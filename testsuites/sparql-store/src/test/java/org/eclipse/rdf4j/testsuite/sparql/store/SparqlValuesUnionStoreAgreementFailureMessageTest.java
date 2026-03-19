@@ -35,8 +35,8 @@ class SparqlValuesUnionStoreAgreementFailureMessageTest {
 	void mismatchMessageIncludesResourcePathsAndBodies() throws Exception {
 		SparqlValuesUnionStoreAgreementTest harness = new SparqlValuesUnionStoreAgreementTest();
 		Object testCase = newTestCase("T001", "T001 synthetic mismatch", DATA_PATH, QUERY_PATH);
-		Object left = newResultSnapshot("Jena", bindingSet("x", "1"));
-		Object right = newResultSnapshot("MemoryStore", bindingSet("x", "2"));
+		Object left = newResultSnapshot("Jena", List.of("x"), bindingSet("x", "1"));
+		Object right = newResultSnapshot("MemoryStore", List.of("x"), bindingSet("x", "2"));
 
 		String message = (String) describeMismatch().invoke(harness, testCase, left, right);
 
@@ -45,6 +45,40 @@ class SparqlValuesUnionStoreAgreementFailureMessageTest {
 				.contains(QUERY_PATH)
 				.contains(readResource(DATA_PATH).trim())
 				.contains(readResource(QUERY_PATH).trim());
+	}
+
+	@Test
+	void mismatchMessageUsesPrefixesFromDataForIriValues() throws Exception {
+		SparqlValuesUnionStoreAgreementTest harness = new SparqlValuesUnionStoreAgreementTest();
+		Object testCase = newTestCase("T001", "T001 prefixed mismatch", DATA_PATH, QUERY_PATH);
+		Object left = newResultSnapshot("Jena", List.of("x"), iriBindingSet("x", "http://example.com/a"));
+		Object right = newResultSnapshot("MemoryStore", List.of("x"), iriBindingSet("x", "http://example.com/b"));
+
+		String message = (String) describeMismatch().invoke(harness, testCase, left, right);
+
+		assertThat(message)
+				.contains("x=:a")
+				.contains("x=:b")
+				.doesNotContain("x=http://example.com/a")
+				.doesNotContain("x=http://example.com/b");
+	}
+
+	@Test
+	void mismatchMessageUsesPrefixesFromQueryForDatatypeIris() throws Exception {
+		SparqlValuesUnionStoreAgreementTest harness = new SparqlValuesUnionStoreAgreementTest();
+		Object testCase = newTestCase("T001", "T001 datatype prefix mismatch", DATA_PATH, QUERY_PATH);
+		Object left = newResultSnapshot("Jena", List.of("count"),
+				typedLiteralBindingSet("count", "6", "http://www.w3.org/2001/XMLSchema#integer"));
+		Object right = newResultSnapshot("MemoryStore", List.of("count"),
+				typedLiteralBindingSet("count", "7", "http://www.w3.org/2001/XMLSchema#integer"));
+
+		String message = (String) describeMismatch().invoke(harness, testCase, left, right);
+
+		assertThat(message)
+				.contains("count=\"6\"^^xsd:integer")
+				.contains("count=\"7\"^^xsd:integer")
+				.doesNotContain("count=\"6\"^^http://www.w3.org/2001/XMLSchema#integer")
+				.doesNotContain("count=\"7\"^^http://www.w3.org/2001/XMLSchema#integer");
 	}
 
 	private static Object newTestCase(String id, String displayName, String dataPath, String queryPath)
@@ -57,13 +91,13 @@ class SparqlValuesUnionStoreAgreementFailureMessageTest {
 		return constructor.newInstance(id, displayName, dataPath, queryPath);
 	}
 
-	private static Object newResultSnapshot(String storeName, BindingSet bindingSet)
+	private static Object newResultSnapshot(String storeName, List<String> bindingNames, BindingSet bindingSet)
 			throws ReflectiveOperationException {
 		Class<?> resultSnapshotClass = Class.forName(
 				"org.eclipse.rdf4j.testsuite.sparql.store.SparqlValuesUnionStoreAgreementTest$ResultSnapshot");
 		Constructor<?> constructor = resultSnapshotClass.getDeclaredConstructor(String.class, List.class, List.class);
 		constructor.setAccessible(true);
-		return constructor.newInstance(storeName, List.of("x"), List.of(bindingSet));
+		return constructor.newInstance(storeName, bindingNames, List.of(bindingSet));
 	}
 
 	private static Method describeMismatch() throws ReflectiveOperationException {
@@ -80,6 +114,20 @@ class SparqlValuesUnionStoreAgreementFailureMessageTest {
 	private static BindingSet bindingSet(String name, String lexicalValue) {
 		MapBindingSet bindingSet = new MapBindingSet(1);
 		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createLiteral(lexicalValue));
+		return bindingSet;
+	}
+
+	private static BindingSet iriBindingSet(String name, String iri) {
+		MapBindingSet bindingSet = new MapBindingSet(1);
+		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createIRI(iri));
+		return bindingSet;
+	}
+
+	private static BindingSet typedLiteralBindingSet(String name, String label, String datatypeIri) {
+		MapBindingSet bindingSet = new MapBindingSet(1);
+		bindingSet.addBinding(name, SimpleValueFactory.getInstance()
+				.createLiteral(label,
+						SimpleValueFactory.getInstance().createIRI(datatypeIri)));
 		return bindingSet;
 	}
 
