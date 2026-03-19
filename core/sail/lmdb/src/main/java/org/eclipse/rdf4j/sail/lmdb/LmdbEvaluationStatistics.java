@@ -225,8 +225,8 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 			return cached;
 		}
 
-		long revisionId = valueStore.getRevision().getRevisionId();
-		SharedCardinalityKey sharedKey = new SharedCardinalityKey(tripleStoreIdentity, revisionId, key);
+		long dataRevision = tripleStore.getDataRevision();
+		SharedCardinalityKey sharedKey = new SharedCardinalityKey(tripleStoreIdentity, dataRevision, key);
 		Double sharedCached = sharedCardinalityCache.get(sharedKey);
 		if (sharedCached != null) {
 			cardinalityCache.put(key, sharedCached);
@@ -286,22 +286,22 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 
 	private static final class SharedCardinalityKey {
 		private final int tripleStoreIdentity;
-		private final long revisionId;
+		private final long dataRevision;
 		private final long subjID;
 		private final long predID;
 		private final long objID;
 		private final long contextID;
 		private final int hashCode;
 
-		private SharedCardinalityKey(int tripleStoreIdentity, long revisionId, CardinalityKey cardinalityKey) {
+		private SharedCardinalityKey(int tripleStoreIdentity, long dataRevision, CardinalityKey cardinalityKey) {
 			this.tripleStoreIdentity = tripleStoreIdentity;
-			this.revisionId = revisionId;
+			this.dataRevision = dataRevision;
 			this.subjID = cardinalityKey.subjID;
 			this.predID = cardinalityKey.predID;
 			this.objID = cardinalityKey.objID;
 			this.contextID = cardinalityKey.contextID;
 			int hash = Integer.hashCode(tripleStoreIdentity);
-			hash = 31 * hash + Long.hashCode(revisionId);
+			hash = 31 * hash + Long.hashCode(dataRevision);
 			hash = 31 * hash + Long.hashCode(subjID);
 			hash = 31 * hash + Long.hashCode(predID);
 			hash = 31 * hash + Long.hashCode(objID);
@@ -319,7 +319,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 			}
 			SharedCardinalityKey other = (SharedCardinalityKey) obj;
 			return tripleStoreIdentity == other.tripleStoreIdentity
-					&& revisionId == other.revisionId
+					&& dataRevision == other.dataRevision
 					&& subjID == other.subjID
 					&& predID == other.predID
 					&& objID == other.objID

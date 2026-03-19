@@ -103,6 +103,56 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void invalidatesSharedCardinalityCacheAfterTripleOnlyCommit() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-triple-only-commit").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			sharedCardinalityCache().clear();
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			IRI follows = vf.createIRI("urn:test:follows");
+			IRI name = vf.createIRI("urn:test:name");
+			IRI s1 = vf.createIRI("urn:test:user:1");
+			IRI s2 = vf.createIRI("urn:test:user:2");
+			IRI o1 = vf.createIRI("urn:test:user:3");
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(s1, follows, o1);
+				connection.add(s2, name, vf.createLiteral("u2"));
+				connection.commit();
+			}
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			ValueStore valueStore = (ValueStore) backingStore.getValueFactory();
+			StatementPattern initialPattern = statementPattern("SELECT * WHERE { ?s <urn:test:follows> ?o . }");
+			EvaluationStatistics firstStatistics = backingStore.getEvaluationStatistics();
+
+			assertEquals(1.0d, firstStatistics.getCardinality(initialPattern), 0.0d);
+			long revisionBefore = valueStore.getRevision().getRevisionId();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(s2, follows, o1);
+				connection.commit();
+			}
+
+			long revisionAfter = valueStore.getRevision().getRevisionId();
+			assertEquals(revisionBefore, revisionAfter,
+					"Triple-only commit should not change value-store revision in this regression scenario");
+
+			EvaluationStatistics secondStatistics = backingStore.getEvaluationStatistics();
+			StatementPattern refreshedPattern = statementPattern("SELECT * WHERE { ?s <urn:test:follows> ?o . }");
+			assertEquals(2.0d, secondStatistics.getCardinality(refreshedPattern), 0.0d,
+					"Shared cardinality cache should be invalidated after triple-store commits");
+		} finally {
+			sharedCardinalityCache().clear();
+			repository.shutDown();
+			FileUtils.deleteDirectory(dataDir);
+		}
+	}
+
+	@Test
 	void joinCardinalityUsesSingleSketchProbeWhenReady() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		when(estimator.isReady()).thenReturn(true);
@@ -296,5 +346,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		Field field = statistics.getClass().getDeclaredField("cardinalityCache");
 		field.setAccessible(true);
 		return (Map<?, ?>) field.get(statistics);
+	}
+
+	private static Map<?, ?> sharedCardinalityCache() throws Exception {
+		Field field = LmdbEvaluationStatistics.class.getDeclaredField("sharedCardinalityCache");
+		field.setAccessible(true);
+		return (Map<?, ?>) field.get(null);
 	}
 }

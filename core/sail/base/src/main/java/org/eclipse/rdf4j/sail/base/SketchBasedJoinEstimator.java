@@ -3141,6 +3141,20 @@ public class SketchBasedJoinEstimator {
 		return Math.min(distinct, rows);
 	}
 
+	private Map<String, VarPlanStats> clampVarStatsToRows(Map<String, VarPlanStats> varStats, double rows,
+			boolean keepSketches) {
+		if (varStats.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		Map<String, VarPlanStats> clamped = new HashMap<>(varStats.size());
+		for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
+			VarPlanStats stats = entry.getValue();
+			clamped.put(entry.getKey(),
+					new VarPlanStats(clampDistinct(stats.distinct, rows), keepSketches ? stats.sketch : null));
+		}
+		return clamped;
+	}
+
 	static final class TuplePlanEstimate {
 		private final double baseRows;
 		private final double outputRows;
@@ -3200,6 +3214,12 @@ public class SketchBasedJoinEstimator {
 		double workRows() {
 			return workRows;
 		}
+	}
+
+	private enum EvictionResult {
+		EVICTED,
+		FAILED,
+		NEEDS_UNLOAD
 	}
 
 	public double cardinality(Join node) {
@@ -3429,7 +3449,7 @@ public class SketchBasedJoinEstimator {
 			rows = Math.min(rows, slice.getLimit());
 		}
 		rows = normalizeRows(rows);
-		return new TuplePlanEstimate(rows, rows, 1.0d, argEstimate.varStats);
+		return new TuplePlanEstimate(rows, rows, 1.0d, clampVarStatsToRows(argEstimate.varStats, rows, false));
 	}
 
 	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr,
@@ -4726,7 +4746,12 @@ public class SketchBasedJoinEstimator {
 				candidateSlot = residentLru.slot(headNode);
 			}
 
-			if (!evictResidentSketch(candidateEntryId, candidateSlot)) {
+			EvictionResult evictionResult = evictResidentSketch(candidateEntryId, candidateSlot);
+			if (evictionResult == EvictionResult.NEEDS_UNLOAD) {
+				unloadInternal(true);
+				return;
+			}
+			if (evictionResult == EvictionResult.FAILED) {
 				System.out.println("after: " + ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().toString());
 
 				return;
@@ -4735,13 +4760,13 @@ public class SketchBasedJoinEstimator {
 
 	}
 
-	private boolean evictResidentSketch(int entryId, byte slotByte) {
+	private EvictionResult evictResidentSketch(int entryId, byte slotByte) {
 		BufferSlot slot = slotByte == 0 ? BufferSlot.A : BufferSlot.B;
 		State state = stateOf(slot);
 		SketchAddress sketchAddress;
 		synchronized (sketchCacheLock) {
 			if (entryId < 0 || entryId >= cacheDirectory.size()) {
-				return true;
+				return EvictionResult.EVICTED;
 			}
 			sketchAddress = cacheDirectory.toSketchAddress(entryId);
 		}
@@ -4753,11 +4778,11 @@ public class SketchBasedJoinEstimator {
 				synchronized (sketchCacheLock) {
 					removeResidentSketchTracking(entryId, slotByte);
 				}
-				return true;
+				return EvictionResult.EVICTED;
 			}
 			dirtySketch = isDirty(entryId);
 			if (dirtySketch && (!persistenceEnabled || persistenceFile == null || persistenceBlobBaseFile == null)) {
-				return false;
+				return EvictionResult.NEEDS_UNLOAD;
 			}
 			setResidentSketch(state, sketchAddress, null);
 			synchronized (sketchCacheLock) {
@@ -4765,12 +4790,12 @@ public class SketchBasedJoinEstimator {
 			}
 		}
 		if (!dirtySketch) {
-			return true;
+			return EvictionResult.EVICTED;
 		}
 		synchronized (persistLock) {
 			try {
 				appendSketchPayload(entryId, sketchAddress, sketch);
-				return true;
+				return EvictionResult.EVICTED;
 			} catch (IOException e) {
 				logger.warn("Failed to persist dirty sketch during eviction", e);
 				synchronized (state) {
@@ -4779,7 +4804,7 @@ public class SketchBasedJoinEstimator {
 						touchResidentSketch(state, sketchAddress, sketch, false);
 					}
 				}
-				return false;
+				return EvictionResult.FAILED;
 			}
 		}
 	}

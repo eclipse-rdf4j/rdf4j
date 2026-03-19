@@ -77,6 +77,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
@@ -175,6 +176,7 @@ class TripleStore implements Closeable {
 	private long writeTxn;
 	private final TxnManager txnManager;
 	private final LmdbPageCardinalityEstimator pageEstimator;
+	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
 
@@ -319,6 +321,10 @@ class TripleStore implements Closeable {
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	long getDataRevision() {
+		return dataRevision.get();
 	}
 
 	/**
@@ -1223,6 +1229,7 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
+						dataRevision.incrementAndGet();
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
