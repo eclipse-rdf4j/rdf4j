@@ -133,6 +133,52 @@ class MessagePassingJoinPlannerTest {
 	}
 
 	@Test
+	void dynamicProgrammingChoosesSelectiveUnaryChainTailFirstWithContext() {
+		IRI hasArm = iri("hasArm");
+		IRI hasResult = iri("hasResult");
+		IRI biomarker = iri("biomarker");
+		IRI context = iri("ctx");
+		IRI targetMarker = iri("targetMarker");
+		List<TripleData> statements = new ArrayList<>();
+		for (int trialIndex = 0; trialIndex < 8; trialIndex++) {
+			for (int armIndex = 0; armIndex < 50; armIndex++) {
+				IRI trial = iri("trial-" + trialIndex);
+				IRI arm = iri("arm-" + trialIndex + '-' + armIndex);
+				IRI result = iri("result-" + trialIndex + '-' + armIndex);
+				IRI marker = trialIndex == 0 && armIndex == 0 ? targetMarker
+						: iri("marker-" + trialIndex + '-' + armIndex);
+				statements.add(new TripleData(trial, hasArm, arm, context));
+				statements.add(new TripleData(arm, hasResult, result, context));
+				statements.add(new TripleData(result, biomarker, marker, context));
+			}
+		}
+
+		StatementPattern trialArmPattern = new StatementPattern(
+				Var.of("trial"),
+				Var.of("hasArmPredicate", hasArm),
+				Var.of("arm"),
+				Var.of("context", context));
+		StatementPattern armResultPattern = new StatementPattern(
+				Var.of("arm"),
+				Var.of("hasResultPredicate", hasResult),
+				Var.of("result"),
+				Var.of("context", context));
+		StatementPattern biomarkerPattern = new StatementPattern(
+				Var.of("result"),
+				Var.of("biomarkerPredicate", biomarker),
+				Var.of("targetMarker", targetMarker),
+				Var.of("context", context));
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = new MessagePassingJoinPlanner(
+				adapt(synopsis(statements), List.of(trialArmPattern, armResultPattern, biomarkerPattern)).orElseThrow())
+				.plan(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected DP planner to keep the supported unary-tail chain");
+		assertEquals(List.of(biomarkerPattern, armResultPattern, trialArmPattern), plan.get().getOrderedArgs(),
+				"DP should seed from the selective unary tail before expanding toward the broad root");
+	}
+
+	@Test
 	void adaptRejectsCycleFactors() {
 		IRI p1 = iri("p1");
 		IRI p2 = iri("p2");
@@ -228,7 +274,7 @@ class MessagePassingJoinPlannerTest {
 			builder.addStatement(fingerprint(statement.subject().stringValue()),
 					fingerprint(statement.predicate().stringValue()),
 					fingerprint(statement.object().stringValue()),
-					0L);
+					fingerprint(statement.context().stringValue()));
 		}
 		return builder.build();
 	}
@@ -258,6 +304,9 @@ class MessagePassingJoinPlannerTest {
 		return SketchFingerprint.valueFingerprint(value);
 	}
 
-	private record TripleData(IRI subject, IRI predicate, IRI object) {
+	private record TripleData(IRI subject, IRI predicate, IRI object, IRI context) {
+		private TripleData(IRI subject, IRI predicate, IRI object) {
+			this(subject, predicate, object, iri("defaultContext"));
+		}
 	}
 }

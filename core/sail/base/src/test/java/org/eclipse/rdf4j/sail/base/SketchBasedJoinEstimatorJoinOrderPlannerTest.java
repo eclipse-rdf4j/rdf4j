@@ -16,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -116,11 +115,15 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				JoinOrderPlanner.Algorithm.GREEDY);
 
 		assertTrue(dpPlan.isPresent(), "Expected dynamic programming planner to produce a join order");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
+				"Supported flat segments should go through the robust planner");
 		assertTrue(greedyPlan.isPresent(), "Expected greedy planner to produce a join order");
 		assertEquals(args.size(), dpPlan.get().getOrderedArgs().size());
 		assertTrue(dpPlan.get().getOrderedArgs().containsAll(args));
 		assertEquals(args.size(), greedyPlan.get().getOrderedArgs().size());
 		assertTrue(greedyPlan.get().getOrderedArgs().containsAll(args));
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
+				"Supported flat segments should go through the robust planner");
 	}
 
 	@Test
@@ -234,8 +237,19 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		List<TupleExpr> args = List.of(bindings, typePattern, encounterPattern, observationPattern,
 				filteredValuePattern);
 
-		assertPlanWithDisconnectedBindingAssignment(args, JoinOrderPlanner.Algorithm.GREEDY, estimator);
-		assertPlanWithDisconnectedBindingAssignment(args, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, estimator);
+		Optional<JoinOrderPlanner.JoinOrderPlan> greedyPlan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY);
+		assertTrue(greedyPlan.isEmpty(),
+				"Disconnected binding assignments should now fall back through Optional.empty()");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE, estimator.lastJoinOrderPlannerPath(),
+				"Disconnected binding assignments should report an unsupported planner shape");
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> dynamicProgrammingPlan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+		assertTrue(dynamicProgrammingPlan.isEmpty(),
+				"Disconnected binding assignments should now fall back through Optional.empty()");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE, estimator.lastJoinOrderPlannerPath(),
+				"Disconnected binding assignments should report an unsupported planner shape");
 	}
 
 	@Test
@@ -677,6 +691,35 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void cardinalityListReturnsNegativeOneWhenRobustEstimatorRejectsCycle() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+		IRI pC = VF.createIRI("urn:pC");
+
+		for (int i = 0; i < 32; i++) {
+			Resource x = VF.createIRI("urn:x" + i);
+			Resource y = VF.createIRI("urn:y" + i);
+			Resource z = VF.createIRI("urn:z" + i);
+			store.add(VF.createStatement(x, pA, y));
+			store.add(VF.createStatement(y, pB, z));
+			store.add(VF.createStatement(z, pC, x));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		double rows = estimator.cardinality(List.of(pattern("x", pA, "y"), pattern("y", pB, "z"),
+				pattern("z", pC, "x")));
+
+		assertEquals(-1.0d, rows,
+				"Cycle-shaped join lists should now return -1 so higher-level cardinality fallback can take over");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_CYCLE,
+				estimator.lastRobustCardinalityPath(),
+				"Rejected cycle estimates should report the explicit unsupported reason");
+	}
+
+	@Test
 	void cardinalityJoinDelegatesToListEstimatorForFlattenableJoinTree() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
@@ -705,139 +748,38 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(listRows >= 0.0d, "Expected cardinality(List) to support flattenable join tree tuple expressions");
 		assertEquals(listRows, joinRows,
 				"Expected cardinality(Join) to delegate to cardinality(List) for flattenable join trees");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastRobustCardinalityPath(),
+				"Supported flattened joins should use the robust cardinality path");
 	}
 
 	@Test
-	void planJoinOrderGreedyMaySeedFromCheapestDisconnectedTerm() {
+	void cardinalityJoinReturnsNegativeOneWhenFlattenedCycleIsUnsupported() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
 		IRI pC = VF.createIRI("urn:pC");
-		Resource seed = VF.createIRI("urn:seed");
-		store.add(VF.createStatement(seed, pA, VF.createIRI("urn:a0")));
-		store.add(VF.createStatement(seed, pB, VF.createIRI("urn:b0")));
-		store.add(VF.createStatement(seed, pC, VF.createIRI("urn:c0")));
 
-		Map<String, Double> prefixCosts = Map.ofEntries(
-				Map.entry("pA", 10.0d),
-				Map.entry("pB", 20.0d),
-				Map.entry("pC", 1.0d),
-				Map.entry("pA>pB", 4.0d),
-				Map.entry("pA>pB>pC", 6.0d),
-				Map.entry("pB>pA", 5.0d),
-				Map.entry("pB>pA>pC", 7.0d),
-				Map.entry("pC>pA", 2.0d),
-				Map.entry("pC>pB", 3.0d),
-				Map.entry("pC>pA>pB", 4.0d),
-				Map.entry("pC>pB>pA", 5.0d));
-		Map<String, Set<String>> connectivity = Map.of(
-				"pA", Set.of("pB"),
-				"pB", Set.of("pA"),
-				"pC", Set.of());
-
-		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), prefixCosts,
-				connectivity);
-		estimator.rebuildOnceSlow();
-
-		StatementPattern a = pattern("s", pA, "a");
-		StatementPattern b = pattern("s", pB, "b");
-		StatementPattern c = pattern("s", pC, "c");
-
-		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(List.of(a, b, c), Set.of(),
-				JoinOrderPlanner.Algorithm.GREEDY);
-
-		assertTrue(plan.isPresent(), "Expected planner to produce a greedy plan");
-		assertEquals(c, plan.get().getOrderedArgs().get(0),
-				"Greedy planner should be allowed to seed from the cheapest disconnected term");
-	}
-
-	@Test
-	void planJoinOrderPrefersLowerWorkBeforeCrossJoinTiming() {
-		StubSailStore store = new StubSailStore();
-		IRI pA = VF.createIRI("urn:pA");
-		IRI pB = VF.createIRI("urn:pB");
-		IRI pC = VF.createIRI("urn:pC");
-		Resource seed = VF.createIRI("urn:seed");
-		store.add(VF.createStatement(seed, pA, VF.createIRI("urn:a0")));
-		store.add(VF.createStatement(seed, pB, VF.createIRI("urn:b0")));
-		store.add(VF.createStatement(seed, pC, VF.createIRI("urn:c0")));
-
-		Map<String, Double> prefixCosts = Map.ofEntries(
-				Map.entry("pA", 20.0d),
-				Map.entry("pB", 30.0d),
-				Map.entry("pC", 1.0d),
-				Map.entry("pA>pB", 100.0d),
-				Map.entry("pA>pC", 2.0d),
-				Map.entry("pA>pC>pB", 2.0d),
-				Map.entry("pA>pB>pC", 100.0d),
-				Map.entry("pB>pA", 100.0d),
-				Map.entry("pB>pC", 2.0d),
-				Map.entry("pB>pC>pA", 2.0d),
-				Map.entry("pB>pA>pC", 100.0d),
-				Map.entry("pC>pA", 2.0d),
-				Map.entry("pC>pB", 3.0d),
-				Map.entry("pC>pA>pB", 2.0d),
-				Map.entry("pC>pB>pA", 2.0d));
-		Map<String, Set<String>> connectivity = Map.of(
-				"pA", Set.of("pB"),
-				"pB", Set.of("pA"),
-				"pC", Set.of());
-
-		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), prefixCosts,
-				connectivity);
-		estimator.rebuildOnceSlow();
-
-		StatementPattern a = pattern("s", pA, "a");
-		StatementPattern b = pattern("s", pB, "b");
-		StatementPattern c = pattern("s", pC, "c");
-
-		assertAlgorithmOrder(List.of(a, b, c), estimator, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, c, a, b);
-	}
-
-	@Test
-	void planJoinOrderUsesRequestedAlgorithmInsteadOfPairExpansionShortcut() {
-		StubSailStore store = new StubSailStore();
-		IRI pA = VF.createIRI("urn:pA");
-		IRI pB = VF.createIRI("urn:pB");
-		IRI pC = VF.createIRI("urn:pC");
-		IRI pD = VF.createIRI("urn:pD");
-
-		for (int i = 0; i < 20; i++) {
-			Resource s = VF.createIRI("urn:s" + i);
-			store.add(VF.createStatement(s, pA, VF.createIRI("urn:a" + i)));
-			store.add(VF.createStatement(s, pB, VF.createIRI("urn:b" + i)));
-			store.add(VF.createStatement(s, pC, VF.createIRI("urn:c" + i)));
-			store.add(VF.createStatement(s, pD, VF.createIRI("urn:d" + i)));
+		for (int i = 0; i < 32; i++) {
+			Resource x = VF.createIRI("urn:x" + i);
+			Resource y = VF.createIRI("urn:y" + i);
+			Resource z = VF.createIRI("urn:z" + i);
+			store.add(VF.createStatement(x, pA, y));
+			store.add(VF.createStatement(y, pB, z));
+			store.add(VF.createStatement(z, pC, x));
 		}
 
-		Map<String, Double> prefixCosts = Map.ofEntries(
-				Map.entry("pA", 4.0d),
-				Map.entry("pB", 1.0d),
-				Map.entry("pC", 2.0d),
-				Map.entry("pD", 3.0d),
-				Map.entry("pB>pA", 5.0d),
-				Map.entry("pC>pA", 6.0d),
-				Map.entry("pD>pA", 7.0d),
-				Map.entry("pB>pC", 8.0d),
-				Map.entry("pB>pD", 9.0d),
-				Map.entry("pC>pD", 10.0d),
-				Map.entry("pB>pA>pC", 100.0d),
-				Map.entry("pB>pA>pD", 20.0d),
-				Map.entry("pB>pA>pD>pC", 50.0d),
-				Map.entry("pC>pA>pD", 2.0d),
-				Map.entry("pC>pA>pD>pB", 2.0d));
-
-		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), prefixCosts);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
 		estimator.rebuildOnceSlow();
 
-		StatementPattern a = pattern("s", pA, "a");
-		StatementPattern b = pattern("s", pB, "b");
-		StatementPattern c = pattern("s", pC, "c");
-		StatementPattern d = pattern("s", pD, "d");
-		List<TupleExpr> args = List.of(a, b, c, d);
+		StatementPattern a = pattern("x", pA, "y");
+		StatementPattern b = pattern("y", pB, "z");
+		StatementPattern c = pattern("z", pC, "x");
 
-		assertAlgorithmOrder(args, estimator, JoinOrderPlanner.Algorithm.GREEDY, b, a, d, c);
-		assertAlgorithmOrder(args, estimator, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, c, a, d, b);
+		assertEquals(-1.0d, estimator.cardinality(new Join(new Join(a, b), c)),
+				"Flattened cycle joins should return -1 so evaluation statistics can use the generic fallback");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_CYCLE,
+				estimator.lastRobustCardinalityPath(),
+				"Rejected flattened cycles should report the explicit unsupported reason");
 	}
 
 	@Test
@@ -850,7 +792,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			args.add(pattern("s", predicate, "o" + i));
 		}
 
-		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), Map.of());
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
 		estimator.rebuildOnceSlow();
 
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
@@ -858,6 +800,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		assertTrue(plan.isEmpty(),
 				"Dynamic-programming requests beyond the supported subset-mask width must fall back through Optional.empty()");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE, estimator.lastJoinOrderPlannerPath(),
+				"Too-wide dynamic-programming requests should report an unsupported planner shape");
 	}
 
 	@Test
@@ -887,9 +831,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
 				JoinOrderPlanner.Algorithm.GREEDY);
 
-		assertTrue(plan.isPresent(), "Cycle-shaped joins should fall back to the legacy planner");
-		assertEquals(args.size(), plan.get().getOrderedArgs().size());
-		assertTrue(plan.get().getOrderedArgs().containsAll(args));
+		assertTrue(plan.isEmpty(), "Cycle-shaped joins should now fall back through Optional.empty()");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_CYCLE,
+				estimator.lastJoinOrderPlannerPath(),
+				"Rejected cycle plans should report the explicit unsupported reason");
 	}
 
 	@Test
@@ -920,30 +865,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(List.of(wrappedJoin, c), Set.of(),
 				JoinOrderPlanner.Algorithm.GREEDY);
 
-		assertTrue(plan.isPresent(), "Unsupported wrapped join segments should fall back to the legacy planner");
-		assertEquals(List.of(wrappedJoin, c), plan.get().getOrderedArgs(),
-				"Fallback should preserve the caller-visible join arguments");
-	}
-
-	private static void assertAlgorithmOrder(List<TupleExpr> args, SketchBasedJoinEstimator estimator,
-			JoinOrderPlanner.Algorithm algorithm, TupleExpr... expectedOrder) {
-		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(), algorithm);
-		assertTrue(plan.isPresent(), "Expected planner to produce a plan for " + algorithm);
-		assertEquals(List.of(expectedOrder), plan.get().getOrderedArgs(),
-				"Expected planner to respect the requested search algorithm for " + algorithm);
-	}
-
-	private static void assertPlanWithDisconnectedBindingAssignment(List<TupleExpr> args,
-			JoinOrderPlanner.Algorithm algorithm,
-			SketchBasedJoinEstimator estimator) {
-		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(), algorithm);
-		assertTrue(plan.isPresent(), "Expected " + algorithm + " planner to produce a plan");
-
-		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-		assertEquals(args.size(), orderedArgs.size(), "Expected planner to retain every join argument");
-		assertTrue(orderedArgs.containsAll(args), "Expected planner output to contain every join argument");
-		assertTrue(Double.isFinite(plan.get().getEstimatedFinalRows()) && plan.get().getEstimatedFinalRows() >= 0.0d,
-				"Expected planner to provide a finite final-row estimate");
+		assertTrue(plan.isEmpty(), "Unsupported wrapped join segments should now fall back through Optional.empty()");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_WRAPPER,
+				estimator.lastJoinOrderPlannerPath(),
+				"Wrapped join segments should report the wrapper rejection reason");
 	}
 
 	private static final class FixedPatternPassRatioJoinStatsProvider implements JoinStatsProvider {
@@ -987,147 +912,6 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		@Override
 		public long getTotalCalls() {
 			return 0L;
-		}
-	}
-
-	private static final class PrefixCostSketchBasedJoinEstimator extends SketchBasedJoinEstimator {
-		private final Map<String, Double> prefixCosts;
-		private final Map<String, Set<String>> connectivityByLabel;
-		private final IdentityHashMap<TuplePlanEstimate, String> labelsByEstimate = new IdentityHashMap<>();
-		private final IdentityHashMap<JoinStepEstimate, String> labelsByStep = new IdentityHashMap<>();
-
-		private PrefixCostSketchBasedJoinEstimator(StubSailStore store, Config config,
-				Map<String, Double> prefixCosts) {
-			this(store, config, prefixCosts, null);
-		}
-
-		private PrefixCostSketchBasedJoinEstimator(StubSailStore store, Config config,
-				Map<String, Double> prefixCosts, Map<String, Set<String>> connectivityByLabel) {
-			super(store, config);
-			this.prefixCosts = prefixCosts;
-			this.connectivityByLabel = connectivityByLabel;
-		}
-
-		@Override
-		public double cardinality(List<TupleExpr> tupleExprs) {
-			return prefixCosts.getOrDefault(prefixKey(tupleExprs), 10_000.0d);
-		}
-
-		@Override
-		public double cardinality(Join node) {
-			List<TupleExpr> flattened = new java.util.ArrayList<>();
-			flatten(node, flattened);
-			return cardinality(flattened);
-		}
-
-		@Override
-		TuplePlanEstimate planEstimateForJoinOrdering(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
-			String label = label(tupleExpr);
-			TuplePlanEstimate estimate = tuplePlanEstimate(prefixCosts.getOrDefault(label, 10_000.0d));
-			labelsByEstimate.put(estimate, label);
-			return estimate;
-		}
-
-		@Override
-		JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
-			String prefix = labelsByEstimate.get(left) + ">" + labelsByEstimate.get(right);
-			double rows = prefixCosts.getOrDefault(prefix, 10_000.0d);
-			JoinStepEstimate step = joinStepEstimate(rows, rows);
-			labelsByStep.put(step, prefix);
-			return step;
-		}
-
-		@Override
-		TuplePlanEstimate joinedPlanEstimate(JoinStepEstimate step) {
-			TuplePlanEstimate estimate = tuplePlanEstimate(step.outputRows());
-			labelsByEstimate.put(estimate, labelsByStep.get(step));
-			return estimate;
-		}
-
-		@Override
-		boolean hasSharedJoinVariable(TuplePlanEstimate left, TuplePlanEstimate right) {
-			if (connectivityByLabel == null) {
-				return true;
-			}
-			return labelsShareJoinVariable(labelsByEstimate.get(left), labelsByEstimate.get(right));
-		}
-
-		private boolean labelsShareJoinVariable(String leftLabel, String rightLabel) {
-			if (leftLabel == null || rightLabel == null) {
-				return false;
-			}
-			for (String leftPart : leftLabel.split(">")) {
-				for (String rightPart : rightLabel.split(">")) {
-					if (termsShareJoinVariable(leftPart, rightPart)) {
-						return true;
-					}
-				}
-			}
-			return false;
-		}
-
-		private boolean termsShareJoinVariable(String leftLabel, String rightLabel) {
-			if (leftLabel.equals(rightLabel)) {
-				return true;
-			}
-			Set<String> connectedTerms = connectivityByLabel.get(leftLabel);
-			return connectedTerms != null && connectedTerms.contains(rightLabel);
-		}
-
-		private static void flatten(TupleExpr tupleExpr, List<TupleExpr> flattened) {
-			if (tupleExpr instanceof Join) {
-				Join join = (Join) tupleExpr;
-				flatten(join.getLeftArg(), flattened);
-				flatten(join.getRightArg(), flattened);
-			} else {
-				flattened.add(tupleExpr);
-			}
-		}
-
-		private static String prefixKey(List<TupleExpr> tupleExprs) {
-			StringBuilder builder = new StringBuilder();
-			for (int i = 0; i < tupleExprs.size(); i++) {
-				if (i > 0) {
-					builder.append('>');
-				}
-				builder.append(label(tupleExprs.get(i)));
-			}
-			return builder.toString();
-		}
-
-		private static String label(TupleExpr tupleExpr) {
-			if (tupleExpr instanceof Filter) {
-				return label(((Filter) tupleExpr).getArg());
-			}
-			if (tupleExpr instanceof StatementPattern) {
-				StatementPattern pattern = (StatementPattern) tupleExpr;
-				if (pattern.getPredicateVar() != null && pattern.getPredicateVar().hasValue()
-						&& pattern.getPredicateVar().getValue() instanceof IRI) {
-					return ((IRI) pattern.getPredicateVar().getValue()).getLocalName();
-				}
-			}
-			return tupleExpr.getClass().getSimpleName();
-		}
-
-		private static TuplePlanEstimate tuplePlanEstimate(double rows) {
-			try {
-				var constructor = TuplePlanEstimate.class.getDeclaredConstructor(double.class, double.class,
-						double.class, Map.class);
-				constructor.setAccessible(true);
-				return constructor.newInstance(rows, rows, 1.0d, Map.of());
-			} catch (ReflectiveOperationException e) {
-				throw new AssertionError(e);
-			}
-		}
-
-		private static JoinStepEstimate joinStepEstimate(double outputRows, double workRows) {
-			try {
-				var constructor = JoinStepEstimate.class.getDeclaredConstructor(double.class, double.class, Map.class);
-				constructor.setAccessible(true);
-				return constructor.newInstance(outputRows, workRows, Map.of());
-			} catch (ReflectiveOperationException e) {
-				throw new AssertionError(e);
-			}
 		}
 	}
 

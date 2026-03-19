@@ -148,6 +148,40 @@ class QueryJoinOptimizerReorderSafetyTest {
 	}
 
 	@Test
+	void reorderJoinArgsFallsBackToGreedyCardinalityWhenPlannerReturnsEmpty() throws Exception {
+		StatementPattern a = statementPattern("a", "ex:pA");
+		StatementPattern b = statementPattern("b", "ex:pB");
+		StatementPattern c = statementPattern("c", "ex:pC");
+		Map<String, Double> joinCosts = new HashMap<>();
+		joinCosts.put(pairKey("ex:pA", "ex:pB"), 1.0d);
+		joinCosts.put(pairKey("ex:pA", "ex:pC"), 20.0d);
+		joinCosts.put(pairKey("ex:pB", "ex:pC"), 30.0d);
+		EmptyPlanStatistics statistics = new EmptyPlanStatistics(joinCosts);
+
+		QueryJoinOptimizer.JoinOrderStrategy originalStrategy = QueryJoinOptimizer.JOIN_ORDER_STRATEGY;
+		int originalLimit = QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT;
+		try {
+			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = QueryJoinOptimizer.JoinOrderStrategy.HYBRID;
+			QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = 4;
+
+			QueryJoinOptimizer optimizer = new QueryJoinOptimizer(statistics, new EmptyTripleSource());
+			Deque<TupleExpr> reordered = invokeReorderJoinArgs(optimizer, new ArrayDeque<>(List.of(a, b, c)));
+
+			List<String> predicates = reordered.stream()
+					.map(QueryJoinOptimizerReorderSafetyTest::predicate)
+					.collect(Collectors.toList());
+
+			assertThat(statistics.algorithms)
+					.as("Planner should be tried first, then QueryJoinOptimizer should fall back to greedy cardinality")
+					.containsExactly(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, JoinOrderPlanner.Algorithm.GREEDY);
+			assertThat(predicates).containsExactly("ex:pA", "ex:pB", "ex:pC");
+		} finally {
+			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = originalStrategy;
+			QueryJoinOptimizer.DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = originalLimit;
+		}
+	}
+
+	@Test
 	void plannerOrderIsMaterializedAsLeftDeepJoinTree() {
 		StatementPattern a = statementPattern("a", "ex:pA");
 		StatementPattern b = statementPattern("b", "ex:pB");
@@ -306,6 +340,40 @@ class QueryJoinOptimizerReorderSafetyTest {
 				Algorithm algorithm) {
 			lastAlgorithm = algorithm;
 			return Optional.of(new JoinOrderPlan(plannedOrder, 1.0d, 1.0d));
+		}
+	}
+
+	private static final class EmptyPlanStatistics extends EvaluationStatistics implements JoinOrderPlanner {
+		private final Map<String, Double> joinCosts;
+		private final List<JoinOrderPlanner.Algorithm> algorithms = new ArrayList<>();
+
+		private EmptyPlanStatistics(Map<String, Double> joinCosts) {
+			this.joinCosts = joinCosts;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Join) {
+				Join join = (Join) expr;
+				return joinCosts.getOrDefault(pairKey(predicate(join.getLeftArg()), predicate(join.getRightArg())),
+						1000.0d);
+			}
+			if (expr instanceof StatementPattern) {
+				return 10.0d;
+			}
+			return super.getCardinality(expr);
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			algorithms.add(algorithm);
+			return Optional.empty();
 		}
 	}
 

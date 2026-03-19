@@ -61,8 +61,12 @@ public final class PatternSynopsisAdapter {
 	}
 
 	public Optional<SupportedQuery> adapt(List<TupleExpr> args, Set<String> initiallyBoundVars) {
+		return adaptWithReason(args, initiallyBoundVars).supportedQuery();
+	}
+
+	public AdaptationResult adaptWithReason(List<TupleExpr> args, Set<String> initiallyBoundVars) {
 		if (args == null || args.isEmpty()) {
-			return Optional.empty();
+			return AdaptationResult.unsupported(RejectionReason.UNSUPPORTED_SHAPE);
 		}
 
 		Set<String> boundVars = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Set.of()
@@ -70,41 +74,48 @@ public final class PatternSynopsisAdapter {
 		Map<Long, Long> queryResolver = new LinkedHashMap<>();
 		List<SupportedFactor> factors = new ArrayList<>(args.size());
 		for (TupleExpr arg : args) {
-			SupportedFactor factor = adaptFactor(arg, queryResolver);
-			if (factor == null) {
-				return Optional.empty();
+			FactorAdaptation adaptation = adaptFactor(arg, queryResolver);
+			if (adaptation.factor() == null) {
+				return AdaptationResult.unsupported(adaptation.rejectionReason());
 			}
-			factors.add(applyInitiallyBoundVars(factor, boundVars));
+			factors.add(applyInitiallyBoundVars(adaptation.factor(), boundVars));
 		}
 
-		if (!isConnectedAcyclic(factors)) {
-			return Optional.empty();
+		RejectionReason graphRejection = classifyGraph(factors);
+		if (graphRejection != null) {
+			return AdaptationResult.unsupported(graphRejection);
 		}
-		return Optional.of(new SupportedQuery(List.copyOf(factors), synopsis, Map.copyOf(queryResolver)));
+		return AdaptationResult
+				.supported(new SupportedQuery(List.copyOf(factors), synopsis, Map.copyOf(queryResolver)));
 	}
 
-	private SupportedFactor adaptFactor(TupleExpr tupleExpr, Map<Long, Long> queryResolver) {
+	private FactorAdaptation adaptFactor(TupleExpr tupleExpr, Map<Long, Long> queryResolver) {
 		if (tupleExpr instanceof BindingSetAssignment) {
-			return adaptBindingSetAssignment((BindingSetAssignment) tupleExpr, queryResolver);
+			return FactorAdaptation
+					.supported(adaptBindingSetAssignment((BindingSetAssignment) tupleExpr, queryResolver));
 		}
 
 		PatternInput input = unwrapPattern(tupleExpr, 1.0d);
 		if (input == null) {
-			return null;
+			return FactorAdaptation.unsupported(RejectionReason.UNSUPPORTED_WRAPPER);
 		}
 
 		Map<String, Component> variableComponents = collectVariableComponents(input.pattern());
 		if (variableComponents == null || variableComponents.isEmpty() || variableComponents.size() > 2) {
-			return null;
+			return FactorAdaptation.unsupported(RejectionReason.UNSUPPORTED_SHAPE);
 		}
 
 		boolean contextPresent = input.pattern().getContextVar() != null;
 		if (variableComponents.size() == 1) {
 			SupportedFactor factor = adaptUnary(tupleExpr, input.pattern(), variableComponents, contextPresent);
-			return scaleFactor(factor, input.multiplier());
+			return factor == null
+					? FactorAdaptation.unsupported(RejectionReason.UNSUPPORTED_SHAPE)
+					: FactorAdaptation.supported(scaleFactor(factor, input.multiplier()));
 		}
 		SupportedFactor factor = adaptBinary(tupleExpr, input.pattern(), variableComponents, contextPresent);
-		return scaleFactor(factor, input.multiplier());
+		return factor == null
+				? FactorAdaptation.unsupported(RejectionReason.UNSUPPORTED_SHAPE)
+				: FactorAdaptation.supported(scaleFactor(factor, input.multiplier()));
 	}
 
 	private SupportedFactor adaptUnary(TupleExpr tupleExpr, StatementPattern pattern,
@@ -269,17 +280,27 @@ public final class PatternSynopsisAdapter {
 		return previous == null || previous == component;
 	}
 
-	private static boolean isConnectedAcyclic(List<SupportedFactor> factors) {
+	private static RejectionReason classifyGraph(List<SupportedFactor> factors) {
+		if (factors.isEmpty()) {
+			return RejectionReason.UNSUPPORTED_SHAPE;
+		}
+		if (!isConnected(factors)) {
+			return RejectionReason.UNSUPPORTED_SHAPE;
+		}
+		if (hasMultiSharedVariableAttachment(factors)) {
+			return RejectionReason.UNSUPPORTED_MULTI_SHARED_VAR;
+		}
+
 		Set<String> variables = new LinkedHashSet<>();
 		int edgeCount = 0;
 		for (SupportedFactor factor : factors) {
 			variables.addAll(factor.variables);
 			edgeCount += factor.arity();
 		}
-		if (variables.isEmpty()) {
-			return false;
-		}
+		return edgeCount == factors.size() + variables.size() - 1 ? null : RejectionReason.UNSUPPORTED_CYCLE;
+	}
 
+	private static boolean isConnected(List<SupportedFactor> factors) {
 		Set<Integer> seenFactors = new LinkedHashSet<>();
 		Set<String> seenVariables = new LinkedHashSet<>();
 		ArrayDeque<Object> queue = new ArrayDeque<>();
@@ -304,7 +325,21 @@ public final class PatternSynopsisAdapter {
 				}
 			}
 		}
-		return seenFactors.size() == factors.size() && edgeCount == factors.size() + variables.size() - 1;
+		return seenFactors.size() == factors.size();
+	}
+
+	private static boolean hasMultiSharedVariableAttachment(List<SupportedFactor> factors) {
+		for (int i = 0; i < factors.size(); i++) {
+			for (int j = i + 1; j < factors.size(); j++) {
+				int shared = 0;
+				for (String variable : factors.get(i).variables) {
+					if (factors.get(j).variables.contains(variable) && ++shared > 1) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	private static Pair findPair(Component left, Component right) {
@@ -379,6 +414,33 @@ public final class PatternSynopsisAdapter {
 	}
 
 	private record PatternInput(StatementPattern pattern, double multiplier) {
+	}
+
+	public enum RejectionReason {
+		UNSUPPORTED_CYCLE,
+		UNSUPPORTED_MULTI_SHARED_VAR,
+		UNSUPPORTED_WRAPPER,
+		UNSUPPORTED_SHAPE
+	}
+
+	public record AdaptationResult(Optional<SupportedQuery> supportedQuery, RejectionReason rejectionReason) {
+		static AdaptationResult supported(SupportedQuery supportedQuery) {
+			return new AdaptationResult(Optional.of(supportedQuery), null);
+		}
+
+		static AdaptationResult unsupported(RejectionReason rejectionReason) {
+			return new AdaptationResult(Optional.empty(), Objects.requireNonNull(rejectionReason, "rejectionReason"));
+		}
+	}
+
+	private record FactorAdaptation(SupportedFactor factor, RejectionReason rejectionReason) {
+		static FactorAdaptation supported(SupportedFactor factor) {
+			return new FactorAdaptation(Objects.requireNonNull(factor, "factor"), null);
+		}
+
+		static FactorAdaptation unsupported(RejectionReason rejectionReason) {
+			return new FactorAdaptation(null, Objects.requireNonNull(rejectionReason, "rejectionReason"));
+		}
 	}
 
 	public record SupportedQuery(List<SupportedFactor> factors, StoreSynopsis synopsis, Map<Long, Long> queryResolver) {

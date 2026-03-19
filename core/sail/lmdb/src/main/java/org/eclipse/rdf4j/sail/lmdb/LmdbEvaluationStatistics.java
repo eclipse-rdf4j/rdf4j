@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +45,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
 	private static final long JOIN_SUPPORT_CACHE_TTL_MS = 100;
+	private static final Method CAN_USE_ROBUST_SKETCH_OPTIMIZER = resolveCanUseRobustSketchOptimizer();
 	private static final Map<SharedCardinalityKey, Double> sharedCardinalityCache = new ConcurrentHashMap<>();
 
 	private final ValueStore valueStore;
@@ -71,7 +74,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 			return joinSupportCacheValue;
 		}
 
-		boolean ready = sketchBasedJoinEstimator.isReady();
+		boolean ready = ensureRobustJoinEstimationReady();
 		joinSupportCacheValue = ready;
 		joinSupportCacheRevisionId = revisionId;
 		joinSupportCacheExpiryMs = now + JOIN_SUPPORT_CACHE_TTL_MS;
@@ -95,7 +98,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		SketchBasedJoinEstimator.Staleness staleness = sketchBasedJoinEstimator.staleness();
 		Map<String, Object> diagnostics = new LinkedHashMap<>();
 		diagnostics.put("estimator", "SketchBasedJoinEstimator");
-		diagnostics.put("ready", sketchBasedJoinEstimator.isReady());
+		diagnostics.put("ready", sketchBasedJoinEstimator.isReady() && canUseRobustSketchOptimizer());
 		diagnostics.put("stalenessScore", staleness.stalenessScore);
 		diagnostics.put("ageMillis", staleness.ageMillis);
 		diagnostics.put("sampledAdds", staleness.sampledAdds);
@@ -104,6 +107,47 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		diagnostics.put("sampledRemovalRatio", staleness.sampledRemovalRatio);
 		diagnostics.put("sampledReaddRatio", staleness.sampledReaddRatio);
 		return diagnostics;
+	}
+
+	private boolean canUseRobustSketchOptimizer() {
+		if (sketchBasedJoinEstimator.getClass() != SketchBasedJoinEstimator.class) {
+			return true;
+		}
+		try {
+			return Boolean.TRUE.equals(CAN_USE_ROBUST_SKETCH_OPTIMIZER.invoke(sketchBasedJoinEstimator, Set.of()));
+		} catch (IllegalAccessException | InvocationTargetException e) {
+			log.debug("Failed to probe robust sketch optimizer readiness", e);
+			return false;
+		}
+	}
+
+	private boolean ensureRobustJoinEstimationReady() {
+		if (!sketchBasedJoinEstimator.isReady()) {
+			return false;
+		}
+		if (canUseRobustSketchOptimizer()) {
+			return true;
+		}
+		if (sketchBasedJoinEstimator.getClass() != SketchBasedJoinEstimator.class) {
+			return true;
+		}
+		try {
+			sketchBasedJoinEstimator.rebuildOnceSlow();
+		} catch (RuntimeException e) {
+			log.debug("Failed to rebuild robust sketch synopsis on demand", e);
+			return false;
+		}
+		return sketchBasedJoinEstimator.isReady() && canUseRobustSketchOptimizer();
+	}
+
+	private static Method resolveCanUseRobustSketchOptimizer() {
+		try {
+			Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("canUseRobustSketchOptimizer", Set.class);
+			method.setAccessible(true);
+			return method;
+		} catch (NoSuchMethodException e) {
+			throw new ExceptionInInitializerError(e);
+		}
 	}
 
 	@Override

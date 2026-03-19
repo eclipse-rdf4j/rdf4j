@@ -196,6 +196,15 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
+	enum SketchPlannerPath {
+		ROBUST_USED,
+		ROBUST_NOT_READY,
+		UNSUPPORTED_CYCLE,
+		UNSUPPORTED_WRAPPER,
+		UNSUPPORTED_MULTI_SHARED_VAR,
+		UNSUPPORTED_SHAPE
+	}
+
 	/* ────────────────────────────────────────────────────────────── */
 	/* Configuration & high‑level state */
 	/* ────────────────────────────────────────────────────────────── */
@@ -228,6 +237,8 @@ public class SketchBasedJoinEstimator {
 	private volatile JoinStatsProvider learnedStatsProvider;
 	private volatile StoreSynopsis robustSynopsis;
 	private volatile boolean robustSynopsisFresh;
+	private volatile SketchPlannerPath lastJoinOrderPlannerPath = SketchPlannerPath.ROBUST_NOT_READY;
+	private volatile SketchPlannerPath lastRobustCardinalityPath = SketchPlannerPath.ROBUST_NOT_READY;
 
 	private long seenTriples = 0L;
 
@@ -1290,11 +1301,11 @@ public class SketchBasedJoinEstimator {
 	/* --------------------------------------------------------------------- */
 
 	public boolean isReady() {
-		if (rebuildRequired.get()) {
-			return false;
-		}
 		if (sketchesLoaded && seenTriples > 0) {
 			return true;
+		}
+		if (rebuildRequired.get()) {
+			return false;
 		}
 
 		if (!sketchesLoaded && persistenceEnabled && persistenceFile != null && hasSnapshotAvailable(persistenceFile)) {
@@ -1612,6 +1623,7 @@ public class SketchBasedJoinEstimator {
 		churnSampler.recordAdd(signature, samplingInterval());
 		seenTriples = approxStoreSize.incrementAndGet();
 		invalidateRobustSynopsis();
+		rebuildRequired.set(true);
 
 		try {
 			ingestIncremental(s, p, o, c, false);
@@ -1673,6 +1685,7 @@ public class SketchBasedJoinEstimator {
 		churnSampler.recordDelete(signature, samplingInterval());
 		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
 		invalidateRobustSynopsis();
+		rebuildRequired.set(true);
 
 		try {
 			ingestIncremental(s, p, o, c, true);
@@ -2858,7 +2871,12 @@ public class SketchBasedJoinEstimator {
 
 	public Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm) {
-		if (!isReady() || args == null || args.isEmpty()) {
+		if (!isReady()) {
+			recordJoinOrderPlannerPath(SketchPlannerPath.ROBUST_NOT_READY);
+			return Optional.empty();
+		}
+		if (args == null || args.isEmpty()) {
+			recordJoinOrderPlannerPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
 			return Optional.empty();
 		}
 
@@ -2871,6 +2889,34 @@ public class SketchBasedJoinEstimator {
 
 	StoreSynopsis robustSynopsis() {
 		return robustSynopsis;
+	}
+
+	SketchPlannerPath lastJoinOrderPlannerPath() {
+		return lastJoinOrderPlannerPath;
+	}
+
+	SketchPlannerPath lastRobustCardinalityPath() {
+		return lastRobustCardinalityPath;
+	}
+
+	void recordJoinOrderPlannerPath(SketchPlannerPath plannerPath) {
+		lastJoinOrderPlannerPath = Objects.requireNonNull(plannerPath, "plannerPath");
+	}
+
+	private void recordRobustCardinalityPath(SketchPlannerPath plannerPath) {
+		lastRobustCardinalityPath = Objects.requireNonNull(plannerPath, "plannerPath");
+	}
+
+	SketchPlannerPath mapAdaptationReason(PatternSynopsisAdapter.RejectionReason rejectionReason) {
+		if (rejectionReason == null) {
+			return SketchPlannerPath.UNSUPPORTED_SHAPE;
+		}
+		return switch (rejectionReason) {
+		case UNSUPPORTED_CYCLE -> SketchPlannerPath.UNSUPPORTED_CYCLE;
+		case UNSUPPORTED_MULTI_SHARED_VAR -> SketchPlannerPath.UNSUPPORTED_MULTI_SHARED_VAR;
+		case UNSUPPORTED_WRAPPER -> SketchPlannerPath.UNSUPPORTED_WRAPPER;
+		case UNSUPPORTED_SHAPE -> SketchPlannerPath.UNSUPPORTED_SHAPE;
+		};
 	}
 
 	double filterMultiplierForSketchOptimizer(Filter filter, StatementPattern pattern) {
@@ -2887,17 +2933,22 @@ public class SketchBasedJoinEstimator {
 
 	double estimateRobustCardinality(List<TupleExpr> tupleExprs, Set<String> initiallyBoundVars) {
 		if (!canUseRobustSketchOptimizer(initiallyBoundVars)) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_NOT_READY);
 			return -1.0d;
 		}
 		PatternSynopsisAdapter adapter = newPatternSynopsisAdapter();
 		if (adapter == null) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_NOT_READY);
 			return -1.0d;
 		}
-		Optional<PatternSynopsisAdapter.SupportedQuery> supported = adapter.adapt(tupleExprs, initiallyBoundVars);
-		if (supported.isEmpty()) {
+		PatternSynopsisAdapter.AdaptationResult adaptation = adapter.adaptWithReason(tupleExprs, initiallyBoundVars);
+		if (adaptation.supportedQuery().isEmpty()) {
+			recordRobustCardinalityPath(mapAdaptationReason(adaptation.rejectionReason()));
 			return -1.0d;
 		}
-		return normalizeRows(new MessagePassingJoinPlanner(supported.get()).estimateRows());
+		recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+		return normalizeRows(
+				new MessagePassingJoinPlanner(adaptation.supportedQuery().orElseThrow()).estimateRows());
 	}
 
 	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
@@ -3224,19 +3275,13 @@ public class SketchBasedJoinEstimator {
 
 	public double cardinality(Join node) {
 		if (!isReady()) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_NOT_READY);
 			return -1;
 		}
 
 		List<TupleExpr> orderedArgs = new ArrayList<>();
 		flattenJoinTreeToOrderedArgs(node, orderedArgs);
-		double flattenedRows = cardinality(orderedArgs);
-		if (flattenedRows >= 0.0d) {
-			return flattenedRows;
-		}
-
-		TupleExpr leftArg = node.getLeftArg();
-		TupleExpr rightArg = node.getRightArg();
-		return estimateJoinCardinality(leftArg, rightArg, false);
+		return cardinality(orderedArgs);
 	}
 
 	public double cardinality(List<TupleExpr> tupleExprs) {
@@ -3245,35 +3290,14 @@ public class SketchBasedJoinEstimator {
 
 	private double cardinalityWithInitiallyBoundVars(List<TupleExpr> tupleExprs, Set<String> initiallyBoundVars) {
 		if (!isReady() || tupleExprs == null || tupleExprs.isEmpty()) {
+			recordRobustCardinalityPath(
+					isReady() ? SketchPlannerPath.UNSUPPORTED_SHAPE : SketchPlannerPath.ROBUST_NOT_READY);
 			return -1;
 		}
 
 		Set<String> bound = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Collections.emptySet()
 				: Set.copyOf(initiallyBoundVars);
-		double robustRows = estimateRobustCardinality(tupleExprs, bound);
-		if (robustRows >= 0.0d) {
-			return robustRows;
-		}
-		TuplePlanEstimate currentEstimate = null;
-		for (TupleExpr tupleExpr : tupleExprs) {
-			TuplePlanEstimate nextEstimate = estimateTupleExprPlan(tupleExpr);
-			if (nextEstimate == null) {
-				return -1.0d;
-			}
-			if (!bound.isEmpty()) {
-				nextEstimate = applyInitiallyBoundVars(nextEstimate, bound);
-			}
-
-			if (currentEstimate == null) {
-				currentEstimate = nextEstimate;
-				continue;
-			}
-
-			JoinStepEstimate step = estimateJoinStep(currentEstimate, nextEstimate);
-			currentEstimate = new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
-		}
-
-		return currentEstimate == null ? -1.0d : normalizeRows(currentEstimate.outputRows);
+		return estimateRobustCardinality(tupleExprs, bound);
 	}
 
 	public double cardinality(LeftJoin node) {
