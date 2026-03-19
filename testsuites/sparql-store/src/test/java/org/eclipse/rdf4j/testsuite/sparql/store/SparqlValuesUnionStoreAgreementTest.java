@@ -224,6 +224,7 @@ public class SparqlValuesUnionStoreAgreementTest {
 				.append(testCase.displayName)
 				.append(" ===================================")
 				.append('\n');
+		appendSourceContext(message, testCase);
 		message.append("# Binding names").append('\n');
 		message.append(left.storeName).append(": ").append(left.bindingNames).append('\n');
 		message.append(right.storeName).append(": ").append(right.bindingNames).append('\n');
@@ -247,6 +248,32 @@ public class SparqlValuesUnionStoreAgreementTest {
 		}
 
 		return message.toString();
+	}
+
+	private void appendSourceContext(StringBuilder message, TestCase testCase) {
+		message.append("# Data path").append('\n');
+		message.append(testCase.dataPath).append('\n').append('\n');
+		message.append("# Query path").append('\n');
+		message.append(testCase.queryPath).append('\n').append('\n');
+		appendTextBlock(message, "Data", safeReadResourceString(testCase.dataPath));
+		appendTextBlock(message, "Query", safeReadResourceString(testCase.queryPath));
+	}
+
+	private void appendTextBlock(StringBuilder message, String header, String content) {
+		message.append("# ").append(header).append('\n').append('\n');
+		message.append(content);
+		if (!content.endsWith("\n")) {
+			message.append('\n');
+		}
+		message.append('\n');
+	}
+
+	private String safeReadResourceString(String resourcePath) {
+		try {
+			return readResourceString(resourcePath);
+		} catch (IOException e) {
+			return "[Could not read " + resourcePath + ": " + e.getMessage() + "]";
+		}
 	}
 
 	private void appendBindings(StringBuilder message, String header, List<BindingSet> bindings) {
