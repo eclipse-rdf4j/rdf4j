@@ -450,15 +450,27 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		node.getWhereClause().jjtAccept(this, null);
 		TupleExpr tupleExpr = graphPattern.buildTupleExpr();
 
+		BindingSetAssignment queryLevelBindings = null;
+		final ASTBindingsClause bindingsClause = node.getBindingsClause();
+		if (bindingsClause != null) {
+			queryLevelBindings = (BindingSetAssignment) bindingsClause.jjtAccept(this, null);
+		}
+		final ASTHavingClause havingClause = node.getHavingClause();
+
 		// Apply grouping
 		Group group = null;
 		ASTGroupClause groupNode = node.getGroupClause();
+		if (havingClause != null && queryLevelBindings != null) {
+			Join join = new Join(tupleExpr, queryLevelBindings);
+			join.setVariableScopeChange(true);
+			tupleExpr = join;
+			queryLevelBindings = null;
+		}
 		if (groupNode != null) {
 			tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);
 			group = (Group) tupleExpr;
 		}
 
-		final ASTHavingClause havingClause = node.getHavingClause();
 		if (havingClause != null) {
 			if (group == null) {
 				// create implicit group
@@ -469,27 +481,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			tupleExpr = processHavingClause(havingClause, tupleExpr, group);
 		}
 
-		// process external VALUES clause
-		final ASTBindingsClause bindingsClause = node.getBindingsClause();
-		if (bindingsClause != null) {
-			// values clause should be treated as scoped to the where clause
-			((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
-			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
-		}
-
-		final ASTOrderClause orderClause = node.getOrderClause();
-		if (orderClause != null) {
-			if (group == null) {
-				// create implicit group
-				group = new Group(tupleExpr);
-			}
-
-			// Apply result ordering
-			tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);
-		}
-
-		// Apply projection
-		tupleExpr = (TupleExpr) node.getSelect().jjtAccept(this, tupleExpr);
+		// Apply projection and any remaining query-level VALUES/ORDER handling
+		tupleExpr = (TupleExpr) node.getSelect()
+				.jjtAccept(this, new SelectClauseContext(tupleExpr, node.getOrderClause(), queryLevelBindings));
 
 		// Process limit and offset clauses
 		ASTLimit limitNode = node.getLimit();
@@ -576,6 +570,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				Extension extension = new Extension();
 
 				for (AggregateOperator operator : collector.getOperators()) {
+					if (group == null) {
+						group = new Group(tupleExpr);
+					}
+
 					Var var = createAnonVar();
 
 					// replace occurrence of the operator in the order condition
@@ -609,9 +607,17 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public TupleExpr visit(ASTSelect node, Object data) throws VisitorException {
-		TupleExpr result = (TupleExpr) data;
-
-		final Order orderClause = result instanceof Order ? (Order) result : null;
+		TupleExpr result;
+		ASTOrderClause orderClauseNode = null;
+		BindingSetAssignment queryLevelBindings = null;
+		if (data instanceof SelectClauseContext) {
+			SelectClauseContext context = (SelectClauseContext) data;
+			result = context.tupleExpr;
+			orderClauseNode = context.orderClause;
+			queryLevelBindings = context.queryLevelBindings;
+		} else {
+			result = (TupleExpr) data;
+		}
 
 		Extension extension = new Extension();
 
@@ -657,7 +663,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					for (AggregateOperator operator : collector.getOperators()) {
 						// Apply implicit grouping if necessary
 						if (group == null) {
-							group = new Group(orderClause != null ? orderClause.getArg() : result);
+							group = new Group(result);
 						}
 
 						if (operator.equals(valueExpr)) {
@@ -699,21 +705,18 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		if (!extension.getElements().isEmpty()) {
-			if (orderClause != null) {
-				// Extensions produced by SELECT expressions should be nested inside the ORDER BY clause, to make sure
-				// sorting can work on the newly introduced variable. See SES-892 and SES-1809.
-				if (group != null && !isExistingGroup) {
-					// we introduced a new implicit group that is not part of the original ORDER BY clause.
-					extension.setArg(group);
-				} else {
-					extension.setArg(orderClause.getArg());
-				}
-				orderClause.setArg(extension);
-				result = orderClause;
-			} else {
-				extension.setArg(result);
-				result = extension;
-			}
+			extension.setArg(result);
+			result = extension;
+		}
+
+		if (queryLevelBindings != null) {
+			Join join = new Join(result, queryLevelBindings);
+			join.setVariableScopeChange(true);
+			result = join;
+		}
+
+		if (orderClauseNode != null) {
+			result = processOrderClause(orderClauseNode, result, group);
 		}
 
 		result = new Projection(result, projElemList);
@@ -872,7 +875,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// process bindings clause
 		ASTBindingsClause bindingsClause = node.getBindingsClause();
 		if (bindingsClause != null) {
-			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
+			Join join = new Join(tupleExpr, (BindingSetAssignment) bindingsClause.jjtAccept(this, null));
+			join.setVariableScopeChange(true);
+			tupleExpr = join;
 		}
 
 		// Apply result ordering
@@ -1210,7 +1215,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// process bindings clause
 		final ASTBindingsClause bindingsClause = node.getBindingsClause();
 		if (bindingsClause != null) {
-			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
+			Join join = new Join(tupleExpr, (BindingSetAssignment) bindingsClause.jjtAccept(this, null));
+			join.setVariableScopeChange(true);
+			tupleExpr = join;
 		}
 
 		final ASTOrderClause orderClause = node.getOrderClause();
@@ -1236,6 +1243,19 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					t.getPredicateVar().clone(), t.getObjectVar().clone());
 		}
 		throw new IllegalArgumentException("could not cast " + node.getClass().getName() + " to ValueExpr");
+	}
+
+	private static final class SelectClauseContext {
+		private final TupleExpr tupleExpr;
+		private final ASTOrderClause orderClause;
+		private final BindingSetAssignment queryLevelBindings;
+
+		private SelectClauseContext(TupleExpr tupleExpr, ASTOrderClause orderClause,
+				BindingSetAssignment queryLevelBindings) {
+			this.tupleExpr = tupleExpr;
+			this.orderClause = orderClause;
+			this.queryLevelBindings = queryLevelBindings;
+		}
 	}
 
 	@Override
