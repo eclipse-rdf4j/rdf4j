@@ -1,0 +1,13 @@
+# T040 — mixed EXISTS and NOT EXISTS across two arms
+# category: exists_not_exists
+# classification: unsafe-prebind
+# note: Each arm observes early binding in a different way.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?o FILTER(EXISTS { ?s :check ?x }) } UNION { ?s :q ?o FILTER(NOT EXISTS { ?s :check ?x }) }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

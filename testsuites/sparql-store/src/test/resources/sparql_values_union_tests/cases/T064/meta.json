@@ -1,0 +1,9 @@
+{
+  "id": "T064",
+  "slug": "f8_v8",
+  "category": "bind_extend",
+  "title": "nested group with BIND and pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "Extra braces can expose mistakes in scope-aware rewrites.",
+  "rdflib_rowcount": 5
+}

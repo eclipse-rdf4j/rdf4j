@@ -1,0 +1,13 @@
+# T043 — OPTIONAL filter compares right binding to pushed variable
+# category: optional_leftjoin
+# classification: unsafe-prebind
+# note: Originally ?x is unbound in the optional filter.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?m WHERE {
+{ ?s a :T OPTIONAL { ?s :p ?m FILTER(?m = ?x) } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "")
+VALUES ?x { 1 }

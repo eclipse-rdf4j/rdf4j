@@ -1,0 +1,9 @@
+{
+  "id": "T010",
+  "slug": "f2_v2",
+  "category": "row_correlation_duplicates_undef",
+  "title": "duplicate VALUES rows preserve bag cardinality",
+  "classification": "bag-cardinality",
+  "note": "Duplicate VALUES rows must duplicate results; deduplication is incorrect.",
+  "rdflib_rowcount": 2
+}

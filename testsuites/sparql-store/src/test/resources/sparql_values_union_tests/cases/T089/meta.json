@@ -1,0 +1,9 @@
+{
+  "id": "T089",
+  "slug": "f12_v1",
+  "category": "inner_values_interaction",
+  "title": "inner and outer VALUES on same variable",
+  "classification": "values-intersection",
+  "note": "The outer VALUES still applies after the arm-local VALUES has done its own restriction.",
+  "rdflib_rowcount": 3
+}

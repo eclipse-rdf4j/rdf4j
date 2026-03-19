@@ -1,0 +1,12 @@
+@prefix : <http://example.com/> .
+
+:a :next :b ;
+   :p 1 .
+:b :next :c ;
+   :q 2 .
+:c :next :d ;
+   :opt :c .
+:d :mark :d .
+:e :k :c .
+:f :q 9 .
+:g :next :g .

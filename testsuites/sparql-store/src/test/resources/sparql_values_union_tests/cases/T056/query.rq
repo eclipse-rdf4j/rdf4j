@@ -1,0 +1,13 @@
+# T056 — duplicate VALUES rows over MINUS expose bag counts
+# category: minus
+# classification: bag-cardinality
+# note: Duplicate rows must duplicate results that survive MINUS.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT (COUNT(*) AS ?count) WHERE {
+{ ?s a :T MINUS { ?u :u ?x } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES ?x { 1 1 }

@@ -1,0 +1,9 @@
+{
+  "id": "T112",
+  "slug": "f14_v8",
+  "category": "safe_must_bound_cases",
+  "title": "multi-column safe after internal bindings",
+  "classification": "safe-must-bound",
+  "note": "Both pushed variables are already bound by the arm before the filter.",
+  "rdflib_rowcount": 4
+}

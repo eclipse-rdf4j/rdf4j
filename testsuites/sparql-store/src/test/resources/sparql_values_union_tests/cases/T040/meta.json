@@ -1,0 +1,9 @@
+{
+  "id": "T040",
+  "slug": "f5_v8",
+  "category": "exists_not_exists",
+  "title": "mixed EXISTS and NOT EXISTS across two arms",
+  "classification": "unsafe-prebind",
+  "note": "Each arm observes early binding in a different way.",
+  "rdflib_rowcount": 3
+}

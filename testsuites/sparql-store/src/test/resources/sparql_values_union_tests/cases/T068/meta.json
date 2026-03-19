@@ -1,0 +1,9 @@
+{
+  "id": "T068",
+  "slug": "f9_v4",
+  "category": "subquery_scope_and_barriers",
+  "title": "subquery ORDER BY DESC/LIMIT with hidden variable",
+  "classification": "subquery-barrier",
+  "note": "The selected row changes if ?x is pushed inside before LIMIT.",
+  "rdflib_rowcount": 3
+}

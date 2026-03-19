@@ -1,0 +1,9 @@
+{
+  "id": "T123",
+  "slug": "f16_v3",
+  "category": "combined_stress",
+  "title": "nested union + multi-column duplicate VALUES",
+  "classification": "row-correlation",
+  "note": "This mixes duplicates, correlation, OPTIONAL, and FILTER over a nested UNION.",
+  "rdflib_rowcount": 3
+}

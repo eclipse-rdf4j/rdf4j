@@ -1,0 +1,9 @@
+{
+  "id": "T103",
+  "slug": "f13_v7",
+  "category": "property_paths",
+  "title": "optional path with multiple VALUES rows",
+  "classification": "safe-path",
+  "note": "Zero-or-one paths can produce self-bindings and one-step bindings.",
+  "rdflib_rowcount": 7
+}

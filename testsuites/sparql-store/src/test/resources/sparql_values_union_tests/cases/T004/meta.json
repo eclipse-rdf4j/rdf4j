@@ -1,0 +1,9 @@
+{
+  "id": "T004",
+  "slug": "f1_v4",
+  "category": "late_binding_absent_vars",
+  "title": "two-column late binding across asymmetric arms",
+  "classification": "row-correlation",
+  "note": "Each arm receives the full row after the union; missing columns are bound late.",
+  "rdflib_rowcount": 6
+}

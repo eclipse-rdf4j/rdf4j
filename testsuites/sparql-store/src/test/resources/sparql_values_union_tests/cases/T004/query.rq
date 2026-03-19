@@ -1,0 +1,13 @@
+# T004 — two-column late binding across asymmetric arms
+# category: late_binding_absent_vars
+# classification: row-correlation
+# note: Each arm receives the full row after the union; missing columns are bound late.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?z ?y WHERE {
+{ ?s :p ?x } UNION { ?s :q ?y }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?z), "") COALESCE(STR(?y), "")
+VALUES (?x ?z) { (1 10) (2 20) }

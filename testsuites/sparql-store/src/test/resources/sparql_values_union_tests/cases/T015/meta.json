@@ -1,0 +1,9 @@
+{
+  "id": "T015",
+  "slug": "f2_v7",
+  "category": "row_correlation_duplicates_undef",
+  "title": "three-column correlation across three arms",
+  "classification": "row-correlation",
+  "note": "All three columns are correlated inside one VALUES row.",
+  "rdflib_rowcount": 8
+}

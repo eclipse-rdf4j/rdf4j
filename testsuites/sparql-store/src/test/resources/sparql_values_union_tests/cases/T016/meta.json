@@ -1,0 +1,9 @@
+{
+  "id": "T016",
+  "slug": "f2_v8",
+  "category": "row_correlation_duplicates_undef",
+  "title": "mixed duplicates and UNDEF rows",
+  "classification": "bag-cardinality",
+  "note": "Tests duplicate preservation together with unbound columns.",
+  "rdflib_rowcount": 3
+}

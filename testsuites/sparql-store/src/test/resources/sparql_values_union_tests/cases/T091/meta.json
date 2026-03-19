@@ -1,0 +1,9 @@
+{
+  "id": "T091",
+  "slug": "f12_v3",
+  "category": "inner_values_interaction",
+  "title": "inner VALUES on unrelated variable with outer absent variable",
+  "classification": "unsafe-drop-values",
+  "note": "An existing inner VALUES must not cause the outer VALUES to be dropped.",
+  "rdflib_rowcount": 5
+}

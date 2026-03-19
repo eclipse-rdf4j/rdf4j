@@ -1,0 +1,9 @@
+{
+  "id": "T014",
+  "slug": "f2_v6",
+  "category": "row_correlation_duplicates_undef",
+  "title": "UNDEF in first column",
+  "classification": "undef-correlation",
+  "note": "This stresses late binding of an unbound first column.",
+  "rdflib_rowcount": 7
+}

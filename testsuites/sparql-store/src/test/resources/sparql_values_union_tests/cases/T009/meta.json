@@ -1,0 +1,9 @@
+{
+  "id": "T009",
+  "slug": "f2_v1",
+  "category": "row_correlation_duplicates_undef",
+  "title": "two-column correlation across separate arms",
+  "classification": "row-correlation",
+  "note": "Pushing columns independently would fabricate cross-paired rows.",
+  "rdflib_rowcount": 6
+}

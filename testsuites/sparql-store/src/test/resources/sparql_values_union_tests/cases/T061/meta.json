@@ -1,0 +1,9 @@
+{
+  "id": "T061",
+  "slug": "f8_v5",
+  "category": "bind_extend",
+  "title": "BIND arithmetic uses pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "Arithmetic makes the changed value easy to observe.",
+  "rdflib_rowcount": 5
+}

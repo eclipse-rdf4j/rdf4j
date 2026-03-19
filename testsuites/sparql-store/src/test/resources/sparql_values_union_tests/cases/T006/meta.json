@@ -1,0 +1,9 @@
+{
+  "id": "T006",
+  "slug": "f1_v6",
+  "category": "late_binding_absent_vars",
+  "title": "empty-group arm still cross joins with VALUES",
+  "classification": "unsafe-drop-values",
+  "note": "An empty/group expression arm produces one mapping that must be joined with every VALUES row.",
+  "rdflib_rowcount": 6
+}

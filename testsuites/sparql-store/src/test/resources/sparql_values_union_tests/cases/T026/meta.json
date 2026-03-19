@@ -1,0 +1,9 @@
+{
+  "id": "T026",
+  "slug": "f4_v2",
+  "category": "function_error_sensitivity",
+  "title": "datatype() on formerly unbound variable",
+  "classification": "unsafe-prebind",
+  "note": "datatype(?x) also distinguishes unbound from bound.",
+  "rdflib_rowcount": 2
+}

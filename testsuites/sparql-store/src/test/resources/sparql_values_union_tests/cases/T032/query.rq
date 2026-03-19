@@ -1,0 +1,13 @@
+# T032 — IF on BOUND chooses a different branch
+# category: function_error_sensitivity
+# classification: unsafe-prebind
+# note: IF makes the branch difference explicit.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?o FILTER(IF(BOUND(?x), ?x = 1, false)) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

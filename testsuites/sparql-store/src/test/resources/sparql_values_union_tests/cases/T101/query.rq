@@ -1,0 +1,13 @@
+# T101 — zero-or-more path followed by filter
+# category: property_paths
+# classification: safe-must-bound
+# note: The path binds ?x before FILTER sees it.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s :next* ?x FILTER(?x = :c) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { :c }

@@ -1,0 +1,9 @@
+{
+  "id": "T093",
+  "slug": "f12_v5",
+  "category": "inner_values_interaction",
+  "title": "inner VALUES inside OPTIONAL with outer VALUES",
+  "classification": "unsafe-prebind",
+  "note": "This combines inner VALUES with a LeftJoin barrier.",
+  "rdflib_rowcount": 4
+}

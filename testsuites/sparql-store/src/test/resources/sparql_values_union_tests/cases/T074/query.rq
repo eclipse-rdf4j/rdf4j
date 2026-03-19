@@ -1,0 +1,13 @@
+# T074 — GROUP BY x after correlated VALUES
+# category: aggregation_and_modifiers
+# classification: row-correlation
+# note: If x/z are de-correlated, group counts change.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?x (COUNT(*) AS ?count) WHERE {
+  { ?s :p ?x } UNION { ?s :q ?z }
+}
+GROUP BY ?x
+ORDER BY COALESCE(STR(?x), "") COALESCE(STR(?count), "")
+VALUES (?x ?z) { (1 10) (2 20) }

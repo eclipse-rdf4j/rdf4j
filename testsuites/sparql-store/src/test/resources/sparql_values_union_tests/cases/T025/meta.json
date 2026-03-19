@@ -1,0 +1,9 @@
+{
+  "id": "T025",
+  "slug": "f4_v1",
+  "category": "function_error_sensitivity",
+  "title": "STR on formerly unbound variable",
+  "classification": "unsafe-prebind",
+  "note": "STR(?x) errors when ?x is unbound but succeeds after prebinding.",
+  "rdflib_rowcount": 2
+}

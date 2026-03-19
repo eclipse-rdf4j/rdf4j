@@ -1,0 +1,9 @@
+{
+  "id": "T063",
+  "slug": "f8_v7",
+  "category": "bind_extend",
+  "title": "BIND only on one arm of the union",
+  "classification": "unsafe-prebind",
+  "note": "A per-arm optimizer must still respect the barrier on the BIND arm.",
+  "rdflib_rowcount": 5
+}

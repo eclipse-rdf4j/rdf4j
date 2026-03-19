@@ -1,0 +1,13 @@
+# T112 — multi-column safe after internal bindings
+# category: safe_must_bound_cases
+# classification: safe-must-bound
+# note: Both pushed variables are already bound by the arm before the filter.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?z WHERE {
+{ ?s :k ?x ; :check ?z FILTER(?x = 1 && ?z = 1) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?z), "")
+VALUES (?x ?z) { (1 1) }

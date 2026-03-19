@@ -1,0 +1,9 @@
+{
+  "id": "T099",
+  "slug": "f13_v3",
+  "category": "property_paths",
+  "title": "sequence path arm",
+  "classification": "safe-path",
+  "note": "Sequence paths test variable extraction from path translation.",
+  "rdflib_rowcount": 3
+}

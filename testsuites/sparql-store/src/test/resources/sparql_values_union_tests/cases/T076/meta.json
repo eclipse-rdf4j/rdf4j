@@ -1,0 +1,9 @@
+{
+  "id": "T076",
+  "slug": "f10_v4",
+  "category": "aggregation_and_modifiers",
+  "title": "COUNT(DISTINCT ?s) with mixed arm bindings",
+  "classification": "row-correlation",
+  "note": "This catches optimizers that invent extra subject/value combinations.",
+  "rdflib_rowcount": 2
+}

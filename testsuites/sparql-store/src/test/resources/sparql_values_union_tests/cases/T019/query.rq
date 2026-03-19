@@ -1,0 +1,13 @@
+# T019 — equality filter on formerly unbound variable
+# category: filter_boundness
+# classification: unsafe-prebind
+# note: Unbound ?x makes the filter fail originally; prebinding makes it pass.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?o FILTER(?x = 1) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

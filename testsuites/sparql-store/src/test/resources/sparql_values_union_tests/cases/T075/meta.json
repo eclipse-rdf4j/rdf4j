@@ -1,0 +1,9 @@
+{
+  "id": "T075",
+  "slug": "f10_v3",
+  "category": "aggregation_and_modifiers",
+  "title": "GROUP BY subject after correlated VALUES",
+  "classification": "row-correlation",
+  "note": "Per-subject multiplicities expose duplicated or missing rows.",
+  "rdflib_rowcount": 12
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T096",
+  "slug": "f12_v8",
+  "category": "inner_values_interaction",
+  "title": "inner UNDEF values with outer UNDEF",
+  "classification": "undef-correlation",
+  "note": "UNDEF handling must remain unbound at both levels.",
+  "rdflib_rowcount": 16
+}

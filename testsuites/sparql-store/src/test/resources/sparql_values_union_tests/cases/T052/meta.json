@@ -1,0 +1,9 @@
+{
+  "id": "T052",
+  "slug": "f7_v4",
+  "category": "minus",
+  "title": "MINUS with no shared vars and inner FILTER",
+  "classification": "unsafe-prebind",
+  "note": "This is the FILTER-based version of the same shared-variable trap.",
+  "rdflib_rowcount": 4
+}

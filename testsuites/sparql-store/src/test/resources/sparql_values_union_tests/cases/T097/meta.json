@@ -1,0 +1,9 @@
+{
+  "id": "T097",
+  "slug": "f13_v1",
+  "category": "property_paths",
+  "title": "simple path arm",
+  "classification": "safe-path",
+  "note": "Simple property path behaves like a BGP for this optimization.",
+  "rdflib_rowcount": 3
+}

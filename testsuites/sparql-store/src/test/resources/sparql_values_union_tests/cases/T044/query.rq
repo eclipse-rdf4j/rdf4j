@@ -1,0 +1,13 @@
+# T044 — OPTIONAL filter on directly bound pushed variable
+# category: optional_leftjoin
+# classification: unsafe-prebind
+# note: The optional branch can bind 2 and then be rejected late, which differs from forcing 1 early.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s a :T OPTIONAL { ?s :p ?x FILTER(?x = 2) } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

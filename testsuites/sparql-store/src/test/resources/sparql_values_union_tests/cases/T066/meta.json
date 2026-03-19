@@ -1,0 +1,9 @@
+{
+  "id": "T066",
+  "slug": "f9_v2",
+  "category": "subquery_scope_and_barriers",
+  "title": "hidden variable inside a union-bearing subquery",
+  "classification": "scope-barrier",
+  "note": "The outer optimizer must not push ?x into the hidden variable inside the subquery.",
+  "rdflib_rowcount": 9
+}

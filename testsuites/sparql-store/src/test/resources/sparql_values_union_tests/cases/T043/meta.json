@@ -1,0 +1,9 @@
+{
+  "id": "T043",
+  "slug": "f6_v3",
+  "category": "optional_leftjoin",
+  "title": "OPTIONAL filter compares right binding to pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "Originally ?x is unbound in the optional filter.",
+  "rdflib_rowcount": 5
+}

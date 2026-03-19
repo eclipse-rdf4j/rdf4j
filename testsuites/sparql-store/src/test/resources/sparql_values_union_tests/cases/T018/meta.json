@@ -1,0 +1,9 @@
+{
+  "id": "T018",
+  "slug": "f3_v2",
+  "category": "filter_boundness",
+  "title": "NOT BOUND filter sees early binding",
+  "classification": "unsafe-prebind",
+  "note": "This is the complementary case to BOUND(?x).",
+  "rdflib_rowcount": 5
+}

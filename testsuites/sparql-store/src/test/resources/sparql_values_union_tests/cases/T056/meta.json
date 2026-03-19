@@ -1,0 +1,9 @@
+{
+  "id": "T056",
+  "slug": "f7_v8",
+  "category": "minus",
+  "title": "duplicate VALUES rows over MINUS expose bag counts",
+  "classification": "bag-cardinality",
+  "note": "Duplicate rows must duplicate results that survive MINUS.",
+  "rdflib_rowcount": 2
+}

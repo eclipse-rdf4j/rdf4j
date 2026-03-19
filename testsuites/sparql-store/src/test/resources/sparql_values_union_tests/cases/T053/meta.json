@@ -1,0 +1,9 @@
+{
+  "id": "T053",
+  "slug": "f7_v5",
+  "category": "minus",
+  "title": "MINUS after an OPTIONAL on the left",
+  "classification": "unsafe-prebind",
+  "note": "The left side remains free of ?x in the original query, but not after early pushdown.",
+  "rdflib_rowcount": 4
+}

@@ -1,0 +1,13 @@
+# T087 — union with empty-group arm
+# category: nested_unions
+# classification: unsafe-drop-values
+# note: Empty-group arms and BIND-only arms still need the VALUES join at the arm root.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?tag WHERE {
+{{ } UNION { ?s :p ?x }} UNION { BIND(:T AS ?tag) }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?tag), "")
+VALUES ?x { 1 }

@@ -1,0 +1,13 @@
+# T039 — nested EXISTS with inner pattern on pushed variable
+# category: exists_not_exists
+# classification: unsafe-prebind
+# note: Nested EXISTS amplifies substitution mistakes.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?o FILTER(EXISTS { ?s :check ?m FILTER(EXISTS { ?s :check ?x }) }) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

@@ -1,0 +1,9 @@
+{
+  "id": "T050",
+  "slug": "f7_v2",
+  "category": "minus",
+  "title": "MINUS with inner FILTER using pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "The MINUS branch behaves differently when ?x is available inside the filter.",
+  "rdflib_rowcount": 4
+}

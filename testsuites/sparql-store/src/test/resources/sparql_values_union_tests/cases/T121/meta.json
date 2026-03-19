@@ -1,0 +1,9 @@
+{
+  "id": "T121",
+  "slug": "f16_v1",
+  "category": "combined_stress",
+  "title": "OPTIONAL + BIND + FILTER in one arm",
+  "classification": "unsafe-prebind",
+  "note": "This combines LeftJoin, Extend, and Filter sensitivity in one arm.",
+  "rdflib_rowcount": 2
+}

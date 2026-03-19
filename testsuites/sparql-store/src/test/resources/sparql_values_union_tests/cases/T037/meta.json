@@ -1,0 +1,9 @@
+{
+  "id": "T037",
+  "slug": "f5_v5",
+  "category": "exists_not_exists",
+  "title": "EXISTS with filter that mentions only pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "Originally the inner FILTER sees ?x unbound; prebinding changes that.",
+  "rdflib_rowcount": 2
+}

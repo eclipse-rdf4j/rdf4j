@@ -1,0 +1,9 @@
+{
+  "id": "T054",
+  "slug": "f7_v6",
+  "category": "minus",
+  "title": "safe MINUS when left already binds x",
+  "classification": "safe-must-bound",
+  "note": "Here ?x is already bound on the left before MINUS is evaluated.",
+  "rdflib_rowcount": 1
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T108",
+  "slug": "f14_v4",
+  "category": "safe_must_bound_cases",
+  "title": "MINUS safe because left side already binds x",
+  "classification": "safe-must-bound",
+  "note": "Here shared-variable behavior is unchanged by early visibility of ?x.",
+  "rdflib_rowcount": 4
+}

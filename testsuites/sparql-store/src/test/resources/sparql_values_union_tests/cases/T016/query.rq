@@ -1,0 +1,13 @@
+# T016 — mixed duplicates and UNDEF rows
+# category: row_correlation_duplicates_undef
+# classification: bag-cardinality
+# note: Tests duplicate preservation together with unbound columns.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT (COUNT(*) AS ?count) WHERE {
+{ ?s :p ?x } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES (?x ?z) { (1 UNDEF) (1 UNDEF) (UNDEF 10) }

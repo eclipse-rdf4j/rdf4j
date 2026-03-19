@@ -1,0 +1,9 @@
+{
+  "id": "T005",
+  "slug": "f1_v5",
+  "category": "late_binding_absent_vars",
+  "title": "nested union with outer absent arm",
+  "classification": "unsafe-drop-values",
+  "note": "The :r arm never mentions ?x but still needs the row at the arm root.",
+  "rdflib_rowcount": 4
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T051",
+  "slug": "f7_v3",
+  "category": "minus",
+  "title": "MINUS with no shared vars until early binding creates one",
+  "classification": "unsafe-prebind",
+  "note": "Without early binding dom(\u03bc) and dom(\u03bc') are disjoint, so MINUS does nothing.",
+  "rdflib_rowcount": 4
+}

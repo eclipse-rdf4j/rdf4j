@@ -1,0 +1,9 @@
+{
+  "id": "T110",
+  "slug": "f14_v6",
+  "category": "safe_must_bound_cases",
+  "title": "BIND plus FILTER safe after internal x binding",
+  "classification": "safe-must-bound",
+  "note": "Another positive control with an expression consumer.",
+  "rdflib_rowcount": 5
+}

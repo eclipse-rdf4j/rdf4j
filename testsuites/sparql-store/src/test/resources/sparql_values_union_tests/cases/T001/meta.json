@@ -1,0 +1,9 @@
+{
+  "id": "T001",
+  "slug": "f1_v1",
+  "category": "late_binding_absent_vars",
+  "title": "single absent arm still needs late binding",
+  "classification": "unsafe-prebind",
+  "note": "Right arm does not mention ?x but late join must still add ?x there.",
+  "rdflib_rowcount": 3
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T128",
+  "slug": "f16_v8",
+  "category": "combined_stress",
+  "title": "deep mixed barrier query",
+  "classification": "mixed-safety",
+  "note": "This is a high-density regression case mixing safe and unsafe branches.",
+  "rdflib_rowcount": 5
+}

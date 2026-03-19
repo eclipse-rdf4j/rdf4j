@@ -1,0 +1,9 @@
+{
+  "id": "T032",
+  "slug": "f4_v8",
+  "category": "function_error_sensitivity",
+  "title": "IF on BOUND chooses a different branch",
+  "classification": "unsafe-prebind",
+  "note": "IF makes the branch difference explicit.",
+  "rdflib_rowcount": 2
+}

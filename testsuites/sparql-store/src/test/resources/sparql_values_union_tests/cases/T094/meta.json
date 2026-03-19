@@ -1,0 +1,9 @@
+{
+  "id": "T094",
+  "slug": "f12_v6",
+  "category": "inner_values_interaction",
+  "title": "inner VALUES feeding a BIND target that collides with outer variable",
+  "classification": "bind-target-barrier",
+  "note": "Pushing outer ?x before BIND would make the target variable already in-scope.",
+  "rdflib_rowcount": 5
+}

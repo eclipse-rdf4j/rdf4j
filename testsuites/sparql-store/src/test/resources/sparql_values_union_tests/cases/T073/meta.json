@@ -1,0 +1,9 @@
+{
+  "id": "T073",
+  "slug": "f10_v1",
+  "category": "aggregation_and_modifiers",
+  "title": "COUNT(*) exposes duplicate VALUES rows",
+  "classification": "bag-cardinality",
+  "note": "Duplicate VALUES rows must duplicate solutions before COUNT(*).",
+  "rdflib_rowcount": 2
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T021",
+  "slug": "f3_v5",
+  "category": "filter_boundness",
+  "title": "combined BOUND and data test",
+  "classification": "unsafe-prebind",
+  "note": "The BOUND test short-circuits the arm in the original query.",
+  "rdflib_rowcount": 2
+}

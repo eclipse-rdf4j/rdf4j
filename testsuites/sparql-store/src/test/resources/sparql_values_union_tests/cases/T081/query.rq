@@ -1,0 +1,13 @@
+# T081 — three-way nested union with filter in one inner arm
+# category: nested_unions
+# classification: unsafe-prebind
+# note: Only one inner arm is sensitive, but the optimizer must recurse correctly.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{{ ?s :p ?x FILTER(BOUND(?x)) } UNION { ?s :q ?o }} UNION { ?s :r ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

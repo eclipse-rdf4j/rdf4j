@@ -1,0 +1,13 @@
+# T008 — three-way union with one binding arm and two absent arms
+# category: late_binding_absent_vars
+# classification: unsafe-drop-values
+# note: Only the first arm mentions ?x; the others still need the VALUES rows.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?x } UNION { ?s :q ?o } UNION { ?s :r ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 2 }

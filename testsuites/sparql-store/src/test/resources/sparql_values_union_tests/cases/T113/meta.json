@@ -1,0 +1,8 @@
+{
+  "id": "T113",
+  "slug": "f15_v1",
+  "category": "undef_and_empty_values",
+  "title": "empty single-column VALUES",
+  "classification": "empty-values",
+  "note": "An empty VALUES table should annihilate the join."
+}

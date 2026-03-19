@@ -1,0 +1,18 @@
+# T128 — deep mixed barrier query
+# category: combined_stress
+# classification: mixed-safety
+# note: This is a high-density regression case mixing safe and unsafe branches.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?m ?o WHERE {
+  {
+    { ?s :k ?x OPTIONAL { ?s :p ?m FILTER(EXISTS { ?s :check ?x }) } }
+    UNION
+    { ?s :q ?o FILTER(NOT EXISTS { ?s :check ?x }) }
+    UNION
+    { { SELECT ?s WHERE { ?s :p ?x } ORDER BY DESC(?x) LIMIT 1 } }
+  }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

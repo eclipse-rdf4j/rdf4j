@@ -1,0 +1,9 @@
+{
+  "id": "T045",
+  "slug": "f6_v5",
+  "category": "optional_leftjoin",
+  "title": "OPTIONAL filter mentions only pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "The filter is false/error in the original arm but true after early binding.",
+  "rdflib_rowcount": 5
+}

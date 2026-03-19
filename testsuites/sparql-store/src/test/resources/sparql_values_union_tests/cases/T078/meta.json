@@ -1,0 +1,9 @@
+{
+  "id": "T078",
+  "slug": "f10_v6",
+  "category": "aggregation_and_modifiers",
+  "title": "DISTINCT after correlated VALUES",
+  "classification": "row-correlation",
+  "note": "DISTINCT removes duplicates only after the correct rows have been formed.",
+  "rdflib_rowcount": 2
+}

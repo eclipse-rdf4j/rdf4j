@@ -1,0 +1,9 @@
+{
+  "id": "T017",
+  "slug": "f3_v1",
+  "category": "filter_boundness",
+  "title": "BOUND filter sees early binding",
+  "classification": "unsafe-prebind",
+  "note": "The left-arm FILTER is false before the outer VALUES join but true after prebinding.",
+  "rdflib_rowcount": 2
+}

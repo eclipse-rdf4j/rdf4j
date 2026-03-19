@@ -1,0 +1,9 @@
+{
+  "id": "T100",
+  "slug": "f13_v4",
+  "category": "property_paths",
+  "title": "alternative path arm",
+  "classification": "safe-path",
+  "note": "Alternative paths stress arm analysis without adding extra barriers.",
+  "rdflib_rowcount": 4
+}

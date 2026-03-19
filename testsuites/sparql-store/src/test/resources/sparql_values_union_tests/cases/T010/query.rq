@@ -1,0 +1,13 @@
+# T010 — duplicate VALUES rows preserve bag cardinality
+# category: row_correlation_duplicates_undef
+# classification: bag-cardinality
+# note: Duplicate VALUES rows must duplicate results; deduplication is incorrect.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT (COUNT(*) AS ?count) WHERE {
+{ ?s :p ?x } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES (?x ?z) { (1 10) (1 10) }

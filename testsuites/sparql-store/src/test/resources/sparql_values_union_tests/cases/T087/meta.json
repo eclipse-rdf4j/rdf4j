@@ -1,0 +1,9 @@
+{
+  "id": "T087",
+  "slug": "f11_v7",
+  "category": "nested_unions",
+  "title": "union with empty-group arm",
+  "classification": "unsafe-drop-values",
+  "note": "Empty-group arms and BIND-only arms still need the VALUES join at the arm root.",
+  "rdflib_rowcount": 3
+}

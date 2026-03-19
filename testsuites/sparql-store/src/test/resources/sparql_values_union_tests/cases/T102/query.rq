@@ -1,0 +1,13 @@
+# T102 — one-or-more path followed by BOUND filter
+# category: property_paths
+# classification: safe-must-bound
+# note: Another safe case where the arm itself must bind ?x first.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s :next+ ?x FILTER(BOUND(?x)) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { :c }

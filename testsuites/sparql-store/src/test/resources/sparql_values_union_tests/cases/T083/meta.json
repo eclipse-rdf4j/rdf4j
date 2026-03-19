@@ -1,0 +1,9 @@
+{
+  "id": "T083",
+  "slug": "f11_v3",
+  "category": "nested_unions",
+  "title": "nested union with filter on pushed variable in deeper arm",
+  "classification": "unsafe-prebind",
+  "note": "A deep arm uses ?x only in a FILTER.",
+  "rdflib_rowcount": 4
+}

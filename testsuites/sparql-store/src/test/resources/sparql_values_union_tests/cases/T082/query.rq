@@ -1,0 +1,13 @@
+# T082 — nested union with OPTIONAL arm
+# category: nested_unions
+# classification: unsafe-prebind
+# note: One nested arm contains a LeftJoin barrier while the others do not.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :r ?o } UNION {{ ?s a :T OPTIONAL { ?s :p ?x } } UNION { ?s :q ?o }}
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

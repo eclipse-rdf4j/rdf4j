@@ -1,0 +1,13 @@
+# T095 — inner duplicate VALUES crossed with outer duplicate VALUES
+# category: inner_values_interaction
+# classification: bag-cardinality
+# note: Both inner and outer duplicate rows contribute multiplicatively.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT (COUNT(*) AS ?count) WHERE {
+{ VALUES ?x { 1 1 } ?s :p ?x } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES ?x { 1 1 }

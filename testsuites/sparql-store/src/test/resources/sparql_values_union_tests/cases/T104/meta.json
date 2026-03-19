@@ -1,0 +1,9 @@
+{
+  "id": "T104",
+  "slug": "f13_v8",
+  "category": "property_paths",
+  "title": "compound path expression",
+  "classification": "safe-path",
+  "note": "Compound path parsing and translation should not confuse variable tracking.",
+  "rdflib_rowcount": 6
+}

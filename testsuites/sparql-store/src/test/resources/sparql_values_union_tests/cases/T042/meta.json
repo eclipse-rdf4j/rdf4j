@@ -1,0 +1,9 @@
+{
+  "id": "T042",
+  "slug": "f6_v2",
+  "category": "optional_leftjoin",
+  "title": "OPTIONAL right side with extra condition",
+  "classification": "unsafe-prebind",
+  "note": "The optional branch can match and later be rejected by the outer VALUES join.",
+  "rdflib_rowcount": 4
+}

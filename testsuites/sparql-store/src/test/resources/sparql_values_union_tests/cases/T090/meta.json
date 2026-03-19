@@ -1,0 +1,9 @@
+{
+  "id": "T090",
+  "slug": "f12_v2",
+  "category": "inner_values_interaction",
+  "title": "inner and outer multi-column VALUES",
+  "classification": "row-correlation",
+  "note": "Both VALUES tables must be joined as rows, not flattened by column.",
+  "rdflib_rowcount": 2
+}

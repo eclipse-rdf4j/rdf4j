@@ -1,0 +1,14 @@
+# T069 — subquery aggregation hides x but changes counts
+# category: subquery_scope_and_barriers
+# classification: subquery-barrier
+# note: Pushing ?x into the aggregated subquery changes COUNT(*).
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?c WHERE {
+  { SELECT ?s (COUNT(*) AS ?c) WHERE { ?s :p ?x } GROUP BY ?s }
+  UNION
+  { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?c), "")
+VALUES ?x { 1 }

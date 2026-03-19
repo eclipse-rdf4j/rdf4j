@@ -1,0 +1,13 @@
+# T048 — duplicate VALUES rows over OPTIONAL expose bag counts
+# category: optional_leftjoin
+# classification: bag-cardinality
+# note: Duplicate VALUES rows should duplicate surviving optional solutions.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT (COUNT(*) AS ?count) WHERE {
+{ ?s a :T OPTIONAL { ?s :p ?x } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES ?x { 1 1 }

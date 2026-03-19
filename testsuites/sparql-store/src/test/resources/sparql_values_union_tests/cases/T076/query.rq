@@ -1,0 +1,12 @@
+# T076 — COUNT(DISTINCT ?s) with mixed arm bindings
+# category: aggregation_and_modifiers
+# classification: row-correlation
+# note: This catches optimizers that invent extra subject/value combinations.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE {
+  { ?s :p ?x } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES (?x ?z) { (1 10) (1 20) }

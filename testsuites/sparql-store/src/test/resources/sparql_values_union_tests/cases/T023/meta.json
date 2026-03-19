@@ -1,0 +1,9 @@
+{
+  "id": "T023",
+  "slug": "f3_v7",
+  "category": "filter_boundness",
+  "title": "sameTerm filter on formerly unbound variable",
+  "classification": "unsafe-prebind",
+  "note": "sameTerm is especially sensitive to early binding.",
+  "rdflib_rowcount": 2
+}

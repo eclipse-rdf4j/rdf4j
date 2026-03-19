@@ -1,0 +1,13 @@
+# T118 — all-UNDEF row still contributes one row
+# category: undef_and_empty_values
+# classification: undef-row
+# note: A row of all UNDEF values is still a row.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT (COUNT(*) AS ?count) WHERE {
+{ ?s :p ?o } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES (?x ?z) { (UNDEF UNDEF) }

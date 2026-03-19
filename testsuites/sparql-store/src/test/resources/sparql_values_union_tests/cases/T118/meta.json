@@ -1,0 +1,9 @@
+{
+  "id": "T118",
+  "slug": "f15_v6",
+  "category": "undef_and_empty_values",
+  "title": "all-UNDEF row still contributes one row",
+  "classification": "undef-row",
+  "note": "A row of all UNDEF values is still a row.",
+  "rdflib_rowcount": 1
+}

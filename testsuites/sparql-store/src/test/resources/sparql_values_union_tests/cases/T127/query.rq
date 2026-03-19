@@ -1,0 +1,18 @@
+# T127 — aggregate subquery followed by MINUS
+# category: combined_stress
+# classification: subquery-barrier
+# note: This combines a hidden-variable aggregate barrier with the MINUS shared-variable trap.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?c ?o WHERE {
+  {
+    { SELECT ?s (COUNT(*) AS ?c) WHERE { ?s :p ?x } GROUP BY ?s }
+    MINUS
+    { ?u :u ?x }
+  }
+  UNION
+  { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?c), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

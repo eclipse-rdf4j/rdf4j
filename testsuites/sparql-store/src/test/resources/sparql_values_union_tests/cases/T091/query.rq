@@ -1,0 +1,13 @@
+# T091 — inner VALUES on unrelated variable with outer absent variable
+# category: inner_values_interaction
+# classification: unsafe-drop-values
+# note: An existing inner VALUES must not cause the outer VALUES to be dropped.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?u ?x WHERE {
+{ VALUES ?u { :a } ?s :p ?o } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?u), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

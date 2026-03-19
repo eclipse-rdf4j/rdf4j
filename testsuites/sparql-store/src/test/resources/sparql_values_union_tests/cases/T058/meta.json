@@ -1,0 +1,9 @@
+{
+  "id": "T058",
+  "slug": "f8_v2",
+  "category": "bind_extend",
+  "title": "BIND with IF(BOUND()) reads pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "This makes the dependency on prebinding explicit.",
+  "rdflib_rowcount": 5
+}

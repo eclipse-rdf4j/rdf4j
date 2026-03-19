@@ -1,0 +1,9 @@
+{
+  "id": "T124",
+  "slug": "f16_v4",
+  "category": "combined_stress",
+  "title": "EXISTS with hidden subquery variable inside union arm",
+  "classification": "scope-barrier",
+  "note": "The hidden subquery variable inside EXISTS must not be captured by name.",
+  "rdflib_rowcount": 4
+}

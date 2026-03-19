@@ -1,0 +1,9 @@
+{
+  "id": "T067",
+  "slug": "f9_v3",
+  "category": "subquery_scope_and_barriers",
+  "title": "subquery ORDER BY/LIMIT with hidden variable",
+  "classification": "subquery-barrier",
+  "note": "Bottom-up subquery evaluation chooses one row before the outer VALUES join.",
+  "rdflib_rowcount": 3
+}

@@ -1,0 +1,13 @@
+# T093 — inner VALUES inside OPTIONAL with outer VALUES
+# category: inner_values_interaction
+# classification: unsafe-prebind
+# note: This combines inner VALUES with a LeftJoin barrier.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?m WHERE {
+{ ?s a :T OPTIONAL { VALUES ?m { 2 } ?s :p ?m FILTER(?x = ?m) } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "")
+VALUES ?x { 2 }

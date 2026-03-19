@@ -1,0 +1,9 @@
+{
+  "id": "T031",
+  "slug": "f4_v7",
+  "category": "function_error_sensitivity",
+  "title": "NOT IN with error branch",
+  "classification": "unsafe-prebind",
+  "note": "This stresses the NOT IN error/false distinction.",
+  "rdflib_rowcount": 2
+}

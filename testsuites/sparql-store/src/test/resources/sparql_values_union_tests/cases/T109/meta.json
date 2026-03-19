@@ -1,0 +1,9 @@
+{
+  "id": "T109",
+  "slug": "f14_v5",
+  "category": "safe_must_bound_cases",
+  "title": "BIND safe because x is already bound by the arm",
+  "classification": "safe-must-bound",
+  "note": "The BIND expression reads the same ?x in both plans.",
+  "rdflib_rowcount": 5
+}

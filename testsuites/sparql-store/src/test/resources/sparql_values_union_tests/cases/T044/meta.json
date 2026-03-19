@@ -1,0 +1,9 @@
+{
+  "id": "T044",
+  "slug": "f6_v4",
+  "category": "optional_leftjoin",
+  "title": "OPTIONAL filter on directly bound pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "The optional branch can bind 2 and then be rejected late, which differs from forcing 1 early.",
+  "rdflib_rowcount": 4
+}

@@ -1,0 +1,12 @@
+# T078 — DISTINCT after correlated VALUES
+# category: aggregation_and_modifiers
+# classification: row-correlation
+# note: DISTINCT removes duplicates only after the correct rows have been formed.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT DISTINCT ?x ?z WHERE {
+  { ?s :p ?x } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?x), "") COALESCE(STR(?z), "")
+VALUES (?x ?z) { (1 10) (1 10) (2 20) }

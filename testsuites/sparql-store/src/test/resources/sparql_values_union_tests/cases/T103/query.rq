@@ -1,0 +1,13 @@
+# T103 — optional path with multiple VALUES rows
+# category: property_paths
+# classification: safe-path
+# note: Zero-or-one paths can produce self-bindings and one-step bindings.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s :next? ?x } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { :a :b }

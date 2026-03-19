@@ -1,0 +1,13 @@
+# T046 — OPTIONAL around inner union
+# category: optional_leftjoin
+# classification: unsafe-prebind
+# note: Nested UNION inside OPTIONAL is another common optimizer corner case.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s a :T OPTIONAL { { ?s :p ?x } UNION { ?s :flag ?o } } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

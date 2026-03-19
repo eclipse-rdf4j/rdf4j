@@ -1,0 +1,9 @@
+{
+  "id": "T003",
+  "slug": "f1_v3",
+  "category": "late_binding_absent_vars",
+  "title": "variable absent from every arm but projected",
+  "classification": "unsafe-drop-values",
+  "note": "No arm mentions ?z, but the final solutions must still contain ?z from VALUES.",
+  "rdflib_rowcount": 8
+}

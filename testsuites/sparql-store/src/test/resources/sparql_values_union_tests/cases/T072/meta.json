@@ -1,0 +1,9 @@
+{
+  "id": "T072",
+  "slug": "f9_v8",
+  "category": "subquery_scope_and_barriers",
+  "title": "projected x inside subquery still blocked by LIMIT",
+  "classification": "subquery-barrier",
+  "note": "Even when ?x is projected, LIMIT means the subquery must be evaluated bottom up.",
+  "rdflib_rowcount": 2
+}

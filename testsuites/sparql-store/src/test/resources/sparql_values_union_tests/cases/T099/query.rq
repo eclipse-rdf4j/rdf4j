@@ -1,0 +1,13 @@
+# T099 — sequence path arm
+# category: property_paths
+# classification: safe-path
+# note: Sequence paths test variable extraction from path translation.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s :next/:next ?x } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { :c }

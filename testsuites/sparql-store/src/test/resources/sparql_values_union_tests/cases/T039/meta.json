@@ -1,0 +1,9 @@
+{
+  "id": "T039",
+  "slug": "f5_v7",
+  "category": "exists_not_exists",
+  "title": "nested EXISTS with inner pattern on pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "Nested EXISTS amplifies substitution mistakes.",
+  "rdflib_rowcount": 4
+}

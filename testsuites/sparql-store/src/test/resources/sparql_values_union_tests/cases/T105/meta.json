@@ -1,0 +1,9 @@
+{
+  "id": "T105",
+  "slug": "f14_v1",
+  "category": "safe_must_bound_cases",
+  "title": "FILTER safe because x is already bound",
+  "classification": "safe-must-bound",
+  "note": "The arm itself binds ?x before the filter is evaluated.",
+  "rdflib_rowcount": 5
+}

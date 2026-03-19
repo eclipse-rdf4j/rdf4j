@@ -1,0 +1,13 @@
+# T015 — three-column correlation across three arms
+# category: row_correlation_duplicates_undef
+# classification: row-correlation
+# note: All three columns are correlated inside one VALUES row.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?mid ?z WHERE {
+{ ?s :p ?x } UNION { ?s :m ?mid } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?mid), "") COALESCE(STR(?z), "")
+VALUES (?x ?mid ?z) { (1 :k1 10) (2 :k2 20) }

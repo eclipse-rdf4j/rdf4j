@@ -1,0 +1,16 @@
+# T124 — EXISTS with hidden subquery variable inside union arm
+# category: combined_stress
+# classification: scope-barrier
+# note: The hidden subquery variable inside EXISTS must not be captured by name.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?o ?m WHERE {
+  { ?s :q ?o
+    FILTER(EXISTS { { SELECT ?s WHERE { ?s :p ?x } } })
+  }
+  UNION
+  { ?s a :T OPTIONAL { ?s :p ?m } }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "") COALESCE(STR(?m), "")
+VALUES ?x { 1 }

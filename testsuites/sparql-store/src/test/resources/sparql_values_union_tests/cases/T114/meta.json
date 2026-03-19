@@ -1,0 +1,8 @@
+{
+  "id": "T114",
+  "slug": "f15_v2",
+  "category": "undef_and_empty_values",
+  "title": "empty multi-column VALUES",
+  "classification": "empty-values",
+  "note": "Same check for a row table."
+}

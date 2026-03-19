@@ -1,0 +1,9 @@
+{
+  "id": "T117",
+  "slug": "f15_v5",
+  "category": "undef_and_empty_values",
+  "title": "UNDEF in second column of correlated row",
+  "classification": "undef-correlation",
+  "note": "The row survives with ?z unbound and ?x bound.",
+  "rdflib_rowcount": 3
+}

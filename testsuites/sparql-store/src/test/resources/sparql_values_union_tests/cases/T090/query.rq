@@ -1,0 +1,13 @@
+# T090 — inner and outer multi-column VALUES
+# category: inner_values_interaction
+# classification: row-correlation
+# note: Both VALUES tables must be joined as rows, not flattened by column.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?z WHERE {
+{ VALUES (?x ?z) { (1 9) (2 10) } ?s :p ?x } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?z), "")
+VALUES (?x ?z) { (1 9) }

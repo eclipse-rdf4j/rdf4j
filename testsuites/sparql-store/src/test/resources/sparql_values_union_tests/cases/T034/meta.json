@@ -1,0 +1,9 @@
+{
+  "id": "T034",
+  "slug": "f5_v2",
+  "category": "exists_not_exists",
+  "title": "NOT EXISTS with pushed variable in pattern",
+  "classification": "unsafe-prebind",
+  "note": "The EXISTS test flips once ?x is fixed too early.",
+  "rdflib_rowcount": 3
+}

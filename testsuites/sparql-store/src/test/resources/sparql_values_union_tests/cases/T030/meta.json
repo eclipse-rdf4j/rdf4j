@@ -1,0 +1,9 @@
+{
+  "id": "T030",
+  "slug": "f4_v6",
+  "category": "function_error_sensitivity",
+  "title": "IN short-circuit with formerly unbound lhs",
+  "classification": "unsafe-prebind",
+  "note": "Unbound lhs raises an error; bound lhs can short-circuit to true.",
+  "rdflib_rowcount": 2
+}

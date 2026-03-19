@@ -1,0 +1,9 @@
+{
+  "id": "T020",
+  "slug": "f3_v4",
+  "category": "filter_boundness",
+  "title": "inequality filter on formerly unbound variable",
+  "classification": "unsafe-prebind",
+  "note": "Again, early binding changes the filter input.",
+  "rdflib_rowcount": 2
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T095",
+  "slug": "f12_v7",
+  "category": "inner_values_interaction",
+  "title": "inner duplicate VALUES crossed with outer duplicate VALUES",
+  "classification": "bag-cardinality",
+  "note": "Both inner and outer duplicate rows contribute multiplicatively.",
+  "rdflib_rowcount": 1
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T048",
+  "slug": "f6_v8",
+  "category": "optional_leftjoin",
+  "title": "duplicate VALUES rows over OPTIONAL expose bag counts",
+  "classification": "bag-cardinality",
+  "note": "Duplicate VALUES rows should duplicate surviving optional solutions.",
+  "rdflib_rowcount": 2
+}

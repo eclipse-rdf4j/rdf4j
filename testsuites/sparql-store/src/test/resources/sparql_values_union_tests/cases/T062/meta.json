@@ -1,0 +1,9 @@
+{
+  "id": "T062",
+  "slug": "f8_v6",
+  "category": "bind_extend",
+  "title": "BIND result used by a FILTER",
+  "classification": "unsafe-prebind",
+  "note": "The FILTER outcome depends on the BIND outcome.",
+  "rdflib_rowcount": 2
+}

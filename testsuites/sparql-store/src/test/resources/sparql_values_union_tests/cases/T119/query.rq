@@ -1,0 +1,11 @@
+# T119 — empty VALUES across a nested union and subquery
+# category: undef_and_empty_values
+# classification: empty-values
+# note: Even complex patterns should still be annihilated by an empty VALUES join.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(*) AS ?count) WHERE {
+  { { SELECT ?s WHERE { ?s :p ?x } } UNION { ?s :q ?o } }
+}
+VALUES ?x { }

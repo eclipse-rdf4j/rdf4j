@@ -1,0 +1,9 @@
+{
+  "id": "T125",
+  "slug": "f16_v5",
+  "category": "combined_stress",
+  "title": "BIND target collision inside OPTIONAL",
+  "classification": "bind-target-barrier",
+  "note": "If ?x is prebound before the inner BIND, the rewritten arm becomes invalid.",
+  "rdflib_rowcount": 5
+}

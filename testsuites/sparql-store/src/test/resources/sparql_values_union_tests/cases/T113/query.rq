@@ -1,0 +1,11 @@
+# T113 — empty single-column VALUES
+# category: undef_and_empty_values
+# classification: empty-values
+# note: An empty VALUES table should annihilate the join.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(*) AS ?count) WHERE {
+  { ?s :p ?x } UNION { ?s :q ?o }
+}
+VALUES ?x { }

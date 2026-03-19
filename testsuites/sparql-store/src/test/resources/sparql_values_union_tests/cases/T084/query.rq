@@ -1,0 +1,13 @@
+# T084 — nested union with multi-column VALUES
+# category: nested_unions
+# classification: row-correlation
+# note: Correlation must survive recursive distribution through the nested UNION tree.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?z ?o WHERE {
+{{ ?s :p ?x } UNION { ?s :q ?o }} UNION {{ ?s :r ?z } UNION { ?s :v ?o }}
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?z), "") COALESCE(STR(?o), "")
+VALUES (?x ?z) { (1 3) (2 9) }

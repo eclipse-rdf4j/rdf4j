@@ -1,0 +1,9 @@
+{
+  "id": "T092",
+  "slug": "f12_v4",
+  "category": "inner_values_interaction",
+  "title": "inner VALUES plus filter that observes outer variable",
+  "classification": "unsafe-prebind",
+  "note": "If ?x is prebound into the arm, the filter outcome changes.",
+  "rdflib_rowcount": 2
+}

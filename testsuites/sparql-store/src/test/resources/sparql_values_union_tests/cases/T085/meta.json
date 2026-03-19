@@ -1,0 +1,9 @@
+{
+  "id": "T085",
+  "slug": "f11_v5",
+  "category": "nested_unions",
+  "title": "nested union where one entire branch ignores VALUES variable",
+  "classification": "unsafe-drop-values",
+  "note": "The right subtree never mentions ?x but still needs the VALUES rows.",
+  "rdflib_rowcount": 6
+}

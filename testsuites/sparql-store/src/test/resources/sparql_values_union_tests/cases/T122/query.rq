@@ -1,0 +1,17 @@
+# T122 — EXISTS plus MINUS no-shared-var trap
+# category: combined_stress
+# classification: unsafe-prebind
+# note: The same pushed variable affects both EXISTS substitution and MINUS compatibility.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?o WHERE {
+  { ?s a :T
+    FILTER(EXISTS { ?s :check ?m FILTER(?m = ?x) })
+    MINUS { ?u :u ?x }
+  }
+  UNION
+  { { SELECT ?s WHERE { ?s :q ?o } } }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

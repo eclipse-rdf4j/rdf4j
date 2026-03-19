@@ -1,0 +1,9 @@
+{
+  "id": "T106",
+  "slug": "f14_v2",
+  "category": "safe_must_bound_cases",
+  "title": "EXISTS safe because x is already bound",
+  "classification": "safe-must-bound",
+  "note": "EXISTS sees the same ?x either way because the left pattern already bound it.",
+  "rdflib_rowcount": 4
+}

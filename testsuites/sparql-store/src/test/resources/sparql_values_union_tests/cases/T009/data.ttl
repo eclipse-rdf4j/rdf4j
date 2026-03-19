@@ -1,0 +1,10 @@
+@prefix : <http://example.com/> .
+
+:a :p 1 .
+:b :p 2 .
+:c :q 10 .
+:d :q 20 .
+:e :m :k1 .
+:f :m :k2 .
+:g :p 1 .
+:h :q 10 .

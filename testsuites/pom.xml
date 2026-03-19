@@ -15,6 +15,7 @@
 		<module>rio</module>
 		<module>queryresultio</module>
 		<module>sparql</module>
+		<module>sparql-store</module>
 		<module>repository</module>
 		<module>sail</module>
 		<module>lucene</module>

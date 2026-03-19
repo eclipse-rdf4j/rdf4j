@@ -1,0 +1,9 @@
+{
+  "id": "T047",
+  "slug": "f6_v7",
+  "category": "optional_leftjoin",
+  "title": "safe OPTIONAL when left side already binds x",
+  "classification": "safe-must-bound",
+  "note": "Here ?x is already bound on the left before the optional is evaluated.",
+  "rdflib_rowcount": 3
+}

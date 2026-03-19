@@ -1,0 +1,9 @@
+{
+  "id": "T011",
+  "slug": "f2_v3",
+  "category": "row_correlation_duplicates_undef",
+  "title": "same x paired with different z values",
+  "classification": "row-correlation",
+  "note": "If an optimizer splits the table by column, it will lose x/z correlation.",
+  "rdflib_rowcount": 7
+}

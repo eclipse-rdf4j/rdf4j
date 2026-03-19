@@ -1,0 +1,13 @@
+# T051 — MINUS with no shared vars until early binding creates one
+# category: minus
+# classification: unsafe-prebind
+# note: Without early binding dom(μ) and dom(μ') are disjoint, so MINUS does nothing.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s a :T MINUS { ?u :u ?x } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

@@ -1,0 +1,9 @@
+{
+  "id": "T122",
+  "slug": "f16_v2",
+  "category": "combined_stress",
+  "title": "EXISTS plus MINUS no-shared-var trap",
+  "classification": "unsafe-prebind",
+  "note": "The same pushed variable affects both EXISTS substitution and MINUS compatibility.",
+  "rdflib_rowcount": 2
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T046",
+  "slug": "f6_v6",
+  "category": "optional_leftjoin",
+  "title": "OPTIONAL around inner union",
+  "classification": "unsafe-prebind",
+  "note": "Nested UNION inside OPTIONAL is another common optimizer corner case.",
+  "rdflib_rowcount": 5
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T022",
+  "slug": "f3_v6",
+  "category": "filter_boundness",
+  "title": "disjunctive filter with unbound branch",
+  "classification": "unsafe-prebind",
+  "note": "Early binding flips the left disjunct from true to false.",
+  "rdflib_rowcount": 5
+}

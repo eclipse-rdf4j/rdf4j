@@ -1,0 +1,13 @@
+# T105 — FILTER safe because x is already bound
+# category: safe_must_bound_cases
+# classification: safe-must-bound
+# note: The arm itself binds ?x before the filter is evaluated.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s :k ?x FILTER(?x = 1) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

@@ -1,0 +1,9 @@
+{
+  "id": "T081",
+  "slug": "f11_v1",
+  "category": "nested_unions",
+  "title": "three-way nested union with filter in one inner arm",
+  "classification": "unsafe-prebind",
+  "note": "Only one inner arm is sensitive, but the optimizer must recurse correctly.",
+  "rdflib_rowcount": 5
+}

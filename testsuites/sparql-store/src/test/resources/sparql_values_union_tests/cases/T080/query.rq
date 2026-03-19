@@ -1,0 +1,14 @@
+# T080 — ORDER BY/OFFSET/LIMIT with duplicate rows
+# category: aggregation_and_modifiers
+# classification: modifier-barrier
+# note: Slicing is very sensitive to duplicate and correlation bugs.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?z WHERE {
+  { ?s :p ?x } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?z), "")
+OFFSET 1
+LIMIT 3
+VALUES (?x ?z) { (1 10) (1 10) (2 20) }

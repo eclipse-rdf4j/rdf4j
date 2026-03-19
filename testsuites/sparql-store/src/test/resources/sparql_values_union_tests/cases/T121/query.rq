@@ -1,0 +1,18 @@
+# T121 — OPTIONAL + BIND + FILTER in one arm
+# category: combined_stress
+# classification: unsafe-prebind
+# note: This combines LeftJoin, Extend, and Filter sensitivity in one arm.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?y ?m ?o WHERE {
+  { ?s a :T
+    OPTIONAL { ?s :p ?m FILTER(?m = ?x) }
+    BIND(COALESCE(?x, 0) AS ?y)
+    FILTER(?y = 1)
+  }
+  UNION
+  { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?y), "") COALESCE(STR(?m), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

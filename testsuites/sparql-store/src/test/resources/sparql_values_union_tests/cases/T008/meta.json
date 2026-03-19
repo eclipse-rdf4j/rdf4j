@@ -1,0 +1,9 @@
+{
+  "id": "T008",
+  "slug": "f1_v8",
+  "category": "late_binding_absent_vars",
+  "title": "three-way union with one binding arm and two absent arms",
+  "classification": "unsafe-drop-values",
+  "note": "Only the first arm mentions ?x; the others still need the VALUES rows.",
+  "rdflib_rowcount": 8
+}

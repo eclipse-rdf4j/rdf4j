@@ -1,0 +1,9 @@
+{
+  "id": "T111",
+  "slug": "f14_v7",
+  "category": "safe_must_bound_cases",
+  "title": "nested group safe after internal x binding",
+  "classification": "safe-must-bound",
+  "note": "The inner filter depends on ?x, but ?x is already fixed by the arm.",
+  "rdflib_rowcount": 2
+}

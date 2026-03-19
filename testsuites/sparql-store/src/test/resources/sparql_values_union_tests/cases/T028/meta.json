@@ -1,0 +1,9 @@
+{
+  "id": "T028",
+  "slug": "f4_v4",
+  "category": "function_error_sensitivity",
+  "title": "regex over STR of formerly unbound variable",
+  "classification": "unsafe-prebind",
+  "note": "Same observation with a function stack.",
+  "rdflib_rowcount": 2
+}

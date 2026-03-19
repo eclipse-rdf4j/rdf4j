@@ -1,0 +1,18 @@
+# T123 — nested union + multi-column duplicate VALUES
+# category: combined_stress
+# classification: row-correlation
+# note: This mixes duplicates, correlation, OPTIONAL, and FILTER over a nested UNION.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(*) AS ?count) WHERE {
+  {
+    { ?s :p ?x OPTIONAL { ?s :check ?z } }
+    UNION
+    { ?s :m ?mid FILTER(?x = 1) }
+  }
+  UNION
+  { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES (?x ?z) { (1 1) (1 1) (2 2) }

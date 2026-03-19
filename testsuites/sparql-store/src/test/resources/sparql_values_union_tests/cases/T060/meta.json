@@ -1,0 +1,9 @@
+{
+  "id": "T060",
+  "slug": "f8_v4",
+  "category": "bind_extend",
+  "title": "BIND target collides with pushed variable",
+  "classification": "bind-target-barrier",
+  "note": "Prebinding ?x before this BIND makes Extend undefined / violates BIND scoping.",
+  "rdflib_rowcount": 5
+}

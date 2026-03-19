@@ -1,0 +1,9 @@
+{
+  "id": "T065",
+  "slug": "f9_v1",
+  "category": "subquery_scope_and_barriers",
+  "title": "hidden subquery variable must not be captured",
+  "classification": "scope-barrier",
+  "note": "The inner ?x is hidden because the subquery projects only ?s.",
+  "rdflib_rowcount": 7
+}

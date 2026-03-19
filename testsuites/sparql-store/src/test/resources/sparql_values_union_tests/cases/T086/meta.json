@@ -1,0 +1,9 @@
+{
+  "id": "T086",
+  "slug": "f11_v6",
+  "category": "nested_unions",
+  "title": "mixed safe and unsafe inner arms",
+  "classification": "mixed-safety",
+  "note": "One arm is safe because it binds ?x first; another is unsafe because FILTER observes early binding.",
+  "rdflib_rowcount": 3
+}

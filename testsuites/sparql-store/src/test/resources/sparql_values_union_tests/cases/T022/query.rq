@@ -1,0 +1,13 @@
+# T022 — disjunctive filter with unbound branch
+# category: filter_boundness
+# classification: unsafe-prebind
+# note: Early binding flips the left disjunct from true to false.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?o FILTER(!BOUND(?x) || ?o = 99) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

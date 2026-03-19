@@ -1,0 +1,9 @@
+{
+  "id": "T027",
+  "slug": "f4_v3",
+  "category": "function_error_sensitivity",
+  "title": "isLiteral() on formerly unbound variable",
+  "classification": "unsafe-prebind",
+  "note": "The boolean result changes once ?x is prebound.",
+  "rdflib_rowcount": 2
+}

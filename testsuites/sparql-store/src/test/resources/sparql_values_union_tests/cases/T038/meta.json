@@ -1,0 +1,9 @@
+{
+  "id": "T038",
+  "slug": "f5_v6",
+  "category": "exists_not_exists",
+  "title": "NOT EXISTS with filter that mentions only pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "This catches an optimizer that substitutes ?x too early into EXISTS/NOT EXISTS.",
+  "rdflib_rowcount": 5
+}

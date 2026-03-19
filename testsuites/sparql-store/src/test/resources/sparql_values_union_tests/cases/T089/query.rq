@@ -1,0 +1,13 @@
+# T089 — inner and outer VALUES on same variable
+# category: inner_values_interaction
+# classification: values-intersection
+# note: The outer VALUES still applies after the arm-local VALUES has done its own restriction.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ VALUES ?x { 1 2 } ?s :p ?x } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

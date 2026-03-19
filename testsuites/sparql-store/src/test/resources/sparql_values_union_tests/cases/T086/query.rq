@@ -1,0 +1,13 @@
+# T086 — mixed safe and unsafe inner arms
+# category: nested_unions
+# classification: mixed-safety
+# note: One arm is safe because it binds ?x first; another is unsafe because FILTER observes early binding.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?m ?o WHERE {
+{{ ?s :p ?x BIND(?x AS ?m) } UNION { ?s :q ?o FILTER(BOUND(?x)) }} UNION { ?s :r ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

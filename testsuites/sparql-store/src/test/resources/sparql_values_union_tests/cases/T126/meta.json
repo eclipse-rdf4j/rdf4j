@@ -1,0 +1,9 @@
+{
+  "id": "T126",
+  "slug": "f16_v6",
+  "category": "combined_stress",
+  "title": "property path arm mixed with value-sensitive filter",
+  "classification": "unsafe-prebind",
+  "note": "Path translation must not distract the optimizer from the FILTER barrier.",
+  "rdflib_rowcount": 1
+}

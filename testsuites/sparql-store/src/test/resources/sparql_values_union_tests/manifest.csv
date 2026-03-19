@@ -1,0 +1,129 @@
+id,slug,category,title,classification,note,rdflib_rowcount
+T001,f1_v1,late_binding_absent_vars,single absent arm still needs late binding,unsafe-prebind,Right arm does not mention ?x but late join must still add ?x there.,3
+T002,f1_v2,late_binding_absent_vars,both arms ignore VALUES variable,unsafe-drop-values,Dropping VALUES because no arm mentions ?x is wrong: late join creates a cross-product.,2
+T003,f1_v3,late_binding_absent_vars,variable absent from every arm but projected,unsafe-drop-values,"No arm mentions ?z, but the final solutions must still contain ?z from VALUES.",8
+T004,f1_v4,late_binding_absent_vars,two-column late binding across asymmetric arms,row-correlation,Each arm receives the full row after the union; missing columns are bound late.,6
+T005,f1_v5,late_binding_absent_vars,nested union with outer absent arm,unsafe-drop-values,The :r arm never mentions ?x but still needs the row at the arm root.,4
+T006,f1_v6,late_binding_absent_vars,empty-group arm still cross joins with VALUES,unsafe-drop-values,An empty/group expression arm produces one mapping that must be joined with every VALUES row.,6
+T007,f1_v7,late_binding_absent_vars,arm-local join plus absent VALUES variable,unsafe-drop-values,"Even when an arm has internal joins, late VALUES still binds absent variables.",2
+T008,f1_v8,late_binding_absent_vars,three-way union with one binding arm and two absent arms,unsafe-drop-values,Only the first arm mentions ?x; the others still need the VALUES rows.,8
+T009,f2_v1,row_correlation_duplicates_undef,two-column correlation across separate arms,row-correlation,Pushing columns independently would fabricate cross-paired rows.,6
+T010,f2_v2,row_correlation_duplicates_undef,duplicate VALUES rows preserve bag cardinality,bag-cardinality,Duplicate VALUES rows must duplicate results; deduplication is incorrect.,2
+T011,f2_v3,row_correlation_duplicates_undef,same x paired with different z values,row-correlation,"If an optimizer splits the table by column, it will lose x/z correlation.",7
+T012,f2_v4,row_correlation_duplicates_undef,same z paired with different x values,row-correlation,Same issue as above but keyed by the other column.,7
+T013,f2_v5,row_correlation_duplicates_undef,UNDEF in second column,undef-correlation,"UNDEF means unbound, not a wildcard literal, and row correlation still matters.",7
+T014,f2_v6,row_correlation_duplicates_undef,UNDEF in first column,undef-correlation,This stresses late binding of an unbound first column.,7
+T015,f2_v7,row_correlation_duplicates_undef,three-column correlation across three arms,row-correlation,All three columns are correlated inside one VALUES row.,8
+T016,f2_v8,row_correlation_duplicates_undef,mixed duplicates and UNDEF rows,bag-cardinality,Tests duplicate preservation together with unbound columns.,3
+T017,f3_v1,filter_boundness,BOUND filter sees early binding,unsafe-prebind,The left-arm FILTER is false before the outer VALUES join but true after prebinding.,2
+T018,f3_v2,filter_boundness,NOT BOUND filter sees early binding,unsafe-prebind,This is the complementary case to BOUND(?x).,5
+T019,f3_v3,filter_boundness,equality filter on formerly unbound variable,unsafe-prebind,Unbound ?x makes the filter fail originally; prebinding makes it pass.,2
+T020,f3_v4,filter_boundness,inequality filter on formerly unbound variable,unsafe-prebind,"Again, early binding changes the filter input.",2
+T021,f3_v5,filter_boundness,combined BOUND and data test,unsafe-prebind,The BOUND test short-circuits the arm in the original query.,2
+T022,f3_v6,filter_boundness,disjunctive filter with unbound branch,unsafe-prebind,Early binding flips the left disjunct from true to false.,5
+T023,f3_v7,filter_boundness,sameTerm filter on formerly unbound variable,unsafe-prebind,sameTerm is especially sensitive to early binding.,2
+T024,f3_v8,filter_boundness,filter outside inner group stresses wrapper placement,filter-collection,Injecting VALUES into the same group without a wrapper can let the filter see ?x too early.,2
+T025,f4_v1,function_error_sensitivity,STR on formerly unbound variable,unsafe-prebind,STR(?x) errors when ?x is unbound but succeeds after prebinding.,2
+T026,f4_v2,function_error_sensitivity,datatype() on formerly unbound variable,unsafe-prebind,datatype(?x) also distinguishes unbound from bound.,2
+T027,f4_v3,function_error_sensitivity,isLiteral() on formerly unbound variable,unsafe-prebind,The boolean result changes once ?x is prebound.,2
+T028,f4_v4,function_error_sensitivity,regex over STR of formerly unbound variable,unsafe-prebind,Same observation with a function stack.,2
+T029,f4_v5,function_error_sensitivity,COALESCE chooses different branch after prebinding,unsafe-prebind,Originally COALESCE picks 0; after prebinding it picks the VALUES term.,2
+T030,f4_v6,function_error_sensitivity,IN short-circuit with formerly unbound lhs,unsafe-prebind,Unbound lhs raises an error; bound lhs can short-circuit to true.,2
+T031,f4_v7,function_error_sensitivity,NOT IN with error branch,unsafe-prebind,This stresses the NOT IN error/false distinction.,2
+T032,f4_v8,function_error_sensitivity,IF on BOUND chooses a different branch,unsafe-prebind,IF makes the branch difference explicit.,2
+T033,f5_v1,exists_not_exists,EXISTS with pushed variable in pattern,unsafe-prebind,"Without prebinding, ?x is not fixed inside EXISTS and any check value can match.",4
+T034,f5_v2,exists_not_exists,NOT EXISTS with pushed variable in pattern,unsafe-prebind,The EXISTS test flips once ?x is fixed too early.,3
+T035,f5_v3,exists_not_exists,EXISTS with inner FILTER using pushed variable,unsafe-prebind,The inner FILTER can only use ?x if ?x is already bound.,2
+T036,f5_v4,exists_not_exists,NOT EXISTS with inner FILTER using pushed variable,unsafe-prebind,Same issue in negative form.,5
+T037,f5_v5,exists_not_exists,EXISTS with filter that mentions only pushed variable,unsafe-prebind,Originally the inner FILTER sees ?x unbound; prebinding changes that.,2
+T038,f5_v6,exists_not_exists,NOT EXISTS with filter that mentions only pushed variable,unsafe-prebind,This catches an optimizer that substitutes ?x too early into EXISTS/NOT EXISTS.,5
+T039,f5_v7,exists_not_exists,nested EXISTS with inner pattern on pushed variable,unsafe-prebind,Nested EXISTS amplifies substitution mistakes.,4
+T040,f5_v8,exists_not_exists,mixed EXISTS and NOT EXISTS across two arms,unsafe-prebind,Each arm observes early binding in a different way.,3
+T041,f6_v1,optional_leftjoin,OPTIONAL binds pushed variable directly,unsafe-prebind,A late incompatibility after OPTIONAL is not the same as an early no-match.,4
+T042,f6_v2,optional_leftjoin,OPTIONAL right side with extra condition,unsafe-prebind,The optional branch can match and later be rejected by the outer VALUES join.,4
+T043,f6_v3,optional_leftjoin,OPTIONAL filter compares right binding to pushed variable,unsafe-prebind,Originally ?x is unbound in the optional filter.,5
+T044,f6_v4,optional_leftjoin,OPTIONAL filter on directly bound pushed variable,unsafe-prebind,"The optional branch can bind 2 and then be rejected late, which differs from forcing 1 early.",4
+T045,f6_v5,optional_leftjoin,OPTIONAL filter mentions only pushed variable,unsafe-prebind,The filter is false/error in the original arm but true after early binding.,5
+T046,f6_v6,optional_leftjoin,OPTIONAL around inner union,unsafe-prebind,Nested UNION inside OPTIONAL is another common optimizer corner case.,5
+T047,f6_v7,optional_leftjoin,safe OPTIONAL when left side already binds x,safe-must-bound,Here ?x is already bound on the left before the optional is evaluated.,3
+T048,f6_v8,optional_leftjoin,duplicate VALUES rows over OPTIONAL expose bag counts,bag-cardinality,Duplicate VALUES rows should duplicate surviving optional solutions.,2
+T049,f7_v1,minus,MINUS with pushed variable on right pattern,unsafe-prebind,Originally any :p value removes the row; prebinding restricts the right side to :p 1.,2
+T050,f7_v2,minus,MINUS with inner FILTER using pushed variable,unsafe-prebind,The MINUS branch behaves differently when ?x is available inside the filter.,4
+T051,f7_v3,minus,MINUS with no shared vars until early binding creates one,unsafe-prebind,"Without early binding dom(μ) and dom(μ') are disjoint, so MINUS does nothing.",4
+T052,f7_v4,minus,MINUS with no shared vars and inner FILTER,unsafe-prebind,This is the FILTER-based version of the same shared-variable trap.,4
+T053,f7_v5,minus,MINUS after an OPTIONAL on the left,unsafe-prebind,"The left side remains free of ?x in the original query, but not after early pushdown.",4
+T054,f7_v6,minus,safe MINUS when left already binds x,safe-must-bound,Here ?x is already bound on the left before MINUS is evaluated.,1
+T055,f7_v7,minus,two-column VALUES around MINUS,row-correlation,Row correlation must be preserved even when one arm contains MINUS.,7
+T056,f7_v8,minus,duplicate VALUES rows over MINUS expose bag counts,bag-cardinality,Duplicate rows must duplicate results that survive MINUS.,2
+T057,f8_v1,bind_extend,BIND with COALESCE reads pushed variable,unsafe-prebind,The BIND expression sees ?x only if it is pushed too early.,5
+T058,f8_v2,bind_extend,BIND with IF(BOUND()) reads pushed variable,unsafe-prebind,This makes the dependency on prebinding explicit.,5
+T059,f8_v3,bind_extend,BIND stringifies pushed variable,unsafe-prebind,The expression result changes from v0 to v1 under early binding.,5
+T060,f8_v4,bind_extend,BIND target collides with pushed variable,bind-target-barrier,Prebinding ?x before this BIND makes Extend undefined / violates BIND scoping.,5
+T061,f8_v5,bind_extend,BIND arithmetic uses pushed variable,unsafe-prebind,Arithmetic makes the changed value easy to observe.,5
+T062,f8_v6,bind_extend,BIND result used by a FILTER,unsafe-prebind,The FILTER outcome depends on the BIND outcome.,2
+T063,f8_v7,bind_extend,BIND only on one arm of the union,unsafe-prebind,A per-arm optimizer must still respect the barrier on the BIND arm.,5
+T064,f8_v8,bind_extend,nested group with BIND and pushed variable,unsafe-prebind,Extra braces can expose mistakes in scope-aware rewrites.,5
+T065,f9_v1,subquery_scope_and_barriers,hidden subquery variable must not be captured,scope-barrier,The inner ?x is hidden because the subquery projects only ?s.,7
+T066,f9_v2,subquery_scope_and_barriers,hidden variable inside a union-bearing subquery,scope-barrier,The outer optimizer must not push ?x into the hidden variable inside the subquery.,9
+T067,f9_v3,subquery_scope_and_barriers,subquery ORDER BY/LIMIT with hidden variable,subquery-barrier,Bottom-up subquery evaluation chooses one row before the outer VALUES join.,3
+T068,f9_v4,subquery_scope_and_barriers,subquery ORDER BY DESC/LIMIT with hidden variable,subquery-barrier,The selected row changes if ?x is pushed inside before LIMIT.,3
+T069,f9_v5,subquery_scope_and_barriers,subquery aggregation hides x but changes counts,subquery-barrier,Pushing ?x into the aggregated subquery changes COUNT(*).,6
+T070,f9_v6,subquery_scope_and_barriers,subquery HAVING depends on hidden-variable counts,subquery-barrier,Early restriction can change which groups satisfy HAVING.,3
+T071,f9_v7,subquery_scope_and_barriers,subquery DISTINCT over hidden x,subquery-barrier,DISTINCT is applied inside the subquery before the outer VALUES join.,6
+T072,f9_v8,subquery_scope_and_barriers,projected x inside subquery still blocked by LIMIT,subquery-barrier,"Even when ?x is projected, LIMIT means the subquery must be evaluated bottom up.",2
+T073,f10_v1,aggregation_and_modifiers,COUNT(*) exposes duplicate VALUES rows,bag-cardinality,Duplicate VALUES rows must duplicate solutions before COUNT(*).,2
+T074,f10_v2,aggregation_and_modifiers,GROUP BY x after correlated VALUES,row-correlation,"If x/z are de-correlated, group counts change.",2
+T075,f10_v3,aggregation_and_modifiers,GROUP BY subject after correlated VALUES,row-correlation,Per-subject multiplicities expose duplicated or missing rows.,12
+T076,f10_v4,aggregation_and_modifiers,COUNT(DISTINCT ?s) with mixed arm bindings,row-correlation,This catches optimizers that invent extra subject/value combinations.,2
+T077,f10_v5,aggregation_and_modifiers,HAVING depends on bag cardinality,bag-cardinality,"If duplicate handling is wrong, HAVING flips.",2
+T078,f10_v6,aggregation_and_modifiers,DISTINCT after correlated VALUES,row-correlation,DISTINCT removes duplicates only after the correct rows have been formed.,2
+T079,f10_v7,aggregation_and_modifiers,ORDER BY/LIMIT after VALUES join,modifier-barrier,Wrong row formation changes the ordered slice.,2
+T080,f10_v8,aggregation_and_modifiers,ORDER BY/OFFSET/LIMIT with duplicate rows,modifier-barrier,Slicing is very sensitive to duplicate and correlation bugs.,3
+T081,f11_v1,nested_unions,three-way nested union with filter in one inner arm,unsafe-prebind,"Only one inner arm is sensitive, but the optimizer must recurse correctly.",5
+T082,f11_v2,nested_unions,nested union with OPTIONAL arm,unsafe-prebind,One nested arm contains a LeftJoin barrier while the others do not.,5
+T083,f11_v3,nested_unions,nested union with filter on pushed variable in deeper arm,unsafe-prebind,A deep arm uses ?x only in a FILTER.,4
+T084,f11_v4,nested_unions,nested union with multi-column VALUES,row-correlation,Correlation must survive recursive distribution through the nested UNION tree.,10
+T085,f11_v5,nested_unions,nested union where one entire branch ignores VALUES variable,unsafe-drop-values,The right subtree never mentions ?x but still needs the VALUES rows.,6
+T086,f11_v6,nested_unions,mixed safe and unsafe inner arms,mixed-safety,One arm is safe because it binds ?x first; another is unsafe because FILTER observes early binding.,3
+T087,f11_v7,nested_unions,union with empty-group arm,unsafe-drop-values,Empty-group arms and BIND-only arms still need the VALUES join at the arm root.,3
+T088,f11_v8,nested_unions,nested union with duplicate VALUES rows,bag-cardinality,Duplicates must be preserved through the whole nested UNION tree.,2
+T089,f12_v1,inner_values_interaction,inner and outer VALUES on same variable,values-intersection,The outer VALUES still applies after the arm-local VALUES has done its own restriction.,3
+T090,f12_v2,inner_values_interaction,inner and outer multi-column VALUES,row-correlation,"Both VALUES tables must be joined as rows, not flattened by column.",2
+T091,f12_v3,inner_values_interaction,inner VALUES on unrelated variable with outer absent variable,unsafe-drop-values,An existing inner VALUES must not cause the outer VALUES to be dropped.,5
+T092,f12_v4,inner_values_interaction,inner VALUES plus filter that observes outer variable,unsafe-prebind,"If ?x is prebound into the arm, the filter outcome changes.",2
+T093,f12_v5,inner_values_interaction,inner VALUES inside OPTIONAL with outer VALUES,unsafe-prebind,This combines inner VALUES with a LeftJoin barrier.,4
+T094,f12_v6,inner_values_interaction,inner VALUES feeding a BIND target that collides with outer variable,bind-target-barrier,Pushing outer ?x before BIND would make the target variable already in-scope.,5
+T095,f12_v7,inner_values_interaction,inner duplicate VALUES crossed with outer duplicate VALUES,bag-cardinality,Both inner and outer duplicate rows contribute multiplicatively.,1
+T096,f12_v8,inner_values_interaction,inner UNDEF values with outer UNDEF,undef-correlation,UNDEF handling must remain unbound at both levels.,16
+T097,f13_v1,property_paths,simple path arm,safe-path,Simple property path behaves like a BGP for this optimization.,3
+T098,f13_v2,property_paths,inverse path arm,safe-path,Inverse path still binds ?x directly before any observing operator.,3
+T099,f13_v3,property_paths,sequence path arm,safe-path,Sequence paths test variable extraction from path translation.,3
+T100,f13_v4,property_paths,alternative path arm,safe-path,Alternative paths stress arm analysis without adding extra barriers.,4
+T101,f13_v5,property_paths,zero-or-more path followed by filter,safe-must-bound,The path binds ?x before FILTER sees it.,5
+T102,f13_v6,property_paths,one-or-more path followed by BOUND filter,safe-must-bound,Another safe case where the arm itself must bind ?x first.,4
+T103,f13_v7,property_paths,optional path with multiple VALUES rows,safe-path,Zero-or-one paths can produce self-bindings and one-step bindings.,7
+T104,f13_v8,property_paths,compound path expression,safe-path,Compound path parsing and translation should not confuse variable tracking.,6
+T105,f14_v1,safe_must_bound_cases,FILTER safe because x is already bound,safe-must-bound,The arm itself binds ?x before the filter is evaluated.,5
+T106,f14_v2,safe_must_bound_cases,EXISTS safe because x is already bound,safe-must-bound,EXISTS sees the same ?x either way because the left pattern already bound it.,4
+T107,f14_v3,safe_must_bound_cases,OPTIONAL safe because left side already binds x,safe-must-bound,This is a positive control for the must-bound condition.,5
+T108,f14_v4,safe_must_bound_cases,MINUS safe because left side already binds x,safe-must-bound,Here shared-variable behavior is unchanged by early visibility of ?x.,4
+T109,f14_v5,safe_must_bound_cases,BIND safe because x is already bound by the arm,safe-must-bound,The BIND expression reads the same ?x in both plans.,5
+T110,f14_v6,safe_must_bound_cases,BIND plus FILTER safe after internal x binding,safe-must-bound,Another positive control with an expression consumer.,5
+T111,f14_v7,safe_must_bound_cases,nested group safe after internal x binding,safe-must-bound,"The inner filter depends on ?x, but ?x is already fixed by the arm.",2
+T112,f14_v8,safe_must_bound_cases,multi-column safe after internal bindings,safe-must-bound,Both pushed variables are already bound by the arm before the filter.,4
+T113,f15_v1,undef_and_empty_values,empty single-column VALUES,empty-values,An empty VALUES table should annihilate the join.,
+T114,f15_v2,undef_and_empty_values,empty multi-column VALUES,empty-values,Same check for a row table.,
+T115,f15_v3,undef_and_empty_values,single UNDEF row on absent variable,undef-row,"UNDEF means one row with ?x unbound, not zero rows.",4
+T116,f15_v4,undef_and_empty_values,UNDEF in first column of correlated row,undef-correlation,The row survives with ?x unbound and ?z bound.,3
+T117,f15_v5,undef_and_empty_values,UNDEF in second column of correlated row,undef-correlation,The row survives with ?z unbound and ?x bound.,3
+T118,f15_v6,undef_and_empty_values,all-UNDEF row still contributes one row,undef-row,A row of all UNDEF values is still a row.,1
+T119,f15_v7,undef_and_empty_values,empty VALUES across a nested union and subquery,empty-values,Even complex patterns should still be annihilated by an empty VALUES join.,
+T120,f15_v8,undef_and_empty_values,duplicate UNDEF rows preserve bag counts,bag-cardinality,Two UNDEF rows and one bound row are three distinct rows in the VALUES table.,3
+T121,f16_v1,combined_stress,OPTIONAL + BIND + FILTER in one arm,unsafe-prebind,"This combines LeftJoin, Extend, and Filter sensitivity in one arm.",2
+T122,f16_v2,combined_stress,EXISTS plus MINUS no-shared-var trap,unsafe-prebind,The same pushed variable affects both EXISTS substitution and MINUS compatibility.,2
+T123,f16_v3,combined_stress,nested union + multi-column duplicate VALUES,row-correlation,"This mixes duplicates, correlation, OPTIONAL, and FILTER over a nested UNION.",3
+T124,f16_v4,combined_stress,EXISTS with hidden subquery variable inside union arm,scope-barrier,The hidden subquery variable inside EXISTS must not be captured by name.,4
+T125,f16_v5,combined_stress,BIND target collision inside OPTIONAL,bind-target-barrier,"If ?x is prebound before the inner BIND, the rewritten arm becomes invalid.",5
+T126,f16_v6,combined_stress,property path arm mixed with value-sensitive filter,unsafe-prebind,Path translation must not distract the optimizer from the FILTER barrier.,1
+T127,f16_v7,combined_stress,aggregate subquery followed by MINUS,subquery-barrier,This combines a hidden-variable aggregate barrier with the MINUS shared-variable trap.,4
+T128,f16_v8,combined_stress,deep mixed barrier query,mixed-safety,This is a high-density regression case mixing safe and unsafe branches.,5

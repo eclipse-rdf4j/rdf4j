@@ -1,0 +1,13 @@
+# T106 — EXISTS safe because x is already bound
+# category: safe_must_bound_cases
+# classification: safe-must-bound
+# note: EXISTS sees the same ?x either way because the left pattern already bound it.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s :k ?x FILTER(EXISTS { ?s :check ?x }) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

@@ -1,0 +1,9 @@
+{
+  "id": "T024",
+  "slug": "f3_v8",
+  "category": "filter_boundness",
+  "title": "filter outside inner group stresses wrapper placement",
+  "classification": "filter-collection",
+  "note": "Injecting VALUES into the same group without a wrapper can let the filter see ?x too early.",
+  "rdflib_rowcount": 2
+}

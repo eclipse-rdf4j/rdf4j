@@ -1,0 +1,14 @@
+# T068 — subquery ORDER BY DESC/LIMIT with hidden variable
+# category: subquery_scope_and_barriers
+# classification: subquery-barrier
+# note: The selected row changes if ?x is pushed inside before LIMIT.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x WHERE {
+  { SELECT ?s WHERE { ?s :p ?x } ORDER BY DESC(?x) LIMIT 1 }
+  UNION
+  { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

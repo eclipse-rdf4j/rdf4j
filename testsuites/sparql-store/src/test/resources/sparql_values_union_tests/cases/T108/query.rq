@@ -1,0 +1,13 @@
+# T108 — MINUS safe because left side already binds x
+# category: safe_must_bound_cases
+# classification: safe-must-bound
+# note: Here shared-variable behavior is unchanged by early visibility of ?x.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s :k ?x MINUS { ?s :p ?x } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 }

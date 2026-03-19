@@ -1,0 +1,9 @@
+{
+  "id": "T098",
+  "slug": "f13_v2",
+  "category": "property_paths",
+  "title": "inverse path arm",
+  "classification": "safe-path",
+  "note": "Inverse path still binds ?x directly before any observing operator.",
+  "rdflib_rowcount": 3
+}

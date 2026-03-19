@@ -1,0 +1,19 @@
+# T125 — BIND target collision inside OPTIONAL
+# category: combined_stress
+# classification: bind-target-barrier
+# note: If ?x is prebound before the inner BIND, the rewritten arm becomes invalid.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?s ?x ?m ?o WHERE {
+  { ?s a :T
+    OPTIONAL {
+      ?s :check ?m
+      BIND(1 AS ?x)
+    }
+  }
+  UNION
+  { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

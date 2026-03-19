@@ -1,0 +1,9 @@
+{
+  "id": "T057",
+  "slug": "f8_v1",
+  "category": "bind_extend",
+  "title": "BIND with COALESCE reads pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "The BIND expression sees ?x only if it is pushed too early.",
+  "rdflib_rowcount": 5
+}

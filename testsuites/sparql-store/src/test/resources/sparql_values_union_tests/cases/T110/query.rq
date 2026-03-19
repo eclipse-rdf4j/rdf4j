@@ -1,0 +1,13 @@
+# T110 — BIND plus FILTER safe after internal x binding
+# category: safe_must_bound_cases
+# classification: safe-must-bound
+# note: Another positive control with an expression consumer.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?y WHERE {
+{ ?s :k ?x BIND(COALESCE(?x, 0) AS ?y) FILTER(?y = 1) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?y), "")
+VALUES ?x { 1 }

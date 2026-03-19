@@ -1,0 +1,13 @@
+# T092 — inner VALUES plus filter that observes outer variable
+# category: inner_values_interaction
+# classification: unsafe-prebind
+# note: If ?x is prebound into the arm, the filter outcome changes.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?m ?o WHERE {
+{ VALUES ?m { 1 } ?s :p ?o FILTER(?x = ?m) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

@@ -1,0 +1,13 @@
+# T001 — single absent arm still needs late binding
+# category: late_binding_absent_vars
+# classification: unsafe-prebind
+# note: Right arm does not mention ?x but late join must still add ?x there.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?y WHERE {
+{ ?s :p ?x } UNION { ?s :q ?y }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?y), "")
+VALUES ?x { 1 }

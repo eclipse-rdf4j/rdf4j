@@ -1,0 +1,1154 @@
+[
+  {
+    "id": "T001",
+    "slug": "f1_v1",
+    "category": "late_binding_absent_vars",
+    "title": "single absent arm still needs late binding",
+    "classification": "unsafe-prebind",
+    "note": "Right arm does not mention ?x but late join must still add ?x there.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T002",
+    "slug": "f1_v2",
+    "category": "late_binding_absent_vars",
+    "title": "both arms ignore VALUES variable",
+    "classification": "unsafe-drop-values",
+    "note": "Dropping VALUES because no arm mentions ?x is wrong: late join creates a cross-product.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T003",
+    "slug": "f1_v3",
+    "category": "late_binding_absent_vars",
+    "title": "variable absent from every arm but projected",
+    "classification": "unsafe-drop-values",
+    "note": "No arm mentions ?z, but the final solutions must still contain ?z from VALUES.",
+    "rdflib_rowcount": 8
+  },
+  {
+    "id": "T004",
+    "slug": "f1_v4",
+    "category": "late_binding_absent_vars",
+    "title": "two-column late binding across asymmetric arms",
+    "classification": "row-correlation",
+    "note": "Each arm receives the full row after the union; missing columns are bound late.",
+    "rdflib_rowcount": 6
+  },
+  {
+    "id": "T005",
+    "slug": "f1_v5",
+    "category": "late_binding_absent_vars",
+    "title": "nested union with outer absent arm",
+    "classification": "unsafe-drop-values",
+    "note": "The :r arm never mentions ?x but still needs the row at the arm root.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T006",
+    "slug": "f1_v6",
+    "category": "late_binding_absent_vars",
+    "title": "empty-group arm still cross joins with VALUES",
+    "classification": "unsafe-drop-values",
+    "note": "An empty/group expression arm produces one mapping that must be joined with every VALUES row.",
+    "rdflib_rowcount": 6
+  },
+  {
+    "id": "T007",
+    "slug": "f1_v7",
+    "category": "late_binding_absent_vars",
+    "title": "arm-local join plus absent VALUES variable",
+    "classification": "unsafe-drop-values",
+    "note": "Even when an arm has internal joins, late VALUES still binds absent variables.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T008",
+    "slug": "f1_v8",
+    "category": "late_binding_absent_vars",
+    "title": "three-way union with one binding arm and two absent arms",
+    "classification": "unsafe-drop-values",
+    "note": "Only the first arm mentions ?x; the others still need the VALUES rows.",
+    "rdflib_rowcount": 8
+  },
+  {
+    "id": "T009",
+    "slug": "f2_v1",
+    "category": "row_correlation_duplicates_undef",
+    "title": "two-column correlation across separate arms",
+    "classification": "row-correlation",
+    "note": "Pushing columns independently would fabricate cross-paired rows.",
+    "rdflib_rowcount": 6
+  },
+  {
+    "id": "T010",
+    "slug": "f2_v2",
+    "category": "row_correlation_duplicates_undef",
+    "title": "duplicate VALUES rows preserve bag cardinality",
+    "classification": "bag-cardinality",
+    "note": "Duplicate VALUES rows must duplicate results; deduplication is incorrect.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T011",
+    "slug": "f2_v3",
+    "category": "row_correlation_duplicates_undef",
+    "title": "same x paired with different z values",
+    "classification": "row-correlation",
+    "note": "If an optimizer splits the table by column, it will lose x/z correlation.",
+    "rdflib_rowcount": 7
+  },
+  {
+    "id": "T012",
+    "slug": "f2_v4",
+    "category": "row_correlation_duplicates_undef",
+    "title": "same z paired with different x values",
+    "classification": "row-correlation",
+    "note": "Same issue as above but keyed by the other column.",
+    "rdflib_rowcount": 7
+  },
+  {
+    "id": "T013",
+    "slug": "f2_v5",
+    "category": "row_correlation_duplicates_undef",
+    "title": "UNDEF in second column",
+    "classification": "undef-correlation",
+    "note": "UNDEF means unbound, not a wildcard literal, and row correlation still matters.",
+    "rdflib_rowcount": 7
+  },
+  {
+    "id": "T014",
+    "slug": "f2_v6",
+    "category": "row_correlation_duplicates_undef",
+    "title": "UNDEF in first column",
+    "classification": "undef-correlation",
+    "note": "This stresses late binding of an unbound first column.",
+    "rdflib_rowcount": 7
+  },
+  {
+    "id": "T015",
+    "slug": "f2_v7",
+    "category": "row_correlation_duplicates_undef",
+    "title": "three-column correlation across three arms",
+    "classification": "row-correlation",
+    "note": "All three columns are correlated inside one VALUES row.",
+    "rdflib_rowcount": 8
+  },
+  {
+    "id": "T016",
+    "slug": "f2_v8",
+    "category": "row_correlation_duplicates_undef",
+    "title": "mixed duplicates and UNDEF rows",
+    "classification": "bag-cardinality",
+    "note": "Tests duplicate preservation together with unbound columns.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T017",
+    "slug": "f3_v1",
+    "category": "filter_boundness",
+    "title": "BOUND filter sees early binding",
+    "classification": "unsafe-prebind",
+    "note": "The left-arm FILTER is false before the outer VALUES join but true after prebinding.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T018",
+    "slug": "f3_v2",
+    "category": "filter_boundness",
+    "title": "NOT BOUND filter sees early binding",
+    "classification": "unsafe-prebind",
+    "note": "This is the complementary case to BOUND(?x).",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T019",
+    "slug": "f3_v3",
+    "category": "filter_boundness",
+    "title": "equality filter on formerly unbound variable",
+    "classification": "unsafe-prebind",
+    "note": "Unbound ?x makes the filter fail originally; prebinding makes it pass.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T020",
+    "slug": "f3_v4",
+    "category": "filter_boundness",
+    "title": "inequality filter on formerly unbound variable",
+    "classification": "unsafe-prebind",
+    "note": "Again, early binding changes the filter input.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T021",
+    "slug": "f3_v5",
+    "category": "filter_boundness",
+    "title": "combined BOUND and data test",
+    "classification": "unsafe-prebind",
+    "note": "The BOUND test short-circuits the arm in the original query.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T022",
+    "slug": "f3_v6",
+    "category": "filter_boundness",
+    "title": "disjunctive filter with unbound branch",
+    "classification": "unsafe-prebind",
+    "note": "Early binding flips the left disjunct from true to false.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T023",
+    "slug": "f3_v7",
+    "category": "filter_boundness",
+    "title": "sameTerm filter on formerly unbound variable",
+    "classification": "unsafe-prebind",
+    "note": "sameTerm is especially sensitive to early binding.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T024",
+    "slug": "f3_v8",
+    "category": "filter_boundness",
+    "title": "filter outside inner group stresses wrapper placement",
+    "classification": "filter-collection",
+    "note": "Injecting VALUES into the same group without a wrapper can let the filter see ?x too early.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T025",
+    "slug": "f4_v1",
+    "category": "function_error_sensitivity",
+    "title": "STR on formerly unbound variable",
+    "classification": "unsafe-prebind",
+    "note": "STR(?x) errors when ?x is unbound but succeeds after prebinding.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T026",
+    "slug": "f4_v2",
+    "category": "function_error_sensitivity",
+    "title": "datatype() on formerly unbound variable",
+    "classification": "unsafe-prebind",
+    "note": "datatype(?x) also distinguishes unbound from bound.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T027",
+    "slug": "f4_v3",
+    "category": "function_error_sensitivity",
+    "title": "isLiteral() on formerly unbound variable",
+    "classification": "unsafe-prebind",
+    "note": "The boolean result changes once ?x is prebound.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T028",
+    "slug": "f4_v4",
+    "category": "function_error_sensitivity",
+    "title": "regex over STR of formerly unbound variable",
+    "classification": "unsafe-prebind",
+    "note": "Same observation with a function stack.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T029",
+    "slug": "f4_v5",
+    "category": "function_error_sensitivity",
+    "title": "COALESCE chooses different branch after prebinding",
+    "classification": "unsafe-prebind",
+    "note": "Originally COALESCE picks 0; after prebinding it picks the VALUES term.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T030",
+    "slug": "f4_v6",
+    "category": "function_error_sensitivity",
+    "title": "IN short-circuit with formerly unbound lhs",
+    "classification": "unsafe-prebind",
+    "note": "Unbound lhs raises an error; bound lhs can short-circuit to true.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T031",
+    "slug": "f4_v7",
+    "category": "function_error_sensitivity",
+    "title": "NOT IN with error branch",
+    "classification": "unsafe-prebind",
+    "note": "This stresses the NOT IN error/false distinction.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T032",
+    "slug": "f4_v8",
+    "category": "function_error_sensitivity",
+    "title": "IF on BOUND chooses a different branch",
+    "classification": "unsafe-prebind",
+    "note": "IF makes the branch difference explicit.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T033",
+    "slug": "f5_v1",
+    "category": "exists_not_exists",
+    "title": "EXISTS with pushed variable in pattern",
+    "classification": "unsafe-prebind",
+    "note": "Without prebinding, ?x is not fixed inside EXISTS and any check value can match.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T034",
+    "slug": "f5_v2",
+    "category": "exists_not_exists",
+    "title": "NOT EXISTS with pushed variable in pattern",
+    "classification": "unsafe-prebind",
+    "note": "The EXISTS test flips once ?x is fixed too early.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T035",
+    "slug": "f5_v3",
+    "category": "exists_not_exists",
+    "title": "EXISTS with inner FILTER using pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "The inner FILTER can only use ?x if ?x is already bound.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T036",
+    "slug": "f5_v4",
+    "category": "exists_not_exists",
+    "title": "NOT EXISTS with inner FILTER using pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "Same issue in negative form.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T037",
+    "slug": "f5_v5",
+    "category": "exists_not_exists",
+    "title": "EXISTS with filter that mentions only pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "Originally the inner FILTER sees ?x unbound; prebinding changes that.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T038",
+    "slug": "f5_v6",
+    "category": "exists_not_exists",
+    "title": "NOT EXISTS with filter that mentions only pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "This catches an optimizer that substitutes ?x too early into EXISTS/NOT EXISTS.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T039",
+    "slug": "f5_v7",
+    "category": "exists_not_exists",
+    "title": "nested EXISTS with inner pattern on pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "Nested EXISTS amplifies substitution mistakes.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T040",
+    "slug": "f5_v8",
+    "category": "exists_not_exists",
+    "title": "mixed EXISTS and NOT EXISTS across two arms",
+    "classification": "unsafe-prebind",
+    "note": "Each arm observes early binding in a different way.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T041",
+    "slug": "f6_v1",
+    "category": "optional_leftjoin",
+    "title": "OPTIONAL binds pushed variable directly",
+    "classification": "unsafe-prebind",
+    "note": "A late incompatibility after OPTIONAL is not the same as an early no-match.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T042",
+    "slug": "f6_v2",
+    "category": "optional_leftjoin",
+    "title": "OPTIONAL right side with extra condition",
+    "classification": "unsafe-prebind",
+    "note": "The optional branch can match and later be rejected by the outer VALUES join.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T043",
+    "slug": "f6_v3",
+    "category": "optional_leftjoin",
+    "title": "OPTIONAL filter compares right binding to pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "Originally ?x is unbound in the optional filter.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T044",
+    "slug": "f6_v4",
+    "category": "optional_leftjoin",
+    "title": "OPTIONAL filter on directly bound pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "The optional branch can bind 2 and then be rejected late, which differs from forcing 1 early.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T045",
+    "slug": "f6_v5",
+    "category": "optional_leftjoin",
+    "title": "OPTIONAL filter mentions only pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "The filter is false/error in the original arm but true after early binding.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T046",
+    "slug": "f6_v6",
+    "category": "optional_leftjoin",
+    "title": "OPTIONAL around inner union",
+    "classification": "unsafe-prebind",
+    "note": "Nested UNION inside OPTIONAL is another common optimizer corner case.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T047",
+    "slug": "f6_v7",
+    "category": "optional_leftjoin",
+    "title": "safe OPTIONAL when left side already binds x",
+    "classification": "safe-must-bound",
+    "note": "Here ?x is already bound on the left before the optional is evaluated.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T048",
+    "slug": "f6_v8",
+    "category": "optional_leftjoin",
+    "title": "duplicate VALUES rows over OPTIONAL expose bag counts",
+    "classification": "bag-cardinality",
+    "note": "Duplicate VALUES rows should duplicate surviving optional solutions.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T049",
+    "slug": "f7_v1",
+    "category": "minus",
+    "title": "MINUS with pushed variable on right pattern",
+    "classification": "unsafe-prebind",
+    "note": "Originally any :p value removes the row; prebinding restricts the right side to :p 1.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T050",
+    "slug": "f7_v2",
+    "category": "minus",
+    "title": "MINUS with inner FILTER using pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "The MINUS branch behaves differently when ?x is available inside the filter.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T051",
+    "slug": "f7_v3",
+    "category": "minus",
+    "title": "MINUS with no shared vars until early binding creates one",
+    "classification": "unsafe-prebind",
+    "note": "Without early binding dom(\u03bc) and dom(\u03bc') are disjoint, so MINUS does nothing.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T052",
+    "slug": "f7_v4",
+    "category": "minus",
+    "title": "MINUS with no shared vars and inner FILTER",
+    "classification": "unsafe-prebind",
+    "note": "This is the FILTER-based version of the same shared-variable trap.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T053",
+    "slug": "f7_v5",
+    "category": "minus",
+    "title": "MINUS after an OPTIONAL on the left",
+    "classification": "unsafe-prebind",
+    "note": "The left side remains free of ?x in the original query, but not after early pushdown.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T054",
+    "slug": "f7_v6",
+    "category": "minus",
+    "title": "safe MINUS when left already binds x",
+    "classification": "safe-must-bound",
+    "note": "Here ?x is already bound on the left before MINUS is evaluated.",
+    "rdflib_rowcount": 1
+  },
+  {
+    "id": "T055",
+    "slug": "f7_v7",
+    "category": "minus",
+    "title": "two-column VALUES around MINUS",
+    "classification": "row-correlation",
+    "note": "Row correlation must be preserved even when one arm contains MINUS.",
+    "rdflib_rowcount": 7
+  },
+  {
+    "id": "T056",
+    "slug": "f7_v8",
+    "category": "minus",
+    "title": "duplicate VALUES rows over MINUS expose bag counts",
+    "classification": "bag-cardinality",
+    "note": "Duplicate rows must duplicate results that survive MINUS.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T057",
+    "slug": "f8_v1",
+    "category": "bind_extend",
+    "title": "BIND with COALESCE reads pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "The BIND expression sees ?x only if it is pushed too early.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T058",
+    "slug": "f8_v2",
+    "category": "bind_extend",
+    "title": "BIND with IF(BOUND()) reads pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "This makes the dependency on prebinding explicit.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T059",
+    "slug": "f8_v3",
+    "category": "bind_extend",
+    "title": "BIND stringifies pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "The expression result changes from v0 to v1 under early binding.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T060",
+    "slug": "f8_v4",
+    "category": "bind_extend",
+    "title": "BIND target collides with pushed variable",
+    "classification": "bind-target-barrier",
+    "note": "Prebinding ?x before this BIND makes Extend undefined / violates BIND scoping.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T061",
+    "slug": "f8_v5",
+    "category": "bind_extend",
+    "title": "BIND arithmetic uses pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "Arithmetic makes the changed value easy to observe.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T062",
+    "slug": "f8_v6",
+    "category": "bind_extend",
+    "title": "BIND result used by a FILTER",
+    "classification": "unsafe-prebind",
+    "note": "The FILTER outcome depends on the BIND outcome.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T063",
+    "slug": "f8_v7",
+    "category": "bind_extend",
+    "title": "BIND only on one arm of the union",
+    "classification": "unsafe-prebind",
+    "note": "A per-arm optimizer must still respect the barrier on the BIND arm.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T064",
+    "slug": "f8_v8",
+    "category": "bind_extend",
+    "title": "nested group with BIND and pushed variable",
+    "classification": "unsafe-prebind",
+    "note": "Extra braces can expose mistakes in scope-aware rewrites.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T065",
+    "slug": "f9_v1",
+    "category": "subquery_scope_and_barriers",
+    "title": "hidden subquery variable must not be captured",
+    "classification": "scope-barrier",
+    "note": "The inner ?x is hidden because the subquery projects only ?s.",
+    "rdflib_rowcount": 7
+  },
+  {
+    "id": "T066",
+    "slug": "f9_v2",
+    "category": "subquery_scope_and_barriers",
+    "title": "hidden variable inside a union-bearing subquery",
+    "classification": "scope-barrier",
+    "note": "The outer optimizer must not push ?x into the hidden variable inside the subquery.",
+    "rdflib_rowcount": 9
+  },
+  {
+    "id": "T067",
+    "slug": "f9_v3",
+    "category": "subquery_scope_and_barriers",
+    "title": "subquery ORDER BY/LIMIT with hidden variable",
+    "classification": "subquery-barrier",
+    "note": "Bottom-up subquery evaluation chooses one row before the outer VALUES join.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T068",
+    "slug": "f9_v4",
+    "category": "subquery_scope_and_barriers",
+    "title": "subquery ORDER BY DESC/LIMIT with hidden variable",
+    "classification": "subquery-barrier",
+    "note": "The selected row changes if ?x is pushed inside before LIMIT.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T069",
+    "slug": "f9_v5",
+    "category": "subquery_scope_and_barriers",
+    "title": "subquery aggregation hides x but changes counts",
+    "classification": "subquery-barrier",
+    "note": "Pushing ?x into the aggregated subquery changes COUNT(*).",
+    "rdflib_rowcount": 6
+  },
+  {
+    "id": "T070",
+    "slug": "f9_v6",
+    "category": "subquery_scope_and_barriers",
+    "title": "subquery HAVING depends on hidden-variable counts",
+    "classification": "subquery-barrier",
+    "note": "Early restriction can change which groups satisfy HAVING.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T071",
+    "slug": "f9_v7",
+    "category": "subquery_scope_and_barriers",
+    "title": "subquery DISTINCT over hidden x",
+    "classification": "subquery-barrier",
+    "note": "DISTINCT is applied inside the subquery before the outer VALUES join.",
+    "rdflib_rowcount": 6
+  },
+  {
+    "id": "T072",
+    "slug": "f9_v8",
+    "category": "subquery_scope_and_barriers",
+    "title": "projected x inside subquery still blocked by LIMIT",
+    "classification": "subquery-barrier",
+    "note": "Even when ?x is projected, LIMIT means the subquery must be evaluated bottom up.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T073",
+    "slug": "f10_v1",
+    "category": "aggregation_and_modifiers",
+    "title": "COUNT(*) exposes duplicate VALUES rows",
+    "classification": "bag-cardinality",
+    "note": "Duplicate VALUES rows must duplicate solutions before COUNT(*).",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T074",
+    "slug": "f10_v2",
+    "category": "aggregation_and_modifiers",
+    "title": "GROUP BY x after correlated VALUES",
+    "classification": "row-correlation",
+    "note": "If x/z are de-correlated, group counts change.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T075",
+    "slug": "f10_v3",
+    "category": "aggregation_and_modifiers",
+    "title": "GROUP BY subject after correlated VALUES",
+    "classification": "row-correlation",
+    "note": "Per-subject multiplicities expose duplicated or missing rows.",
+    "rdflib_rowcount": 12
+  },
+  {
+    "id": "T076",
+    "slug": "f10_v4",
+    "category": "aggregation_and_modifiers",
+    "title": "COUNT(DISTINCT ?s) with mixed arm bindings",
+    "classification": "row-correlation",
+    "note": "This catches optimizers that invent extra subject/value combinations.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T077",
+    "slug": "f10_v5",
+    "category": "aggregation_and_modifiers",
+    "title": "HAVING depends on bag cardinality",
+    "classification": "bag-cardinality",
+    "note": "If duplicate handling is wrong, HAVING flips.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T078",
+    "slug": "f10_v6",
+    "category": "aggregation_and_modifiers",
+    "title": "DISTINCT after correlated VALUES",
+    "classification": "row-correlation",
+    "note": "DISTINCT removes duplicates only after the correct rows have been formed.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T079",
+    "slug": "f10_v7",
+    "category": "aggregation_and_modifiers",
+    "title": "ORDER BY/LIMIT after VALUES join",
+    "classification": "modifier-barrier",
+    "note": "Wrong row formation changes the ordered slice.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T080",
+    "slug": "f10_v8",
+    "category": "aggregation_and_modifiers",
+    "title": "ORDER BY/OFFSET/LIMIT with duplicate rows",
+    "classification": "modifier-barrier",
+    "note": "Slicing is very sensitive to duplicate and correlation bugs.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T081",
+    "slug": "f11_v1",
+    "category": "nested_unions",
+    "title": "three-way nested union with filter in one inner arm",
+    "classification": "unsafe-prebind",
+    "note": "Only one inner arm is sensitive, but the optimizer must recurse correctly.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T082",
+    "slug": "f11_v2",
+    "category": "nested_unions",
+    "title": "nested union with OPTIONAL arm",
+    "classification": "unsafe-prebind",
+    "note": "One nested arm contains a LeftJoin barrier while the others do not.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T083",
+    "slug": "f11_v3",
+    "category": "nested_unions",
+    "title": "nested union with filter on pushed variable in deeper arm",
+    "classification": "unsafe-prebind",
+    "note": "A deep arm uses ?x only in a FILTER.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T084",
+    "slug": "f11_v4",
+    "category": "nested_unions",
+    "title": "nested union with multi-column VALUES",
+    "classification": "row-correlation",
+    "note": "Correlation must survive recursive distribution through the nested UNION tree.",
+    "rdflib_rowcount": 10
+  },
+  {
+    "id": "T085",
+    "slug": "f11_v5",
+    "category": "nested_unions",
+    "title": "nested union where one entire branch ignores VALUES variable",
+    "classification": "unsafe-drop-values",
+    "note": "The right subtree never mentions ?x but still needs the VALUES rows.",
+    "rdflib_rowcount": 6
+  },
+  {
+    "id": "T086",
+    "slug": "f11_v6",
+    "category": "nested_unions",
+    "title": "mixed safe and unsafe inner arms",
+    "classification": "mixed-safety",
+    "note": "One arm is safe because it binds ?x first; another is unsafe because FILTER observes early binding.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T087",
+    "slug": "f11_v7",
+    "category": "nested_unions",
+    "title": "union with empty-group arm",
+    "classification": "unsafe-drop-values",
+    "note": "Empty-group arms and BIND-only arms still need the VALUES join at the arm root.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T088",
+    "slug": "f11_v8",
+    "category": "nested_unions",
+    "title": "nested union with duplicate VALUES rows",
+    "classification": "bag-cardinality",
+    "note": "Duplicates must be preserved through the whole nested UNION tree.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T089",
+    "slug": "f12_v1",
+    "category": "inner_values_interaction",
+    "title": "inner and outer VALUES on same variable",
+    "classification": "values-intersection",
+    "note": "The outer VALUES still applies after the arm-local VALUES has done its own restriction.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T090",
+    "slug": "f12_v2",
+    "category": "inner_values_interaction",
+    "title": "inner and outer multi-column VALUES",
+    "classification": "row-correlation",
+    "note": "Both VALUES tables must be joined as rows, not flattened by column.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T091",
+    "slug": "f12_v3",
+    "category": "inner_values_interaction",
+    "title": "inner VALUES on unrelated variable with outer absent variable",
+    "classification": "unsafe-drop-values",
+    "note": "An existing inner VALUES must not cause the outer VALUES to be dropped.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T092",
+    "slug": "f12_v4",
+    "category": "inner_values_interaction",
+    "title": "inner VALUES plus filter that observes outer variable",
+    "classification": "unsafe-prebind",
+    "note": "If ?x is prebound into the arm, the filter outcome changes.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T093",
+    "slug": "f12_v5",
+    "category": "inner_values_interaction",
+    "title": "inner VALUES inside OPTIONAL with outer VALUES",
+    "classification": "unsafe-prebind",
+    "note": "This combines inner VALUES with a LeftJoin barrier.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T094",
+    "slug": "f12_v6",
+    "category": "inner_values_interaction",
+    "title": "inner VALUES feeding a BIND target that collides with outer variable",
+    "classification": "bind-target-barrier",
+    "note": "Pushing outer ?x before BIND would make the target variable already in-scope.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T095",
+    "slug": "f12_v7",
+    "category": "inner_values_interaction",
+    "title": "inner duplicate VALUES crossed with outer duplicate VALUES",
+    "classification": "bag-cardinality",
+    "note": "Both inner and outer duplicate rows contribute multiplicatively.",
+    "rdflib_rowcount": 1
+  },
+  {
+    "id": "T096",
+    "slug": "f12_v8",
+    "category": "inner_values_interaction",
+    "title": "inner UNDEF values with outer UNDEF",
+    "classification": "undef-correlation",
+    "note": "UNDEF handling must remain unbound at both levels.",
+    "rdflib_rowcount": 16
+  },
+  {
+    "id": "T097",
+    "slug": "f13_v1",
+    "category": "property_paths",
+    "title": "simple path arm",
+    "classification": "safe-path",
+    "note": "Simple property path behaves like a BGP for this optimization.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T098",
+    "slug": "f13_v2",
+    "category": "property_paths",
+    "title": "inverse path arm",
+    "classification": "safe-path",
+    "note": "Inverse path still binds ?x directly before any observing operator.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T099",
+    "slug": "f13_v3",
+    "category": "property_paths",
+    "title": "sequence path arm",
+    "classification": "safe-path",
+    "note": "Sequence paths test variable extraction from path translation.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T100",
+    "slug": "f13_v4",
+    "category": "property_paths",
+    "title": "alternative path arm",
+    "classification": "safe-path",
+    "note": "Alternative paths stress arm analysis without adding extra barriers.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T101",
+    "slug": "f13_v5",
+    "category": "property_paths",
+    "title": "zero-or-more path followed by filter",
+    "classification": "safe-must-bound",
+    "note": "The path binds ?x before FILTER sees it.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T102",
+    "slug": "f13_v6",
+    "category": "property_paths",
+    "title": "one-or-more path followed by BOUND filter",
+    "classification": "safe-must-bound",
+    "note": "Another safe case where the arm itself must bind ?x first.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T103",
+    "slug": "f13_v7",
+    "category": "property_paths",
+    "title": "optional path with multiple VALUES rows",
+    "classification": "safe-path",
+    "note": "Zero-or-one paths can produce self-bindings and one-step bindings.",
+    "rdflib_rowcount": 7
+  },
+  {
+    "id": "T104",
+    "slug": "f13_v8",
+    "category": "property_paths",
+    "title": "compound path expression",
+    "classification": "safe-path",
+    "note": "Compound path parsing and translation should not confuse variable tracking.",
+    "rdflib_rowcount": 6
+  },
+  {
+    "id": "T105",
+    "slug": "f14_v1",
+    "category": "safe_must_bound_cases",
+    "title": "FILTER safe because x is already bound",
+    "classification": "safe-must-bound",
+    "note": "The arm itself binds ?x before the filter is evaluated.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T106",
+    "slug": "f14_v2",
+    "category": "safe_must_bound_cases",
+    "title": "EXISTS safe because x is already bound",
+    "classification": "safe-must-bound",
+    "note": "EXISTS sees the same ?x either way because the left pattern already bound it.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T107",
+    "slug": "f14_v3",
+    "category": "safe_must_bound_cases",
+    "title": "OPTIONAL safe because left side already binds x",
+    "classification": "safe-must-bound",
+    "note": "This is a positive control for the must-bound condition.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T108",
+    "slug": "f14_v4",
+    "category": "safe_must_bound_cases",
+    "title": "MINUS safe because left side already binds x",
+    "classification": "safe-must-bound",
+    "note": "Here shared-variable behavior is unchanged by early visibility of ?x.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T109",
+    "slug": "f14_v5",
+    "category": "safe_must_bound_cases",
+    "title": "BIND safe because x is already bound by the arm",
+    "classification": "safe-must-bound",
+    "note": "The BIND expression reads the same ?x in both plans.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T110",
+    "slug": "f14_v6",
+    "category": "safe_must_bound_cases",
+    "title": "BIND plus FILTER safe after internal x binding",
+    "classification": "safe-must-bound",
+    "note": "Another positive control with an expression consumer.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T111",
+    "slug": "f14_v7",
+    "category": "safe_must_bound_cases",
+    "title": "nested group safe after internal x binding",
+    "classification": "safe-must-bound",
+    "note": "The inner filter depends on ?x, but ?x is already fixed by the arm.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T112",
+    "slug": "f14_v8",
+    "category": "safe_must_bound_cases",
+    "title": "multi-column safe after internal bindings",
+    "classification": "safe-must-bound",
+    "note": "Both pushed variables are already bound by the arm before the filter.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T113",
+    "slug": "f15_v1",
+    "category": "undef_and_empty_values",
+    "title": "empty single-column VALUES",
+    "classification": "empty-values",
+    "note": "An empty VALUES table should annihilate the join.",
+    "rdflib_rowcount": ""
+  },
+  {
+    "id": "T114",
+    "slug": "f15_v2",
+    "category": "undef_and_empty_values",
+    "title": "empty multi-column VALUES",
+    "classification": "empty-values",
+    "note": "Same check for a row table.",
+    "rdflib_rowcount": ""
+  },
+  {
+    "id": "T115",
+    "slug": "f15_v3",
+    "category": "undef_and_empty_values",
+    "title": "single UNDEF row on absent variable",
+    "classification": "undef-row",
+    "note": "UNDEF means one row with ?x unbound, not zero rows.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T116",
+    "slug": "f15_v4",
+    "category": "undef_and_empty_values",
+    "title": "UNDEF in first column of correlated row",
+    "classification": "undef-correlation",
+    "note": "The row survives with ?x unbound and ?z bound.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T117",
+    "slug": "f15_v5",
+    "category": "undef_and_empty_values",
+    "title": "UNDEF in second column of correlated row",
+    "classification": "undef-correlation",
+    "note": "The row survives with ?z unbound and ?x bound.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T118",
+    "slug": "f15_v6",
+    "category": "undef_and_empty_values",
+    "title": "all-UNDEF row still contributes one row",
+    "classification": "undef-row",
+    "note": "A row of all UNDEF values is still a row.",
+    "rdflib_rowcount": 1
+  },
+  {
+    "id": "T119",
+    "slug": "f15_v7",
+    "category": "undef_and_empty_values",
+    "title": "empty VALUES across a nested union and subquery",
+    "classification": "empty-values",
+    "note": "Even complex patterns should still be annihilated by an empty VALUES join.",
+    "rdflib_rowcount": ""
+  },
+  {
+    "id": "T120",
+    "slug": "f15_v8",
+    "category": "undef_and_empty_values",
+    "title": "duplicate UNDEF rows preserve bag counts",
+    "classification": "bag-cardinality",
+    "note": "Two UNDEF rows and one bound row are three distinct rows in the VALUES table.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T121",
+    "slug": "f16_v1",
+    "category": "combined_stress",
+    "title": "OPTIONAL + BIND + FILTER in one arm",
+    "classification": "unsafe-prebind",
+    "note": "This combines LeftJoin, Extend, and Filter sensitivity in one arm.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T122",
+    "slug": "f16_v2",
+    "category": "combined_stress",
+    "title": "EXISTS plus MINUS no-shared-var trap",
+    "classification": "unsafe-prebind",
+    "note": "The same pushed variable affects both EXISTS substitution and MINUS compatibility.",
+    "rdflib_rowcount": 2
+  },
+  {
+    "id": "T123",
+    "slug": "f16_v3",
+    "category": "combined_stress",
+    "title": "nested union + multi-column duplicate VALUES",
+    "classification": "row-correlation",
+    "note": "This mixes duplicates, correlation, OPTIONAL, and FILTER over a nested UNION.",
+    "rdflib_rowcount": 3
+  },
+  {
+    "id": "T124",
+    "slug": "f16_v4",
+    "category": "combined_stress",
+    "title": "EXISTS with hidden subquery variable inside union arm",
+    "classification": "scope-barrier",
+    "note": "The hidden subquery variable inside EXISTS must not be captured by name.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T125",
+    "slug": "f16_v5",
+    "category": "combined_stress",
+    "title": "BIND target collision inside OPTIONAL",
+    "classification": "bind-target-barrier",
+    "note": "If ?x is prebound before the inner BIND, the rewritten arm becomes invalid.",
+    "rdflib_rowcount": 5
+  },
+  {
+    "id": "T126",
+    "slug": "f16_v6",
+    "category": "combined_stress",
+    "title": "property path arm mixed with value-sensitive filter",
+    "classification": "unsafe-prebind",
+    "note": "Path translation must not distract the optimizer from the FILTER barrier.",
+    "rdflib_rowcount": 1
+  },
+  {
+    "id": "T127",
+    "slug": "f16_v7",
+    "category": "combined_stress",
+    "title": "aggregate subquery followed by MINUS",
+    "classification": "subquery-barrier",
+    "note": "This combines a hidden-variable aggregate barrier with the MINUS shared-variable trap.",
+    "rdflib_rowcount": 4
+  },
+  {
+    "id": "T128",
+    "slug": "f16_v8",
+    "category": "combined_stress",
+    "title": "deep mixed barrier query",
+    "classification": "mixed-safety",
+    "note": "This is a high-density regression case mixing safe and unsafe branches.",
+    "rdflib_rowcount": 5
+  }
+]

@@ -1,0 +1,13 @@
+# T062 — BIND result used by a FILTER
+# category: bind_extend
+# classification: unsafe-prebind
+# note: The FILTER outcome depends on the BIND outcome.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?y ?o WHERE {
+{ ?s :p ?o BIND(COALESCE(?x, 0) AS ?y) FILTER(?y = 1) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?y), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

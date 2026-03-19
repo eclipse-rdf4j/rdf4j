@@ -1,0 +1,9 @@
+{
+  "id": "T033",
+  "slug": "f5_v1",
+  "category": "exists_not_exists",
+  "title": "EXISTS with pushed variable in pattern",
+  "classification": "unsafe-prebind",
+  "note": "Without prebinding, ?x is not fixed inside EXISTS and any check value can match.",
+  "rdflib_rowcount": 4
+}

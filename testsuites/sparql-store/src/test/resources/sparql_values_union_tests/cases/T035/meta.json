@@ -1,0 +1,9 @@
+{
+  "id": "T035",
+  "slug": "f5_v3",
+  "category": "exists_not_exists",
+  "title": "EXISTS with inner FILTER using pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "The inner FILTER can only use ?x if ?x is already bound.",
+  "rdflib_rowcount": 2
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T007",
+  "slug": "f1_v7",
+  "category": "late_binding_absent_vars",
+  "title": "arm-local join plus absent VALUES variable",
+  "classification": "unsafe-drop-values",
+  "note": "Even when an arm has internal joins, late VALUES still binds absent variables.",
+  "rdflib_rowcount": 2
+}

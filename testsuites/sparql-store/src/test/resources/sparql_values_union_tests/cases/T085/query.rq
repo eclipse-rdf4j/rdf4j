@@ -1,0 +1,13 @@
+# T085 — nested union where one entire branch ignores VALUES variable
+# category: nested_unions
+# classification: unsafe-drop-values
+# note: The right subtree never mentions ?x but still needs the VALUES rows.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{{ ?s :p ?x } UNION { ?s :q ?o }} UNION {{ ?s :r ?o } UNION { ?s :v ?o }}
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

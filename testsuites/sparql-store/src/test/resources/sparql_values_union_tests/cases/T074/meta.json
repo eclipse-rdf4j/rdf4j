@@ -1,0 +1,9 @@
+{
+  "id": "T074",
+  "slug": "f10_v2",
+  "category": "aggregation_and_modifiers",
+  "title": "GROUP BY x after correlated VALUES",
+  "classification": "row-correlation",
+  "note": "If x/z are de-correlated, group counts change.",
+  "rdflib_rowcount": 2
+}

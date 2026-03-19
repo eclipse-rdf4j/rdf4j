@@ -1,0 +1,9 @@
+{
+  "id": "T102",
+  "slug": "f13_v6",
+  "category": "property_paths",
+  "title": "one-or-more path followed by BOUND filter",
+  "classification": "safe-must-bound",
+  "note": "Another safe case where the arm itself must bind ?x first.",
+  "rdflib_rowcount": 4
+}

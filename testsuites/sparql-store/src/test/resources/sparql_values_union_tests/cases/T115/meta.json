@@ -1,0 +1,9 @@
+{
+  "id": "T115",
+  "slug": "f15_v3",
+  "category": "undef_and_empty_values",
+  "title": "single UNDEF row on absent variable",
+  "classification": "undef-row",
+  "note": "UNDEF means one row with ?x unbound, not zero rows.",
+  "rdflib_rowcount": 4
+}

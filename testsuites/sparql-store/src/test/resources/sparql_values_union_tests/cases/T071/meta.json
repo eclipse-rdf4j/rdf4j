@@ -1,0 +1,9 @@
+{
+  "id": "T071",
+  "slug": "f9_v7",
+  "category": "subquery_scope_and_barriers",
+  "title": "subquery DISTINCT over hidden x",
+  "classification": "subquery-barrier",
+  "note": "DISTINCT is applied inside the subquery before the outer VALUES join.",
+  "rdflib_rowcount": 6
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T082",
+  "slug": "f11_v2",
+  "category": "nested_unions",
+  "title": "nested union with OPTIONAL arm",
+  "classification": "unsafe-prebind",
+  "note": "One nested arm contains a LeftJoin barrier while the others do not.",
+  "rdflib_rowcount": 5
+}

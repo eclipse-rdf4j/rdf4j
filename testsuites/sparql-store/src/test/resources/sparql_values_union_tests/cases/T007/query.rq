@@ -1,0 +1,13 @@
+# T007 — arm-local join plus absent VALUES variable
+# category: late_binding_absent_vars
+# classification: unsafe-drop-values
+# note: Even when an arm has internal joins, late VALUES still binds absent variables.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?t WHERE {
+{ ?s :p ?o . ?s :tag ?t } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?t), "")
+VALUES ?x { 1 }

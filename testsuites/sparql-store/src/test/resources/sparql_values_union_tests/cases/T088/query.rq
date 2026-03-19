@@ -1,0 +1,13 @@
+# T088 — nested union with duplicate VALUES rows
+# category: nested_unions
+# classification: bag-cardinality
+# note: Duplicates must be preserved through the whole nested UNION tree.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT (COUNT(*) AS ?count) WHERE {
+{{ ?s :p ?x } UNION { ?s :q ?o }} UNION { ?s :r ?o }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES ?x { 1 1 }

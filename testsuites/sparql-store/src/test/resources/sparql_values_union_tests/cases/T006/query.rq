@@ -1,0 +1,13 @@
+# T006 — empty-group arm still cross joins with VALUES
+# category: late_binding_absent_vars
+# classification: unsafe-drop-values
+# note: An empty/group expression arm produces one mapping that must be joined with every VALUES row.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?tag ?x ?s WHERE {
+{ BIND(:T AS ?tag) } UNION { ?s :p ?o }
+}
+ORDER BY COALESCE(STR(?tag), "") COALESCE(STR(?x), "") COALESCE(STR(?s), "")
+VALUES ?x { 1 2 }

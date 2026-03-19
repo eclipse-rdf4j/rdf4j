@@ -1,0 +1,13 @@
+# T024 — filter outside inner group stresses wrapper placement
+# category: filter_boundness
+# classification: filter-collection
+# note: Injecting VALUES into the same group without a wrapper can let the filter see ?x too early.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ { ?s :p ?o } FILTER(BOUND(?x)) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

@@ -1,0 +1,9 @@
+{
+  "id": "T041",
+  "slug": "f6_v1",
+  "category": "optional_leftjoin",
+  "title": "OPTIONAL binds pushed variable directly",
+  "classification": "unsafe-prebind",
+  "note": "A late incompatibility after OPTIONAL is not the same as an early no-match.",
+  "rdflib_rowcount": 4
+}

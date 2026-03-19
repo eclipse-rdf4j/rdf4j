@@ -1,0 +1,12 @@
+# T073 — COUNT(*) exposes duplicate VALUES rows
+# category: aggregation_and_modifiers
+# classification: bag-cardinality
+# note: Duplicate VALUES rows must duplicate solutions before COUNT(*).
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(*) AS ?count) WHERE {
+  { ?s :p ?x } UNION { ?s :q ?z }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES (?x ?z) { (1 10) (1 10) }

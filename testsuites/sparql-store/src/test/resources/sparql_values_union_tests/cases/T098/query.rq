@@ -1,0 +1,13 @@
+# T098 — inverse path arm
+# category: property_paths
+# classification: safe-path
+# note: Inverse path still binds ?x directly before any observing operator.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?x ^:next ?s } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { :b }

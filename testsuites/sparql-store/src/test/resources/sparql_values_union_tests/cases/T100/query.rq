@@ -1,0 +1,13 @@
+# T100 — alternative path arm
+# category: property_paths
+# classification: safe-path
+# note: Alternative paths stress arm analysis without adding extra barriers.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x WHERE {
+{ ?s (:p|:q) ?x } UNION { ?s :k ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "")
+VALUES ?x { 1 2 }

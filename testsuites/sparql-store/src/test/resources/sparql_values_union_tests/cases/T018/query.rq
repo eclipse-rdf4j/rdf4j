@@ -1,0 +1,13 @@
+# T018 — NOT BOUND filter sees early binding
+# category: filter_boundness
+# classification: unsafe-prebind
+# note: This is the complementary case to BOUND(?x).
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?o FILTER(!BOUND(?x)) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

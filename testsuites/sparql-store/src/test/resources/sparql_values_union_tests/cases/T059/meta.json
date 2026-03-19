@@ -1,0 +1,9 @@
+{
+  "id": "T059",
+  "slug": "f8_v3",
+  "category": "bind_extend",
+  "title": "BIND stringifies pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "The expression result changes from v0 to v1 under early binding.",
+  "rdflib_rowcount": 5
+}

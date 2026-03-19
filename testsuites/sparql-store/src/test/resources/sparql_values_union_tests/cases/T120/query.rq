@@ -1,0 +1,12 @@
+# T120 — duplicate UNDEF rows preserve bag counts
+# category: undef_and_empty_values
+# classification: bag-cardinality
+# note: Two UNDEF rows and one bound row are three distinct rows in the VALUES table.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(*) AS ?count) WHERE {
+  { ?s :p ?o } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?count), "")
+VALUES ?x { UNDEF UNDEF 1 }

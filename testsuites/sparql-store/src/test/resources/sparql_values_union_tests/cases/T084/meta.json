@@ -1,0 +1,9 @@
+{
+  "id": "T084",
+  "slug": "f11_v4",
+  "category": "nested_unions",
+  "title": "nested union with multi-column VALUES",
+  "classification": "row-correlation",
+  "note": "Correlation must survive recursive distribution through the nested UNION tree.",
+  "rdflib_rowcount": 10
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T077",
+  "slug": "f10_v5",
+  "category": "aggregation_and_modifiers",
+  "title": "HAVING depends on bag cardinality",
+  "classification": "bag-cardinality",
+  "note": "If duplicate handling is wrong, HAVING flips.",
+  "rdflib_rowcount": 2
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T036",
+  "slug": "f5_v4",
+  "category": "exists_not_exists",
+  "title": "NOT EXISTS with inner FILTER using pushed variable",
+  "classification": "unsafe-prebind",
+  "note": "Same issue in negative form.",
+  "rdflib_rowcount": 5
+}

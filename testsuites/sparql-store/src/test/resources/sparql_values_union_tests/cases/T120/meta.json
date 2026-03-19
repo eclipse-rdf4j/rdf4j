@@ -1,0 +1,9 @@
+{
+  "id": "T120",
+  "slug": "f15_v8",
+  "category": "undef_and_empty_values",
+  "title": "duplicate UNDEF rows preserve bag counts",
+  "classification": "bag-cardinality",
+  "note": "Two UNDEF rows and one bound row are three distinct rows in the VALUES table.",
+  "rdflib_rowcount": 3
+}

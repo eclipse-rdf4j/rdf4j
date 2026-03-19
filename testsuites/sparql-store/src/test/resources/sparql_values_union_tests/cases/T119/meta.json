@@ -1,0 +1,8 @@
+{
+  "id": "T119",
+  "slug": "f15_v7",
+  "category": "undef_and_empty_values",
+  "title": "empty VALUES across a nested union and subquery",
+  "classification": "empty-values",
+  "note": "Even complex patterns should still be annihilated by an empty VALUES join."
+}

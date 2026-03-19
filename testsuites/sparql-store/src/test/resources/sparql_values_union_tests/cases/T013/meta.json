@@ -1,0 +1,9 @@
+{
+  "id": "T013",
+  "slug": "f2_v5",
+  "category": "row_correlation_duplicates_undef",
+  "title": "UNDEF in second column",
+  "classification": "undef-correlation",
+  "note": "UNDEF means unbound, not a wildcard literal, and row correlation still matters.",
+  "rdflib_rowcount": 7
+}

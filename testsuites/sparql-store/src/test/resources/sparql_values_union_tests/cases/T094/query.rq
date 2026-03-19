@@ -1,0 +1,13 @@
+# T094 — inner VALUES feeding a BIND target that collides with outer variable
+# category: inner_values_interaction
+# classification: bind-target-barrier
+# note: Pushing outer ?x before BIND would make the target variable already in-scope.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?m ?o WHERE {
+{ VALUES ?m { 1 } ?s :p ?o BIND(?m AS ?x) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

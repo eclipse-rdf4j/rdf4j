@@ -1,0 +1,9 @@
+{
+  "id": "T070",
+  "slug": "f9_v6",
+  "category": "subquery_scope_and_barriers",
+  "title": "subquery HAVING depends on hidden-variable counts",
+  "classification": "subquery-barrier",
+  "note": "Early restriction can change which groups satisfy HAVING.",
+  "rdflib_rowcount": 3
+}

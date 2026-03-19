@@ -1,0 +1,9 @@
+{
+  "id": "T088",
+  "slug": "f11_v8",
+  "category": "nested_unions",
+  "title": "nested union with duplicate VALUES rows",
+  "classification": "bag-cardinality",
+  "note": "Duplicates must be preserved through the whole nested UNION tree.",
+  "rdflib_rowcount": 2
+}

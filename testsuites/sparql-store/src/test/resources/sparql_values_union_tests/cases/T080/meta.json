@@ -1,0 +1,9 @@
+{
+  "id": "T080",
+  "slug": "f10_v8",
+  "category": "aggregation_and_modifiers",
+  "title": "ORDER BY/OFFSET/LIMIT with duplicate rows",
+  "classification": "modifier-barrier",
+  "note": "Slicing is very sensitive to duplicate and correlation bugs.",
+  "rdflib_rowcount": 3
+}

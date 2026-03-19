@@ -1,0 +1,13 @@
+# T047 — safe OPTIONAL when left side already binds x
+# category: optional_leftjoin
+# classification: safe-must-bound
+# note: Here ?x is already bound on the left before the optional is evaluated.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?m WHERE {
+{ ?s :k ?x OPTIONAL { ?s :p ?m FILTER(?m = ?x) } } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?m), "")
+VALUES ?x { 1 }

@@ -1,0 +1,9 @@
+{
+  "id": "T127",
+  "slug": "f16_v7",
+  "category": "combined_stress",
+  "title": "aggregate subquery followed by MINUS",
+  "classification": "subquery-barrier",
+  "note": "This combines a hidden-variable aggregate barrier with the MINUS shared-variable trap.",
+  "rdflib_rowcount": 4
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T029",
+  "slug": "f4_v5",
+  "category": "function_error_sensitivity",
+  "title": "COALESCE chooses different branch after prebinding",
+  "classification": "unsafe-prebind",
+  "note": "Originally COALESCE picks 0; after prebinding it picks the VALUES term.",
+  "rdflib_rowcount": 2
+}

@@ -1,0 +1,9 @@
+{
+  "id": "T101",
+  "slug": "f13_v5",
+  "category": "property_paths",
+  "title": "zero-or-more path followed by filter",
+  "classification": "safe-must-bound",
+  "note": "The path binds ?x before FILTER sees it.",
+  "rdflib_rowcount": 5
+}

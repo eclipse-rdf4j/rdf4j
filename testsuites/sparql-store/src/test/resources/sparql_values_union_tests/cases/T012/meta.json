@@ -1,0 +1,9 @@
+{
+  "id": "T012",
+  "slug": "f2_v4",
+  "category": "row_correlation_duplicates_undef",
+  "title": "same z paired with different x values",
+  "classification": "row-correlation",
+  "note": "Same issue as above but keyed by the other column.",
+  "rdflib_rowcount": 7
+}

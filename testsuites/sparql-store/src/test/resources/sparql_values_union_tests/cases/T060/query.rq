@@ -1,0 +1,13 @@
+# T060 — BIND target collides with pushed variable
+# category: bind_extend
+# classification: bind-target-barrier
+# note: Prebinding ?x before this BIND makes Extend undefined / violates BIND scoping.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?o WHERE {
+{ ?s :p ?o BIND(1 AS ?x) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }

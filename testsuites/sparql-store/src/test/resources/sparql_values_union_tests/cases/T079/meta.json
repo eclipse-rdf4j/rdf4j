@@ -1,0 +1,9 @@
+{
+  "id": "T079",
+  "slug": "f10_v7",
+  "category": "aggregation_and_modifiers",
+  "title": "ORDER BY/LIMIT after VALUES join",
+  "classification": "modifier-barrier",
+  "note": "Wrong row formation changes the ordered slice.",
+  "rdflib_rowcount": 2
+}

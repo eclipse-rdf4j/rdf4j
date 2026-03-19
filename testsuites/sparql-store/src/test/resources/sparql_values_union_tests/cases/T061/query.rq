@@ -1,0 +1,13 @@
+# T061 — BIND arithmetic uses pushed variable
+# category: bind_extend
+# classification: unsafe-prebind
+# note: Arithmetic makes the changed value easy to observe.
+
+PREFIX : <http://example.com/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?s ?x ?sum ?o WHERE {
+{ ?s :p ?o BIND(?o + COALESCE(?x, 0) AS ?sum) } UNION { ?s :q ?o }
+}
+ORDER BY COALESCE(STR(?s), "") COALESCE(STR(?x), "") COALESCE(STR(?sum), "") COALESCE(STR(?o), "")
+VALUES ?x { 1 }
