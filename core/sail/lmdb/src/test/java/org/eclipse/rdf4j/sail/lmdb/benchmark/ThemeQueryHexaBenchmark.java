@@ -59,25 +59,25 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx32G" })
-@Measurement(iterations = 0, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class ThemeQueryBenchmark {
+public class ThemeQueryHexaBenchmark {
 
 	private static final String STORE_NAME = "lmdb";
 	private static final String TARGET_DIRECTORY_ROOT = "core/sail/lmdb/";
 	private static final File STORE_DIRECTORY;
 
 	static {
-		File target = new File("target", "lmdb-theme-query-benchmark");
+		File target = new File("target", "lmdb-theme-query-hexa-benchmark");
 		if (target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)) {
 			STORE_DIRECTORY = target;
 		} else {
 			// In case the benchmark is run from an IDE with a different working directory, we want to ensure the store
 			// directory is still in the target directory of the project.
-			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-benchmark");
+			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-hexa-benchmark");
 		}
 	}
 
@@ -90,12 +90,12 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-//			"0",
+			"0",
 			"1",
-//			"2",
-//			"3", "4",
-//			"5", "6", "7", "8",
-//			"9", "10"
+			"2",
+			"3", "4",
+			"5", "6", "7", "8",
+			"9", "10"
 	})
 	public int z_queryIndex;
 
@@ -121,7 +121,7 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark.explainQuery")
+				.include("ThemeQueryHexaBenchmark.explainQuery")
 				.forks(0)
 				.measurementIterations(1)
 				.measurementBatchSize(1)
@@ -144,6 +144,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setTripleIndexes("spoc,sopc,psoc,posc,ospc,opsc");
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
@@ -490,7 +491,7 @@ public class ThemeQueryBenchmark {
 
 	private static String[] paramValues(String fieldName) {
 		try {
-			var param = ThemeQueryBenchmark.class.getField(fieldName).getAnnotation(Param.class);
+			var param = ThemeQueryHexaBenchmark.class.getField(fieldName).getAnnotation(Param.class);
 			if (param == null) {
 				throw new IllegalStateException("Missing @Param annotation for field " + fieldName);
 			}

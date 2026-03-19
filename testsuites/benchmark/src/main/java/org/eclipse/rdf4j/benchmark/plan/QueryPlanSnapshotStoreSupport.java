@@ -79,7 +79,10 @@ final class QueryPlanSnapshotStoreSupport {
 			dataDirectory = Files.createTempDirectory("rdf4j-lmdb-plan-cli-");
 			deleteDataDirectory = true;
 		}
-		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		config.setForceSync(false);
+		config.setValueDBSize(1_073_741_824L); // 1 GiB
+		config.setTripleDBSize(config.getValueDBSize());
 		LmdbStore lmdbStore = new LmdbStore(dataDirectory.toFile(), config);
 		SailRepository repository = new SailRepository(lmdbStore);
 		return new StoreRuntime(repository, null, lmdbStore, config, dataDirectory, deleteDataDirectory);
