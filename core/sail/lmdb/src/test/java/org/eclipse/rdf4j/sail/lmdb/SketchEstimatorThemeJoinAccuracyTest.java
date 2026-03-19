@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -22,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -127,6 +130,55 @@ class SketchEstimatorThemeJoinAccuracyTest {
 								+ scenario.right + ", estimate=" + estimate + ", actual="
 								+ scenario.actualJoinCount() + ", error=" + relativeError);
 			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void plannerPrefersSelectiveChainEndForPathologicalLmdbJoin(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI biomarker = VF.createIRI("urn:biomarker");
+		IRI targetMarker = VF.createIRI("urn:marker:target");
+
+		try {
+			loadPathologicalChainData(repository, hasArm, hasResult, biomarker, targetMarker);
+
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			assertTrue(awaitJoinEstimationReady(statistics),
+					"LMDB evaluation statistics should expose join estimation after pathological-data load");
+
+			StatementPattern trialArmPattern = new StatementPattern(
+					Var.of("trial"),
+					Var.of("hasArmPredicate", hasArm),
+					Var.of("arm"),
+					Var.of("context", THEME_GRAPH));
+			StatementPattern armResultPattern = new StatementPattern(
+					Var.of("arm"),
+					Var.of("hasResultPredicate", hasResult),
+					Var.of("result"),
+					Var.of("context", THEME_GRAPH));
+			StatementPattern biomarkerPattern = new StatementPattern(
+					Var.of("result"),
+					Var.of("biomarkerPredicate", biomarker),
+					Var.of("targetMarker", targetMarker),
+					Var.of("context", THEME_GRAPH));
+
+			JoinOrderPlanner planner = (JoinOrderPlanner) statistics;
+			Optional<JoinOrderPlanner.JoinOrderPlan> plan = planner.planJoinOrder(
+					List.of(trialArmPattern, armResultPattern, biomarkerPattern),
+					Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+			assertTrue(plan.isPresent(), "Expected LMDB planner to produce a pathological-chain join order");
+			assertEquals(List.of(biomarkerPattern, armResultPattern, trialArmPattern), plan.get().getOrderedArgs(),
+					"Planner should seed from the selective chain tail before expanding toward the broad root");
 		} finally {
 			repository.shutDown();
 		}
@@ -234,6 +286,27 @@ class SketchEstimatorThemeJoinAccuracyTest {
 				System.out.println("Loading theme dataset: " + themeDataset);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
 				System.out.println("Finished loading theme dataset: " + themeDataset + " in " + started);
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadPathologicalChainData(SailRepository repository, IRI hasArm, IRI hasResult, IRI biomarker,
+			IRI targetMarker) {
+		try (var connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int trialIndex = 0; trialIndex < 8; trialIndex++) {
+				Resource trial = VF.createIRI("urn:pathological:trial:" + trialIndex);
+				for (int armIndex = 0; armIndex < 50; armIndex++) {
+					Resource arm = VF.createIRI("urn:pathological:arm:" + trialIndex + ':' + armIndex);
+					Resource result = VF.createIRI("urn:pathological:result:" + trialIndex + ':' + armIndex);
+					IRI marker = trialIndex == 0 && armIndex == 0
+							? targetMarker
+							: VF.createIRI("urn:pathological:marker:" + trialIndex + ':' + armIndex);
+					connection.add(trial, hasArm, arm, THEME_GRAPH);
+					connection.add(arm, hasResult, result, THEME_GRAPH);
+					connection.add(result, biomarker, marker, THEME_GRAPH);
+				}
 			}
 			connection.commit();
 		}

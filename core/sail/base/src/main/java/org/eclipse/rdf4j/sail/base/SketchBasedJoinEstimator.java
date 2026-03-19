@@ -89,6 +89,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.sail.base.sketchoptimizer.MessagePassingJoinPlanner;
+import org.eclipse.rdf4j.sail.base.sketchoptimizer.PatternSynopsisAdapter;
+import org.eclipse.rdf4j.sail.base.sketchoptimizer.StoreSynopsis;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -223,6 +226,8 @@ public class SketchBasedJoinEstimator {
 	private volatile boolean running;
 	private Thread refresher;
 	private volatile JoinStatsProvider learnedStatsProvider;
+	private volatile StoreSynopsis robustSynopsis;
+	private volatile boolean robustSynopsisFresh;
 
 	private long seenTriples = 0L;
 
@@ -1480,6 +1485,7 @@ public class SketchBasedJoinEstimator {
 		clearResidentTrackingForSlot(slotOf(tgt));
 		tgt.clear(); // wipe everything (add + del)
 		rebuildEpoch.incrementAndGet(); // mark rebuild in progress (odd epoch)
+		StoreSynopsis.Builder robustBuilder = new StoreSynopsis.Builder(nominalEntries, QUAD_SEED);
 
 		long seen = 0L;
 		long l = System.currentTimeMillis();
@@ -1496,6 +1502,10 @@ public class SketchBasedJoinEstimator {
 						synchronized (tgt) {
 							ingest(tgt, st, /* isDelete= */false);
 						}
+						robustBuilder.addStatement(valueFingerprint(str(st.getSubject())),
+								valueFingerprint(str(st.getPredicate())),
+								valueFingerprint(str(st.getObject())),
+								valueFingerprint(str(st.getContext())));
 					} catch (OutOfMemoryError oom) {
 						logger.warn(
 								"Out of memory while rebuilding estimator state; unloading sketches and deferring rebuild",
@@ -1529,6 +1539,8 @@ public class SketchBasedJoinEstimator {
 			approxStoreSize.set(seen);
 			sketchesLoaded = true;
 			rebuildRequired.set(false);
+			robustSynopsis = seen > 0 ? robustBuilder.build() : null;
+			robustSynopsisFresh = robustSynopsis != null;
 			dirty.set(true);
 			usingA = !usingA;
 
@@ -1599,6 +1611,7 @@ public class SketchBasedJoinEstimator {
 		String signature = sig(s, p, o, c);
 		churnSampler.recordAdd(signature, samplingInterval());
 		seenTriples = approxStoreSize.incrementAndGet();
+		invalidateRobustSynopsis();
 
 		try {
 			ingestIncremental(s, p, o, c, false);
@@ -1659,6 +1672,7 @@ public class SketchBasedJoinEstimator {
 		String signature = sig(s, p, o, c);
 		churnSampler.recordDelete(signature, samplingInterval());
 		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
+		invalidateRobustSynopsis();
 
 		try {
 			ingestIncremental(s, p, o, c, true);
@@ -2851,6 +2865,41 @@ public class SketchBasedJoinEstimator {
 		return new SketchJoinOrderReorderer(this).plan(args, initiallyBoundVars, algorithm);
 	}
 
+	boolean canUseRobustSketchOptimizer(Set<String> initiallyBoundVars) {
+		return getClass() == SketchBasedJoinEstimator.class && robustSynopsis != null && robustSynopsisFresh;
+	}
+
+	StoreSynopsis robustSynopsis() {
+		return robustSynopsis;
+	}
+
+	double filterMultiplierForSketchOptimizer(Filter filter, StatementPattern pattern) {
+		return resolveFilterMultiplier(filter, pattern);
+	}
+
+	PatternSynopsisAdapter newPatternSynopsisAdapter() {
+		StoreSynopsis synopsis = robustSynopsis;
+		if (synopsis == null) {
+			return null;
+		}
+		return new PatternSynopsisAdapter(synopsis, this::filterMultiplierForSketchOptimizer);
+	}
+
+	double estimateRobustCardinality(List<TupleExpr> tupleExprs, Set<String> initiallyBoundVars) {
+		if (!canUseRobustSketchOptimizer(initiallyBoundVars)) {
+			return -1.0d;
+		}
+		PatternSynopsisAdapter adapter = newPatternSynopsisAdapter();
+		if (adapter == null) {
+			return -1.0d;
+		}
+		Optional<PatternSynopsisAdapter.SupportedQuery> supported = adapter.adapt(tupleExprs, initiallyBoundVars);
+		if (supported.isEmpty()) {
+			return -1.0d;
+		}
+		return normalizeRows(new MessagePassingJoinPlanner(supported.get()).estimateRows());
+	}
+
 	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
 		TuplePlanEstimate estimate;
 		if (tupleExpr instanceof BindingSetAssignment) {
@@ -3181,6 +3230,10 @@ public class SketchBasedJoinEstimator {
 
 		Set<String> bound = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Collections.emptySet()
 				: Set.copyOf(initiallyBoundVars);
+		double robustRows = estimateRobustCardinality(tupleExprs, bound);
+		if (robustRows >= 0.0d) {
+			return robustRows;
+		}
 		TuplePlanEstimate currentEstimate = null;
 		for (TupleExpr tupleExpr : tupleExprs) {
 			TuplePlanEstimate nextEstimate = estimateTupleExprPlan(tupleExpr);
@@ -4267,6 +4320,7 @@ public class SketchBasedJoinEstimator {
 				boolean persisted = false;
 				if (hadDirty) {
 					compactPersistedBlobShards();
+					persistRobustSynopsisSnapshot();
 					persisted = true;
 				}
 				if (manifestDirty.get()) {
@@ -4308,6 +4362,7 @@ public class SketchBasedJoinEstimator {
 		}
 		seenTriples = 0L;
 		sketchesLoaded = false;
+		invalidateRobustSynopsis();
 		if (markRebuildRequired) {
 			rebuildRequired.set(true);
 		}
@@ -4326,6 +4381,7 @@ public class SketchBasedJoinEstimator {
 			}
 			try {
 				readManifest(persistenceFile);
+				loadRobustSynopsisSnapshot();
 				sketchesLoaded = true;
 				rebuildRequired.set(false);
 				dirty.set(false);
@@ -4335,6 +4391,7 @@ public class SketchBasedJoinEstimator {
 				if (isUnsupportedSnapshotVersion(t)) {
 					throw new IllegalStateException("Unsupported join estimator snapshot version", t);
 				}
+				invalidateRobustSynopsis();
 				rebuildRequired.set(true);
 				logger.warn("Failed to load join estimator state from {}", persistenceFile, t);
 				return false;
@@ -4358,8 +4415,47 @@ public class SketchBasedJoinEstimator {
 		return file != null && Files.isReadable(file);
 	}
 
+	private void invalidateRobustSynopsis() {
+		robustSynopsis = null;
+		robustSynopsisFresh = false;
+	}
+
+	private void persistRobustSynopsisSnapshot() throws IOException {
+		if (persistenceFile == null) {
+			return;
+		}
+		Path robustSnapshot = robustSnapshotPath(persistenceFile);
+		if (robustSynopsisFresh && robustSynopsis != null) {
+			robustSynopsis.writeTo(robustSnapshot);
+			return;
+		}
+		Files.deleteIfExists(robustSnapshot);
+	}
+
+	private void loadRobustSynopsisSnapshot() {
+		invalidateRobustSynopsis();
+		if (persistenceFile == null) {
+			return;
+		}
+		Path robustSnapshot = robustSnapshotPath(persistenceFile);
+		if (!hasSnapshotAvailable(robustSnapshot)) {
+			return;
+		}
+		try {
+			robustSynopsis = StoreSynopsis.readFrom(robustSnapshot);
+			robustSynopsisFresh = robustSynopsis != null;
+		} catch (IOException e) {
+			logger.warn("Failed to load robust sketch synopsis from {}", robustSnapshot, e);
+			invalidateRobustSynopsis();
+		}
+	}
+
 	private static Path sidecarPath(Path manifest) {
 		return manifest.resolveSibling(manifest.getFileName().toString() + ".sketches");
+	}
+
+	private static Path robustSnapshotPath(Path manifest) {
+		return manifest.resolveSibling(manifest.getFileName().toString() + ".rjms");
 	}
 
 	private static Path sidecarPath(Path baseBlob, int blobId) {

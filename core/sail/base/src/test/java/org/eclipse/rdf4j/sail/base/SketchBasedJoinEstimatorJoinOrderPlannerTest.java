@@ -470,6 +470,41 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void estimateRobustCardinalitySupportsInitiallyBoundVars() {
+		StubSailStore store = new StubSailStore();
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI biomarker = VF.createIRI("urn:biomarker");
+
+		for (int trialIndex = 0; trialIndex < 8; trialIndex++) {
+			Resource trial = VF.createIRI("urn:trial:" + trialIndex);
+			for (int armIndex = 0; armIndex < 50; armIndex++) {
+				Resource arm = VF.createIRI("urn:arm:" + trialIndex + ':' + armIndex);
+				Resource result = VF.createIRI("urn:result:" + trialIndex + ':' + armIndex);
+				Resource marker = VF.createIRI("urn:marker:" + trialIndex + ':' + armIndex);
+				store.add(VF.createStatement(trial, hasArm, arm));
+				store.add(VF.createStatement(arm, hasResult, result));
+				store.add(VF.createStatement(result, biomarker, marker));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
+		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
+		StatementPattern biomarkerPattern = pattern("result", biomarker, "marker");
+		List<TupleExpr> args = List.of(trialArmPattern, armResultPattern, biomarkerPattern);
+
+		double unboundRows = estimator.estimateRobustCardinality(args, Set.of());
+		double boundRows = estimator.estimateRobustCardinality(args, Set.of("trial", "marker"));
+
+		assertTrue(unboundRows >= 0.0d, "Expected robust estimator to support the unbound chain");
+		assertTrue(boundRows >= 0.0d, "Expected robust estimator to support outer bindings");
+		assertTrue(boundRows < unboundRows, "Outer bindings should reduce the robust row estimate");
+	}
+
+	@Test
 	void cardinalityJoinSupportsBindingSetAssignment() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
@@ -803,6 +838,91 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		assertAlgorithmOrder(args, estimator, JoinOrderPlanner.Algorithm.GREEDY, b, a, d, c);
 		assertAlgorithmOrder(args, estimator, JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, c, a, d, b);
+	}
+
+	@Test
+	void planJoinOrderReturnsEmptyWhenDynamicProgrammingRequestExceedsSupportedSize() {
+		StubSailStore store = new StubSailStore();
+		List<TupleExpr> args = new java.util.ArrayList<>();
+		for (int i = 0; i < 21; i++) {
+			IRI predicate = VF.createIRI("urn:p" + i);
+			store.add(VF.createStatement(VF.createIRI("urn:s" + i), predicate, VF.createIRI("urn:o" + i)));
+			args.add(pattern("s", predicate, "o" + i));
+		}
+
+		SketchBasedJoinEstimator estimator = new PrefixCostSketchBasedJoinEstimator(store, config(), Map.of());
+		estimator.rebuildOnceSlow();
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isEmpty(),
+				"Dynamic-programming requests beyond the supported subset-mask width must fall back through Optional.empty()");
+	}
+
+	@Test
+	void planJoinOrderFallsBackWhenRobustPlannerRejectsCycle() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+		IRI pC = VF.createIRI("urn:pC");
+
+		for (int i = 0; i < 32; i++) {
+			Resource x = VF.createIRI("urn:x" + i);
+			Resource y = VF.createIRI("urn:y" + i);
+			Resource z = VF.createIRI("urn:z" + i);
+			store.add(VF.createStatement(x, pA, y));
+			store.add(VF.createStatement(y, pB, z));
+			store.add(VF.createStatement(z, pC, x));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern a = pattern("x", pA, "y");
+		StatementPattern b = pattern("y", pB, "z");
+		StatementPattern c = pattern("z", pC, "x");
+		List<TupleExpr> args = List.of(a, b, c);
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY);
+
+		assertTrue(plan.isPresent(), "Cycle-shaped joins should fall back to the legacy planner");
+		assertEquals(args.size(), plan.get().getOrderedArgs().size());
+		assertTrue(plan.get().getOrderedArgs().containsAll(args));
+	}
+
+	@Test
+	void planJoinOrderFallsBackWhenRobustPlannerRejectsWrappedJoinSegment() {
+		StubSailStore store = new StubSailStore();
+		IRI pA = VF.createIRI("urn:pA");
+		IRI pB = VF.createIRI("urn:pB");
+		IRI pC = VF.createIRI("urn:pC");
+
+		for (int i = 0; i < 48; i++) {
+			Resource s = VF.createIRI("urn:s" + i);
+			Resource x = VF.createIRI("urn:x" + i);
+			Resource y = VF.createIRI("urn:y" + i);
+			store.add(VF.createStatement(s, pA, x));
+			store.add(VF.createStatement(x, pB, y));
+			store.add(VF.createStatement(y, pC, VF.createIRI("urn:z" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern a = pattern("s", pA, "x");
+		StatementPattern b = pattern("x", pB, "y");
+		StatementPattern c = pattern("y", pC, "z");
+		Filter wrappedJoin = new Filter(new Join(a, b),
+				new Compare(Var.of("y"), new ValueConstant(VF.createIRI("urn:y0")), Compare.CompareOp.EQ));
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(List.of(wrappedJoin, c), Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY);
+
+		assertTrue(plan.isPresent(), "Unsupported wrapped join segments should fall back to the legacy planner");
+		assertEquals(List.of(wrappedJoin, c), plan.get().getOrderedArgs(),
+				"Fallback should preserve the caller-visible join arguments");
 	}
 
 	private static void assertAlgorithmOrder(List<TupleExpr> args, SketchBasedJoinEstimator estimator,

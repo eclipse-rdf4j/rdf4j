@@ -21,6 +21,8 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.sail.base.sketchoptimizer.MessagePassingJoinPlanner;
+import org.eclipse.rdf4j.sail.base.sketchoptimizer.PatternSynopsisAdapter;
 
 /**
  * Dedicated join-order search for {@link SketchBasedJoinEstimator}.
@@ -49,6 +51,32 @@ final class SketchJoinOrderReorderer {
 
 		List<TupleExpr> expressions = List.copyOf(args);
 		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
+		Optional<JoinOrderPlanner.JoinOrderPlan> robustPlan = tryRobustPlan(expressions, bound, algorithm);
+		if (robustPlan != null) {
+			return robustPlan;
+		}
+
+		return legacyPlan(expressions, bound, algorithm);
+	}
+
+	private Optional<JoinOrderPlanner.JoinOrderPlan> tryRobustPlan(List<TupleExpr> expressions, Set<String> bound,
+			JoinOrderPlanner.Algorithm algorithm) {
+		if (!estimator.canUseRobustSketchOptimizer(bound)) {
+			return null;
+		}
+		PatternSynopsisAdapter adapter = estimator.newPatternSynopsisAdapter();
+		if (adapter == null) {
+			return null;
+		}
+		Optional<PatternSynopsisAdapter.SupportedQuery> supported = adapter.adapt(expressions, bound);
+		if (supported.isEmpty()) {
+			return null;
+		}
+		return new MessagePassingJoinPlanner(supported.get()).plan(algorithm);
+	}
+
+	private Optional<JoinOrderPlanner.JoinOrderPlan> legacyPlan(List<TupleExpr> expressions, Set<String> bound,
+			JoinOrderPlanner.Algorithm algorithm) {
 		List<Term> terms = new ArrayList<>(expressions.size());
 		for (int index = 0; index < expressions.size(); index++) {
 			SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(
@@ -58,11 +86,13 @@ final class SketchJoinOrderReorderer {
 			}
 			terms.add(new Term(index, estimate));
 		}
+		if (algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
+				&& terms.size() > MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS) {
+			return Optional.empty();
+		}
 
-		Plan bestPlan = algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
-				&& terms.size() <= MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS
-						? dynamicProgramming(terms)
-						: greedy(terms);
+		Plan bestPlan = algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING ? dynamicProgramming(terms)
+				: greedy(terms);
 
 		if (bestPlan == null) {
 			return Optional.empty();
