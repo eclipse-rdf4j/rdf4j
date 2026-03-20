@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -53,12 +54,13 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
+@Warmup(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
-@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Measurement(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -72,18 +74,20 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
+	@Param({
+			// "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+			"11", "12" })
 	public int z_queryIndex;
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 
@@ -97,7 +101,11 @@ public class ThemeQueryBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
 				.include("ThemeQueryBenchmark")
-				.forks(1)
+				.forks(0)
+				.measurementTime(TimeValue.milliseconds(1000))
+				.measurementIterations(10)
+				.measurementBatchSize(1)
+				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
 	}
@@ -116,6 +124,26 @@ public class ThemeQueryBenchmark {
 		ensureDataLoadedAndValidated();
 		if (QueryPlanCapture.isCaptureEnabled()) {
 			captureQueryPlanSnapshot();
+		}
+	}
+
+	@Benchmark
+	public long executeQuery() {
+		try (var connection = repository.getConnection()) {
+			long count;
+			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+			tupleQuery.setMaxExecutionTime(10);
+			try (var evaluate = tupleQuery.evaluate()) {
+				count = evaluate
+						.stream()
+						.count();
+			}
+
+			if (count != expected) {
+				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+			}
+
+			return count;
 		}
 	}
 
@@ -283,24 +311,6 @@ public class ThemeQueryBenchmark {
 		}
 		store = null;
 		storeConfig = null;
-	}
-
-	@Benchmark
-	public long executeQuery() {
-		try (var connection = repository.getConnection()) {
-			long count;
-			try (var evaluate = connection.prepareTupleQuery(query).evaluate()) {
-				count = evaluate
-						.stream()
-						.count();
-			}
-
-			if (count != expected) {
-				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
-			}
-
-			return count;
-		}
 	}
 
 	@Test
