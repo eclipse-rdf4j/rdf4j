@@ -131,8 +131,8 @@ public class TupleExprBuilderTest {
 		assertThat(group.getArg()).isInstanceOf(Join.class);
 
 		Join join = (Join) group.getArg();
-		assertThat(join.getRightArg()).isInstanceOf(BindingSetAssignment.class);
 		assertThat(join.getLeftArg()).isInstanceOf(org.eclipse.rdf4j.query.algebra.Union.class);
+		assertThat(join.getRightArg()).isInstanceOf(BindingSetAssignment.class);
 		assertThat(findNode(join.getLeftArg(), BindingSetAssignment.class)).isNull();
 	}
 
@@ -147,6 +147,33 @@ public class TupleExprBuilderTest {
 		Join join = (Join) bindings.getParentNode();
 
 		assertThat(join.getLeftArg()).isInstanceOf(org.eclipse.rdf4j.query.algebra.Union.class);
+	}
+
+	@Test
+	public void testQueryLevelValuesKeepAliasedSelectExpressionsOnJoinRight() throws Exception {
+		String query = "SELECT (?x + 1 AS ?y) WHERE {} VALUES ?x { 1 }";
+
+		ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+		TupleExpr tupleExpr = builder.visit(qc, null);
+
+		assertThat(tupleExpr).isInstanceOf(Projection.class);
+		Projection projection = (Projection) tupleExpr;
+		assertThat(projection.getArg()).isInstanceOf(Join.class);
+
+		Join join = (Join) projection.getArg();
+		assertThat(join.getLeftArg()).isInstanceOf(Extension.class);
+		assertThat(join.getRightArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(((Extension) join.getLeftArg()).getArg()).isInstanceOf(SingletonSet.class);
+	}
+
+	@Test
+	public void testQueryLevelValuesPreventProjectionAliasReuse() {
+		String query = "SELECT (?o AS ?x) WHERE { BIND(1 AS ?o) } VALUES ?x { 1 }";
+
+		assertThatExceptionOfType(VisitorException.class).isThrownBy(() -> {
+			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+			builder.visit(qc, null);
+		}).withMessageContaining("projection alias 'x' was previously used");
 	}
 
 	@Test

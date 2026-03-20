@@ -113,5 +113,4 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 
 		return (Join) tupleExpr;
 	}
-
 }

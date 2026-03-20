@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -45,14 +46,23 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(BindingSetAssignment bsa) {
-			Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
-			if (iter.hasNext()) {
-				BindingSet firstBindingSet = iter.next();
-				if (!iter.hasNext()) {
-					bindingSet = firstBindingSet;
+			bindingSet = getSingleBindingSet(bsa);
+			super.meet(bsa);
+		}
+
+		@Override
+		public void meet(Join join) {
+			if (join.isVariableScopeChange()) {
+				BindingSetAssignment bsa = getBindingSetAssignment(join);
+				if (bsa != null) {
+					BindingSet previousBindingSet = bindingSet;
+					bindingSet = getSingleBindingSet(bsa);
+					getOtherArg(join, bsa).visit(this);
+					bindingSet = previousBindingSet;
+					return;
 				}
 			}
-			super.meet(bsa);
+			super.meet(join);
 		}
 
 		@Override
@@ -89,6 +99,34 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 				}
 			}
 			super.meetNode(node);
+		}
+
+		private BindingSet getSingleBindingSet(BindingSetAssignment bsa) {
+			Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
+			if (iter.hasNext()) {
+				BindingSet firstBindingSet = iter.next();
+				if (!iter.hasNext()) {
+					return firstBindingSet;
+				}
+			}
+			return null;
+		}
+
+		private BindingSetAssignment getBindingSetAssignment(Join join) {
+			if (join.getLeftArg() instanceof BindingSetAssignment) {
+				return (BindingSetAssignment) join.getLeftArg();
+			}
+			if (join.getRightArg() instanceof BindingSetAssignment) {
+				return (BindingSetAssignment) join.getRightArg();
+			}
+			return null;
+		}
+
+		private TupleExpr getOtherArg(Join join, BindingSetAssignment bsa) {
+			if (join.getLeftArg() == bsa) {
+				return join.getRightArg();
+			}
+			return join.getLeftArg();
 		}
 	}
 }

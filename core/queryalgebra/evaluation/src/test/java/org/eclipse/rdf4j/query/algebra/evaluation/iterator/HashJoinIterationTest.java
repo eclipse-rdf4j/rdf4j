@@ -287,6 +287,7 @@ public class HashJoinIterationTest {
 
 		EvaluationStrategy parsedEvaluator = new StrictEvaluationStrategy(tripleSource, null);
 		ParsedQuery parsedQuery = new SPARQLParser().parseQuery(query, null);
+
 		Join join = findFirstNode(parsedQuery.getTupleExpr(), Join.class);
 
 		List<String> joinResults = new ArrayList<>();

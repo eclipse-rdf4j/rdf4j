@@ -641,7 +641,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 
 				// check if alias is not previously used.
-				if (result.getBindingNames().contains(alias)) {
+				if (result.getBindingNames().contains(alias)
+						|| queryLevelBindings != null && queryLevelBindings.getBindingNames().contains(alias)) {
 					throw new VisitorException("projection alias '" + alias + "' was previously used");
 				}
 

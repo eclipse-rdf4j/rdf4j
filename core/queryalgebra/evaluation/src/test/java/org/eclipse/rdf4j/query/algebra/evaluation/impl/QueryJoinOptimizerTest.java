@@ -198,7 +198,6 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		Group group = findFirstNode(optRoot, Group.class);
 		assertThat(group).isNotNull();
 		assertThat(group.getArg()).isInstanceOf(Join.class);
-
 		Join join = (Join) group.getArg();
 		assertThat(join.getRightArg()).isInstanceOf(BindingSetAssignment.class);
 		assertThat(join.getLeftArg()).isNotInstanceOf(BindingSetAssignment.class);

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -313,6 +314,60 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		StatementPattern sp = (StatementPattern) difference.getRightArg();
 		assertThat(sp.getSubjectVar().getName()).isEqualTo("s1");
 		assertThat(sp.getSubjectVar().getValue()).isNull();
+	}
+
+	@Test
+	public void testOptimize_QueryLevelValuesFilterExistsInlineIntoSubQuery() {
+		String query = "SELECT * WHERE { ?s1 ?p1 ?o1 . FILTER EXISTS { ?s1 ?p2 ?x } } VALUES ?x { <urn:a> }";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
+
+		assertThat(optimizedTree).isInstanceOf(Projection.class);
+
+		Projection projection = (Projection) optimizedTree;
+		Join join = (Join) projection.getArg();
+		assertThat(join.getRightArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(join.getLeftArg()).isInstanceOf(Filter.class);
+
+		Filter filter = (Filter) join.getLeftArg();
+		Exists exists = (Exists) filter.getCondition();
+		StatementPattern sp = (StatementPattern) exists.getSubQuery();
+		assertThat(sp.getObjectVar().getName()).isEqualTo("x");
+		assertThat(sp.getObjectVar().getValue()).isEqualTo(iri("urn:a"));
+	}
+
+	@Test
+	public void testOptimize_QueryLevelValuesInlineIntoAliasedProjectionExpression() {
+		String query = "SELECT (?x + 1 AS ?y) WHERE {} VALUES ?x { 1 }";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
+
+		assertThat(optimizedTree).isInstanceOf(Projection.class);
+
+		Projection projection = (Projection) optimizedTree;
+		Join join = (Join) projection.getArg();
+		assertThat(join.getRightArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(join.getLeftArg()).isInstanceOf(Extension.class);
+
+		Extension extension = (Extension) join.getLeftArg();
+		ExtensionElem extensionElem = extension.getElements().get(0);
+		MathExpr mathExpr = (MathExpr) extensionElem.getExpr();
+		Var leftArg = (Var) mathExpr.getLeftArg();
+		assertThat(leftArg.getName()).isEqualTo("x");
+		assertThat(leftArg.getValue()).isNotNull();
+		assertThat(leftArg.getValue().stringValue()).isEqualTo("1");
 	}
 
 	@Test
