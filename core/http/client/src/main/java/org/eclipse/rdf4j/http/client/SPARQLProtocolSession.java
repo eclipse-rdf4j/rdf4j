@@ -19,12 +19,10 @@ import java.io.StringReader;
 import java.io.Writer;
 import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
-import java.net.URISyntaxException;
 import java.nio.charset.Charset;
-import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -33,36 +31,6 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.http.Header;
-import org.apache.http.HeaderElement;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpException;
-import org.apache.http.HttpHost;
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.client.AuthCache;
-import org.apache.http.client.CredentialsProvider;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.entity.ContentType;
-import org.apache.http.impl.auth.BasicScheme;
-import org.apache.http.impl.client.BasicAuthCache;
-import org.apache.http.impl.client.BasicCookieStore;
-import org.apache.http.impl.client.SystemDefaultCredentialsProvider;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.params.BasicHttpParams;
-import org.apache.http.params.CoreConnectionPNames;
-import org.apache.http.params.HttpParams;
-import org.apache.http.protocol.HttpContext;
-import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.common.exception.RDF4JConfigException;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ByteSink;
@@ -70,6 +38,15 @@ import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.io.Sink;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
+import org.eclipse.rdf4j.http.client.spi.HttpClientHeader;
+import org.eclipse.rdf4j.http.client.spi.HttpClientRequest;
+import org.eclipse.rdf4j.http.client.spi.HttpClientRequestBody;
+import org.eclipse.rdf4j.http.client.spi.HttpClientRequests;
+import org.eclipse.rdf4j.http.client.spi.HttpClientResponse;
+import org.eclipse.rdf4j.http.client.spi.HttpClientResponses;
+import org.eclipse.rdf4j.http.client.spi.NameValuePair;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.client.spi.UriBuilder;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
@@ -170,13 +147,11 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	private String updateURL;
 
-	private HttpClient httpClient;
+	private RDF4JHttpClient httpClient;
 
 	private final BackgroundResultExecutor background;
 
-	private final HttpClientContext httpContext;
-
-	private HttpParams params;
+	private String authorizationHeader;
 
 	private ParserConfig parserConfig = new ParserConfig();
 
@@ -190,12 +165,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	private boolean passThroughEnabled = true;
 
-	public SPARQLProtocolSession(HttpClient client, ExecutorService executor) {
+	public SPARQLProtocolSession(RDF4JHttpClient client, ExecutorService executor) {
 		this.httpClient = client;
-		this.httpContext = new HttpClientContext();
 		this.background = new BackgroundResultExecutor(executor);
 		valueFactory = SimpleValueFactory.getInstance();
-		httpContext.setCookieStore(new BasicCookieStore());
 
 		// parser used for processing server response data should be lenient
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
@@ -215,12 +188,12 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	@Override
-	public final HttpClient getHttpClient() {
+	public final RDF4JHttpClient getHttpClient() {
 		return httpClient;
 	}
 
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		this.httpClient = httpClient;
 	}
 
@@ -316,26 +289,22 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	protected void setUsernameAndPasswordForUrl(String username, String password, String url) {
-
 		if (username != null && password != null) {
 			logger.debug("Setting username '{}' and password for server at {}.", username, url);
-			java.net.URI requestURI = java.net.URI.create(url);
-			String host = requestURI.getHost();
-			int port = requestURI.getPort();
-			AuthScope scope = new AuthScope(host, port);
-			UsernamePasswordCredentials cred = new UsernamePasswordCredentials(username, password);
-			CredentialsProvider credsProvider = new SystemDefaultCredentialsProvider();
-			credsProvider.setCredentials(scope, cred);
-			httpContext.setCredentialsProvider(credsProvider);
-			AuthCache authCache = new BasicAuthCache();
-			BasicScheme basicAuth = new BasicScheme();
-			HttpHost httpHost = new HttpHost(requestURI.getHost(), requestURI.getPort(), requestURI.getScheme());
-			authCache.put(httpHost, basicAuth);
-			httpContext.setAuthCache(authCache);
+			String encoded = Base64.getEncoder().encodeToString((username + ":" + password).getBytes(UTF8));
+			this.authorizationHeader = "Basic " + encoded;
 		} else {
-			httpContext.removeAttribute(HttpClientContext.AUTH_CACHE);
-			httpContext.removeAttribute(HttpClientContext.CREDS_PROVIDER);
+			this.authorizationHeader = null;
 		}
+	}
+
+	/**
+	 * Returns the current authorization header value, or {@code null} if no credentials have been set.
+	 *
+	 * @return the authorization header value, or {@code null}.
+	 */
+	protected String getAuthorizationHeader() {
+		return authorizationHeader;
 	}
 
 	public String getQueryURL() {
@@ -374,7 +343,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			boolean includeInferred, int maxQueryTime, WeakReference<?> callerRef, Binding... bindings)
 			throws IOException, RepositoryException,
 			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
-		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
+		HttpClientRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		return getBackgroundTupleQueryResult(method, callerRef);
 	}
 
@@ -382,7 +351,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			int maxQueryTime, TupleQueryResultHandler handler, Binding... bindings)
 			throws IOException, TupleQueryResultHandlerException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
-		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
+		HttpClientRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		getTupleQueryResult(method, handler);
 	}
 
@@ -395,7 +364,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	public void sendUpdate(QueryLanguage ql, String update, String baseURI, Dataset dataset, boolean includeInferred,
 			int maxQueryTime, Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
-		HttpUriRequest method = getUpdateMethod(ql, update, baseURI, dataset, includeInferred, maxQueryTime, bindings);
+		HttpClientRequest method = getUpdateMethod(ql, update, baseURI, dataset, includeInferred, maxQueryTime,
+				bindings);
 
 		try {
 			executeNoContent(method);
@@ -426,7 +396,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			throws IOException, RepositoryException,
 			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
 		try {
-			HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
+			HttpClientRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
 					bindings);
 			return getRDFBackground(method, false, callerRef);
 		} catch (RDFHandlerException e) {
@@ -444,7 +414,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	public void sendGraphQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset, boolean includeInferred,
 			int maxQueryTime, RDFHandler handler, Binding... bindings) throws IOException, RDFHandlerException,
 			RepositoryException, MalformedQueryException, UnauthorizedException, QueryInterruptedException {
-		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
+		HttpClientRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		getRDF(method, handler, false);
 	}
 
@@ -457,7 +427,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	public boolean sendBooleanQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, Binding... bindings) throws IOException, RepositoryException,
 			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
-		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
+		HttpClientRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		try {
 			return getBoolean(method);
 		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
@@ -490,38 +460,37 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 	}
 
-	protected HttpUriRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+	protected HttpClientRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, Binding... bindings) {
 		List<NameValuePair> queryParams = getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred,
 				maxQueryTime, bindings);
-		HttpUriRequest method;
-		String queryUrlWithParams;
-		try {
-			URIBuilder urib = new URIBuilder(getQueryURL());
-			for (NameValuePair nvp : queryParams) {
-				urib.addParameter(nvp.getName(), nvp.getValue());
-			}
-			queryUrlWithParams = urib.toString();
-		} catch (URISyntaxException e) {
-			throw new AssertionError(e);
+
+		UriBuilder urib = UriBuilder.from(getQueryURL());
+		for (NameValuePair nvp : queryParams) {
+			urib.addParameter(nvp.getName(), nvp.getValue());
 		}
+		String queryUrlWithParams = urib.toString();
+
+		HttpClientRequest.Builder builder;
 		if (shouldUsePost(queryUrlWithParams)) {
 			// we just built up a URL for nothing. oh well.
 			// It's probably not much overhead against
 			// the poor triplestore having to process such as massive query
-			HttpPost postMethod = new HttpPost(getQueryURL());
-			postMethod.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
-			postMethod.setEntity(new UrlEncodedFormEntity(queryParams, UTF8));
-			method = postMethod;
+			builder = HttpClientRequests.post(getQueryURL())
+					.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
+					.body(HttpClientRequestBody.ofFormData(queryParams));
 		} else {
-			method = new HttpGet(queryUrlWithParams);
+			builder = HttpClientRequests.get(queryUrlWithParams);
 		}
-		// functionality to provide custom http headers as required by the
-		// applications
+
+		// functionality to provide custom http headers as required by the applications
 		for (Map.Entry<String, String> additionalHeader : additionalHttpHeaders.entrySet()) {
-			method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
+			builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 		}
-		return method;
+		if (authorizationHeader != null) {
+			builder.header("Authorization", authorizationHeader);
+		}
+		return builder.build();
 	}
 
 	/**
@@ -533,29 +502,29 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		return fullQueryUrl.length() > maximumUrlLength;
 	}
 
-	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+	protected HttpClientRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
 			boolean includeInferred, Binding... bindings) {
 		return getUpdateMethod(ql, update, baseURI, dataset, includeInferred, 0, bindings);
 	}
 
-	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+	protected HttpClientRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, Binding... bindings) {
-		HttpPost method = new HttpPost(getUpdateURL());
-
-		method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
-
 		List<NameValuePair> queryParams = getUpdateMethodParameters(ql, update, baseURI, dataset, includeInferred,
 				maxQueryTime, bindings);
 
-		method.setEntity(new UrlEncodedFormEntity(queryParams, UTF8));
+		HttpClientRequest.Builder builder = HttpClientRequests.post(getUpdateURL())
+				.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
+				.body(HttpClientRequestBody.ofFormData(queryParams));
 
 		if (this.additionalHttpHeaders != null) {
 			for (Map.Entry<String, String> additionalHeader : additionalHttpHeaders.entrySet()) {
-				method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
+				builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 			}
 		}
-
-		return method;
+		if (authorizationHeader != null) {
+			builder.header("Authorization", authorizationHeader);
+		}
+		return builder.build();
 	}
 
 	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
@@ -571,16 +540,15 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				// prepend query string with base URI declaration
 				query = "BASE <" + baseURI + "> \n" + query;
 			}
-			queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));
+			queryParams.add(NameValuePair.of(Protocol.QUERY_PARAM_NAME, query));
 		}
 
 		if (dataset != null) {
 			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
-				queryParams.add(
-						new BasicNameValuePair(Protocol.DEFAULT_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
+				queryParams.add(NameValuePair.of(Protocol.DEFAULT_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
 			}
 			for (IRI namedGraphURI : dataset.getNamedGraphs()) {
-				queryParams.add(new BasicNameValuePair(Protocol.NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
+				queryParams.add(NameValuePair.of(Protocol.NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
 			}
 		}
 
@@ -602,7 +570,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				// prepend update string with base URI declaration
 				update = "BASE <" + baseURI + "> \n" + update;
 			}
-			queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
+			queryParams.add(NameValuePair.of(Protocol.UPDATE_PARAM_NAME, update));
 			logger.debug("added update string {}", update);
 		}
 
@@ -620,7 +588,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 									dataset.getDefaultInsertGraph(), graphURI);
 						}
 					}
-					queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(graphURI)));
+					queryParams.add(NameValuePair.of(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(graphURI)));
 				}
 			}
 
@@ -634,17 +602,16 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 					}
 				}
 
-				queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME,
+				queryParams.add(NameValuePair.of(Protocol.USING_GRAPH_PARAM_NAME,
 						String.valueOf(dataset.getDefaultInsertGraph())));
 			}
 
 			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
-				queryParams
-						.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
+				queryParams.add(NameValuePair.of(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
 			}
 			for (IRI namedGraphURI : dataset.getNamedGraphs()) {
 				queryParams.add(
-						new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
+						NameValuePair.of(Protocol.USING_NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
 			}
 		}
 
@@ -662,7 +629,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * @deprecated WeakReference<?> callerRef argument will be removed
 	 */
 	@Deprecated(since = "4.1.2")
-	protected TupleQueryResult getBackgroundTupleQueryResult(HttpUriRequest method, WeakReference<?> callerRef)
+	protected TupleQueryResult getBackgroundTupleQueryResult(HttpClientRequest method, WeakReference<?> callerRef)
 			throws RepositoryException, QueryInterruptedException, MalformedQueryException, IOException {
 
 		boolean submitted = false;
@@ -675,7 +642,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 		TupleQueryResult tRes;
 		// send the tuple query
-		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);
+		HttpClientResponse response = sendTupleQueryViaHttp(method, tqrFormats);
 		try {
 
 			// if we get here, HTTP code is 200
@@ -684,13 +651,14 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 					.orElseThrow(() -> new RepositoryException(
 							"Server responded with an unsupported file format: " + mimeType));
 			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
-			tRes = background.parse(parser, response.getEntity().getContent(), callerRef);
+			tRes = background.parse(parser, response.getBodyAsStream(), callerRef);
 			submitted = true;
 			return tRes;
 		} finally {
 			if (!submitted) {
-				EntityUtils.consumeQuietly(response.getEntity());
+				response.discardQuietly();
 			}
+			response.close();
 		}
 	}
 
@@ -698,7 +666,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Parse the response in this thread using the provided {@link TupleQueryResultHandler}. All HTTP connections are
 	 * closed and released in this method
 	 */
-	protected void getTupleQueryResult(HttpUriRequest method, TupleQueryResultHandler handler)
+	protected void getTupleQueryResult(HttpClientRequest method, TupleQueryResultHandler handler)
 			throws IOException, TupleQueryResultHandlerException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
 		// Specify which formats we support
@@ -708,8 +676,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 
 		// send the tuple query
-		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);
-		try {
+		try (HttpClientResponse response = sendTupleQueryViaHttp(method, tqrFormats)) {
 
 			// if we get here, HTTP code is 200
 			String mimeType = getResponseMIMEType(response);
@@ -726,7 +693,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				// we need to parse the result and re-serialize.
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
 				parser.setQueryResultHandler(handler);
-				parser.parseQueryResult(response.getEntity().getContent());
+				parser.parseQueryResult(response.getBodyAsStream());
 			} catch (QueryResultParseException e) {
 				throw new RepositoryException("Malformed query result from server", e);
 			} catch (QueryResultHandlerException e) {
@@ -736,8 +703,6 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 					throw new TupleQueryResultHandlerException(e);
 				}
 			}
-		} finally {
-			EntityUtils.consumeQuietly(response.getEntity());
 		}
 	}
 
@@ -748,12 +713,11 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 *
 	 * @param method
 	 * @throws RepositoryException
-	 * @throws HttpException
 	 * @throws IOException
 	 * @throws QueryInterruptedException
 	 * @throws MalformedQueryException
 	 */
-	private HttpResponse sendTupleQueryViaHttp(HttpUriRequest method, Set<QueryResultFormat> tqrFormats)
+	private HttpClientResponse sendTupleQueryViaHttp(HttpClientRequest method, Set<QueryResultFormat> tqrFormats)
 			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
 
 		final List<String> acceptValues = new ArrayList<>(tqrFormats.size());
@@ -777,10 +741,11 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			}
 		}
 
-		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptValues));
+		HttpClientRequest methodWithAccept = withHeader(method, ACCEPT_PARAM_NAME,
+				String.join(", ", acceptValues));
 
 		try {
-			return executeOK(method);
+			return executeOK(methodWithAccept);
 		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		} catch (RDF4JException e) {
@@ -795,7 +760,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * @deprecated WeakReference<?> callerRef argument will be removed
 	 */
 	@Deprecated(since = "4.1.2")
-	protected GraphQueryResult getRDFBackground(HttpUriRequest method, boolean requireContext,
+	protected GraphQueryResult getRDFBackground(HttpClientRequest method, boolean requireContext,
 			WeakReference<?> callerRef)
 			throws IOException, RDFHandlerException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
@@ -810,7 +775,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 		GraphQueryResult gRes;
 		// send the tuple query
-		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);
+		HttpClientResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);
 		try {
 
 			// if we get here, HTTP code is 200
@@ -828,34 +793,22 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			// defined not to have a charset
 			// This prevents errors caused by people erroneously attaching a
 			// charset to a binary formatted document
-			HttpEntity entity = response.getEntity();
-			if (format.hasCharset() && entity != null && entity.getContentType() != null) {
-				// TODO copied from SPARQLGraphQuery repository, is this
-				// required?
-				try {
-					charset = ContentType.parse(entity.getContentType().getValue()).getCharset();
-				} catch (IllegalCharsetNameException e) {
-					// work around for Joseki-3.2
-					// Content-Type: application/rdf+xml;
-					// charset=application/rdf+xml
-				}
+			if (format.hasCharset()) {
+				charset = getResponseCharset(response).orElse(null);
 				if (charset == null) {
 					charset = UTF8;
 				}
 			}
 
-			if (entity == null) {
-				throw new RepositoryException("Server response was empty.");
-			}
-
-			String baseURI = method.getURI().toASCIIString();
-			gRes = background.parse(parser, entity.getContent(), charset, baseURI, callerRef);
+			String baseURI = method.getUri().toASCIIString();
+			gRes = background.parse(parser, response.getBodyAsStream(), charset, baseURI, callerRef);
 			submitted = true;
 			return gRes;
 		} finally {
 			if (!submitted) {
-				EntityUtils.consumeQuietly(response.getEntity());
+				response.discardQuietly();
 			}
+			response.close();
 		}
 
 	}
@@ -864,7 +817,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Parse the response in this thread using the provided {@link RDFHandler}. All HTTP connections are closed and
 	 * released in this method
 	 */
-	protected void getRDF(HttpUriRequest method, RDFHandler handler, boolean requireContext)
+	protected void getRDF(HttpClientRequest method, RDFHandler handler, boolean requireContext)
 			throws IOException, RDFHandlerException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
 		// Specify which formats we support using Accept headers
@@ -874,8 +827,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 
 		// send the tuple query
-		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);
-		try {
+		try (HttpClientResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats)) {
 
 			String mimeType = getResponseMIMEType(response);
 			try {
@@ -893,31 +845,29 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				parser.setParserConfig(getParserConfig());
 				parser.setParseErrorListener(new ParseErrorLogger());
 				parser.setRDFHandler(handler);
-				parser.parse(response.getEntity().getContent(), method.getURI().toASCIIString());
+				parser.parse(response.getBodyAsStream(), method.getUri().toASCIIString());
 			} catch (RDFParseException e) {
 				throw new RepositoryException("Malformed query result from server", e);
 			}
-		} finally {
-			EntityUtils.consumeQuietly(response.getEntity());
 		}
 	}
 
 	/**
 	 * Pass through response content directly to the supplied sink if possible.
 	 *
-	 * @param response       the {@link HttpResponse} with the content.
+	 * @param response       the {@link HttpClientResponse} with the content.
 	 * @param responseFormat the format of the response.
 	 * @param sink           the {@link Sink} to pass the content through to.
 	 * @return {@code true} if the content was passed through, {@code false} otherwise.
 	 * @throws IOException
 	 */
-	private boolean passThrough(HttpResponse response, FileFormat responseFormat, Sink sink)
+	private boolean passThrough(HttpClientResponse response, FileFormat responseFormat, Sink sink)
 			throws IOException {
 		if (!isPassThroughEnabled()) {
 			return false;
 		}
 		if (sink.acceptsFileFormat(responseFormat)) {
-			InputStream in = response.getEntity().getContent();
+			InputStream in = response.getBodyAsStream();
 			if (sink instanceof CharSink) {
 				Writer out = ((CharSink) sink).getWriter();
 				IOUtils.copy(in, out,
@@ -935,15 +885,17 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		return false;
 	}
 
-	private HttpResponse sendGraphQueryViaHttp(HttpUriRequest method, boolean requireContext, Set<RDFFormat> rdfFormats)
+	private HttpClientResponse sendGraphQueryViaHttp(HttpClientRequest method, boolean requireContext,
+			Set<RDFFormat> rdfFormats)
 			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
 
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext, getPreferredRDFFormat());
 
-		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptParams));
+		HttpClientRequest methodWithAccept = withHeader(method, ACCEPT_PARAM_NAME,
+				String.join(", ", acceptParams));
 
 		try {
-			return executeOK(method);
+			return executeOK(methodWithAccept);
 		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		} catch (RDF4JException e) {
@@ -957,7 +909,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 *
 	 * @throws RDF4JException
 	 */
-	protected boolean getBoolean(HttpUriRequest method) throws IOException, RDF4JException {
+	protected boolean getBoolean(HttpClientRequest method) throws IOException, RDF4JException {
 		// Specify which formats we support using Accept headers
 		Set<QueryResultFormat> booleanFormats = BooleanQueryResultParserRegistry.getInstance().getKeys();
 		if (booleanFormats.isEmpty()) {
@@ -965,8 +917,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 
 		// send the tuple query
-		HttpResponse response = sendBooleanQueryViaHttp(method, booleanFormats);
-		try {
+		try (HttpClientResponse response = sendBooleanQueryViaHttp(method, booleanFormats)) {
 
 			// if we get here, HTTP code is 200
 			String mimeType = getResponseMIMEType(response);
@@ -977,18 +928,16 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(format);
 				QueryResultCollector results = new QueryResultCollector();
 				parser.setQueryResultHandler(results);
-				parser.parseQueryResult(response.getEntity().getContent());
+				parser.parseQueryResult(response.getBodyAsStream());
 				return results.getBoolean();
 			} catch (QueryResultParseException e) {
 				throw new RepositoryException("Malformed query result from server", e);
 			}
-		} finally {
-			EntityUtils.consumeQuietly(response.getEntity());
 		}
 
 	}
 
-	private HttpResponse sendBooleanQueryViaHttp(HttpUriRequest method, Set<QueryResultFormat> booleanFormats)
+	private HttpClientResponse sendBooleanQueryViaHttp(HttpClientRequest method, Set<QueryResultFormat> booleanFormats)
 			throws IOException, RDF4JException {
 
 		final List<String> acceptValues = new ArrayList<>(booleanFormats.size());
@@ -1013,9 +962,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			}
 		}
 
-		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptValues));
+		HttpClientRequest methodWithAccept = withHeader(method, ACCEPT_PARAM_NAME,
+				String.join(", ", acceptValues));
 
-		return executeOK(method);
+		return executeOK(methodWithAccept);
 	}
 
 	/**
@@ -1025,78 +975,64 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * @param method
 	 * @throws RDF4JException
 	 */
-	protected HttpResponse executeOK(HttpUriRequest method) throws IOException, RDF4JException {
+	protected HttpClientResponse executeOK(HttpClientRequest method) throws IOException, RDF4JException {
 		boolean fail = true;
-		HttpResponse response = execute(method);
+		HttpClientResponse response = execute(method);
 
 		try {
-			int httpCode = response.getStatusLine().getStatusCode();
+			int httpCode = response.getStatusCode();
 			if (httpCode == HttpURLConnection.HTTP_OK || httpCode == HttpURLConnection.HTTP_NOT_AUTHORITATIVE) {
 				fail = false;
 				return response; // everything OK, control flow can continue
 			} else {
 				// trying to contact a non-SPARQL server?
 				throw new RepositoryException("Request failed with status " + httpCode + ": "
-						+ method.getURI().toString());
+						+ method.getUri().toString());
 			}
 		} finally {
 			if (fail) {
-				EntityUtils.consumeQuietly(response.getEntity());
+				response.discardAndClose();
 			}
 		}
 	}
 
-	protected void executeNoContent(HttpUriRequest method) throws IOException, RDF4JException {
-		HttpResponse response = execute(method);
-		try {
-			if (response.getStatusLine().getStatusCode() >= 300) {
+	protected void executeNoContent(HttpClientRequest method) throws IOException, RDF4JException {
+		try (HttpClientResponse response = execute(method)) {
+			if (response.getStatusCode() >= 300) {
 				throw new RepositoryException("Failed to get server protocol; no such resource on this server: "
-						+ method.getURI().toString());
+						+ method.getUri().toString());
 			}
-		} finally {
-			EntityUtils.consume(response.getEntity());
 		}
 	}
 
-	protected HttpResponse execute(HttpUriRequest method) throws IOException, RDF4JException {
-		return executeWithRedirects(method, 5);
-	}
+	/**
+	 * Executes the given HTTP request and returns the response on success (2xx or 404).
+	 * <p>
+	 * The caller is responsible for closing the returned {@link HttpClientResponse}. On error (non-2xx other than 404)
+	 * the response is consumed and closed internally and an appropriate exception is thrown.
+	 *
+	 * @param request the request to execute
+	 * @return the response; the caller must close it after use
+	 * @throws IOException    if a network or I/O error occurs
+	 * @throws RDF4JException if the server reports a protocol-level error
+	 */
+	protected HttpClientResponse execute(HttpClientRequest request) throws IOException, RDF4JException {
 
-	private HttpResponse executeWithRedirects(HttpUriRequest method, int redirectsLeft)
-			throws IOException, RDF4JException {
-		boolean consume = true;
-		if (params != null) {
-			method.setParams(params);
+		HttpClientResponse response = httpClient.execute(request);
+		int httpCode = response.getStatusCode();
+		if (httpCode >= 200 && httpCode < 300 || httpCode == HttpURLConnection.HTTP_NOT_FOUND) {
+			return response;
 		}
-		HttpResponse response = httpClient.execute(method, httpContext);
+		boolean consumed = false;
 		try {
-			int httpCode = response.getStatusLine().getStatusCode();
-			if (httpCode >= 200 && httpCode < 300 || httpCode == HttpURLConnection.HTTP_NOT_FOUND) {
-				consume = false;
-				return response; // everything OK, control flow can continue
-			}
-
-			// Follow redirects for any method (preserving method and entity)
-			if (redirectsLeft > 0 && (httpCode == HttpURLConnection.HTTP_MOVED_PERM
-					|| httpCode == HttpURLConnection.HTTP_MOVED_TEMP || httpCode == 307 || httpCode == 308)) {
-				Header location = response.getFirstHeader("Location");
-				if (location != null) {
-					// consume and follow
-					EntityUtils.consumeQuietly(response.getEntity());
-					java.net.URI uri = java.net.URI.create(location.getValue());
-					HttpUriRequest redirect = RequestBuilder.copy(method).setUri(uri).build();
-					return executeWithRedirects(redirect, redirectsLeft - 1);
-				}
-			}
-
 			switch (httpCode) {
-			case HttpURLConnection.HTTP_UNAUTHORIZED: // 401
+			case HttpURLConnection.HTTP_UNAUTHORIZED:
 				throw new UnauthorizedException();
-			case HttpURLConnection.HTTP_UNAVAILABLE: // 503
+			case HttpURLConnection.HTTP_UNAVAILABLE:
 				throw new QueryInterruptedException();
 			default:
 				ErrorInfo errInfo = getErrorInfo(response);
-				// Throw appropriate exception
+				consumed = true;
 				if (errInfo.getErrorType() == ErrorType.MALFORMED_DATA) {
 					throw new RDFParseException(errInfo.getErrorMessage());
 				} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_FILE_FORMAT) {
@@ -1109,75 +1045,70 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 					RDFFormat format = getContentTypeSerialisation(response);
 					throw new RepositoryException(new RemoteShaclValidationException(
 							new StringReader(errInfo.toString()), "", format));
-
 				} else if (!errInfo.toString().isEmpty()) {
 					throw new RepositoryException(errInfo.toString());
 				} else {
-					throw new RepositoryException(response.getStatusLine().getReasonPhrase());
+					throw new RepositoryException(response.getReasonPhrase());
 				}
 			}
 		} finally {
-			if (consume) {
-				EntityUtils.consumeQuietly(response.getEntity());
+			if (!consumed) {
+				response.discardQuietly();
 			}
+			response.close();
 		}
 	}
 
-	static RDFFormat getContentTypeSerialisation(HttpResponse response) {
-		Header[] headers = response.getHeaders("Content-Type");
-
+	static RDFFormat getContentTypeSerialisation(HttpClientResponse response) {
 		Set<RDFFormat> rdfFormats = RDFParserRegistry.getInstance().getKeys();
 		if (rdfFormats.isEmpty()) {
 			throw new RepositoryException("No tuple RDF parsers have been registered");
 		}
 
-		for (Header header : headers) {
-			for (HeaderElement element : header.getElements()) {
-				// SHACL Validation report Content-Type gets transformed from:
-				// application/shacl-validation-report+n-quads => application/n-quads
-				// application/shacl-validation-report+ld+json => application/ld+json
-				// text/shacl-validation-report+turtle => text/turtle
+		for (HttpClientHeader header : response.getHeaders("Content-Type")) {
+			String headerValue = header.getValue();
+			// get the mime type part (before ';')
+			String mimeType = headerValue.split(";")[0].trim();
+			// SHACL Validation report Content-Type gets transformed from:
+			// application/shacl-validation-report+n-quads => application/n-quads
+			// application/shacl-validation-report+ld+json => application/ld+json
+			// text/shacl-validation-report+turtle => text/turtle
 
-				String[] split = element.getName().split("\\+");
-				StringBuilder serialisation = new StringBuilder(element.getName().split("/")[0] + "/");
-				for (int i = 1; i < split.length; i++) {
-					serialisation.append(split[i]);
-					if (i + 1 < split.length) {
-						serialisation.append("+");
-					}
+			String[] split = mimeType.split("\\+");
+			StringBuilder serialisation = new StringBuilder(mimeType.split("/")[0] + "/");
+			for (int i = 1; i < split.length; i++) {
+				serialisation.append(split[i]);
+				if (i + 1 < split.length) {
+					serialisation.append("+");
 				}
+			}
+			logger.debug("SHACL validation report is serialised as: " + serialisation);
 
-				logger.debug("SHACL validation report is serialised as: " + serialisation.toString());
+			Optional<RDFFormat> rdfFormat = RDFFormat.matchMIMEType(serialisation.toString(), rdfFormats);
 
-				Optional<RDFFormat> rdfFormat = RDFFormat.matchMIMEType(serialisation.toString(), rdfFormats);
-
-				if (rdfFormat.isPresent()) {
-					return rdfFormat.get();
-				}
+			if (rdfFormat.isPresent()) {
+				return rdfFormat.get();
 			}
 		}
 
 		throw new RepositoryException("Unsupported content-type for SHACL Validation Report: "
-				+ Arrays.toString(response.getHeaders("Content-Type"))
+				+ response.getHeaders("Content-Type")
 				+ "! If the format seems correct, then you may need a maven dependency for that.");
 
 	}
 
-	private static boolean contentTypeIs(HttpResponse response, String contentType) {
-		Header[] headers = response.getHeaders("Content-Type");
-		if (headers.length == 0) {
+	private static boolean contentTypeIs(HttpClientResponse response, String contentType) {
+		List<HttpClientHeader> headers = response.getHeaders("Content-Type");
+		if (headers.isEmpty()) {
 			return false;
 		}
-
-		for (Header header : headers) {
-			for (HeaderElement element : header.getElements()) {
-				String name = element.getName().split("\\+")[0];
-				if (contentType.equals(name)) {
-					return true;
-				}
+		for (HttpClientHeader header : headers) {
+			String mimeType = header.getValue().split(";")[0].trim();
+			String name = mimeType.split("\\+")[0];
+			if (contentType.equals(name)) {
+				return true;
 			}
 		}
-
 		return false;
 	}
 
@@ -1190,24 +1121,18 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * headers contain <var>Content-Type: application/xml;charset=UTF-8</var>, this method will return
 	 * <var>application/xml</var> as the MIME type.
 	 *
-	 * @param method The method to get the reponse MIME type from.
+	 * @param response The response to get the MIME type from.
 	 * @return The response MIME type, or <var>null</var> if not available.
 	 */
-	protected String getResponseMIMEType(HttpResponse method) throws IOException {
-		Header[] headers = method.getHeaders("Content-Type");
-
-		for (Header header : headers) {
-			HeaderElement[] headerElements = header.getElements();
-
-			for (HeaderElement headerEl : headerElements) {
-				String mimeType = headerEl.getName();
-				if (mimeType != null) {
-					logger.debug("response MIME type is {}", mimeType);
-					return mimeType;
-				}
+	protected String getResponseMIMEType(HttpClientResponse response) throws IOException {
+		List<HttpClientHeader> headers = response.getHeaders("Content-Type");
+		for (HttpClientHeader header : headers) {
+			String value = header.getValue().split(";")[0].trim();
+			if (!value.isEmpty()) {
+				logger.debug("response MIME type is {}", value);
+				return value;
 			}
 		}
-
 		return null;
 	}
 
@@ -1219,18 +1144,17 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * @param response the response to get the character encoding from.
 	 * @return the response character encoding, {@link Optional#empty()} if it can not be determined.
 	 */
-	Optional<Charset> getResponseCharset(HttpResponse response) {
-		Header[] headers = response.getHeaders("Content-Type");
-		for (Header header : headers) {
-			HeaderElement[] headerElements = header.getElements();
-
-			for (HeaderElement element : headerElements) {
-				NameValuePair charsetParam = element.getParameterByName("charset");
-				if (charsetParam != null) {
+	Optional<Charset> getResponseCharset(HttpClientResponse response) {
+		List<HttpClientHeader> headers = response.getHeaders("Content-Type");
+		for (HttpClientHeader header : headers) {
+			for (String part : header.getValue().split(";")) {
+				String trimmed = part.trim();
+				if (trimmed.startsWith("charset=")) {
+					String charsetName = trimmed.substring("charset=".length()).trim();
 					try {
-						Charset charset = Charset.forName(charsetParam.getValue());
+						Charset charset = Charset.forName(charsetName);
 						logger.debug("response charset is {}", charset);
-						return Optional.ofNullable(charset);
+						return Optional.of(charset);
 					} catch (IllegalArgumentException e) {
 						// continue
 					}
@@ -1240,9 +1164,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		return Optional.empty();
 	}
 
-	protected ErrorInfo getErrorInfo(HttpResponse response) throws RepositoryException {
+	protected ErrorInfo getErrorInfo(HttpClientResponse response) throws RepositoryException {
 		try {
-			ErrorInfo errInfo = ErrorInfo.parse(EntityUtils.toString(response.getEntity()));
+			String body = HttpClientResponses.toString(response);
+			ErrorInfo errInfo = ErrorInfo.parse(body);
 			logger.warn("Server reports problem: {} (enable debug logging for full details)", errInfo.getErrorType());
 			logger.debug("full error message: {}", errInfo.getErrorMessage());
 			return errInfo;
@@ -1269,37 +1194,6 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	/**
-	 * Gets the http connection read timeout in milliseconds.
-	 */
-	public long getConnectionTimeout() {
-		if (params == null) {
-			return 0;
-		}
-		return params.getIntParameter(CoreConnectionPNames.SO_TIMEOUT, 0);
-	}
-
-	/**
-	 * Sets the http connection read timeout.
-	 *
-	 * @param timeout timeout in milliseconds. Zero sets to infinity.
-	 */
-	public void setConnectionTimeout(long timeout) {
-		if (params == null) {
-			params = new BasicHttpParams();
-		}
-		params.setIntParameter(CoreConnectionPNames.SO_TIMEOUT, (int) timeout);
-	}
-
-	/**
-	 * Get the {@link HttpContext} used for sending HTTP requests.
-	 *
-	 * @return the {@link HttpContext} instance used for all protocol session requests.
-	 */
-	protected HttpContext getHttpContext() {
-		return this.httpContext;
-	}
-
-	/**
 	 * Indicates if direct pass-through of the endpoint result to the supplied {@link Sink} is enabled.
 	 *
 	 * @return the passThroughEnabled setting.
@@ -1317,5 +1211,21 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 */
 	public void setPassThroughEnabled(boolean passThroughEnabled) {
 		this.passThroughEnabled = passThroughEnabled;
+	}
+
+	/**
+	 * Creates a new {@link HttpClientRequest} with an additional header added to the existing request.
+	 *
+	 * @param request the original request
+	 * @param name    the header name
+	 * @param value   the header value
+	 * @return a new request with the additional header
+	 */
+	private static HttpClientRequest withHeader(HttpClientRequest request, String name, String value) {
+		HttpClientRequest.Builder builder = HttpClientRequest.newBuilder(request.getMethod(), request.getUri())
+				.headers(request.getHeaders())
+				.header(name, value);
+		request.getBody().ifPresent(builder::body);
+		return builder.build();
 	}
 }

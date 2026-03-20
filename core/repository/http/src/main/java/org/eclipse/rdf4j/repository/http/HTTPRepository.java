@@ -17,13 +17,13 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Value;
@@ -175,12 +175,12 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	@Override
-	public final HttpClient getHttpClient() {
+	public final RDF4JHttpClient getHttpClient() {
 		return getHttpClientSessionManager().getHttpClient();
 	}
 
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		SharedHttpClientSessionManager toSetDependentSessionManager = dependentSessionManager;
 		if (toSetDependentSessionManager == null) {
 			getHttpClientSessionManager();

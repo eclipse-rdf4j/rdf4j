@@ -12,6 +12,9 @@
 	<description>Client and protocol for repository communication over HTTP.</description>
 	<modules>
 		<module>protocol</module>
+		<module>client-api</module>
+		<module>client-jdk</module>
+		<module>client-apache5</module>
 		<module>client</module>
 	</modules>
 </project>

@@ -17,8 +17,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -37,7 +37,7 @@ public abstract class SPARQLOperation implements Operation {
 
 	private static final Executor executor = Executors.newCachedThreadPool();
 
-	protected HttpClient client;
+	protected RDF4JHttpClient client;
 
 	private final String url;
 
@@ -47,7 +47,7 @@ public abstract class SPARQLOperation implements Operation {
 
 	protected MapBindingSet bindings = new MapBindingSet();
 
-	protected SPARQLOperation(HttpClient client, String url, String base, String operation) {
+	protected SPARQLOperation(RDF4JHttpClient client, String url, String base, String operation) {
 		this.url = url;
 		this.operation = operation;
 		this.client = client;
