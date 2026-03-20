@@ -10,43 +10,24 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URI;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.http.HttpConnection;
-import org.apache.http.HttpRequest;
-import org.apache.http.HttpResponse;
-import org.apache.http.ProtocolException;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.HttpRequestRetryHandler;
-import org.apache.http.client.ServiceUnavailableRetryStrategy;
-import org.apache.http.client.config.CookieSpecs;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.client.utils.HttpClientUtils;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.DefaultRedirectStrategy;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.protocol.HttpContext;
-import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A Manager for HTTP sessions that uses a shared {@link HttpClient} to manage HTTP connections.
+ * A Manager for HTTP sessions that uses a shared {@link RDF4JHttpClient} to manage HTTP connections.
  *
  * @author James Leigh
  */
@@ -313,105 +294,16 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	/**
 	 * Independent life cycle
 	 */
-	private volatile HttpClient httpClient;
+	private volatile RDF4JHttpClient httpClient;
 
 	/**
-	 * Dependent life cycle
+	 * Dependent life cycle (created internally, closed by this manager)
 	 */
-	private volatile CloseableHttpClient dependentClient;
+	private volatile RDF4JHttpClient dependentClient;
 
 	private final ExecutorService executor;
 
-	/**
-	 * Optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if not provided externally)
-	 */
-	private volatile HttpClientBuilder httpClientBuilder;
-
 	private final Map<SPARQLProtocolSession, Boolean> openSessions = new ConcurrentHashMap<>();
-
-	private static final HttpRequestRetryHandler retryHandlerStale = new RetryHandlerStale();
-	private static final ServiceUnavailableRetryStrategy serviceUnavailableRetryHandler = new ServiceUnavailableRetryHandler();
-
-	/**
-	 * Retry handler: closes stale connections and suggests to simply retry the HTTP request once. Just closing the
-	 * stale connection is enough: the connection will be reopened elsewhere. This seems to be necessary for Jetty
-	 * 9.4.24+.
-	 * <p>
-	 * Other HTTP issues are considered to be more severe, so these requests are not retried.
-	 */
-	private static class RetryHandlerStale implements HttpRequestRetryHandler {
-		private final Logger logger = LoggerFactory.getLogger(RetryHandlerStale.class);
-
-		@Override
-		public boolean retryRequest(IOException ioe, int count, HttpContext context) {
-			// only try this once
-			if (count > 1) {
-				return false;
-			}
-			HttpClientContext clientContext = HttpClientContext.adapt(context);
-			HttpConnection conn = clientContext.getConnection();
-			if (conn != null) {
-				synchronized (this) {
-					if (conn.isStale()) {
-						try {
-							logger.warn("Closing stale connection");
-							conn.close();
-							return true;
-						} catch (IOException e) {
-							logger.error("Error closing stale connection", e);
-						}
-					}
-				}
-			}
-			return false;
-		}
-	}
-
-	private static class ServiceUnavailableRetryHandler implements ServiceUnavailableRetryStrategy {
-		private final Logger logger = LoggerFactory.getLogger(ServiceUnavailableRetryHandler.class);
-
-		@Override
-		public boolean retryRequest(HttpResponse response, int executionCount, HttpContext context) {
-			// only retry on HTTP 408 (Request Timeout)
-			if (response.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CLIENT_TIMEOUT) {
-				return false;
-			}
-
-			// when `keepAlive` is disabled every connection is fresh (with the default `useSystemProperties` http
-			// client configuration we use), a 408 in that case is an unexpected issue we don't handle here
-			String keepAlive = System.getProperty("http.keepAlive", "true");
-			if (!"true".equalsIgnoreCase(keepAlive)) {
-				return false;
-			}
-
-			// Worst case, the connection pool is filled to the max and all of them idled out on the server already
-			// We then need to clean up the pool and retry with a fresh connection. Hence, we need at most
-			// pooledConnections + 1 retries.
-			int pooledConnections = MAX_CONN_PER_ROUTE;
-			if (executionCount > (pooledConnections + 1)) {
-				return false;
-			}
-
-			HttpClientContext clientContext = HttpClientContext.adapt(context);
-			HttpConnection conn = clientContext.getConnection();
-
-			synchronized (this) {
-				try {
-					logger.info("Cleaning up closed connection");
-					conn.close();
-					return true;
-				} catch (IOException e) {
-					logger.error("Error cleaning up closed connection", e);
-				}
-			}
-			return false;
-		}
-
-		@Override
-		public long getRetryInterval() {
-			return 1000;
-		}
-	}
 
 	/*--------------*
 	 * Constructors *
@@ -433,15 +325,14 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		this.executor = threadPoolExecutor;
 	}
 
-	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,
-			ScheduledExecutorService dependentExecutorService) {
+	public SharedHttpClientSessionManager(RDF4JHttpClient dependentClient, ExecutorService dependentExecutorService) {
 		this.httpClient = this.dependentClient = Objects.requireNonNull(dependentClient, "HTTP client was null");
 		this.executor = Objects.requireNonNull(dependentExecutorService, "Executor service was null");
 	}
 
 	@Override
-	public HttpClient getHttpClient() {
-		HttpClient result = httpClient;
+	public RDF4JHttpClient getHttpClient() {
+		RDF4JHttpClient result = httpClient;
 		if (result == null) {
 			synchronized (this) {
 				result = httpClient;
@@ -453,32 +344,29 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		return result;
 	}
 
-	/**
-	 * @param httpClient The httpClient to use for remote/service calls.
-	 */
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		synchronized (this) {
 			this.httpClient = Objects.requireNonNull(httpClient, "HTTP Client cannot be null");
-			// If they set a client, we need to check whether we need to
-			// close any existing dependentClient
-			CloseableHttpClient toCloseDependentClient = dependentClient;
+			// If they set a client, we need to check whether we need to close any existing dependentClient
+			RDF4JHttpClient toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
-				HttpClientUtils.closeQuietly(toCloseDependentClient);
+				toCloseDependentClient.close();
 			}
 		}
 	}
 
 	/**
-	 * Set an optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if the latter is not provided
+	 * Set an optional {@link RDF4JHttpClientConfig} to be used when creating the inner HTTP client (if not provided
 	 * externally as dependent client).
 	 *
-	 * @param httpClientBuilder the builder for the managed HttpClient
-	 * @see HttpClientBuilders
+	 * @param config the configuration for the managed HTTP client
 	 */
-	public void setHttpClientBuilder(HttpClientBuilder httpClientBuilder) {
-		this.httpClientBuilder = httpClientBuilder;
+	public void setHttpClientConfig(RDF4JHttpClientConfig config) {
+		this.currentConnectionTimeout = config.getConnectTimeoutMs();
+		this.currentConnectionRequestTimeout = config.getConnectionRequestTimeoutMs();
+		this.currentSocketTimeout = config.getSocketTimeoutMs();
 	}
 
 	@Override
@@ -529,10 +417,10 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 					logger.error(e.toString(), e);
 				}
 			});
-			CloseableHttpClient toCloseDependentClient = dependentClient;
+			RDF4JHttpClient toCloseDependentClient = dependentClient;
 			dependentClient = null;
 			if (toCloseDependentClient != null) {
-				HttpClientUtils.closeQuietly(toCloseDependentClient);
+				toCloseDependentClient.close();
 			}
 		} finally {
 			// Shutdown the executor
@@ -568,73 +456,25 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		return this.executor;
 	}
 
-	private CloseableHttpClient createHttpClient() {
-
-		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
-		if (nextHttpClientBuilder != null) {
-			return nextHttpClientBuilder.build();
-		}
-
-		RequestConfig requestConfig = getDefaultRequestConfig();
-
-		return HttpClientBuilder.create()
-				.evictExpiredConnections()
-				.evictIdleConnections(30, TimeUnit.MINUTES)
-				.setRetryHandler(retryHandlerStale)
-				.setServiceUnavailableRetryStrategy(serviceUnavailableRetryHandler)
-				.setMaxConnPerRoute(MAX_CONN_PER_ROUTE)
-				.setMaxConnTotal(MAX_CONN_TOTAL)
-				.useSystemProperties()
-				.setRedirectStrategy(new SameMethodRedirectStrategy())
-				.setDefaultRequestConfig(requestConfig)
-				.build();
+	private RDF4JHttpClient createHttpClient() {
+		RDF4JHttpClientConfig config = getDefaultHttpClientConfig();
+		return RDF4JHttpClients.newDefaultClient(config);
 	}
 
 	/**
-	 * Returns the default {@link RequestConfig} using the currently set timeout values.
+	 * Returns the default {@link RDF4JHttpClientConfig} using the currently set timeout values.
 	 *
-	 * @return a configured {@link RequestConfig} with the current timeouts.
+	 * @return a configured {@link RDF4JHttpClientConfig} with the current timeouts.
 	 */
-	public RequestConfig getDefaultRequestConfig() {
-		return RequestConfig.custom()
-				.setConnectTimeout(currentConnectionTimeout)
-				.setConnectionRequestTimeout(currentConnectionRequestTimeout)
-				.setSocketTimeout(currentSocketTimeout)
-				.setRedirectsEnabled(true)
-				.setRelativeRedirectsAllowed(true)
-				.setExpectContinueEnabled(true)
-				.setCookieSpec(CookieSpecs.STANDARD)
+	public RDF4JHttpClientConfig getDefaultHttpClientConfig() {
+		return RDF4JHttpClientConfig.newBuilder()
+				.connectTimeoutMs(currentConnectionTimeout)
+				.connectionRequestTimeoutMs(currentConnectionRequestTimeout)
+				.socketTimeoutMs(currentSocketTimeout)
+				.maxConnectionsPerRoute(MAX_CONN_PER_ROUTE)
+				.maxConnectionsTotal(MAX_CONN_TOTAL)
+				.followRedirects(true)
 				.build();
-	}
-
-	/**
-	 * Redirect strategy that follows 301/302/307/308 for any HTTP method and preserves the original method and entity.
-	 */
-	private static class SameMethodRedirectStrategy extends DefaultRedirectStrategy {
-		private static final String[] REDIRECT_METHODS = new String[] { "GET", "HEAD", "POST", "PUT", "DELETE",
-				"PATCH" };
-
-		@Override
-		protected boolean isRedirectable(String method) {
-			for (String m : REDIRECT_METHODS) {
-				if (m.equalsIgnoreCase(method)) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		@Override
-		public HttpUriRequest getRedirect(HttpRequest request,
-				HttpResponse response, HttpContext context)
-				throws ProtocolException {
-			URI uri = getLocationURI(request, response, context);
-			// Preserve original method and entity
-			RequestBuilder rb = RequestBuilder
-					.copy(request);
-			rb.setUri(uri);
-			return rb.build();
-		}
 	}
 
 	/**

@@ -13,15 +13,13 @@ package org.eclipse.rdf4j.http.client;
 
 import static org.eclipse.rdf4j.http.protocol.Protocol.TRANSACTION_SETTINGS_PREFIX;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.net.HttpURLConnection;
-import java.net.URISyntaxException;
+import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -37,32 +35,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.http.Header;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.HttpDelete;
-import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.entity.AbstractHttpEntity;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.InputStreamEntity;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.message.BasicHeader;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+import org.eclipse.rdf4j.http.client.spi.HttpRequest;
+import org.eclipse.rdf4j.http.client.spi.HttpRequestBody;
+import org.eclipse.rdf4j.http.client.spi.HttpRequests;
+import org.eclipse.rdf4j.http.client.spi.HttpResponse;
+import org.eclipse.rdf4j.http.client.spi.HttpUtils;
+import org.eclipse.rdf4j.http.client.spi.NameValuePair;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.client.spi.UriBuilder;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -129,15 +113,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	private long pingDelay = PINGDELAY;
 
-	/**
-	 * @deprecated Use {@link #RDF4JProtocolSession(HttpClient, ExecutorService)} instead
-	 */
-	@Deprecated(since = "3.6.2")
-	public RDF4JProtocolSession(HttpClient client, ScheduledExecutorService executor) {
-		this(client, (ExecutorService) executor);
-	}
-
-	public RDF4JProtocolSession(HttpClient client, ExecutorService executor) {
+	public RDF4JProtocolSession(RDF4JHttpClient client, ExecutorService executor) {
 		super(client, executor);
 
 		// we want to preserve bnode ids to allow RDF4J API methods to match
@@ -250,7 +226,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			RepositoryException, UnauthorizedException, QueryInterruptedException {
 		checkServerURL();
 
-		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getRepositoriesLocation(serverURL)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getRepositoriesLocation(serverURL)))
+				.build();
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -258,8 +236,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			// This shouldn't happen as no queries are involved
 			logger.warn("Server reported unexpected malfored query error", e);
 			throw new RepositoryException(e.getMessage(), e);
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -270,16 +246,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	public String getServerProtocol() throws IOException, RepositoryException, UnauthorizedException {
 		checkServerURL();
 
-		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getProtocolLocation(serverURL)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getProtocolLocation(serverURL)))
+				.build();
 
-		try {
-			return EntityUtils.toString(executeOK(method).getEntity());
+		try (HttpResponse response = executeOK(method)) {
+			return HttpUtils.toString(response);
 		} catch (RepositoryException e) {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -296,30 +272,30 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 			String baseLocation = useTransaction ? appendAction(transactionURL, Action.SIZE)
 					: Protocol.getSizeLocation(getQueryURL());
-			URIBuilder url = new URIBuilder(baseLocation);
+			UriBuilder url = UriBuilder.from(baseLocation);
 
 			String[] encodedContexts = Protocol.encodeContexts(contexts);
 			for (int i = 0; i < encodedContexts.length; i++) {
 				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContexts[i]);
 			}
 
-			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
-			applyAdditionalHeaders(method);
+			HttpRequest method;
+			if (useTransaction) {
+				method = applyAdditionalHeaders(HttpRequests.put(url.build())).build();
+			} else {
+				method = applyAdditionalHeaders(HttpRequests.get(url.build())).build();
+			}
 
-			try {
-				String response = EntityUtils.toString(executeOK(method).getEntity());
+			try (HttpResponse response = executeOK(method)) {
+				String responseText = HttpUtils.toString(response);
 				pingTransaction();
 
 				try {
-					return Long.parseLong(response);
+					return Long.parseLong(responseText);
 				} catch (NumberFormatException e) {
-					throw new RepositoryException("Server responded with invalid size value: " + response);
+					throw new RepositoryException("Server responded with invalid size value: " + responseText);
 				}
-			} finally {
-				method.reset();
 			}
-		} catch (URISyntaxException e) {
-			throw new AssertionError(e);
 		} catch (RepositoryException e) {
 			throw e;
 		} catch (RDF4JException e) {
@@ -342,22 +318,19 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		config.export(model, ctx);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		Rio.write(model, baos, getPreferredRDFFormat());
+		byte[] bytes = baos.toByteArray();
 
-		HttpEntityEnclosingRequestBase method = null;
-		try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
-			HttpEntity entity = new InputStreamEntity(contents, -1,
-					ContentType.parse(getPreferredRDFFormat().getDefaultMIMEType()));
-			method = applyAdditionalHeaders(new HttpPut(baseURI));
-			method.setEntity(entity);
-			executeNoContent((HttpUriRequest) method);
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.put(baseURI)
+						.body(HttpRequestBody.ofBytes(bytes, getPreferredRDFFormat().getDefaultMIMEType())))
+				.build();
+
+		try {
+			executeNoContent(method);
 		} catch (RepositoryException | RDFParseException e) {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			if (method != null) {
-				method.reset();
-			}
 		}
 	}
 
@@ -376,29 +349,27 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		config.export(model, ctx);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		Rio.write(model, baos, getPreferredRDFFormat());
+		byte[] bytes = baos.toByteArray();
 
-		HttpEntityEnclosingRequestBase method = null;
-		try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
-			HttpEntity entity = new InputStreamEntity(contents, -1,
-					ContentType.parse(getPreferredRDFFormat().getDefaultMIMEType()));
-			method = applyAdditionalHeaders(new HttpPost(Protocol.getRepositoryConfigLocation(baseURI)));
-			method.setEntity(entity);
-			executeNoContent((HttpUriRequest) method);
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.post(Protocol.getRepositoryConfigLocation(baseURI))
+						.body(HttpRequestBody.ofBytes(bytes, getPreferredRDFFormat().getDefaultMIMEType())))
+				.build();
+
+		try {
+			executeNoContent(method);
 		} catch (RepositoryException | RDFParseException e) {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			if (method != null) {
-				method.reset();
-			}
 		}
 	}
 
 	public void deleteRepository(String repositoryID) throws IOException, RepositoryException {
 
-		HttpDelete method = applyAdditionalHeaders(
-				new HttpDelete(Protocol.getRepositoryLocation(serverURL, repositoryID)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.delete(Protocol.getRepositoryLocation(serverURL, repositoryID)))
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -406,8 +377,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -426,23 +395,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			QueryInterruptedException, RDFHandlerException, RepositoryException, IOException {
 		checkRepositoryURL();
 
+		String baseLocation = Protocol.getRepositoryConfigLocation(getRepositoryURL());
+		UriBuilder url = UriBuilder.from(baseLocation);
+
+		HttpRequest method = applyAdditionalHeaders(HttpRequests.get(url.build())).build();
+
 		try {
-			String baseLocation = Protocol.getRepositoryConfigLocation(getRepositoryURL());
-			URIBuilder url = new URIBuilder(baseLocation);
-
-			HttpRequestBase method = new HttpGet(url.build());
-			method = applyAdditionalHeaders(method);
-
-			try {
-				getRDF(method, statementCollector, true);
-			} catch (MalformedQueryException e) {
-				logger.warn("Server reported unexpected malformed query error", e);
-				throw new RepositoryException(e.getMessage(), e);
-			} finally {
-				method.reset();
-			}
-		} catch (URISyntaxException e) {
-			throw new AssertionError(e);
+			getRDF(method, statementCollector, true);
+		} catch (MalformedQueryException e) {
+			logger.warn("Server reported unexpected malformed query error", e);
+			throw new RepositoryException(e.getMessage(), e);
 		}
 	}
 
@@ -466,39 +428,36 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			RepositoryException, UnauthorizedException, QueryInterruptedException {
 		checkRepositoryURL();
 
-		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getNamespacesLocation(getQueryURL())));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getNamespacesLocation(getQueryURL())))
+				.build();
 
 		try {
 			getTupleQueryResult(method, handler);
 		} catch (MalformedQueryException e) {
 			logger.warn("Server reported unexpected malfored query error", e);
 			throw new RepositoryException(e.getMessage(), e);
-		} finally {
-			method.reset();
 		}
 	}
 
 	public String getNamespace(String prefix) throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpGet method = applyAdditionalHeaders(
-				new HttpGet(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)))
+				.build();
 
-		try {
-			HttpResponse response = execute(method);
-			int code = response.getStatusLine().getStatusCode();
+		try (HttpResponse response = execute(method)) {
+			int code = response.getStatusCode();
 			if (code == HttpURLConnection.HTTP_OK || code == HttpURLConnection.HTTP_NOT_AUTHORITATIVE) {
-				return EntityUtils.toString(response.getEntity());
+				return HttpUtils.toString(response);
 			} else {
-				EntityUtils.consume(response.getEntity());
 				return null;
 			}
 		} catch (RepositoryException e) {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -506,26 +465,26 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpPut method = applyAdditionalHeaders(
-				new HttpPut(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.put(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix))
+						.body(HttpRequestBody.ofString(name, "text/plain", StandardCharsets.UTF_8)))
+				.build();
 
 		try {
-			method.setEntity(new StringEntity(name, ContentType.create("text/plain", StandardCharsets.UTF_8)));
 			executeNoContent(method);
 		} catch (RepositoryException e) {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			method.reset();
 		}
 	}
 
 	public void removeNamespacePrefix(String prefix) throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpDelete method = applyAdditionalHeaders(
-				new HttpDelete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.delete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)))
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -533,15 +492,15 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			method.reset();
 		}
 	}
 
 	public void clearNamespaces() throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpDelete method = applyAdditionalHeaders(new HttpDelete(Protocol.getNamespacesLocation(getQueryURL())));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.delete(Protocol.getNamespacesLocation(getQueryURL())))
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -549,8 +508,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw e;
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -574,15 +531,15 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			RepositoryException, UnauthorizedException, QueryInterruptedException {
 		checkRepositoryURL();
 
-		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getContextsLocation(getQueryURL())));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getContextsLocation(getQueryURL())))
+				.build();
 
 		try {
 			getTupleQueryResult(method, handler);
 		} catch (MalformedQueryException e) {
 			logger.warn("Server reported unexpected malfored query error", e);
 			throw new RepositoryException(e.getMessage(), e);
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -595,43 +552,41 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			QueryInterruptedException {
 		checkRepositoryURL();
 
+		String transactionURL = getTransactionURL();
+		final boolean useTransaction = transactionURL != null;
+
+		String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());
+		UriBuilder url = UriBuilder.from(baseLocation);
+
+		if (subj != null) {
+			url.addParameter(Protocol.SUBJECT_PARAM_NAME, Protocol.encodeValue(subj));
+		}
+		if (pred != null) {
+			url.addParameter(Protocol.PREDICATE_PARAM_NAME, Protocol.encodeValue(pred));
+		}
+		if (obj != null) {
+			url.addParameter(Protocol.OBJECT_PARAM_NAME, Protocol.encodeValue(obj));
+		}
+		for (String encodedContext : Protocol.encodeContexts(contexts)) {
+			url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
+		}
+		url.addParameter(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred));
+		if (useTransaction) {
+			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.GET.toString());
+		}
+
+		HttpRequest method;
+		if (useTransaction) {
+			method = applyAdditionalHeaders(HttpRequests.put(url.build())).build();
+		} else {
+			method = applyAdditionalHeaders(HttpRequests.get(url.build())).build();
+		}
+
 		try {
-			String transactionURL = getTransactionURL();
-			final boolean useTransaction = transactionURL != null;
-
-			String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());
-			URIBuilder url = new URIBuilder(baseLocation);
-
-			if (subj != null) {
-				url.setParameter(Protocol.SUBJECT_PARAM_NAME, Protocol.encodeValue(subj));
-			}
-			if (pred != null) {
-				url.setParameter(Protocol.PREDICATE_PARAM_NAME, Protocol.encodeValue(pred));
-			}
-			if (obj != null) {
-				url.setParameter(Protocol.OBJECT_PARAM_NAME, Protocol.encodeValue(obj));
-			}
-			for (String encodedContext : Protocol.encodeContexts(contexts)) {
-				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
-			}
-			url.setParameter(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred));
-			if (useTransaction) {
-				url.setParameter(Protocol.ACTION_PARAM_NAME, Action.GET.toString());
-			}
-
-			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());
-			method = applyAdditionalHeaders(method);
-
-			try {
-				getRDF(method, handler, true);
-			} catch (MalformedQueryException e) {
-				logger.warn("Server reported unexpected malfored query error", e);
-				throw new RepositoryException(e.getMessage(), e);
-			} finally {
-				method.reset();
-			}
-		} catch (URISyntaxException e) {
-			throw new AssertionError(e);
+			getRDF(method, handler, true);
+		} catch (MalformedQueryException e) {
+			logger.warn("Server reported unexpected malfored query error", e);
+			throw new RepositoryException(e.getMessage(), e);
 		}
 		pingTransaction();
 	}
@@ -649,45 +604,37 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new IllegalStateException("Transaction URL is already set");
 		}
 
-		HttpPost method = applyAdditionalHeaders(new HttpPost(Protocol.getTransactionsLocation(getRepositoryURL())));
+		List<NameValuePair> params = new ArrayList<>();
 
-		try {
-			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
-
-			List<NameValuePair> params = new ArrayList<>();
-
-			for (TransactionSetting transactionSetting : transactionSettings) {
-				if (transactionSetting == null) {
-					continue;
-				}
-				params.add(
-						new BasicNameValuePair(
-								TRANSACTION_SETTINGS_PREFIX + transactionSetting.getName(),
-								transactionSetting.getValue()
-						)
-				);
+		for (TransactionSetting transactionSetting : transactionSettings) {
+			if (transactionSetting == null) {
+				continue;
 			}
+			params.add(
+					NameValuePair.of(
+							TRANSACTION_SETTINGS_PREFIX + transactionSetting.getName(),
+							transactionSetting.getValue()
+					)
+			);
+		}
 
-			method.setEntity(new UrlEncodedFormEntity(params, UTF8));
-			HttpResponse response = execute(method);
-			try {
-				int code = response.getStatusLine().getStatusCode();
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.post(Protocol.getTransactionsLocation(getRepositoryURL()))
+						.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
+						.body(HttpRequestBody.ofFormData(params)))
+				.build();
 
-				if (code == HttpURLConnection.HTTP_CREATED) {
-					transactionURL = response.getFirstHeader("Location").getValue();
-					if (transactionURL == null) {
-						throw new RepositoryException("no valid transaction ID received in server response.");
-					} else {
-						pingTransaction();
-					}
-				} else {
-					throw new RepositoryException("unable to start transaction. HTTP error code " + code);
-				}
-			} finally {
-				EntityUtils.consume(response.getEntity());
+		try (HttpResponse response = execute(method)) {
+			int code = response.getStatusCode();
+
+			if (code == HttpURLConnection.HTTP_CREATED) {
+				transactionURL = response.getHeader("Location")
+						.orElseThrow(() -> new RepositoryException(
+								"no valid transaction ID received in server response."));
+				pingTransaction();
+			} else {
+				throw new RepositoryException("unable to start transaction. HTTP error code " + code);
 			}
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -698,28 +645,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new IllegalStateException("Transaction URL has not been set");
 		}
 
-		HttpPut method = null;
-		try {
-			URIBuilder url = new URIBuilder(transactionURL);
-			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PREPARE.toString());
-			method = applyAdditionalHeaders(new HttpPut(url.build()));
+		UriBuilder url = UriBuilder.from(transactionURL);
+		url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PREPARE.toString());
+		HttpRequest method = applyAdditionalHeaders(HttpRequests.put(url.build())).build();
 
-			final HttpResponse response = execute(method);
-			try {
-				int code = response.getStatusLine().getStatusCode();
-				if (code == HttpURLConnection.HTTP_OK) {
-				} else {
-					throw new RepositoryException("unable to prepare transaction. HTTP error code " + code);
-				}
-			} finally {
-				EntityUtils.consumeQuietly(response.getEntity());
-			}
-		} catch (URISyntaxException e) {
-			logger.error("could not create URL for transaction prepare", e);
-			throw new RuntimeException(e);
-		} finally {
-			if (method != null) {
-				method.reset();
+		try (HttpResponse response = execute(method)) {
+			int code = response.getStatusCode();
+			if (code == HttpURLConnection.HTTP_OK) {
+				// prepared
+			} else {
+				throw new RepositoryException("unable to prepare transaction. HTTP error code " + code);
 			}
 		}
 	}
@@ -731,33 +666,20 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new IllegalStateException("Transaction URL has not been set");
 		}
 
-		HttpPut method = null;
-		try {
-			URIBuilder url = new URIBuilder(transactionURL);
-			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.COMMIT.toString());
-			method = applyAdditionalHeaders(new HttpPut(url.build()));
+		UriBuilder url = UriBuilder.from(transactionURL);
+		url.addParameter(Protocol.ACTION_PARAM_NAME, Action.COMMIT.toString());
+		HttpRequest method = applyAdditionalHeaders(HttpRequests.put(url.build())).build();
 
-			final HttpResponse response = execute(method);
-			try {
-				int code = response.getStatusLine().getStatusCode();
-				if (code == HttpURLConnection.HTTP_OK) {
-					// we're done.
-					transactionURL = null;
-					if (ping != null) {
-						ping.cancel(false);
-					}
-				} else {
-					throw new RepositoryException("unable to commit transaction. HTTP error code " + code);
+		try (HttpResponse response = execute(method)) {
+			int code = response.getStatusCode();
+			if (code == HttpURLConnection.HTTP_OK) {
+				// we're done.
+				transactionURL = null;
+				if (ping != null) {
+					ping.cancel(false);
 				}
-			} finally {
-				EntityUtils.consumeQuietly(response.getEntity());
-			}
-		} catch (URISyntaxException e) {
-			logger.error("could not create URL for transaction commit", e);
-			throw new RuntimeException(e);
-		} finally {
-			if (method != null) {
-				method.reset();
+			} else {
+				throw new RepositoryException("unable to commit transaction. HTTP error code " + code);
 			}
 		}
 	}
@@ -770,26 +692,21 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 
 		String requestURL = transactionURL;
-		HttpDelete method = applyAdditionalHeaders(new HttpDelete(requestURL));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.delete(requestURL))
+				.build();
 
-		try {
-			final HttpResponse response = execute(method);
-			try {
-				int code = response.getStatusLine().getStatusCode();
-				if (code == HttpURLConnection.HTTP_NO_CONTENT) {
-					// we're done.
-					transactionURL = null;
-					if (ping != null) {
-						ping.cancel(false);
-					}
-				} else {
-					throw new RepositoryException("unable to rollback transaction. HTTP error code " + code);
+		try (HttpResponse response = execute(method)) {
+			int code = response.getStatusCode();
+			if (code == HttpURLConnection.HTTP_NO_CONTENT) {
+				// we're done.
+				transactionURL = null;
+				if (ping != null) {
+					ping.cancel(false);
 				}
-			} finally {
-				EntityUtils.consumeQuietly(response.getEntity());
+			} else {
+				throw new RepositoryException("unable to rollback transaction. HTTP error code " + code);
 			}
-		} finally {
-			method.reset();
 		}
 	}
 
@@ -812,18 +729,19 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		if (transactionURL == null) {
 			return; // transaction has already been closed
 		}
-		HttpPost method;
 		try {
-			URIBuilder url = new URIBuilder(transactionURL);
+			UriBuilder url = UriBuilder.from(transactionURL);
 			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PING.toString());
-			method = applyAdditionalHeaders(new HttpPost(url.build()));
-			String text = EntityUtils.toString(executeOK(method).getEntity());
-			long timeout = Long.parseLong(text);
-			// clients should ping before server timeouts transaction
-			long nextPingDelay = timeout / 2;
-			synchronized (this) {
-				if (pingDelay != nextPingDelay) {
-					pingDelay = nextPingDelay;
+			HttpRequest method = applyAdditionalHeaders(HttpRequests.post(url.build())).build();
+			try (HttpResponse response = executeOK(method)) {
+				String text = HttpUtils.toString(response);
+				long timeout = Long.parseLong(text);
+				// clients should ping before server timeouts transaction
+				long nextPingDelay = timeout / 2;
+				synchronized (this) {
+					if (pingDelay != nextPingDelay) {
+						pingDelay = nextPingDelay;
+					}
 				}
 			}
 		} catch (Exception e) {
@@ -857,55 +775,22 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();
 
-		HttpPost method = applyAdditionalHeaders(new HttpPost(Protocol.getStatementsLocation(getQueryURL())));
+		ByteArrayOutputStream buf = new ByteArrayOutputStream();
+		TransactionWriter txnWriter = new TransactionWriter();
+		txnWriter.serialize(txn, buf);
+		byte[] bytes = buf.toByteArray();
+
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.post(Protocol.getStatementsLocation(getQueryURL()))
+						.body(HttpRequestBody.ofBytes(bytes, Protocol.TXN_MIME_TYPE)))
+				.build();
 
 		try {
-			// Create a RequestEntity for the transaction data
-			method.setEntity(new AbstractHttpEntity() {
-
-				@Override
-				public long getContentLength() {
-					return -1; // don't know
-				}
-
-				@Override
-				public Header getContentType() {
-					return new BasicHeader("Content-Type", Protocol.TXN_MIME_TYPE);
-				}
-
-				@Override
-				public boolean isRepeatable() {
-					return true;
-				}
-
-				@Override
-				public boolean isStreaming() {
-					return true;
-				}
-
-				@Override
-				public InputStream getContent() throws IOException, IllegalStateException {
-					ByteArrayOutputStream buf = new ByteArrayOutputStream();
-					writeTo(buf);
-					return new ByteArrayInputStream(buf.toByteArray());
-				}
-
-				@Override
-				public void writeTo(OutputStream out) throws IOException {
-					TransactionWriter txnWriter = new TransactionWriter();
-					txnWriter.serialize(txn, out);
-				}
-			});
-
-			try {
-				executeNoContent(method);
-			} catch (RepositoryException e) {
-				throw e;
-			} catch (RDF4JException e) {
-				throw new RepositoryException(e);
-			}
-		} finally {
-			method.reset();
+			executeNoContent(method);
+		} catch (RepositoryException e) {
+			throw e;
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
 		}
 	}
 
@@ -929,9 +814,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			boolean preserveNodeIds, Action action, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException, UnauthorizedException {
 		// Set Content-Length to -1 as we don't know it and we also don't want to
-		// cache
-		HttpEntity entity = new InputStreamEntity(contents, -1, ContentType.parse(dataFormat.getDefaultMIMEType()));
-		upload(entity, baseURI, overwrite, preserveNodeIds, action, contexts);
+		// buffer
+		HttpRequestBody body = HttpRequestBody.ofStream(contents, dataFormat.getDefaultMIMEType(), -1);
+		upload(body, baseURI, overwrite, preserveNodeIds, action, contexts);
 	}
 
 	public void upload(final Reader contents, String baseURI, final RDFFormat dataFormat, boolean overwrite,
@@ -941,34 +826,34 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	}
 
 	@Override
-	protected HttpUriRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+	protected HttpRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, Binding... bindings) {
-		RequestBuilder builder;
+		HttpRequest.Builder builder;
 		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
-			builder = RequestBuilder.put(transactionURL);
-			builder.setHeader("Content-Type", Protocol.SPARQL_QUERY_MIME_TYPE + "; charset=utf-8");
-			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.QUERY.toString());
+			UriBuilder urib = UriBuilder.from(transactionURL);
+			urib.addParameter(Protocol.ACTION_PARAM_NAME, Action.QUERY.toString());
 			for (NameValuePair nvp : getQueryMethodParameters(ql, null, baseURI, dataset, includeInferred, maxQueryTime,
 					bindings)) {
-				builder.addParameter(nvp);
+				urib.addParameter(nvp);
 			}
 			// in a PUT request, we carry the actual query string as the entity
 			// body rather than a parameter.
-			builder.setEntity(new StringEntity(query, UTF8));
+			builder = HttpRequests.put(urib.build())
+					.header("Content-Type", Protocol.SPARQL_QUERY_MIME_TYPE + "; charset=utf-8")
+					.body(HttpRequestBody.ofString(query, Protocol.SPARQL_QUERY_MIME_TYPE + "; charset=utf-8",
+							UTF8));
 			pingTransaction();
 		} else {
-			builder = RequestBuilder.post(getQueryURL());
-			builder.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
-
-			builder.setEntity(new UrlEncodedFormEntity(
-					getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings),
-					UTF8));
+			List<NameValuePair> queryParams = getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred,
+					maxQueryTime, bindings);
+			builder = HttpRequests.post(getQueryURL())
+					.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
+					.body(HttpRequestBody.ofFormData(queryParams));
 		}
-		// functionality to provide custom http headers as required by the
-		// applications
+		// functionality to provide custom http headers as required by the applications
 		for (Map.Entry<String, String> additionalHeader : getAdditionalHttpHeaders().entrySet()) {
-			builder.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
+			builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 		}
 		return builder.build();
 	}
@@ -978,13 +863,12 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
 			QueryInterruptedException {
 		Objects.requireNonNull(level, "Explanation level may not be null");
-		HttpUriRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
-				bindings);
-		HttpUriRequest explainMethod = addQueryParameter(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
+		HttpRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
+		HttpRequest explainMethod = withQueryParam(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
 		String explainRequestId = getTransactionURL() == null ? QueryExplanationRequestContext.getExplainRequestId()
 				: null;
 		if (explainRequestId != null) {
-			explainMethod = addQueryParameter(explainMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
+			explainMethod = withQueryParam(explainMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
 		}
 		return getQueryExplanation(explainMethod, level);
 	}
@@ -997,41 +881,42 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throw new IllegalArgumentException("Explain request id was blank");
 		}
 
-		HttpUriRequest cancelMethod = applyAdditionalHeaders(new HttpPost(getQueryURL()));
-		cancelMethod = addQueryParameter(cancelMethod, Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
-		cancelMethod = addQueryParameter(cancelMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME,
+		HttpRequest cancelMethod = applyAdditionalHeaders(HttpRequests.post(getQueryURL())).build();
+		cancelMethod = withQueryParam(cancelMethod, Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
+		cancelMethod = withQueryParam(cancelMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME,
 				normalizedExplainRequestId);
 		executeNoContent(cancelMethod);
 	}
 
 	@Override
-	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+	protected HttpRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxExecutionTime, Binding... bindings) {
-		RequestBuilder builder;
+		HttpRequest.Builder builder;
 		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
-			builder = RequestBuilder.put(transactionURL);
-			builder.addHeader("Content-Type", Protocol.SPARQL_UPDATE_MIME_TYPE + "; charset=utf-8");
-			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.UPDATE.toString());
+			UriBuilder urib = UriBuilder.from(transactionURL);
+			urib.addParameter(Protocol.ACTION_PARAM_NAME, Action.UPDATE.toString());
 			for (NameValuePair nvp : getUpdateMethodParameters(ql, null, baseURI, dataset, includeInferred,
 					maxExecutionTime, bindings)) {
-				builder.addParameter(nvp);
+				urib.addParameter(nvp);
 			}
 			// in a PUT request, we carry the only actual update string as the
 			// request body - the rest is sent as request parameters
-			builder.setEntity(new StringEntity(update, UTF8));
+			builder = HttpRequests.put(urib.build())
+					.header("Content-Type", Protocol.SPARQL_UPDATE_MIME_TYPE + "; charset=utf-8")
+					.body(HttpRequestBody.ofString(update, Protocol.SPARQL_UPDATE_MIME_TYPE + "; charset=utf-8",
+							UTF8));
 			pingTransaction();
 		} else {
-			builder = RequestBuilder.post(getUpdateURL());
-			builder.addHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
-
-			builder.setEntity(new UrlEncodedFormEntity(getUpdateMethodParameters(ql, update, baseURI, dataset,
-					includeInferred, maxExecutionTime, bindings), UTF8));
+			List<NameValuePair> updateParams = getUpdateMethodParameters(ql, update, baseURI, dataset, includeInferred,
+					maxExecutionTime, bindings);
+			builder = HttpRequests.post(getUpdateURL())
+					.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
+					.body(HttpRequestBody.ofFormData(updateParams));
 		}
-		// functionality to provide custom http headers as required by the
-		// applications
+		// functionality to provide custom http headers as required by the applications
 		for (Map.Entry<String, String> additionalHeader : getAdditionalHttpHeaders().entrySet()) {
-			builder.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
+			builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 		}
 		return builder.build();
 	}
@@ -1041,54 +926,19 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throws IOException, RDFParseException, RepositoryException, UnauthorizedException {
 		final Charset charset = dataFormat.hasCharset() ? dataFormat.getCharset() : StandardCharsets.UTF_8;
 
-		HttpEntity entity = new AbstractHttpEntity() {
+		ByteArrayOutputStream buf = new ByteArrayOutputStream();
+		try (OutputStreamWriter writer = new OutputStreamWriter(buf, charset)) {
+			IOUtil.transfer(contents, writer);
+			writer.flush();
+		}
+		byte[] bytes = buf.toByteArray();
+		String contentType = dataFormat.getDefaultMIMEType() + "; charset=" + charset.name();
+		HttpRequestBody body = HttpRequestBody.ofBytes(bytes, contentType);
 
-			private InputStream content;
-
-			@Override
-			public long getContentLength() {
-				return -1; // don't know
-			}
-
-			@Override
-			public Header getContentType() {
-				return new BasicHeader("Content-Type", dataFormat.getDefaultMIMEType() + "; charset=" + charset.name());
-			}
-
-			@Override
-			public boolean isRepeatable() {
-				return false;
-			}
-
-			@Override
-			public boolean isStreaming() {
-				return true;
-			}
-
-			@Override
-			public synchronized InputStream getContent() throws IOException, IllegalStateException {
-				if (content == null) {
-					ByteArrayOutputStream buf = new ByteArrayOutputStream();
-					writeTo(buf);
-					content = new ByteArrayInputStream(buf.toByteArray());
-				}
-				return content;
-			}
-
-			@Override
-			public void writeTo(OutputStream out) throws IOException {
-				try (contents) {
-					OutputStreamWriter writer = new OutputStreamWriter(out, charset);
-					IOUtil.transfer(contents, writer);
-					writer.flush();
-				}
-			}
-		};
-
-		upload(entity, baseURI, overwrite, preserveNodeIds, action, contexts);
+		upload(body, baseURI, overwrite, preserveNodeIds, action, contexts);
 	}
 
-	protected void upload(HttpEntity reqEntity, String baseURI, boolean overwrite, boolean preserveNodeIds,
+	protected void upload(HttpRequestBody reqBody, String baseURI, boolean overwrite, boolean preserveNodeIds,
 			Action action, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException, UnauthorizedException {
 		Objects.requireNonNull(contexts,
@@ -1099,57 +949,43 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		String transactionURL = getTransactionURL();
 		boolean useTransaction = transactionURL != null;
 
+		String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());
+		UriBuilder url = UriBuilder.from(baseLocation);
+
+		// Set relevant query parameters
+		for (String encodedContext : Protocol.encodeContexts(contexts)) {
+			url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
+		}
+		if (baseURI != null && !baseURI.trim().isEmpty()) {
+			String encodedBaseURI = Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI));
+			url.addParameter(Protocol.BASEURI_PARAM_NAME, encodedBaseURI);
+		}
+		if (preserveNodeIds) {
+			url.addParameter(Protocol.PRESERVE_BNODE_ID_PARAM_NAME, "true");
+		}
+
+		if (useTransaction) {
+			if (action == null) {
+				throw new IllegalArgumentException("action can not be null on transaction operation");
+			}
+			url.addParameter(Protocol.ACTION_PARAM_NAME, action.toString());
+		}
+
+		// Select appropriate HTTP method
+		HttpRequest method;
+		if (overwrite || useTransaction) {
+			method = applyAdditionalHeaders(HttpRequests.put(url.build()).body(reqBody)).build();
+		} else {
+			method = applyAdditionalHeaders(HttpRequests.post(url.build()).body(reqBody)).build();
+		}
+
+		// Send request
 		try {
-
-			String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());
-			URIBuilder url = new URIBuilder(baseLocation);
-
-			// Set relevant query parameters
-			for (String encodedContext : Protocol.encodeContexts(contexts)) {
-				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);
-			}
-			if (baseURI != null && !baseURI.trim().isEmpty()) {
-				String encodedBaseURI = Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI));
-				url.setParameter(Protocol.BASEURI_PARAM_NAME, encodedBaseURI);
-			}
-			if (preserveNodeIds) {
-				url.setParameter(Protocol.PRESERVE_BNODE_ID_PARAM_NAME, "true");
-			}
-
-			if (useTransaction) {
-				if (action == null) {
-					throw new IllegalArgumentException("action can not be null on transaction operation");
-				}
-				url.setParameter(Protocol.ACTION_PARAM_NAME, action.toString());
-			}
-
-			// Select appropriate HTTP method
-			HttpEntityEnclosingRequestBase method = null;
-			try {
-				if (overwrite || useTransaction) {
-					method = applyAdditionalHeaders(new HttpPut(url.build()));
-				} else {
-					method = applyAdditionalHeaders(new HttpPost(url.build()));
-				}
-
-				// Set payload
-				method.setEntity(reqEntity);
-
-				// Send request
-				try {
-					executeNoContent((HttpUriRequest) method);
-				} catch (RepositoryException | RDFParseException e) {
-					throw e;
-				} catch (RDF4JException e) {
-					throw new RepositoryException(e);
-				}
-			} finally {
-				if (method != null) {
-					method.reset();
-				}
-			}
-		} catch (URISyntaxException e) {
-			throw new AssertionError(e);
+			executeNoContent(method);
+		} catch (RepositoryException | RDFParseException e) {
+			throw e;
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
 		}
 		pingTransaction();
 	}
@@ -1166,34 +1002,33 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
 		List<NameValuePair> queryParams = new ArrayList<>();
-		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
-		queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));
+		queryParams.add(NameValuePair.of(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
+		queryParams.add(NameValuePair.of(Protocol.QUERY_PARAM_NAME, query));
 
 		if (baseURI != null) {
-			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
+			queryParams.add(NameValuePair.of(Protocol.BASEURI_PARAM_NAME, baseURI));
 		}
 
-		queryParams
-				.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
+		queryParams.add(NameValuePair.of(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
 
 		if (maxQueryTime > 0) {
-			queryParams.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+			queryParams.add(NameValuePair.of(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
 		}
 
 		if (dataset != null) {
 			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
 				queryParams.add(
-						new BasicNameValuePair(Protocol.DEFAULT_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
+						NameValuePair.of(Protocol.DEFAULT_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
 			}
 			for (IRI namedGraphURI : dataset.getNamedGraphs()) {
-				queryParams.add(new BasicNameValuePair(Protocol.NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
+				queryParams.add(NameValuePair.of(Protocol.NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
 			}
 		}
 
 		for (int i = 0; i < bindings.length; i++) {
 			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
 			String paramValue = Protocol.encodeValue(bindings[i].getValue());
-			queryParams.add(new BasicNameValuePair(paramName, paramValue));
+			queryParams.add(NameValuePair.of(paramName, paramValue));
 		}
 
 		return queryParams;
@@ -1206,84 +1041,81 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		List<NameValuePair> queryParams = new ArrayList<>();
 
-		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
+		queryParams.add(NameValuePair.of(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
 
 		if (update != null) {
-			queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
+			queryParams.add(NameValuePair.of(Protocol.UPDATE_PARAM_NAME, update));
 		}
 
 		if (baseURI != null) {
-			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));
+			queryParams.add(NameValuePair.of(Protocol.BASEURI_PARAM_NAME, baseURI));
 		}
 
-		queryParams
-				.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
+		queryParams.add(NameValuePair.of(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
 
 		if (dataset != null) {
 			for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {
-				queryParams.add(new BasicNameValuePair(Protocol.REMOVE_GRAPH_PARAM_NAME, String.valueOf(graphURI)));
+				queryParams.add(NameValuePair.of(Protocol.REMOVE_GRAPH_PARAM_NAME, String.valueOf(graphURI)));
 			}
 			if (dataset.getDefaultInsertGraph() != null) {
-				queryParams.add(new BasicNameValuePair(Protocol.INSERT_GRAPH_PARAM_NAME,
+				queryParams.add(NameValuePair.of(Protocol.INSERT_GRAPH_PARAM_NAME,
 						String.valueOf(dataset.getDefaultInsertGraph())));
 			}
 			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {
-				queryParams
-						.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
+				queryParams.add(NameValuePair.of(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));
 			}
 			for (IRI namedGraphURI : dataset.getNamedGraphs()) {
 				queryParams.add(
-						new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
+						NameValuePair.of(Protocol.USING_NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));
 			}
 		}
 
 		if (maxQueryTime > 0) {
-			queryParams.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+			queryParams.add(NameValuePair.of(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
 		}
 
 		for (int i = 0; i < bindings.length; i++) {
 			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();
 			String paramValue = Protocol.encodeValue(bindings[i].getValue());
-			queryParams.add(new BasicNameValuePair(paramName, paramValue));
+			queryParams.add(NameValuePair.of(paramName, paramValue));
 		}
 
 		return queryParams;
 	}
 
-	private <T extends HttpUriRequest> T applyAdditionalHeaders(T method) {
+	/**
+	 * Applies additional HTTP headers (from {@link #getAdditionalHttpHeaders()}) and the authorization header to the
+	 * supplied request builder.
+	 *
+	 * @param builder the request builder to add headers to
+	 * @return the same builder, with headers added
+	 */
+	protected HttpRequest.Builder applyAdditionalHeaders(HttpRequest.Builder builder) {
 		for (Map.Entry<String, String> additionalHeader : getAdditionalHttpHeaders().entrySet()) {
-			method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());
+			builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 		}
-		return method;
+		return builder;
 	}
 
-	private HttpUriRequest addQueryParameter(HttpUriRequest method, String parameterName, String parameterValue) {
-		try {
-			URIBuilder uriBuilder = new URIBuilder(method.getURI());
-			uriBuilder.addParameter(parameterName, parameterValue);
-			return RequestBuilder.copy(method).setUri(uriBuilder.build()).build();
-		} catch (URISyntaxException e) {
-			throw new AssertionError(e);
-		}
+	private HttpRequest withQueryParam(HttpRequest method, String parameterName, String parameterValue) {
+		URI newUri = UriBuilder.from(method.getUri().toString()).addParameter(parameterName, parameterValue).build();
+		return HttpRequest.copyOf(method, newUri).build();
 	}
 
-	private Explanation getQueryExplanation(HttpUriRequest method, Explanation.Level level)
+	private Explanation getQueryExplanation(HttpRequest method, Explanation.Level level)
 			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
 			QueryInterruptedException {
 		method.addHeader(Protocol.ACCEPT_PARAM_NAME, "application/json");
-		HttpResponse response = executeOK(method);
-		try {
+		try (HttpResponse response = executeOK(method)) {
 			String mimeType = getResponseMIMEType(response);
 			if (mimeType == null || !mimeType.toLowerCase(Locale.ROOT).contains("json")) {
 				throw new RepositoryException("Server responded with an unsupported explanation format: " + mimeType);
 			}
 
-			GenericPlanNode planNode = EXPLANATION_MAPPER.readValue(response.getEntity().getContent(),
+			GenericPlanNode planNode = EXPLANATION_MAPPER.readValue(response.getBodyAsStream(),
 					GenericPlanNode.class);
 			planNode.applyExplanationLevel(level);
 			return new ExplanationImpl(planNode, Boolean.TRUE.equals(planNode.getTimedOut()), null);
-		} finally {
-			EntityUtils.consumeQuietly(response.getEntity());
 		}
 	}
 }

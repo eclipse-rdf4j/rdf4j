@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.federation;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -75,7 +75,7 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 	}
 
 	@Override
-	public HttpClient getHttpClient() {
+	public RDF4JHttpClient getHttpClient() {
 		HttpClientSessionManager httpClientSessionManager = getHttpClientSessionManager();
 
 		try {
@@ -92,7 +92,7 @@ public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
 	}
 
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
 		if (toSetDependentClient == null) {
 			getHttpClientSessionManager();
