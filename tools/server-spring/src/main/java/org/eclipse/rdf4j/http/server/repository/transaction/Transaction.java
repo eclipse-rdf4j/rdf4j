@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -225,6 +226,11 @@ class Transaction implements AutoCloseable {
 	 */
 	boolean evaluate(BooleanQuery bQuery) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> bQuery.evaluate());
+		return getFromFuture(result);
+	}
+
+	Explanation explain(Query query, Explanation.Level level) throws InterruptedException, ExecutionException {
+		Future<Explanation> result = submit(() -> query.explain(level));
 		return getFromFuture(result);
 	}
 

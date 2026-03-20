@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+import org.eclipse.rdf4j.workbench.util.WorkbenchTupleResultWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -193,6 +194,10 @@ public abstract class AbstractServlet implements Servlet {
 			resultFormat = TupleQueryResultFormat.SPARQL;
 		}
 
+		if (TupleQueryResultFormat.SPARQL.equals(resultFormat)) {
+			return new WorkbenchTupleResultWriter(outputStream);
+		}
+
 		return QueryResultIO.createWriter(resultFormat, outputStream);
 	}
 
@@ -219,7 +224,7 @@ public abstract class AbstractServlet implements Servlet {
 		} else {
 			// If the JSON-P check above failed, use the normal methods to
 			// determine output format
-			resultWriter = getResultWriter(req, resp, resp.getOutputStream());
+			resultWriter = getResultWriter(req, resp, outputStream);
 			contentType = resultWriter.getQueryResultFormat().getDefaultMIMEType();
 		}
 

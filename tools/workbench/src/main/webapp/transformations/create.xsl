@@ -24,56 +24,11 @@
 						</th>
 						<td>
 							<select id="type" name="type">
-								<option value="memory">
-									Memory Store
-								</option>
-								<option value="memory-lucene">
-									Memory Store + Lucene
-                                </option>
-								<option value="memory-rdfs">
-									Memory Store + RDFS
-								</option>
-								<option value="memory-rdfs-dt">
-									Memory Store + RDFS and Direct Type
-								</option>
-								<option value="memory-rdfs-lucene">
-									Memory Store + RDFS and Lucene
-								</option>
-								<option value="memory-customrule">
-									Memory Store + Custom Graph Query Inference
-								</option>
-								<option value="memory-shacl">
-									Memory Store + SHACL
-								</option>
-								<option value="native">
-									Native Store
-								</option>
-								<option value="native-lucene">
-                                   Native Store + Lucene
-                                </option>
-								<option value="native-rdfs">
-									Native Store + RDFS
-								</option>
-								<option value="native-rdfs-dt">
-									Native Store + RDFS and Direct Type
-								</option>
-								<option value="memory-rdfs-lucene">
-									Native Store + RDFS and Lucene
-								</option>
-								<option value="native-customrule">
-									Native Store + Custom Graph Query Inference
-								</option>
-								<option value="native-shacl">
-									Native Store + SHACL
-								</option>
-								<option value="remote">
-									Remote RDF Store
-								</option>
-								<option value="sparql">
-									SPARQL endpoint proxy
-								</option>
-								<option value="federate">Federation</option>
-								<option value="lmdb">LMDB Store</option>
+								<xsl:for-each select="sparql:results/sparql:result">
+									<option value="{sparql:binding[@name='type']/sparql:literal}">
+										<xsl:value-of select="sparql:binding[@name='label']/sparql:literal" />
+									</option>
+								</xsl:for-each>
 							</select>
 						</td>
 						<td></td>

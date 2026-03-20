@@ -16,7 +16,11 @@ import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -48,6 +52,18 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 public class CreateServlet extends TransformationServlet {
 
+	private static final String FEDERATE = "federate";
+
+	private static final String[] FEDERATE_RESULT_VARS = { "id", "description", "location" };
+
+	private static final String[] TYPE_PICKER_RESULT_VARS = { "type", "label" };
+
+	private static final String[] TEMPLATE_RESULT_VARS = { "templateType", "templateLabel", "fieldId",
+			"fieldProperty", "fieldRole", "fieldName", "fieldType", "value", "selected", "size", "rows", "cols",
+			"placeholder" };
+
+	private static final int FEDERATE_ORDER = 170;
+
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
@@ -77,21 +93,28 @@ public class CreateServlet extends TransformationServlet {
 			throws IOException, RepositoryException, QueryResultHandlerException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		boolean federate;
+		boolean typedTemplate;
 		if (req.isParameterPresent("type")) {
 			final String type = req.getTypeParameter();
-			federate = "federate".equals(type);
-			builder.transform(xslPath, "create-" + type + ".xsl");
+			federate = FEDERATE.equals(type);
+			typedTemplate = !federate;
+			builder.transform(xslPath, federate ? "create-federate.xsl" : "create-template.xsl");
 		} else {
 			federate = false;
+			typedTemplate = false;
 			builder.transform(xslPath, "create.xsl");
 		}
-		builder.start(federate ? new String[] { "id", "description", "location" } : new String[] {});
+		builder.start(federate ? FEDERATE_RESULT_VARS : typedTemplate ? TEMPLATE_RESULT_VARS : TYPE_PICKER_RESULT_VARS);
 		builder.link(List.of(INFO));
 		if (federate) {
 			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 				String identity = info.getId();
 				builder.result(identity, info.getDescription(), info.getLocation());
 			}
+		} else if (typedTemplate) {
+			writeTemplateFields(getCreateTemplate(req.getTypeParameter()), builder);
+		} else {
+			writeTemplateCatalog(builder);
 		}
 		builder.end();
 	}
@@ -99,12 +122,13 @@ public class CreateServlet extends TransformationServlet {
 	private String createRepositoryConfig(final WorkbenchRequest req) throws IOException, RDF4JException {
 		String type = req.getTypeParameter();
 		String newID;
-		if ("federate".equals(type)) {
+		if (FEDERATE.equals(type)) {
 			newID = req.getParameter("Local repository ID");
 			addFederated(newID, req.getParameter("Repository title"),
 					Arrays.asList(req.getParameterValues("memberID")));
 		} else {
-			newID = updateRepositoryConfig(getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
+			CreateTemplateConfig template = getCreateTemplate(type);
+			newID = updateRepositoryConfig(template.render(getTemplateValues(req, template))).getID();
 		}
 		return newID;
 	}
@@ -138,6 +162,92 @@ public class CreateServlet extends TransformationServlet {
 		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
 			final String template = IOUtil.readString(new InputStreamReader(ttlInput, StandardCharsets.UTF_8));
 			return new ConfigTemplate(template);
+		}
+	}
+
+	static List<CreateTemplateConfig> getCreateTemplates() throws IOException {
+		return visibleCreateTemplates(CreateTemplateConfig.loadBuiltin());
+	}
+
+	static CreateTemplateConfig getCreateTemplate(String type) throws IOException {
+		return CreateTemplateConfig.load(type);
+	}
+
+	static List<CreateTemplateConfig> visibleCreateTemplates(List<CreateTemplateConfig> templates) {
+		return templates.stream()
+				.filter(template -> !template.isHidden())
+				.collect(Collectors.toList());
+	}
+
+	private void writeTemplateCatalog(TupleResultBuilder builder) throws IOException, QueryResultHandlerException {
+		List<TemplateOption> options = new java.util.ArrayList<>();
+		for (CreateTemplateConfig template : getCreateTemplates()) {
+			options.add(new TemplateOption(template.getType(), template.getLabel(), template.getOrder()));
+		}
+		options.add(new TemplateOption(FEDERATE, "Federation", FEDERATE_ORDER));
+		options.sort(Comparator.comparingInt(TemplateOption::getOrder)
+				.thenComparing(TemplateOption::getLabel)
+				.thenComparing(TemplateOption::getType));
+
+		for (TemplateOption option : options) {
+			builder.result(option.getType(), option.getLabel());
+		}
+	}
+
+	private void writeTemplateFields(CreateTemplateConfig template, TupleResultBuilder builder)
+			throws QueryResultHandlerException {
+		for (CreateTemplateConfig.Field field : template.getFields()) {
+			if (field.getControl() == CreateTemplateConfig.FieldControl.SELECT
+					|| field.getControl() == CreateTemplateConfig.FieldControl.RADIO) {
+				for (String value : field.getValues()) {
+					writeTemplateField(builder, template, field, value, value.equals(field.getDefaultValue()));
+				}
+			} else {
+				writeTemplateField(builder, template, field, field.getDefaultValue(), true);
+			}
+		}
+	}
+
+	private void writeTemplateField(TupleResultBuilder builder, CreateTemplateConfig template,
+			CreateTemplateConfig.Field field, String value, boolean selected) throws QueryResultHandlerException {
+		builder.result(template.getType(), template.getLabel(), field.getId(), field.getProperty(), field.getRole(),
+				field.getName(), field.getControl().getXslValue(), value, String.valueOf(selected),
+				String.valueOf(field.getSize()), String.valueOf(field.getRows()), String.valueOf(field.getCols()),
+				field.getPlaceholder());
+	}
+
+	private Map<String, String> getTemplateValues(WorkbenchRequest req, CreateTemplateConfig template) {
+		Map<String, String> values = new LinkedHashMap<>();
+		for (CreateTemplateConfig.Field field : template.getFields()) {
+			String value = req.getParameter(field.getName());
+			if (value != null) {
+				values.put(field.getName(), value);
+			}
+		}
+		return values;
+	}
+
+	private static final class TemplateOption {
+		private final String type;
+		private final String label;
+		private final int order;
+
+		private TemplateOption(String type, String label, int order) {
+			this.type = type;
+			this.label = label;
+			this.order = order;
+		}
+
+		private String getType() {
+			return type;
+		}
+
+		private String getLabel() {
+			return label;
+		}
+
+		private int getOrder() {
+			return order;
 		}
 	}
 }

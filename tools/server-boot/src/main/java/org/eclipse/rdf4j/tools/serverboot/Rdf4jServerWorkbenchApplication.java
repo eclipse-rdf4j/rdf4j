@@ -134,6 +134,7 @@ public class Rdf4jServerWorkbenchApplication {
 				serverServletUrlMappings().toArray(new String[0]));
 		registration.setName("rdf4jServer");
 		registration.setLoadOnStartup(1);
+		registration.setAsyncSupported(true);
 		return registration;
 	}
 
@@ -175,6 +176,7 @@ public class Rdf4jServerWorkbenchApplication {
 				workbenchServletUrlMappings().toArray(new String[0]));
 		registration.setName("rdf4jWorkbench");
 		registration.setLoadOnStartup(2);
+		registration.setAsyncSupported(true);
 		registration.setInitParameters(workbenchInitParameters());
 		registration.setMultipartConfig(new MultipartConfigElement(""));
 		return registration;
@@ -187,6 +189,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server", "/rdf4j-server/*", "/rdf4j-workbench", "/rdf4j-workbench/*");
 		registration.setName("ServerPrefixForwardFilter");
 		registration.setOrder(1000);
+		registration.setAsyncSupported(true);
 		return registration;
 	}
 
@@ -197,6 +200,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server/");
 		registration.setName("serverRootDummyPage");
 		registration.setOrder(-12);
+		registration.setAsyncSupported(true);
 		return registration;
 	}
 
@@ -216,6 +220,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server/*");
 		registration.setName("CompressingFilter");
 		registration.setOrder(-10);
+		registration.setAsyncSupported(true);
 		registration.addInitParameter("excludeContentTypes",
 				"application/x-binary-rdf,application/x-binary-rdf-results-table");
 		return registration;
@@ -227,6 +232,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server", "/rdf4j-server/");
 		registration.setName("UrlRewriteFilter");
 		registration.setOrder(-9);
+		registration.setAsyncSupported(true);
 		registration.addInitParameter("logLevel", "commons");
 		registration.addInitParameter("statusEnabled", "false");
 		return registration;
@@ -239,6 +245,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/*");
 		registration.setName("errorLoggingFilter");
 		registration.setOrder(Integer.MAX_VALUE);
+		registration.setAsyncSupported(true);
 		return registration;
 	}
 
@@ -248,6 +255,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("*.css");
 		registration.setName("PathFilter");
 		registration.setOrder(-8);
+		registration.setAsyncSupported(true);
 		return registration;
 	}
 
@@ -257,6 +265,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-workbench", "/rdf4j-workbench/*");
 		registration.setName("redirect");
 		registration.setOrder(-11);
+		registration.setAsyncSupported(true);
 		registration.addInitParameter("/", "/rdf4j-workbench/repositories");
 		registration.addInitParameter("/rdf4j-workbench", "/rdf4j-workbench/repositories");
 		registration.addInitParameter("/rdf4j-workbench/", "/rdf4j-workbench/repositories");
@@ -305,6 +314,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-workbench/repositories/*");
 		registration.setName("cache");
 		registration.setOrder(1);
+		registration.setAsyncSupported(true);
 		return registration;
 	}
 
@@ -314,6 +324,7 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-workbench/*");
 		registration.setName("CacheFilter");
 		registration.setOrder(2);
+		registration.setAsyncSupported(true);
 		registration.addInitParameter("Cache-Control", "600");
 		return registration;
 	}

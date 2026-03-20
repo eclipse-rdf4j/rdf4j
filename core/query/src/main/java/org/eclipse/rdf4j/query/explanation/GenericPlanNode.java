@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.explanation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +23,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -100,7 +100,8 @@ public class GenericPlanNode {
 	private static final Set<String> ACCESS_ONLY_METRICS = Set.of(
 			TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL,
 			TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
-			TelemetryMetricNames.INDEX_NAME);
+			TelemetryMetricNames.INDEX_NAME,
+			TelemetryMetricNames.INDEX_NAMES);
 
 	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
@@ -138,6 +139,7 @@ public class GenericPlanNode {
 	private Long sourceRowsMatchedActual;
 	private Long sourceRowsFilteredActual;
 	private boolean runtimeTelemetryEnabled = true;
+	private boolean estimateStabilityMetricsEnabled = true;
 	private Map<String, Long> longMetricsActual = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsActual = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsActual = new LinkedHashMap<>();
@@ -253,6 +255,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getHasNextCallCountActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return hasNextCallCountActual;
 	}
 
@@ -263,6 +268,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getHasNextTrueCountActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return hasNextTrueCountActual;
 	}
 
@@ -273,6 +281,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getHasNextTimeNanosActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return hasNextTimeNanosActual;
 	}
 
@@ -283,6 +294,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getNextCallCountActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return nextCallCountActual;
 	}
 
@@ -293,6 +307,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getNextTimeNanosActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return nextTimeNanosActual;
 	}
 
@@ -303,6 +320,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getJoinRightIteratorsCreatedActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return joinRightIteratorsCreatedActual;
 	}
 
@@ -313,6 +333,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getJoinLeftBindingsConsumedActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return joinLeftBindingsConsumedActual;
 	}
 
@@ -323,6 +346,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getJoinRightBindingsConsumedActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return joinRightBindingsConsumedActual;
 	}
 
@@ -333,6 +359,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getSourceRowsScannedActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return sourceRowsScannedActual;
 	}
 
@@ -343,6 +372,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getSourceRowsMatchedActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return sourceRowsMatchedActual;
 	}
 
@@ -353,6 +385,9 @@ public class GenericPlanNode {
 	}
 
 	public Long getSourceRowsFilteredActual() {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return sourceRowsFilteredActual;
 	}
 
@@ -366,8 +401,30 @@ public class GenericPlanNode {
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
+	public void setEstimateStabilityMetricsEnabled(boolean estimateStabilityMetricsEnabled) {
+		this.estimateStabilityMetricsEnabled = estimateStabilityMetricsEnabled;
+	}
+
+	public void applyExplanationLevel(Explanation.Level level) {
+		if (level == null) {
+			return;
+		}
+
+		setRuntimeTelemetryEnabled(level.includesRuntimeTelemetry());
+		setEstimateStabilityMetricsEnabled(level.includesEstimateStabilityMetrics());
+
+		if (plans == null) {
+			return;
+		}
+
+		for (GenericPlanNode child : plans) {
+			child.applyExplanationLevel(level);
+		}
+	}
+
 	public Map<String, Long> getLongMetricsActual() {
-		return longMetricsActual.isEmpty() ? null : longMetricsActual;
+		Map<String, Long> visible = visibleLongMetricsActual();
+		return visible == null || visible.isEmpty() ? null : visible;
 	}
 
 	public void setLongMetricsActual(Map<String, Long> longMetricsActual) {
@@ -376,7 +433,15 @@ public class GenericPlanNode {
 	}
 
 	public Long getLongMetricActual(String metricName) {
-		return longMetricsActual.get(metricName);
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
+		Long metricValue = longMetricsActual.get(metricName);
+		if (TelemetryMetricNames.OUTPUT_ROWS_ACTUAL.equals(metricName)
+				&& Objects.equals(metricValue, getResultSizeActual())) {
+			return null;
+		}
+		return metricValue;
 	}
 
 	public void setLongMetricActual(String metricName, Long metricValue) {
@@ -387,7 +452,10 @@ public class GenericPlanNode {
 	}
 
 	public Map<String, Double> getDoubleMetricsActual() {
-		return doubleMetricsActual.isEmpty() ? null : doubleMetricsActual;
+		if (!runtimeTelemetryEnabled || doubleMetricsActual.isEmpty()) {
+			return null;
+		}
+		return doubleMetricsActual;
 	}
 
 	public void setDoubleMetricsActual(Map<String, Double> doubleMetricsActual) {
@@ -396,6 +464,9 @@ public class GenericPlanNode {
 	}
 
 	public Double getDoubleMetricActual(String metricName) {
+		if (!runtimeTelemetryEnabled) {
+			return null;
+		}
 		return doubleMetricsActual.get(metricName);
 	}
 
@@ -407,7 +478,8 @@ public class GenericPlanNode {
 	}
 
 	public Map<String, String> getStringMetricsActual() {
-		return stringMetricsActual.isEmpty() ? null : stringMetricsActual;
+		Map<String, String> visible = visibleStringMetricsActual();
+		return visible.isEmpty() ? null : visible;
 	}
 
 	public void setStringMetricsActual(Map<String, String> stringMetricsActual) {
@@ -416,7 +488,11 @@ public class GenericPlanNode {
 	}
 
 	public String getStringMetricActual(String metricName) {
-		return stringMetricsActual.get(metricName);
+		if (!runtimeTelemetryEnabled && !isPreferredExplainAnnotationMetric(metricName)) {
+			return null;
+		}
+		String metricValue = stringMetricsActual.get(metricName);
+		return hideStringMetric(metricName, metricValue) ? null : metricValue;
 	}
 
 	public void setStringMetricActual(String metricName, String metricValue) {
@@ -452,6 +528,14 @@ public class GenericPlanNode {
 
 		return totalTimeActual - childTime;
 
+	}
+
+	/**
+	 * Accepts selfTimeActual when deserializing JSON for compatibility with clients/servers that include this derived
+	 * field.
+	 */
+	public void setSelfTimeActual(Double ignoredSelfTimeActual) {
+		// selfTimeActual is derived from totalTimeActual and child totals.
 	}
 
 	/**
@@ -812,31 +896,37 @@ public class GenericPlanNode {
 	}
 
 	private void appendMapTelemetry(Map<String, String> metrics) {
-		for (Map.Entry<String, Long> entry : longMetricsActual.entrySet()) {
-			String metricName = entry.getKey();
-			Long metricValue = entry.getValue();
-			if (metricValue == null || metricValue <= 0) {
-				continue;
+		Map<String, Long> visibleLongMetrics = getLongMetricsActual();
+		if (visibleLongMetrics != null) {
+			for (Map.Entry<String, Long> entry : visibleLongMetrics.entrySet()) {
+				String metricName = entry.getKey();
+				Long metricValue = entry.getValue();
+				if (metricValue == null || metricValue <= 0) {
+					continue;
+				}
+				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
+					continue;
+				}
+				putIfKnown(metrics, metricName, toHumanReadableNumber(metricValue));
 			}
-			if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
-				continue;
-			}
-			putIfKnown(metrics, metricName, toHumanReadableNumber(metricValue));
 		}
 
-		for (Map.Entry<String, Double> entry : doubleMetricsActual.entrySet()) {
-			String metricName = entry.getKey();
-			Double metricValue = entry.getValue();
-			if (metricValue == null || metricValue <= 0) {
-				continue;
+		Map<String, Double> visibleDoubleMetrics = getDoubleMetricsActual();
+		if (visibleDoubleMetrics != null) {
+			for (Map.Entry<String, Double> entry : visibleDoubleMetrics.entrySet()) {
+				String metricName = entry.getKey();
+				Double metricValue = entry.getValue();
+				if (metricValue == null || metricValue <= 0) {
+					continue;
+				}
+				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
+					continue;
+				}
+				putIfKnown(metrics, metricName, toHumanReadableNumber(metricValue));
 			}
-			if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
-				continue;
-			}
-			putIfKnown(metrics, metricName, toHumanReadableNumber(metricValue));
 		}
 
-		for (Map.Entry<String, String> entry : stringMetricsActual.entrySet()) {
+		for (Map.Entry<String, String> entry : orderedStringMetricsActual()) {
 			String metricName = entry.getKey();
 			String metricValue = entry.getValue();
 			if (metricValue == null || metricValue.isEmpty()) {
@@ -849,33 +939,111 @@ public class GenericPlanNode {
 		}
 	}
 
+	private List<Map.Entry<String, String>> orderedStringMetricsActual() {
+		Map<String, String> visibleStringMetrics = visibleStringMetricsActual();
+		List<Map.Entry<String, String>> orderedEntries = new ArrayList<>();
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.BINDING_STATE);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.JOIN_TYPE);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.INDEX_NAME);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.INDEX_NAMES);
+		for (Map.Entry<String, String> entry : visibleStringMetrics.entrySet()) {
+			if (isPreferredExplainAnnotationMetric(entry.getKey())) {
+				continue;
+			}
+			orderedEntries.add(entry);
+		}
+		return orderedEntries;
+	}
+
+	private void appendPreferredStringMetric(List<Map.Entry<String, String>> orderedEntries,
+			Map<String, String> visibleStringMetrics, String metricName) {
+		String metricValue = visibleStringMetrics.get(metricName);
+		if (metricValue != null && !metricValue.isEmpty()) {
+			orderedEntries.add(Map.entry(metricName, metricValue));
+		}
+	}
+
+	private Map<String, String> visibleStringMetricsActual() {
+		if (stringMetricsActual.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		if (runtimeTelemetryEnabled) {
+			Map<String, String> visible = new LinkedHashMap<>();
+			for (Map.Entry<String, String> entry : stringMetricsActual.entrySet()) {
+				if (!hideStringMetric(entry.getKey(), entry.getValue())) {
+					visible.put(entry.getKey(), entry.getValue());
+				}
+			}
+			return visible;
+		}
+		Map<String, String> visible = new LinkedHashMap<>();
+		for (String metricName : List.of(
+				TelemetryMetricNames.BINDING_STATE,
+				TelemetryMetricNames.JOIN_TYPE,
+				TelemetryMetricNames.INDEX_NAME,
+				TelemetryMetricNames.INDEX_NAMES)) {
+			String metricValue = stringMetricsActual.get(metricName);
+			if (metricValue != null && !metricValue.isEmpty() && !hideStringMetric(metricName, metricValue)) {
+				visible.put(metricName, metricValue);
+			}
+		}
+		return visible;
+	}
+
+	private static boolean hideStringMetric(String metricName, String metricValue) {
+		return TelemetryMetricNames.JOIN_TYPE.equals(metricName) && "regular join".equals(metricValue);
+	}
+
+	private Map<String, Long> visibleLongMetricsActual() {
+		if (!runtimeTelemetryEnabled || longMetricsActual.isEmpty()) {
+			return null;
+		}
+		Long outputRowsActual = longMetricsActual.get(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL);
+		if (!Objects.equals(outputRowsActual, getResultSizeActual())) {
+			return longMetricsActual;
+		}
+		Map<String, Long> visible = new LinkedHashMap<>(longMetricsActual);
+		visible.remove(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL);
+		return visible;
+	}
+
+	private static boolean isPreferredExplainAnnotationMetric(String metricName) {
+		return TelemetryMetricNames.BINDING_STATE.equals(metricName)
+				|| TelemetryMetricNames.JOIN_TYPE.equals(metricName)
+				|| TelemetryMetricNames.INDEX_NAME.equals(metricName)
+				|| TelemetryMetricNames.INDEX_NAMES.equals(metricName);
+	}
+
 	private void appendDerivedTelemetry(Map<String, String> metrics, Long sourceRowsScanned, Long sourceRowsMatched,
 			Long sourceRowsFiltered) {
 		Long inputRows = totalInputRowsFromChildren();
 		Long outputRows = getResultSizeActual();
 
-		putIfKnownIfAbsent(metrics, TelemetryMetricNames.INPUT_ROWS_ACTUAL, toHumanReadableNumber(inputRows));
-		putIfKnownIfAbsent(metrics, TelemetryMetricNames.OUTPUT_ROWS_ACTUAL, toHumanReadableNumber(outputRows));
+		if (!shouldHideInputRowsActual(inputRows, outputRows)) {
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.INPUT_ROWS_ACTUAL, toHumanReadableNumber(inputRows));
+		}
 		if (inputRows != null && outputRows != null) {
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.ROWS_DROPPED_ACTUAL,
-					toHumanReadableNumber(Math.max(0L, inputRows - outputRows)));
+			long rowsDropped = Math.max(0L, inputRows - outputRows);
+			if (rowsDropped > 0L) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.ROWS_DROPPED_ACTUAL,
+						toHumanReadableNumber(rowsDropped));
+			}
 			Double selectivity = ratio(outputRows, inputRows);
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.SELECTIVITY_ACTUAL, toHumanReadableNumber(selectivity));
 			Double expansion = ratio(outputRows, Math.max(1L, inputRows));
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.EXPANSION_FACTOR_ACTUAL, toHumanReadableNumber(expansion));
+			if (!isApproximatelyOne(selectivity) && !(isJoinNode() && isApproximatelyEqual(selectivity, expansion))) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.SELECTIVITY_ACTUAL,
+						toHumanReadableNumber(selectivity));
+			}
+			if (!isApproximatelyOne(expansion)) {
+				putIfKnownIfAbsent(metrics, TelemetryMetricNames.EXPANSION_FACTOR_ACTUAL,
+						toHumanReadableNumber(expansion));
+			}
 		}
 
 		if (outputRows != null && getTotalTimeActual() != null && getTotalTimeActual() > 0) {
 			double throughput = outputRows * 1000.0 / getTotalTimeActual();
 			putIfKnownIfAbsent(metrics, TelemetryMetricNames.THROUGHPUT_ROWS_PER_SEC_ACTUAL,
 					toHumanReadableNumber(throughput));
-		}
-
-		if (getResultSizeEstimate() != null && getResultSizeEstimate() > 0 && outputRows != null && outputRows > 0) {
-			double estimate = getResultSizeEstimate();
-			double actual = outputRows.doubleValue();
-			double qError = Math.max(estimate / actual, actual / estimate);
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.ESTIMATE_ERROR_Q, toHumanReadableNumber(qError));
 		}
 
 		List<Double> childQErrors = new ArrayList<>();
@@ -888,7 +1056,7 @@ public class GenericPlanNode {
 			double actual = child.getResultSizeActual().doubleValue();
 			childQErrors.add(Math.max(estimate / actual, actual / estimate));
 		}
-		if (!childQErrors.isEmpty()) {
+		if (estimateStabilityMetricsEnabled && !childQErrors.isEmpty()) {
 			long sampleCount = childQErrors.size();
 			double mean = childQErrors.stream().mapToDouble(Double::doubleValue).average().orElse(0D);
 			double variance = childQErrors.stream()
@@ -1121,6 +1289,22 @@ public class GenericPlanNode {
 		}
 	}
 
+	private boolean shouldHideInputRowsActual(Long inputRows, Long outputRows) {
+		return inputRows != null
+				&& outputRows != null
+				&& !isFilterNode()
+				&& !isJoinNode()
+				&& Objects.equals(inputRows, outputRows);
+	}
+
+	private static boolean isApproximatelyOne(Double value) {
+		return value != null && Math.abs(value - 1D) < 1e-9;
+	}
+
+	private static boolean isApproximatelyEqual(Double left, Double right) {
+		return left != null && right != null && Math.abs(left - right) < 1e-9;
+	}
+
 	private static void putIfKnownIfAbsent(Map<String, String> target, String metricName, String metricValue) {
 		if (target.containsKey(metricName)) {
 			return;
@@ -1171,21 +1355,24 @@ public class GenericPlanNode {
 				.append(" [label=")
 				.append("<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" >");
 
-		sb.append(Stream.of(
-				"<tr><td COLSPAN=\"2\" BGCOLOR=\"" + totalTimeColor + "\"><U>" + StringEscapeUtils.escapeHtml4(type)
-						+ "</U></td></tr>",
-				"<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>",
-				"<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
-						+ "</td></tr>",
-				"<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>",
-				"<tr><td>Result size estimate</td><td>" + toHumanReadableNumber(getResultSizeEstimate()) + "</td></tr>",
-				"<tr><td >Result size actual</td><td>" + toHumanReadableNumber(getResultSizeActual()) + "</td></tr>",
-//			"<tr><td >Result size actual</td><td BGCOLOR=\"" + resultSizeActualColor + "\">" + toHumanReadableNumber(getResultSizeActual()) + "</td></tr>",
-				"<tr><td >Total time actual</td><td BGCOLOR=\"" + totalTimeColor + "\">"
-						+ toHumanReadableTime(getTotalTimeActual()) + "</td></tr>",
-				"<tr><td >Self time actual</td><td BGCOLOR=\"" + selfTimeColor + "\">"
-						+ toHumanReadableTime(getSelfTimeActual()) + "</td></tr>")
-				.filter(s -> !s.contains(UNKNOWN)) // simple but hacky way of removing essentially null values
+		List<String> rows = new ArrayList<>();
+		rows.add("<tr><td COLSPAN=\"2\" BGCOLOR=\"" + totalTimeColor + "\"><U>"
+				+ StringEscapeUtils.escapeHtml4(type) + "</U></td></tr>");
+		rows.add("<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>");
+		rows.add("<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
+				+ "</td></tr>");
+		rows.add("<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>");
+		rows.add("<tr><td>Result size estimate</td><td>" + toHumanReadableNumber(getResultSizeEstimate())
+				+ "</td></tr>");
+		rows.add("<tr><td >Result size actual</td><td>" + toHumanReadableNumber(getResultSizeActual())
+				+ "</td></tr>");
+		rows.add("<tr><td >Total time actual</td><td BGCOLOR=\"" + totalTimeColor + "\">"
+				+ toHumanReadableTime(getTotalTimeActual()) + "</td></tr>");
+		rows.add("<tr><td >Self time actual</td><td BGCOLOR=\"" + selfTimeColor + "\">"
+				+ toHumanReadableTime(getSelfTimeActual()) + "</td></tr>");
+		appendExplainAnnotationDotRows(rows);
+		sb.append(rows.stream()
+				.filter(s -> !s.contains(UNKNOWN))
 				.reduce((a, b) -> a + " " + b)
 				.orElse(""));
 
@@ -1217,6 +1404,25 @@ public class GenericPlanNode {
 			sb.append(newLine).append("}").append(newLine);
 		}
 		return sb.toString();
+	}
+
+	private void appendExplainAnnotationDotRows(List<String> rows) {
+		appendExplainAnnotationDotRow(rows, "Binding state", TelemetryMetricNames.BINDING_STATE);
+		appendExplainAnnotationDotRow(rows, "Join type", TelemetryMetricNames.JOIN_TYPE);
+		if (getStringMetricActual(TelemetryMetricNames.INDEX_NAME) != null) {
+			appendExplainAnnotationDotRow(rows, "Index", TelemetryMetricNames.INDEX_NAME);
+		} else {
+			appendExplainAnnotationDotRow(rows, "Indexes", TelemetryMetricNames.INDEX_NAMES);
+		}
+	}
+
+	private void appendExplainAnnotationDotRow(List<String> rows, String label, String metricName) {
+		String metricValue = getStringMetricActual(metricName);
+		if (metricValue == null || metricValue.isEmpty()) {
+			return;
+		}
+		rows.add("<tr><td>" + StringEscapeUtils.escapeHtml4(label) + "</td><td>"
+				+ StringEscapeUtils.escapeHtml4(metricValue) + "</td></tr>");
 	}
 
 	private String getProportionalRedColor(Double max, Double value) {

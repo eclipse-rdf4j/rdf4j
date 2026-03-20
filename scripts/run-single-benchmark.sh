@@ -10,6 +10,7 @@ Options:
   --warmup-iterations <number>      Number of warmup iterations (default: 1)
   --measurement-iterations <number> Number of measurement iterations (default: 3)
   --forks <number>                  Number of forks (default: 1)
+  --param <name=value>              Append a benchmark parameter override (can be repeated)
   --jvm-arg <value>                 Append a JVM argument (can be repeated)
   --jmh-arg <value>                 Append a raw JMH argument (can be repeated)
   --enable-jfr                      Enable JFR profiling with fixed iteration and timing settings
@@ -29,6 +30,7 @@ dry_run=false
 warmup_iterations=1
 measurement_iterations=3
 forks=1
+benchmark_params=()
 jmh_extra_args=()
 jvm_args=()
 measurement_time=""
@@ -67,6 +69,10 @@ while [[ $# -gt 0 ]]; do
         --forks)
                 forks="$2"
                 forks_overridden=true
+                shift 2
+                ;;
+        --param)
+                benchmark_params+=("$2")
                 shift 2
                 ;;
         --jvm-arg)
@@ -118,6 +124,13 @@ if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; 
         exit 1
 fi
 
+for param in "${benchmark_params[@]}"; do
+        if [[ "${param}" != *=* ]]; then
+                echo "Error: --param expects name=value." >&2
+                exit 1
+        fi
+done
+
 module_dir="${REPO_ROOT}/${module}"
 if [[ ! -d "${module_dir}" ]]; then
         echo "Error: Module directory '${module}' does not exist." >&2
@@ -130,6 +143,8 @@ if ${enable_jfr_cpu_times} && ! ${enable_jfr}; then
 fi
 
 if ${enable_jfr}; then
+        start_flight_recording_options=()
+
         if (( ${#jmh_extra_args[@]} > 0 )); then
                 echo "Error: --enable-jfr cannot be combined with additional JMH arguments." >&2
                 exit 1
@@ -164,22 +179,33 @@ if ${enable_jfr}; then
                 jfr_output="${REPO_ROOT}/${jfr_output}"
         fi
 
-        jvm_args+=("-XX:StartFlightRecording=settings=profile,dumponexit=true,filename=${jfr_output},duration=120s")
+        start_flight_recording_options+=("settings=profile")
+        start_flight_recording_options+=("dumponexit=true")
+        start_flight_recording_options+=("filename=${jfr_output}")
+        start_flight_recording_options+=("duration=120s")
 
         if ${enable_jfr_cpu_times}; then
-                jvm_args+=("-XX:FlightRecorderOptions=enableThreadCpuTime=true,enableProcessCpuTime=true")
+                start_flight_recording_options+=("jdk.CPUTimeSample#enabled=true")
+                start_flight_recording_options+=("report-on-exit=cpu-time-hot-methods")
         fi
+
+        start_flight_recording_option="$(printf '%s,' "${start_flight_recording_options[@]}")"
+        start_flight_recording_option="${start_flight_recording_option%,}"
+        jvm_args+=("-XX:StartFlightRecording=${start_flight_recording_option}")
 
         jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."
 fi
 
-mvn_cmd=(mvn "-pl" "${module}" "-am" "-P" "benchmarks" "-DskipTests" package)
+mvn_cmd=(mvn "-pl" "${module}" "-am" "-P" "benchmarks,quick" "-DskipTests" clean package)
 
 benchmark_pattern="${benchmark_class}.${benchmark_method}"
 jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")
 if [[ -n "${measurement_time}" ]]; then
         jmh_args+=(-r "${measurement_time}")
 fi
+for param in "${benchmark_params[@]}"; do
+        jmh_args+=(-p "${param}")
+done
 for arg in "${jvm_args[@]}"; do
         jmh_args+=("-jvmArgsAppend" "${arg}")
 done
@@ -211,6 +237,27 @@ find_benchmark_jar() {
         printf '%s\n' "${module_path}/target/jmh.jar"
 }
 
+java_major_version() {
+        java -version 2>&1 | awk -F '[\".]' '/version/ { print $2; exit }'
+}
+
+require_linux_java25_for_cpu_time_jfr() {
+        local os_name
+        local java_major
+
+        os_name="$(uname -s)"
+        if [[ "${os_name}" != "Linux" ]]; then
+                echo "Error: --enable-jfr-cpu-times requires Linux at runtime. Use --dry-run on other platforms." >&2
+                exit 1
+        fi
+
+        java_major="$(java_major_version)"
+        if ! [[ "${java_major}" =~ ^[0-9]+$ ]] || (( java_major < 25 )); then
+                echo "Error: --enable-jfr-cpu-times requires Java 25 or newer at runtime." >&2
+                exit 1
+        fi
+}
+
 print_command() {
         printf '%q ' "$@"
         printf '\n'
@@ -231,6 +278,10 @@ fi
         cd "${REPO_ROOT}"
         "${mvn_cmd[@]}"
 )
+
+if ${enable_jfr_cpu_times}; then
+        require_linux_java25_for_cpu_time_jfr
+fi
 
 jar_path="$(find_benchmark_jar "${module_dir}" true)"
 java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
