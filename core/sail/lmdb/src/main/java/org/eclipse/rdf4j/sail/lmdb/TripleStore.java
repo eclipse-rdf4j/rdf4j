@@ -68,6 +68,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -83,6 +84,7 @@ import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
@@ -948,6 +950,69 @@ class TripleStore implements Closeable {
 		}
 
 		return bestIndex;
+	}
+
+	IndexPrefixSelection selectBestIndexPrefix(Set<Component> boundComponents) {
+		long subj = boundMask(boundComponents, Component.S);
+		long pred = boundMask(boundComponents, Component.P);
+		long obj = boundMask(boundComponents, Component.O);
+		long context = boundMask(boundComponents, Component.C);
+		TripleIndex bestIndex = getBestIndex(subj, pred, obj, context);
+		if (bestIndex == null) {
+			return new IndexPrefixSelection("", 0, Set.of());
+		}
+
+		int prefixScore = bestIndex.getPatternScore(subj, pred, obj, context);
+		EnumSet<Component> prefixComponents = EnumSet.noneOf(Component.class);
+		char[] fieldSequence = bestIndex.getFieldSeq();
+		for (int i = 0; i < prefixScore; i++) {
+			prefixComponents.add(toEstimatorComponent(fieldSequence[i]));
+		}
+
+		return new IndexPrefixSelection(new String(fieldSequence), prefixScore, prefixComponents);
+	}
+
+	private long boundMask(Set<Component> boundComponents, Component component) {
+		return boundComponents != null && boundComponents.contains(component) ? 1L : -1L;
+	}
+
+	private Component toEstimatorComponent(char field) {
+		switch (field) {
+		case 's':
+			return Component.S;
+		case 'p':
+			return Component.P;
+		case 'o':
+			return Component.O;
+		case 'c':
+			return Component.C;
+		default:
+			throw new IllegalArgumentException("invalid index field: " + field);
+		}
+	}
+
+	static final class IndexPrefixSelection {
+		private final String indexFieldSequence;
+		private final int prefixScore;
+		private final Set<Component> prefixComponents;
+
+		private IndexPrefixSelection(String indexFieldSequence, int prefixScore, Set<Component> prefixComponents) {
+			this.indexFieldSequence = indexFieldSequence;
+			this.prefixScore = prefixScore;
+			this.prefixComponents = Set.copyOf(prefixComponents);
+		}
+
+		String indexFieldSequence() {
+			return indexFieldSequence;
+		}
+
+		int prefixScore() {
+			return prefixScore;
+		}
+
+		Set<Component> prefixComponents() {
+			return prefixComponents;
+		}
 	}
 
 	private boolean requiresResize() {

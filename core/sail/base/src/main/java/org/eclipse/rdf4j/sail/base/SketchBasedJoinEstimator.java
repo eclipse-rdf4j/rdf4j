@@ -74,6 +74,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -194,6 +195,78 @@ public class SketchBasedJoinEstimator {
 			this.comp1 = c1;
 			this.comp2 = c2;
 		}
+	}
+
+	@FunctionalInterface
+	public interface JoinOrderWorkAdjuster {
+		JoinOrderWorkAdjuster NO_OP = (accessShape, defaultWorkRows) -> defaultWorkRows;
+
+		double adjustedWorkRows(AccessShape accessShape, double defaultWorkRows);
+	}
+
+	public static final class AccessShape {
+		private final StatementPattern pattern;
+		private final double filterMultiplier;
+		private final Set<Component> patternConstantComponents;
+		private final Map<Component, String> joinBoundVarNamesByComponent;
+		private final Set<Component> filterLookupComponents;
+		private final Set<Component> lookupBoundComponents;
+		private final AccessRowsEstimator accessRowsEstimator;
+
+		private AccessShape(StatementPattern pattern, double filterMultiplier, Set<Component> patternConstantComponents,
+				Map<Component, String> joinBoundVarNamesByComponent, Set<Component> filterLookupComponents,
+				AccessRowsEstimator accessRowsEstimator) {
+			this.pattern = Objects.requireNonNull(pattern, "pattern");
+			this.filterMultiplier = filterMultiplier;
+			this.patternConstantComponents = Set.copyOf(patternConstantComponents);
+			EnumMap<Component, String> joinBoundVarNames = new EnumMap<>(Component.class);
+			joinBoundVarNames.putAll(joinBoundVarNamesByComponent);
+			this.joinBoundVarNamesByComponent = Collections.unmodifiableMap(joinBoundVarNames);
+			this.filterLookupComponents = Set.copyOf(filterLookupComponents);
+			EnumSet<Component> lookupBound = EnumSet.noneOf(Component.class);
+			lookupBound.addAll(this.patternConstantComponents);
+			lookupBound.addAll(this.joinBoundVarNamesByComponent.keySet());
+			lookupBound.addAll(this.filterLookupComponents);
+			this.lookupBoundComponents = Set.copyOf(lookupBound);
+			this.accessRowsEstimator = Objects.requireNonNull(accessRowsEstimator, "accessRowsEstimator");
+		}
+
+		public StatementPattern pattern() {
+			return pattern;
+		}
+
+		public double filterMultiplier() {
+			return filterMultiplier;
+		}
+
+		public Set<Component> patternConstantComponents() {
+			return patternConstantComponents;
+		}
+
+		public Map<Component, String> joinBoundVarNamesByComponent() {
+			return joinBoundVarNamesByComponent;
+		}
+
+		public Set<Component> filterLookupComponents() {
+			return filterLookupComponents;
+		}
+
+		public Set<Component> lookupBoundComponents() {
+			return lookupBoundComponents;
+		}
+
+		public double estimateAccessRows(Set<Component> prefixComponents) {
+			return accessRowsEstimator.estimate(prefixComponents);
+		}
+
+		public boolean isDirectLookup(Set<Component> prefixComponents) {
+			return prefixComponents.containsAll(lookupBoundComponents);
+		}
+	}
+
+	@FunctionalInterface
+	private interface AccessRowsEstimator {
+		double estimate(Set<Component> prefixComponents);
 	}
 
 	enum SketchPlannerPath {
@@ -2871,6 +2944,11 @@ public class SketchBasedJoinEstimator {
 
 	public Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm) {
+		return planJoinOrder(args, initiallyBoundVars, algorithm, JoinOrderWorkAdjuster.NO_OP);
+	}
+
+	public Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster) {
 		if (!isReady()) {
 			recordJoinOrderPlannerPath(SketchPlannerPath.ROBUST_NOT_READY);
 			return Optional.empty();
@@ -2880,7 +2958,7 @@ public class SketchBasedJoinEstimator {
 			return Optional.empty();
 		}
 
-		return new SketchJoinOrderReorderer(this).plan(args, initiallyBoundVars, algorithm);
+		return new SketchJoinOrderReorderer(this, workAdjuster).plan(args, initiallyBoundVars, algorithm);
 	}
 
 	boolean canUseRobustSketchOptimizer(Set<String> initiallyBoundVars) {
@@ -3719,6 +3797,299 @@ public class SketchBasedJoinEstimator {
 		return new PatternEstimateInput(input.pattern, combinedMultiplier);
 	}
 
+	AccessShape accessShapeForJoinOrdering(TupleExpr tupleExpr, Set<String> currentlyBoundVars) {
+		if (tupleExpr instanceof StatementPattern) {
+			return buildAccessShape((StatementPattern) tupleExpr, currentlyBoundVars, 1.0d, Set.of());
+		}
+		if (tupleExpr instanceof Filter) {
+			return accessShapeForJoinOrdering((Filter) tupleExpr, currentlyBoundVars);
+		}
+		return null;
+	}
+
+	private AccessShape accessShapeForJoinOrdering(Filter filter, Set<String> currentlyBoundVars) {
+		AccessShape accessShape = accessShapeForJoinOrdering(filter.getArg(), currentlyBoundVars);
+		if (accessShape == null) {
+			return null;
+		}
+		LookupAnalysis lookupAnalysis = analyzeLookupBindings(accessShape.pattern(), filter.getCondition(),
+				currentlyBoundVars);
+		double filterMultiplier = resolveFilterMultiplier(filter, accessShape.pattern());
+		if (filterMultiplier >= 1.0d && lookupAnalysis.multiplier() > 0.0d) {
+			filterMultiplier = lookupAnalysis.multiplier();
+		}
+		double combinedMultiplier = normalizeFilterMultiplier(accessShape.filterMultiplier() * filterMultiplier);
+		EnumSet<Component> combinedLookupComponents = EnumSet.noneOf(Component.class);
+		combinedLookupComponents.addAll(accessShape.filterLookupComponents());
+		combinedLookupComponents.addAll(lookupAnalysis.components());
+		return buildAccessShape(accessShape.pattern(), currentlyBoundVars, combinedMultiplier,
+				combinedLookupComponents);
+	}
+
+	private AccessShape buildAccessShape(StatementPattern pattern, Set<String> currentlyBoundVars,
+			double filterMultiplier, Set<Component> filterLookupComponents) {
+		StatementPattern patternClone = pattern.clone();
+		EnumSet<Component> patternConstantComponents = collectPatternConstantComponents(patternClone);
+		EnumMap<Component, String> joinBoundVarNamesByComponent = collectJoinBoundVarNames(patternClone,
+				currentlyBoundVars);
+		EnumSet<Component> filterLookup = filterLookupComponents.isEmpty()
+				? EnumSet.noneOf(Component.class)
+				: EnumSet.copyOf(filterLookupComponents);
+		return new AccessShape(patternClone, filterMultiplier, patternConstantComponents, joinBoundVarNamesByComponent,
+				filterLookup,
+				prefixComponents -> estimateAccessRows(patternClone, joinBoundVarNamesByComponent, prefixComponents));
+	}
+
+	private EnumSet<Component> collectPatternConstantComponents(StatementPattern pattern) {
+		EnumSet<Component> components = EnumSet.noneOf(Component.class);
+		for (Component component : Component.values()) {
+			Var var = varForComponent(pattern, component);
+			if (var != null && var.hasValue()) {
+				components.add(component);
+			}
+		}
+		return components;
+	}
+
+	private EnumMap<Component, String> collectJoinBoundVarNames(StatementPattern pattern,
+			Set<String> currentlyBoundVars) {
+		EnumMap<Component, String> components = new EnumMap<>(Component.class);
+		if (currentlyBoundVars == null || currentlyBoundVars.isEmpty()) {
+			return components;
+		}
+		for (Component component : Component.values()) {
+			Var var = varForComponent(pattern, component);
+			if (var == null || var.hasValue() || var.getName() == null || !currentlyBoundVars.contains(var.getName())) {
+				continue;
+			}
+			components.put(component, var.getName());
+		}
+		return components;
+	}
+
+	private double estimateAccessRows(StatementPattern pattern, Map<Component, String> joinBoundVarNamesByComponent,
+			Set<Component> prefixComponents) {
+		Set<Component> coveredComponents = prefixComponents == null || prefixComponents.isEmpty()
+				? Set.of()
+				: Set.copyOf(prefixComponents);
+		StatementPattern accessPattern = patternForAccessPrefix(pattern, coveredComponents);
+		Set<String> prefixBoundVars = new HashSet<>();
+		for (Map.Entry<Component, String> entry : joinBoundVarNamesByComponent.entrySet()) {
+			if (coveredComponents.contains(entry.getKey()) && entry.getValue() != null) {
+				prefixBoundVars.add(entry.getValue());
+			}
+		}
+		TuplePlanEstimate estimate = estimateTupleExprPlan(accessPattern, prefixBoundVars);
+		if (estimate == null) {
+			return 0.0d;
+		}
+		return estimate.outputRows();
+	}
+
+	private StatementPattern patternForAccessPrefix(StatementPattern pattern, Set<Component> prefixComponents) {
+		StatementPattern accessPattern = pattern.clone();
+		for (Component component : Component.values()) {
+			if (prefixComponents.contains(component)) {
+				continue;
+			}
+			Var var = varForComponent(accessPattern, component);
+			if (var != null && var.hasValue()) {
+				accessPattern.replaceChildNode(var, unboundCopy(var));
+			}
+		}
+		return accessPattern;
+	}
+
+	private Var unboundCopy(Var var) {
+		return Var.of(var.getName(), null, var.isAnonymous(), false);
+	}
+
+	private LookupAnalysis analyzeLookupBindings(StatementPattern pattern, ValueExpr condition,
+			Set<String> currentlyBoundVars) {
+		if (condition == null) {
+			return LookupAnalysis.none();
+		}
+		if (condition instanceof And) {
+			And and = (And) condition;
+			return combineLookupAnalyses(analyzeLookupBindings(pattern, and.getLeftArg(), currentlyBoundVars),
+					analyzeLookupBindings(pattern, and.getRightArg(), currentlyBoundVars));
+		}
+		LookupAnalysis listMember = analyzeListMemberLookup(pattern, condition, currentlyBoundVars);
+		if (!listMember.isNone()) {
+			return listMember;
+		}
+		LookupAnalysis disjunction = analyzeDisjunctiveEqualityLookup(pattern, condition, currentlyBoundVars);
+		if (!disjunction.isNone()) {
+			return disjunction;
+		}
+		return analyzeEqualityLookup(pattern, condition, currentlyBoundVars);
+	}
+
+	private LookupAnalysis combineLookupAnalyses(LookupAnalysis left, LookupAnalysis right) {
+		if (left.isNone()) {
+			return right;
+		}
+		if (right.isNone()) {
+			return left;
+		}
+		EnumSet<Component> components = EnumSet.noneOf(Component.class);
+		components.addAll(left.components());
+		components.addAll(right.components());
+		double multiplier = left.multiplier() > 0.0d && right.multiplier() > 0.0d
+				? normalizeFilterMultiplier(left.multiplier() * right.multiplier())
+				: Math.max(left.multiplier(), right.multiplier());
+		return new LookupAnalysis(components, multiplier);
+	}
+
+	private LookupAnalysis analyzeListMemberLookup(StatementPattern pattern, ValueExpr condition,
+			Set<String> currentlyBoundVars) {
+		if (!(condition instanceof ListMemberOperator)) {
+			return LookupAnalysis.none();
+		}
+
+		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
+		if (arguments == null || arguments.size() < 2 || !(arguments.get(0) instanceof Var listedVar)
+				|| listedVar.getName() == null) {
+			return LookupAnalysis.none();
+		}
+
+		Component component = findPatternComponentByVarName(pattern, listedVar.getName());
+		if (component == null) {
+			return LookupAnalysis.none();
+		}
+
+		Set<String> lookupKeys = new HashSet<>();
+		for (int i = 1; i < arguments.size(); i++) {
+			String lookupKey = lookupKey(arguments.get(i), currentlyBoundVars);
+			if (lookupKey == null) {
+				return LookupAnalysis.none();
+			}
+			lookupKeys.add(lookupKey);
+		}
+		if (lookupKeys.isEmpty()) {
+			return LookupAnalysis.none();
+		}
+		return lookupAnalysisFor(pattern, component, lookupKeys.size());
+	}
+
+	private LookupAnalysis analyzeDisjunctiveEqualityLookup(StatementPattern pattern, ValueExpr condition,
+			Set<String> currentlyBoundVars) {
+		List<LookupValueCount> alternatives = new ArrayList<>();
+		if (!collectDisjunctiveEqualityAlternatives(pattern, condition, currentlyBoundVars, alternatives)
+				|| alternatives.isEmpty()) {
+			return LookupAnalysis.none();
+		}
+		Component component = alternatives.get(0).component();
+		int valueCount = 0;
+		for (LookupValueCount alternative : alternatives) {
+			if (alternative.component() != component) {
+				return LookupAnalysis.none();
+			}
+			valueCount += alternative.valueCount();
+		}
+		return lookupAnalysisFor(pattern, component, valueCount);
+	}
+
+	private boolean collectDisjunctiveEqualityAlternatives(StatementPattern pattern, ValueExpr condition,
+			Set<String> currentlyBoundVars, List<LookupValueCount> alternatives) {
+		if (condition instanceof Or) {
+			Or or = (Or) condition;
+			return collectDisjunctiveEqualityAlternatives(pattern, or.getLeftArg(), currentlyBoundVars, alternatives)
+					&& collectDisjunctiveEqualityAlternatives(pattern, or.getRightArg(), currentlyBoundVars,
+							alternatives);
+		}
+		LookupValueCount alternative = lookupValueCountForEquality(pattern, condition, currentlyBoundVars);
+		if (alternative == null) {
+			return false;
+		}
+		alternatives.add(alternative);
+		return true;
+	}
+
+	private LookupAnalysis analyzeEqualityLookup(StatementPattern pattern, ValueExpr condition,
+			Set<String> currentlyBoundVars) {
+		LookupValueCount lookupValue = lookupValueCountForEquality(pattern, condition, currentlyBoundVars);
+		if (lookupValue == null) {
+			return LookupAnalysis.none();
+		}
+		return lookupAnalysisFor(pattern, lookupValue.component(), lookupValue.valueCount());
+	}
+
+	private LookupValueCount lookupValueCountForEquality(StatementPattern pattern, ValueExpr condition,
+			Set<String> currentlyBoundVars) {
+		if (condition instanceof Compare compare) {
+			if (compare.getOperator() != Compare.CompareOp.EQ) {
+				return null;
+			}
+			return lookupValueCountForEquality(pattern, compare.getLeftArg(), compare.getRightArg(), currentlyBoundVars,
+					compare.getRightArg(), compare.getLeftArg());
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			return lookupValueCountForEquality(pattern, sameTerm.getLeftArg(), sameTerm.getRightArg(),
+					currentlyBoundVars,
+					sameTerm.getRightArg(), sameTerm.getLeftArg());
+		}
+		return null;
+	}
+
+	private LookupValueCount lookupValueCountForEquality(StatementPattern pattern, ValueExpr leftVarCandidate,
+			ValueExpr rightValueCandidate, Set<String> currentlyBoundVars, ValueExpr rightVarCandidate,
+			ValueExpr leftValueCandidate) {
+		LookupValueCount left = lookupValueCountForVarBinding(pattern, leftVarCandidate, rightValueCandidate,
+				currentlyBoundVars);
+		if (left != null) {
+			return left;
+		}
+		return lookupValueCountForVarBinding(pattern, rightVarCandidate, leftValueCandidate, currentlyBoundVars);
+	}
+
+	private LookupValueCount lookupValueCountForVarBinding(StatementPattern pattern, ValueExpr maybePatternVarExpr,
+			ValueExpr maybeLookupExpr, Set<String> currentlyBoundVars) {
+		if (!(maybePatternVarExpr instanceof Var patternVar) || patternVar.getName() == null) {
+			return null;
+		}
+		Component component = findPatternComponentByVarName(pattern, patternVar.getName());
+		if (component == null || lookupKey(maybeLookupExpr, currentlyBoundVars) == null) {
+			return null;
+		}
+		return new LookupValueCount(component, 1);
+	}
+
+	private LookupAnalysis lookupAnalysisFor(StatementPattern pattern, Component component, int valueCount) {
+		if (component == null || valueCount <= 0) {
+			return LookupAnalysis.none();
+		}
+		double multiplier = estimateLookupFilterMultiplier(pattern, component, valueCount);
+		return new LookupAnalysis(EnumSet.of(component), multiplier);
+	}
+
+	private double estimateLookupFilterMultiplier(StatementPattern pattern, Component component, int valueCount) {
+		JoinEstimate estimate = estimate(component,
+				getValueOrNull(pattern.getSubjectVar()),
+				getValueOrNull(pattern.getPredicateVar()),
+				getValueOrNull(pattern.getObjectVar()),
+				getValueOrNull(pattern.getContextVar()));
+		double distinct = estimate.distinct;
+		if (!Double.isFinite(distinct) || distinct <= 0.0d) {
+			return -1.0d;
+		}
+		double ratio = valueCount / Math.max(1.0d, distinct);
+		if (!Double.isFinite(ratio) || ratio <= 0.0d) {
+			return -1.0d;
+		}
+		return normalizeFilterMultiplier(Math.min(1.0d, ratio));
+	}
+
+	private String lookupKey(ValueExpr valueExpr, Set<String> currentlyBoundVars) {
+		if (valueExpr instanceof ValueConstant constant && constant.getValue() != null) {
+			return "value:" + constant.getValue().stringValue();
+		}
+		if (valueExpr instanceof Var var && var.getName() != null && currentlyBoundVars.contains(var.getName())) {
+			return "var:" + var.getName();
+		}
+		return null;
+	}
+
 	private double resolveFilterMultiplier(Filter filter, StatementPattern pattern) {
 		if (!FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
 			return 1.0d;
@@ -4086,6 +4457,16 @@ public class SketchBasedJoinEstimator {
 		return var != null && var.hasValue();
 	}
 
+	private Component findPatternComponentByVarName(StatementPattern pattern, String varName) {
+		for (Component component : Component.values()) {
+			Var var = varForComponent(pattern, component);
+			if (var != null && varName.equals(var.getName())) {
+				return component;
+			}
+		}
+		return null;
+	}
+
 	private Component getComponent(StatementPattern sp, Var var) {
 		if (var.equals(sp.getSubjectVar())) {
 			return Component.S;
@@ -4100,6 +4481,28 @@ public class SketchBasedJoinEstimator {
 			return Component.C;
 		}
 		throw new IllegalStateException("Unexpected variable " + var + " in pattern " + sp);
+	}
+
+	private Var varForComponent(StatementPattern pattern, Component component) {
+		return switch (component) {
+		case S -> pattern.getSubjectVar();
+		case P -> pattern.getPredicateVar();
+		case O -> pattern.getObjectVar();
+		case C -> pattern.getContextVar();
+		};
+	}
+
+	private record LookupAnalysis(Set<Component> components, double multiplier) {
+		private static LookupAnalysis none() {
+			return new LookupAnalysis(Set.of(), -1.0d);
+		}
+
+		private boolean isNone() {
+			return components.isEmpty();
+		}
+	}
+
+	private record LookupValueCount(Component component, int valueCount) {
 	}
 
 	/* ────────────────────────────────────────────────────────────── */

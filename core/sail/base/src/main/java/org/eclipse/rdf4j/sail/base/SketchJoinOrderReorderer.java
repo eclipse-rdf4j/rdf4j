@@ -12,13 +12,19 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.sail.base.sketchoptimizer.MessagePassingJoinPlanner;
 import org.eclipse.rdf4j.sail.base.sketchoptimizer.PatternSynopsisAdapter;
@@ -29,9 +35,16 @@ import org.eclipse.rdf4j.sail.base.sketchoptimizer.PatternSynopsisAdapter;
 final class SketchJoinOrderReorderer {
 
 	private final SketchBasedJoinEstimator estimator;
+	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster;
 
 	SketchJoinOrderReorderer(SketchBasedJoinEstimator estimator) {
+		this(estimator, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP);
+	}
+
+	SketchJoinOrderReorderer(SketchBasedJoinEstimator estimator,
+			SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster) {
 		this.estimator = Objects.requireNonNull(estimator, "estimator");
+		this.workAdjuster = Objects.requireNonNull(workAdjuster, "workAdjuster");
 	}
 
 	Optional<JoinOrderPlanner.JoinOrderPlan> plan(List<TupleExpr> args, Set<String> initiallyBoundVars,
@@ -43,6 +56,9 @@ final class SketchJoinOrderReorderer {
 
 		List<TupleExpr> expressions = List.copyOf(args);
 		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
+		PlanningInputs planningInputs = promoteFilterLookupBindings(expressions, bound);
+		List<TupleExpr> plannedExpressions = planningInputs.expressions();
+		Set<String> plannedBound = planningInputs.boundVars();
 		if (!estimator.canUseRobustSketchOptimizer(bound)) {
 			estimator.recordJoinOrderPlannerPath(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_NOT_READY);
 			return Optional.empty();
@@ -54,17 +70,144 @@ final class SketchJoinOrderReorderer {
 			return Optional.empty();
 		}
 
-		PatternSynopsisAdapter.AdaptationResult adaptation = adapter.adaptWithReason(expressions, bound);
+		if (plannedExpressions.isEmpty()) {
+			return Optional.of(new JoinOrderPlanner.JoinOrderPlan(planningInputs.prefixExpressions(), 0.0d,
+					totalBindingRows(planningInputs.prefixExpressions())));
+		}
+
+		PatternSynopsisAdapter.AdaptationResult adaptation = adapter.adaptWithReason(plannedExpressions, plannedBound);
 		if (adaptation.supportedQuery().isEmpty()) {
 			estimator.recordJoinOrderPlannerPath(estimator.mapAdaptationReason(adaptation.rejectionReason()));
 			return Optional.empty();
 		}
 
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = new MessagePassingJoinPlanner(
-				adaptation.supportedQuery().orElseThrow()).plan(algorithm);
+				adaptation.supportedQuery().orElseThrow(),
+				plannedBound,
+				(factor, currentlyBoundVars, defaultWorkRows) -> {
+					SketchBasedJoinEstimator.AccessShape accessShape = estimator
+							.accessShapeForJoinOrdering(factor.tupleExpr(), currentlyBoundVars);
+					if (accessShape == null) {
+						return defaultWorkRows;
+					}
+					return workAdjuster.adjustedWorkRows(accessShape, defaultWorkRows);
+				})
+				.plan(algorithm)
+				.map(result -> prependBindingPrefixes(result, planningInputs.prefixExpressions()));
 		estimator.recordJoinOrderPlannerPath(plan.isPresent()
 				? SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED
 				: SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE);
 		return plan;
+	}
+
+	private PlanningInputs promoteFilterLookupBindings(List<TupleExpr> expressions, Set<String> initiallyBoundVars) {
+		if (expressions.isEmpty()) {
+			return new PlanningInputs(List.of(), Set.copyOf(initiallyBoundVars), List.of());
+		}
+
+		List<TupleExpr> nonBindingExpressions = new ArrayList<>(expressions.size());
+		for (TupleExpr expression : expressions) {
+			if (!(expression instanceof BindingSetAssignment)) {
+				nonBindingExpressions.add(expression);
+			}
+		}
+
+		List<TupleExpr> prefixExpressions = new ArrayList<>();
+		List<TupleExpr> remainingExpressions = new ArrayList<>(expressions.size());
+		LinkedHashSet<String> promotedBoundVars = new LinkedHashSet<>(initiallyBoundVars);
+		for (TupleExpr expression : expressions) {
+			if (!(expression instanceof BindingSetAssignment assignment)) {
+				remainingExpressions.add(expression);
+				continue;
+			}
+
+			String bindingName = singleBindingName(assignment);
+			if (bindingName == null || bindingVarAppearsInPattern(bindingName, nonBindingExpressions)
+					|| !bindingEnablesLookup(bindingName, nonBindingExpressions, promotedBoundVars)) {
+				remainingExpressions.add(expression);
+				continue;
+			}
+
+			prefixExpressions.add(expression);
+			promotedBoundVars.add(bindingName);
+		}
+		return new PlanningInputs(List.copyOf(remainingExpressions), Set.copyOf(promotedBoundVars),
+				List.copyOf(prefixExpressions));
+	}
+
+	private boolean bindingEnablesLookup(String bindingName, List<TupleExpr> expressions,
+			Set<String> currentBoundVars) {
+		Set<String> withoutBinding = Set.copyOf(currentBoundVars);
+		LinkedHashSet<String> withBinding = new LinkedHashSet<>(currentBoundVars);
+		withBinding.add(bindingName);
+		for (TupleExpr expression : expressions) {
+			SketchBasedJoinEstimator.AccessShape before = estimator.accessShapeForJoinOrdering(expression,
+					withoutBinding);
+			SketchBasedJoinEstimator.AccessShape after = estimator.accessShapeForJoinOrdering(expression,
+					Set.copyOf(withBinding));
+			if (before == null || after == null) {
+				continue;
+			}
+			if (!before.lookupBoundComponents().equals(after.lookupBoundComponents())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean bindingVarAppearsInPattern(String bindingName, List<TupleExpr> expressions) {
+		for (TupleExpr expression : expressions) {
+			SketchBasedJoinEstimator.AccessShape accessShape = estimator.accessShapeForJoinOrdering(expression,
+					Set.of());
+			if (accessShape == null || !containsUnboundPatternVar(accessShape.pattern(), bindingName)) {
+				continue;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private boolean containsUnboundPatternVar(StatementPattern pattern, String bindingName) {
+		return matches(pattern.getSubjectVar(), bindingName)
+				|| matches(pattern.getPredicateVar(), bindingName)
+				|| matches(pattern.getObjectVar(), bindingName)
+				|| matches(pattern.getContextVar(), bindingName);
+	}
+
+	private boolean matches(Var var, String bindingName) {
+		return var != null && !var.hasValue() && bindingName.equals(var.getName());
+	}
+
+	private String singleBindingName(BindingSetAssignment assignment) {
+		return assignment.getBindingNames().size() == 1 ? assignment.getBindingNames().iterator().next() : null;
+	}
+
+	private JoinOrderPlanner.JoinOrderPlan prependBindingPrefixes(JoinOrderPlanner.JoinOrderPlan plan,
+			List<TupleExpr> prefixExpressions) {
+		if (prefixExpressions.isEmpty()) {
+			return plan;
+		}
+		List<TupleExpr> orderedArgs = new ArrayList<>(prefixExpressions.size() + plan.getOrderedArgs().size());
+		orderedArgs.addAll(prefixExpressions);
+		orderedArgs.addAll(plan.getOrderedArgs());
+		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), plan.getEstimatedFinalRows(),
+				plan.getEstimatedTotalWork() + totalBindingRows(prefixExpressions));
+	}
+
+	private double totalBindingRows(List<TupleExpr> prefixExpressions) {
+		double totalRows = 0.0d;
+		for (TupleExpr prefixExpression : prefixExpressions) {
+			if (!(prefixExpression instanceof BindingSetAssignment assignment)) {
+				continue;
+			}
+			for (BindingSet ignored : assignment.getBindingSets()) {
+				totalRows += 1.0d;
+			}
+		}
+		return totalRows;
+	}
+
+	private record PlanningInputs(List<TupleExpr> expressions, Set<String> boundVars,
+			List<TupleExpr> prefixExpressions) {
 	}
 }

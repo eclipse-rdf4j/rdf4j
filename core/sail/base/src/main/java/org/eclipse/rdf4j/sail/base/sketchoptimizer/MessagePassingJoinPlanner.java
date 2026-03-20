@@ -41,7 +41,15 @@ public final class MessagePassingJoinPlanner {
 
 	static final int MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS = 20;
 
+	@FunctionalInterface
+	public interface AdjustedWorkRowsResolver {
+		double adjustedWorkRows(PatternSynopsisAdapter.SupportedFactor factor, Set<String> currentlyBoundVars,
+				double defaultWorkRows);
+	}
+
 	private final PatternSynopsisAdapter.SupportedQuery query;
+	private final Set<String> initiallyBoundVars;
+	private final AdjustedWorkRowsResolver adjustedWorkRowsResolver;
 	private final ArrayOfDoublesUpdatableSketchBuilder updatableBuilder;
 	private final ArrayOfDoublesSetOperationBuilder setOperationBuilder;
 	private final ArrayOfDoublesCombiner multiplyCombiner = (a, b) -> new double[] { a[0] * b[0] };
@@ -50,7 +58,15 @@ public final class MessagePassingJoinPlanner {
 	private final Map<MessageKey, Message> messageMemo = new HashMap<>();
 
 	public MessagePassingJoinPlanner(PatternSynopsisAdapter.SupportedQuery query) {
+		this(query, Set.of(), (factor, currentlyBoundVars, defaultWorkRows) -> defaultWorkRows);
+	}
+
+	public MessagePassingJoinPlanner(PatternSynopsisAdapter.SupportedQuery query, Set<String> initiallyBoundVars,
+			AdjustedWorkRowsResolver adjustedWorkRowsResolver) {
 		this.query = Objects.requireNonNull(query, "query");
+		this.initiallyBoundVars = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Set.of()
+				: Set.copyOf(initiallyBoundVars);
+		this.adjustedWorkRowsResolver = Objects.requireNonNull(adjustedWorkRowsResolver, "adjustedWorkRowsResolver");
 		this.updatableBuilder = new ArrayOfDoublesUpdatableSketchBuilder()
 				.setNominalEntries(query.synopsis().nominalEntries())
 				.setNumberOfValues(1)
@@ -106,7 +122,8 @@ public final class MessagePassingJoinPlanner {
 
 		for (int i = 0; i < query.factors().size(); i++) {
 			double rows = query.factors().get(i).rows();
-			bestByMask.put(bit(i), new StatePlan(List.of(i), rows, rows));
+			double seedWork = adjustedWorkRows(i, initiallyBoundVars, rows);
+			bestByMask.put(bit(i), new StatePlan(List.of(i), rows, seedWork));
 			statesBySize.computeIfAbsent(1, ignored -> new LinkedHashSet<>()).add(bit(i));
 		}
 
@@ -122,12 +139,13 @@ public final class MessagePassingJoinPlanner {
 						continue;
 					}
 					double stepRows = estimateOutputRows(message(mask, shared), query.factors().get(candidate), shared);
+					double stepWork = adjustedWorkRows(candidate, boundVariables(mask), stepRows);
 					long nextMask = mask | bit(candidate);
 					List<Integer> nextOrder = new ArrayList<>(prefix.order().size() + 1);
 					nextOrder.addAll(prefix.order());
 					nextOrder.add(candidate);
 					StatePlan candidatePlan = new StatePlan(List.copyOf(nextOrder), stepRows,
-							prefix.totalWork() + stepRows);
+							prefix.totalWork() + stepWork);
 					StatePlan incumbent = bestByMask.get(nextMask);
 					if (isBetter(candidatePlan, incumbent)) {
 						bestByMask.put(nextMask, candidatePlan);
@@ -143,10 +161,14 @@ public final class MessagePassingJoinPlanner {
 
 	private PlanResult optimizeGreedy() {
 		int seed = -1;
+		double bestSeedWork = Double.POSITIVE_INFINITY;
 		double bestSeedRows = Double.POSITIVE_INFINITY;
 		for (int i = 0; i < query.factors().size(); i++) {
 			double rows = query.factors().get(i).rows();
-			if (rows < bestSeedRows || rows == bestSeedRows && i < seed) {
+			double work = adjustedWorkRows(i, initiallyBoundVars, rows);
+			if (work < bestSeedWork
+					|| work == bestSeedWork && (rows < bestSeedRows || rows == bestSeedRows && i < seed)) {
+				bestSeedWork = work;
 				bestSeedRows = rows;
 				seed = i;
 			}
@@ -156,13 +178,14 @@ public final class MessagePassingJoinPlanner {
 		}
 
 		long mask = bit(seed);
-		double totalWork = bestSeedRows;
+		double totalWork = bestSeedWork;
 		double finalRows = bestSeedRows;
 		List<Integer> order = new ArrayList<>();
 		order.add(seed);
 
 		while (mask != allMask()) {
 			int bestNext = -1;
+			double bestWork = Double.POSITIVE_INFINITY;
 			double bestStep = Double.POSITIVE_INFINITY;
 			for (int candidate : candidates(mask)) {
 				String shared = uniqueSharedVariable(mask, candidate);
@@ -170,7 +193,10 @@ public final class MessagePassingJoinPlanner {
 					continue;
 				}
 				double step = estimateOutputRows(message(mask, shared), query.factors().get(candidate), shared);
-				if (step < bestStep || step == bestStep && candidate < bestNext) {
+				double work = adjustedWorkRows(candidate, boundVariables(mask), step);
+				if (work < bestWork
+						|| work == bestWork && (step < bestStep || step == bestStep && candidate < bestNext)) {
+					bestWork = work;
 					bestStep = step;
 					bestNext = candidate;
 				}
@@ -179,7 +205,7 @@ public final class MessagePassingJoinPlanner {
 				return null;
 			}
 			mask |= bit(bestNext);
-			totalWork += bestStep;
+			totalWork += bestWork;
 			finalRows = bestStep;
 			order.add(bestNext);
 		}
@@ -354,6 +380,25 @@ public final class MessagePassingJoinPlanner {
 			}
 			return Set.copyOf(vars);
 		});
+	}
+
+	private Set<String> boundVariables(long mask) {
+		if (initiallyBoundVars.isEmpty()) {
+			return variables(mask);
+		}
+		LinkedHashSet<String> combined = new LinkedHashSet<>(initiallyBoundVars);
+		combined.addAll(variables(mask));
+		return Set.copyOf(combined);
+	}
+
+	private double adjustedWorkRows(int factorIndex, Set<String> currentlyBoundVars, double defaultWorkRows) {
+		double adjusted = adjustedWorkRowsResolver.adjustedWorkRows(query.factors().get(factorIndex),
+				currentlyBoundVars,
+				defaultWorkRows);
+		if (!Double.isFinite(adjusted) || adjusted <= 0.0d) {
+			return defaultWorkRows;
+		}
+		return adjusted;
 	}
 
 	private long childComponentMask(long subsetMask, int factorIndex, String parentVariable, String childVariable) {

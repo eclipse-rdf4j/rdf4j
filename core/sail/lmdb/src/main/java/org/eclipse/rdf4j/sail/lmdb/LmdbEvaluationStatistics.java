@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 	private final int tripleStoreIdentity;
 	private final Map<CardinalityKey, Double> cardinalityCache = new ConcurrentHashMap<>();
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
+	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster joinOrderWorkAdjuster;
 	private volatile long joinSupportCacheExpiryMs = Long.MIN_VALUE;
 	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
 	private volatile boolean joinSupportCacheValue = false;
@@ -64,6 +66,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		this.tripleStore = tripleStore;
 		this.tripleStoreIdentity = System.identityHashCode(tripleStore);
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
+		this.joinOrderWorkAdjuster = this::adjustJoinOrderWorkRows;
 	}
 
 	@Override
@@ -87,7 +90,36 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		if (!supportsJoinEstimation()) {
 			return Optional.empty();
 		}
-		return sketchBasedJoinEstimator.planJoinOrder(args, initiallyBoundVars, algorithm);
+		return sketchBasedJoinEstimator.planJoinOrder(args, initiallyBoundVars, algorithm, joinOrderWorkAdjuster);
+	}
+
+	private double adjustJoinOrderWorkRows(SketchBasedJoinEstimator.AccessShape accessShape, double defaultWorkRows) {
+		if (accessShape == null) {
+			return defaultWorkRows;
+		}
+
+		TripleStore.IndexPrefixSelection prefixSelection = tripleStore
+				.selectBestIndexPrefix(accessShape.lookupBoundComponents());
+		if (prefixSelection == null) {
+			return defaultWorkRows;
+		}
+
+		double accessRows = accessShape.estimateAccessRows(prefixSelection.prefixComponents());
+		if (!Double.isFinite(accessRows) || accessRows <= 0.0d) {
+			return defaultWorkRows;
+		}
+
+		double adjustedWorkRows = accessRows;
+		Set<Component> filterLookupComponents = accessShape.filterLookupComponents();
+		if (!filterLookupComponents.isEmpty()
+				&& accessShape.isDirectLookup(prefixSelection.prefixComponents())) {
+			double filteredAccessRows = accessRows * accessShape.filterMultiplier();
+			if (Double.isFinite(filteredAccessRows) && filteredAccessRows > 0.0d) {
+				adjustedWorkRows = filteredAccessRows;
+			}
+		}
+
+		return adjustedWorkRows;
 	}
 
 	public boolean isJoinEstimationReady() {

@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -82,6 +83,55 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 		assertEquals(args.size(), orderedArgs.size());
 		assertTrue(orderedArgs.containsAll(args));
+	}
+
+	@Test
+	void planJoinOrderSupportsBindingSetAssignmentsUsedOnlyByLookupFilters() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI generatorType = VF.createIRI("urn:Generator");
+		IRI feeds = VF.createIRI("urn:feeds");
+		IRI name = VF.createIRI("urn:name");
+		Resource substation1 = VF.createIRI("urn:substation:1");
+		Resource substation2 = VF.createIRI("urn:substation:2");
+
+		store.add(VF.createStatement(VF.createIRI("urn:generator:1"), rdfType, generatorType));
+		store.add(VF.createStatement(VF.createIRI("urn:generator:1"), feeds, substation1));
+		store.add(VF.createStatement(VF.createIRI("urn:generator:2"), rdfType, generatorType));
+		store.add(VF.createStatement(VF.createIRI("urn:generator:2"), feeds, substation2));
+		store.add(VF.createStatement(substation1, name, VF.createLiteral("Substation 1")));
+		store.add(VF.createStatement(substation2, name, VF.createLiteral("Substation 2")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		BindingSetAssignment bindings = new BindingSetAssignment();
+		QueryBindingSet row1 = new QueryBindingSet();
+		row1.addBinding("target", VF.createLiteral("Substation 1"));
+		QueryBindingSet row2 = new QueryBindingSet();
+		row2.addBinding("target", VF.createLiteral("Substation 2"));
+		bindings.setBindingSets(List.<BindingSet>of(row1, row2));
+
+		StatementPattern typePattern = new StatementPattern(Var.of("entity"), Var.of("rdfType", rdfType),
+				Var.of("generatorType", generatorType));
+		StatementPattern feedsPattern = pattern("entity", feeds, "substation");
+		Filter filteredName = new Filter(pattern("substation", name, "stationName"),
+				new Or(
+						new Compare(Var.of("stationName"), Var.of("target"), Compare.CompareOp.EQ),
+						new Compare(Var.of("stationName"), new ValueConstant(VF.createLiteral("Substation 3")),
+								Compare.CompareOp.EQ)));
+
+		List<TupleExpr> args = List.of(bindings, typePattern, feedsPattern, filteredName);
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to support BindingSetAssignment values used by lookup filters");
+		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+		assertEquals(args.size(), orderedArgs.size());
+		assertEquals(bindings, orderedArgs.get(0),
+				"Lookup-only BindingSetAssignment should be evaluated before the graph");
+		assertTrue(orderedArgs.indexOf(feedsPattern) < orderedArgs.indexOf(filteredName),
+				"Expected connected graph planning to remain available after promoting lookup-only bindings");
 	}
 
 	@Test
