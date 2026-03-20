@@ -164,6 +164,24 @@ jobs:
         working-directory: ./e2e
         run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh
 
+  frontend-unit-tests:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install dependencies
+        working-directory: ./e2e
+        run: npm ci
+      - name: Run frontend unit tests
+        working-directory: ./e2e
+        run: npm run test:unit
+
   copyright-check:
     runs-on: ubuntu-latest
     steps:

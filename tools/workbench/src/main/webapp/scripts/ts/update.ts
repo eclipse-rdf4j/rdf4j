@@ -28,21 +28,29 @@ module workbench {
                 // This way, we don't conflict with the YASQE editor of the
                 // regular query interface, and we show the most recent
                 // -update- query.
-                persistent: "update"
+                persistent: "update",
 
             });
 
-            // Some styling conflicts. Could add my own css file, but not a
-            // lot of things need changing, so just do this programmatically.
-            // First, set the font size (otherwise font is as small as menu,
-            // which is too small). Second, set the width. YASQE normally
-            // expands to 100%, but the use of a table requires us to set a
-            // fixed width.
-            $(yasqe.getWrapperElement()).css({
+            var $wrapper = $(yasqe.getWrapperElement());
+
+            // Style the outer wrapper
+            $wrapper.css({
                 "fontSize": "14px",
                 "width": "900px"
             });
 
+            // Style the actual CodeMirror elements inside YASQE
+            $wrapper.find(".CodeMirror").css({
+                "height": "auto"
+            });
+
+            $wrapper.find(".CodeMirror-scroll").css({
+                "height": "auto",
+                "max-height": "55vh",
+                "overflow-y": "auto",
+                "overflow-x": "auto"
+            });
             // We made a change to the css wrapper element (and did so after
             // initialization). So, force a manual update of the yasqe
             // instance.

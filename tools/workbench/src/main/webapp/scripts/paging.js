@@ -19,41 +19,117 @@ var workbench;
             }
             return url;
         }
+        function createHiddenInput(name, value) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            return input;
+        }
+        function addCookieToFormIfPresent(form, name) {
+            var value = workbench.getCookie(name);
+            if (value) {
+                form.appendChild(createHiddenInput(name, value));
+            }
+        }
+        function addElementValueToFormIfPresent(form, name) {
+            var element = document.getElementById(name);
+            if (element && element.value) {
+                form.appendChild(createHiddenInput(name, element.value));
+            }
+        }
+        function appendParamToUrl(url, name, value) {
+            if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
+                return url + AMP + name + '=' + value;
+            }
+            return url + ';' + name + '=' + value;
+        }
+        function addElementValueToUrlIfPresent(url, name) {
+            var element = document.getElementById(name);
+            if (element && element.value) {
+                return appendParamToUrl(url, name, encodeURIComponent(element.value));
+            }
+            return url;
+        }
+        function getEmbeddedQueryText() {
+            var queryText = document.getElementById('wb-query-text');
+            if (queryText && queryText.value) {
+                return queryText.value;
+            }
+            return '';
+        }
+        function addQueryReferenceToForm(form) {
+            var queryText = getEmbeddedQueryText();
+            if (queryText) {
+                form.appendChild(createHiddenInput('query', queryText));
+                form.appendChild(createHiddenInput('ref', 'text'));
+                return;
+            }
+            addCookieToFormIfPresent(form, 'query');
+            addCookieToFormIfPresent(form, 'ref');
+        }
+        function submitGraphParamRequest(name, value) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'query';
+            form.style.display = 'none';
+            form.appendChild(createHiddenInput('action', 'exec'));
+            addQueryReferenceToForm(form);
+            addCookieToFormIfPresent(form, 'owner');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
+            if (name == 'Accept') {
+                addElementValueToFormIfPresent(form, 'download_limit');
+            }
+            form.appendChild(createHiddenInput(name, value));
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+        function submitPagingParamRequest(name, value) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'query';
+            form.style.display = 'none';
+            form.appendChild(createHiddenInput('action', 'exec'));
+            addQueryReferenceToForm(form);
+            addCookieToFormIfPresent(form, 'owner');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
+            if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
+                form.appendChild(createHiddenInput(KT, String(getTotalResultCount())));
+            }
+            form.appendChild(createHiddenInput(name, value));
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
         /**
          * Invoked in graph.xsl and tuple.xsl for download functionality. Takes a
          * document element by name, and creates a request with it as a parameter.
          */
         function addGraphParam(name) {
-            var value = encodeURIComponent($('#' + name).val());
+            var value = $('#' + name).val();
             var url = document.location.href;
-            var ref = workbench.getCookie('ref');
-            if (url.match(/query$/)) {
-                if ('id' == ref) {
-                    url = url + ';ref=id' + AMP + 'action=exec';
-                    url = addCookieToUrlQueryIfPresent(url, 'query');
-                    url = addCookieToUrlQueryIfPresent(url, 'queryLn');
-                    url = addCookieToUrlQueryIfPresent(url, 'infer');
-                    url = addCookieToUrlQueryIfPresent(url, 'limit_query');
-                }
-                else {
-                    alert("Can't put query in URL, since it might be too long for your browser.\n" +
-                        "Save your query on the server, then execute it from the 'Saved Queries' page.");
-                    return;
-                }
+            if (url.match(/query$/)) { // looking at POST query results?
+                submitGraphParamRequest(name, value);
+                return;
             }
-            if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
-                document.location.href = url + AMP + name + '=' + value;
+            if (name == 'Accept') {
+                url = addElementValueToUrlIfPresent(url, 'download_limit');
             }
-            else {
-                document.location.href = url + ';' + name + '=' + value;
-            }
+            document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
         }
         paging.addGraphParam = addGraphParam;
-        var StringMap = (function () {
+        var StringMap = /** @class */ (function () {
             function StringMap() {
             }
             return StringMap;
-        })();
+        }());
         /**
          * Scans the given URI for duplicate query parameter names, and removes
          * all but the last occurrence for any duplicate case.
@@ -71,6 +147,7 @@ var workbench;
             for (var i = 0; elements.length - i; i++) {
                 var pair = elements[i].split('=');
                 params[pair[0]] = pair[1];
+                // Keep looping. We are interested in the last value.
             }
             for (var name in params) {
                 // use hasOwnProperty to filter out keys from the
@@ -92,6 +169,10 @@ var workbench;
          * @param {number} value The value of the query parameter.
          */
         function addPagingParam(name, value) {
+            if (document.location.pathname.match(/\/query$/)) {
+                submitPagingParamRequest(name, String(value));
+                return;
+            }
             var url = document.location.href;
             var hasParams = (url.indexOf('?') + 1 || url.indexOf(';') + 1);
             var sep = hasParams ? AMP : ';';
@@ -162,6 +243,7 @@ var workbench;
                     continue;
                 }
                 rval = pair[1];
+                // Keep looping. We are interested in the last value.
             }
             return rval;
         }

@@ -28,7 +28,6 @@ public final class TelemetryMetricNames {
 	public static final String SELECTIVITY_ACTUAL = "selectivityActual";
 	public static final String EXPANSION_FACTOR_ACTUAL = "expansionFactorActual";
 	public static final String THROUGHPUT_ROWS_PER_SEC_ACTUAL = "throughputRowsPerSecActual";
-	public static final String ESTIMATE_ERROR_Q = "estimateErrorQ";
 	public static final String COST_ERROR_RATIO = "costErrorRatio";
 
 	public static final String OPEN_COUNT_ACTUAL = "openCountActual";
@@ -66,6 +65,7 @@ public final class TelemetryMetricNames {
 	public static final String INDEX_LOOKUP_COUNT_ACTUAL = "indexLookupCountActual";
 	public static final String INDEX_HIT_RATE_ACTUAL = "indexHitRateActual";
 	public static final String INDEX_NAME = "indexName";
+	public static final String INDEX_NAMES = "indexNames";
 
 	public static final String REMOTE_REQUEST_COUNT_ACTUAL = "remoteRequestCountActual";
 	public static final String REMOTE_ASK_REQUEST_COUNT_ACTUAL = "remoteAskRequestCountActual";
@@ -104,6 +104,8 @@ public final class TelemetryMetricNames {
 	public static final String BINDINGS_PROVIDED_ACTUAL = "bindingsProvidedActual";
 	public static final String VARS_ADDED_ACTUAL = "varsAddedActual";
 	public static final String VARS_DROPPED_ACTUAL = "varsDroppedActual";
+	public static final String BINDING_STATE = "bindingState";
+	public static final String JOIN_TYPE = "joinType";
 
 	public static final String METRIC_ORIGIN = "metricOrigin";
 	public static final String SAMPLE_COUNT_ACTUAL = "sampleCountActual";

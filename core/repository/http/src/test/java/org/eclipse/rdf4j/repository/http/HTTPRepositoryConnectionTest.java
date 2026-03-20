@@ -10,19 +10,34 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.http;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.InputStream;
 import java.net.URL;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.junit.jupiter.api.BeforeAll;
@@ -110,6 +125,85 @@ public class HTTPRepositoryConnectionTest {
 			assertThatExceptionOfType(UnsupportedRDFormatException.class).isThrownBy(() -> {
 				repoConn.add(url);
 			}).withMessageContaining("Could not find RDF format for URL: " + url.toExternalForm());
+		}
+	}
+
+	@Test
+	public void testTupleQueryExplainDoesNotThrowUnsupportedOperation() throws Exception {
+		HTTPRepositoryConnection connection = mock(HTTPRepositoryConnection.class);
+		RDF4JProtocolSession explainSession = mock(RDF4JProtocolSession.class);
+		Explanation explanation = mock(Explanation.class);
+		when(connection.getSesameSession()).thenReturn(explainSession);
+		when(explainSession.sendQueryExplanation(any(), any(), any(), any(), anyBoolean(), anyInt(), any(), any()))
+				.thenReturn(explanation);
+		HTTPTupleQuery query = new HTTPTupleQuery(connection, QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }",
+				null);
+
+		assertThatCode(() -> query.explain(Explanation.Level.Optimized)).doesNotThrowAnyException();
+		verify(connection).flushTransactionState(Protocol.Action.QUERY);
+		verify(explainSession).sendQueryExplanation(eq(QueryLanguage.SPARQL), any(), eq((String) null), eq(null),
+				eq(true), eq(0), eq(Explanation.Level.Optimized), any());
+	}
+
+	@Test
+	public void testTupleQueryExplainRegistersActiveSessionForCancellation() throws Exception {
+		RDF4JProtocolSession activeSession = mock(RDF4JProtocolSession.class);
+		RDF4JProtocolSession fallbackSession = mock(RDF4JProtocolSession.class);
+		Explanation explanation = mock(Explanation.class);
+		TestHTTPRepository repository = new TestHTTPRepository(fallbackSession);
+		HTTPRepositoryConnection connection = new HTTPRepositoryConnection(repository, activeSession);
+		HTTPTupleQuery query = new HTTPTupleQuery(connection, QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }",
+				null);
+		CountDownLatch explainStarted = new CountDownLatch(1);
+		CountDownLatch allowExplainToFinish = new CountDownLatch(1);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		repository.init();
+		when(activeSession.sendQueryExplanation(any(), any(), any(), any(), anyBoolean(), anyInt(), any(), any()))
+				.thenAnswer(invocation -> {
+					explainStarted.countDown();
+					assertThat(allowExplainToFinish.await(5, TimeUnit.SECONDS)).isTrue();
+					return explanation;
+				});
+
+		try {
+			Future<Explanation> future = executor.submit(() -> {
+				try (QueryExplanationRequestContext.Activation ignored = QueryExplanationRequestContext.activate(
+						"req-123")) {
+					return query.explain(Explanation.Level.Optimized);
+				}
+			});
+
+			assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			repository.cancelQueryExplanation("req-123");
+			allowExplainToFinish.countDown();
+			assertThat(future.get(5, TimeUnit.SECONDS)).isSameAs(explanation);
+
+			verify(activeSession).cancelQueryExplanation("req-123");
+			verify(fallbackSession, never()).cancelQueryExplanation(anyString());
+		} finally {
+			executor.shutdownNow();
+			connection.close();
+			repository.shutDown();
+		}
+	}
+
+	private static final class TestHTTPRepository extends HTTPRepository {
+		private final RDF4JProtocolSession fallbackSession;
+
+		private TestHTTPRepository(RDF4JProtocolSession fallbackSession) {
+			super("http://localhost/rdf4j-server", "test");
+			this.fallbackSession = fallbackSession;
+		}
+
+		@Override
+		protected RDF4JProtocolSession createHTTPClient() {
+			return fallbackSession;
+		}
+
+		@Override
+		boolean useCompatibleMode() {
+			return false;
 		}
 	}
 

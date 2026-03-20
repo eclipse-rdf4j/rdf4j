@@ -23,6 +23,8 @@ import org.springframework.web.servlet.ModelAndView;
  */
 public interface QueryRequestHandler {
 
+	boolean handleCancelExplain(HttpServletRequest request, HttpServletResponse response) throws Exception;
+
 	ModelAndView handleQueryRequest(HttpServletRequest request, RequestMethod requestMethod,
 			HttpServletResponse response) throws Exception;
 }

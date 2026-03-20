@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.query.explanation;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -148,5 +150,259 @@ class GenericPlanNodeTest {
 		assertTrue(actual.contains("varianceActual="), actual);
 		assertTrue(actual.contains("stddevActual="), actual);
 		assertTrue(actual.contains("confidenceScoreActual="), actual);
+	}
+
+	@Test
+	void toStringOmitsEstimateErrorQ() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(1.0);
+		node.setResultSizeEstimate(10.0);
+		node.setResultSizeActual(20L);
+
+		String actual = node.toString();
+
+		assertFalse(actual.contains("estimateErrorQ="), actual);
+	}
+
+	@Test
+	void toStringOmitsOutputRowsActualWhenItMatchesResultSizeActual() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(1.0);
+		node.setResultSizeActual(20L);
+
+		String actual = node.toString();
+
+		assertFalse(actual.contains("outputRowsActual="), actual);
+	}
+
+	@Test
+	void longMetricsOmitOutputRowsActualWhenItMatchesResultSizeActual() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setResultSizeActual(20L);
+		node.setLongMetricActual("outputRowsActual", 20L);
+
+		assertNull(node.getLongMetricActual("outputRowsActual"));
+		assertNull(node.getLongMetricsActual());
+	}
+
+	@Test
+	void toStringOrdersExplainAnnotationsIndependentlyOfInsertionOrder() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(1.0);
+		node.setStringMetricActual("indexNames", "spoc, posc");
+		node.setStringMetricActual("bindingState", "bound");
+
+		String actual = node.toString();
+
+		assertTrue(actual.contains("bindingState=bound"), actual);
+		assertTrue(actual.contains("indexNames=spoc, posc"), actual);
+		assertTrue(actual.indexOf("bindingState=bound") < actual.indexOf("indexNames=spoc, posc"), actual);
+	}
+
+	@Test
+	void toDotIncludesExplainAnnotationRows() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setStringMetricActual("joinType", "cross join");
+
+		GenericPlanNode statementPattern = new GenericPlanNode("StatementPattern");
+		statementPattern.setStringMetricActual("indexName", "spoc");
+		statementPattern.setStringMetricActual("bindingState", "unbound");
+		join.addPlans(statementPattern);
+
+		String actual = join.toDot();
+
+		assertTrue(actual.contains("<tr><td>Join type</td><td>cross join</td></tr>"), actual);
+		assertTrue(actual.contains("<tr><td>Binding state</td><td>unbound</td></tr>"), actual);
+		assertTrue(actual.contains("<tr><td>Index</td><td>spoc</td></tr>"), actual);
+	}
+
+	@Test
+	void regularJoinTypeIsHidden() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setStringMetricActual("joinType", "regular join");
+
+		String actual = join.toString();
+
+		assertFalse(actual.contains("joinType=regular join"), actual);
+		assertNull(join.getStringMetricActual("joinType"));
+		assertNull(join.getStringMetricsActual());
+	}
+
+	@Test
+	void toStringOmitsRedundantDerivedMetricsForProjection() {
+		GenericPlanNode projection = new GenericPlanNode("Projection");
+		projection.setResultSizeActual(20L);
+
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		child.setResultSizeActual(20L);
+		projection.addPlans(child);
+
+		String actual = projection.toString();
+
+		assertFalse(actual.contains("inputRowsActual="), actual);
+		assertFalse(actual.contains("rowsDroppedActual="), actual);
+		assertFalse(actual.contains("selectivityActual="), actual);
+		assertFalse(actual.contains("expansionFactorActual="), actual);
+	}
+
+	@Test
+	void toStringKeepsInputRowsActualForJoinWhenItMatchesResultSizeActual() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setResultSizeActual(20L);
+
+		GenericPlanNode left = new GenericPlanNode("StatementPattern");
+		left.setResultSizeActual(10L);
+		GenericPlanNode right = new GenericPlanNode("StatementPattern");
+		right.setResultSizeActual(10L);
+		join.addPlans(left, right);
+
+		String actual = join.toString();
+
+		assertTrue(actual.contains("inputRowsActual=20"), actual);
+		assertFalse(actual.contains("rowsDroppedActual="), actual);
+		assertFalse(actual.contains("selectivityActual="), actual);
+		assertFalse(actual.contains("expansionFactorActual="), actual);
+	}
+
+	@Test
+	void toStringOmitsJoinSelectivityWhenItMatchesExpansionFactor() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setResultSizeActual(10L);
+
+		GenericPlanNode left = new GenericPlanNode("StatementPattern");
+		left.setResultSizeActual(8L);
+		GenericPlanNode right = new GenericPlanNode("StatementPattern");
+		right.setResultSizeActual(12L);
+		join.addPlans(left, right);
+
+		String actual = join.toString();
+
+		assertTrue(actual.contains("inputRowsActual=20"), actual);
+		assertFalse(actual.contains("selectivityActual="), actual);
+		assertTrue(actual.contains("expansionFactorActual=0.50"), actual);
+	}
+
+	@Test
+	void toStringKeepsInputRowsActualForFilterWhenItMatchesResultSizeActual() {
+		GenericPlanNode filter = new GenericPlanNode("Filter");
+		filter.setResultSizeActual(20L);
+
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		child.setResultSizeActual(20L);
+		filter.addPlans(child);
+
+		String actual = filter.toString();
+
+		assertTrue(actual.contains("inputRowsActual=20"), actual);
+		assertFalse(actual.contains("rowsDroppedActual="), actual);
+		assertFalse(actual.contains("selectivityActual="), actual);
+		assertFalse(actual.contains("expansionFactorActual="), actual);
+	}
+
+	@Test
+	void toStringSuppressesTelemetryWhenRuntimeTelemetryDisabledButKeepsExplainAnnotations() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setRuntimeTelemetryEnabled(false);
+		node.setHasNextCallCountActual(2L);
+		node.setSourceRowsScannedActual(7L);
+		node.setLongMetricActual("outputRowsActual", 11L);
+		node.setDoubleMetricActual("selectivityActual", 0.5);
+		node.setStringMetricActual("bindingState", "bound");
+		node.setStringMetricActual("indexName", "spoc");
+
+		String actual = node.toString();
+
+		assertFalse(actual.contains("hasNextCallCountActual="), actual);
+		assertFalse(actual.contains("sourceRowsScannedActual="), actual);
+		assertFalse(actual.contains("outputRowsActual="), actual);
+		assertFalse(actual.contains("selectivityActual="), actual);
+		assertTrue(actual.contains("bindingState=bound"), actual);
+		assertTrue(actual.contains("indexName=spoc"), actual);
+	}
+
+	@Test
+	void explanationLevelHelpersExposeSharedVisibilityPolicy() {
+		assertFalse(Explanation.Level.Unoptimized.includesEvaluationAnnotations());
+		assertFalse(Explanation.Level.Unoptimized.includesRuntimeTelemetry());
+		assertFalse(Explanation.Level.Unoptimized.includesEstimateStabilityMetrics());
+
+		assertTrue(Explanation.Level.Optimized.includesEvaluationAnnotations());
+		assertFalse(Explanation.Level.Optimized.includesRuntimeTelemetry());
+		assertFalse(Explanation.Level.Optimized.includesEstimateStabilityMetrics());
+
+		assertTrue(Explanation.Level.Executed.includesEvaluationAnnotations());
+		assertFalse(Explanation.Level.Executed.includesRuntimeTelemetry());
+		assertFalse(Explanation.Level.Executed.includesEstimateStabilityMetrics());
+
+		assertTrue(Explanation.Level.Timed.includesEvaluationAnnotations());
+		assertFalse(Explanation.Level.Timed.includesRuntimeTelemetry());
+		assertFalse(Explanation.Level.Timed.includesEstimateStabilityMetrics());
+
+		assertTrue(Explanation.Level.Telemetry.includesEvaluationAnnotations());
+		assertTrue(Explanation.Level.Telemetry.includesRuntimeTelemetry());
+		assertTrue(Explanation.Level.Telemetry.includesEstimateStabilityMetrics());
+	}
+
+	@Test
+	void timedExplanationLevelKeepsTimingButHidesRuntimeTelemetry() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setTotalTimeActual(12.5);
+		node.setSourceRowsScannedActual(7L);
+		node.setLongMetricActual(TelemetryMetricNames.SAMPLE_COUNT_ACTUAL, 2L);
+		node.setStringMetricActual("bindingState", "bound");
+
+		node.applyExplanationLevel(Explanation.Level.Timed);
+
+		assertNull(node.getSourceRowsScannedActual());
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.SAMPLE_COUNT_ACTUAL));
+		assertNotNull(node.getStringMetricsActual());
+		String actual = new ExplanationImpl(node, false, null).toJson();
+		assertTrue(actual.contains("\"totalTimeActual\""), actual);
+		assertFalse(actual.contains("sourceRowsScannedActual"), actual);
+		assertFalse(actual.contains("sampleCountActual"), actual);
+	}
+
+	@Test
+	void applyExplanationLevelRecursivelyUsesSharedVisibilityPolicy() {
+		GenericPlanNode parent = new GenericPlanNode("Join");
+		parent.setResultSizeActual(5L);
+		parent.setSourceRowsScannedActual(7L);
+		parent.setLongMetricActual(TelemetryMetricNames.SAMPLE_COUNT_ACTUAL, 2L);
+		parent.setStringMetricActual("bindingState", "bound");
+
+		GenericPlanNode left = new GenericPlanNode("StatementPattern");
+		left.setResultSizeEstimate(2.0);
+		left.setResultSizeActual(3L);
+		left.setSourceRowsScannedActual(11L);
+		left.setStringMetricActual("indexName", "spoc");
+
+		GenericPlanNode right = new GenericPlanNode("StatementPattern");
+		right.setResultSizeEstimate(8.0);
+		right.setResultSizeActual(2L);
+		right.setSourceRowsScannedActual(13L);
+		right.setStringMetricActual("bindingState", "unbound");
+		parent.addPlans(left, right);
+
+		parent.applyExplanationLevel(Explanation.Level.Executed);
+
+		assertNull(parent.getSourceRowsScannedActual());
+		assertNull(parent.getLongMetricActual(TelemetryMetricNames.SAMPLE_COUNT_ACTUAL));
+		assertNotNull(parent.getStringMetricsActual());
+		assertTrue(parent.getStringMetricsActual().containsKey("bindingState"));
+		assertNull(left.getSourceRowsScannedActual());
+		assertNotNull(left.getStringMetricsActual());
+		assertTrue(left.getStringMetricsActual().containsKey("indexName"));
+		String executed = parent.toString();
+		assertFalse(executed.contains("sampleCountActual="), executed);
+		assertFalse(executed.contains("varianceActual="), executed);
+
+		parent.applyExplanationLevel(Explanation.Level.Telemetry);
+
+		assertTrue(parent.getSourceRowsScannedActual() > 0);
+		assertNotNull(parent.getLongMetricsActual());
+		assertTrue(left.getSourceRowsScannedActual() > 0);
+		String telemetry = parent.toString();
+		assertTrue(telemetry.contains("sampleCountActual="), telemetry);
+		assertTrue(telemetry.contains("varianceActual="), telemetry);
 	}
 }

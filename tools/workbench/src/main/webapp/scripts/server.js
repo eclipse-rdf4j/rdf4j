@@ -8,7 +8,7 @@
  */
 function changeServer(event) {
     event.preventDefault();
-    var form = $(event.target).closest('form')[0];
+    var form = $(event.target).closest('form').get(0);
     var user = $('#server-user').prop('value');
     var password = $('#server-password').prop('value');
     if (user && password) {
@@ -16,6 +16,8 @@ function changeServer(event) {
         var encoded = window.btoa ? window.btoa(decoded) : decoded;
         $('#server-password').attr('name', 'server-user-password').prop('value', encoded);
     }
-    form.submit();
+    if (form) {
+        form.submit();
+    }
 }
 //# sourceMappingURL=server.js.map
