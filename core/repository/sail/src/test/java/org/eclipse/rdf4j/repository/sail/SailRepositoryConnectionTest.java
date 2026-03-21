@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -167,6 +168,13 @@ public class SailRepositoryConnectionTest {
 
 		verify(sailConnection).explain(eq(Explanation.Level.Unoptimized), any(QueryRoot.class), any(), any(),
 				anyBoolean(), anyInt());
+	}
+
+	@Test
+	public void testTraceQueryMethodExistsOnTupleQuery() {
+		TupleQuery query = subject.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
+
+		assertThatCode(() -> query.getClass().getMethod("trace")).doesNotThrowAnyException();
 	}
 
 }

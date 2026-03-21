@@ -10,10 +10,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
+
 public interface TupleQuery extends Query {
 
 	TupleQueryResult evaluate() throws QueryEvaluationException;
 
 	void evaluate(TupleQueryResultHandler handler)
 			throws QueryEvaluationException, TupleQueryResultHandlerException;
+
+	@Experimental
+	default QueryTrace trace() throws QueryEvaluationException {
+		throw new UnsupportedOperationException("Trace is not supported for this query or repository.");
+	}
 }

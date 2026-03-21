@@ -300,6 +300,128 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void traceUiShouldRenderQueryLikePlaybackWithActiveLineTooltips() throws IOException {
+		String queryStyles = readQueryStyles();
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String tracePlayerScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query-trace-player.ts"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryStyles)
+				.contains(".query-trace-query")
+				.contains(".query-trace-query__line")
+				.contains(".query-trace-query__line--active")
+				.contains(".query-trace-query__binding")
+				.contains(".query-trace-query__variable");
+
+		assertThat(tracePlayerScript)
+				.contains("SELECT * WHERE {")
+				.contains("queryHead:")
+				.contains("queryTail:")
+				.contains("tooltipBindings:");
+
+		assertThat(queryScript)
+				.contains("query-trace-query__line--active")
+				.contains("query-trace-query__binding")
+				.contains("query-trace-query__variable");
+	}
+
+	@Test
+	void tracePanelShouldUseFullWidthSingleShellLayout() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.contains("class=\"query-form__row query-form__row--stacked query-trace-row\"")
+				.contains("id=\"query-trace-row\" class=\"query-trace-shell\"");
+
+		assertThat(queryStyles)
+				.contains(".query-trace-row")
+				.contains(".query-trace-shell")
+				.containsPattern("\\.query-trace-shell\\s*\\{[^}]*width:\\s*100%;");
+	}
+
+	@Test
+	void queryTemplateShouldExposePreserveJoinOrderToggle() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryMessages = Files.readString(Path.of("src/main/webapp/locale/messages.xsl"), StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"preserve-query-order\"")
+				.contains("name=\"preserve-query-order\"")
+				.contains("for=\"preserve-query-order\"");
+
+		assertThat(queryMessages)
+				.contains("preserve-query-order.label");
+
+		assertThat(queryScript)
+				.contains("workbench.addParam(url, 'preserve-query-order');")
+				.contains("serializedForm[i].name === 'preserve-query-order'")
+				.contains("serializedForm.push({ name: 'preserve-query-order', value: 'false' });");
+	}
+
+	@Test
+	void traceUiShouldUseDistilledSingleCanvasLayout() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"query-trace-row\" class=\"query-trace-shell\"")
+				.contains("class=\"query-trace-topbar\"")
+				.contains("class=\"query-trace-transport\"")
+				.contains("class=\"query-trace-canvas\"")
+				.contains("class=\"query-trace-meta\"")
+				.contains("class=\"query-trace-meta-toggle\">Details</summary>")
+				.doesNotContain("class=\"query-trace-header\"")
+				.doesNotContain("class=\"query-trace-kicker\">Trace playback</span>")
+				.doesNotContain("class=\"query-trace-workspace\"")
+				.doesNotContain("class=\"query-trace-result-stage\"");
+
+		assertThat(queryStyles)
+				.contains(".query-trace-shell")
+				.contains(".query-trace-topbar")
+				.contains(".query-trace-transport")
+				.contains(".query-trace-canvas")
+				.contains(".query-trace-meta")
+				.contains(".query-trace-meta-toggle")
+				.doesNotContain(".query-trace-workspace")
+				.doesNotContain(".query-trace-result-stage");
+
+		assertThat(queryScript)
+				.contains("function renderTraceMeta(")
+				.contains("function renderTraceReadout(")
+				.doesNotContain("function renderTraceSummary(")
+				.doesNotContain("function renderTraceFrameLabel(");
+	}
+
+	@Test
+	void traceUiShouldMergeStoreAndStandardNamespaces() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String tracePlayerScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query-trace-player.ts"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("xmlns:workbench=\"https://rdf4j.org/schema/workbench#\"")
+				.contains("workbench:metadata/workbench:trace-namespaces/text()")
+				.contains("var rdf4jTraceNamespaces =")
+				.contains("var traceNamespaces = Object.assign({}, rdf4jTraceNamespaces, sparqlNamespaces);");
+
+		assertThat(queryScript)
+				.contains("declare var traceNamespaces: any;")
+				.contains("workbench.queryTracePlayer.setNamespaces(traceNamespaces);");
+
+		assertThat(tracePlayerScript)
+				.contains("export function setNamespaces(")
+				.contains("export function formatTraceValue(");
+	}
+
+	@Test
 	void queryTemplateShouldExposeCompareModeRailAndDiffModal() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
@@ -587,6 +709,96 @@ class QueryTemplateTest {
 		assertThat(queryStyles)
 				.containsPattern(
 						"#query-explanation-row,\\s*#query-explanation-row-compare\\s*\\{[^}]*margin-top:\\s*1.2em;");
+	}
+
+	@Test
+	void traceUiShouldLeaveMoreVerticalRoomBetweenQueryLines() throws IOException {
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryStyles)
+				.containsPattern(
+						"\\.query-trace-query__line \\+ \\.query-trace-query__line\\s*\\{[^}]*margin-top:\\s*1.6rem;")
+				.containsPattern(
+						"\\.query-trace-query__line--head \\+ \\.query-trace-query__line,\\s*\\.query-trace-query__line--tail\\s*\\{[^}]*margin-top:\\s*0.9rem;");
+	}
+
+	@Test
+	void traceUiShouldUseReducedMotionSafePlaybackAnimations() throws IOException {
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryStyles)
+				.contains("@media (prefers-reduced-motion: no-preference)")
+				.contains("--trace-ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);")
+				.contains("--trace-ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);")
+				.contains(".query-trace-readout--visible")
+				.contains("animation: query-trace-readout-enter 220ms var(--trace-ease-out-quart);")
+				.contains(".query-trace-query__line--active .query-trace-query__line-content")
+				.contains("animation: query-trace-line-focus 260ms var(--trace-ease-out-quint);")
+				.contains(".query-trace-query__line--active .query-trace-query__binding")
+				.contains("animation: query-trace-binding-rise 220ms var(--trace-ease-out-quart);")
+				.contains("@keyframes query-trace-readout-enter")
+				.contains("@keyframes query-trace-line-focus")
+				.contains("@keyframes query-trace-binding-rise");
+	}
+
+	@Test
+	void traceBindingBadgesShouldUseTranslucentBlurredSurfaces() throws IOException {
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryStyles)
+				.containsPattern(
+						"\\.query-trace-query__binding\\s*\\{[^}]*background:\\s*rgba\\(34,\\s*50,\\s*64,\\s*0\\.[0-9]+\\);")
+				.contains("-webkit-backdrop-filter: blur(")
+				.contains("backdrop-filter: blur(")
+				.containsPattern(
+						"\\.query-trace-query__line--pending \\.query-trace-query__binding\\s*\\{[^}]*background:\\s*rgba\\(220,\\s*229,\\s*234,\\s*0\\.[0-9]+\\);");
+	}
+
+	@Test
+	void traceUiShouldGiveActiveLineAStrongerCurrentStepMarker() throws IOException {
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryStyles)
+				.containsPattern(
+						"\\.query-trace-query__line--active \\.query-trace-query__gutter\\s*\\{[^}]*background:\\s*rgba\\(")
+				.containsPattern(
+						"\\.query-trace-query__line--active \\.query-trace-query__line-content\\s*\\{[^}]*linear-gradient\\(")
+				.containsPattern(
+						"\\.query-trace-query__line--active \\.query-trace-query__line-content\\s*\\{[^}]*border:\\s*1px\\s+solid")
+				.contains(".query-trace-query__line--active .query-trace-query__line-content::before")
+				.contains("box-shadow: 0 0 0");
+	}
+
+	@Test
+	void traceUiShouldUseAnimatedChevronForActiveLine() throws IOException {
+		String queryStyles = readQueryStyles();
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("query-trace-query__active-chevron")
+				.contains("line.append(")
+				.contains("query-trace-query__gutter")
+				.contains("query-trace-query__line--active");
+
+		assertThat(queryStyles)
+				.contains(".query-trace-query__active-chevron")
+				.contains("animation: query-trace-chevron-bob")
+				.contains("@keyframes query-trace-chevron-bob");
+	}
+
+	@Test
+	void traceUiShouldAnimateWaveWhenPlaybackRollsBackUpward() throws IOException {
+		String queryStyles = readQueryStyles();
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("previousTraceActivePatternIndex")
+				.contains("query-trace-query__line--rollback-wave");
+
+		assertThat(queryStyles)
+				.contains(".query-trace-query__line--rollback-wave .query-trace-query__line-content")
+				.contains("animation: query-trace-line-rollback-wave")
+				.contains("@keyframes query-trace-line-rollback-wave");
 	}
 
 	@Test

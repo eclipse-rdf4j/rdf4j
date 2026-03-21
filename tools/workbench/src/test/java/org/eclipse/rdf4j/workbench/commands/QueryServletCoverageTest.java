@@ -50,6 +50,7 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.Repository;
@@ -274,6 +275,37 @@ class QueryServletCoverageTest {
 				.contains("20")
 				.contains("name='query-timeout'")
 				.contains(">17</literal>");
+	}
+
+	@Test
+	void emptyQueryPageShouldExposeTraceNamespaceMetadata() throws Exception {
+		CookieAwareQueryServlet servlet = new CookieAwareQueryServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getNamespaces()).thenReturn(new RepositoryResult<>(
+				new CloseableIteratorIteration<>(List.<Namespace>of(
+						new SimpleNamespace("med", "http://example.com/theme/medical/")).iterator())));
+		when(response.getOutputStream()).thenReturn(outputStream);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
+		when(request.isParameterPresent("Accept")).thenReturn(false);
+		when(request.getHeader("Accept-Encoding")).thenReturn(null);
+		servlet.setRepository(repository);
+		servlet.writeQueryCookie = true;
+		servlet.setCookieHandler(mock(CookieHandler.class));
+
+		servlet.service(request, response, "/transform");
+
+		assertThat(outputStream.asString())
+				.contains("workbench:trace-namespaces")
+				.contains("\"med:\"")
+				.contains("\"rdf:\"")
+				.contains("\"rdf4j:\"")
+				.contains("xmlns:med='http://example.com/theme/medical/'");
 	}
 
 	@Test

@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 
 /**
  * A connection to an RDF Sail object. A SailConnection is active from the moment it is created until it is closed. Care
@@ -473,6 +474,12 @@ public interface SailConnection extends AutoCloseable {
 	@Experimental
 	default Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Experimental
+	default QueryTrace trace(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
+			int timeoutSeconds) {
 		throw new UnsupportedOperationException();
 	}
 

@@ -24,7 +24,9 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.AsyncTraceCoordinator;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryTraceRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -56,6 +59,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	private final RepositoryResolver repositoryResolver;
 
 	private final AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
+	private final AsyncTraceCoordinator asyncTraceCoordinator = new AsyncTraceCoordinator();
 
 	public AbstractQueryRequestHandler(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
@@ -76,6 +80,25 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		}
 
 		asyncExplainCoordinator.cancel(explainRequestId.trim());
+		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+		return true;
+	}
+
+	@Override
+	public boolean handleCancelTrace(HttpServletRequest request, HttpServletResponse response) throws IOException {
+		if (!RequestMethod.POST.name().equals(request.getMethod())
+				|| request.getParameter(Protocol.CANCEL_TRACE_PARAM_NAME) == null) {
+			return false;
+		}
+
+		String traceRequestId = request.getParameter(Protocol.TRACE_REQUEST_ID_PARAM_NAME);
+		if (traceRequestId == null || traceRequestId.trim().isEmpty()) {
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+					"Missing parameter: " + Protocol.TRACE_REQUEST_ID_PARAM_NAME);
+			return true;
+		}
+
+		asyncTraceCoordinator.cancel(traceRequestId.trim());
 		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
 		return true;
 	}
@@ -103,8 +126,15 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long limit = getLimit(request);
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
+			final boolean trace = isTrace(request);
+			final Optional<String> traceRequestId = getTraceRequestId(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
 			final Optional<String> explainRequestId = getExplainRequestId(request);
+
+			if (!headersOnly && trace && traceRequestId.isPresent()) {
+				return handleRegisteredTraceRequest(request, response, repository, repositoryCon, query,
+						traceRequestId.get());
+			}
 
 			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
 				return handleRegisteredExplainRequest(request, response, repository, repositoryCon, query,
@@ -114,6 +144,14 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 			try {
 				if (!headersOnly) {
+					if (trace) {
+						try {
+							QueryTrace queryTrace = traceQuery(query);
+							return getTraceQueryResponse(request, response, queryTrace);
+						} finally {
+							repositoryCon.close();
+						}
+					}
 					// explain param is present, return the query explanation
 					if (explainLevel.isPresent()) {
 						try {
@@ -185,6 +223,10 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		throw new ServerHTTPException("unimplemented explainQuery feature");
 	}
 
+	protected QueryTrace traceQuery(final Query query) throws QueryEvaluationException, HTTPException {
+		throw new ServerHTTPException("unimplemented traceQuery feature");
+	}
+
 	private ModelAndView handleRegisteredExplainRequest(HttpServletRequest request, HttpServletResponse response,
 			Repository repository, RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel,
 			String explainRequestId)
@@ -238,6 +280,58 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		}
 	}
 
+	private ModelAndView handleRegisteredTraceRequest(HttpServletRequest request, HttpServletResponse response,
+			Repository repository, RepositoryConnection repositoryCon, Query query, String traceRequestId)
+			throws IOException, HTTPException {
+		final AsyncTraceCoordinator.Handle handle;
+		try {
+			handle = asyncTraceCoordinator.register(traceRequestId, createRemoteTraceCancelAction(repository,
+					traceRequestId));
+		} catch (IllegalStateException e) {
+			closeConnection(repositoryCon);
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+			return null;
+		}
+
+		try {
+			QueryTrace trace = asyncTraceCoordinator.execute(handle, repositoryCon,
+					currentHandle -> QueryTraceRequestContext
+							.activate(currentHandle.getTraceRequestId())::close,
+					() -> traceQuery(query));
+			if (trace == null) {
+				return null;
+			}
+
+			return getTraceQueryResponse(request, response, trace);
+		} catch (QueryInterruptedException e) {
+			logger.info("Query interrupted", e);
+			if (!handle.isActive()) {
+				return null;
+			}
+			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
+		} catch (QueryEvaluationException e) {
+			logger.info("Query evaluation error", e);
+			if (!handle.isActive()) {
+				return null;
+			}
+			if (e.getCause() instanceof HTTPException) {
+				throw (HTTPException) e.getCause();
+			}
+			throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
+		} catch (HTTPException e) {
+			if (!handle.isActive()) {
+				return null;
+			}
+			throw e;
+		} finally {
+			try {
+				closeConnection(repositoryCon);
+			} finally {
+				asyncTraceCoordinator.complete(handle);
+			}
+		}
+	}
+
 	private void closeConnection(RepositoryConnection repositoryCon) {
 		try {
 			repositoryCon.close();
@@ -261,8 +355,26 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		};
 	}
 
+	private Runnable createRemoteTraceCancelAction(Repository repository, String traceRequestId) {
+		if (!(repository instanceof HTTPRepository)) {
+			return null;
+		}
+
+		HTTPRepository httpRepository = (HTTPRepository) repository;
+		return () -> {
+			try {
+				httpRepository.cancelQueryTrace(traceRequestId);
+			} catch (RepositoryException e) {
+				logger.debug("Remote trace cancellation failed for request {}", traceRequestId, e);
+			}
+		};
+	}
+
 	protected abstract ModelAndView getExplainQueryResponse(
 			final HttpServletRequest request, final HttpServletResponse response, final Explanation explanation);
+
+	protected abstract ModelAndView getTraceQueryResponse(
+			final HttpServletRequest request, final HttpServletResponse response, final QueryTrace trace);
 
 	abstract protected Object evaluateQuery(Query query, long limit, long offset, boolean distinct)
 			throws ClientHTTPException;
@@ -317,6 +429,13 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		}
 	}
 
+	protected boolean isTrace(HttpServletRequest request) throws ClientHTTPException {
+		if (request.getParameter(Protocol.TRACE_PARAM_NAME) == null) {
+			return false;
+		}
+		return ProtocolUtil.parseBooleanParam(request, Protocol.TRACE_PARAM_NAME, false);
+	}
+
 	protected Optional<String> getExplainRequestId(HttpServletRequest request) {
 		String explainRequestId = request.getParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
 		if (explainRequestId == null) {
@@ -327,6 +446,18 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			return Optional.empty();
 		}
 		return Optional.of(normalizedExplainRequestId);
+	}
+
+	protected Optional<String> getTraceRequestId(HttpServletRequest request) {
+		String traceRequestId = request.getParameter(Protocol.TRACE_REQUEST_ID_PARAM_NAME);
+		if (traceRequestId == null) {
+			return Optional.empty();
+		}
+		String normalizedTraceRequestId = traceRequestId.trim();
+		if (normalizedTraceRequestId.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(normalizedTraceRequestId);
 	}
 
 	<T> T getParam(HttpServletRequest request, String distinctParamName, T defaultValue, Class<T> clazz)

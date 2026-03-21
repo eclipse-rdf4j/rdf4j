@@ -25,6 +25,8 @@ public interface QueryRequestHandler {
 
 	boolean handleCancelExplain(HttpServletRequest request, HttpServletResponse response) throws Exception;
 
+	boolean handleCancelTrace(HttpServletRequest request, HttpServletResponse response) throws Exception;
+
 	ModelAndView handleQueryRequest(HttpServletRequest request, RequestMethod requestMethod,
 			HttpServletResponse response) throws Exception;
 }

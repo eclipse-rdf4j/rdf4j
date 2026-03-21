@@ -63,6 +63,7 @@ import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.QueryResultView;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+import org.eclipse.rdf4j.http.server.repository.TraceQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.TupleQueryResultView;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -83,6 +84,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -366,6 +368,10 @@ public class TransactionController extends AbstractController implements Disposa
 			throw new ClientHTTPException(SC_BAD_REQUEST,
 					"Canceling query explanations is not supported for transaction requests.");
 		}
+		if (request.getParameter(Protocol.CANCEL_TRACE_PARAM_NAME) != null) {
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Canceling query traces is not supported for transaction requests.");
+		}
 
 		View view;
 		Object queryResult;
@@ -373,7 +379,25 @@ public class TransactionController extends AbstractController implements Disposa
 
 		try {
 			Query query = getQuery(txn, queryStr, request, response);
+			boolean trace = isTrace(request);
 			Optional<Explanation.Level> explainLevel = getExplain(request);
+
+			if (trace) {
+				if (hasTraceRequestId(request)) {
+					throw new ClientHTTPException(SC_BAD_REQUEST,
+							"Tracked query traces are only supported through the workbench UI.");
+				}
+				if (!(query instanceof TupleQuery)) {
+					throw new ClientHTTPException(SC_BAD_REQUEST,
+							"Query traces are only supported for tuple queries.");
+				}
+				try {
+					QueryTrace queryTrace = txn.trace(query);
+					return queryTrace == null ? null : getTraceQueryResponse(queryTrace);
+				} catch (ExecutionException e) {
+					handleTraceExecutionException(query, e);
+				}
+			}
 
 			if (explainLevel.isPresent()) {
 				if (hasExplainRequestId(request)) {
@@ -455,6 +479,15 @@ public class TransactionController extends AbstractController implements Disposa
 		return explainRequestId != null && !explainRequestId.trim().isEmpty();
 	}
 
+	private boolean isTrace(HttpServletRequest request) {
+		return request.getParameter(Protocol.TRACE_PARAM_NAME) != null;
+	}
+
+	private boolean hasTraceRequestId(HttpServletRequest request) {
+		String traceRequestId = request.getParameter(Protocol.TRACE_REQUEST_ID_PARAM_NAME);
+		return traceRequestId != null && !traceRequestId.trim().isEmpty();
+	}
+
 	private ModelAndView getExplainQueryResponse(Explanation explanation) {
 		Map<String, Object> model = new HashMap<>();
 		model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
@@ -462,11 +495,27 @@ public class TransactionController extends AbstractController implements Disposa
 		return new ModelAndView(new ExplainQueryResultView(), model);
 	}
 
+	private ModelAndView getTraceQueryResponse(QueryTrace queryTrace) {
+		Map<String, Object> model = new HashMap<>();
+		model.put(QueryResultView.FILENAME_HINT_KEY, "query-trace");
+		model.put(QueryResultView.QUERY_TRACE_RESULT_KEY, queryTrace);
+		return new ModelAndView(new TraceQueryResultView(), model);
+	}
+
 	private void handleExplainExecutionException(Query query, ExecutionException e)
 			throws ClientHTTPException, ExecutionException {
 		if (containsCause(e, UnsupportedOperationException.class)) {
 			throw new ClientHTTPException(SC_BAD_REQUEST,
 					"Query explanations are not supported for query type: " + query.getClass().getName(), e);
+		}
+		throw e;
+	}
+
+	private void handleTraceExecutionException(Query query, ExecutionException e)
+			throws ClientHTTPException, ExecutionException {
+		if (containsCause(e, UnsupportedOperationException.class)) {
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Query traces are not supported for query type: " + query.getClass().getName(), e);
 		}
 		throw e;
 	}

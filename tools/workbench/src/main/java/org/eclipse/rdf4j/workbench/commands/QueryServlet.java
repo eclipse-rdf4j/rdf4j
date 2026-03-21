@@ -19,6 +19,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -34,7 +35,9 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.AsyncTraceCoordinator;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryTraceRequestContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -47,6 +50,7 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
@@ -57,6 +61,7 @@ import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.TraceNamespaceCatalog;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
@@ -89,9 +94,17 @@ public class QueryServlet extends TransformationServlet {
 
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
 
+	private static final String ACTION_TRACE = "trace";
+
+	private static final String ACTION_CANCEL_TRACE = "cancel-trace";
+
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
 
 	private static final String EXPLAIN_TIMEOUT_MESSAGE = "Query explanation took too long";
+
+	private static final String TRACE_REQUEST_ID = "trace-request-id";
+
+	private static final String TRACE_TIMEOUT_MESSAGE = "Query trace took too long";
 
 	private static final String[] EDIT_PARAMS = new String[] { QUERY_LN, QUERY, INFER, LIMIT, QUERY_TIMEOUT };
 
@@ -104,6 +117,7 @@ public class QueryServlet extends TransformationServlet {
 	private QueryStorage storage;
 
 	private AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
+	private AsyncTraceCoordinator asyncTraceCoordinator = new AsyncTraceCoordinator();
 
 	protected boolean writeQueryCookie;
 
@@ -126,6 +140,10 @@ public class QueryServlet extends TransformationServlet {
 
 	protected void substituteAsyncExplainCoordinator(AsyncExplainCoordinator asyncExplainCoordinator) {
 		this.asyncExplainCoordinator = asyncExplainCoordinator;
+	}
+
+	protected void substituteAsyncTraceCoordinator(AsyncTraceCoordinator asyncTraceCoordinator) {
+		this.asyncTraceCoordinator = asyncTraceCoordinator;
 	}
 
 	/**
@@ -168,6 +186,7 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	public void destroy() {
 		this.asyncExplainCoordinator.shutdown();
+		this.asyncTraceCoordinator.shutdown();
 		this.storage.shutdown();
 		super.destroy();
 	}
@@ -214,6 +233,15 @@ public class QueryServlet extends TransformationServlet {
 			} else {
 				writeExplainResponse(req, resp);
 			}
+		} else if (ACTION_TRACE.equals(action)) {
+			if (isSavedQueryReference(req) && !canReadSavedQuery(req)) {
+				throw new BadRequestException("Current user may not read the given query.");
+			}
+			if (req.isParameterPresent(TRACE_REQUEST_ID)) {
+				writeAsyncTraceResponse(req, resp);
+			} else {
+				writeTraceResponse(req, resp);
+			}
 		} else {
 			handleStandardBrowserRequest(req, resp, xslPath);
 		}
@@ -254,6 +282,34 @@ public class QueryServlet extends TransformationServlet {
 			} else {
 				LOGGER.warn(e.toString(), e);
 				writeExplainErrorResponse(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, e.getMessage());
+			}
+		}
+	}
+
+	private void writeTraceResponse(final WorkbenchRequest req, final HttpServletResponse resp) throws IOException {
+		try (RepositoryConnection con = repository.getConnection()) {
+			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
+			writeTraceSuccessResponse(resp, EVAL.trace(con, getQueryText(req), req));
+		} catch (BadRequestException e) {
+			writeTraceErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed", e.getMessage());
+		} catch (MalformedQueryException e) {
+			writeTraceErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed", e.getMessage());
+		} catch (QueryInterruptedException e) {
+			writeTraceTimeoutResponse(resp);
+		} catch (HTTPQueryEvaluationException e) {
+			if (isExplainTimeout(e)) {
+				writeTraceTimeoutResponse(resp);
+			} else {
+				writeTraceErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed",
+						getExplainErrorMessage(e));
+			}
+		} catch (RDF4JException e) {
+			if (isExplainTimeout(e)) {
+				writeTraceTimeoutResponse(resp);
+			} else {
+				LOGGER.warn(e.toString(), e);
+				writeTraceErrorResponse(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "traceRequestFailed",
+						e.getMessage());
 			}
 		}
 	}
@@ -334,6 +390,85 @@ public class QueryServlet extends TransformationServlet {
 		}
 	}
 
+	private void writeAsyncTraceResponse(final WorkbenchRequest req, final HttpServletResponse resp)
+			throws IOException {
+		final String traceRequestId = getTraceRequestId(req);
+		if (traceRequestId == null) {
+			writeTraceErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed",
+					"Missing parameter: " + TRACE_REQUEST_ID);
+			return;
+		}
+		final String queryText;
+		try {
+			queryText = getQueryText(req);
+		} catch (BadRequestException e) {
+			writeTraceErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed", e.getMessage());
+			return;
+		} catch (RDF4JException e) {
+			LOGGER.warn(e.toString(), e);
+			writeTraceErrorResponse(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "traceRequestFailed",
+					e.getMessage());
+			return;
+		}
+
+		final AsyncTraceCoordinator.Handle handle;
+		try {
+			handle = asyncTraceCoordinator.register(traceRequestId, createRemoteTraceCancelAction(traceRequestId));
+		} catch (IllegalStateException e) {
+			writeTraceErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed", e.getMessage());
+			return;
+		}
+
+		try {
+			RepositoryConnection con = repository.getConnection();
+			Throwable connectionFailure = null;
+			try {
+				con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
+				QueryEvaluator.TraceQueryResult traceQueryResult = asyncTraceCoordinator.execute(handle, con,
+						currentHandle -> QueryTraceRequestContext
+								.activate(currentHandle.getTraceRequestId())::close,
+						() -> EVAL.trace(con, queryText, req));
+				if (traceQueryResult != null && handle.isActive()) {
+					writeTraceSuccessResponse(resp, traceQueryResult);
+				}
+			} catch (Throwable t) {
+				connectionFailure = t;
+				throw t;
+			} finally {
+				closeConnection(con, connectionFailure);
+			}
+		} catch (BadRequestException e) {
+			writeTrackedTraceError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed",
+					e.getMessage());
+		} catch (MalformedQueryException e) {
+			writeTrackedTraceError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed",
+					e.getMessage());
+		} catch (QueryInterruptedException e) {
+			writeTrackedTraceTimeout(resp, handle);
+		} catch (HTTPQueryEvaluationException e) {
+			if (isExplainTimeout(e)) {
+				writeTrackedTraceTimeout(resp, handle);
+			} else {
+				writeTrackedTraceError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, "traceRequestFailed",
+						getExplainErrorMessage(e));
+			}
+		} catch (RDF4JException e) {
+			if (isExplainTimeout(e)) {
+				writeTrackedTraceTimeout(resp, handle);
+			} else {
+				LOGGER.warn(e.toString(), e);
+				writeTrackedTraceError(resp, handle, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+						"traceRequestFailed", e.getMessage());
+			}
+		} catch (IOException e) {
+			if (handle.isActive()) {
+				LOGGER.debug("Trace response write failed for request {}", handle.getTraceRequestId(), e);
+			}
+		} finally {
+			asyncTraceCoordinator.complete(handle);
+		}
+	}
+
 	private void writeTrackedExplainError(HttpServletResponse response, AsyncExplainCoordinator.Handle handle,
 			int statusCode,
 			String message) {
@@ -347,12 +482,35 @@ public class QueryServlet extends TransformationServlet {
 		}
 	}
 
+	private void writeTrackedTraceError(HttpServletResponse response, AsyncTraceCoordinator.Handle handle,
+			int statusCode,
+			String code, String message) {
+		if (!handle.isActive()) {
+			return;
+		}
+		try {
+			writeTraceErrorResponse(response, statusCode, code, message);
+		} catch (IOException e) {
+			LOGGER.debug("Trace error response write failed for request {}", handle.getTraceRequestId(), e);
+		}
+	}
+
 	private void writeExplainTimeoutResponse(HttpServletResponse response) throws IOException {
 		writeExplainErrorResponse(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, EXPLAIN_TIMEOUT_MESSAGE);
 	}
 
 	private void writeTrackedExplainTimeout(HttpServletResponse response, AsyncExplainCoordinator.Handle handle) {
 		writeTrackedExplainError(response, handle, HttpServletResponse.SC_SERVICE_UNAVAILABLE, EXPLAIN_TIMEOUT_MESSAGE);
+	}
+
+	private void writeTraceTimeoutResponse(HttpServletResponse response) throws IOException {
+		writeTraceErrorResponse(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "traceTimeout",
+				TRACE_TIMEOUT_MESSAGE);
+	}
+
+	private void writeTrackedTraceTimeout(HttpServletResponse response, AsyncTraceCoordinator.Handle handle) {
+		writeTrackedTraceError(response, handle, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "traceTimeout",
+				TRACE_TIMEOUT_MESSAGE);
 	}
 
 	private void closeConnection(RepositoryConnection con, Throwable failure) {
@@ -383,12 +541,32 @@ public class QueryServlet extends TransformationServlet {
 		};
 	}
 
+	private Runnable createRemoteTraceCancelAction(String traceRequestId) {
+		if (!(repository instanceof HTTPRepository)) {
+			return null;
+		}
+
+		HTTPRepository httpRepository = (HTTPRepository) repository;
+		return () -> {
+			try {
+				httpRepository.cancelQueryTrace(traceRequestId);
+			} catch (RepositoryException e) {
+				LOGGER.debug("Remote trace cancellation failed for request {}", traceRequestId, e);
+			}
+		};
+	}
+
 	private void writeExplainSuccessResponse(final HttpServletResponse resp,
 			QueryEvaluator.ExplainQueryResult explainQueryResult) throws IOException {
 		ObjectNode jsonObject = mapper.createObjectNode();
 		jsonObject.put("format", explainQueryResult.getFormat());
 		jsonObject.put("content", explainQueryResult.getContent());
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);
+	}
+
+	private void writeTraceSuccessResponse(final HttpServletResponse resp,
+			QueryEvaluator.TraceQueryResult traceQueryResult) throws IOException {
+		writeJsonResponse(resp, HttpServletResponse.SC_OK, traceQueryResult.getTrace());
 	}
 
 	private void writeExplainErrorResponse(final HttpServletResponse resp, int statusCode, String message)
@@ -398,13 +576,23 @@ public class QueryServlet extends TransformationServlet {
 		writeExplainJsonResponse(resp, statusCode, jsonObject);
 	}
 
+	private void writeTraceErrorResponse(final HttpServletResponse resp, int statusCode, String code, String message)
+			throws IOException {
+		writeJsonResponse(resp, statusCode, QueryTrace.error(code, message));
+	}
+
 	private void writeExplainJsonResponse(final HttpServletResponse resp, int statusCode, ObjectNode jsonObject)
+			throws IOException {
+		writeJsonResponse(resp, statusCode, jsonObject);
+	}
+
+	private void writeJsonResponse(final HttpServletResponse resp, int statusCode, Object payload)
 			throws IOException {
 		resp.setContentType("application/json");
 		resp.setStatus(statusCode);
 		PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
 		try {
-			writer.write(mapper.writeValueAsString(jsonObject));
+			writer.write(mapper.writeValueAsString(payload));
 		} finally {
 			writer.flush();
 		}
@@ -441,6 +629,7 @@ public class QueryServlet extends TransformationServlet {
 			builder.transform(xslPath, "query.xsl");
 			builder.start("error-message");
 			builder.link(Arrays.asList(INFO, "namespaces"));
+			builder.metadata(TraceNamespaceCatalog.METADATA_NAME, getTraceNamespacesJson());
 			builder.result(exc.getMessage());
 			builder.end();
 		} finally {
@@ -546,6 +735,7 @@ public class QueryServlet extends TransformationServlet {
 				builder.transform(xslPath, "query.xsl");
 				builder.start(EDIT_PARAMS);
 				builder.link(Arrays.asList(INFO, "namespaces"));
+				builder.metadata(TraceNamespaceCatalog.METADATA_NAME, getTraceNamespacesJson());
 				final String queryLn = req.getParameter(EDIT_PARAMS[0]);
 				final String query = getQueryText(req);
 				final Boolean infer = Boolean.valueOf(req.getParameter(EDIT_PARAMS[2]));
@@ -573,6 +763,16 @@ public class QueryServlet extends TransformationServlet {
 			} else {
 				throw new BadRequestException("Current user may not read the given query.");
 			}
+		} else if (ACTION_TRACE.equals(action)) {
+			if (canReadSavedQuery(req)) {
+				if (req.isParameterPresent(TRACE_REQUEST_ID)) {
+					writeAsyncTraceResponse(req, resp);
+				} else {
+					writeTraceResponse(req, resp);
+				}
+			} else {
+				throw new BadRequestException("Current user may not read the given query.");
+			}
 		} else if (ACTION_CANCEL_EXPLAIN.equals(action)) {
 			final String explainRequestId = getExplainRequestId(req);
 			if (explainRequestId == null) {
@@ -580,6 +780,15 @@ public class QueryServlet extends TransformationServlet {
 				return;
 			} else {
 				asyncExplainCoordinator.cancel(explainRequestId);
+				resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+			}
+		} else if (ACTION_CANCEL_TRACE.equals(action)) {
+			final String traceRequestId = getTraceRequestId(req);
+			if (traceRequestId == null) {
+				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + TRACE_REQUEST_ID);
+				return;
+			} else {
+				asyncTraceCoordinator.cancel(traceRequestId);
 				resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
 			}
 		} else {
@@ -656,6 +865,18 @@ public class QueryServlet extends TransformationServlet {
 		return explainRequestId.isEmpty() ? null : explainRequestId;
 	}
 
+	private String getTraceRequestId(WorkbenchRequest req) {
+		if (!req.isParameterPresent(TRACE_REQUEST_ID)) {
+			return null;
+		}
+		String traceRequestId = req.getParameter(TRACE_REQUEST_ID);
+		if (traceRequestId == null) {
+			return null;
+		}
+		traceRequestId = traceRequestId.trim();
+		return traceRequestId.isEmpty() ? null : traceRequestId;
+	}
+
 	private String getRepositoryReference() {
 		if (repository instanceof HTTPRepository) {
 			return ((HTTPRepository) repository).getRepositoryURL();
@@ -717,14 +938,17 @@ public class QueryServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
-			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
+			List<Namespace> namespaces = Iterations.asList(con.getNamespaces());
+			for (Namespace ns : namespaces) {
 				builder.prefix(ns.getPrefix(), ns.getName());
 			}
+			String traceNamespacesJson = TraceNamespaceCatalog.getNamespacesJson(namespaces);
 			String query = getQueryText(req);
 			if (query.isEmpty()) {
 				builder.transform(xslPath, "query.xsl");
 				builder.start();
 				builder.link(Arrays.asList(INFO, "namespaces"));
+				builder.metadata(TraceNamespaceCatalog.METADATA_NAME, traceNamespacesJson);
 				builder.end();
 			} else {
 				try {
@@ -739,6 +963,15 @@ public class QueryServlet extends TransformationServlet {
 					throw exc;
 				}
 			}
+		}
+	}
+
+	private String getTraceNamespacesJson() {
+		try (RepositoryConnection con = repository.getConnection()) {
+			return TraceNamespaceCatalog.getNamespacesJson(Iterations.asList(con.getNamespaces()));
+		} catch (RuntimeException e) {
+			LOGGER.debug("Could not load repository namespaces for trace metadata", e);
+			return TraceNamespaceCatalog.getStandardNamespacesJson();
 		}
 	}
 

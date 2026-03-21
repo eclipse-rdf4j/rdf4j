@@ -46,6 +46,11 @@ public abstract class QueryResultView implements View {
 	public static final String QUERY_EXPLAIN_RESULT_KEY = "explainResult";
 
 	/**
+	 * Key by which the query trace result is stored in the model.
+	 */
+	public static final String QUERY_TRACE_RESULT_KEY = "traceResult";
+
+	/**
 	 * Key by which the query result writer factory is stored in the model.
 	 */
 	public static final String FACTORY_KEY = "factory";

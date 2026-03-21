@@ -39,6 +39,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.trace.QueryTraceContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.trace.QueryTraceRecorder;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -283,6 +285,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		QueryTraceRecorder recorder = QueryTraceContext.getRecorder();
+		if (recorder != null) {
+			recorder.recordProbe(statementPatternForMetrics, bindings);
+		}
 		if (emptyGraph) {
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
@@ -290,7 +296,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
-			return iteration;
+			return traceIteration(recorder, iteration, bindings);
 
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
@@ -301,8 +307,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
+			return traceIteration(recorder, iteration, bindings);
+		}
+	}
+
+	private CloseableIteration<BindingSet> traceIteration(QueryTraceRecorder recorder,
+			CloseableIteration<BindingSet> iteration, BindingSet inputBindings) {
+		if (recorder == null) {
 			return iteration;
 		}
+		return new TracingBindingSetIteration(iteration, recorder, statementPatternForMetrics, inputBindings);
 	}
 
 	private JoinStatementWithBindingSetIterator getIteration(BindingSet bindings) {
@@ -860,6 +874,44 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		private IndexReportingIterator indexReporter() {
 			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
+		}
+	}
+
+	private static final class TracingBindingSetIteration implements CloseableIteration<BindingSet> {
+
+		private final CloseableIteration<BindingSet> delegate;
+		private final QueryTraceRecorder recorder;
+		private final StatementPattern statementPattern;
+		private final BindingSet inputBindings;
+
+		private TracingBindingSetIteration(CloseableIteration<BindingSet> delegate, QueryTraceRecorder recorder,
+				StatementPattern statementPattern, BindingSet inputBindings) {
+			this.delegate = delegate;
+			this.recorder = recorder;
+			this.statementPattern = statementPattern;
+			this.inputBindings = inputBindings;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return delegate.hasNext();
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			BindingSet result = delegate.next();
+			recorder.recordMatch(statementPattern, inputBindings, result);
+			return result;
+		}
+
+		@Override
+		public void remove() throws QueryEvaluationException {
+			delegate.remove();
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			delegate.close();
 		}
 	}
 

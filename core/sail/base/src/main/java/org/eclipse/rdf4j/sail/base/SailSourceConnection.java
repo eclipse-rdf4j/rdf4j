@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -46,11 +47,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.trace.QueryTraceAnalyzer;
+import org.eclipse.rdf4j.query.algebra.evaluation.trace.QueryTraceContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.trace.QueryTraceRecorder;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
@@ -70,6 +75,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
+
+	private static final String QUERY_TIMEOUT_MESSAGE = "execution took too long";
 
 	/*-----------*
 	 * Variables *
@@ -265,22 +272,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			throw new SailException(e);
 		} finally {
 			if (!allGood) {
-
-				try {
-					if (iteration != null) {
-						iteration.close();
-					}
-				} finally {
-					try {
-						if (rdfDataset != null) {
-							rdfDataset.close();
-						}
-					} finally {
-						if (branch != null) {
-							branch.close();
-						}
-					}
-				}
+				closeQueryResources(iteration, rdfDataset, branch);
 			}
 		}
 	}
@@ -347,28 +339,84 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
+	@Override
+	public QueryTrace trace(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
+			int timeoutSeconds) {
+		logger.trace("Incoming trace model:\n{}", tupleExpr);
+
+		if (cloneTupleExpression) {
+			tupleExpr = tupleExpr.clone();
+		}
+
+		if (!(tupleExpr instanceof QueryRoot)) {
+			tupleExpr = new QueryRoot(tupleExpr);
+		}
+
+		SailSource branch = null;
+		SailDataset rdfDataset = null;
+		CloseableIteration<BindingSet> iteration = null;
+		try (ExecutionTimeout executionTimeout = ExecutionTimeout.start(timeoutSeconds)) {
+			branch = branch(IncludeInferred.fromBoolean(includeInferred));
+			rdfDataset = branch.dataset(getIsolationLevel());
+
+			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
+			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
+			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			logger.trace("Optimized trace model:\n{}", tupleExpr);
+
+			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
+			QueryTraceAnalyzer.Analysis analysis = QueryTraceAnalyzer.analyze(tupleExpr);
+			if (!analysis.isSupported()) {
+				return QueryTrace.error(QueryTraceRecorder.UNSUPPORTED_SHAPE, analysis.getMessage());
+			}
+
+			QueryTraceRecorder recorder = new QueryTraceRecorder(analysis);
+			try (QueryTraceContext.Activation ignored = QueryTraceContext.activate(recorder)) {
+				iteration = qes.evaluate(EmptyBindingSet.getInstance());
+				while (iteration.hasNext()) {
+					if (executionTimeout.hasTimedOut()) {
+						throw new QueryInterruptedException(QUERY_TIMEOUT_MESSAGE);
+					}
+					recorder.recordResult(iteration.next());
+				}
+				if (executionTimeout.hasTimedOut()) {
+					throw new QueryInterruptedException(QUERY_TIMEOUT_MESSAGE);
+				}
+				return recorder.toTrace();
+			} catch (QueryTraceRecorder.TraceLimitExceededException e) {
+				return QueryTrace.error(QueryTraceRecorder.TRACE_LIMIT_EXCEEDED, e.getMessage());
+			}
+		} catch (QueryInterruptedException e) {
+			throw new SailException(e);
+		} catch (QueryEvaluationException e) {
+			throw new SailException(e);
+		} finally {
+			closeQueryResources(iteration, rdfDataset, branch);
+		}
+	}
+
+	private void closeQueryResources(CloseableIteration<?> iteration, SailDataset rdfDataset, SailSource branch) {
+		try {
+			if (iteration != null) {
+				iteration.close();
+			}
+		} finally {
+			try {
+				if (rdfDataset != null) {
+					rdfDataset.close();
+				}
+			} finally {
+				if (branch != null) {
+					branch.close();
+				}
+			}
+		}
+	}
+
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int timeoutSeconds) {
 
-		AtomicBoolean timedOut = new AtomicBoolean(false);
-
-		Thread currentThread = Thread.currentThread();
-
-		// selfInterruptOnTimeoutThread will interrupt the current thread after a set timeout to stop the query
-		// execution
-		Thread selfInterruptOnTimeoutThread = new Thread(() -> {
-			try {
-				TimeUnit.SECONDS.sleep(timeoutSeconds);
-				currentThread.interrupt();
-				timedOut.set(true);
-			} catch (InterruptedException ignored) {
-
-			}
-		});
-
-		try {
-			selfInterruptOnTimeoutThread.start();
-
+		try (ExecutionTimeout executionTimeout = ExecutionTimeout.start(timeoutSeconds)) {
 			try (CloseableIteration<? extends BindingSet> evaluate = evaluate(tupleExpr,
 					dataset, bindings, includeInferred)) {
 				while (evaluate.hasNext()) {
@@ -381,25 +429,50 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				if (e instanceof InterruptedException) {
 					Thread.currentThread().interrupt();
 				}
-				if (!timedOut.get()) {
+				if (!executionTimeout.hasTimedOut()) {
 					throw e;
 				}
 			}
 
-			return timedOut.get();
+			return executionTimeout.hasTimedOut();
+		}
+	}
 
-		} finally {
-			selfInterruptOnTimeoutThread.interrupt();
+	private static final class ExecutionTimeout implements AutoCloseable {
+		private final AtomicBoolean timedOut = new AtomicBoolean(false);
+		private final Thread timeoutThread;
+
+		private ExecutionTimeout(int timeoutSeconds, Thread currentThread) {
+			timeoutThread = new Thread(() -> {
+				try {
+					TimeUnit.SECONDS.sleep(timeoutSeconds);
+					currentThread.interrupt();
+					timedOut.set(true);
+				} catch (InterruptedException ignored) {
+				}
+			});
+		}
+
+		private static ExecutionTimeout start(int timeoutSeconds) {
+			ExecutionTimeout executionTimeout = new ExecutionTimeout(timeoutSeconds, Thread.currentThread());
+			executionTimeout.timeoutThread.start();
+			return executionTimeout;
+		}
+
+		private boolean hasTimedOut() {
+			return timedOut.get();
+		}
+
+		@Override
+		public void close() {
+			timeoutThread.interrupt();
 			try {
-				// make sure selfInterruptOnTimeoutThread finishes
-				selfInterruptOnTimeoutThread.join();
+				timeoutThread.join();
 			} catch (InterruptedException ignored) {
 			}
 
-			// clear interrupted flag;
 			Thread.interrupted();
 		}
-
 	}
 
 	private static void setRuntimeTelemetryEnabled(TupleExpr tupleExpr, boolean enabled) {

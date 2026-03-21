@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0"
                 xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-                xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns="http://www.w3.org/1999/xhtml">
+                xmlns:sparql="http://www.w3.org/2005/sparql-results#"
+                xmlns:workbench="https://rdf4j.org/schema/workbench#"
+                xmlns="http://www.w3.org/1999/xhtml">
 
     <xsl:include href="../locale/messages.xsl"/>
 
@@ -187,10 +189,13 @@
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-format']/sparql:literal"/>
         <xsl:variable name="explanationLevel"
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-level']/sparql:literal"/>
+        <xsl:variable name="trace"
+                      select="sparql:results/sparql:result/sparql:binding[@name='trace']/sparql:literal"/>
         <link rel="stylesheet" type="text/css" href="../../styles/query.css"/>
         <form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
             <input type="hidden" name="action" id="action"/>
             <input type="hidden" name="explain" id="explain"/>
+            <input type="hidden" name="trace" id="trace" value="false"/>
             <input type="hidden" name="ref" value="text"/>
             <input type="hidden" name="include-query-text" id="include-query-text" value="false"/>
             <button id="query-sidebar-toggle" type="button"
@@ -321,6 +326,52 @@
                         <xsl:with-param name="copyButtonId">copy-explanation-compare</xsl:with-param>
                     </xsl:call-template>
                 </div>
+                <div class="query-form__row query-form__row--stacked query-trace-row">
+                    <span class="query-form__label query-form__label--blank">Trace</span>
+                    <div class="query-form__field">
+                        <div id="query-trace-row" class="query-trace-shell">
+                            <div class="query-trace-topbar">
+                                <div class="query-trace-titleblock">
+                                    <span class="query-trace-title">Trace</span>
+                                    <div id="query-trace-status" class="query-explanation-status query-trace-status"
+                                         aria-live="polite"></div>
+                                </div>
+                                <details class="query-trace-meta">
+                                    <summary class="query-trace-meta-toggle">Details</summary>
+                                    <div class="query-trace-meta-body">
+                                        <div id="query-trace-summary" class="query-trace-meta-summary"></div>
+                                        <div id="query-trace-frame-label" class="query-trace-meta-frame"></div>
+                                        <div class="query-trace-meta-actions">
+                                            <input id="trace-reset" type="button" value="Start over" disabled="disabled"/>
+                                            <input id="download-trace" type="button" value="Download JSON"
+                                                   disabled="disabled"/>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="query-trace-transport">
+                                <div class="query-trace-transport-buttons">
+                                    <input id="trace-previous" type="button" value="Back" disabled="disabled"/>
+                                    <input id="trace-playback-toggle" type="button" value="Play" disabled="disabled"/>
+                                    <input id="trace-next" type="button" value="Next" disabled="disabled"/>
+                                </div>
+                                <div class="query-trace-transport-scrubber">
+                                    <label class="query-trace-scrubber-label" for="query-trace-scrubber">
+                                        Step through execution
+                                    </label>
+                                    <input id="query-trace-scrubber" class="query-trace-scrubber" type="range"
+                                           min="0" max="0" value="0" disabled="disabled"/>
+                                </div>
+                            </div>
+                            <div class="query-trace-canvas">
+                                <div id="query-trace-patterns" class="query-trace-patterns"></div>
+                                <div id="query-trace-result" class="query-trace-readout">
+                                        <xsl:value-of select="$trace"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="query-form__row">
                     <span class="query-form__label">
                         <xsl:value-of select="$result-limit.label"/>
@@ -365,6 +416,10 @@
                         <label for="infer">
                             <xsl:value-of select="$include-inferred.label"/>
                         </label>
+                        <input id="preserve-query-order" name="preserve-query-order" type="checkbox" value="true"/>
+                        <label for="preserve-query-order">
+                            <xsl:value-of select="$preserve-query-order.label"/>
+                        </label>
                         <input id="save-private" name="save-private" type="checkbox" value="true"/>
                         <label for="save-private">
                             <xsl:value-of select="$save-private.label"/>
@@ -384,6 +439,13 @@
                               aria-hidden="true"></span>
                         <input id="explain-trigger-cancel" class="query-explain-cancel"
                                type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
+                               aria-hidden="true" disabled="disabled"/>
+                        <input id="trace-trigger" type="button" value="Trace"
+                               onclick="workbench.query.runTrace()"/>
+                        <span id="trace-trigger-spinner" class="query-explain-spinner"
+                              aria-hidden="true"></span>
+                        <input id="trace-trigger-cancel" class="query-explain-cancel"
+                               type="button" value="{$cancel.label}" onclick="workbench.query.cancelTrace()"
                                aria-hidden="true" disabled="disabled"/>
                         <input id="save" type="submit" value="{$save.label}" disabled="disabled"/>
                         <input id="query-name" name="query-name" type="text" size="32"
@@ -422,6 +484,13 @@
             </div>
         </div>
         <script type="text/javascript">
+            var rdf4jTraceNamespaces =
+            <xsl:choose>
+                <xsl:when test="string-length(normalize-space(workbench:metadata/workbench:trace-namespaces/text())) &gt; 0">
+                    <xsl:value-of select="workbench:metadata/workbench:trace-namespaces/text()"/>
+                </xsl:when>
+                <xsl:otherwise>{}</xsl:otherwise>
+            </xsl:choose>;
             var sparqlNamespaces = {
             <xsl:for-each
                     select="document(//sparql:link[@href='namespaces']/@href)//sparql:results/sparql:result">
@@ -431,6 +500,7 @@
                 </xsl:text>
             </xsl:for-each>
             };
+            var traceNamespaces = Object.assign({}, rdf4jTraceNamespaces, sparqlNamespaces);
         </script>
         <script src="../../scripts/codemirror.4.5.0.min.js" type="text/javascript"></script>
         <script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
@@ -440,6 +510,7 @@
         <script src="../../scripts/viz/viz.js" type="text/javascript"></script>
         <script src="../../scripts/viz/full.render.js" type="text/javascript"></script>
         <script src="../../scripts/svg-pan-zoom.min.js" type="text/javascript"></script>
+        <script src="../../scripts/query-trace-player.js" type="text/javascript"></script>
         <script src="../../scripts/query.js" type="text/javascript"></script>
 
     </xsl:template>

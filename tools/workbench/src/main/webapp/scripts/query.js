@@ -1,11 +1,9 @@
 /// <reference path="template.ts" />
 /// <reference path="jquery.d.ts" />
 /// <reference path="queryCancelPolicy.ts" />
+/// <reference path="query-trace-player.ts" />
 /// <reference path="yasqe.d.ts" />
 /// <reference path="yasqeHelper.ts" />
-// WARNING: Do not edit the *.js version of this file. Instead, always edit the
-// corresponding *.ts source in the ts subfolder, and then invoke the
-// compileTypescript.sh bash script to generate new *.js and *.js.map files.
 var workbench;
 (function (workbench) {
     var query;
@@ -29,6 +27,16 @@ var workbench;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
         var activeCompareExplainJqXHRs = [];
+        var traceServerRequestIdCounter = 0;
+        var activeTraceRequestId = 0;
+        var activeTraceJqXHR = null;
+        var activeTraceServerRequestId = '';
+        var activeTracePlaybackTimer = null;
+        var currentTrace = null;
+        var currentTraceState = null;
+        var previousTraceActivePatternIndex = null;
+        var previousTraceChevronOffset = null;
+        var pendingTraceChevronAnimationFrame = null;
         var compareModeEnabled = false;
         var compareSidebarOpen = false;
         var compareQuerySeeded = false;
@@ -1719,17 +1727,34 @@ var workbench;
                 }
             }
         }
+        function getErrorMessage(error) {
+            if (typeof error === 'string') {
+                return error;
+            }
+            if (error && typeof error.message === 'string') {
+                return error.message;
+            }
+            if (error && typeof error === 'object') {
+                try {
+                    return JSON.stringify(error);
+                }
+                catch (e) {
+                    // fall through and stringify the value directly
+                }
+            }
+            return String(error);
+        }
         function getExplainErrorMessage(jqXHR, textStatus, errorThrown) {
             var response = jqXHR.responseJSON;
             if (response && response.error) {
-                return response.error;
+                return getErrorMessage(response.error);
             }
             var responseText = jqXHR.responseText;
             if (responseText) {
                 try {
                     var parsedResponse = JSON.parse(responseText);
                     if (parsedResponse && parsedResponse.error) {
-                        return parsedResponse.error;
+                        return getErrorMessage(parsedResponse.error);
                     }
                 }
                 catch (e) {
@@ -1751,6 +1776,7 @@ var workbench;
             var seenExplain = false;
             var seenFormat = false;
             var seenInfer = false;
+            var seenPreserveQueryOrder = false;
             var seenQuery = false;
             var seenExplainRequestId = false;
             for (var i = 0; i < serializedForm.length; i++) {
@@ -1768,6 +1794,9 @@ var workbench;
                 }
                 else if (serializedForm[i].name === 'infer') {
                     seenInfer = true;
+                }
+                else if (serializedForm[i].name === 'preserve-query-order') {
+                    seenPreserveQueryOrder = true;
                 }
                 else if (serializedForm[i].name === 'query') {
                     serializedForm[i].value = queryValue;
@@ -1790,6 +1819,9 @@ var workbench;
             if (!seenInfer) {
                 serializedForm.push({ name: 'infer', value: 'false' });
             }
+            if (!seenPreserveQueryOrder) {
+                serializedForm.push({ name: 'preserve-query-order', value: 'false' });
+            }
             if (!seenQuery) {
                 serializedForm.push({ name: 'query', value: queryValue });
             }
@@ -1804,6 +1836,64 @@ var workbench;
                 { name: 'explain-request-id', value: serverRequestId }
             ]);
         }
+        function serializeTraceFormData(queryValue, serverRequestId) {
+            var serializedForm = $('form[action="query"]').serializeArray();
+            var seenAction = false;
+            var seenTrace = false;
+            var seenInfer = false;
+            var seenPreserveQueryOrder = false;
+            var seenQuery = false;
+            var seenTraceRequestId = false;
+            for (var i = 0; i < serializedForm.length; i++) {
+                if (serializedForm[i].name === 'action') {
+                    serializedForm[i].value = 'trace';
+                    seenAction = true;
+                }
+                else if (serializedForm[i].name === 'trace') {
+                    serializedForm[i].value = 'true';
+                    seenTrace = true;
+                }
+                else if (serializedForm[i].name === 'infer') {
+                    seenInfer = true;
+                }
+                else if (serializedForm[i].name === 'preserve-query-order') {
+                    seenPreserveQueryOrder = true;
+                }
+                else if (serializedForm[i].name === 'query') {
+                    serializedForm[i].value = queryValue;
+                    seenQuery = true;
+                }
+                else if (serializedForm[i].name === 'trace-request-id') {
+                    serializedForm[i].value = serverRequestId;
+                    seenTraceRequestId = true;
+                }
+            }
+            if (!seenAction) {
+                serializedForm.push({ name: 'action', value: 'trace' });
+            }
+            if (!seenTrace) {
+                serializedForm.push({ name: 'trace', value: 'true' });
+            }
+            if (!seenInfer) {
+                serializedForm.push({ name: 'infer', value: 'false' });
+            }
+            if (!seenPreserveQueryOrder) {
+                serializedForm.push({ name: 'preserve-query-order', value: 'false' });
+            }
+            if (!seenQuery) {
+                serializedForm.push({ name: 'query', value: queryValue });
+            }
+            if (!seenTraceRequestId) {
+                serializedForm.push({ name: 'trace-request-id', value: serverRequestId });
+            }
+            return $.param(serializedForm);
+        }
+        function serializeCancelTraceFormData(serverRequestId) {
+            return $.param([
+                { name: 'action', value: 'cancel-trace' },
+                { name: 'trace-request-id', value: serverRequestId }
+            ]);
+        }
         function postCancelExplain(serverRequestId) {
             if (!serverRequestId) {
                 return;
@@ -1812,6 +1902,16 @@ var workbench;
                 url: 'query',
                 type: 'POST',
                 data: serializeCancelExplainFormData(serverRequestId)
+            });
+        }
+        function postCancelTrace(serverRequestId) {
+            if (!serverRequestId) {
+                return;
+            }
+            $.ajax({
+                url: 'query',
+                type: 'POST',
+                data: serializeCancelTraceFormData(serverRequestId)
             });
         }
         function createStableExplanationFromResponse(signature, response, fallbackFormat) {
@@ -1982,6 +2082,7 @@ var workbench;
             if (eventType === 'PRIMARY_QUERY_CHANGED') {
                 persistPrimaryQueryValue();
             }
+            clearTraceState();
             dispatchQueryPageEvent({ type: eventType });
         }
         function notifyQueryPageInputChange(eventType) {
@@ -2302,6 +2403,7 @@ var workbench;
                 workbench.addParam(url, 'limit_query');
                 workbench.addParam(url, 'query-timeout');
                 workbench.addParam(url, 'infer');
+                workbench.addParam(url, 'preserve-query-order');
                 workbench.addParam(url, 'explain');
                 workbench.addParam(url, 'explain-format');
                 var href = url.join('');
@@ -2475,6 +2577,434 @@ var workbench;
             return window.navigator.clipboard.writeText(paneDisplayExplanation.rawContent);
         }
         query_1.copyExplanation = copyExplanation;
+        function generateTraceServerRequestId() {
+            traceServerRequestIdCounter += 1;
+            return 'workbench-trace-' + traceServerRequestIdCounter + '-' + new Date().getTime();
+        }
+        function stopTracePlayback() {
+            if (activeTracePlaybackTimer !== null) {
+                window.clearInterval(activeTracePlaybackTimer);
+                activeTracePlaybackTimer = null;
+            }
+            if (currentTraceState) {
+                currentTraceState = workbench.queryTracePlayer.setPlaying(currentTraceState, false);
+            }
+        }
+        function setTraceRequestUi(active) {
+            $('#trace-trigger').prop('disabled', active);
+            $('#trace-trigger-spinner').toggleClass('query-explain-spinner--visible', active);
+            $('#trace-trigger-cancel')
+                .toggleClass('query-explain-cancel--visible', active)
+                .prop('disabled', !active);
+        }
+        function setTraceStatus(message, isError) {
+            var status = $('#query-trace-status');
+            status.text(message || '');
+            status
+                .toggleClass('query-explanation-status--visible', !!message)
+                .toggleClass('query-explanation-status--loading', !!message && !isError)
+                .toggleClass('query-explanation-status--error', !!message && !!isError);
+        }
+        function hasTraceBindings(bindings) {
+            if (!bindings) {
+                return false;
+            }
+            for (var bindingName in bindings) {
+                if (bindings.hasOwnProperty(bindingName)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        function formatTraceBindingsInline(bindings) {
+            var lines = [];
+            if (!bindings) {
+                return '';
+            }
+            for (var bindingName in bindings) {
+                if (bindings.hasOwnProperty(bindingName)) {
+                    lines.push('?' + bindingName + ' = ' + workbench.queryTracePlayer.formatTraceValue(bindings[bindingName]));
+                }
+            }
+            return lines.join('  ·  ');
+        }
+        function createTraceMetaItem(text) {
+            return $('<span></span>')
+                .addClass('query-trace-meta-item')
+                .text(text);
+        }
+        function renderTraceMeta(frame, patternCount, frameIndex, frameCount) {
+            var summary = $('#query-trace-summary');
+            var frameLabel = $('#query-trace-frame-label');
+            summary.empty();
+            frameLabel.empty();
+            if (patternCount > 0) {
+                summary.append(createTraceMetaItem(patternCount + ' patterns'));
+            }
+            if (frameCount > 0) {
+                summary.append(createTraceMetaItem(frameCount + ' frames'));
+            }
+            if (frameCount <= 0 || !frame) {
+                return;
+            }
+            frameLabel
+                .append(createTraceMetaItem('Frame ' + (frameIndex + 1) + ' of ' + frameCount))
+                .append(createTraceMetaItem('Event ' + frame.event));
+            if (frame.patternIndex >= 0) {
+                frameLabel.append(createTraceMetaItem('Line ' + (frame.patternIndex + 1)));
+            }
+        }
+        function renderTraceReadout(frame, snapshot) {
+            var readout = $('#query-trace-result');
+            var bindings = null;
+            var label = '';
+            readout.text('').toggleClass('query-trace-readout--visible', false);
+            if (!frame) {
+                return;
+            }
+            if (frame.event === 'result' && hasTraceBindings(snapshot.resultBindings)) {
+                bindings = snapshot.resultBindings;
+                label = 'Result';
+            }
+            else if (frame.event === 'match' && hasTraceBindings(frame.outputBindings)) {
+                bindings = frame.outputBindings;
+                label = 'Matched bindings';
+            }
+            else if (hasTraceBindings(frame.inputBindings)) {
+                bindings = frame.inputBindings;
+                label = 'Current bindings';
+            }
+            else if (hasTraceBindings(frame.outputBindings)) {
+                bindings = frame.outputBindings;
+                label = 'Current bindings';
+            }
+            if (!bindings) {
+                return;
+            }
+            readout
+                .text(label + ': ' + formatTraceBindingsInline(bindings))
+                .toggleClass('query-trace-readout--visible', true);
+        }
+        function renderTraceEmptyState(message) {
+            $('#query-trace-patterns')
+                .empty()
+                .append($('<div class="query-trace-empty"></div>')
+                .text(message));
+        }
+        function clearTraceMotionState() {
+            previousTraceActivePatternIndex = null;
+            previousTraceChevronOffset = null;
+            if (pendingTraceChevronAnimationFrame !== null) {
+                window.cancelAnimationFrame(pendingTraceChevronAnimationFrame);
+                pendingTraceChevronAnimationFrame = null;
+            }
+        }
+        function getSnapshotActivePatternIndex(snapshot) {
+            return snapshot && snapshot.frame && typeof snapshot.frame.patternIndex === 'number'
+                && snapshot.frame.patternIndex >= 0
+                ? snapshot.frame.patternIndex
+                : null;
+        }
+        function getRollbackWaveDelayMs(queryLine, activePatternIndex, rollbackFromPatternIndex) {
+            if (!queryLine || !queryLine.pattern || activePatternIndex === null || rollbackFromPatternIndex === null) {
+                return -1;
+            }
+            if (activePatternIndex >= rollbackFromPatternIndex) {
+                return -1;
+            }
+            if (queryLine.pattern.index < activePatternIndex || queryLine.pattern.index > rollbackFromPatternIndex) {
+                return -1;
+            }
+            return (rollbackFromPatternIndex - queryLine.pattern.index) * 48;
+        }
+        function computeTraceChevronOffset(activeLine) {
+            return activeLine.position().top + ((activeLine.outerHeight() || 0) - 16) / 2;
+        }
+        function renderTraceActiveChevron(query) {
+            if (pendingTraceChevronAnimationFrame !== null) {
+                window.cancelAnimationFrame(pendingTraceChevronAnimationFrame);
+                pendingTraceChevronAnimationFrame = null;
+            }
+            var activeLine = query.children('.query-trace-query__line--active').first();
+            if (!activeLine.length) {
+                previousTraceChevronOffset = null;
+                return;
+            }
+            var chevron = $('<span class="query-trace-query__active-chevron" aria-hidden="true"></span>');
+            query.append(chevron);
+            var targetOffset = computeTraceChevronOffset(activeLine);
+            var startOffset = previousTraceChevronOffset !== null ? previousTraceChevronOffset : targetOffset;
+            chevron.css('transform', 'translate3d(0, ' + startOffset + 'px, 0)');
+            previousTraceChevronOffset = targetOffset;
+            pendingTraceChevronAnimationFrame = window.requestAnimationFrame(function () {
+                pendingTraceChevronAnimationFrame = null;
+                chevron.css('transform', 'translate3d(0, ' + targetOffset + 'px, 0)');
+            });
+        }
+        function createTraceQueryShellLine(text, modifierClass) {
+            var line = $('<div class="query-trace-query__line"></div>');
+            if (modifierClass) {
+                line.addClass(modifierClass);
+            }
+            line.append($('<span class="query-trace-query__gutter"></span>'));
+            line.append($('<span class="query-trace-query__line-content"></span>')
+                .text(text));
+            return line;
+        }
+        function appendTraceQueryToken(content, token) {
+            if (!token.variableName) {
+                content.append(document.createTextNode(token.text));
+                return;
+            }
+            var variable = $('<span class="query-trace-query__variable"></span>');
+            if (token.bindingValue) {
+                variable
+                    .addClass('query-trace-query__variable--bound')
+                    .append($('<span class="query-trace-query__binding"></span>')
+                    .text(token.bindingValue));
+            }
+            variable.append($('<span class="query-trace-query__variable-text"></span>')
+                .text(token.text));
+            content.append(variable);
+        }
+        function createTraceQueryPatternLine(queryLine, activePatternIndex, rollbackFromPatternIndex) {
+            var line = $('<div class="query-trace-query__line"></div>')
+                .toggleClass('query-trace-query__line--active', queryLine.active)
+                .toggleClass('query-trace-query__line--pending', queryLine.pending);
+            var rollbackWaveDelayMs = getRollbackWaveDelayMs(queryLine, activePatternIndex, rollbackFromPatternIndex);
+            if (rollbackWaveDelayMs >= 0) {
+                line
+                    .addClass('query-trace-query__line--rollback-wave')
+                    .css('--query-trace-rollback-delay', rollbackWaveDelayMs + 'ms');
+            }
+            line.append($('<span class="query-trace-query__gutter"></span>')
+                .text(queryLine.gutterLabel || ''));
+            var content = $('<span class="query-trace-query__line-content"></span>');
+            for (var i = 0; i < queryLine.tokens.length; i++) {
+                appendTraceQueryToken(content, queryLine.tokens[i]);
+            }
+            line.append(content);
+            return line;
+        }
+        function renderTraceQuery(snapshot) {
+            var patternContainer = $('#query-trace-patterns');
+            patternContainer.empty();
+            var query = $('<div class="query-trace-query"></div>');
+            var activePatternIndex = getSnapshotActivePatternIndex(snapshot);
+            var rollbackFromPatternIndex = previousTraceActivePatternIndex !== null
+                && activePatternIndex !== null
+                && activePatternIndex < previousTraceActivePatternIndex
+                ? previousTraceActivePatternIndex
+                : null;
+            query.append(createTraceQueryShellLine(snapshot.queryHead, 'query-trace-query__line--head'));
+            for (var i = 0; i < snapshot.queryLines.length; i++) {
+                query.append(createTraceQueryPatternLine(snapshot.queryLines[i], activePatternIndex, rollbackFromPatternIndex));
+            }
+            query.append(createTraceQueryShellLine(snapshot.queryTail, 'query-trace-query__line--tail'));
+            patternContainer.append(query);
+            renderTraceActiveChevron(query);
+            previousTraceActivePatternIndex = activePatternIndex;
+        }
+        function clearTraceSurface() {
+            clearTraceMotionState();
+            renderTraceEmptyState('Run Trace to step through the optimized query.');
+            $('#query-trace-frame-label').empty();
+            $('#query-trace-summary').empty();
+            $('#query-trace-result').text('').removeClass('query-trace-readout--visible');
+            $('#query-trace-scrubber').val('0').prop('max', 0).prop('disabled', true);
+            $('#trace-playback-toggle').prop('disabled', true).val('Play');
+            $('#trace-previous').prop('disabled', true);
+            $('#trace-next').prop('disabled', true);
+            $('#trace-reset').prop('disabled', true);
+            $('#download-trace').prop('disabled', true);
+        }
+        function renderTracePanel() {
+            var traceRow = $('#query-trace-row');
+            traceRow.show();
+            if (!currentTrace) {
+                clearTraceSurface();
+                return;
+            }
+            if (currentTrace.error) {
+                clearTraceSurface();
+                setTraceStatus(currentTrace.error.message || 'Trace request failed.', true);
+                return;
+            }
+            if (!currentTraceState) {
+                currentTraceState = workbench.queryTracePlayer.createState(currentTrace);
+            }
+            var snapshot = workbench.queryTracePlayer.snapshot(currentTraceState);
+            var frameCount = workbench.queryTracePlayer.getFrameCount(currentTraceState);
+            $('#query-trace-scrubber')
+                .prop('disabled', frameCount <= 1)
+                .prop('max', Math.max(0, frameCount - 1))
+                .val(String(currentTraceState.frameIndex));
+            $('#trace-playback-toggle')
+                .prop('disabled', frameCount <= 1)
+                .val(currentTraceState.playing ? 'Pause' : 'Play');
+            $('#trace-previous').prop('disabled', !workbench.queryTracePlayer.canStepBackward(currentTraceState));
+            $('#trace-next').prop('disabled', !workbench.queryTracePlayer.canStepForward(currentTraceState));
+            $('#trace-reset').prop('disabled', frameCount <= 0);
+            $('#download-trace').prop('disabled', false);
+            var frame = snapshot.frame;
+            renderTraceMeta(frame, currentTrace.patterns.length, currentTraceState.frameIndex, frameCount);
+            if (!frame) {
+                renderTraceEmptyState('No trace frames were returned.');
+                $('#query-trace-result').text('').removeClass('query-trace-readout--visible');
+                return;
+            }
+            renderTraceQuery(snapshot);
+            renderTraceReadout(frame, snapshot);
+            setTraceStatus('');
+        }
+        function applyTraceResponse(response, requestId) {
+            if (requestId !== activeTraceRequestId) {
+                return;
+            }
+            stopTracePlayback();
+            currentTrace = workbench.queryTracePlayer.normalizeTrace(response);
+            currentTraceState = currentTrace.error ? null : workbench.queryTracePlayer.createState(currentTrace);
+            renderTracePanel();
+        }
+        function clearTraceState() {
+            stopTracePlayback();
+            currentTrace = null;
+            currentTraceState = null;
+            setTraceStatus('');
+            clearTraceSurface();
+        }
+        function runTrace() {
+            savePaneQuery('primary');
+            if (activeTraceJqXHR) {
+                cancelTrace();
+            }
+            clearTraceState();
+            activeTraceRequestId += 1;
+            var requestId = activeTraceRequestId;
+            activeTraceServerRequestId = generateTraceServerRequestId();
+            $('#query-trace-row').show();
+            setTraceRequestUi(true);
+            setTraceStatus('Tracing query...');
+            activeTraceJqXHR = $.ajax({
+                url: 'query',
+                type: 'POST',
+                dataType: 'json',
+                data: serializeTraceFormData(getPaneRawQueryValue('primary'), activeTraceServerRequestId),
+                error: function (jqXHR, textStatus, errorThrown) {
+                    if (textStatus === 'abort' || requestId !== activeTraceRequestId) {
+                        return;
+                    }
+                    stopTracePlayback();
+                    currentTrace = {
+                        patterns: [],
+                        frames: [],
+                        error: {
+                            code: 'traceRequestFailed',
+                            message: getExplainErrorMessage(jqXHR, textStatus, errorThrown)
+                        }
+                    };
+                    currentTraceState = null;
+                    renderTracePanel();
+                },
+                success: function (response) {
+                    applyTraceResponse(response, requestId);
+                },
+                complete: function () {
+                    if (requestId !== activeTraceRequestId) {
+                        return;
+                    }
+                    activeTraceJqXHR = null;
+                    activeTraceServerRequestId = '';
+                    setTraceRequestUi(false);
+                }
+            });
+        }
+        query_1.runTrace = runTrace;
+        function cancelTrace() {
+            if (!activeTraceJqXHR && !activeTraceServerRequestId) {
+                return;
+            }
+            postCancelTrace(activeTraceServerRequestId);
+            if (activeTraceJqXHR) {
+                activeTraceJqXHR.abort();
+                activeTraceJqXHR = null;
+            }
+            activeTraceServerRequestId = '';
+            stopTracePlayback();
+            setTraceRequestUi(false);
+            setTraceStatus('Trace cancelled.', true);
+        }
+        query_1.cancelTrace = cancelTrace;
+        function toggleTracePlayback() {
+            if (!currentTraceState || workbench.queryTracePlayer.getFrameCount(currentTraceState) <= 1) {
+                return;
+            }
+            if (currentTraceState.playing) {
+                stopTracePlayback();
+                renderTracePanel();
+                return;
+            }
+            currentTraceState = workbench.queryTracePlayer.setPlaying(currentTraceState, true);
+            renderTracePanel();
+            activeTracePlaybackTimer = window.setInterval(function () {
+                if (!currentTraceState || !workbench.queryTracePlayer.canStepForward(currentTraceState)) {
+                    stopTracePlayback();
+                    renderTracePanel();
+                    return;
+                }
+                currentTraceState = workbench.queryTracePlayer.next(currentTraceState);
+                currentTraceState = workbench.queryTracePlayer.setPlaying(currentTraceState, true);
+                renderTracePanel();
+            }, 900);
+        }
+        query_1.toggleTracePlayback = toggleTracePlayback;
+        function stepTrace(delta) {
+            if (!currentTraceState) {
+                return;
+            }
+            stopTracePlayback();
+            currentTraceState = delta < 0
+                ? workbench.queryTracePlayer.previous(currentTraceState)
+                : workbench.queryTracePlayer.next(currentTraceState);
+            renderTracePanel();
+        }
+        query_1.stepTrace = stepTrace;
+        function resetTracePlayback() {
+            if (!currentTraceState) {
+                return;
+            }
+            stopTracePlayback();
+            currentTraceState = workbench.queryTracePlayer.reset(currentTraceState);
+            renderTracePanel();
+        }
+        query_1.resetTracePlayback = resetTracePlayback;
+        function seekTrace(frameIndexValue) {
+            if (!currentTraceState) {
+                return;
+            }
+            var nextFrameIndex = parseInt(frameIndexValue, 10);
+            if (isNaN(nextFrameIndex)) {
+                return;
+            }
+            stopTracePlayback();
+            currentTraceState = workbench.queryTracePlayer.seek(currentTraceState, nextFrameIndex);
+            renderTracePanel();
+        }
+        query_1.seekTrace = seekTrace;
+        function downloadTrace() {
+            if (!currentTrace || currentTrace.error) {
+                return;
+            }
+            var blob = new Blob([JSON.stringify(currentTrace, null, 2)], { type: 'application/json;charset=utf-8' });
+            var link = document.createElement('a');
+            link.download = 'query-trace.json';
+            link.href = window.URL.createObjectURL(blob);
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(link.href);
+            document.body.removeChild(link);
+        }
+        query_1.downloadTrace = downloadTrace;
         function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
             var initialFormat = getNormalizedExplainFormat($('#query-explanation').attr('data-format') || $('#explain-format').val() || 'text');
@@ -2914,6 +3444,7 @@ workbench.addLoad(function queryPageLoaded() {
             }
         });
     }
+    workbench.queryTracePlayer.setNamespaces(traceNamespaces);
     //Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
     //(all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance
     workbench.query.updateYasqe();
@@ -2989,6 +3520,23 @@ workbench.addLoad(function queryPageLoaded() {
         workbench.query.copyExplanation('compare');
     });
     $('#download-explanation').click(workbench.query.downloadExplanation);
+    $('#download-trace').click(workbench.query.downloadTrace);
+    $('#query-trace-scrubber').on('input change', function () {
+        workbench.query.seekTrace($(this).val());
+    });
+    $('#trace-playback-toggle').click(function () {
+        workbench.query.toggleTracePlayback();
+    });
+    $('#trace-previous').click(function () {
+        workbench.query.stepTrace(-1);
+    });
+    $('#trace-next').click(function () {
+        workbench.query.stepTrace(1);
+    });
+    $('#trace-reset').click(function () {
+        workbench.query.resetTracePlayback();
+    });
+    $('#query-trace-row').hide();
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
     // Add event handlers to the query text area to react to changes in it.

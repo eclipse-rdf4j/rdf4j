@@ -18,22 +18,33 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
+import java.lang.reflect.Method;
 import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.AbstractQuery;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.junit.jupiter.api.Test;
 
 class QueryEvaluatorTest {
+
+	private static void stubNamespaces(RepositoryConnection connection) {
+		when(connection.getNamespaces()).thenReturn(new RepositoryResult<>(
+				new CloseableIteratorIteration<>(List.<Namespace>of().iterator())));
+	}
 
 	@Test
 	void shouldUseExplainInsteadOfEvaluateWhenExplainParameterIsPresent() throws Exception {
@@ -47,6 +58,7 @@ class QueryEvaluatorTest {
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		Explanation explanation = mock(Explanation.class);
 
+		stubNamespaces(con);
 		when(req.getParameter("queryLn")).thenReturn("SPARQL");
 		when(req.isParameterPresent("explain")).thenReturn(true);
 		when(req.getParameter("explain")).thenReturn("Optimized");
@@ -68,6 +80,83 @@ class QueryEvaluatorTest {
 	}
 
 	@Test
+	void shouldUseTraceInsteadOfEvaluateWhenTraceParameterIsPresent() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = new TraceTupleQuery();
+
+		stubNamespaces(con);
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getParameter("trace")).thenReturn("true");
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+	}
+
+	@Test
+	void shouldApplyWorkbenchLimitBeforeTracingTupleQuery() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String pagedQueryText = queryText + "\nlimit 5";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery unpagedQuery = mock(TupleQuery.class);
+		TupleQuery pagedQuery = mock(TupleQuery.class);
+
+		stubNamespaces(con);
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.getParameter("trace")).thenReturn("true");
+		when(req.getInt("limit_query")).thenReturn(5);
+		when(req.getInt("offset")).thenReturn(0);
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(unpagedQuery);
+		when(con.prepareQuery(QueryLanguage.SPARQL, pagedQueryText)).thenReturn(pagedQuery);
+		when(unpagedQuery.trace()).thenThrow(new AssertionError("trace() should use the paged query text"));
+		when(pagedQuery.trace()).thenReturn(QueryTrace.success(List.of(), List.of()));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+
+		verify(pagedQuery).trace();
+		verify(unpagedQuery, never()).trace();
+	}
+
+	@Test
+	void shouldIgnoreFalseTraceParameterAndEvaluateQuery() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = new EvaluateTupleQuery();
+
+		stubNamespaces(con);
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("trace")).thenReturn(true);
+		when(req.getParameter("trace")).thenReturn("false");
+		when(req.isParameterPresent("Accept")).thenReturn(false);
+		when(req.getInt("offset")).thenReturn(0);
+		when(req.getInt("limit_query")).thenReturn(0);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+	}
+
+	@Test
 	void shouldUseDotExplanationWhenExplainFormatIsDot() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
 		String xslPath = "/xsl";
@@ -79,6 +168,7 @@ class QueryEvaluatorTest {
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		Explanation explanation = mock(Explanation.class);
 
+		stubNamespaces(con);
 		when(req.getParameter("queryLn")).thenReturn("SPARQL");
 		when(req.isParameterPresent("explain")).thenReturn(true);
 		when(req.getParameter("explain")).thenReturn("Optimized");
@@ -106,6 +196,7 @@ class QueryEvaluatorTest {
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		Explanation explanation = mock(Explanation.class);
 
+		stubNamespaces(con);
 		when(req.getParameter("queryLn")).thenReturn("SPARQL");
 		when(req.isParameterPresent("explain")).thenReturn(true);
 		when(req.getParameter("explain")).thenReturn("Optimized");
@@ -133,6 +224,7 @@ class QueryEvaluatorTest {
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		Explanation explanation = mock(Explanation.class);
 
+		stubNamespaces(con);
 		when(req.getParameter("queryLn")).thenReturn("SPARQL");
 		when(req.isParameterPresent("explain")).thenReturn(true);
 		when(req.getParameter("explain")).thenReturn("Optimized");
@@ -162,6 +254,7 @@ class QueryEvaluatorTest {
 		TupleQuery pagedQuery = mock(TupleQuery.class);
 		TupleQueryResult tupleQueryResult = mock(TupleQueryResult.class);
 
+		stubNamespaces(con);
 		when(req.getParameter("queryLn")).thenReturn("SPARQL");
 		when(req.isParameterPresent("infer")).thenReturn(true);
 		when(req.getParameter("infer")).thenReturn("true");
@@ -200,6 +293,7 @@ class QueryEvaluatorTest {
 		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("one"),
 				binding("two"), binding("three")));
 
+		stubNamespaces(con);
 		when(req.getParameter("queryLn")).thenReturn("SPARQL");
 		when(req.isParameterPresent("Accept")).thenReturn(true);
 		when(req.isParameterPresent("download_limit")).thenReturn(true);
@@ -219,9 +313,91 @@ class QueryEvaluatorTest {
 		verify(cookies).addTotalResultCountCookie(req, resp, 3);
 	}
 
+	@Test
+	void shouldApplyPreserveQueryOrderWhenRequested() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = new PreserveOrderAwareTupleQuery();
+
+		stubNamespaces(con);
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(false);
+		when(req.getParameter("preserve-query-order")).thenReturn("true");
+		when(req.getInt("offset")).thenReturn(0);
+		when(req.getInt("limit_query")).thenReturn(0);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+	}
+
 	private static BindingSet binding(String value) {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding("s", SimpleValueFactory.getInstance().createLiteral(value));
 		return bindingSet;
+	}
+
+	private static boolean isPreserveQueryOrderEnabled(AbstractQuery query) {
+		try {
+			Method method = query.getClass().getMethod("isPreserveQueryOrder");
+			return (Boolean) method.invoke(query);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Query should expose preserve query order flag", e);
+		}
+	}
+
+	private static final class TraceTupleQuery extends AbstractQuery implements TupleQuery {
+		@Override
+		public TupleQueryResult evaluate() {
+			throw new AssertionError("evaluate() should not run when trace is selected");
+		}
+
+		@Override
+		public void evaluate(org.eclipse.rdf4j.query.TupleQueryResultHandler handler) {
+			throw new AssertionError("evaluate(handler) should not run when trace is selected");
+		}
+
+		public QueryTrace trace() {
+			return QueryTrace.success(List.of(), List.of());
+		}
+	}
+
+	private static final class EvaluateTupleQuery extends AbstractQuery implements TupleQuery {
+		@Override
+		public TupleQueryResult evaluate() {
+			return new IteratingTupleQueryResult(List.of("s"), List.of());
+		}
+
+		@Override
+		public void evaluate(org.eclipse.rdf4j.query.TupleQueryResultHandler handler) {
+			throw new AssertionError("evaluate(handler) should not run in this regression test");
+		}
+
+		@Override
+		public QueryTrace trace() {
+			throw new AssertionError("trace() should not run when trace=false");
+		}
+	}
+
+	private static final class PreserveOrderAwareTupleQuery extends AbstractQuery implements TupleQuery {
+		@Override
+		public TupleQueryResult evaluate() {
+			if (!isPreserveQueryOrderEnabled(this)) {
+				throw new AssertionError("evaluate() should see preserve query order enabled");
+			}
+			return new IteratingTupleQueryResult(List.of("s"), List.of());
+		}
+
+		@Override
+		public void evaluate(org.eclipse.rdf4j.query.TupleQueryResultHandler handler) {
+			throw new AssertionError("evaluate(handler) should not run in this regression test");
+		}
 	}
 }

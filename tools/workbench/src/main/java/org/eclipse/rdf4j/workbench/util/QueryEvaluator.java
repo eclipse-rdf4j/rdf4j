@@ -20,6 +20,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -31,12 +32,15 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Evaluates queries for QueryServlet.
@@ -61,11 +65,17 @@ public final class QueryEvaluator {
 
 	private static final String EXPLANATION_LEVEL = "explanation-level";
 
+	private static final String PRESERVE_QUERY_ORDER = "preserve-query-order";
+
+	private static final String TRACE = "trace";
+
 	private static final String METADATA_QUERY_TEXT = "query-text";
 
 	private static final String METADATA_INFER = "infer";
 
 	private static final String METADATA_QUERY_TIMEOUT = "query-timeout";
+
+	private static final ObjectMapper mapper = new ObjectMapper();
 
 	private QueryEvaluator() {
 		// do nothing
@@ -98,14 +108,16 @@ public final class QueryEvaluator {
 	public static final class ExplainRequest {
 		private final QueryLanguage queryLanguage;
 		private final Boolean includeInferred;
+		private final boolean preserveQueryOrder;
 		private final int queryTimeoutSeconds;
 		private final Explanation.Level explainLevel;
 		private final ExplainFormat explainFormat;
 
-		private ExplainRequest(QueryLanguage queryLanguage, Boolean includeInferred, int queryTimeoutSeconds,
-				Explanation.Level explainLevel, ExplainFormat explainFormat) {
+		private ExplainRequest(QueryLanguage queryLanguage, Boolean includeInferred, boolean preserveQueryOrder,
+				int queryTimeoutSeconds, Explanation.Level explainLevel, ExplainFormat explainFormat) {
 			this.queryLanguage = queryLanguage;
 			this.includeInferred = includeInferred;
+			this.preserveQueryOrder = preserveQueryOrder;
 			this.queryTimeoutSeconds = queryTimeoutSeconds;
 			this.explainLevel = explainLevel;
 			this.explainFormat = explainFormat;
@@ -123,6 +135,10 @@ public final class QueryEvaluator {
 			return queryTimeoutSeconds;
 		}
 
+		public boolean isPreserveQueryOrder() {
+			return preserveQueryOrder;
+		}
+
 		public Explanation.Level getExplainLevel() {
 			return explainLevel;
 		}
@@ -137,6 +153,18 @@ public final class QueryEvaluator {
 
 		private ExplainFormat getExplainFormat() {
 			return explainFormat;
+		}
+	}
+
+	public static final class TraceQueryResult {
+		private final QueryTrace trace;
+
+		private TraceQueryResult(QueryTrace trace) {
+			this.trace = trace;
+		}
+
+		public QueryTrace getTrace() {
+			return trace;
 		}
 	}
 
@@ -161,10 +189,17 @@ public final class QueryEvaluator {
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText)
 			throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
+		String traceNamespacesJson = TraceNamespaceCatalog
+				.getNamespacesJson(Iterations.<Namespace>asList(con.getNamespaces()));
 		Query query = prepareQuery(con, queryText, req);
+		if (isTraceRequested(req)) {
+			query = applyTracePagingIfRequested(con, queryText, queryLn, req, query);
+			traceQuery(builder, xslPath, trace(query), traceNamespacesJson);
+			return;
+		}
 		if (req.isParameterPresent(EXPLAIN)) {
 			ExplainQueryResult explainQueryResult = explain(query, req);
-			explainQuery(builder, xslPath, explainQueryResult);
+			explainQuery(builder, xslPath, explainQueryResult, traceNamespacesJson);
 			return;
 		}
 
@@ -190,7 +225,7 @@ public final class QueryEvaluator {
 			}
 		}
 		this.evaluate(builder, out, xslPath, req, resp, cookies, query, evaluateCookie, paged, offset, limit,
-				responseQueryText);
+				responseQueryText, traceNamespacesJson);
 	}
 
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
@@ -199,12 +234,22 @@ public final class QueryEvaluator {
 		return explain(con, queryText, extractExplainRequest(req));
 	}
 
+	public TraceQueryResult trace(final RepositoryConnection con, final String queryText, final WorkbenchRequest req)
+			throws BadRequestException, RDF4JException {
+		return trace(prepareQuery(con, queryText, req));
+	}
+
+	private boolean isTraceRequested(WorkbenchRequest req) {
+		return Boolean.parseBoolean(req.getParameter(TRACE));
+	}
+
 	public ExplainRequest extractExplainRequest(final WorkbenchRequest req) throws BadRequestException {
 		Boolean includeInferred = req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer"))
 				: null;
 		return new ExplainRequest(
 				QueryLanguage.valueOf(req.getParameter("queryLn")),
 				includeInferred,
+				Boolean.parseBoolean(req.getParameter(PRESERVE_QUERY_ORDER)),
 				req.getInt("query-timeout"),
 				getExplainLevel(req.getParameter(EXPLAIN)),
 				getExplainFormat(req.getParameter(EXPLAIN_FORMAT)));
@@ -221,14 +266,18 @@ public final class QueryEvaluator {
 			throws BadRequestException, RDF4JException {
 		Boolean includeInferred = req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer"))
 				: null;
-		return prepareQuery(con, queryText, QueryLanguage.valueOf(req.getParameter("queryLn")), includeInferred,
-				req.getInt("query-timeout"));
+		Query query = prepareQuery(con, queryText, QueryLanguage.valueOf(req.getParameter("queryLn")),
+				includeInferred, req.getInt("query-timeout"));
+		query.setPreserveQueryOrder(Boolean.parseBoolean(req.getParameter(PRESERVE_QUERY_ORDER)));
+		return query;
 	}
 
 	private Query prepareQuery(final RepositoryConnection con, final String queryText, final ExplainRequest req)
 			throws RDF4JException {
-		return prepareQuery(con, queryText, req.getQueryLanguage(), req.getIncludeInferred(),
+		Query query = prepareQuery(con, queryText, req.getQueryLanguage(), req.getIncludeInferred(),
 				req.getQueryTimeoutSeconds());
+		query.setPreserveQueryOrder(req.isPreserveQueryOrder());
+		return query;
 	}
 
 	private Query prepareQuery(final RepositoryConnection con, final String queryText,
@@ -267,11 +316,56 @@ public final class QueryEvaluator {
 	}
 
 	private void explainQuery(final TupleResultBuilder builder, final String xslPath,
-			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
+			final ExplainQueryResult explainQueryResult, final String traceNamespacesJson)
+			throws QueryResultHandlerException {
 		builder.transform(xslPath, "query.xsl");
 		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL);
 		builder.link(List.of(INFO, "namespaces"));
+		builder.metadata(TraceNamespaceCatalog.METADATA_NAME, traceNamespacesJson);
 		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel());
+		builder.end();
+	}
+
+	private TraceQueryResult trace(final Query query) throws BadRequestException {
+		if (!(query instanceof TupleQuery)) {
+			throw new BadRequestException("Trace is only supported for tuple queries.");
+		}
+		try {
+			return new TraceQueryResult(((TupleQuery) query).trace());
+		} catch (UnsupportedOperationException e) {
+			throw new BadRequestException("Trace is not supported for this query or repository.", e);
+		}
+	}
+
+	private Query applyTracePagingIfRequested(final RepositoryConnection con, final String queryText,
+			final QueryLanguage queryLn, final WorkbenchRequest req, final Query query)
+			throws BadRequestException, RDF4JException {
+		if (!(query instanceof TupleQuery)) {
+			return query;
+		}
+		int limit = getResultLimit(req);
+		if (limit <= 0) {
+			return query;
+		}
+		PagedQuery pagedQuery = new PagedQuery(queryText, queryLn, limit, req.getInt("offset"));
+		if (!pagedQuery.isPaged()) {
+			return query;
+		}
+		return prepareQuery(con, pagedQuery.toString(), req);
+	}
+
+	private void traceQuery(final TupleResultBuilder builder, final String xslPath,
+			final TraceQueryResult traceQueryResult, final String traceNamespacesJson)
+			throws QueryResultHandlerException {
+		builder.transform(xslPath, "query.xsl");
+		builder.start(TRACE);
+		builder.link(List.of(INFO, "namespaces"));
+		builder.metadata(TraceNamespaceCatalog.METADATA_NAME, traceNamespacesJson);
+		try {
+			builder.result(mapper.writeValueAsString(traceQueryResult.getTrace()));
+		} catch (Exception e) {
+			throw new QueryResultHandlerException(e);
+		}
 		builder.end();
 	}
 
@@ -352,7 +446,7 @@ public final class QueryEvaluator {
 	 */
 	public void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
-			int offset, int limit, String responseQueryText)
+			int offset, int limit, String responseQueryText, String traceNamespacesJson)
 			throws QueryEvaluationException, QueryResultHandlerException {
 		final TupleQueryResult result = query.evaluate();
 		final String[] names = result.getBindingNames().toArray(new String[0]);
@@ -363,7 +457,7 @@ public final class QueryEvaluator {
 		builder.transform(xslPath, "tuple.xsl");
 		builder.start(names);
 		builder.link(List.of(INFO));
-		addWorkbenchMetadata(builder, req, responseQueryText);
+		addWorkbenchMetadata(builder, req, responseQueryText, traceNamespacesJson);
 		final List<Object> values = new ArrayList<>(names.length);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
@@ -425,7 +519,7 @@ public final class QueryEvaluator {
 	 */
 	private void evaluateGraphQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
-			int offset, int limit, String responseQueryText)
+			int offset, int limit, String responseQueryText, String traceNamespacesJson)
 			throws QueryEvaluationException, QueryResultHandlerException {
 		List<Statement> statements = Iterations.asList(query.evaluate());
 		if (writeCookie) {
@@ -434,7 +528,7 @@ public final class QueryEvaluator {
 		builder.transform(xslPath, "graph.xsl");
 		builder.start("subject", "predicate", "object");
 		builder.link(List.of(INFO));
-		addWorkbenchMetadata(builder, req, responseQueryText);
+		addWorkbenchMetadata(builder, req, responseQueryText, traceNamespacesJson);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
@@ -464,11 +558,12 @@ public final class QueryEvaluator {
 
 	private void evaluate(final TupleResultBuilder builder, final OutputStream out, final String xslPath,
 			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, final Query query,
-			boolean writeCookie, boolean paged, int offset, int limit, String responseQueryText)
+			boolean writeCookie, boolean paged, int offset, int limit, String responseQueryText,
+			String traceNamespacesJson)
 			throws RDF4JException, BadRequestException {
 		if (query instanceof TupleQuery) {
 			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery) query, writeCookie, paged,
-					offset, limit, responseQueryText);
+					offset, limit, responseQueryText, traceNamespacesJson);
 		} else {
 			final RDFFormat format = req.isParameterPresent(ACCEPT)
 					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)).orElse(null)
@@ -477,7 +572,7 @@ public final class QueryEvaluator {
 				GraphQuery graphQuery = (GraphQuery) query;
 				if (null == format) {
 					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie, paged,
-							offset, limit, responseQueryText);
+							offset, limit, responseQueryText, traceNamespacesJson);
 				} else {
 					this.evaluateGraphQuery(Rio.createWriter(format, out), graphQuery);
 				}
@@ -492,7 +587,9 @@ public final class QueryEvaluator {
 		}
 	}
 
-	private void addWorkbenchMetadata(TupleResultBuilder builder, WorkbenchRequest req, String responseQueryText) {
+	private void addWorkbenchMetadata(TupleResultBuilder builder, WorkbenchRequest req, String responseQueryText,
+			String traceNamespacesJson) {
+		builder.metadata(TraceNamespaceCatalog.METADATA_NAME, traceNamespacesJson);
 		if (responseQueryText == null) {
 			return;
 		}

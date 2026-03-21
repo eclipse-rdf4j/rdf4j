@@ -52,6 +52,9 @@ public abstract class AbstractRepositoryController extends AbstractController {
 		if (getQueryRequestHandler().handleCancelExplain(request, response)) {
 			return null;
 		}
+		if (getQueryRequestHandler().handleCancelTrace(request, response)) {
+			return null;
+		}
 
 		return getQueryRequestHandler().handleQueryRequest(request, requestMethod, response);
 	}

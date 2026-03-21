@@ -93,6 +93,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	private volatile Map<String, String> additionalHttpHeaders = Collections.emptyMap();
 
 	private final ConcurrentMap<String, RDF4JProtocolSession> activeExplainSessions = new ConcurrentHashMap<>();
+	private final ConcurrentMap<String, RDF4JProtocolSession> activeTraceSessions = new ConcurrentHashMap<>();
 
 	private HTTPRepository() {
 		super();
@@ -270,6 +271,34 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		}
 	}
 
+	public void cancelQueryTrace(String traceRequestId) throws RepositoryException {
+		String normalizedTraceRequestId = Objects.requireNonNull(traceRequestId, "Trace request id was null").trim();
+		if (normalizedTraceRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Trace request id was blank");
+		}
+		RDF4JProtocolSession activeSession = activeTraceSessions.get(normalizedTraceRequestId);
+		if (activeSession != null) {
+			try {
+				activeSession.cancelQueryTrace(normalizedTraceRequestId);
+				return;
+			} catch (RepositoryException e) {
+				throw e;
+			} catch (RDF4JException | IOException e) {
+				throw new RepositoryException(e);
+			}
+		}
+		if (!isInitialized()) {
+			init();
+		}
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			client.cancelQueryTrace(normalizedTraceRequestId);
+		} catch (RepositoryException e) {
+			throw e;
+		} catch (RDF4JException | IOException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
 	void registerActiveQueryExplanationSession(String explainRequestId, RDF4JProtocolSession session) {
 		String normalizedExplainRequestId = Objects.requireNonNull(explainRequestId, "Explain request id was null")
 				.trim();
@@ -286,6 +315,22 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 			throw new IllegalArgumentException("Explain request id was blank");
 		}
 		activeExplainSessions.remove(normalizedExplainRequestId, Objects.requireNonNull(session, "Session was null"));
+	}
+
+	void registerActiveQueryTraceSession(String traceRequestId, RDF4JProtocolSession session) {
+		String normalizedTraceRequestId = Objects.requireNonNull(traceRequestId, "Trace request id was null").trim();
+		if (normalizedTraceRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Trace request id was blank");
+		}
+		activeTraceSessions.put(normalizedTraceRequestId, Objects.requireNonNull(session, "Session was null"));
+	}
+
+	void unregisterActiveQueryTraceSession(String traceRequestId, RDF4JProtocolSession session) {
+		String normalizedTraceRequestId = Objects.requireNonNull(traceRequestId, "Trace request id was null").trim();
+		if (normalizedTraceRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Trace request id was blank");
+		}
+		activeTraceSessions.remove(normalizedTraceRequestId, Objects.requireNonNull(session, "Session was null"));
 	}
 
 	/**

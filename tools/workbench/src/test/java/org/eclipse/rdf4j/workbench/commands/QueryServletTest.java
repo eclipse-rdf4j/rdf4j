@@ -48,12 +48,14 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.AsyncTraceCoordinator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
@@ -532,6 +534,221 @@ public class QueryServletTest {
 		} finally {
 			executor.shutdownNow();
 			asyncExplainCoordinator.shutdown();
+		}
+	}
+
+	@Test
+	public void testTraceWithoutRequestIdShouldUseLegacySyncFlow() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		servlet.setRepository(repository);
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("trace");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.isParameterPresent("trace-request-id")).thenReturn(false);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.trace()).thenReturn(QueryTrace.success(List.of(), List.of()));
+
+		StringWriter body = new StringWriter();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+		servlet.service(request, response, "/transformations");
+
+		verify(request, never()).startAsync(any(), any());
+		assertThat(body.toString()).contains("\"patterns\":[]");
+		verify(tupleQuery).trace();
+	}
+
+	@Test
+	public void testAsyncTraceShouldRejectBlankRequestId() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		servlet.setRepository(repository);
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("trace");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.isParameterPresent("trace-request-id")).thenReturn(true);
+		when(request.getParameter("trace-request-id")).thenReturn("   ");
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.trace()).thenReturn(QueryTrace.success(List.of(), List.of()));
+
+		StringWriter body = new StringWriter();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+		servlet.service(request, response, "/transformations");
+
+		verify(request, never()).startAsync(any(), any());
+		assertThat(body.toString()).contains("\"message\":\"Missing parameter: trace-request-id\"");
+	}
+
+	@Test
+	public void testCancelTraceShouldRejectBlankRequestId() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("cancel-trace");
+		when(request.isParameterPresent("trace-request-id")).thenReturn(true);
+		when(request.getParameter("trace-request-id")).thenReturn("   ");
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		servlet.doPost(request, response, "/transformations");
+
+		verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: trace-request-id");
+	}
+
+	@Test
+	public void testTraceRequestIdShouldRunInlineAndPropagateRemoteCancel() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		AsyncTraceCoordinator asyncTraceCoordinator = new AsyncTraceCoordinator();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		servlet.setRepository(repository);
+		servlet.substituteAsyncTraceCoordinator(asyncTraceCoordinator);
+
+		CountDownLatch traceStarted = new CountDownLatch(1);
+		CountDownLatch traceInterrupted = new CountDownLatch(1);
+		AtomicBoolean interrupted = new AtomicBoolean(false);
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.trace()).thenAnswer(invocation -> {
+			traceStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return QueryTrace.success(List.of(), List.of());
+			} catch (InterruptedException e) {
+				interrupted.set(true);
+				traceInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		WorkbenchRequest traceRequest = mock(WorkbenchRequest.class);
+		when(traceRequest.getParameter("action")).thenReturn("trace");
+		when(traceRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(traceRequest.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(traceRequest.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(traceRequest.isParameterPresent("trace-request-id")).thenReturn(true);
+		when(traceRequest.getParameter("trace-request-id")).thenReturn("req-trace");
+		when(traceRequest.getParameter("queryLn")).thenReturn("SPARQL");
+		when(traceRequest.isParameterPresent("infer")).thenReturn(false);
+		when(traceRequest.getInt("query-timeout")).thenReturn(0);
+
+		HttpServletResponse traceResponse = mock(HttpServletResponse.class);
+		when(traceResponse.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+		WorkbenchRequest cancelRequest = mock(WorkbenchRequest.class);
+		when(cancelRequest.getParameter("action")).thenReturn("cancel-trace");
+		when(cancelRequest.isParameterPresent("trace-request-id")).thenReturn(true);
+		when(cancelRequest.getParameter("trace-request-id")).thenReturn("req-trace");
+
+		HttpServletResponse cancelResponse = mock(HttpServletResponse.class);
+
+		try {
+			Future<?> traceFuture = executor.submit(() -> {
+				servlet.service(traceRequest, traceResponse, "/transformations");
+				return null;
+			});
+
+			assertThat(traceStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(traceFuture.isDone()).isFalse();
+			verify(traceRequest, never()).startAsync(any(), any());
+
+			servlet.doPost(cancelRequest, cancelResponse, "/transformations");
+
+			verify(cancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
+			assertThat(traceInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(interrupted).isTrue();
+			assertThatCode(() -> traceFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
+			verify(connection, atLeastOnce()).close();
+			verify(repository).cancelQueryTrace("req-trace");
+		} finally {
+			executor.shutdownNow();
+			asyncTraceCoordinator.shutdown();
+		}
+	}
+
+	@Test
+	public void testDestroyShouldShutdownAsyncTraceCoordinator() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		QueryStorage storage = mock(QueryStorage.class);
+		AsyncTraceCoordinator asyncTraceCoordinator = new AsyncTraceCoordinator();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		servlet.setRepository(repository);
+		servlet.substituteQueryStorage(storage);
+		servlet.substituteAsyncTraceCoordinator(asyncTraceCoordinator);
+
+		CountDownLatch traceStarted = new CountDownLatch(1);
+		CountDownLatch traceInterrupted = new CountDownLatch(1);
+		AtomicBoolean interrupted = new AtomicBoolean(false);
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.trace()).thenAnswer(invocation -> {
+			traceStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return QueryTrace.success(List.of(), List.of());
+			} catch (InterruptedException e) {
+				interrupted.set(true);
+				traceInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("trace");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.isParameterPresent("trace-request-id")).thenReturn(true);
+		when(request.getParameter("trace-request-id")).thenReturn("req-destroy");
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+		try {
+			Future<?> traceFuture = executor.submit(() -> {
+				servlet.service(request, response, "/transformations");
+				return null;
+			});
+
+			assertThat(traceStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(traceFuture.isDone()).isFalse();
+
+			servlet.destroy();
+
+			assertThat(traceInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(interrupted).isTrue();
+			assertThatCode(() -> traceFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
+			verify(storage).shutdown();
+			verify(connection, atLeastOnce()).close();
+		} finally {
+			executor.shutdownNow();
+			asyncTraceCoordinator.shutdown();
 		}
 	}
 

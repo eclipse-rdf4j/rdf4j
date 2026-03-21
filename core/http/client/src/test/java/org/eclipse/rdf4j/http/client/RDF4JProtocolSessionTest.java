@@ -12,18 +12,22 @@
 package org.eclipse.rdf4j.http.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
+import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -500,6 +504,267 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
 		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+	}
+
+	@Test
+	public void testSendQueryTrace(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("trace", "true"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"patterns\":[{\"id\":\"sp-0\",\"index\":0,\"text\":\"?s ?p ?o\"}],"
+										+ "\"frames\":[{\"index\":0,\"event\":\"probe\",\"patternId\":\"sp-0\","
+										+ "\"patternIndex\":0,\"inputBindings\":{},\"outputBindings\":{},"
+										+ "\"resultBindings\":{}}]}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		QueryTrace trace = getRDF4JSession().sendQueryTrace(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0);
+
+		assertThat(trace.isSuccess()).isTrue();
+		assertThat(trace.getPatterns()).hasSize(1);
+		assertThat(trace.getFrames()).hasSize(1);
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("trace", "true")
+						.withHeader(testHeader, testValue)
+						.withHeader("Accept", "application/json")
+		);
+	}
+
+	@Test
+	public void testSendTupleQueryIncludesPreserveQueryOrder(MockServerClient client) throws Exception {
+		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/transactions"),
+				Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionStartUrl + "/1"));
+
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("preserve-query-order", "true"),
+				Times.once())
+				.respond(
+						response()
+								.withBody(readFileToString("repository-list.xml"))
+								.withContentType(MediaType.parse(TupleQueryResultFormat.SPARQL.getDefaultMIMEType()))
+				);
+
+		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
+		try (TupleQueryResult result = getRDF4JSession().sendTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, true, (WeakReference<?>) null)) {
+			assertThat(result.hasNext()).isTrue();
+		}
+
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("preserve-query-order", "true")
+						.withHeader(testHeader, testValue)
+		);
+	}
+
+	@Test
+	public void testSendQueryTraceAcceptsLegacySuccessResponse(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("trace", "true"),
+				Times.once())
+				.respond(
+						response()
+								.withBody(
+										"{\"success\":true,\"patterns\":[{\"id\":\"sp-0\",\"index\":0,\"text\":\"?s ?p ?o\"}],"
+												+ "\"frames\":[{\"index\":0,\"event\":\"probe\",\"patternId\":\"sp-0\","
+												+ "\"patternIndex\":0,\"inputBindings\":{},\"outputBindings\":{},"
+												+ "\"resultBindings\":{}}]}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		QueryTrace trace = getRDF4JSession().sendQueryTrace(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0);
+
+		assertThat(trace.isSuccess()).isTrue();
+		assertThat(trace.getPatterns()).hasSize(1);
+		assertThat(trace.getFrames()).hasSize(1);
+	}
+
+	@Test
+	public void testSendQueryTraceIncludesTraceRequestId(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("trace", "true")
+						.withQueryStringParameter("trace-request-id", "req-123"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"patterns\":[{\"id\":\"sp-0\",\"index\":0,\"text\":\"?s ?p ?o\"}],"
+										+ "\"frames\":[]}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		try (QueryTraceRequestContext.Activation ignored = QueryTraceRequestContext.activate("req-123")) {
+			QueryTrace trace = getRDF4JSession().sendQueryTrace(QueryLanguage.SPARQL,
+					"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0);
+			assertThat(trace.isSuccess()).isTrue();
+		}
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("trace", "true")
+						.withQueryStringParameter("trace-request-id", "req-123")
+						.withHeader(testHeader, testValue)
+						.withHeader("Accept", "application/json")
+		);
+	}
+
+	@Test
+	public void testSendQueryTraceOmitsTraceRequestIdInsideTransaction(MockServerClient client) throws Exception {
+		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/transactions"),
+				Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionStartUrl + "/1"));
+
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("trace", "true"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"patterns\":[{\"id\":\"sp-0\",\"index\":0,\"text\":\"?s ?p ?o\"}],"
+										+ "\"frames\":[]}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
+		try (QueryTraceRequestContext.Activation ignored = QueryTraceRequestContext.activate("req-123")) {
+			QueryTrace trace = getRDF4JSession().sendQueryTrace(QueryLanguage.SPARQL,
+					"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0);
+			assertThat(trace.isSuccess()).isTrue();
+		}
+
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY")
+						.withQueryStringParameter("trace", "true")
+						.withHeader(testHeader, testValue)
+						.withHeader("Accept", "application/json")
+		);
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("trace-request-id", "req-123"),
+				VerificationTimes.exactly(0));
+	}
+
+	@Test
+	public void testSendQueryTraceRejectsInvalidTraceResponse(MockServerClient client) {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("trace", "true"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		assertThatThrownBy(() -> getRDF4JSession().sendQueryTrace(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0))
+				.hasMessageContaining("invalid trace response");
+	}
+
+	@Test
+	public void testCancelQueryTrace(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-trace", "true")
+						.withQueryStringParameter("trace-request-id", "req-456"),
+				Times.once())
+				.respond(response().withStatusCode(204));
+
+		getRDF4JSession().cancelQueryTrace("req-456");
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-trace", "true")
+						.withQueryStringParameter("trace-request-id", "req-456")
+						.withHeader(testHeader, testValue)
+		);
+	}
+
+	@Test
+	public void testCancelQueryTraceIgnoresTransactionEndpoint(MockServerClient client) throws Exception {
+		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/transactions"),
+				Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionStartUrl + "/1"));
+
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-trace", "true")
+						.withQueryStringParameter("trace-request-id", "req-456"),
+				Times.once())
+				.respond(response().withStatusCode(204));
+
+		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
+		getRDF4JSession().cancelQueryTrace("req-456");
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-trace", "true")
+						.withQueryStringParameter("trace-request-id", "req-456")
+						.withHeader(testHeader, testValue)
+		);
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("cancel-trace", "true")
+						.withQueryStringParameter("trace-request-id", "req-456"),
+				VerificationTimes.exactly(0));
 	}
 
 	@Test

@@ -145,6 +145,7 @@
 	<variable name="include-inferred.label">
 		Include inferred statements
 	</variable>
+	<variable name="preserve-query-order.label">Preserve query join order</variable>
 	<variable name="save-private.label">Save privately (do not share)</variable>
 	<variable name="save.label">Save query</variable>
 	<variable name="object.label">Object</variable>

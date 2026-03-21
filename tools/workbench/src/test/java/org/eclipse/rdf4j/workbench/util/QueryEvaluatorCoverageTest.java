@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.workbench.util;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -26,7 +28,10 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -35,10 +40,16 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.junit.jupiter.api.Test;
 
 class QueryEvaluatorCoverageTest {
+
+	private static void stubNamespaces(RepositoryConnection connection) {
+		when(connection.getNamespaces()).thenReturn(new RepositoryResult<>(
+				new CloseableIteratorIteration<>(List.<Namespace>of().iterator())));
+	}
 
 	@Test
 	void extractExplainRequestDefaultsNullFormatAndParsesInferFlag() throws Exception {
@@ -116,6 +127,7 @@ class QueryEvaluatorCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		GraphQuery graphQuery = mock(GraphQuery.class);
 
+		stubNamespaces(connection);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(false);
@@ -143,6 +155,46 @@ class QueryEvaluatorCoverageTest {
 	}
 
 	@Test
+	void graphQueriesShouldExposeRepositoryNamespacesInTraceMetadata() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		Statement statement = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createLiteral("o"));
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		GraphQuery graphQuery = mock(GraphQuery.class);
+
+		stubNamespaces(connection);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("explain")).thenReturn(false);
+		when(request.isParameterPresent("Accept")).thenReturn(false);
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("offset")).thenReturn(0);
+		when(request.getInt("limit_query")).thenReturn(0);
+		when(request.getInt("know_total")).thenReturn(0);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		when(request.getParameter("query-timeout")).thenReturn("");
+		when(connection.getNamespaces()).thenReturn(new RepositoryResult<>(
+				new CloseableIteratorIteration<>(List.<Namespace>of(
+						new SimpleNamespace("med", "http://example.com/theme/medical/")).iterator())));
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
+				"transformations", connection, queryText, request, cookies, queryText);
+
+		verify(builder).metadata(eq(TraceNamespaceCatalog.METADATA_NAME),
+				argThat((String json) -> json.contains("\"med:\"")
+						&& json.contains("\"rdf:\"")
+						&& json.contains("\"rdf4j:\"")));
+	}
+
+	@Test
 	void graphQueriesCanBeStreamedThroughRioWriters() throws Exception {
 		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
@@ -152,6 +204,7 @@ class QueryEvaluatorCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		GraphQuery graphQuery = mock(GraphQuery.class);
 
+		stubNamespaces(connection);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(true);
@@ -191,6 +244,7 @@ class QueryEvaluatorCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		GraphQuery graphQuery = mock(GraphQuery.class);
 
+		stubNamespaces(connection);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(false);
@@ -207,7 +261,10 @@ class QueryEvaluatorCoverageTest {
 				"transformations", connection, queryText, request, cookies, null);
 
 		verify(cookies).addTotalResultCountCookie(request, response, 2);
-		verify(builder, never()).metadata(any(), any());
+		verify(builder).metadata(eq(TraceNamespaceCatalog.METADATA_NAME), any());
+		verify(builder, never()).metadata(eq("query-text"), any());
+		verify(builder, never()).metadata(eq("infer"), any());
+		verify(builder, never()).metadata(eq("query-timeout"), any());
 		verify(builder, times(1)).result(any(), any(), any(), any());
 	}
 
@@ -226,6 +283,7 @@ class QueryEvaluatorCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		GraphQuery graphQuery = mock(GraphQuery.class);
 
+		stubNamespaces(connection);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(false);
@@ -257,6 +315,7 @@ class QueryEvaluatorCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		BooleanQuery booleanQuery = mock(BooleanQuery.class);
 
+		stubNamespaces(connection);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(true);
@@ -287,6 +346,7 @@ class QueryEvaluatorCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		Query query = mock(Query.class);
 
+		stubNamespaces(connection);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(false);
@@ -333,6 +393,7 @@ class QueryEvaluatorCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		GraphQuery graphQuery = mock(GraphQuery.class);
 
+		stubNamespaces(connection);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(false);
@@ -350,6 +411,9 @@ class QueryEvaluatorCoverageTest {
 
 		verify(cookies).addTotalResultCountCookie(request, response, 5);
 		verify(connection, times(2)).prepareQuery(QueryLanguage.SPARQL, queryText);
-		verify(builder, never()).metadata(any(), any());
+		verify(builder).metadata(eq(TraceNamespaceCatalog.METADATA_NAME), any());
+		verify(builder, never()).metadata(eq("query-text"), any());
+		verify(builder, never()).metadata(eq("infer"), any());
+		verify(builder, never()).metadata(eq("query-timeout"), any());
 	}
 }

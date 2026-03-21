@@ -87,6 +87,7 @@ import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.query.trace.QueryTrace;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -111,6 +112,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
+	private static final ObjectMapper TRACE_MAPPER = new ObjectMapper();
 
 	/**
 	 * How long the client should wait before sending another PING to the server
@@ -943,6 +945,12 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	@Override
 	protected HttpUriRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, Binding... bindings) {
+		return getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, false, bindings);
+	}
+
+	@Override
+	protected HttpUriRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, boolean preserveQueryOrder, Binding... bindings) {
 		RequestBuilder builder;
 		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
@@ -950,7 +958,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			builder.setHeader("Content-Type", Protocol.SPARQL_QUERY_MIME_TYPE + "; charset=utf-8");
 			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.QUERY.toString());
 			for (NameValuePair nvp : getQueryMethodParameters(ql, null, baseURI, dataset, includeInferred, maxQueryTime,
-					bindings)) {
+					preserveQueryOrder, bindings)) {
 				builder.addParameter(nvp);
 			}
 			// in a PUT request, we carry the actual query string as the entity
@@ -962,7 +970,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			builder.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
 			builder.setEntity(new UrlEncodedFormEntity(
-					getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings),
+					getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
+							preserveQueryOrder, bindings),
 					UTF8));
 		}
 		// functionality to provide custom http headers as required by the
@@ -977,9 +986,18 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			boolean includeInferred, int maxQueryTime, Explanation.Level level, Binding... bindings)
 			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
 			QueryInterruptedException {
+		return sendQueryExplanation(ql, query, baseURI, dataset, includeInferred, maxQueryTime, false, level,
+				bindings);
+	}
+
+	public Explanation sendQueryExplanation(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, boolean preserveQueryOrder, Explanation.Level level,
+			Binding... bindings)
+			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+			QueryInterruptedException {
 		Objects.requireNonNull(level, "Explanation level may not be null");
 		HttpUriRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
-				bindings);
+				preserveQueryOrder, bindings);
 		HttpUriRequest explainMethod = addQueryParameter(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
 		String explainRequestId = getTransactionURL() == null ? QueryExplanationRequestContext.getExplainRequestId()
 				: null;
@@ -1001,6 +1019,40 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		cancelMethod = addQueryParameter(cancelMethod, Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
 		cancelMethod = addQueryParameter(cancelMethod, Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME,
 				normalizedExplainRequestId);
+		executeNoContent(cancelMethod);
+	}
+
+	public QueryTrace sendQueryTrace(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, Binding... bindings)
+			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+			QueryInterruptedException {
+		return sendQueryTrace(ql, query, baseURI, dataset, includeInferred, maxQueryTime, false, bindings);
+	}
+
+	public QueryTrace sendQueryTrace(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+			boolean includeInferred, int maxQueryTime, boolean preserveQueryOrder, Binding... bindings)
+			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+			QueryInterruptedException {
+		HttpUriRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
+				preserveQueryOrder, bindings);
+		HttpUriRequest traceMethod = addQueryParameter(queryMethod, Protocol.TRACE_PARAM_NAME, Boolean.TRUE.toString());
+		String traceRequestId = getTransactionURL() == null ? QueryTraceRequestContext.getTraceRequestId() : null;
+		if (traceRequestId != null) {
+			traceMethod = addQueryParameter(traceMethod, Protocol.TRACE_REQUEST_ID_PARAM_NAME, traceRequestId);
+		}
+		return getQueryTrace(traceMethod);
+	}
+
+	public void cancelQueryTrace(String traceRequestId)
+			throws IOException, RepositoryException, UnauthorizedException {
+		String normalizedTraceRequestId = Objects.requireNonNull(traceRequestId, "Trace request id was null").trim();
+		if (normalizedTraceRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Trace request id was blank");
+		}
+
+		HttpUriRequest cancelMethod = applyAdditionalHeaders(new HttpPost(getQueryURL()));
+		cancelMethod = addQueryParameter(cancelMethod, Protocol.CANCEL_TRACE_PARAM_NAME, Boolean.TRUE.toString());
+		cancelMethod = addQueryParameter(cancelMethod, Protocol.TRACE_REQUEST_ID_PARAM_NAME, normalizedTraceRequestId);
 		executeNoContent(cancelMethod);
 	}
 
@@ -1163,6 +1215,13 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	@Override
 	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
+		return getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred, maxQueryTime, false, bindings);
+	}
+
+	@Override
+	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
+			Dataset dataset, boolean includeInferred, int maxQueryTime, boolean preserveQueryOrder,
+			Binding... bindings) {
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
 
 		List<NameValuePair> queryParams = new ArrayList<>();
@@ -1178,6 +1237,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		if (maxQueryTime > 0) {
 			queryParams.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));
+		}
+
+		if (preserveQueryOrder) {
+			queryParams.add(new BasicNameValuePair(Protocol.PRESERVE_QUERY_ORDER_PARAM_NAME, Boolean.TRUE.toString()));
 		}
 
 		if (dataset != null) {
@@ -1282,6 +1345,27 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 					GenericPlanNode.class);
 			planNode.applyExplanationLevel(level);
 			return new ExplanationImpl(planNode, Boolean.TRUE.equals(planNode.getTimedOut()), null);
+		} finally {
+			EntityUtils.consumeQuietly(response.getEntity());
+		}
+	}
+
+	private QueryTrace getQueryTrace(HttpUriRequest method)
+			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
+			QueryInterruptedException {
+		method.addHeader(Protocol.ACCEPT_PARAM_NAME, "application/json");
+		HttpResponse response = executeOK(method);
+		try {
+			String mimeType = getResponseMIMEType(response);
+			if (mimeType == null || !mimeType.toLowerCase(Locale.ROOT).contains("json")) {
+				throw new RepositoryException("Server responded with an unsupported trace format: " + mimeType);
+			}
+
+			QueryTrace trace = TRACE_MAPPER.readValue(response.getEntity().getContent(), QueryTrace.class);
+			if (trace.getError() == null && (trace.getPatterns() == null || trace.getPatterns().isEmpty())) {
+				throw new RepositoryException("Server returned an invalid trace response.");
+			}
+			return trace;
 		} finally {
 			EntityUtils.consumeQuietly(response.getEntity());
 		}
