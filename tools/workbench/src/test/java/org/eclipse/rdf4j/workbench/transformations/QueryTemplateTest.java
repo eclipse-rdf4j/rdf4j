@@ -376,6 +376,8 @@ class QueryTemplateTest {
 				.contains("class=\"query-trace-canvas\"")
 				.contains("class=\"query-trace-meta\"")
 				.contains("class=\"query-trace-meta-toggle\">Details</summary>")
+				.contains("id=\"query-trace-step-label\"")
+				.doesNotContain("id=\"query-trace-result\"")
 				.doesNotContain("class=\"query-trace-header\"")
 				.doesNotContain("class=\"query-trace-kicker\">Trace playback</span>")
 				.doesNotContain("class=\"query-trace-workspace\"")
@@ -386,14 +388,18 @@ class QueryTemplateTest {
 				.contains(".query-trace-topbar")
 				.contains(".query-trace-transport")
 				.contains(".query-trace-canvas")
+				.contains(".query-trace-step-label")
 				.contains(".query-trace-meta")
 				.contains(".query-trace-meta-toggle")
+				.doesNotContain(".query-trace-readout")
 				.doesNotContain(".query-trace-workspace")
 				.doesNotContain(".query-trace-result-stage");
 
 		assertThat(queryScript)
 				.contains("function renderTraceMeta(")
-				.contains("function renderTraceReadout(")
+				.contains("function renderTraceStepLabel(")
+				.contains("$('#query-trace-step-label')")
+				.doesNotContain("function renderTraceReadout(")
 				.doesNotContain("function renderTraceSummary(")
 				.doesNotContain("function renderTraceFrameLabel(");
 	}
@@ -730,15 +736,16 @@ class QueryTemplateTest {
 				.contains("@media (prefers-reduced-motion: no-preference)")
 				.contains("--trace-ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);")
 				.contains("--trace-ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);")
-				.contains(".query-trace-readout--visible")
-				.contains("animation: query-trace-readout-enter 220ms var(--trace-ease-out-quart);")
-				.contains(".query-trace-query__line--active .query-trace-query__line-content")
-				.contains("animation: query-trace-line-focus 260ms var(--trace-ease-out-quint);")
-				.contains(".query-trace-query__line--active .query-trace-query__binding")
-				.contains("animation: query-trace-binding-rise 220ms var(--trace-ease-out-quart);")
-				.contains("@keyframes query-trace-readout-enter")
-				.contains("@keyframes query-trace-line-focus")
-				.contains("@keyframes query-trace-binding-rise");
+				.contains(".query-trace-query__active-marker")
+				.contains("transition: transform 240ms var(--trace-ease-out-quint);")
+				.contains(".query-trace-query__binding--changed")
+				.contains("animation: query-trace-binding-settle 220ms var(--trace-ease-out-quart);")
+				.contains(".query-trace-query--rollback .query-trace-query__line--rollback")
+				.contains("animation: query-trace-line-rollback-wave 280ms var(--trace-ease-out-quint);")
+				.contains("@keyframes query-trace-binding-settle")
+				.contains("@keyframes query-trace-line-rollback-wave")
+				.doesNotContain("query-trace-readout-enter")
+				.doesNotContain("query-trace-chevron-bob");
 	}
 
 	@Test
@@ -759,31 +766,37 @@ class QueryTemplateTest {
 		String queryStyles = readQueryStyles();
 
 		assertThat(queryStyles)
+				.contains(".query-trace-query__active-marker")
 				.containsPattern(
-						"\\.query-trace-query__line--active \\.query-trace-query__gutter\\s*\\{[^}]*background:\\s*rgba\\(")
+						"\\.query-trace-query__gutter::before\\s*\\{[^}]*background:\\s*var\\(--trace-line\\);")
 				.containsPattern(
-						"\\.query-trace-query__line--active \\.query-trace-query__line-content\\s*\\{[^}]*linear-gradient\\(")
+						"\\.query-trace-query__line--active \\.query-trace-query__gutter\\s*\\{[^}]*color:\\s*#")
+				.containsPattern(
+						"\\.query-trace-query__line--active \\.query-trace-query__line-content\\s*\\{[^}]*background:\\s*rgba\\(")
 				.containsPattern(
 						"\\.query-trace-query__line--active \\.query-trace-query__line-content\\s*\\{[^}]*border:\\s*1px\\s+solid")
-				.contains(".query-trace-query__line--active .query-trace-query__line-content::before")
-				.contains("box-shadow: 0 0 0");
+				.doesNotContain(".query-trace-query__line--active .query-trace-query__line-content::before")
+				.doesNotContain(
+						".query-trace-query__line--active .query-trace-query__gutter {\n    min-width: 1.9rem;");
 	}
 
 	@Test
-	void traceUiShouldUseAnimatedChevronForActiveLine() throws IOException {
+	void traceUiShouldUseIntegratedExecutionTrackMarker() throws IOException {
 		String queryStyles = readQueryStyles();
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryScript)
-				.contains("query-trace-query__active-chevron")
-				.contains("line.append(")
+				.contains("query-trace-query__active-marker")
+				.contains("function renderTraceActiveMarker(")
+				.contains("query.addClass('query-trace-query--rollback')")
 				.contains("query-trace-query__gutter")
-				.contains("query-trace-query__line--active");
+				.doesNotContain("query-trace-query__active-chevron");
 
 		assertThat(queryStyles)
-				.contains(".query-trace-query__active-chevron")
-				.contains("animation: query-trace-chevron-bob")
-				.contains("@keyframes query-trace-chevron-bob");
+				.contains(".query-trace-query__active-marker")
+				.contains(".query-trace-query__gutter::before")
+				.doesNotContain(".query-trace-query__active-chevron")
+				.doesNotContain("query-trace-chevron-bob");
 	}
 
 	@Test
@@ -793,12 +806,15 @@ class QueryTemplateTest {
 
 		assertThat(queryScript)
 				.contains("previousTraceActivePatternIndex")
-				.contains("query-trace-query__line--rollback-wave");
+				.contains("query-trace-query--rollback")
+				.contains("query-trace-query__line--rollback");
 
 		assertThat(queryStyles)
-				.contains(".query-trace-query__line--rollback-wave .query-trace-query__line-content")
+				.contains(
+						".query-trace-query--rollback .query-trace-query__line--rollback .query-trace-query__line-content")
 				.contains("animation: query-trace-line-rollback-wave")
-				.contains("@keyframes query-trace-line-rollback-wave");
+				.contains("@keyframes query-trace-line-rollback-wave")
+				.doesNotContain("query-trace-chevron-bob");
 	}
 
 	@Test

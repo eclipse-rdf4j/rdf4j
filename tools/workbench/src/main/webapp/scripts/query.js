@@ -35,8 +35,8 @@ var workbench;
         var currentTrace = null;
         var currentTraceState = null;
         var previousTraceActivePatternIndex = null;
-        var previousTraceChevronOffset = null;
-        var pendingTraceChevronAnimationFrame = null;
+        var previousTraceMarkerOffset = null;
+        var pendingTraceMarkerAnimationFrame = null;
         var compareModeEnabled = false;
         var compareSidebarOpen = false;
         var compareQuerySeeded = false;
@@ -2605,29 +2605,6 @@ var workbench;
                 .toggleClass('query-explanation-status--loading', !!message && !isError)
                 .toggleClass('query-explanation-status--error', !!message && !!isError);
         }
-        function hasTraceBindings(bindings) {
-            if (!bindings) {
-                return false;
-            }
-            for (var bindingName in bindings) {
-                if (bindings.hasOwnProperty(bindingName)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        function formatTraceBindingsInline(bindings) {
-            var lines = [];
-            if (!bindings) {
-                return '';
-            }
-            for (var bindingName in bindings) {
-                if (bindings.hasOwnProperty(bindingName)) {
-                    lines.push('?' + bindingName + ' = ' + workbench.queryTracePlayer.formatTraceValue(bindings[bindingName]));
-                }
-            }
-            return lines.join('  ·  ');
-        }
         function createTraceMetaItem(text) {
             return $('<span></span>')
                 .addClass('query-trace-meta-item')
@@ -2654,36 +2631,18 @@ var workbench;
                 frameLabel.append(createTraceMetaItem('Line ' + (frame.patternIndex + 1)));
             }
         }
-        function renderTraceReadout(frame, snapshot) {
-            var readout = $('#query-trace-result');
-            var bindings = null;
-            var label = '';
-            readout.text('').toggleClass('query-trace-readout--visible', false);
-            if (!frame) {
+        function renderTraceStepLabel(frame, frameIndex, frameCount) {
+            var stepLabel = $('#query-trace-step-label');
+            stepLabel.text('');
+            if (frameCount <= 0 || !frame) {
                 return;
             }
-            if (frame.event === 'result' && hasTraceBindings(snapshot.resultBindings)) {
-                bindings = snapshot.resultBindings;
-                label = 'Result';
+            var label = 'Step ' + (frameIndex + 1) + ' / ' + frameCount + '  ·  '
+                + frame.event.charAt(0).toUpperCase() + frame.event.substring(1);
+            if (frame.patternIndex >= 0) {
+                label += '  ·  Line ' + (frame.patternIndex + 1);
             }
-            else if (frame.event === 'match' && hasTraceBindings(frame.outputBindings)) {
-                bindings = frame.outputBindings;
-                label = 'Matched bindings';
-            }
-            else if (hasTraceBindings(frame.inputBindings)) {
-                bindings = frame.inputBindings;
-                label = 'Current bindings';
-            }
-            else if (hasTraceBindings(frame.outputBindings)) {
-                bindings = frame.outputBindings;
-                label = 'Current bindings';
-            }
-            if (!bindings) {
-                return;
-            }
-            readout
-                .text(label + ': ' + formatTraceBindingsInline(bindings))
-                .toggleClass('query-trace-readout--visible', true);
+            stepLabel.text(label);
         }
         function renderTraceEmptyState(message) {
             $('#query-trace-patterns')
@@ -2693,10 +2652,10 @@ var workbench;
         }
         function clearTraceMotionState() {
             previousTraceActivePatternIndex = null;
-            previousTraceChevronOffset = null;
-            if (pendingTraceChevronAnimationFrame !== null) {
-                window.cancelAnimationFrame(pendingTraceChevronAnimationFrame);
-                pendingTraceChevronAnimationFrame = null;
+            previousTraceMarkerOffset = null;
+            if (pendingTraceMarkerAnimationFrame !== null) {
+                window.cancelAnimationFrame(pendingTraceMarkerAnimationFrame);
+                pendingTraceMarkerAnimationFrame = null;
             }
         }
         function getSnapshotActivePatternIndex(snapshot) {
@@ -2717,36 +2676,38 @@ var workbench;
             }
             return (rollbackFromPatternIndex - queryLine.pattern.index) * 48;
         }
-        function computeTraceChevronOffset(activeLine) {
-            return activeLine.position().top + ((activeLine.outerHeight() || 0) - 16) / 2;
+        function computeTraceActiveMarkerOffset(activeLine) {
+            var gutter = activeLine.children('.query-trace-query__gutter').first();
+            return activeLine.position().top + (((gutter.outerHeight() || activeLine.outerHeight() || 0)) / 2);
         }
-        function renderTraceActiveChevron(query) {
-            if (pendingTraceChevronAnimationFrame !== null) {
-                window.cancelAnimationFrame(pendingTraceChevronAnimationFrame);
-                pendingTraceChevronAnimationFrame = null;
+        function renderTraceActiveMarker(query) {
+            if (pendingTraceMarkerAnimationFrame !== null) {
+                window.cancelAnimationFrame(pendingTraceMarkerAnimationFrame);
+                pendingTraceMarkerAnimationFrame = null;
             }
-            var activeLine = query.children('.query-trace-query__line--active').first();
+            var activeLine = query.children('.query-trace-query__line--active.query-trace-query__line--pattern').first();
             if (!activeLine.length) {
-                previousTraceChevronOffset = null;
+                previousTraceMarkerOffset = null;
                 return;
             }
-            var chevron = $('<span class="query-trace-query__active-chevron" aria-hidden="true"></span>');
-            query.append(chevron);
-            var targetOffset = computeTraceChevronOffset(activeLine);
-            var startOffset = previousTraceChevronOffset !== null ? previousTraceChevronOffset : targetOffset;
-            chevron.css('transform', 'translate3d(0, ' + startOffset + 'px, 0)');
-            previousTraceChevronOffset = targetOffset;
-            pendingTraceChevronAnimationFrame = window.requestAnimationFrame(function () {
-                pendingTraceChevronAnimationFrame = null;
-                chevron.css('transform', 'translate3d(0, ' + targetOffset + 'px, 0)');
+            var marker = $('<span class="query-trace-query__active-marker" aria-hidden="true"></span>');
+            query.append(marker);
+            var targetOffset = computeTraceActiveMarkerOffset(activeLine);
+            var startOffset = previousTraceMarkerOffset !== null ? previousTraceMarkerOffset : targetOffset;
+            marker.css('transform', 'translate3d(-35px, ' + startOffset + 'px, 0)');
+            previousTraceMarkerOffset = targetOffset;
+            pendingTraceMarkerAnimationFrame = window.requestAnimationFrame(function () {
+                pendingTraceMarkerAnimationFrame = null;
+                marker.css('transform', 'translate3d(-35px, ' + targetOffset + 'px, 0)');
             });
         }
         function createTraceQueryShellLine(text, modifierClass) {
-            var line = $('<div class="query-trace-query__line"></div>');
+            var line = $('<div class="query-trace-query__line query-trace-query__line--shell"></div>');
             if (modifierClass) {
                 line.addClass(modifierClass);
             }
-            line.append($('<span class="query-trace-query__gutter"></span>'));
+            line.append($('<span class="query-trace-query__gutter"></span>')
+                .append($('<span class="query-trace-query__gutter-label"></span>')));
             line.append($('<span class="query-trace-query__line-content"></span>')
                 .text(text));
             return line;
@@ -2758,27 +2719,43 @@ var workbench;
             }
             var variable = $('<span class="query-trace-query__variable"></span>');
             if (token.bindingValue) {
+                var binding = $('<span class="query-trace-query__binding"></span>')
+                    .text(token.bindingValue);
+                if (token.bindingState) {
+                    binding.addClass('query-trace-query__binding--' + token.bindingState);
+                }
                 variable
                     .addClass('query-trace-query__variable--bound')
-                    .append($('<span class="query-trace-query__binding"></span>')
-                    .text(token.bindingValue));
+                    .append(binding);
             }
             variable.append($('<span class="query-trace-query__variable-text"></span>')
                 .text(token.text));
             content.append(variable);
         }
         function createTraceQueryPatternLine(queryLine, activePatternIndex, rollbackFromPatternIndex) {
+            var kindClass = 'query-trace-query__line--pattern';
+            if (queryLine.kind === 'filter') {
+                kindClass = 'query-trace-query__line--filter';
+            }
+            else if (queryLine.kind === 'optionalStart') {
+                kindClass = 'query-trace-query__line--optional-start';
+            }
+            else if (queryLine.kind === 'optionalEnd') {
+                kindClass = 'query-trace-query__line--optional-end';
+            }
             var line = $('<div class="query-trace-query__line"></div>')
+                .addClass(kindClass)
                 .toggleClass('query-trace-query__line--active', queryLine.active)
                 .toggleClass('query-trace-query__line--pending', queryLine.pending);
             var rollbackWaveDelayMs = getRollbackWaveDelayMs(queryLine, activePatternIndex, rollbackFromPatternIndex);
             if (rollbackWaveDelayMs >= 0) {
                 line
-                    .addClass('query-trace-query__line--rollback-wave')
+                    .addClass('query-trace-query__line--rollback')
                     .css('--query-trace-rollback-delay', rollbackWaveDelayMs + 'ms');
             }
             line.append($('<span class="query-trace-query__gutter"></span>')
-                .text(queryLine.gutterLabel || ''));
+                .append($('<span class="query-trace-query__gutter-label"></span>')
+                .text(queryLine.gutterLabel || '')));
             var content = $('<span class="query-trace-query__line-content"></span>');
             for (var i = 0; i < queryLine.tokens.length; i++) {
                 appendTraceQueryToken(content, queryLine.tokens[i]);
@@ -2790,10 +2767,15 @@ var workbench;
             var patternContainer = $('#query-trace-patterns');
             patternContainer.empty();
             var query = $('<div class="query-trace-query"></div>');
-            var activePatternIndex = getSnapshotActivePatternIndex(snapshot);
-            var rollbackFromPatternIndex = previousTraceActivePatternIndex !== null
-                && activePatternIndex !== null
-                && activePatternIndex < previousTraceActivePatternIndex
+            if (snapshot.direction === 'rollback') {
+                query.addClass('query-trace-query--rollback');
+            }
+            var activePatternIndex = snapshot && typeof snapshot.activePatternIndex === 'number'
+                && snapshot.activePatternIndex >= 0
+                ? snapshot.activePatternIndex
+                : null;
+            var rollbackFromPatternIndex = snapshot.direction === 'rollback'
+                && previousTraceActivePatternIndex !== null
                 ? previousTraceActivePatternIndex
                 : null;
             query.append(createTraceQueryShellLine(snapshot.queryHead, 'query-trace-query__line--head'));
@@ -2802,7 +2784,7 @@ var workbench;
             }
             query.append(createTraceQueryShellLine(snapshot.queryTail, 'query-trace-query__line--tail'));
             patternContainer.append(query);
-            renderTraceActiveChevron(query);
+            renderTraceActiveMarker(query);
             previousTraceActivePatternIndex = activePatternIndex;
         }
         function clearTraceSurface() {
@@ -2810,7 +2792,7 @@ var workbench;
             renderTraceEmptyState('Run Trace to step through the optimized query.');
             $('#query-trace-frame-label').empty();
             $('#query-trace-summary').empty();
-            $('#query-trace-result').text('').removeClass('query-trace-readout--visible');
+            $('#query-trace-step-label').text('');
             $('#query-trace-scrubber').val('0').prop('max', 0).prop('disabled', true);
             $('#trace-playback-toggle').prop('disabled', true).val('Play');
             $('#trace-previous').prop('disabled', true);
@@ -2848,13 +2830,12 @@ var workbench;
             $('#download-trace').prop('disabled', false);
             var frame = snapshot.frame;
             renderTraceMeta(frame, currentTrace.patterns.length, currentTraceState.frameIndex, frameCount);
+            renderTraceStepLabel(frame, currentTraceState.frameIndex, frameCount);
             if (!frame) {
                 renderTraceEmptyState('No trace frames were returned.');
-                $('#query-trace-result').text('').removeClass('query-trace-readout--visible');
                 return;
             }
             renderTraceQuery(snapshot);
-            renderTraceReadout(frame, snapshot);
             setTraceStatus('');
         }
         function applyTraceResponse(response, requestId) {

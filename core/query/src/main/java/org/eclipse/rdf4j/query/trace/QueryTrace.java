@@ -103,14 +103,21 @@ public class QueryTrace {
 		private String id;
 		private int index;
 		private String text;
+		@JsonInclude(JsonInclude.Include.NON_DEFAULT)
+		private int optionalDepth;
 
 		public Pattern() {
 		}
 
 		public Pattern(String id, int index, String text) {
+			this(id, index, text, 0);
+		}
+
+		public Pattern(String id, int index, String text, int optionalDepth) {
 			this.id = id;
 			this.index = index;
 			this.text = text;
+			this.optionalDepth = optionalDepth;
 		}
 
 		public String getId() {
@@ -135,6 +142,14 @@ public class QueryTrace {
 
 		public void setText(String text) {
 			this.text = text;
+		}
+
+		public int getOptionalDepth() {
+			return optionalDepth;
+		}
+
+		public void setOptionalDepth(int optionalDepth) {
+			this.optionalDepth = optionalDepth;
 		}
 	}
 

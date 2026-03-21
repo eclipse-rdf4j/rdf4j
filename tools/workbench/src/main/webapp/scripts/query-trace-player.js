@@ -17,7 +17,10 @@ var workbench;
                 patterns.push({
                     id: rawPatterns[i].id || ('sp-' + i),
                     index: typeof rawPatterns[i].index === 'number' ? rawPatterns[i].index : i,
-                    text: rawPatterns[i].text || ''
+                    text: rawPatterns[i].text || '',
+                    optionalDepth: typeof rawPatterns[i].optionalDepth === 'number' && rawPatterns[i].optionalDepth > 0
+                        ? rawPatterns[i].optionalDepth
+                        : 0
                 });
             }
             for (var j = 0; j < rawFrames.length; j++) {
@@ -108,16 +111,29 @@ var workbench;
         queryTracePlayer.setPlaying = setPlaying;
         function snapshot(state) {
             var activeFrame = getActiveFrame(state);
+            var previousFrame = getPreviousFrame(state);
             var patternSnapshots = [];
             var queryLines = [];
             var tracePatterns = state && state.trace ? state.trace.patterns : [];
             var traceFilters = state && state.trace && state.trace.filters ? state.trace.filters : [];
             var patternBindings = buildPatternBindingsByPatternId(state);
             var currentBindings = buildCurrentBindings(patternBindings, tracePatterns, activeFrame);
+            var direction = getTraceDirection(previousFrame, activeFrame);
+            var changedBindingStates = buildChangedBindingStates(state, activeFrame);
+            var currentOptionalDepth = 0;
             for (var i = 0; i < tracePatterns.length; i++) {
                 var isActive = !!activeFrame && tracePatterns[i].id === activeFrame.patternId;
                 var isPending = isPatternPending(tracePatterns[i], activeFrame);
-                var sparqlText = renderPatternAsSparqlLine(tracePatterns[i].text);
+                var optionalDepth = getOptionalDepth(tracePatterns[i]);
+                while (currentOptionalDepth < optionalDepth) {
+                    queryLines.push(createOptionalBoundaryLine('optionalStart', currentOptionalDepth));
+                    currentOptionalDepth += 1;
+                }
+                while (currentOptionalDepth > optionalDepth) {
+                    currentOptionalDepth -= 1;
+                    queryLines.push(createOptionalBoundaryLine('optionalEnd', currentOptionalDepth));
+                }
+                var sparqlText = renderPatternAsSparqlLine(tracePatterns[i].text, optionalDepth);
                 var lineBindings = isPending
                     ? {}
                     : filterBindingsForQueryLine(sparqlText, formatBindings(patternBindings[tracePatterns[i].id] || {}));
@@ -132,29 +148,39 @@ var workbench;
                         : {}
                 });
                 queryLines.push({
+                    kind: 'pattern',
                     pattern: tracePatterns[i],
                     gutterLabel: String(tracePatterns[i].index + 1),
                     active: isActive,
                     pending: isPending,
                     sparqlText: sparqlText,
                     tooltipBindings: lineBindings,
-                    tokens: tokenizeQueryLine(sparqlText, lineBindings)
+                    tokens: tokenizeQueryLine(sparqlText, lineBindings, buildBindingStates(lineBindings, isActive ? changedBindingStates : null))
                 });
+            }
+            while (currentOptionalDepth > 0) {
+                currentOptionalDepth -= 1;
+                queryLines.push(createOptionalBoundaryLine('optionalEnd', currentOptionalDepth));
             }
             for (var j = 0; j < traceFilters.length; j++) {
                 var filterLineText = renderFilterAsSparqlLine(traceFilters[j]);
                 var filterBindings = filterBindingsForQueryLine(filterLineText, currentBindings);
                 queryLines.push({
+                    kind: 'filter',
                     gutterLabel: '',
                     active: false,
                     pending: false,
                     sparqlText: filterLineText,
                     tooltipBindings: filterBindings,
-                    tokens: tokenizeQueryLine(filterLineText, filterBindings)
+                    tokens: tokenizeQueryLine(filterLineText, filterBindings, buildBindingStates(filterBindings, null))
                 });
             }
             return {
                 frame: activeFrame,
+                direction: direction,
+                activePatternIndex: activeFrame && typeof activeFrame.patternIndex === 'number'
+                    ? activeFrame.patternIndex
+                    : -1,
                 patterns: patternSnapshots,
                 queryHead: state && state.trace && state.trace.distinct ? 'SELECT DISTINCT * WHERE {' : 'SELECT * WHERE {',
                 queryTail: '}',
@@ -163,6 +189,20 @@ var workbench;
             };
         }
         queryTracePlayer.snapshot = snapshot;
+        function createOptionalBoundaryLine(kind, optionalDepth) {
+            return {
+                kind: kind,
+                gutterLabel: '',
+                active: false,
+                pending: false,
+                sparqlText: kind === 'optionalStart'
+                    ? renderOptionalStartLine(optionalDepth)
+                    : renderOptionalEndLine(optionalDepth),
+                tooltipBindings: {},
+                tokens: [{ text: kind === 'optionalStart' ? renderOptionalStartLine(optionalDepth)
+                            : renderOptionalEndLine(optionalDepth) }]
+            };
+        }
         function updateFrameIndex(state, nextFrameIndex) {
             return {
                 trace: state.trace,
@@ -182,6 +222,12 @@ var workbench;
                 return frameCount - 1;
             }
             return frameIndex;
+        }
+        function getPreviousFrame(state) {
+            if (!state || !state.trace || !state.trace.frames.length || state.frameIndex <= 0) {
+                return null;
+            }
+            return state.trace.frames[clampFrameIndex(state, state.frameIndex) - 1];
         }
         function buildPatternBindingsByPatternId(state) {
             var bindingsByPattern = {};
@@ -257,6 +303,76 @@ var workbench;
             }
             return frame.inputBindings || {};
         }
+        function getTraceDirection(previousFrame, activeFrame) {
+            if (!activeFrame || typeof activeFrame.patternIndex !== 'number' || activeFrame.patternIndex < 0) {
+                return 'initial';
+            }
+            if (!previousFrame || typeof previousFrame.patternIndex !== 'number' || previousFrame.patternIndex < 0) {
+                return 'initial';
+            }
+            if (activeFrame.patternIndex > previousFrame.patternIndex) {
+                return 'forward';
+            }
+            if (activeFrame.patternIndex < previousFrame.patternIndex) {
+                return 'rollback';
+            }
+            return 'steady';
+        }
+        function buildChangedBindingStates(state, activeFrame) {
+            var bindingStates = {};
+            if (!activeFrame) {
+                return bindingStates;
+            }
+            var previousBindings = formatBindings(findPreviousPatternBindings(state, activeFrame));
+            var currentBindings = formatBindings(getFrameBindings(activeFrame));
+            for (var bindingName in currentBindings) {
+                if (!currentBindings.hasOwnProperty(bindingName)) {
+                    continue;
+                }
+                bindingStates[bindingName] = !previousBindings.hasOwnProperty(bindingName)
+                    || previousBindings[bindingName] !== currentBindings[bindingName]
+                    ? 'changed'
+                    : 'stable';
+            }
+            return bindingStates;
+        }
+        function findPreviousPatternBindings(state, activeFrame) {
+            if (!state || !state.trace || !state.trace.frames.length || !activeFrame) {
+                return {};
+            }
+            var activeIndex = clampFrameIndex(state, state.frameIndex);
+            for (var i = activeIndex - 1; i >= 0; i--) {
+                var candidate = state.trace.frames[i];
+                if (isSamePatternFrame(candidate, activeFrame)) {
+                    return getFrameBindings(candidate);
+                }
+            }
+            return {};
+        }
+        function isSamePatternFrame(left, right) {
+            if (!left || !right) {
+                return false;
+            }
+            if (left.patternId && right.patternId) {
+                return left.patternId === right.patternId;
+            }
+            return left.patternIndex === right.patternIndex;
+        }
+        function buildBindingStates(tooltipBindings, activeBindingStates) {
+            var bindingStates = {};
+            if (!tooltipBindings) {
+                return bindingStates;
+            }
+            for (var bindingName in tooltipBindings) {
+                if (!tooltipBindings.hasOwnProperty(bindingName)) {
+                    continue;
+                }
+                bindingStates[bindingName] = activeBindingStates && activeBindingStates[bindingName]
+                    ? activeBindingStates[bindingName]
+                    : 'stable';
+            }
+            return bindingStates;
+        }
         function mergeBindings(target, source) {
             if (!source) {
                 return;
@@ -295,18 +411,37 @@ var workbench;
             }
             return lineBindings;
         }
-        function renderPatternAsSparqlLine(patternText) {
+        function getOptionalDepth(pattern) {
+            return pattern && typeof pattern.optionalDepth === 'number' && pattern.optionalDepth > 0
+                ? pattern.optionalDepth
+                : 0;
+        }
+        function renderPatternAsSparqlLine(patternText, optionalDepth) {
+            var indent = buildQueryIndent(optionalDepth);
             var contextMatch = patternText.match(/^(.*)\s+\[([^\]]+)\]$/);
             if (contextMatch) {
-                return '  GRAPH ' + formatTraceValue(contextMatch[2]) + ' { '
+                return indent + 'GRAPH ' + formatTraceValue(contextMatch[2]) + ' { '
                     + compactTraceText(contextMatch[1]) + ' . }';
             }
-            return '  ' + compactTraceText(patternText) + ' .';
+            return indent + compactTraceText(patternText) + ' .';
         }
         function renderFilterAsSparqlLine(filterText) {
-            return '  ' + compactTraceText(filterText);
+            return buildQueryIndent(0) + compactTraceText(filterText);
         }
-        function tokenizeQueryLine(sparqlText, tooltipBindings) {
+        function renderOptionalStartLine(optionalDepth) {
+            return buildQueryIndent(optionalDepth) + 'OPTIONAL {';
+        }
+        function renderOptionalEndLine(optionalDepth) {
+            return buildQueryIndent(optionalDepth) + '}';
+        }
+        function buildQueryIndent(optionalDepth) {
+            var indent = '';
+            for (var i = 0; i <= optionalDepth; i++) {
+                indent += '  ';
+            }
+            return indent;
+        }
+        function tokenizeQueryLine(sparqlText, tooltipBindings, bindingStates) {
             var tokens = [];
             var variablePattern = /\?([A-Za-z_][A-Za-z0-9_-]*)/g;
             var match;
@@ -321,6 +456,9 @@ var workbench;
                 };
                 if (tooltipBindings && Object.prototype.hasOwnProperty.call(tooltipBindings, match[1])) {
                     token.bindingValue = tooltipBindings[match[1]];
+                    token.bindingState = bindingStates && Object.prototype.hasOwnProperty.call(bindingStates, match[1])
+                        ? bindingStates[match[1]]
+                        : 'stable';
                 }
                 tokens.push(token);
                 nextIndex = match.index + match[0].length;

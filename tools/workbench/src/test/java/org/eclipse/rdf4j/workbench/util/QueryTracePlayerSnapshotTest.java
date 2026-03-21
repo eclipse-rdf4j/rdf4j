@@ -246,6 +246,116 @@ class QueryTracePlayerSnapshotTest {
 			+ "  queryLines: snapshot.queryLines.map(line => line.sparqlText)\n"
 			+ "}));\n";
 
+	private static final String DELTA_STATE_NODE_SCRIPT = "const fs = require('fs');\n"
+			+ "const vm = require('vm');\n"
+			+ "const source = fs.readFileSync(process.argv[1], 'utf8');\n"
+			+ "vm.runInThisContext(source);\n"
+			+ "const trace = workbench.queryTracePlayer.normalizeTrace({\n"
+			+ "  patterns: [\n"
+			+ "    { id: 'sp-0', index: 0, text: '?a <urn:knows> ?b' },\n"
+			+ "    { id: 'sp-1', index: 1, text: '?b <urn:name> ?name' }\n"
+			+ "  ],\n"
+			+ "  frames: [\n"
+			+ "    {\n"
+			+ "      index: 0,\n"
+			+ "      event: 'match',\n"
+			+ "      patternId: 'sp-0',\n"
+			+ "      patternIndex: 0,\n"
+			+ "      outputBindings: { a: '<urn:alice>', b: '<urn:bob>' }\n"
+			+ "    },\n"
+			+ "    {\n"
+			+ "      index: 1,\n"
+			+ "      event: 'probe',\n"
+			+ "      patternId: 'sp-1',\n"
+			+ "      patternIndex: 1,\n"
+			+ "      inputBindings: { b: '<urn:bob>' }\n"
+			+ "    },\n"
+			+ "    {\n"
+			+ "      index: 2,\n"
+			+ "      event: 'match',\n"
+			+ "      patternId: 'sp-0',\n"
+			+ "      patternIndex: 0,\n"
+			+ "      outputBindings: { a: '<urn:alice>', b: '<urn:betty>' }\n"
+			+ "    }\n"
+			+ "  ]\n"
+			+ "});\n"
+			+ "let forwardState = workbench.queryTracePlayer.seek(workbench.queryTracePlayer.createState(trace), 1);\n"
+			+ "let rollbackState = workbench.queryTracePlayer.seek(workbench.queryTracePlayer.createState(trace), 2);\n"
+			+ "const forwardSnapshot = workbench.queryTracePlayer.snapshot(forwardState);\n"
+			+ "const rollbackSnapshot = workbench.queryTracePlayer.snapshot(rollbackState);\n"
+			+ "const rollbackActiveLine = rollbackSnapshot.queryLines[0];\n"
+			+ "process.stdout.write(JSON.stringify({\n"
+			+ "  forwardDirection: forwardSnapshot.direction,\n"
+			+ "  rollbackDirection: rollbackSnapshot.direction,\n"
+			+ "  rollbackVariables: rollbackActiveLine.tokens.filter(token => token.variableName).map(token => ({\n"
+			+ "    name: token.variableName,\n"
+			+ "    value: token.bindingValue || null,\n"
+			+ "    state: token.bindingState || null\n"
+			+ "  }))\n"
+			+ "}));\n";
+
+	private static final String FILTER_CUE_NODE_SCRIPT = "const fs = require('fs');\n"
+			+ "const vm = require('vm');\n"
+			+ "const source = fs.readFileSync(process.argv[1], 'utf8');\n"
+			+ "vm.runInThisContext(source);\n"
+			+ "const trace = workbench.queryTracePlayer.normalizeTrace({\n"
+			+ "  filters: ['FILTER(?a != ?c)'],\n"
+			+ "  patterns: [\n"
+			+ "    { id: 'sp-0', index: 0, text: '?a <urn:trace:kind> ?c' }\n"
+			+ "  ],\n"
+			+ "  frames: [\n"
+			+ "    {\n"
+			+ "      index: 0,\n"
+			+ "      event: 'match',\n"
+			+ "      patternId: 'sp-0',\n"
+			+ "      patternIndex: 0,\n"
+			+ "      outputBindings: { a: '<urn:alice>', c: '<urn:Person>' }\n"
+			+ "    }\n"
+			+ "  ]\n"
+			+ "});\n"
+			+ "const snapshot = workbench.queryTracePlayer.snapshot(workbench.queryTracePlayer.createState(trace));\n"
+			+ "process.stdout.write(JSON.stringify({\n"
+			+ "  lineKinds: snapshot.queryLines.map(line => line.kind),\n"
+			+ "  lineActive: snapshot.queryLines.map(line => line.active)\n"
+			+ "}));\n";
+
+	private static final String OPTIONAL_NODE_SCRIPT = "const fs = require('fs');\n"
+			+ "const vm = require('vm');\n"
+			+ "const source = fs.readFileSync(process.argv[1], 'utf8');\n"
+			+ "vm.runInThisContext(source);\n"
+			+ "const trace = workbench.queryTracePlayer.normalizeTrace({\n"
+			+ "  distinct: true,\n"
+			+ "  filters: ['FILTER(?a != ?person)'],\n"
+			+ "  patterns: [\n"
+			+ "    { id: 'sp-0', index: 0, text: '?a <urn:trace:knows> ?person', optionalDepth: 0 },\n"
+			+ "    { id: 'sp-1', index: 1, text: '?person <urn:trace:name> ?name', optionalDepth: 1 }\n"
+			+ "  ],\n"
+			+ "  frames: [\n"
+			+ "    {\n"
+			+ "      index: 0,\n"
+			+ "      event: 'match',\n"
+			+ "      patternId: 'sp-0',\n"
+			+ "      patternIndex: 0,\n"
+			+ "      outputBindings: { a: '<urn:alice>', person: '<urn:bob>' }\n"
+			+ "    },\n"
+			+ "    {\n"
+			+ "      index: 1,\n"
+			+ "      event: 'probe',\n"
+			+ "      patternId: 'sp-1',\n"
+			+ "      patternIndex: 1,\n"
+			+ "      inputBindings: { a: '<urn:alice>', person: '<urn:bob>' }\n"
+			+ "    }\n"
+			+ "  ]\n"
+			+ "});\n"
+			+ "let state = workbench.queryTracePlayer.seek(workbench.queryTracePlayer.createState(trace), 1);\n"
+			+ "const snapshot = workbench.queryTracePlayer.snapshot(state);\n"
+			+ "process.stdout.write(JSON.stringify({\n"
+			+ "  queryHead: snapshot.queryHead,\n"
+			+ "  lineKinds: snapshot.queryLines.map(line => line.kind),\n"
+			+ "  lineTexts: snapshot.queryLines.map(line => line.sparqlText),\n"
+			+ "  lineActive: snapshot.queryLines.map(line => line.active)\n"
+			+ "}));\n";
+
 	@Test
 	void activeTraceLineShouldExposeQueryLikeTooltipBindings() throws Exception {
 		assertThat(runNodeScript(NODE_SCRIPT)).isEqualTo(
@@ -292,6 +402,31 @@ class QueryTracePlayerSnapshotTest {
 		assertThat(runNodeScript(FILTER_DISTINCT_NODE_SCRIPT)).isEqualTo(
 				"{\"queryHead\":\"SELECT DISTINCT * WHERE {\","
 						+ "\"queryLines\":[\"  ?a <urn:trace:kind> ?c .\",\"  FILTER(?a != ?c)\"]}");
+	}
+
+	@Test
+	void traceSnapshotShouldExposeDirectionAndBindingDeltaState() throws Exception {
+		assertThat(runNodeScript(DELTA_STATE_NODE_SCRIPT)).isEqualTo(
+				"{\"forwardDirection\":\"forward\","
+						+ "\"rollbackDirection\":\"rollback\","
+						+ "\"rollbackVariables\":[{\"name\":\"a\",\"value\":\"<urn:alice>\",\"state\":\"stable\"},"
+						+ "{\"name\":\"b\",\"value\":\"<urn:betty>\",\"state\":\"changed\"}]}");
+	}
+
+	@Test
+	void traceSnapshotShouldKeepFilterLinesOutOfActiveExecutionCue() throws Exception {
+		assertThat(runNodeScript(FILTER_CUE_NODE_SCRIPT)).isEqualTo(
+				"{\"lineKinds\":[\"pattern\",\"filter\"],\"lineActive\":[true,false]}");
+	}
+
+	@Test
+	void traceSnapshotShouldRenderOptionalBlocksWithWrapperMetadata() throws Exception {
+		assertThat(runNodeScript(OPTIONAL_NODE_SCRIPT)).isEqualTo(
+				"{\"queryHead\":\"SELECT DISTINCT * WHERE {\","
+						+ "\"lineKinds\":[\"pattern\",\"optionalStart\",\"pattern\",\"optionalEnd\",\"filter\"],"
+						+ "\"lineTexts\":[\"  ?a <urn:trace:knows> ?person .\",\"  OPTIONAL {\","
+						+ "\"    ?person <urn:trace:name> ?name .\",\"  }\",\"  FILTER(?a != ?person)\"],"
+						+ "\"lineActive\":[false,false,true,false,false]}");
 	}
 
 	private static String runNodeScript(String script) throws Exception {

@@ -355,6 +355,8 @@
                                     <input id="trace-playback-toggle" type="button" value="Play" disabled="disabled"/>
                                     <input id="trace-next" type="button" value="Next" disabled="disabled"/>
                                 </div>
+                                <div id="query-trace-step-label" class="query-trace-step-label"
+                                     aria-live="polite"></div>
                                 <div class="query-trace-transport-scrubber">
                                     <label class="query-trace-scrubber-label" for="query-trace-scrubber">
                                         Step through execution
@@ -365,9 +367,6 @@
                             </div>
                             <div class="query-trace-canvas">
                                 <div id="query-trace-patterns" class="query-trace-patterns"></div>
-                                <div id="query-trace-result" class="query-trace-readout">
-                                        <xsl:value-of select="$trace"/>
-                                </div>
                             </div>
                         </div>
                     </div>

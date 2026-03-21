@@ -18,12 +18,16 @@ import java.util.List;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Supported demo shape: top-level QueryRoot/Projection/Slice/Distinct/Filter wrappers over a single StatementPattern or
@@ -32,17 +36,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 public final class QueryTraceAnalyzer {
 
 	private static final String UNSUPPORTED_MESSAGE = "Trace demo only supports simple queries with optional "
-			+ "projection/root/limit/distinct/filter wrappers and JoinIterator joins over statement patterns.";
+			+ "projection/root/limit/distinct/filter wrappers, JoinIterator joins, and OPTIONAL "
+			+ "branches over statement patterns.";
 
 	private QueryTraceAnalyzer() {
 	}
 
 	public static Analysis analyze(TupleExpr tupleExpr) {
-		List<StatementPattern> patterns = new ArrayList<>();
+		List<CollectedPattern> patterns = new ArrayList<>();
 		List<String> filters = new ArrayList<>();
 		UnwrappedQuery unwrappedQuery = unwrap(tupleExpr, filters);
 		TupleExpr current = unwrappedQuery.current;
-		if (!collectPatterns(current, patterns)) {
+		if (!collectPatterns(current, patterns, filters, 0)) {
 			return Analysis.unsupported(UNSUPPORTED_MESSAGE);
 		}
 		if (patterns.isEmpty()) {
@@ -78,33 +83,75 @@ public final class QueryTraceAnalyzer {
 		return UnwrappedQuery.supported(current, distinct);
 	}
 
-	private static boolean collectPatterns(TupleExpr tupleExpr, List<StatementPattern> patterns) {
+	private static boolean collectPatterns(TupleExpr tupleExpr, List<CollectedPattern> patterns, List<String> filters,
+			int optionalDepth) {
 		if (tupleExpr instanceof StatementPattern) {
-			patterns.add((StatementPattern) tupleExpr);
+			patterns.add(new CollectedPattern((StatementPattern) tupleExpr, optionalDepth));
 			return true;
 		}
-		if (!(tupleExpr instanceof Join)) {
-			return false;
+		if (tupleExpr instanceof Filter) {
+			Filter filter = (Filter) tupleExpr;
+			try {
+				filters.add(QueryTraceRenderUtils.renderFilter(filter.getCondition()));
+			} catch (IllegalArgumentException e) {
+				return false;
+			}
+			return collectPatterns(filter.getArg(), patterns, filters, optionalDepth);
 		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			if (!JoinIterator.class.getSimpleName().equals(join.getAlgorithmName())) {
+				return false;
+			}
+			if (!collectPatterns(join.getLeftArg(), patterns, filters, optionalDepth)) {
+				return false;
+			}
+			return collectPatterns(join.getRightArg(), patterns, filters, optionalDepth);
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+			if (!isSupportedLeftJoinAlgorithm(leftJoin.getAlgorithmName())) {
+				return false;
+			}
+			if (leftJoin.hasCondition() && !collectLeftJoinCondition(leftJoin, filters)) {
+				return false;
+			}
+			if (!collectPatterns(leftJoin.getLeftArg(), patterns, filters, optionalDepth)) {
+				return false;
+			}
+			return collectPatterns(leftJoin.getRightArg(), patterns, filters, optionalDepth + 1);
+		}
+		return false;
+	}
 
-		Join join = (Join) tupleExpr;
-		if (!JoinIterator.class.getSimpleName().equals(join.getAlgorithmName())) {
+	private static boolean isSupportedLeftJoinAlgorithm(String algorithmName) {
+		if (algorithmName == null || algorithmName.isEmpty()) {
+			return true;
+		}
+		return LeftJoinIterator.class.getSimpleName().equals(algorithmName)
+				|| BadlyDesignedLeftJoinIterator.class.getSimpleName().equals(algorithmName);
+	}
+
+	private static boolean collectLeftJoinCondition(LeftJoin leftJoin, List<String> filters) {
+		if (!leftJoin.getAssuredBindingNames().containsAll(VarNameCollector.process(leftJoin.getCondition()))) {
 			return false;
 		}
-		if (!collectPatterns(join.getLeftArg(), patterns)) {
+		try {
+			filters.add(QueryTraceRenderUtils.renderFilter(leftJoin.getCondition()));
+		} catch (IllegalArgumentException e) {
 			return false;
 		}
-		return collectPatterns(join.getRightArg(), patterns);
+		return true;
 	}
 
 	public static final class Analysis {
 		private final boolean supported;
 		private final String message;
-		private final List<StatementPattern> patterns;
+		private final List<CollectedPattern> patterns;
 		private final boolean distinct;
 		private final List<String> filters;
 
-		private Analysis(boolean supported, String message, List<StatementPattern> patterns, boolean distinct,
+		private Analysis(boolean supported, String message, List<CollectedPattern> patterns, boolean distinct,
 				List<String> filters) {
 			this.supported = supported;
 			this.message = message;
@@ -113,7 +160,7 @@ public final class QueryTraceAnalyzer {
 			this.filters = filters;
 		}
 
-		public static Analysis supported(List<StatementPattern> patterns, boolean distinct, List<String> filters) {
+		public static Analysis supported(List<CollectedPattern> patterns, boolean distinct, List<String> filters) {
 			return new Analysis(true, null, Collections.unmodifiableList(new ArrayList<>(patterns)), distinct,
 					Collections.unmodifiableList(new ArrayList<>(filters)));
 		}
@@ -131,6 +178,14 @@ public final class QueryTraceAnalyzer {
 		}
 
 		public List<StatementPattern> getPatterns() {
+			List<StatementPattern> statementPatterns = new ArrayList<>(patterns.size());
+			for (CollectedPattern pattern : patterns) {
+				statementPatterns.add(pattern.statementPattern);
+			}
+			return Collections.unmodifiableList(statementPatterns);
+		}
+
+		List<CollectedPattern> getCollectedPatterns() {
 			return patterns;
 		}
 
@@ -140,6 +195,24 @@ public final class QueryTraceAnalyzer {
 
 		public List<String> getFilters() {
 			return filters;
+		}
+	}
+
+	static final class CollectedPattern {
+		private final StatementPattern statementPattern;
+		private final int optionalDepth;
+
+		CollectedPattern(StatementPattern statementPattern, int optionalDepth) {
+			this.statementPattern = statementPattern;
+			this.optionalDepth = optionalDepth;
+		}
+
+		StatementPattern getStatementPattern() {
+			return statementPattern;
+		}
+
+		int getOptionalDepth() {
+			return optionalDepth;
 		}
 	}
 

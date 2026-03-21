@@ -63,4 +63,19 @@ class QueryTraceJsonTest {
 		assertTrue(json.contains("\"distinct\":true"), json);
 		assertTrue(json.contains("\"filters\":[\"FILTER(?a != ?c)\"]"), json);
 	}
+
+	@Test
+	void roundTripPreservesOptionalPatternDepth() throws Exception {
+		QueryTrace trace = mapper.readValue(
+				"{\"patterns\":[{\"id\":\"sp-0\",\"index\":0,\"text\":\"?a <urn:trace:knows> ?person\",\"optionalDepth\":0},"
+						+ "{\"id\":\"sp-1\",\"index\":1,\"text\":\"?person <urn:trace:name> ?name\",\"optionalDepth\":1}],"
+						+ "\"frames\":[]}",
+				QueryTrace.class);
+
+		String json = mapper.writeValueAsString(trace);
+
+		assertTrue(json.contains("\"optionalDepth\":1"), json);
+		assertEquals(0, trace.getPatterns().get(0).getOptionalDepth());
+		assertEquals(1, trace.getPatterns().get(1).getOptionalDepth());
+	}
 }

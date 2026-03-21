@@ -259,6 +259,47 @@ class QueryTraceExecutionTest {
 	}
 
 	@Test
+	void traceShouldSupportOptionalWithCurrentWrappers() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+
+		try {
+			addMinimalTraceData(repository);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery query = connection.prepareTupleQuery(
+						"SELECT DISTINCT ?a ?name WHERE { ?a <urn:trace:knows> ?person . "
+								+ "OPTIONAL { ?person <urn:trace:name> ?name } FILTER(?a != ?person) } LIMIT 5");
+				String optimizedPlan = query.explain(Explanation.Level.Optimized).toString();
+
+				QueryTrace trace = query.trace();
+
+				assertThat(optimizedPlan)
+						.contains("Slice")
+						.contains("Distinct")
+						.contains("Filter")
+						.contains("LeftJoin");
+				assertThat(trace.isSuccess())
+						.withFailMessage("trace error %s:%s%nplan:%n%s",
+								trace.getError() == null ? "<none>" : trace.getError().getCode(),
+								trace.getError() == null ? "<none>" : trace.getError().getMessage(),
+								optimizedPlan)
+						.isTrue();
+				assertThat(trace.isDistinct()).isTrue();
+				assertThat(trace.getFilters()).containsExactly("FILTER(?a != ?person)");
+				assertThat(trace.getPatterns())
+						.extracting(QueryTrace.Pattern::getText, QueryTrace.Pattern::getOptionalDepth)
+						.containsExactly(
+								org.assertj.core.groups.Tuple.tuple("?a <urn:trace:knows> ?person", 0),
+								org.assertj.core.groups.Tuple.tuple("?person <urn:trace:name> ?name", 1));
+				assertThat(trace.getFrames()).isNotEmpty();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void traceShouldFailWhenFrameLimitIsExceeded() {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		repository.init();

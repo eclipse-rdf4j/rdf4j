@@ -42,18 +42,34 @@ public final class QueryTraceRecorder {
 	}
 
 	public QueryTraceRecorder(QueryTraceAnalyzer.Analysis analysis) {
-		this(analysis.getPatterns(), analysis.isDistinct(), analysis.getFilters());
+		this.distinct = analysis.isDistinct();
+		this.filters = new ArrayList<>(analysis.getFilters());
+		initializePatterns(analysis.getCollectedPatterns());
 	}
 
 	public QueryTraceRecorder(List<StatementPattern> statementPatterns, boolean distinct, List<String> filters) {
 		this.distinct = distinct;
 		this.filters = new ArrayList<>(filters);
+		initializePatterns(asCollectedPatterns(statementPatterns));
+	}
+
+	private static List<QueryTraceAnalyzer.CollectedPattern> asCollectedPatterns(
+			List<StatementPattern> statementPatterns) {
+		List<QueryTraceAnalyzer.CollectedPattern> collectedPatterns = new ArrayList<>(statementPatterns.size());
+		for (StatementPattern statementPattern : statementPatterns) {
+			collectedPatterns.add(new QueryTraceAnalyzer.CollectedPattern(statementPattern, 0));
+		}
+		return collectedPatterns;
+	}
+
+	private void initializePatterns(List<QueryTraceAnalyzer.CollectedPattern> statementPatterns) {
 		for (int i = 0; i < statementPatterns.size(); i++) {
-			StatementPattern statementPattern = statementPatterns.get(i);
+			QueryTraceAnalyzer.CollectedPattern statementPattern = statementPatterns.get(i);
 			QueryTrace.Pattern pattern = new QueryTrace.Pattern("sp-" + i, i,
-					QueryTraceRenderUtils.renderStatementPattern(statementPattern));
+					QueryTraceRenderUtils.renderStatementPattern(statementPattern.getStatementPattern()),
+					statementPattern.getOptionalDepth());
 			patterns.add(pattern);
-			patternRefs.put(statementPattern, new PatternRef(pattern));
+			patternRefs.put(statementPattern.getStatementPattern(), new PatternRef(pattern));
 		}
 	}
 
