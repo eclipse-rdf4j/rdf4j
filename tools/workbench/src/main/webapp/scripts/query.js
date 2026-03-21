@@ -2676,29 +2676,27 @@ var workbench;
             }
             return (rollbackFromPatternIndex - queryLine.pattern.index) * 48;
         }
-        function computeTraceActiveMarkerOffset(activeLine) {
-            var gutter = activeLine.children('.query-trace-query__gutter').first();
-            return activeLine.position().top + (((gutter.outerHeight() || activeLine.outerHeight() || 0)) / 2);
+        function computeTraceActiveMarkerOffset(activePatternIndex) {
+            return ((activePatternIndex + 1) * 4)-0.1 + 'em';
         }
-        function renderTraceActiveMarker(query) {
+        function renderTraceActiveMarker(query, activePatternIndex) {
             if (pendingTraceMarkerAnimationFrame !== null) {
                 window.cancelAnimationFrame(pendingTraceMarkerAnimationFrame);
                 pendingTraceMarkerAnimationFrame = null;
             }
-            var activeLine = query.children('.query-trace-query__line--active.query-trace-query__line--pattern').first();
-            if (!activeLine.length) {
+            if (activePatternIndex === null) {
                 previousTraceMarkerOffset = null;
                 return;
             }
             var marker = $('<span class="query-trace-query__active-marker" aria-hidden="true"></span>');
             query.append(marker);
-            var targetOffset = computeTraceActiveMarkerOffset(activeLine);
+            var targetOffset = computeTraceActiveMarkerOffset(activePatternIndex);
             var startOffset = previousTraceMarkerOffset !== null ? previousTraceMarkerOffset : targetOffset;
-            marker.css('transform', 'translate3d(-35px, ' + startOffset + 'px, 0)');
+            marker.css('transform', 'translate3d(0, ' + startOffset + ', 0)');
             previousTraceMarkerOffset = targetOffset;
             pendingTraceMarkerAnimationFrame = window.requestAnimationFrame(function () {
                 pendingTraceMarkerAnimationFrame = null;
-                marker.css('transform', 'translate3d(-35px, ' + targetOffset + 'px, 0)');
+                marker.css('transform', 'translate3d(0, ' + targetOffset + ', 0)');
             });
         }
         function createTraceQueryShellLine(text, modifierClass) {
@@ -2784,7 +2782,7 @@ var workbench;
             }
             query.append(createTraceQueryShellLine(snapshot.queryTail, 'query-trace-query__line--tail'));
             patternContainer.append(query);
-            renderTraceActiveMarker(query);
+            renderTraceActiveMarker(query, activePatternIndex);
             previousTraceActivePatternIndex = activePatternIndex;
         }
         function clearTraceSurface() {

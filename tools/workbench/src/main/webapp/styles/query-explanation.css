@@ -370,6 +370,7 @@
 
 .query-trace-meta-summary,
 .query-trace-meta-frame,
+.query-trace-step-label,
 .query-trace-meta-actions {
     display: flex;
     flex-wrap: wrap;
@@ -408,7 +409,7 @@
 
 .query-trace-transport {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 0.75rem 1rem;
     padding: 0.8rem 0.95rem;
@@ -487,19 +488,23 @@
 .query-trace-query {
     --trace-gutter-width: 2.45rem;
     --trace-track-x: 2rem;
+    --trace-query-font-size: 0.95rem;
+    --trace-query-line-height: 1.7;
+    --trace-line-block-padding: 0.28rem;
+    --trace-marker-size: 0.76rem;
     position: relative;
     padding-left: 0.35rem;
     min-width: max-content;
     color: var(--trace-ink);
     font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-    font-size: 0.95rem;
-    line-height: 1.7;
+    font-size: var(--trace-query-font-size);
+    line-height: var(--trace-query-line-height);
 }
 
 .query-trace-query__line {
     display: grid;
     grid-template-columns: var(--trace-gutter-width) minmax(0, 1fr);
-    column-gap: 0.7rem;
+    column-gap: 0.9rem;
     align-items: start;
 }
 
@@ -514,14 +519,16 @@
 
 .query-trace-query__gutter {
     position: relative;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: flex-end;
-    padding: 0.16rem 0.58rem 0 0;
+    min-height: calc(var(--trace-query-font-size) * var(--trace-query-line-height));
+    padding: var(--trace-line-block-padding) 0.85rem 0 0;
     text-align: right;
     color: #8a949c;
     font-size: 0.78rem;
     font-weight: 600;
+    line-height: 1;
     user-select: none;
 }
 
@@ -538,6 +545,8 @@
 
 .query-trace-query__gutter-label {
     position: relative;
+    display: inline-flex;
+    align-items: center;
     z-index: 1;
     min-width: 1rem;
     padding: 0 0.1rem;
@@ -547,7 +556,7 @@
 .query-trace-query__line-content {
     position: relative;
     display: block;
-    padding: 0.28rem 0.68rem;
+    padding: var(--trace-line-block-padding) 0rem;
     border: 1px solid transparent;
     border-radius: 0.86rem;
     white-space: pre-wrap;
@@ -679,8 +688,8 @@
     position: absolute;
     top: 0;
     left: calc(var(--trace-track-x));
-    width: 0.76rem;
-    height: 0.76rem;
+    width: var(--trace-marker-size);
+    height: var(--trace-marker-size);
     border: 2px solid var(--trace-paper-strong);
     border-radius: 999px;
     background: var(--trace-accent);

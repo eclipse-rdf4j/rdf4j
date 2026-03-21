@@ -341,6 +341,8 @@
                                     <div class="query-trace-meta-body">
                                         <div id="query-trace-summary" class="query-trace-meta-summary"></div>
                                         <div id="query-trace-frame-label" class="query-trace-meta-frame"></div>
+                                        <div id="query-trace-step-label" class="query-trace-step-label"
+                                             aria-live="polite"></div>
                                         <div class="query-trace-meta-actions">
                                             <input id="trace-reset" type="button" value="Start over" disabled="disabled"/>
                                             <input id="download-trace" type="button" value="Download JSON"
@@ -355,8 +357,6 @@
                                     <input id="trace-playback-toggle" type="button" value="Play" disabled="disabled"/>
                                     <input id="trace-next" type="button" value="Next" disabled="disabled"/>
                                 </div>
-                                <div id="query-trace-step-label" class="query-trace-step-label"
-                                     aria-live="polite"></div>
                                 <div class="query-trace-transport-scrubber">
                                     <label class="query-trace-scrubber-label" for="query-trace-scrubber">
                                         Step through execution

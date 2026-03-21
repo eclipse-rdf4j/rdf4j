@@ -405,6 +405,23 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void traceUiShouldOnlyShowStepLabelInsideDetailsPanel() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.containsPattern(
+						"<details class=\"query-trace-meta\">[\\s\\S]*<div class=\"query-trace-meta-body\">[\\s\\S]*id=\"query-trace-step-label\"")
+				.doesNotContainPattern(
+						"<div class=\"query-trace-transport\">[\\s\\S]*id=\"query-trace-step-label\"");
+
+		assertThat(queryStyles)
+				.containsPattern(
+						"\\.query-trace-transport\\s*\\{[^}]*grid-template-columns:\\s*auto\\s+minmax\\(0,\\s*1fr\\);");
+	}
+
+	@Test
 	void traceUiShouldMergeStoreAndStandardNamespaces() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
@@ -797,6 +814,20 @@ class QueryTemplateTest {
 				.contains(".query-trace-query__gutter::before")
 				.doesNotContain(".query-trace-query__active-chevron")
 				.doesNotContain("query-trace-chevron-bob");
+	}
+
+	@Test
+	void traceUiShouldStepExecutionMarkerInFixedFourEmIncrements() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("function computeTraceActiveMarkerOffset(activePatternIndex: number): string")
+				.contains("return ((activePatternIndex + 1) * 4) + 'em';")
+				.contains("var targetOffset = computeTraceActiveMarkerOffset(activePatternIndex);")
+				.contains("marker.css('transform', 'translate3d(0, ' + startOffset + ', 0)');")
+				.contains("marker.css('transform', 'translate3d(0, ' + targetOffset + ', 0)');")
+				.doesNotContain("window.getComputedStyle(content.get(0))")
+				.doesNotContain("style.lineHeight");
 	}
 
 	@Test

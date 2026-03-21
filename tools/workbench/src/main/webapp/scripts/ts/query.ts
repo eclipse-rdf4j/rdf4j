@@ -50,7 +50,7 @@ module workbench {
         var currentTrace: workbench.queryTracePlayer.QueryTrace = null;
         var currentTraceState: workbench.queryTracePlayer.TracePlayerState = null;
         var previousTraceActivePatternIndex: number = null;
-        var previousTraceMarkerOffset: number = null;
+        var previousTraceMarkerOffset: string = null;
         var pendingTraceMarkerAnimationFrame: number = null;
         var compareModeEnabled = false;
         var compareSidebarOpen = false;
@@ -3222,30 +3222,28 @@ module workbench {
             return (rollbackFromPatternIndex - queryLine.pattern.index) * 48;
         }
 
-        function computeTraceActiveMarkerOffset(activeLine: JQuery): number {
-            var gutter = activeLine.children('.query-trace-query__gutter').first();
-            return activeLine.position().top + (((gutter.outerHeight() || activeLine.outerHeight() || 0) - 12) / 2);
+        function computeTraceActiveMarkerOffset(activePatternIndex: number): string {
+            return ((activePatternIndex + 1) * 4) + 'em';
         }
 
-        function renderTraceActiveMarker(query: JQuery) {
+        function renderTraceActiveMarker(query: JQuery, activePatternIndex: number) {
             if (pendingTraceMarkerAnimationFrame !== null) {
                 window.cancelAnimationFrame(pendingTraceMarkerAnimationFrame);
                 pendingTraceMarkerAnimationFrame = null;
             }
-            var activeLine = query.children('.query-trace-query__line--active.query-trace-query__line--pattern').first();
-            if (!activeLine.length) {
+            if (activePatternIndex === null) {
                 previousTraceMarkerOffset = null;
                 return;
             }
             var marker = $('<span class="query-trace-query__active-marker" aria-hidden="true"></span>');
             query.append(marker);
-            var targetOffset = computeTraceActiveMarkerOffset(activeLine);
+            var targetOffset = computeTraceActiveMarkerOffset(activePatternIndex);
             var startOffset = previousTraceMarkerOffset !== null ? previousTraceMarkerOffset : targetOffset;
-            marker.css('transform', 'translate3d(0, ' + startOffset + 'px, 0)');
+            marker.css('transform', 'translate3d(0, ' + startOffset + ', 0)');
             previousTraceMarkerOffset = targetOffset;
             pendingTraceMarkerAnimationFrame = window.requestAnimationFrame(function() {
                 pendingTraceMarkerAnimationFrame = null;
-                marker.css('transform', 'translate3d(0, ' + targetOffset + 'px, 0)');
+                marker.css('transform', 'translate3d(0, ' + targetOffset + ', 0)');
             });
         }
 
@@ -3354,7 +3352,7 @@ module workbench {
             }
             query.append(createTraceQueryShellLine(snapshot.queryTail, 'query-trace-query__line--tail'));
             patternContainer.append(query);
-            renderTraceActiveMarker(query);
+            renderTraceActiveMarker(query, activePatternIndex);
             previousTraceActivePatternIndex = activePatternIndex;
         }
 
