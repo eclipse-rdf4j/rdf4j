@@ -19,12 +19,14 @@ import java.nio.file.Path;
 import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests gzip safety: we don't delete the original segment if compression fails, and resulting gzip fully decompresses.
  */
+@Tag("slow")
 class ValueStoreWALGzipSafetyTest {
 
 	@TempDir

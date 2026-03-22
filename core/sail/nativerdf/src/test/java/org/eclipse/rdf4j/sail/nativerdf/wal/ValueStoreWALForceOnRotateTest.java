@@ -28,6 +28,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Proves that rotating a WAL segment must force the previous segment to disk before closing it. This test wraps the
  * writer's FileChannel with a tracking wrapper and invokes the private rotate method via reflection.
  */
+@Tag("slow")
 class ValueStoreWALForceOnRotateTest {
 
 	@TempDir

@@ -21,6 +21,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
  * it removes elements without signalling {@code notFull}, leaving producers blocked in {@code put()} even though the
  * queue is now empty.
  */
+@Tag("slow")
 class ValueStoreWALPurgeWakesProducersTest {
 
 	@TempDir

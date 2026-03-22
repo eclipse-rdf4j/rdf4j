@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Ensures WAL segment numbering remains monotonic across restarts by including gzipped segments when determining the
  * next segment sequence.
  */
+@Tag("slow")
 class ValueStoreWALMonotonicSegmentTest {
 
 	private static final Pattern SEGMENT_GZ = Pattern.compile("wal-(\\d+)\\.v1\\.gz");

@@ -873,24 +873,26 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testExplainAnnotationsDoNotEmitJoinTypeTextOrJson() throws IOException {
+	public void testExplainAnnotationsEmitCartesianJoinTypeTextAndJson() throws IOException {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { ?a a ?c . ?a ?b ?d }");
+			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { ?a a ?c . ?d ?e ?f }");
 
 			Explanation explain = query.explain(Explanation.Level.Optimized);
 			String text = explain.toString();
+			String dot = explain.toDot();
 			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
-			JsonNode joinNode = root.path("plans").get(1);
+			JsonNode joinNode = findFirstPlanNode(root,
+					node -> "cartesian join".equals(node.path("stringMetricsActual").path("joinType").asText(null)));
 
 			assertThat(text).doesNotContain("joinType=regular join");
-			assertThat(text).doesNotContain("joinType=cross join");
-			assertThat(text).contains("bindingState=bound");
+			assertThat(text).contains("joinType=cartesian join");
 			assertThat(text).contains("bindingState=unbound");
+			assertThat(dot).contains("<tr><td>Join type</td><td>cartesian join</td></tr>");
 			assertThat(joinNode).isNotNull();
-			assertThat(joinNode.path("stringMetricsActual").has("joinType")).isFalse();
+			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("cartesian join");
 			assertThat(joinNode.path("plans")
 					.get(0)
 					.path("plans")
@@ -904,7 +906,7 @@ public class QueryPlanRetrievalTest {
 					.get(0)
 					.path("stringMetricsActual")
 					.path("bindingState")
-					.asText()).isEqualTo("bound");
+					.asText()).isEqualTo("unbound");
 		}
 		sailRepository.shutDown();
 	}

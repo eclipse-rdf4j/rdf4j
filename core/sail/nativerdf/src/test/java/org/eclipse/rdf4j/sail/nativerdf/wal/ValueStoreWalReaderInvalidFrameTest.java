@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -29,6 +30,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 /**
  * Ensures the reader marks the scan incomplete when encountering an invalid or oversized frame length.
  */
+@Tag("slow")
 class ValueStoreWalReaderInvalidFrameTest {
 
 	@TempDir

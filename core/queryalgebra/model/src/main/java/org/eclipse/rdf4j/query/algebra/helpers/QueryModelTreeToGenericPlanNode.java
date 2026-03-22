@@ -61,6 +61,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	private final QueryModelNode topTupleExpr;
 	private final Explanation.Level level;
 	private final Set<String> rootIncomingBindings;
+	private final CartesianJoinExplainAnalyzer cartesianJoinExplainAnalyzer;
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this(topTupleExpr, Collections.emptySet(), defaultExplanationLevel(topTupleExpr));
@@ -79,6 +80,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		this.level = level == null ? defaultExplanationLevel(topTupleExpr) : level;
 		this.rootIncomingBindings = rootIncomingBindings == null ? Collections.emptySet()
 				: Collections.unmodifiableSet(new LinkedHashSet<>(rootIncomingBindings));
+		this.cartesianJoinExplainAnalyzer = this.level.includesEvaluationAnnotations()
+				? new CartesianJoinExplainAnalyzer(this.topTupleExpr, this.rootIncomingBindings)
+				: null;
 	}
 
 	public GenericPlanNode getGenericPlanNode() {
@@ -213,6 +217,13 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 		if (node instanceof StatementPattern) {
 			applyIndexAnnotation((StatementPattern) node, genericPlanNode);
+		}
+
+		if (cartesianJoinExplainAnalyzer != null) {
+			String joinType = cartesianJoinExplainAnalyzer.getJoinType(node);
+			if (joinType != null) {
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.JOIN_TYPE, joinType);
+			}
 		}
 	}
 

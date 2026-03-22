@@ -19,6 +19,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -28,6 +29,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 /**
  * Ensures reader reports incomplete when segment sequences are non-contiguous (e.g., segments 1 and 3 present).
  */
+@Tag("slow")
 class ValueStoreWalReaderHasSequenceGapsTest {
 
 	@TempDir
