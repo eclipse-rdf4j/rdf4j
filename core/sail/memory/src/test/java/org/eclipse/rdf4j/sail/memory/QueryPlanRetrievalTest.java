@@ -32,15 +32,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -880,7 +873,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testExplainAnnotationsMarkCertainCrossJoinTextAndJson() throws IOException {
+	public void testExplainAnnotationsDoNotEmitJoinTypeTextOrJson() throws IOException {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
@@ -893,11 +886,11 @@ public class QueryPlanRetrievalTest {
 			JsonNode joinNode = root.path("plans").get(1);
 
 			assertThat(text).doesNotContain("joinType=regular join");
-			assertThat(text).contains("joinType=cross join");
+			assertThat(text).doesNotContain("joinType=cross join");
 			assertThat(text).contains("bindingState=bound");
 			assertThat(text).contains("bindingState=unbound");
 			assertThat(joinNode).isNotNull();
-			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("cross join");
+			assertThat(joinNode.path("stringMetricsActual").has("joinType")).isFalse();
 			assertThat(joinNode.path("plans")
 					.get(0)
 					.path("plans")
@@ -912,78 +905,6 @@ public class QueryPlanRetrievalTest {
 					.path("stringMetricsActual")
 					.path("bindingState")
 					.asText()).isEqualTo("bound");
-		}
-		sailRepository.shutDown();
-	}
-
-	@Test
-	public void testExplainAnnotationsDoNotMarkProjectedAwaySubqueryJoinAsCrossJoin() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		addData(sailRepository);
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			Projection projectedLeft = new Projection(
-					new StatementPattern(Var.of("a"), Var.of("p"), Var.of("d")),
-					new ProjectionElemList(new ProjectionElem("d")));
-			Join join = new Join(projectedLeft, new StatementPattern(Var.of("a"), Var.of("code"), Var.of("code")));
-			join.setAlgorithm("JoinIterator");
-			MapBindingSet bindings = new MapBindingSet();
-			bindings.setBinding("a", RDF.TYPE);
-
-			Explanation explain = connection.getSailConnection()
-					.explain(Explanation.Level.Optimized, join, null,
-							bindings, true, 0);
-			String text = explain.toString();
-			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
-
-			assertThat(text).doesNotContain("joinType=cross join");
-			assertThat(root.path("stringMetricsActual").has("joinType")).isFalse();
-		}
-		sailRepository.shutDown();
-	}
-
-	@Test
-	public void testExplainAnnotationsSuppressUnsupportedTupleExprCrossJoinMarkers() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		addData(sailRepository);
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			Join join = new Join(
-					new UnsupportedStatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
-					new StatementPattern(Var.of("x"), Var.of("p2"), Var.of("o2")));
-			join.setAlgorithm("JoinIterator");
-
-			Explanation explain = connection.getSailConnection()
-					.explain(Explanation.Level.Optimized, join, null,
-							new MapBindingSet(), true, 0);
-			String text = explain.toString();
-			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
-			JsonNode joinNode = findFirstPlanNode(root, node -> "cross join"
-					.equals(node.path("stringMetricsActual").path("joinType").asText(null)));
-
-			assertThat(text).doesNotContain("joinType=cross join");
-			assertThat(joinNode).isNull();
-		}
-		sailRepository.shutDown();
-	}
-
-	@Test
-	public void testExplainAnnotationsDoNotMarkRootBoundJoinAsCrossJoin() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		addData(sailRepository);
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { ?a a ?c . ?a ?b ?d }");
-			query.setBinding("a", RDF.TYPE);
-
-			Explanation explain = query.explain(Explanation.Level.Optimized);
-			String text = explain.toString();
-			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
-			JsonNode joinNode = findFirstPlanNode(root, node -> "cross join"
-					.equals(node.path("stringMetricsActual").path("joinType").asText(null)));
-
-			assertThat(text).doesNotContain("joinType=cross join");
-			assertThat(joinNode).isNull();
 		}
 		sailRepository.shutDown();
 	}
@@ -2146,12 +2067,4 @@ public class QueryPlanRetrievalTest {
 		sailRepository.shutDown();
 
 	}
-
-	private static final class UnsupportedStatementPattern extends StatementPattern {
-
-		private UnsupportedStatementPattern(Var subjectVar, Var predicateVar, Var objectVar) {
-			super(subjectVar, predicateVar, objectVar);
-		}
-	}
-
 }

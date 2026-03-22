@@ -14,10 +14,7 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-import java.util.Set;
 
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -25,15 +22,12 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class QueryModelTreeToGenericPlanNodeTest {
@@ -127,7 +121,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
-	public void annotatesJoinIteratorRightSideVarsAsBoundAndDetectsCrossJoin() {
+	public void annotatesJoinIteratorRightSideVarsAsBound() {
 		Join tupleExpr = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
@@ -137,7 +131,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		tupleExpr.visit(converter);
 		GenericPlanNode root = converter.getGenericPlanNode();
 
-		assertThat(root.getStringMetricsActual()).containsEntry("joinType", "cross join");
+		assertThat(root.getStringMetricsActual()).isNull();
 		assertThat(statementPattern(root, 0).getPlans().get(0).getStringMetricsActual())
 				.containsEntry("bindingState", "unbound");
 		assertThat(statementPattern(root, 1).getPlans().get(0).getStringMetricsActual())
@@ -147,7 +141,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
-	public void annotatesHashJoinRightSideVarsAsUnboundAndDetectsCrossJoin() {
+	public void annotatesHashJoinRightSideVarsAsUnbound() {
 		Join hashJoin = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
@@ -160,132 +154,19 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(hashPlan.getStringMetricsActual()).isNull();
 		assertThat(statementPattern(hashPlan, 1).getPlans().get(0).getStringMetricsActual())
 				.containsEntry("bindingState", "unbound");
+	}
 
-		Join crossJoin = new Join(
+	@Test
+	public void doesNotAnnotateJoinTypeForJoins() {
+		Join join = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				new StatementPattern(Var.of("x"), Var.of("p2"), Var.of("o2")));
-		crossJoin.setAlgorithm("JoinIterator");
-
-		QueryModelTreeToGenericPlanNode crossConverter = new QueryModelTreeToGenericPlanNode(crossJoin);
-		crossJoin.visit(crossConverter);
-
-		assertThat(crossConverter.getGenericPlanNode().getStringMetricsActual())
-				.containsEntry("joinType", "cross join");
-	}
-
-	@Test
-	public void marksJoinAsCrossJoinWhenSharedVarIsGuaranteedByLeftPrefix() {
-		Join join = new Join(
-				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("x")),
-				new StatementPattern(Var.of("x"), Var.of("p2"), Var.of("y")));
 		join.setAlgorithm("JoinIterator");
 
 		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
 		join.visit(converter);
 
-		assertThat(converter.getGenericPlanNode().getStringMetricsActual())
-				.containsEntry("joinType", "cross join");
-	}
-
-	@Test
-	public void marksNestedJoinAsCrossJoinWhenSharedVarComesFromParentJoin() {
-		StatementPattern parentLeft = new StatementPattern(Var.of("a"), Var.of("type"), Var.of("encounter"));
-		StatementPattern nestedLeft = new StatementPattern(Var.of("a"), Var.of("hasCondition"), Var.of("d"));
-		StatementPattern nestedRight = new StatementPattern(Var.of("a"), Var.of("code"), Var.of("code"));
-
-		Join nestedJoin = new Join(nestedLeft, nestedRight);
-		nestedJoin.setAlgorithm("JoinIterator");
-
-		Join rootJoin = new Join(parentLeft, nestedJoin);
-		rootJoin.setAlgorithm("JoinIterator");
-
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(rootJoin);
-		rootJoin.visit(converter);
-		GenericPlanNode root = converter.getGenericPlanNode();
-		GenericPlanNode nestedPlan = root.getPlans().get(1);
-
-		assertThat(nestedPlan.getStringMetricsActual()).containsEntry("joinType", "cross join");
-	}
-
-	@Test
-	public void doesNotMarkNestedJoinAsCrossJoinWhenSharedParentVarIsProjectedAway() {
-		StatementPattern parentLeft = new StatementPattern(Var.of("a"), Var.of("type"), Var.of("encounter"));
-		StatementPattern projectedSource = new StatementPattern(Var.of("a"), Var.of("hasCondition"), Var.of("d"));
-		Projection projectedLeft = new Projection(projectedSource, new ProjectionElemList(new ProjectionElem("d")));
-		StatementPattern nestedRight = new StatementPattern(Var.of("a"), Var.of("code"), Var.of("code"));
-
-		Join nestedJoin = new Join(projectedLeft, nestedRight);
-		nestedJoin.setAlgorithm("JoinIterator");
-
-		Join rootJoin = new Join(parentLeft, nestedJoin);
-		rootJoin.setAlgorithm("JoinIterator");
-
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(rootJoin);
-		rootJoin.visit(converter);
-		GenericPlanNode root = converter.getGenericPlanNode();
-		GenericPlanNode nestedPlan = root.getPlans().get(1);
-
-		assertThat(nestedPlan.getStringMetricsActual()).isNull();
-	}
-
-	@Test
-	public void doesNotMarkJoinAsCrossJoinWhenBothSidesDependOnIncomingBindings() {
-		StatementPattern left = new StatementPattern(Var.of("d"), Var.of("code"), Var.of("code"));
-		StatementPattern right = new StatementPattern(Var.of("a"), Var.of("handledBy"), Var.of("person"));
-
-		Join join = new Join(left, right);
-		join.setAlgorithm("JoinIterator");
-
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, Set.of("a", "d"));
-		join.visit(converter);
-
-		assertThat(converter.getGenericPlanNode().getStringMetricsActual()).isNull();
-	}
-
-	@Test
-	public void doesNotMarkJoinAsCrossJoinWhenValuesBindingIsNotAssured() {
-		BindingSetAssignment values = new BindingSetAssignment();
-		MapBindingSet first = new MapBindingSet();
-		first.setBinding("x", SimpleValueFactory.getInstance().createLiteral("first"));
-		values.setBindingSets(List.of(first, new MapBindingSet()));
-
-		Join join = new Join(values,
-				new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")));
-		join.setAlgorithm("JoinIterator");
-
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
-		join.visit(converter);
-
-		assertThat(converter.getGenericPlanNode().getStringMetricsActual()).isNull();
-	}
-
-	@Test
-	public void marksJoinAsCrossJoinWhenExtensionPropagatesConstantAlias() {
-		Extension extension = new Extension(new SingletonSet(),
-				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("fixed")), "x"),
-				new ExtensionElem(Var.of("x"), "alias"));
-		Join join = new Join(extension,
-				new StatementPattern(Var.of("alias"), Var.of("p"), Var.of("o")));
-		join.setAlgorithm("JoinIterator");
-
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
-		join.visit(converter);
-
-		assertThat(converter.getGenericPlanNode().getStringMetricsActual())
-				.containsEntry("joinType", "cross join");
-	}
-
-	@Test
-	public void suppressesCrossJoinAnnotationsWhenQueryContainsUnsupportedTupleExpr() {
-		Join join = new Join(
-				new UnsupportedStatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
-				new StatementPattern(Var.of("x"), Var.of("p2"), Var.of("o2")));
-		join.setAlgorithm("JoinIterator");
-
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
-		join.visit(converter);
-
-		assertThat(converter.getGenericPlanNode().getStringMetricsActual()).isNull();
+		assertThat(converter.getGenericPlanNode().getStringMetricsActual()).isNullOrEmpty();
 	}
 
 	@Test
@@ -400,7 +281,6 @@ public class QueryModelTreeToGenericPlanNodeTest {
 			assertThat(node.getStringMetricsActual().keySet())
 					.isSubsetOf(
 							TelemetryMetricNames.BINDING_STATE,
-							TelemetryMetricNames.JOIN_TYPE,
 							TelemetryMetricNames.INDEX_NAME,
 							TelemetryMetricNames.INDEX_NAMES);
 		}
@@ -410,13 +290,6 @@ public class QueryModelTreeToGenericPlanNodeTest {
 			for (GenericPlanNode child : children) {
 				assertUnsetTelemetryRecursively(child);
 			}
-		}
-	}
-
-	private static final class UnsupportedStatementPattern extends StatementPattern {
-
-		private UnsupportedStatementPattern(Var subjectVar, Var predicateVar, Var objectVar) {
-			super(subjectVar, predicateVar, objectVar);
 		}
 	}
 }
