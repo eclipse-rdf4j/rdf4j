@@ -28,6 +28,9 @@
         <xsl:param name="explanationFormat"/>
         <xsl:param name="explanationLevel"/>
         <xsl:param name="explanationValue"/>
+        <xsl:param name="renderedQueryRowId"/>
+        <xsl:param name="renderedQueryId"/>
+        <xsl:param name="renderedQueryValue"/>
         <xsl:param name="dotViewId"/>
         <xsl:param name="jsonViewId"/>
         <xsl:param name="showControls" select="false()"/>
@@ -74,6 +77,19 @@
                         <div id="{$dotViewId}"></div>
                         <div id="{$jsonViewId}"></div>
                     </div>
+                </div>
+            </div>
+            <div id="{$renderedQueryRowId}" class="query-form__row query-form__row--stacked">
+                <xsl:if test="string-length(normalize-space($renderedQueryValue)) = 0">
+                    <xsl:attribute name="style">display:none;</xsl:attribute>
+                </xsl:if>
+                <span class="query-form__label">
+                    <xsl:value-of select="$rendered-query.label"/>
+                </span>
+                <div class="query-form__field">
+                    <pre id="{$renderedQueryId}">
+                        <xsl:value-of select="$renderedQueryValue"/>
+                    </pre>
                 </div>
             </div>
             <xsl:if test="$showControls">
@@ -177,6 +193,8 @@
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-format']/sparql:literal"/>
         <xsl:variable name="explanationLevel"
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-level']/sparql:literal"/>
+        <xsl:variable name="renderedQuery"
+                      select="sparql:results/sparql:result/sparql:binding[@name='rendered-query']/sparql:literal"/>
         <link rel="stylesheet" type="text/css" href="../../styles/query.css"/>
         <form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
             <input type="hidden" name="action" id="action"/>
@@ -243,6 +261,9 @@
                         <xsl:with-param name="explanationFormat" select="normalize-space($explanationFormat)"/>
                         <xsl:with-param name="explanationLevel" select="$explanationLevel"/>
                         <xsl:with-param name="explanationValue" select="$explanation"/>
+                        <xsl:with-param name="renderedQueryRowId">query-rendered-query-row</xsl:with-param>
+                        <xsl:with-param name="renderedQueryId">query-rendered-query</xsl:with-param>
+                        <xsl:with-param name="renderedQueryValue" select="$renderedQuery"/>
                         <xsl:with-param name="dotViewId">query-explanation-dot-view</xsl:with-param>
                         <xsl:with-param name="jsonViewId">query-explanation-json-view</xsl:with-param>
                         <xsl:with-param name="showControls" select="true()"/>
@@ -299,6 +320,9 @@
                         <xsl:with-param name="explanationFormat" select="'text'"/>
                         <xsl:with-param name="explanationLevel" select="''"/>
                         <xsl:with-param name="explanationValue" select="''"/>
+                        <xsl:with-param name="renderedQueryRowId">query-rendered-query-row-compare</xsl:with-param>
+                        <xsl:with-param name="renderedQueryId">query-rendered-query-compare</xsl:with-param>
+                        <xsl:with-param name="renderedQueryValue" select="''"/>
                         <xsl:with-param name="dotViewId">query-explanation-dot-view-compare</xsl:with-param>
                         <xsl:with-param name="jsonViewId">query-explanation-json-view-compare</xsl:with-param>
                     </xsl:call-template>

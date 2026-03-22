@@ -3,6 +3,11 @@
     margin-top: 1.2em;
 }
 
+#query-rendered-query-row,
+#query-rendered-query-row-compare {
+    margin-top: 0.75em;
+}
+
 .query-explanation-controls-row-class {
     margin-top: 0.5em;
     margin-left: -0.1em;
@@ -98,7 +103,9 @@
 }
 
 #query-explanation,
-#query-explanation-compare {
+#query-explanation-compare,
+#query-rendered-query,
+#query-rendered-query-compare {
     margin-top: 0;
     margin-bottom: 0;
     max-height: 75vh;

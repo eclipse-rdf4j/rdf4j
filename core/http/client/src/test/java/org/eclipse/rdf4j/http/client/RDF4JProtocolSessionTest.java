@@ -16,12 +16,18 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -312,6 +318,45 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testSendQueryExplanationRequestsAndParsesTupleExprEnvelope(MockServerClient client) throws Exception {
+		TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		String tupleExprJson = "{"
+				+ "\"format\":\"java-serialized-base64-v1\","
+				+ "\"tupleExprClass\":\"" + tupleExpr.getClass().getName() + "\","
+				+ "\"tupleExprTree\":\"" + tupleExpr.toString().replace("\n", "\\n").replace("\"", "\\\"") + "\","
+				+ "\"payloadBase64\":\"" + serialize(tupleExpr) + "\""
+				+ "}";
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Optimized")
+						.withQueryStringParameter("explain-tuple-expr", "true"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"plan\":{\"type\":\"Projection\"},\"tupleExprJson\":"
+										+ quote(tupleExprJson) + "}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
+		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+		assertThat(explanation.tupleExpr()).isInstanceOf(StatementPattern.class);
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Optimized")
+						.withQueryStringParameter("explain-tuple-expr", "true")
+						.withHeader(testHeader, testValue)
+						.withHeader("Accept", "application/json")
+		);
+	}
+
+	@Test
 	public void testSendQueryExplanationIncludesExplainRequestId(MockServerClient client) throws Exception {
 		client.when(
 				request()
@@ -341,6 +386,19 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 						.withHeader(testHeader, testValue)
 						.withHeader("Accept", "application/json")
 		);
+	}
+
+	private static String serialize(TupleExpr tupleExpr) throws Exception {
+		try (ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+				ObjectOutputStream objectStream = new ObjectOutputStream(byteStream)) {
+			objectStream.writeObject(tupleExpr);
+			objectStream.flush();
+			return Base64.getEncoder().encodeToString(byteStream.toByteArray());
+		}
+	}
+
+	private static String quote(String value) {
+		return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
 	}
 
 	@Test

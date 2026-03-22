@@ -39,6 +39,14 @@ public class UnionQueryEvaluationStep implements QueryEvaluationStep {
 			} else if (evaluate1 == QueryEvaluationStep.EMPTY_ITERATION) {
 				return evaluate;
 			}
+			// Some union branches return a regular empty iteration rather than EMPTY_ITERATION.
+			if (!evaluate.hasNext()) {
+				evaluate.close();
+				return evaluate1;
+			} else if (!evaluate1.hasNext()) {
+				evaluate1.close();
+				return evaluate;
+			}
 
 			return DualUnionIteration.getInstance(evaluate, evaluate1);
 		} catch (Throwable t) {

@@ -39,13 +39,16 @@ var workbench;
             queryId: 'query',
             errorId: 'queryString.errors',
             explanationRowId: 'query-explanation-row',
+            renderedQueryRowId: 'query-rendered-query-row',
             explanationControlsRowId: 'query-explanation-controls-row',
             statusId: 'query-explanation-status',
             overlayId: 'query-explanation-overlay',
             explanationId: 'query-explanation',
+            renderedQueryId: 'query-rendered-query',
             dotViewId: 'query-explanation-dot-view',
             jsonViewId: 'query-explanation-json-view',
             latestExplanation: '',
+            latestRenderedQuery: '',
             latestExplanationFormat: 'text',
             dotPanZoomInstance: null,
             explainButtonViewportTopBeforeRequest: null,
@@ -56,12 +59,15 @@ var workbench;
             queryId: 'query-compare',
             errorId: 'queryString.errors-compare',
             explanationRowId: 'query-explanation-row-compare',
+            renderedQueryRowId: 'query-rendered-query-row-compare',
             statusId: 'query-explanation-status-compare',
             overlayId: 'query-explanation-overlay-compare',
             explanationId: 'query-explanation-compare',
+            renderedQueryId: 'query-rendered-query-compare',
             dotViewId: 'query-explanation-dot-view-compare',
             jsonViewId: 'query-explanation-json-view-compare',
             latestExplanation: '',
+            latestRenderedQuery: '',
             latestExplanationFormat: 'text',
             dotPanZoomInstance: null,
             explainButtonViewportTopBeforeRequest: null,
@@ -413,7 +419,8 @@ var workbench;
                 requestedFormat: explanation.requestedFormat,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
-                rawContent: explanation.rawContent
+                rawContent: explanation.rawContent,
+                renderedQuery: explanation.renderedQuery
             };
         }
         function getStableExplanationKey(explanation) {
@@ -426,7 +433,8 @@ var workbench;
                 explanation.requestedFormat,
                 explanation.responseFormat,
                 explanation.view,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.renderedQuery
             ].join('||');
         }
         function getStableExplanationContentKey(explanation) {
@@ -438,7 +446,8 @@ var workbench;
                 explanation.level,
                 explanation.requestedFormat,
                 explanation.responseFormat,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.renderedQuery
             ].join('||');
         }
         function getPaneSnapshot(paneState) {
@@ -1277,11 +1286,15 @@ var workbench;
             var paneState = getPaneState(paneKey);
             lockExplanationDimensions(paneKey);
             var explanation = $('#' + paneState.explanationId);
+            var renderedQuery = $('#' + paneState.renderedQueryId);
             explanation.text('');
+            renderedQuery.text('');
             var normalizedFormat = (pendingFormat || paneState.latestExplanationFormat || 'text').toLowerCase();
             explanation.attr('data-format', normalizedFormat);
             paneState.latestExplanation = '';
+            paneState.latestRenderedQuery = '';
             paneState.latestExplanationFormat = normalizedFormat;
+            $('#' + paneState.renderedQueryRowId).hide();
             if (paneKey !== 'compare') {
                 updateDownloadButtonState();
                 syncPrimaryExplanationControls();
@@ -1588,7 +1601,14 @@ var workbench;
             }
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
-        function renderExplanation(paneKey, explanationText, format) {
+        function renderRenderedQuery(paneKey, renderedQueryText) {
+            var paneState = getPaneState(paneKey);
+            var renderedQuery = renderedQueryText || '';
+            $('#' + paneState.renderedQueryId).text(renderedQuery);
+            $('#' + paneState.renderedQueryRowId).toggle(renderedQuery.length > 0);
+            paneState.latestRenderedQuery = renderedQuery;
+        }
+        function renderExplanation(paneKey, explanationText, format, renderedQueryText) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
             $('#' + paneState.explanationRowId).show();
@@ -1604,6 +1624,7 @@ var workbench;
             setExplanationDisplayMode(paneKey, normalizedFormat);
             paneState.latestExplanation = explanationText;
             paneState.latestExplanationFormat = normalizedFormat;
+            renderRenderedQuery(paneKey, renderedQueryText);
             if (paneKey !== 'compare') {
                 updateDownloadButtonState();
                 syncPrimaryExplanationControls();
@@ -1685,7 +1706,7 @@ var workbench;
             }
             if (lastRenderedExplanationKeys[paneKey] !== renderContentKey) {
                 lastRenderedExplanationKeys[paneKey] = renderContentKey;
-                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat);
+                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat, paneDisplayExplanation.renderedQuery);
             }
         }
         function renderQueryPageState() {
@@ -1814,6 +1835,7 @@ var workbench;
         function createStableExplanationFromResponse(signature, response, fallbackFormat) {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
+            var renderedQuery = response.renderedQuery || '';
             var explanationView = 'text';
             if (responseFormat === 'json') {
                 explanationView = 'jsonTree';
@@ -1835,7 +1857,8 @@ var workbench;
                 requestedFormat: signature.format,
                 responseFormat: responseFormat,
                 view: explanationView,
-                rawContent: explanationText
+                rawContent: explanationText,
+                renderedQuery: renderedQuery
             };
         }
         function applyExplainResponseToPane(paneKey, signature, response, fallbackFormat) {
@@ -2460,9 +2483,10 @@ var workbench;
         query_1.downloadExplanation = downloadExplanation;
         function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
+            var initialRenderedQuery = $('#query-rendered-query').text();
             var initialFormat = getNormalizedExplainFormat($('#query-explanation').attr('data-format') || $('#explain-format').val() || 'text');
             var hydratedExplanation = null;
-            if (initialExplanation) {
+            if (initialExplanation || initialRenderedQuery) {
                 hydratedExplanation = createStableExplanationFromResponse({
                     requestId: 0,
                     serverRequestId: 'initial-primary-explanation',
@@ -2473,6 +2497,7 @@ var workbench;
                     format: initialFormat
                 }, {
                     content: initialExplanation,
+                    renderedQuery: initialRenderedQuery,
                     format: initialFormat,
                     error: ''
                 }, initialFormat);

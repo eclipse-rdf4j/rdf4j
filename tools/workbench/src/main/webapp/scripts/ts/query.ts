@@ -63,6 +63,7 @@ module workbench {
             responseFormat: 'text' | 'json' | 'dot';
             view: ExplanationView;
             rawContent: string;
+            renderedQuery: string;
         }
 
         interface RequestSignature {
@@ -146,13 +147,16 @@ module workbench {
             queryId: string;
             errorId: string;
             explanationRowId: string;
+            renderedQueryRowId: string;
             explanationControlsRowId?: string;
             statusId: string;
             overlayId: string;
             explanationId: string;
+            renderedQueryId: string;
             dotViewId: string;
             jsonViewId: string;
             latestExplanation: string;
+            latestRenderedQuery: string;
             latestExplanationFormat: string;
             dotPanZoomInstance: any;
             explainButtonViewportTopBeforeRequest: number;
@@ -187,13 +191,16 @@ module workbench {
             queryId: 'query',
             errorId: 'queryString.errors',
             explanationRowId: 'query-explanation-row',
+            renderedQueryRowId: 'query-rendered-query-row',
             explanationControlsRowId: 'query-explanation-controls-row',
             statusId: 'query-explanation-status',
             overlayId: 'query-explanation-overlay',
             explanationId: 'query-explanation',
+            renderedQueryId: 'query-rendered-query',
             dotViewId: 'query-explanation-dot-view',
             jsonViewId: 'query-explanation-json-view',
             latestExplanation: '',
+            latestRenderedQuery: '',
             latestExplanationFormat: 'text',
             dotPanZoomInstance: null,
             explainButtonViewportTopBeforeRequest: null,
@@ -204,12 +211,15 @@ module workbench {
             queryId: 'query-compare',
             errorId: 'queryString.errors-compare',
             explanationRowId: 'query-explanation-row-compare',
+            renderedQueryRowId: 'query-rendered-query-row-compare',
             statusId: 'query-explanation-status-compare',
             overlayId: 'query-explanation-overlay-compare',
             explanationId: 'query-explanation-compare',
+            renderedQueryId: 'query-rendered-query-compare',
             dotViewId: 'query-explanation-dot-view-compare',
             jsonViewId: 'query-explanation-json-view-compare',
             latestExplanation: '',
+            latestRenderedQuery: '',
             latestExplanationFormat: 'text',
             dotPanZoomInstance: null,
             explainButtonViewportTopBeforeRequest: null,
@@ -621,7 +631,8 @@ module workbench {
                 requestedFormat: explanation.requestedFormat,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
-                rawContent: explanation.rawContent
+                rawContent: explanation.rawContent,
+                renderedQuery: explanation.renderedQuery
             };
         }
 
@@ -635,7 +646,8 @@ module workbench {
                 explanation.requestedFormat,
                 explanation.responseFormat,
                 explanation.view,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.renderedQuery
             ].join('||');
         }
 
@@ -648,7 +660,8 @@ module workbench {
                 explanation.level,
                 explanation.requestedFormat,
                 explanation.responseFormat,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.renderedQuery
             ].join('||');
         }
 
@@ -1087,6 +1100,7 @@ module workbench {
 
         interface AjaxExplainResponse {
             content: string;
+            renderedQuery: string;
             format: string;
             error: string;
         }
@@ -1653,11 +1667,15 @@ module workbench {
             var paneState = getPaneState(paneKey);
             lockExplanationDimensions(paneKey);
             var explanation = $('#' + paneState.explanationId);
+            var renderedQuery = $('#' + paneState.renderedQueryId);
             explanation.text('');
+            renderedQuery.text('');
             var normalizedFormat = (pendingFormat || paneState.latestExplanationFormat || 'text').toLowerCase();
             explanation.attr('data-format', normalizedFormat);
             paneState.latestExplanation = '';
+            paneState.latestRenderedQuery = '';
             paneState.latestExplanationFormat = normalizedFormat;
+            $('#' + paneState.renderedQueryRowId).hide();
             if (paneKey !== 'compare') {
                 updateDownloadButtonState();
                 syncPrimaryExplanationControls();
@@ -1994,7 +2012,15 @@ module workbench {
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
 
-        function renderExplanation(paneKey: string, explanationText: string, format: string) {
+        function renderRenderedQuery(paneKey: string, renderedQueryText: string) {
+            var paneState = getPaneState(paneKey);
+            var renderedQuery = renderedQueryText || '';
+            $('#' + paneState.renderedQueryId).text(renderedQuery);
+            $('#' + paneState.renderedQueryRowId).toggle(renderedQuery.length > 0);
+            paneState.latestRenderedQuery = renderedQuery;
+        }
+
+        function renderExplanation(paneKey: string, explanationText: string, format: string, renderedQueryText: string) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
             $('#' + paneState.explanationRowId).show();
@@ -2009,6 +2035,7 @@ module workbench {
             setExplanationDisplayMode(paneKey, normalizedFormat);
             paneState.latestExplanation = explanationText;
             paneState.latestExplanationFormat = normalizedFormat;
+            renderRenderedQuery(paneKey, renderedQueryText);
             if (paneKey !== 'compare') {
                 updateDownloadButtonState();
                 syncPrimaryExplanationControls();
@@ -2099,7 +2126,8 @@ module workbench {
 
             if (lastRenderedExplanationKeys[paneKey] !== renderContentKey) {
                 lastRenderedExplanationKeys[paneKey] = renderContentKey;
-                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat);
+                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat,
+                    paneDisplayExplanation.renderedQuery);
             }
         }
 
@@ -2241,6 +2269,7 @@ module workbench {
         ): StableExplanation {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
+            var renderedQuery = response.renderedQuery || '';
             var explanationView: ExplanationView = 'text';
             if (responseFormat === 'json') {
                 explanationView = 'jsonTree';
@@ -2260,7 +2289,8 @@ module workbench {
                 requestedFormat: signature.format,
                 responseFormat: responseFormat,
                 view: explanationView,
-                rawContent: explanationText
+                rawContent: explanationText,
+                renderedQuery: renderedQuery
             };
         }
 
@@ -2954,11 +2984,12 @@ module workbench {
 
         export function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
+            var initialRenderedQuery = $('#query-rendered-query').text();
             var initialFormat = getNormalizedExplainFormat(
                 <string>$('#query-explanation').attr('data-format') || <string>$('#explain-format').val() || 'text'
             );
             var hydratedExplanation: StableExplanation = null;
-            if (initialExplanation) {
+            if (initialExplanation || initialRenderedQuery) {
                 hydratedExplanation = createStableExplanationFromResponse({
                     requestId: 0,
                     serverRequestId: 'initial-primary-explanation',
@@ -2969,6 +3000,7 @@ module workbench {
                     format: initialFormat
                 }, {
                     content: initialExplanation,
+                    renderedQuery: initialRenderedQuery,
                     format: initialFormat,
                     error: ''
                 }, initialFormat);

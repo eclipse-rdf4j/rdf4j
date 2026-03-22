@@ -146,6 +146,31 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryTemplateShouldExposeRenderedQueryBindingsAndHydration() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String messages = Files.readString(Path.of("src/main/webapp/locale/messages.xsl"), StandardCharsets.UTF_8);
+
+		assertThat(messages)
+				.contains("rendered-query.label");
+
+		assertThat(queryTemplate)
+				.contains("binding[@name='rendered-query']")
+				.contains("id=\"{$renderedQueryId}\"")
+				.contains("name=\"renderedQueryRowId\">query-rendered-query-row</xsl:with-param>")
+				.contains("name=\"renderedQueryId\">query-rendered-query</xsl:with-param>")
+				.contains("name=\"renderedQueryRowId\">query-rendered-query-row-compare</xsl:with-param>")
+				.contains("name=\"renderedQueryId\">query-rendered-query-compare</xsl:with-param>");
+
+		assertThat(queryScript)
+				.contains("renderedQuery: string;")
+				.contains("response.renderedQuery || ''")
+				.contains("var initialRenderedQuery = $('#query-rendered-query').text();")
+				.contains("renderedQuery: initialRenderedQuery");
+	}
+
+	@Test
 	void explainUiShouldDisableButtonsAndShowDelayedSpinnerForSlowResponses() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);

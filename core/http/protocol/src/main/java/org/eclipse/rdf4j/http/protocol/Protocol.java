@@ -168,6 +168,8 @@ public abstract class Protocol {
 
 	public static final String EXPLAIN_PARAM_NAME = "explain";
 
+	public static final String EXPLAIN_TUPLE_EXPR_PARAM_NAME = "explain-tuple-expr";
+
 	public static final String EXPLAIN_REQUEST_ID_PARAM_NAME = "explain-request-id";
 
 	public static final String CANCEL_EXPLAIN_PARAM_NAME = "cancel-explain";

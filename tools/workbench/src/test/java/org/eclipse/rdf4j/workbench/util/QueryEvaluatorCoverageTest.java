@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.workbench.util;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -32,13 +35,109 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.junit.jupiter.api.Test;
 
 class QueryEvaluatorCoverageTest {
+
+	@Test
+	void askExplainShouldRenderAskQuery() throws Exception {
+		String queryText = "ask { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		WorkbenchRequest request = mockExplainRequest();
+		BooleanQuery booleanQuery = mock(BooleanQuery.class);
+		Explanation explanation = mock(Explanation.class);
+
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(booleanQuery);
+		when(booleanQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("ask plan");
+		when(explanation.tupleExpr()).thenReturn(parseTupleExpr(queryText));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
+				"transformations", connection, queryText, request, cookies, queryText);
+
+		verify(builder).result(eq("ask plan"), eq("text"), eq("Optimized"),
+				argThat(renderedQuery -> renderedQuery instanceof String
+						&& ((String) renderedQuery).contains("ASK")
+						&& ((String) renderedQuery).contains("?s ?p ?o")));
+	}
+
+	@Test
+	void explainShouldHideRenderedQueryWhenTupleExprIsMissing() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		WorkbenchRequest request = mockExplainRequest();
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("fallback plan");
+		when(explanation.tupleExpr()).thenReturn(null);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
+				"transformations", connection, queryText, request, cookies, queryText);
+
+		verify(builder).result("fallback plan", "text", "Optimized", null);
+	}
+
+	@Test
+	void rendererFailuresShouldNotFailExplainRequests() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		WorkbenchRequest request = mockExplainRequest();
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		TupleExpr brokenTupleExpr = mock(TupleExpr.class);
+
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan with broken tuple expr");
+		doThrow(new IllegalStateException("boom")).when(brokenTupleExpr).visit(any());
+		when(explanation.tupleExpr()).thenReturn(brokenTupleExpr);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
+				"transformations", connection, queryText, request, cookies, queryText);
+
+		verify(builder).result("plan with broken tuple expr", "text", "Optimized", null);
+	}
+
+	@Test
+	void graphExplainShouldOmitRenderedQuery() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		WorkbenchRequest request = mockExplainRequest();
+		GraphQuery graphQuery = mock(GraphQuery.class);
+		Explanation explanation = mock(Explanation.class);
+
+		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(graphQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("graph plan");
+		when(explanation.tupleExpr()).thenReturn(parseTupleExpr(queryText));
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
+				"transformations", connection, queryText, request, cookies, queryText);
+
+		verify(builder).result("graph plan", "text", "Optimized", null);
+	}
 
 	@Test
 	void extractExplainRequestDefaultsNullFormatAndParsesInferFlag() throws Exception {
@@ -351,5 +450,20 @@ class QueryEvaluatorCoverageTest {
 		verify(cookies).addTotalResultCountCookie(request, response, 5);
 		verify(connection, times(2)).prepareQuery(QueryLanguage.SPARQL, queryText);
 		verify(builder, never()).metadata(any(), any());
+	}
+
+	private static WorkbenchRequest mockExplainRequest() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("explain")).thenReturn(true);
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+		return request;
+	}
+
+	private static Object parseTupleExpr(String queryText) throws Exception {
+		return QueryParserUtil.parseQuery(QueryLanguage.SPARQL, queryText, null).getTupleExpr();
 	}
 }
