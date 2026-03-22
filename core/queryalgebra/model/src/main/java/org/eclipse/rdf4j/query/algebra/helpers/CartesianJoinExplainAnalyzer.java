@@ -25,6 +25,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -41,11 +42,14 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
 final class CartesianJoinExplainAnalyzer {
 
@@ -172,12 +176,18 @@ final class CartesianJoinExplainAnalyzer {
 	private final IdentityHashMap<QueryModelNode, NodeInfo> infoByNode = new IdentityHashMap<>();
 	private final IdentityHashMap<QueryModelNode, String> joinTypeByNode = new IdentityHashMap<>();
 	private final Set<String> externalBindings;
+	private final boolean globallySupported;
 
 	CartesianJoinExplainAnalyzer(QueryModelNode root, Set<String> externalBindings) {
 		this.externalBindings = immutableCopy(externalBindings);
 		if (root != null) {
-			inspect(root);
-			analyze(root, this.externalBindings, false);
+			NodeInfo rootInfo = inspect(root);
+			globallySupported = rootInfo.supportedSubtree;
+			if (globallySupported) {
+				analyze(root, this.externalBindings, false);
+			}
+		} else {
+			globallySupported = true;
 		}
 	}
 
@@ -268,9 +278,10 @@ final class CartesianJoinExplainAnalyzer {
 		NodeInfo leftInfo = inspect(left);
 		NodeInfo rightInfo = inspect(right);
 
-		if (!guaranteedBindingsTainted && leftInfo.supportedSubtree && rightInfo.supportedSubtree
+		if (globallySupported && !guaranteedBindingsTainted && leftInfo.supportedSubtree && rightInfo.supportedSubtree
 				&& isCorrelationEmpty(leftInfo.bindingNames, leftInfo.use, rightInfo.bindingNames, rightInfo.use,
-						guaranteedBindings)) {
+						guaranteedBindings)
+				&& !regionConnects(join, List.of(left), List.of(right), guaranteedBindings)) {
 			joinTypeByNode.put(join, "cartesian join");
 		}
 
@@ -314,9 +325,10 @@ final class CartesianJoinExplainAnalyzer {
 			TupleExpr arg = args.get(index);
 			NodeInfo argInfo = inspect(arg);
 
-			if (!guaranteedBindingsTainted && prefixSupported && argInfo.supportedSubtree
+			if (globallySupported && !guaranteedBindingsTainted && prefixSupported && argInfo.supportedSubtree
 					&& isCorrelationEmpty(prefixBindingNames, prefixUse, argInfo.bindingNames, argInfo.use,
-							guaranteedBindings)) {
+							guaranteedBindings)
+					&& !regionConnects(nJoin, args.subList(0, index), List.of(arg), guaranteedBindings)) {
 				boundaries.add(formatBoundary(index + 1));
 			}
 
@@ -479,6 +491,165 @@ final class CartesianJoinExplainAnalyzer {
 		correlation.addAll(intersection(rightBindingNames, leftUse));
 		correlation.removeAll(guaranteedBindings);
 		return correlation.isEmpty();
+	}
+
+	private boolean regionConnects(QueryModelNode boundaryOwner, Collection<? extends QueryModelNode> leftRoots,
+			Collection<? extends QueryModelNode> rightRoots, Set<String> guaranteedBindings) {
+		QueryModelNode regionRoot = findMandatoryRegionRoot(boundaryOwner);
+		List<QueryModelNode> atoms = new ArrayList<>();
+		collectMandatoryRegionAtoms(regionRoot, atoms);
+
+		List<QueryModelNode> leftAtoms = new ArrayList<>();
+		List<QueryModelNode> rightAtoms = new ArrayList<>();
+		for (QueryModelNode atom : atoms) {
+			if (isContainedByAny(atom, leftRoots)) {
+				leftAtoms.add(atom);
+			}
+			if (isContainedByAny(atom, rightRoots)) {
+				rightAtoms.add(atom);
+			}
+		}
+
+		if (leftAtoms.isEmpty() || rightAtoms.isEmpty()) {
+			return false;
+		}
+
+		List<List<Integer>> adjacency = new ArrayList<>(atoms.size());
+		for (int index = 0; index < atoms.size(); index++) {
+			adjacency.add(new ArrayList<>());
+		}
+		for (int leftIndex = 0; leftIndex < atoms.size(); leftIndex++) {
+			NodeInfo leftInfo = inspect(atoms.get(leftIndex));
+			for (int rightIndex = leftIndex + 1; rightIndex < atoms.size(); rightIndex++) {
+				NodeInfo rightInfo = inspect(atoms.get(rightIndex));
+				Set<String> overlap = intersection(leftInfo.use, rightInfo.use);
+				overlap.removeAll(guaranteedBindings);
+				if (!overlap.isEmpty()) {
+					adjacency.get(leftIndex).add(rightIndex);
+					adjacency.get(rightIndex).add(leftIndex);
+				}
+			}
+		}
+
+		Set<Integer> rightIndexes = new LinkedHashSet<>();
+		for (QueryModelNode rightAtom : rightAtoms) {
+			rightIndexes.add(atoms.indexOf(rightAtom));
+		}
+
+		List<Integer> stack = new ArrayList<>();
+		Set<Integer> visited = new LinkedHashSet<>();
+		for (QueryModelNode leftAtom : leftAtoms) {
+			int leftIndex = atoms.indexOf(leftAtom);
+			if (visited.add(leftIndex)) {
+				stack.add(leftIndex);
+			}
+		}
+
+		while (!stack.isEmpty()) {
+			int current = stack.remove(stack.size() - 1);
+			if (rightIndexes.contains(current)) {
+				return true;
+			}
+			for (int neighbor : adjacency.get(current)) {
+				if (visited.add(neighbor)) {
+					stack.add(neighbor);
+				}
+			}
+		}
+
+		return false;
+	}
+
+	private QueryModelNode findMandatoryRegionRoot(QueryModelNode boundaryOwner) {
+		QueryModelNode current = boundaryOwner;
+		QueryModelNode parent = current.getParentNode();
+		while (parent != null && !isMandatoryRegionBoundary(parent)
+				&& (isMandatoryJoinNode(parent) || isTransparentRegionWrapper(parent))) {
+			current = parent;
+			parent = current.getParentNode();
+		}
+		return current;
+	}
+
+	private void collectMandatoryRegionAtoms(QueryModelNode node, List<QueryModelNode> atoms) {
+		if (node == null) {
+			return;
+		}
+		if (isMandatoryJoinNode(node) || isTransparentRegionWrapper(node)) {
+			for (TupleExpr child : tupleChildren(node)) {
+				collectMandatoryRegionAtoms(child, atoms);
+			}
+			return;
+		}
+		if (node instanceof TupleExpr) {
+			atoms.add(node);
+		}
+	}
+
+	private static boolean isMandatoryJoinNode(QueryModelNode node) {
+		return isExact(node, Join.class) || isClass(node, NJOIN_CLASS);
+	}
+
+	private static boolean isTransparentRegionWrapper(QueryModelNode node) {
+		return isExact(node, QueryRoot.class)
+				|| isExact(node, Distinct.class)
+				|| isExact(node, Reduced.class)
+				|| isExact(node, Slice.class)
+				|| isExact(node, Order.class)
+				|| isExact(node, Filter.class)
+				|| isExact(node, Extension.class)
+				|| isExact(node, MultiProjection.class)
+				|| (isExact(node, Projection.class) && !((Projection) node).isSubquery());
+	}
+
+	private static boolean isMandatoryRegionBoundary(QueryModelNode node) {
+		return !isSupportedExactClass(node)
+				|| isExact(node, LeftJoin.class)
+				|| isExact(node, Union.class)
+				|| isExact(node, Difference.class)
+				|| isExact(node, Intersection.class)
+				|| isClass(node, NUNION_CLASS)
+				|| isExact(node, Service.class)
+				|| isClass(node, FEDX_SERVICE_CLASS)
+				|| isExact(node, Group.class)
+				|| isClass(node, PASS_THROUGH_CLASS)
+				|| isClass(node, SINGLE_SOURCE_CLASS)
+				|| isClass(node, PRECOMPILED_CLASS)
+				|| (node instanceof VariableScopeChange && ((VariableScopeChange) node).isVariableScopeChange())
+				|| (isExact(node, Projection.class) && ((Projection) node).isSubquery());
+	}
+
+	private static List<TupleExpr> tupleChildren(QueryModelNode node) {
+		if (isClass(node, NJOIN_CLASS) || isClass(node, NUNION_CLASS)) {
+			return invokeList(node, "getArgs", TupleExpr.class);
+		}
+		List<TupleExpr> children = new ArrayList<>();
+		for (QueryModelNode child : directChildren(node)) {
+			if (child instanceof TupleExpr) {
+				children.add((TupleExpr) child);
+			}
+		}
+		return children;
+	}
+
+	private static boolean isContainedByAny(QueryModelNode atom, Collection<? extends QueryModelNode> roots) {
+		for (QueryModelNode root : roots) {
+			if (isContainedBy(atom, root)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isContainedBy(QueryModelNode node, QueryModelNode root) {
+		QueryModelNode current = node;
+		while (current != null) {
+			if (current == root) {
+				return true;
+			}
+			current = current.getParentNode();
+		}
+		return false;
 	}
 
 	private static Set<String> intersection(Set<String> left, Set<String> right) {

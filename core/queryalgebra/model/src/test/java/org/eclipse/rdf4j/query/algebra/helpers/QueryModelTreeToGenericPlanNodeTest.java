@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -234,6 +236,34 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(findFirstPlan(outerPlan.getPlans().get(1),
 				node -> "cartesian join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE))))
 				.isNotNull();
+	}
+
+	@Test
+	public void doesNotAnnotateJoinWhenMandatoryRegionReconnectsSidesThroughSiblingAtoms() {
+		StatementPattern personType = new StatementPattern(plainVar("person"), plainVar("typePred"),
+				plainVar("personType"));
+		StatementPattern hasCondition = new StatementPattern(plainVar("encounter"), plainVar("conditionPred"),
+				plainVar("condition"));
+		StatementPattern handledBy = new StatementPattern(plainVar("encounter"), plainVar("handledByPred"),
+				plainVar("person"));
+		StatementPattern personName = new StatementPattern(plainVar("person"), plainVar("namePred"), plainVar("name"));
+		StatementPattern conditionCode = new StatementPattern(plainVar("condition"), plainVar("codePred"),
+				plainVar("code"));
+
+		Join locallyDisconnectedJoin = new Join(personType, hasCondition);
+		Join rightRegion = new Join(handledBy, new Join(personName, conditionCode));
+		Join rootJoin = new Join(locallyDisconnectedJoin, rightRegion);
+		Distinct distinct = new Distinct(new Slice(rootJoin, 0, 100));
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(distinct);
+		distinct.visit(converter);
+
+		GenericPlanNode targetJoin = findFirstPlan(converter.getGenericPlanNode(),
+				node -> node.getType().startsWith("Join")
+						&& node.toString().contains("name=typePred")
+						&& node.toString().contains("name=conditionPred"));
+		assertThat(targetJoin).isNotNull();
+		assertThat(targetJoin.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
 	}
 
 	@Test
