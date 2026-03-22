@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.base.CoreDatatype.XSD;
-import org.eclipse.rdf4j.model.impl.CalendarLiteral;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 public class Dates {
