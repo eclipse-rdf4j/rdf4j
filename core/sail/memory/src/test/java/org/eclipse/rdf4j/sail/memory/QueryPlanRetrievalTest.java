@@ -894,7 +894,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testExplainAnnotationsEmitCartesianJoinTypeTextAndJson() throws IOException {
+	public void testExplainAnnotationsEmitDisconnectedJoinTypeTextAndJson() throws IOException {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
@@ -906,14 +906,14 @@ public class QueryPlanRetrievalTest {
 			String dot = explain.toDot();
 			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
 			JsonNode joinNode = findFirstPlanNode(root,
-					node -> "cartesian join".equals(node.path("stringMetricsActual").path("joinType").asText(null)));
+					node -> "disconnected join".equals(node.path("stringMetricsActual").path("joinType").asText(null)));
 
 			assertThat(text).doesNotContain("joinType=regular join");
-			assertThat(text).contains("joinType=cartesian join");
+			assertThat(text).contains("joinType=disconnected join");
 			assertThat(text).contains("bindingState=unbound");
-			assertThat(dot).contains("<tr><td>Join type</td><td>cartesian join</td></tr>");
+			assertThat(dot).contains("<tr><td>Join type</td><td>disconnected join</td></tr>");
 			assertThat(joinNode).isNotNull();
-			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("cartesian join");
+			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("disconnected join");
 			assertThat(joinNode.path("plans")
 					.get(0)
 					.path("plans")
@@ -933,7 +933,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testMandatoryRegionNegativeQueryDoesNotEmitCartesianJoinType() throws MalformedQueryException {
+	public void testMandatoryRegionNegativeQueryDoesNotEmitDisconnectedJoinType() throws MalformedQueryException {
 		ParsedTupleQuery parsed = (ParsedTupleQuery) new SPARQLParser().parseQuery(MANDATORY_REGION_NEGATIVE_QUERY,
 				null);
 		TupleExpr tupleExpr = parsed.getTupleExpr();
@@ -943,7 +943,7 @@ public class QueryPlanRetrievalTest {
 		tupleExpr.visit(converter);
 
 		GenericPlanNode joinNode = findFirstGenericPlanNode(converter.getGenericPlanNode(),
-				node -> "cartesian join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
+				node -> "disconnected join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
 		assertThat(joinNode).isNull();
 	}
 

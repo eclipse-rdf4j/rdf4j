@@ -162,7 +162,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
-	public void annotatesDisconnectedJoinAsCartesianJoin() {
+	public void annotatesDisconnectedJoinAsDisconnectedJoin() {
 		Join join = new Join(
 				new StatementPattern(plainVar("s"), plainVar("p"), plainVar("o")),
 				new StatementPattern(plainVar("x"), plainVar("p2"), plainVar("o2")));
@@ -172,7 +172,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		join.visit(converter);
 
 		assertThat(converter.getGenericPlanNode().getStringMetricsActual())
-				.containsEntry(TelemetryMetricNames.JOIN_TYPE, "cartesian join");
+				.containsEntry(TelemetryMetricNames.JOIN_TYPE, "disconnected join");
 	}
 
 	@Test
@@ -213,12 +213,12 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		filter.visit(converter);
 
 		GenericPlanNode joinPlan = findFirstPlan(converter.getGenericPlanNode(),
-				node -> "cartesian join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
+				node -> "disconnected join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
 		assertThat(joinPlan).isNotNull();
 	}
 
 	@Test
-	public void annotatesInnerJoinWhenSharedVarIsAlreadyGuaranteedBound() {
+	public void doesNotAnnotateConnectedJoinWhenSharedVarIsAlreadyGuaranteedBound() {
 		Join innerJoin = new Join(
 				new StatementPattern(plainVar("a"), plainVar("p2"), plainVar("x")),
 				new StatementPattern(plainVar("b"), plainVar("p3"), plainVar("x")));
@@ -234,8 +234,8 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 		assertThat(outerPlan.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
 		assertThat(findFirstPlan(outerPlan.getPlans().get(1),
-				node -> "cartesian join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE))))
-				.isNotNull();
+				node -> node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE) != null))
+				.isNull();
 	}
 
 	@Test

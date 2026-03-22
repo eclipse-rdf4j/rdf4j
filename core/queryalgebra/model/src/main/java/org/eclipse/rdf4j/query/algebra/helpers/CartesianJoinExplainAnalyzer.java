@@ -279,10 +279,9 @@ final class CartesianJoinExplainAnalyzer {
 		NodeInfo rightInfo = inspect(right);
 
 		if (globallySupported && !guaranteedBindingsTainted && leftInfo.supportedSubtree && rightInfo.supportedSubtree
-				&& isCorrelationEmpty(leftInfo.bindingNames, leftInfo.use, rightInfo.bindingNames, rightInfo.use,
-						guaranteedBindings)
-				&& !regionConnects(join, List.of(left), List.of(right), guaranteedBindings)) {
-			joinTypeByNode.put(join, "cartesian join");
+				&& isCorrelationEmpty(leftInfo.bindingNames, leftInfo.use, rightInfo.bindingNames, rightInfo.use)
+				&& !regionConnects(join, List.of(left), List.of(right))) {
+			joinTypeByNode.put(join, "disconnected join");
 		}
 
 		analyze(left, guaranteedBindings, guaranteedBindingsTainted);
@@ -326,9 +325,8 @@ final class CartesianJoinExplainAnalyzer {
 			NodeInfo argInfo = inspect(arg);
 
 			if (globallySupported && !guaranteedBindingsTainted && prefixSupported && argInfo.supportedSubtree
-					&& isCorrelationEmpty(prefixBindingNames, prefixUse, argInfo.bindingNames, argInfo.use,
-							guaranteedBindings)
-					&& !regionConnects(nJoin, args.subList(0, index), List.of(arg), guaranteedBindings)) {
+					&& isCorrelationEmpty(prefixBindingNames, prefixUse, argInfo.bindingNames, argInfo.use)
+					&& !regionConnects(nJoin, args.subList(0, index), List.of(arg))) {
 				boundaries.add(formatBoundary(index + 1));
 			}
 
@@ -341,7 +339,7 @@ final class CartesianJoinExplainAnalyzer {
 		}
 
 		if (!boundaries.isEmpty()) {
-			joinTypeByNode.put(nJoin, "cartesian join boundaries: " + String.join(", ", boundaries));
+			joinTypeByNode.put(nJoin, "disconnected join boundaries: " + String.join(", ", boundaries));
 		}
 	}
 
@@ -486,15 +484,14 @@ final class CartesianJoinExplainAnalyzer {
 	}
 
 	private static boolean isCorrelationEmpty(Set<String> leftBindingNames, Set<String> leftUse,
-			Set<String> rightBindingNames, Set<String> rightUse, Set<String> guaranteedBindings) {
+			Set<String> rightBindingNames, Set<String> rightUse) {
 		Set<String> correlation = intersection(leftBindingNames, rightUse);
 		correlation.addAll(intersection(rightBindingNames, leftUse));
-		correlation.removeAll(guaranteedBindings);
 		return correlation.isEmpty();
 	}
 
 	private boolean regionConnects(QueryModelNode boundaryOwner, Collection<? extends QueryModelNode> leftRoots,
-			Collection<? extends QueryModelNode> rightRoots, Set<String> guaranteedBindings) {
+			Collection<? extends QueryModelNode> rightRoots) {
 		QueryModelNode regionRoot = findMandatoryRegionRoot(boundaryOwner);
 		List<QueryModelNode> atoms = new ArrayList<>();
 		collectMandatoryRegionAtoms(regionRoot, atoms);
@@ -523,7 +520,6 @@ final class CartesianJoinExplainAnalyzer {
 			for (int rightIndex = leftIndex + 1; rightIndex < atoms.size(); rightIndex++) {
 				NodeInfo rightInfo = inspect(atoms.get(rightIndex));
 				Set<String> overlap = intersection(leftInfo.use, rightInfo.use);
-				overlap.removeAll(guaranteedBindings);
 				if (!overlap.isEmpty()) {
 					adjacency.get(leftIndex).add(rightIndex);
 					adjacency.get(rightIndex).add(leftIndex);
