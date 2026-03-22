@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.explanation;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -169,7 +170,8 @@ public class GenericPlanNode {
 	}
 
 	public List<GenericPlanNode> getPlans() {
-		return plans.isEmpty() ? null : plans; // for simplified json
+		List<GenericPlanNode> orderedPlans = orderedPlansForDisplay();
+		return orderedPlans.isEmpty() ? null : orderedPlans; // for simplified json
 	}
 
 	public void setPlans(List<GenericPlanNode> plans) {
@@ -585,6 +587,7 @@ public class GenericPlanNode {
 	 */
 	private String getHumanReadable(int prettyBoxDrawingType) {
 		StringBuilder sb = new StringBuilder();
+		List<GenericPlanNode> displayPlans = orderedPlansForDisplay();
 
 		if (timedOut != null && timedOut) {
 			sb.append("Timed out while retrieving explanation! Explanation may be incomplete!").append(newLine);
@@ -607,7 +610,7 @@ public class GenericPlanNode {
 		// we use box-drawing characters to "group" nodes in the plan visually when there are exactly two child plans
 		// and
 		// the child plans contain child plans
-		if (plans.size() == 2 && plans.stream().anyMatch(p -> !p.plans.isEmpty())) {
+		if (displayPlans.size() == 2 && displayPlans.stream().anyMatch(p -> !p.plans.isEmpty())) {
 
 			String start;
 			String horizontal;
@@ -626,8 +629,8 @@ public class GenericPlanNode {
 				end = "└";
 			}
 
-			String left = plans.get(0).getHumanReadable(prettyBoxDrawingType + 1);
-			String right = plans.get(1).getHumanReadable(prettyBoxDrawingType + 1);
+			String left = displayPlans.get(0).getHumanReadable(prettyBoxDrawingType + 1);
+			String right = displayPlans.get(1).getHumanReadable(prettyBoxDrawingType + 1);
 			boolean join = type.contains("Join");
 
 			{
@@ -655,8 +658,8 @@ public class GenericPlanNode {
 
 		} else {
 
-			for (int i = 0; i < plans.size(); i++) {
-				GenericPlanNode child = plans.get(i);
+			for (int i = 0; i < displayPlans.size(); i++) {
+				GenericPlanNode child = displayPlans.get(i);
 				int j = i;
 				sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1).split(newLine))
 						.map(c -> {
@@ -672,6 +675,19 @@ public class GenericPlanNode {
 		}
 
 		return sb.toString();
+	}
+
+	private List<GenericPlanNode> orderedPlansForDisplay() {
+		if (!isProjectionElemListNode() || plans.size() < 2) {
+			return plans;
+		}
+		List<GenericPlanNode> orderedPlans = new ArrayList<>(plans);
+		orderedPlans.sort(Comparator.comparing(plan -> plan.getType() == null ? "" : plan.getType()));
+		return orderedPlans;
+	}
+
+	private boolean isProjectionElemListNode() {
+		return type != null && type.startsWith("ProjectionElemList");
 	}
 
 	/**
@@ -1336,6 +1352,7 @@ public class GenericPlanNode {
 	private String toDotInternal(double maxResultSizeActual, double maxTotalTime, double maxSelfTime) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("   ");
+		List<GenericPlanNode> displayPlans = orderedPlansForDisplay();
 
 		if (newScope != null && newScope) {
 			sb.append("subgraph cluster_")
@@ -1377,13 +1394,13 @@ public class GenericPlanNode {
 				.orElse(""));
 
 		sb.append("</table>>").append(" shape=plaintext];").append(newLine);
-		for (int i = 0; i < plans.size(); i++) {
-			GenericPlanNode p = plans.get(i);
+		for (int i = 0; i < displayPlans.size(); i++) {
+			GenericPlanNode p = displayPlans.get(i);
 			String linkLabel = "index " + i;
 
-			if (plans.size() == 2) {
+			if (displayPlans.size() == 2) {
 				linkLabel = i == 0 ? "left" : "right";
-			} else if (plans.size() == 1) {
+			} else if (displayPlans.size() == 1) {
 				linkLabel = "";
 			}
 
@@ -1398,7 +1415,7 @@ public class GenericPlanNode {
 					.append(newLine);
 		}
 
-		plans.forEach(p -> sb.append(p.toDotInternal(maxResultSizeActual, maxTotalTime, maxSelfTime)));
+		displayPlans.forEach(p -> sb.append(p.toDotInternal(maxResultSizeActual, maxTotalTime, maxSelfTime)));
 
 		if (newScope != null && newScope) {
 			sb.append(newLine).append("}").append(newLine);

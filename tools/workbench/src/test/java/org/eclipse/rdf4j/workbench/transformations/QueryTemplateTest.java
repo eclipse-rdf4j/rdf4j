@@ -515,6 +515,52 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryExplanationShouldExposeCopyButtonsAndClipboardHandler() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"{$copyButtonId}\"")
+				.contains("class=\"query-explanation-copy\"")
+				.contains("aria-label=\"{$copy-explanation.label}\"")
+				.contains("title=\"{$copy-explanation.label}\"")
+				.contains("name=\"copyButtonId\">copy-explanation</xsl:with-param>")
+				.contains("name=\"copyButtonId\">copy-explanation-compare</xsl:with-param>");
+
+		assertThat(queryStyles)
+				.contains(".query-explanation-copy")
+				.contains(".query-explanation-copy__svg")
+				.contains(".query-explanation-copy__stroke");
+
+		assertThat(queryScript)
+				.contains("export function copyExplanation(paneKey?: string)")
+				.contains("window.navigator.clipboard.writeText")
+				.contains("$('#copy-explanation').click(function()")
+				.contains("$('#copy-explanation-compare').click(function()");
+	}
+
+	@Test
+	void queryCompareCancelActionShouldUseSvgIcon() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.contains("id=\"explain-compare-cancel-icon\"")
+				.contains("class=\"query-compare-action__svg query-compare-action__svg--cancel\"")
+				.contains("<path class=\"query-compare-action__fill\"")
+				.doesNotContain("query-compare-action__icon--cancel")
+				.doesNotContainPattern(
+						"id=\"explain-compare-cancel\"[\\s\\S]*query-compare-action__icon--cancel");
+
+		assertThat(queryStyles)
+				.contains(".query-compare-action__svg--cancel")
+				.doesNotContain(".query-compare-action__icon--cancel");
+	}
+
+	@Test
 	void queryCompareExplainRefreshActionShouldUseSvgIcon() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);

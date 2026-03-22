@@ -40,6 +40,7 @@ var workbench;
             errorId: 'queryString.errors',
             explanationRowId: 'query-explanation-row',
             explanationControlsRowId: 'query-explanation-controls-row',
+            copyButtonId: 'copy-explanation',
             statusId: 'query-explanation-status',
             overlayId: 'query-explanation-overlay',
             explanationId: 'query-explanation',
@@ -56,6 +57,7 @@ var workbench;
             queryId: 'query-compare',
             errorId: 'queryString.errors-compare',
             explanationRowId: 'query-explanation-row-compare',
+            copyButtonId: 'copy-explanation-compare',
             statusId: 'query-explanation-status-compare',
             overlayId: 'query-explanation-overlay-compare',
             explanationId: 'query-explanation-compare',
@@ -1627,6 +1629,7 @@ var workbench;
             var rowVisible = paneMachineState.kind !== 'inactive' && paneMachineState.kind !== 'empty';
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation);
             $('#' + paneState.explanationRowId).toggle(rowVisible);
+            $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
                 paneStatus
                     .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
@@ -2458,6 +2461,20 @@ var workbench;
             document.body.removeChild(link);
         }
         query_1.downloadExplanation = downloadExplanation;
+        function copyExplanation(paneKey) {
+            var normalizedPaneKey = paneKey === 'compare' ? 'compare' : 'primary';
+            var paneDisplayExplanation = getPaneDisplayExplanation(getPaneMachineState(normalizedPaneKey));
+            if (!paneDisplayExplanation || !paneDisplayExplanation.rawContent) {
+                return false;
+            }
+            if (!window.navigator
+                || !window.navigator.clipboard
+                || typeof window.navigator.clipboard.writeText !== 'function') {
+                return false;
+            }
+            return window.navigator.clipboard.writeText(paneDisplayExplanation.rawContent);
+        }
+        query_1.copyExplanation = copyExplanation;
         function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
             var initialFormat = getNormalizedExplainFormat($('#query-explanation').attr('data-format') || $('#explain-format').val() || 'text');
@@ -2964,6 +2981,12 @@ workbench.addLoad(function queryPageLoaded() {
     addHandler('save', function () {
         $('#explain').val('');
         $('#explain-level').val('');
+    });
+    $('#copy-explanation').click(function () {
+        workbench.query.copyExplanation('primary');
+    });
+    $('#copy-explanation-compare').click(function () {
+        workbench.query.copyExplanation('compare');
     });
     $('#download-explanation').click(workbench.query.downloadExplanation);
     // Add event handlers to the save name field to react to changes in it.

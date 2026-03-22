@@ -108,6 +108,39 @@ test('query explain flow covers success, error, download, and legacy change noti
     );
 });
 
+test('query explanation copy writes the current pane explanation to the clipboard', async () => {
+    const clipboardWrites = [];
+    const harness = createQueryBrowserHarness({
+        initialExplanation: 'Primary plan',
+        initialExplanationFormat: 'text',
+        window: {
+            navigator: {
+                clipboard: {
+                    writeText(text) {
+                        clipboardWrites.push(text);
+                        return Promise.resolve();
+                    }
+                }
+            }
+        }
+    });
+
+    harness.runPageLoad();
+
+    await harness.context.workbench.query.copyExplanation('primary');
+    assert.deepEqual(clipboardWrites, ['Primary plan']);
+
+    harness.context.workbench.query.toggleCompareMode();
+    harness.pendingExplainRequests[0].resolve({
+        content: 'Compare plan',
+        format: 'text',
+        error: ''
+    });
+
+    await harness.context.workbench.query.copyExplanation('compare');
+    assert.deepEqual(clipboardWrites, ['Primary plan', 'Compare plan']);
+});
+
 test('large primary query edits preserve existing hash-backed cookie state', () => {
     const longQuery = 'x'.repeat(3000);
     const harness = createQueryBrowserHarness({

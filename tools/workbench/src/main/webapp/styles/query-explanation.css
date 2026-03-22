@@ -44,6 +44,55 @@
     position: relative;
 }
 
+.query-explanation-copy {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid #c7d3df;
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.92);
+    color: #234e73;
+    box-shadow: 0 6px 16px rgba(12, 25, 36, 0.12);
+    cursor: pointer;
+}
+
+.query-explanation-copy:hover {
+    background: #eef5fb;
+}
+
+.query-explanation-copy:focus {
+    outline: 2px solid #5a9ad6;
+    outline-offset: 2px;
+}
+
+.query-explanation-copy[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.query-explanation-copy__svg {
+    display: block;
+    width: 1rem;
+    height: 1rem;
+}
+
+.query-explanation-copy__stroke {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
 .query-explanation-overlay {
     display: none;
     position: absolute;

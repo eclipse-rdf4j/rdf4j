@@ -91,6 +91,7 @@
 	<variable name="diff-not-ready.label">Run Explain both to compare explanations.</variable>
 	<variable name="explain-format.label">Explain format</variable>
 	<variable name="download-explanation.label">Download explanation</variable>
+	<variable name="copy-explanation.label">Copy explanation</variable>
 	<variable name="change-server.label">RDF4J Server URL</variable>
 	<variable name="change.label">Change</variable>
 	<variable name="server.label">RDF4J Server</variable>

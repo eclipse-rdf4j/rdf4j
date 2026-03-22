@@ -212,9 +212,9 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     height: 1.35rem;
 }
 
-.query-compare-action__icon--cancel {
-    font-size: 1.45rem;
-    line-height: 1;
+.query-compare-action__svg--cancel {
+    width: 1.25rem;
+    height: 1.25rem;
 }
 
 .query-compare-action__svg--diff {
