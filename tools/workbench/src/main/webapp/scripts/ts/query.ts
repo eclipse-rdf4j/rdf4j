@@ -47,8 +47,10 @@ module workbench {
         var activeTraceJqXHR: JQueryXHR = null;
         var activeTraceServerRequestId = '';
         var activeTracePlaybackTimer: number = null;
+        var activeTraceBridgeTimer: number = null;
         var currentTrace: workbench.queryTracePlayer.QueryTrace = null;
         var currentTraceState: workbench.queryTracePlayer.TracePlayerState = null;
+        var previousTraceFrameIndex: number = null;
         var previousTraceActivePatternIndex: number = null;
         var previousTraceMarkerOffset: string = null;
         var pendingTraceMarkerAnimationFrame: number = null;
@@ -3188,6 +3190,11 @@ module workbench {
         }
 
         function clearTraceMotionState() {
+            if (activeTraceBridgeTimer !== null) {
+                window.clearTimeout(activeTraceBridgeTimer);
+                activeTraceBridgeTimer = null;
+            }
+            previousTraceFrameIndex = null;
             previousTraceActivePatternIndex = null;
             previousTraceMarkerOffset = null;
             if (pendingTraceMarkerAnimationFrame !== null) {
@@ -3327,7 +3334,7 @@ module workbench {
             return line;
         }
 
-        function renderTraceQuery(snapshot: workbench.queryTracePlayer.TraceSnapshot) {
+        function renderTraceQuerySnapshot(snapshot: workbench.queryTracePlayer.TraceSnapshot) {
             var patternContainer = $('#query-trace-patterns');
             patternContainer.empty();
             var query = $('<div class="query-trace-query"></div>');
@@ -3354,6 +3361,47 @@ module workbench {
             patternContainer.append(query);
             renderTraceActiveMarker(query, activePatternIndex);
             previousTraceActivePatternIndex = activePatternIndex;
+        }
+
+        function continueTraceRollbackBridge(
+            bridgeSnapshots: workbench.queryTracePlayer.TraceSnapshot[],
+            finalSnapshot: workbench.queryTracePlayer.TraceSnapshot,
+            finalFrameIndex: number,
+            bridgeIndex: number
+        ) {
+            if (bridgeIndex >= bridgeSnapshots.length) {
+                activeTraceBridgeTimer = null;
+                renderTraceQuerySnapshot(finalSnapshot);
+                previousTraceFrameIndex = finalFrameIndex;
+                return;
+            }
+            renderTraceQuerySnapshot(bridgeSnapshots[bridgeIndex]);
+            activeTraceBridgeTimer = window.setTimeout(function() {
+                continueTraceRollbackBridge(bridgeSnapshots, finalSnapshot, finalFrameIndex, bridgeIndex + 1);
+            }, 180);
+        }
+
+        function renderTraceQuery(snapshot: workbench.queryTracePlayer.TraceSnapshot) {
+            if (activeTraceBridgeTimer !== null) {
+                window.clearTimeout(activeTraceBridgeTimer);
+                activeTraceBridgeTimer = null;
+            }
+            var currentFrameIndex = currentTraceState ? currentTraceState.frameIndex : null;
+            var bridgeSnapshots: workbench.queryTracePlayer.TraceSnapshot[] = [];
+            if (currentTrace && currentTraceState && previousTraceFrameIndex !== null
+                && previousTraceFrameIndex !== currentFrameIndex) {
+                var previousState = workbench.queryTracePlayer.seek(
+                    workbench.queryTracePlayer.createState(currentTrace),
+                    previousTraceFrameIndex
+                );
+                bridgeSnapshots = workbench.queryTracePlayer.createRollbackBridgeSnapshots(previousState, currentTraceState);
+            }
+            if (!bridgeSnapshots.length) {
+                renderTraceQuerySnapshot(snapshot);
+                previousTraceFrameIndex = currentFrameIndex;
+                return;
+            }
+            continueTraceRollbackBridge(bridgeSnapshots, snapshot, currentFrameIndex, 0);
         }
 
         function clearTraceSurface() {

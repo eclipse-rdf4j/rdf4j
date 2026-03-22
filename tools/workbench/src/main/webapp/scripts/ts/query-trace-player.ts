@@ -85,6 +85,12 @@ module workbench {
             resultBindings: { [key: string]: string };
         }
 
+        interface SnapshotOptions {
+            activePatternIndex?: number;
+            direction?: 'initial' | 'forward' | 'rollback' | 'steady';
+            clearedPatternIndexes?: number[];
+        }
+
         var configuredNamespaces: TraceNamespaceDefinition[] = [];
 
         // Flow: normalize raw JSON -> keep active frame index -> derive a UI snapshot per render.
@@ -190,20 +196,57 @@ module workbench {
         }
 
         export function snapshot(state: TracePlayerState): TraceSnapshot {
-            var activeFrame = getActiveFrame(state);
+            return buildSnapshot(state);
+        }
+
+        export function createRollbackBridgeSnapshots(
+            fromState: TracePlayerState,
+            toState: TracePlayerState
+        ): TraceSnapshot[] {
+            var bridgeSnapshots: TraceSnapshot[] = [];
+            if (!fromState || !toState || !fromState.trace || !toState.trace) {
+                return bridgeSnapshots;
+            }
+            var fromFrame = getActiveFrame(fromState);
+            var toFrame = getActiveFrame(toState);
+            var tracePatterns = fromState.trace.patterns || [];
+            var fromPattern = resolveActivePattern(fromState, tracePatterns, fromFrame);
+            var toPattern = resolveActivePattern(toState, tracePatterns, toFrame);
+            if (!fromPattern || !toPattern || fromPattern.index <= toPattern.index + 1) {
+                return bridgeSnapshots;
+            }
+            var rollbackPatterns = getRollbackBridgePatterns(tracePatterns, fromPattern.index, toPattern.index);
+            for (var i = 0; i < rollbackPatterns.length; i++) {
+                bridgeSnapshots.push(buildSnapshot(fromState, {
+                    activePatternIndex: rollbackPatterns[i].index,
+                    direction: 'rollback',
+                    clearedPatternIndexes: [rollbackPatterns[i].index]
+                }));
+            }
+            return bridgeSnapshots;
+        }
+
+        function buildSnapshot(state: TracePlayerState, options?: SnapshotOptions): TraceSnapshot {
+            var actualActiveFrame = getActiveFrame(state);
             var previousFrame = getPreviousFrame(state);
             var patternSnapshots: TracePatternSnapshot[] = [];
             var queryLines: TraceQueryLine[] = [];
             var tracePatterns = state && state.trace ? state.trace.patterns : [];
             var traceFilters = state && state.trace && state.trace.filters ? state.trace.filters : [];
             var patternBindings = buildPatternBindingsByPatternId(state);
-            var currentBindings = buildCurrentBindings(patternBindings, tracePatterns, activeFrame);
-            var direction = getTraceDirection(previousFrame, activeFrame);
-            var changedBindingStates = buildChangedBindingStates(state, activeFrame);
+            var activePattern = resolveActivePattern(state, tracePatterns, actualActiveFrame, options);
+            var activePatternIndex = activePattern ? activePattern.index : getSnapshotActivePatternIndex(actualActiveFrame, options);
+            var currentBindings = buildCurrentBindings(patternBindings, tracePatterns, activePatternIndex);
+            var direction = options && options.direction
+                ? options.direction
+                : getTraceDirection(previousFrame, actualActiveFrame, activePatternIndex);
+            var changedBindingStates = shouldUseActualBindingDelta(actualActiveFrame, activePattern)
+                ? buildChangedBindingStates(state, actualActiveFrame, activePattern)
+                : {};
             var currentOptionalDepth = 0;
             for (var i = 0; i < tracePatterns.length; i++) {
-                var isActive = !!activeFrame && tracePatterns[i].id === activeFrame.patternId;
-                var isPending = isPatternPending(tracePatterns[i], activeFrame);
+                var isActive = !!activePattern && tracePatterns[i].id === activePattern.id;
+                var isPending = isPatternPending(tracePatterns[i], activePatternIndex);
                 var optionalDepth = getOptionalDepth(tracePatterns[i]);
                 while (currentOptionalDepth < optionalDepth) {
                     queryLines.push(createOptionalBoundaryLine('optionalStart', currentOptionalDepth));
@@ -214,7 +257,7 @@ module workbench {
                     queryLines.push(createOptionalBoundaryLine('optionalEnd', currentOptionalDepth));
                 }
                 var sparqlText = renderPatternAsSparqlLine(tracePatterns[i].text, optionalDepth);
-                var lineBindings = isPending
+                var lineBindings = isPending || shouldClearPatternBindings(tracePatterns[i], options)
                     ? {}
                     : filterBindingsForQueryLine(
                         sparqlText,
@@ -223,11 +266,11 @@ module workbench {
                 patternSnapshots.push({
                     pattern: tracePatterns[i],
                     active: isActive,
-                    inputBindings: isActive
-                        ? (activeFrame.inputBindings || {})
+                    inputBindings: isActive && shouldUseActualBindingDelta(actualActiveFrame, activePattern)
+                        ? (actualActiveFrame.inputBindings || {})
                         : {},
-                    outputBindings: isActive
-                        ? (activeFrame.outputBindings || {})
+                    outputBindings: isActive && shouldUseActualBindingDelta(actualActiveFrame, activePattern)
+                        ? (actualActiveFrame.outputBindings || {})
                         : {}
                 });
                 queryLines.push({
@@ -267,16 +310,17 @@ module workbench {
                 });
             }
             return {
-                frame: activeFrame,
+                frame: createSnapshotFrame(actualActiveFrame, activePattern),
                 direction: direction,
-                activePatternIndex: activeFrame && typeof activeFrame.patternIndex === 'number'
-                    ? activeFrame.patternIndex
-                    : -1,
+                activePatternIndex: activePatternIndex,
                 patterns: patternSnapshots,
                 queryHead: state && state.trace && state.trace.distinct ? 'SELECT DISTINCT * WHERE {' : 'SELECT * WHERE {',
                 queryTail: '}',
                 queryLines: queryLines,
-                resultBindings: activeFrame && activeFrame.resultBindings ? activeFrame.resultBindings : {}
+                resultBindings: actualActiveFrame && actualActiveFrame.resultBindings
+                    && (hasBindings(actualActiveFrame.resultBindings) || shouldUseActualBindingDelta(actualActiveFrame, activePattern))
+                    ? actualActiveFrame.resultBindings
+                    : {}
             };
         }
 
@@ -351,14 +395,14 @@ module workbench {
         function buildCurrentBindings(
             bindingsByPattern: { [patternId: string]: { [key: string]: string } },
             patterns: TracePattern[],
-            activeFrame: TraceFrame
+            activePatternIndex: number
         ): { [key: string]: string } {
             var currentBindings: { [key: string]: string } = {};
             if (!patterns) {
                 return currentBindings;
             }
             for (var i = 0; i < patterns.length; i++) {
-                if (isPatternPending(patterns[i], activeFrame)) {
+                if (isPatternPending(patterns[i], activePatternIndex)) {
                     continue;
                 }
                 mergeBindings(currentBindings, bindingsByPattern[patterns[i].id] || {});
@@ -416,18 +460,20 @@ module workbench {
 
         function getTraceDirection(
             previousFrame: TraceFrame,
-            activeFrame: TraceFrame
+            activeFrame: TraceFrame,
+            activePatternIndex?: number
         ): 'initial' | 'forward' | 'rollback' | 'steady' {
-            if (!activeFrame || typeof activeFrame.patternIndex !== 'number' || activeFrame.patternIndex < 0) {
+            var resolvedActivePatternIndex = getFramePatternIndex(activeFrame, activePatternIndex);
+            if (resolvedActivePatternIndex < 0) {
                 return 'initial';
             }
             if (!previousFrame || typeof previousFrame.patternIndex !== 'number' || previousFrame.patternIndex < 0) {
                 return 'initial';
             }
-            if (activeFrame.patternIndex > previousFrame.patternIndex) {
+            if (resolvedActivePatternIndex > previousFrame.patternIndex) {
                 return 'forward';
             }
-            if (activeFrame.patternIndex < previousFrame.patternIndex) {
+            if (resolvedActivePatternIndex < previousFrame.patternIndex) {
                 return 'rollback';
             }
             return 'steady';
@@ -435,13 +481,14 @@ module workbench {
 
         function buildChangedBindingStates(
             state: TracePlayerState,
-            activeFrame: TraceFrame
+            activeFrame: TraceFrame,
+            activePattern: TracePattern
         ): { [key: string]: 'changed' | 'stable' } {
             var bindingStates: { [key: string]: 'changed' | 'stable' } = {};
             if (!activeFrame) {
                 return bindingStates;
             }
-            var previousBindings = formatBindings(findPreviousPatternBindings(state, activeFrame));
+            var previousBindings = formatBindings(findPreviousPatternBindings(state, activeFrame, activePattern));
             var currentBindings = formatBindings(getFrameBindings(activeFrame));
             for (var bindingName in currentBindings) {
                 if (!currentBindings.hasOwnProperty(bindingName)) {
@@ -457,7 +504,8 @@ module workbench {
 
         function findPreviousPatternBindings(
             state: TracePlayerState,
-            activeFrame: TraceFrame
+            activeFrame: TraceFrame,
+            activePattern?: TracePattern
         ): { [key: string]: string } {
             if (!state || !state.trace || !state.trace.frames.length || !activeFrame) {
                 return {};
@@ -465,11 +513,28 @@ module workbench {
             var activeIndex = clampFrameIndex(state, state.frameIndex);
             for (var i = activeIndex - 1; i >= 0; i--) {
                 var candidate = state.trace.frames[i];
-                if (isSamePatternFrame(candidate, activeFrame)) {
+                if (isSameResolvedPatternFrame(candidate, activeFrame, activePattern)) {
                     return getFrameBindings(candidate);
                 }
             }
             return {};
+        }
+
+        function isSameResolvedPatternFrame(
+            candidate: TraceFrame,
+            activeFrame: TraceFrame,
+            activePattern?: TracePattern
+        ): boolean {
+            if (!candidate || !activeFrame) {
+                return false;
+            }
+            if (activePattern) {
+                if (candidate.patternId && activePattern.id) {
+                    return candidate.patternId === activePattern.id;
+                }
+                return candidate.patternIndex === activePattern.index;
+            }
+            return isSamePatternFrame(candidate, activeFrame);
         }
 
         function isSamePatternFrame(left: TraceFrame, right: TraceFrame): boolean {
@@ -524,11 +589,156 @@ module workbench {
             return false;
         }
 
-        function isPatternPending(pattern: TracePattern, activeFrame: TraceFrame): boolean {
+        function getSnapshotActivePatternIndex(activeFrame: TraceFrame, options?: SnapshotOptions): number {
+            if (options && typeof options.activePatternIndex === 'number' && options.activePatternIndex >= 0) {
+                return options.activePatternIndex;
+            }
+            return activeFrame && typeof activeFrame.patternIndex === 'number' && activeFrame.patternIndex >= 0
+                ? activeFrame.patternIndex
+                : -1;
+        }
+
+        function findPatternByIndex(patterns: TracePattern[], patternIndex: number): TracePattern {
+            if (!patterns || patternIndex < 0) {
+                return null;
+            }
+            for (var i = 0; i < patterns.length; i++) {
+                if (patterns[i].index === patternIndex) {
+                    return patterns[i];
+                }
+            }
+            return null;
+        }
+
+        function findPatternById(patterns: TracePattern[], patternId: string): TracePattern {
+            if (!patterns || !patternId) {
+                return null;
+            }
+            for (var i = 0; i < patterns.length; i++) {
+                if (patterns[i].id === patternId) {
+                    return patterns[i];
+                }
+            }
+            return null;
+        }
+
+        function resolveActivePattern(
+            state: TracePlayerState,
+            patterns: TracePattern[],
+            activeFrame: TraceFrame,
+            options?: SnapshotOptions
+        ): TracePattern {
+            if (options && typeof options.activePatternIndex === 'number' && options.activePatternIndex >= 0) {
+                return findPatternByIndex(patterns, options.activePatternIndex);
+            }
+            var resolvedPattern = findPatternById(patterns, activeFrame && activeFrame.patternId)
+                || findPatternByIndex(patterns, getSnapshotActivePatternIndex(activeFrame));
+            if (resolvedPattern) {
+                return resolvedPattern;
+            }
+            if (isResultFrame(activeFrame)) {
+                return findPreviousResolvablePattern(state, patterns);
+            }
+            return null;
+        }
+
+        function getRollbackBridgePatterns(
+            patterns: TracePattern[],
+            fromPatternIndex: number,
+            toPatternIndex: number
+        ): TracePattern[] {
+            var rollbackPatterns: TracePattern[] = [];
+            if (!patterns) {
+                return rollbackPatterns;
+            }
+            for (var i = 0; i < patterns.length; i++) {
+                if (patterns[i].index < fromPatternIndex && patterns[i].index > toPatternIndex) {
+                    rollbackPatterns.push(patterns[i]);
+                }
+            }
+            rollbackPatterns.sort(function(left, right) {
+                return right.index - left.index;
+            });
+            return rollbackPatterns;
+        }
+
+        function shouldUseActualBindingDelta(activeFrame: TraceFrame, activePattern: TracePattern): boolean {
             return !!activeFrame
-                && typeof activeFrame.patternIndex === 'number'
-                && activeFrame.patternIndex >= 0
-                && pattern.index > activeFrame.patternIndex;
+                && !!activePattern
+                && (
+                    isResultFrame(activeFrame)
+                    || (
+                    (activeFrame.patternId && activeFrame.patternId === activePattern.id)
+                    || activeFrame.patternIndex === activePattern.index
+                    )
+                );
+        }
+
+        function isResultFrame(frame: TraceFrame): boolean {
+            return !!frame
+                && frame.event === 'result'
+                && hasBindings(frame.resultBindings);
+        }
+
+        function findPreviousResolvablePattern(state: TracePlayerState, patterns: TracePattern[]): TracePattern {
+            if (!state || !state.trace || !state.trace.frames.length) {
+                return null;
+            }
+            var activeIndex = clampFrameIndex(state, state.frameIndex);
+            for (var i = activeIndex - 1; i >= 0; i--) {
+                var candidatePattern = findPatternById(patterns, state.trace.frames[i] && state.trace.frames[i].patternId)
+                    || findPatternByIndex(patterns, getSnapshotActivePatternIndex(state.trace.frames[i]));
+                if (candidatePattern) {
+                    return candidatePattern;
+                }
+            }
+            return null;
+        }
+
+        function getFramePatternIndex(frame: TraceFrame, fallbackPatternIndex?: number): number {
+            if (frame && typeof frame.patternIndex === 'number' && frame.patternIndex >= 0) {
+                return frame.patternIndex;
+            }
+            if (typeof fallbackPatternIndex === 'number' && fallbackPatternIndex >= 0) {
+                return fallbackPatternIndex;
+            }
+            return -1;
+        }
+
+        function shouldClearPatternBindings(pattern: TracePattern, options?: SnapshotOptions): boolean {
+            if (!pattern || !options || !options.clearedPatternIndexes) {
+                return false;
+            }
+            for (var i = 0; i < options.clearedPatternIndexes.length; i++) {
+                if (options.clearedPatternIndexes[i] === pattern.index) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function createSnapshotFrame(activeFrame: TraceFrame, activePattern: TracePattern): TraceFrame {
+            if (!activePattern) {
+                return null;
+            }
+            if (activeFrame && activeFrame.patternId === activePattern.id) {
+                return activeFrame;
+            }
+            return {
+                index: activeFrame && typeof activeFrame.index === 'number' ? activeFrame.index : -1,
+                event: activeFrame && activeFrame.event ? activeFrame.event : '',
+                patternId: activePattern.id,
+                patternIndex: activePattern.index,
+                inputBindings: {},
+                outputBindings: {},
+                resultBindings: {}
+            };
+        }
+
+        function isPatternPending(pattern: TracePattern, activePatternIndex: number): boolean {
+            return typeof activePatternIndex === 'number'
+                && activePatternIndex >= 0
+                && pattern.index > activePatternIndex;
         }
 
         function filterBindingsForQueryLine(
