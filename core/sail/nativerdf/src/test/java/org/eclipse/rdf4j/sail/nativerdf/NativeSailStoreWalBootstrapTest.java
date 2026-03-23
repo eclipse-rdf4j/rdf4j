@@ -20,9 +20,11 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+@Tag("slow")
 class NativeSailStoreWalBootstrapTest {
 
 	@TempDir

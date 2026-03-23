@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.zip.CRC32C;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -32,6 +33,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 /**
  * Exercises ValueStoreWalReader's uncompressed path by writing a minimal .v1 segment by hand and verifying iteration.
  */
+@Tag("slow")
 class ValueStoreWalReaderUncompressedTest {
 
 	@TempDir

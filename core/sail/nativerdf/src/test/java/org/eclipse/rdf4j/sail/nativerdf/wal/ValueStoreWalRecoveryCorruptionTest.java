@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,6 +50,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Tests that corrupt or missing ValueStore files can be reconstructed from the ValueStore WAL, restoring consistent IDs
  * so existing triple indexes remain valid.
  */
+@Tag("slow")
 class ValueStoreWalRecoveryCorruptionTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();

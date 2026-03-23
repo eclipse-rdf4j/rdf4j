@@ -40,6 +40,9 @@
 						<artifactId>maven-surefire-plugin</artifactId>
 						<configuration>
 							<groups>slow</groups>
+							<properties>
+								<includeTags>slow</includeTags>
+							</properties>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -47,6 +50,9 @@
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
 							<groups>slow</groups>
+							<properties>
+								<includeTags>slow</includeTags>
+							</properties>
 						</configuration>
 					</plugin>
 				</plugins>
@@ -65,6 +71,9 @@
 						<artifactId>maven-surefire-plugin</artifactId>
 						<configuration>
 							<excludedGroups>slow</excludedGroups>
+							<properties>
+								<excludeTags>slow</excludeTags>
+							</properties>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -72,6 +81,9 @@
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
 							<excludedGroups>slow</excludedGroups>
+							<properties>
+								<excludeTags>slow</excludeTags>
+							</properties>
 						</configuration>
 					</plugin>
 				</plugins>

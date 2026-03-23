@@ -26,6 +26,7 @@ import java.util.zip.GZIPOutputStream;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -38,6 +39,7 @@ import com.fasterxml.jackson.core.JsonToken;
  * Validates that ValueStoreWalReader verifies the CRC32 summary embedded in compressed segments and marks the scan as
  * incomplete when the summary does not match the decompressed content.
  */
+@Tag("slow")
 class ValueStoreWalCompressedSummaryCrcValidationTest {
 
 	private static final Pattern SEGMENT_GZ = Pattern.compile("wal-(\\d+)\\.v1\\.gz");

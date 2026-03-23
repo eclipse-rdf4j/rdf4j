@@ -147,6 +147,7 @@ module workbench {
             errorId: string;
             explanationRowId: string;
             explanationControlsRowId?: string;
+            copyButtonId: string;
             statusId: string;
             overlayId: string;
             explanationId: string;
@@ -188,6 +189,7 @@ module workbench {
             errorId: 'queryString.errors',
             explanationRowId: 'query-explanation-row',
             explanationControlsRowId: 'query-explanation-controls-row',
+            copyButtonId: 'copy-explanation',
             statusId: 'query-explanation-status',
             overlayId: 'query-explanation-overlay',
             explanationId: 'query-explanation',
@@ -204,6 +206,7 @@ module workbench {
             queryId: 'query-compare',
             errorId: 'queryString.errors-compare',
             explanationRowId: 'query-explanation-row-compare',
+            copyButtonId: 'copy-explanation-compare',
             statusId: 'query-explanation-status-compare',
             overlayId: 'query-explanation-overlay-compare',
             explanationId: 'query-explanation-compare',
@@ -2034,6 +2037,7 @@ module workbench {
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation);
 
             $('#' + paneState.explanationRowId).toggle(rowVisible);
+            $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
                 paneStatus
                     .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
@@ -2952,6 +2956,20 @@ module workbench {
             document.body.removeChild(link);
         }
 
+        export function copyExplanation(paneKey?: string) {
+            var normalizedPaneKey: PaneKey = paneKey === 'compare' ? 'compare' : 'primary';
+            var paneDisplayExplanation = getPaneDisplayExplanation(getPaneMachineState(normalizedPaneKey));
+            if (!paneDisplayExplanation || !paneDisplayExplanation.rawContent) {
+                return false;
+            }
+            if (!window.navigator
+                    || !window.navigator.clipboard
+                    || typeof window.navigator.clipboard.writeText !== 'function') {
+                return false;
+            }
+            return window.navigator.clipboard.writeText(paneDisplayExplanation.rawContent);
+        }
+
         export function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
             var initialFormat = getNormalizedExplainFormat(
@@ -3470,6 +3488,12 @@ workbench.addLoad(function queryPageLoaded() {
     addHandler('save', function() {
         $('#explain').val('');
         $('#explain-level').val('');
+    });
+    $('#copy-explanation').click(function() {
+        workbench.query.copyExplanation('primary');
+    });
+    $('#copy-explanation-compare').click(function() {
+        workbench.query.copyExplanation('compare');
     });
     $('#download-explanation').click(workbench.query.downloadExplanation);
     // Add event handlers to the save name field to react to changes in it.

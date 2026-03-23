@@ -270,6 +270,7 @@ function createQueryBrowserHarness(options = {}) {
     const queryExplanationControlsRow = registerElement('div', { id: 'query-explanation-controls-row' });
     const queryExplanationStatus = registerElement('div', { id: 'query-explanation-status' });
     const queryExplanationOverlay = registerElement('div', { id: 'query-explanation-overlay' });
+    const copyExplanation = registerElement('button', { id: 'copy-explanation', type: 'button' });
     const queryExplanation = registerElement('pre', {
         id: 'query-explanation',
         textContent: options.initialExplanation || '',
@@ -289,6 +290,7 @@ function createQueryBrowserHarness(options = {}) {
     const queryExplanationRowCompare = registerElement('div', { id: 'query-explanation-row-compare' });
     const queryExplanationStatusCompare = registerElement('div', { id: 'query-explanation-status-compare' });
     const queryExplanationOverlayCompare = registerElement('div', { id: 'query-explanation-overlay-compare' });
+    const copyExplanationCompare = registerElement('button', { id: 'copy-explanation-compare', type: 'button' });
     const queryExplanationCompare = registerElement('pre', { id: 'query-explanation-compare' });
     const queryExplanationDotViewCompare = registerElement('div', { id: 'query-explanation-dot-view-compare' });
     const queryExplanationJsonViewCompare = registerElement('div', { id: 'query-explanation-json-view-compare' });
@@ -343,6 +345,7 @@ function createQueryBrowserHarness(options = {}) {
         queryExplanationControlsRow,
         queryExplanationStatus,
         queryExplanationOverlay,
+        copyExplanation,
         queryExplanation,
         queryExplanationDotView,
         queryExplanationJsonView,
@@ -358,6 +361,7 @@ function createQueryBrowserHarness(options = {}) {
         queryExplanationRowCompare,
         queryExplanationStatusCompare,
         queryExplanationOverlayCompare,
+        copyExplanationCompare,
         queryExplanationCompare,
         queryExplanationDotViewCompare,
         queryExplanationJsonViewCompare,

@@ -30,6 +30,7 @@
         <xsl:param name="explanationValue"/>
         <xsl:param name="dotViewId"/>
         <xsl:param name="jsonViewId"/>
+        <xsl:param name="copyButtonId"/>
         <xsl:param name="showControls" select="false()"/>
         <xsl:param name="controlsRowId"/>
 
@@ -67,6 +68,15 @@
                 <div class="query-form__field">
                     <div id="{$statusId}" class="query-explanation-status" aria-live="polite"></div>
                     <div class="query-explanation-surface">
+                        <button id="{$copyButtonId}" class="query-explanation-copy" type="button"
+                                aria-label="{$copy-explanation.label}" title="{$copy-explanation.label}">
+                            <svg class="query-explanation-copy__svg" viewBox="0 0 24 24" focusable="false"
+                                 aria-hidden="true">
+                                <rect class="query-explanation-copy__stroke" x="9" y="9" width="10" height="10"
+                                      rx="1.5"></rect>
+                                <path class="query-explanation-copy__stroke" d="M7 15H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
+                            </svg>
+                        </button>
                         <div id="{$overlayId}" class="query-explanation-overlay" aria-hidden="true"></div>
                         <pre id="{$explanationId}" data-format="{$explanationFormat}">
                             <xsl:value-of select="$explanationValue"/>
@@ -245,6 +255,7 @@
                         <xsl:with-param name="explanationValue" select="$explanation"/>
                         <xsl:with-param name="dotViewId">query-explanation-dot-view</xsl:with-param>
                         <xsl:with-param name="jsonViewId">query-explanation-json-view</xsl:with-param>
+                        <xsl:with-param name="copyButtonId">copy-explanation</xsl:with-param>
                         <xsl:with-param name="showControls" select="true()"/>
                         <xsl:with-param name="controlsRowId">query-explanation-controls-row</xsl:with-param>
                     </xsl:call-template>
@@ -263,8 +274,14 @@
                                 type="button" aria-label="{$cancel.label}" title="{$cancel.label}"
                                 onclick="workbench.query.cancelCompareExplain()" aria-hidden="true"
                                 disabled="disabled">
-                            <span class="query-compare-action__icon query-compare-action__icon--cancel"
-                                  aria-hidden="true">&#x2715;</span>
+                            <svg id="explain-compare-cancel-icon"
+                                 class="query-compare-action__svg query-compare-action__svg--cancel"
+                                 focusable="false" aria-hidden="true" viewBox="0 0 305.002 305.002">
+                                <path class="query-compare-action__fill"
+                                      d="M152.502,0.001C68.412,0.001,0,68.412,0,152.501s68.412,152.5,152.502,152.5c84.089,0,152.5-68.411,152.5-152.5S236.591,0.001,152.502,0.001z M152.502,280.001C82.197,280.001,25,222.806,25,152.501c0-70.304,57.197-127.5,127.502-127.5c70.304,0,127.5,57.196,127.5,127.5C280.002,222.806,222.806,280.001,152.502,280.001z"></path>
+                                <path class="query-compare-action__fill"
+                                      d="M170.18,152.5l43.13-43.129c4.882-4.882,4.882-12.796,0-17.678c-4.881-4.882-12.796-4.881-17.678,0l-43.13,43.13l-43.131-43.131c-4.882-4.881-12.796-4.881-17.678,0c-4.881,4.882-4.881,12.796,0,17.678l43.13,43.13l-43.131,43.131c-4.881,4.882-4.881,12.796,0,17.679c2.441,2.44,5.64,3.66,8.839,3.66c3.199,0,6.398-1.221,8.839-3.66l43.131-43.132l43.131,43.132c2.441,2.439,5.64,3.66,8.839,3.66s6.398-1.221,8.839-3.66c4.882-4.883,4.882-12.797,0-17.679L170.18,152.5z"></path>
+                            </svg>
                         </button>
                         <button id="query-diff-trigger" class="query-compare-action" type="button"
                                 aria-label="{$diff.label}" title="{$diff.label}"
@@ -301,6 +318,7 @@
                         <xsl:with-param name="explanationValue" select="''"/>
                         <xsl:with-param name="dotViewId">query-explanation-dot-view-compare</xsl:with-param>
                         <xsl:with-param name="jsonViewId">query-explanation-json-view-compare</xsl:with-param>
+                        <xsl:with-param name="copyButtonId">copy-explanation-compare</xsl:with-param>
                     </xsl:call-template>
                 </div>
                 <div class="query-form__row">

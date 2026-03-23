@@ -61,6 +61,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	private final QueryModelNode topTupleExpr;
 	private final Explanation.Level level;
 	private final Set<String> rootIncomingBindings;
+	private final CartesianJoinExplainAnalyzer cartesianJoinExplainAnalyzer;
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this(topTupleExpr, Collections.emptySet(), defaultExplanationLevel(topTupleExpr));
@@ -79,6 +80,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		this.level = level == null ? defaultExplanationLevel(topTupleExpr) : level;
 		this.rootIncomingBindings = rootIncomingBindings == null ? Collections.emptySet()
 				: Collections.unmodifiableSet(new LinkedHashSet<>(rootIncomingBindings));
+		this.cartesianJoinExplainAnalyzer = this.level.includesEvaluationAnnotations()
+				? new CartesianJoinExplainAnalyzer(this.topTupleExpr, this.rootIncomingBindings)
+				: null;
 	}
 
 	public GenericPlanNode getGenericPlanNode() {
@@ -215,9 +219,11 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			applyIndexAnnotation((StatementPattern) node, genericPlanNode);
 		}
 
-		if (node instanceof Join || node instanceof LeftJoin) {
-			genericPlanNode.setStringMetricActual(TelemetryMetricNames.JOIN_TYPE,
-					isCrossJoin((BinaryTupleOperator) node, incomingBindings) ? "cross join" : "regular join");
+		if (cartesianJoinExplainAnalyzer != null) {
+			String joinType = cartesianJoinExplainAnalyzer.getJoinType(node);
+			if (joinType != null) {
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.JOIN_TYPE, joinType);
+			}
 		}
 	}
 
@@ -231,13 +237,6 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		} else {
 			genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
 		}
-	}
-
-	private static boolean isCrossJoin(BinaryTupleOperator node, Set<String> incomingBindings) {
-		Set<String> overlap = new LinkedHashSet<>(node.getLeftArg().getBindingNames());
-		overlap.retainAll(node.getRightArg().getBindingNames());
-		overlap.removeAll(incomingBindings);
-		return overlap.isEmpty();
 	}
 
 	private Set<String> childIncomingBindings(QueryModelNode parent, QueryModelNode child,

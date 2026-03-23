@@ -30,10 +30,16 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -108,6 +114,21 @@ public class QueryPlanRetrievalTest {
 			"           }\n" +
 			"        }\n" +
 			"} GROUP BY ?countryID ?year";
+
+	public static final String MANDATORY_REGION_NEGATIVE_QUERY = String.join("\n", "",
+			"PREFIX medical: <http://example.com/theme/medical/>",
+			"select distinct * where {",
+			"",
+			"  ?person medical:name ?name.",
+			"",
+			"  ?a medical:handledBy ?person.",
+			"  ?a <http://example.com/theme/medical/hasCondition> ?d.",
+			"  ?d medical:code ?code.",
+			"",
+			"  ?person a ?personType.",
+			"  ?a a medical:Encounter.",
+			"",
+			"} limit 100");
 
 	public static final String CONSTRUCT = "PREFIX epo: <http://data.europa.eu/a4g/ontology#>\n" +
 			"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
@@ -873,23 +894,26 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testExplainAnnotationsForRegularJoinTextAndJson() throws IOException {
+	public void testExplainAnnotationsEmitDisconnectedJoinTypeTextAndJson() throws IOException {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { ?a a ?c . ?a ?b ?d }");
+			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { ?a a ?c . ?d ?e ?f }");
 
 			Explanation explain = query.explain(Explanation.Level.Optimized);
 			String text = explain.toString();
+			String dot = explain.toDot();
 			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
-			JsonNode joinNode = root.path("plans").get(1);
+			JsonNode joinNode = findFirstPlanNode(root,
+					node -> "Cartesian product".equals(node.path("stringMetricsActual").path("joinType").asText(null)));
 
 			assertThat(text).doesNotContain("joinType=regular join");
-			assertThat(text).contains("bindingState=bound");
+			assertThat(text).contains("joinType=Cartesian product");
 			assertThat(text).contains("bindingState=unbound");
+			assertThat(dot).contains("<tr><td>Join type</td><td>Cartesian product</td></tr>");
 			assertThat(joinNode).isNotNull();
-			assertThat(joinNode.path("stringMetricsActual").has("joinType")).isFalse();
+			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("Cartesian product");
 			assertThat(joinNode.path("plans")
 					.get(0)
 					.path("plans")
@@ -903,31 +927,24 @@ public class QueryPlanRetrievalTest {
 					.get(0)
 					.path("stringMetricsActual")
 					.path("bindingState")
-					.asText()).isEqualTo("bound");
+					.asText()).isEqualTo("unbound");
 		}
 		sailRepository.shutDown();
 	}
 
 	@Test
-	public void testExplainAnnotationsUseRootBindingsForCrossJoinDetection() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		addData(sailRepository);
+	public void testMandatoryRegionNegativeQueryDoesNotEmitDisconnectedJoinType() throws MalformedQueryException {
+		ParsedTupleQuery parsed = (ParsedTupleQuery) new SPARQLParser().parseQuery(MANDATORY_REGION_NEGATIVE_QUERY,
+				null);
+		TupleExpr tupleExpr = parsed.getTupleExpr();
 
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { ?a a ?c . ?a ?b ?d }");
-			query.setBinding("a", RDF.TYPE);
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr, null,
+				Explanation.Level.Optimized);
+		tupleExpr.visit(converter);
 
-			Explanation explain = query.explain(Explanation.Level.Optimized);
-			String text = explain.toString();
-			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
-			JsonNode joinNode = findFirstPlanNode(root, node -> "cross join"
-					.equals(node.path("stringMetricsActual").path("joinType").asText(null)));
-
-			assertThat(text).contains("joinType=cross join");
-			assertThat(joinNode).isNotNull();
-			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("cross join");
-		}
-		sailRepository.shutDown();
+		GenericPlanNode joinNode = findFirstGenericPlanNode(converter.getGenericPlanNode(),
+				node -> "Cartesian product".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
+		assertThat(joinNode).isNull();
 	}
 
 	@Test
@@ -1030,6 +1047,26 @@ public class QueryPlanRetrievalTest {
 				if (match != null) {
 					return match;
 				}
+			}
+		}
+		return null;
+	}
+
+	private static GenericPlanNode findFirstGenericPlanNode(GenericPlanNode node,
+			Predicate<GenericPlanNode> predicate) {
+		if (node == null) {
+			return null;
+		}
+		if (predicate.test(node)) {
+			return node;
+		}
+		if (node.getPlans() == null) {
+			return null;
+		}
+		for (GenericPlanNode child : node.getPlans()) {
+			GenericPlanNode match = findFirstGenericPlanNode(child, predicate);
+			if (match != null) {
+				return match;
 			}
 		}
 		return null;
@@ -2088,5 +2125,4 @@ public class QueryPlanRetrievalTest {
 		sailRepository.shutDown();
 
 	}
-
 }

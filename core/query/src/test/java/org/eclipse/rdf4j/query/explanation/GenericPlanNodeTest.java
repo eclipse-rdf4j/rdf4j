@@ -200,6 +200,20 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void toStringSortsProjectionElemListChildrenAlphabetically() {
+		GenericPlanNode projectionElemList = new GenericPlanNode("ProjectionElemList");
+		projectionElemList.addPlans(
+				new GenericPlanNode("ProjectionElem \"d\""),
+				new GenericPlanNode("ProjectionElem \"a\""),
+				new GenericPlanNode("ProjectionElem \"code\""));
+
+		String actual = projectionElemList.toString();
+
+		assertTrue(actual.indexOf("ProjectionElem \"a\"") < actual.indexOf("ProjectionElem \"code\""), actual);
+		assertTrue(actual.indexOf("ProjectionElem \"code\"") < actual.indexOf("ProjectionElem \"d\""), actual);
+	}
+
+	@Test
 	void toDotIncludesExplainAnnotationRows() {
 		GenericPlanNode join = new GenericPlanNode("Join");
 		join.setStringMetricActual("joinType", "cross join");

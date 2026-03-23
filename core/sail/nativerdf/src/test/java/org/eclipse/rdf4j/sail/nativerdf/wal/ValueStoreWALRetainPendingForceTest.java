@@ -18,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Basic sanity for back-to-back awaitDurable calls. This does not attempt to deterministically reproduce the race but
  * ensures that in normal use two sequential awaits complete promptly.
  */
+@Tag("slow")
 class ValueStoreWALRetainPendingForceTest {
 
 	@TempDir
