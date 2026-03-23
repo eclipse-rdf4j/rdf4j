@@ -662,7 +662,11 @@ public class GenericPlanNode {
 			for (int i = 0; i < displayPlans.size(); i++) {
 				GenericPlanNode child = displayPlans.get(i);
 				int j = i;
-				sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1, child.isProjectionElemListNode() && !isMultiProjectionNode()).split(newLine))
+				sb.append(Arrays
+						.stream(child
+								.getHumanReadable(prettyBoxDrawingType + 1,
+										child.isProjectionElemListNode() && !isMultiProjectionNode())
+								.split(newLine))
 						.map(c -> {
 							if (type.startsWith("StatementPattern") && child.type.startsWith("Var")) {
 								return spoc[j] + ": " + c;
@@ -677,7 +681,6 @@ public class GenericPlanNode {
 
 		return sb.toString();
 	}
-
 
 	private List<GenericPlanNode> orderedPlansForDisplay() {
 		if (!isProjectionElemListNode() || plans.size() < 2) {
