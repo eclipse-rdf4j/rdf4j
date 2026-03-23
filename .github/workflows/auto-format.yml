@@ -1,0 +1,65 @@
+name: Auto-format code
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  auto-format:
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, 'format please')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            core.setOutput('ref', pr.data.head.ref);
+            core.setOutput('repo', pr.data.head.repo.full_name);
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          repository: ${{ steps.pr.outputs.repo }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 11
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Apply formatting
+        run: mvn -B -Pformatting spotless:apply
+
+      - name: Get last commit author
+        id: author
+        run: |
+          echo "name=$(git log -1 --format='%an')" >> "$GITHUB_OUTPUT"
+          echo "email=$(git log -1 --format='%ae')" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push formatting changes
+        run: |
+          git config user.name "${{ steps.author.outputs.name }}"
+          git config user.email "${{ steps.author.outputs.email }}"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No formatting changes needed."
+          else
+            git commit -m "Auto-format code"
+            git push
+          fi
