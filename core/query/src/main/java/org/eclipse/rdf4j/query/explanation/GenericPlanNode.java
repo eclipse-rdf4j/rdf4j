@@ -577,7 +577,7 @@ public class GenericPlanNode {
 	 */
 	@Override
 	public String toString() {
-		return getHumanReadable(0, false);
+		return getHumanReadable(0, isProjectionElemListNode());
 	}
 
 	/**
