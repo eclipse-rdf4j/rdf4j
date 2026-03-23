@@ -906,14 +906,14 @@ public class QueryPlanRetrievalTest {
 			String dot = explain.toDot();
 			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
 			JsonNode joinNode = findFirstPlanNode(root,
-					node -> "disconnected join".equals(node.path("stringMetricsActual").path("joinType").asText(null)));
+					node -> "Cartesian product".equals(node.path("stringMetricsActual").path("joinType").asText(null)));
 
 			assertThat(text).doesNotContain("joinType=regular join");
-			assertThat(text).contains("joinType=disconnected join");
+			assertThat(text).contains("joinType=Cartesian product");
 			assertThat(text).contains("bindingState=unbound");
-			assertThat(dot).contains("<tr><td>Join type</td><td>disconnected join</td></tr>");
+			assertThat(dot).contains("<tr><td>Join type</td><td>Cartesian product</td></tr>");
 			assertThat(joinNode).isNotNull();
-			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("disconnected join");
+			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("Cartesian product");
 			assertThat(joinNode.path("plans")
 					.get(0)
 					.path("plans")
@@ -943,7 +943,7 @@ public class QueryPlanRetrievalTest {
 		tupleExpr.visit(converter);
 
 		GenericPlanNode joinNode = findFirstGenericPlanNode(converter.getGenericPlanNode(),
-				node -> "disconnected join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
+				node -> "Cartesian product".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
 		assertThat(joinNode).isNull();
 	}
 

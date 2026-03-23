@@ -281,7 +281,7 @@ final class CartesianJoinExplainAnalyzer {
 		if (globallySupported && !guaranteedBindingsTainted && leftInfo.supportedSubtree && rightInfo.supportedSubtree
 				&& isCorrelationEmpty(leftInfo.bindingNames, leftInfo.use, rightInfo.bindingNames, rightInfo.use)
 				&& !regionConnects(join, List.of(left), List.of(right))) {
-			joinTypeByNode.put(join, "disconnected join");
+			joinTypeByNode.put(join, "Cartesian product");
 		}
 
 		analyze(left, guaranteedBindings, guaranteedBindingsTainted);

@@ -577,17 +577,18 @@ public class GenericPlanNode {
 	 */
 	@Override
 	public String toString() {
-		return getHumanReadable(0);
+		return getHumanReadable(0, false);
 	}
 
 	/**
 	 * @param prettyBoxDrawingType for deciding if we should use single or double walled character for drawing the
 	 *                             connectors between nodes in the query plan. Eg. ├ or ╠ and ─ o
+	 * @param ordered
 	 * @return
 	 */
-	private String getHumanReadable(int prettyBoxDrawingType) {
+	private String getHumanReadable(int prettyBoxDrawingType, boolean ordered) {
 		StringBuilder sb = new StringBuilder();
-		List<GenericPlanNode> displayPlans = orderedPlansForDisplay();
+		List<GenericPlanNode> displayPlans = ordered ? orderedPlansForDisplay() : plans;
 
 		if (timedOut != null && timedOut) {
 			sb.append("Timed out while retrieving explanation! Explanation may be incomplete!").append(newLine);
@@ -629,8 +630,8 @@ public class GenericPlanNode {
 				end = "└";
 			}
 
-			String left = displayPlans.get(0).getHumanReadable(prettyBoxDrawingType + 1);
-			String right = displayPlans.get(1).getHumanReadable(prettyBoxDrawingType + 1);
+			String left = displayPlans.get(0).getHumanReadable(prettyBoxDrawingType + 1, false);
+			String right = displayPlans.get(1).getHumanReadable(prettyBoxDrawingType + 1, false);
 			boolean join = type.contains("Join");
 
 			{
@@ -661,7 +662,7 @@ public class GenericPlanNode {
 			for (int i = 0; i < displayPlans.size(); i++) {
 				GenericPlanNode child = displayPlans.get(i);
 				int j = i;
-				sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1).split(newLine))
+				sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1, child.isProjectionElemListNode() && !isMultiProjectionNode()).split(newLine))
 						.map(c -> {
 							if (type.startsWith("StatementPattern") && child.type.startsWith("Var")) {
 								return spoc[j] + ": " + c;
@@ -677,6 +678,7 @@ public class GenericPlanNode {
 		return sb.toString();
 	}
 
+
 	private List<GenericPlanNode> orderedPlansForDisplay() {
 		if (!isProjectionElemListNode() || plans.size() < 2) {
 			return plans;
@@ -688,6 +690,10 @@ public class GenericPlanNode {
 
 	private boolean isProjectionElemListNode() {
 		return type != null && type.startsWith("ProjectionElemList");
+	}
+
+	private boolean isMultiProjectionNode() {
+		return type != null && type.startsWith("MultiProjection");
 	}
 
 	/**

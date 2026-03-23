@@ -172,7 +172,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		join.visit(converter);
 
 		assertThat(converter.getGenericPlanNode().getStringMetricsActual())
-				.containsEntry(TelemetryMetricNames.JOIN_TYPE, "disconnected join");
+				.containsEntry(TelemetryMetricNames.JOIN_TYPE, "Cartesian product");
 	}
 
 	@Test
@@ -213,7 +213,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		filter.visit(converter);
 
 		GenericPlanNode joinPlan = findFirstPlan(converter.getGenericPlanNode(),
-				node -> "disconnected join".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
+				node -> "Cartesian product".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
 		assertThat(joinPlan).isNotNull();
 	}
 
