@@ -98,6 +98,12 @@ final class QueryTraceRenderUtils {
 		return builder.toString();
 	}
 
+	static String renderMinusStart(boolean newScope) {
+		if(newScope)
+		return "MINUS (new scope) {";
+		return "MINUS {";
+	}
+
 	static String renderVar(Var var) {
 		if (var == null) {
 			return "()";

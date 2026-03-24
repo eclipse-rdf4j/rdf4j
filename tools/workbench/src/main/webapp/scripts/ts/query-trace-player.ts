@@ -347,6 +347,7 @@ module workbench {
             var traceLines = state && state.trace ? state.trace.lines : [];
             var tracePatterns = state && state.trace ? state.trace.patterns : [];
             var patternBindings = buildPatternBindingsByPatternId(state);
+            var visiblePatternIdsByLineId = buildVisiblePatternIdsByLineId(traceLines, tracePatterns);
             var activePattern = resolveActivePattern(state, tracePatterns, actualActiveFrame, options);
             var activeLine = resolveActiveLine(state, traceLines, actualActiveFrame, options);
             if (!activeLine && activePattern) {
@@ -373,7 +374,12 @@ module workbench {
                     ? {}
                     : filterBindingsForQueryLine(
                         sparqlText,
-                        formatBindings(currentBindings)
+                        formatBindings(getBindingsVisibleToLine(
+                            traceLines[i],
+                            patternBindings,
+                            visiblePatternIdsByLineId,
+                            currentBindings
+                        ))
                     );
                 if (stepPattern) {
                     patternSnapshots.push({
@@ -491,6 +497,41 @@ module workbench {
             return bindingsByPattern;
         }
 
+        function buildVisiblePatternIdsByLineId(
+            lines: TraceLine[],
+            patterns: TracePattern[]
+        ): { [lineId: string]: string[] } {
+            var visiblePatternIdsByLineId: { [lineId: string]: string[] } = {};
+            var visiblePatternScopes: string[][] = [[]];
+            if (!lines) {
+                return visiblePatternIdsByLineId;
+            }
+            for (var i = 0; i < lines.length; i++) {
+                var currentScope = visiblePatternScopes[visiblePatternScopes.length - 1];
+                var visiblePatternIds = currentScope.slice(0);
+                var currentPattern = findPatternById(patterns, lines[i].id)
+                    || findPatternByIndex(patterns, lines[i].stepIndex);
+                if (currentPattern) {
+                    visiblePatternIds.push(currentPattern.id);
+                }
+                visiblePatternIdsByLineId[lines[i].id] = visiblePatternIds;
+                if (currentPattern) {
+                    currentScope.push(currentPattern.id);
+                }
+                if (lines[i].kind === 'minus' || lines[i].kind === 'optionalStart') {
+                    visiblePatternScopes.push(currentScope.slice(0));
+                    continue;
+                }
+                if ((lines[i].kind === 'minusEnd' || lines[i].kind === 'optionalEnd') && visiblePatternScopes.length > 1) {
+                    var completedScope = visiblePatternScopes.pop();
+                    if (lines[i].kind === 'optionalEnd') {
+                        mergeVisiblePatternIds(visiblePatternScopes[visiblePatternScopes.length - 1], completedScope);
+                    }
+                }
+            }
+            return visiblePatternIdsByLineId;
+        }
+
         function buildCurrentBindings(
             bindingsByPattern: { [patternId: string]: { [key: string]: string } },
             patterns: TracePattern[],
@@ -507,6 +548,25 @@ module workbench {
                 mergeBindings(currentBindings, bindingsByPattern[patterns[i].id] || {});
             }
             return currentBindings;
+        }
+
+        function getBindingsVisibleToLine(
+            line: TraceLine,
+            bindingsByPattern: { [patternId: string]: { [key: string]: string } },
+            visiblePatternIdsByLineId: { [lineId: string]: string[] },
+            fallbackBindings: { [key: string]: string }
+        ): { [key: string]: string } {
+            var visibleBindings: { [key: string]: string } = {};
+            var visiblePatternIds = line && visiblePatternIdsByLineId
+                ? visiblePatternIdsByLineId[line.id]
+                : null;
+            if (!visiblePatternIds || !visiblePatternIds.length) {
+                return fallbackBindings || visibleBindings;
+            }
+            for (var i = 0; i < visiblePatternIds.length; i++) {
+                mergeBindings(visibleBindings, bindingsByPattern[visiblePatternIds[i]] || {});
+            }
+            return visibleBindings;
         }
 
         function getPatternIndexesById(patterns: TracePattern[]): { [patternId: string]: number } {
@@ -688,6 +748,17 @@ module workbench {
             for (var bindingName in source) {
                 if (source.hasOwnProperty(bindingName)) {
                     target[bindingName] = source[bindingName];
+                }
+            }
+        }
+
+        function mergeVisiblePatternIds(target: string[], source: string[]) {
+            if (!target || !source) {
+                return;
+            }
+            for (var i = 0; i < source.length; i++) {
+                if (target.indexOf(source[i]) < 0) {
+                    target.push(source[i]);
                 }
             }
         }

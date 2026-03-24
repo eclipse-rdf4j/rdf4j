@@ -162,7 +162,7 @@ class QueryTraceJsonHarnessTest {
 				break;
 			case 2:
 				lines.add(new QueryTrace.Line("line-0", 0, 0, "values", "VALUES ?a { <urn:bob> }", 1));
-				lines.add(new QueryTrace.Line("line-1", 1, 1, "minus", "MINUS {", 1));
+				lines.add(new QueryTrace.Line("line-1", 1, 1, "minus", "MINUS (new scope) {", 1));
 				lines.add(new QueryTrace.Line("line-2", 2, 2, "pattern", "?a <urn:name> ?name", 2));
 				lines.add(new QueryTrace.Line("line-3", 3, -1, "minusEnd", "}", 1));
 				break;

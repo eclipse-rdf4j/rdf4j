@@ -96,7 +96,7 @@ class QueryTraceAnalyzerTest {
 						org.assertj.core.groups.Tuple.tuple(0, 0, "values", "VALUES ?a { <urn:trace:alice> }", 1),
 						org.assertj.core.groups.Tuple.tuple(1, 1, "pattern", "?a <urn:trace:knows> ?b", 1),
 						org.assertj.core.groups.Tuple.tuple(2, 2, "bind", "BIND(?b AS ?who)", 1),
-						org.assertj.core.groups.Tuple.tuple(3, 3, "minus", "MINUS {", 1),
+						org.assertj.core.groups.Tuple.tuple(3, 3, "minus", "MINUS (new scope) {", 1),
 						org.assertj.core.groups.Tuple.tuple(4, 4, "pattern", "?a <urn:trace:name> ?name", 2),
 						org.assertj.core.groups.Tuple.tuple(5, -1, "minusEnd", "}", 1));
 		assertThat(analysis.getCollectedPatterns())

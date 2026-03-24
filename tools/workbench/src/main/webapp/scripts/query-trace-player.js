@@ -233,6 +233,7 @@ var workbench;
             var traceLines = state && state.trace ? state.trace.lines : [];
             var tracePatterns = state && state.trace ? state.trace.patterns : [];
             var patternBindings = buildPatternBindingsByPatternId(state);
+            var visiblePatternIdsByLineId = buildVisiblePatternIdsByLineId(traceLines, tracePatterns);
             var activePattern = resolveActivePattern(state, tracePatterns, actualActiveFrame, options);
             var activeLine = resolveActiveLine(state, traceLines, actualActiveFrame, options);
             if (!activeLine && activePattern) {
@@ -257,7 +258,7 @@ var workbench;
                 var sparqlText = renderTraceLineAsSparqlLine(traceLines[i]);
                 var lineBindings = isPending || shouldClearPatternBindings(stepPattern, options)
                     ? {}
-                    : filterBindingsForQueryLine(sparqlText, formatBindings(currentBindings));
+                    : filterBindingsForQueryLine(sparqlText, formatBindings(getBindingsVisibleToLine(traceLines[i], patternBindings, visiblePatternIdsByLineId, currentBindings)));
                 if (stepPattern) {
                     patternSnapshots.push({
                         pattern: stepPattern,
@@ -361,6 +362,37 @@ var workbench;
             }
             return bindingsByPattern;
         }
+        function buildVisiblePatternIdsByLineId(lines, patterns) {
+            var visiblePatternIdsByLineId = {};
+            var visiblePatternScopes = [[]];
+            if (!lines) {
+                return visiblePatternIdsByLineId;
+            }
+            for (var i = 0; i < lines.length; i++) {
+                var currentScope = visiblePatternScopes[visiblePatternScopes.length - 1];
+                var visiblePatternIds = currentScope.slice(0);
+                var currentPattern = findPatternById(patterns, lines[i].id)
+                    || findPatternByIndex(patterns, lines[i].stepIndex);
+                if (currentPattern) {
+                    visiblePatternIds.push(currentPattern.id);
+                }
+                visiblePatternIdsByLineId[lines[i].id] = visiblePatternIds;
+                if (currentPattern) {
+                    currentScope.push(currentPattern.id);
+                }
+                if (lines[i].kind === 'minus' || lines[i].kind === 'optionalStart') {
+                    visiblePatternScopes.push(currentScope.slice(0));
+                    continue;
+                }
+                if ((lines[i].kind === 'minusEnd' || lines[i].kind === 'optionalEnd') && visiblePatternScopes.length > 1) {
+                    var completedScope = visiblePatternScopes.pop();
+                    if (lines[i].kind === 'optionalEnd') {
+                        mergeVisiblePatternIds(visiblePatternScopes[visiblePatternScopes.length - 1], completedScope);
+                    }
+                }
+            }
+            return visiblePatternIdsByLineId;
+        }
         function buildCurrentBindings(bindingsByPattern, patterns, activePatternIndex) {
             var currentBindings = {};
             if (!patterns) {
@@ -373,6 +405,19 @@ var workbench;
                 mergeBindings(currentBindings, bindingsByPattern[patterns[i].id] || {});
             }
             return currentBindings;
+        }
+        function getBindingsVisibleToLine(line, bindingsByPattern, visiblePatternIdsByLineId, fallbackBindings) {
+            var visibleBindings = {};
+            var visiblePatternIds = line && visiblePatternIdsByLineId
+                ? visiblePatternIdsByLineId[line.id]
+                : null;
+            if (!visiblePatternIds || !visiblePatternIds.length) {
+                return fallbackBindings || visibleBindings;
+            }
+            for (var i = 0; i < visiblePatternIds.length; i++) {
+                mergeBindings(visibleBindings, bindingsByPattern[visiblePatternIds[i]] || {});
+            }
+            return visibleBindings;
         }
         function getPatternIndexesById(patterns) {
             var patternIndexesById = {};
@@ -520,6 +565,16 @@ var workbench;
             for (var bindingName in source) {
                 if (source.hasOwnProperty(bindingName)) {
                     target[bindingName] = source[bindingName];
+                }
+            }
+        }
+        function mergeVisiblePatternIds(target, source) {
+            if (!target || !source) {
+                return;
+            }
+            for (var i = 0; i < source.length; i++) {
+                if (target.indexOf(source[i]) < 0) {
+                    target.push(source[i]);
                 }
             }
         }

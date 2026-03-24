@@ -366,7 +366,7 @@ class QueryTraceExecutionTest {
 						.contains(
 								"{\"id\":\"line-0\",\"displayIndex\":0,\"stepIndex\":0,\"kind\":\"values\",\"text\":\"VALUES ?a { <urn:trace:alice> }\",\"indentDepth\":1}",
 								"{\"id\":\"line-2\",\"displayIndex\":2,\"stepIndex\":2,\"kind\":\"bind\",\"text\":\"BIND(?b AS ?who)\",\"indentDepth\":1}",
-								"{\"id\":\"line-3\",\"displayIndex\":3,\"stepIndex\":3,\"kind\":\"minus\",\"text\":\"MINUS {\",\"indentDepth\":1}");
+								"{\"id\":\"line-3\",\"displayIndex\":3,\"stepIndex\":3,\"kind\":\"minus\",\"text\":\"MINUS (new scope) {\",\"indentDepth\":1}");
 				assertThat(traceJson.path("frames"))
 						.extracting(node -> node.path("lineId").asText(), node -> node.path("event").asText())
 						.contains(
@@ -467,7 +467,7 @@ class QueryTraceExecutionTest {
 						.containsExactly(
 								org.assertj.core.groups.Tuple.tuple("line-0", 0, 0, "values",
 										"VALUES ?a { <urn:trace:alice> }", 1),
-								org.assertj.core.groups.Tuple.tuple("line-1", 1, 1, "minus", "MINUS {", 1),
+								org.assertj.core.groups.Tuple.tuple("line-1", 1, 1, "minus", "MINUS (new scope) {", 1),
 								org.assertj.core.groups.Tuple.tuple("line-2", 2, 2, "pattern",
 										"?a <urn:trace:name> ?name", 2),
 								org.assertj.core.groups.Tuple.tuple("line-3", 3, -1, "minusEnd", "}", 1));

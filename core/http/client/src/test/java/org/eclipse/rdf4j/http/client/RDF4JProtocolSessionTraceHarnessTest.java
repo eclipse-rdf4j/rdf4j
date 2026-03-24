@@ -192,7 +192,7 @@ public class RDF4JProtocolSessionTraceHarnessTest extends SPARQLProtocolSessionT
 		case MATCH:
 			return "VALUES ?s { <urn:test> }";
 		case DROP:
-			return "MINUS {";
+			return "MINUS (new scope) {";
 		case RESULT:
 			return "BIND(?seed AS ?s)";
 		case PROBE:

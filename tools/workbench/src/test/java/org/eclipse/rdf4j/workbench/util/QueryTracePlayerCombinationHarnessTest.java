@@ -101,7 +101,7 @@ class QueryTracePlayerCombinationHarnessTest {
 			"    });",
 			"  }",
 			"  if (withMinus) {",
-			"    const minusLine = addLine('minus', 'MINUS {', 1, stepIndex++);",
+			"    const minusLine = addLine('minus', 'MINUS (new scope) {', 1, stepIndex++);",
 			"    const minusPatternLine = addLine('pattern', '?a <urn:name> ?name', 2, stepIndex++);",
 			"    addLine('minusEnd', '}', 1, -1);",
 			"    pushFrame('match', minusPatternLine, {",

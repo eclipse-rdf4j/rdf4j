@@ -134,7 +134,7 @@ public class QueryServletTraceJsonTest {
 	private static QueryTrace createRichTrace() {
 		List<QueryTrace.Line> lines = List.of(
 				new QueryTrace.Line("line-0", 0, 0, "values", "VALUES ?s { <urn:seed> }", 1),
-				new QueryTrace.Line("line-1", 1, 1, "minus", "MINUS {", 1),
+				new QueryTrace.Line("line-1", 1, 1, "minus", "MINUS (new scope) {", 1),
 				new QueryTrace.Line("line-2", 2, 2, "bind", "BIND(?s AS ?result)", 2),
 				new QueryTrace.Line("line-3", 3, -1, "minusEnd", "}", 1));
 		List<QueryTrace.Pattern> patterns = List.of(new QueryTrace.Pattern("sp-0", 0, "?s ?p ?o"));
