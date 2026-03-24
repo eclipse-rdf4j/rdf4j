@@ -29,8 +29,10 @@ public final class QueryTraceRecorder {
 	public static final String TRACE_LIMIT_EXCEEDED = "traceLimitExceeded";
 	public static final String UNSUPPORTED_SHAPE = "unsupportedShape";
 
+	private final List<QueryTrace.Line> lines = new ArrayList<>();
 	private final List<QueryTrace.Pattern> patterns = new ArrayList<>();
 	private final List<QueryTrace.Frame> frames = new ArrayList<>();
+	private final Map<Object, LineRef> lineRefs = new IdentityHashMap<>();
 	private final Map<StatementPattern, PatternRef> patternRefs = new IdentityHashMap<>();
 	private final boolean distinct;
 	private final List<String> filters;
@@ -44,6 +46,7 @@ public final class QueryTraceRecorder {
 	public QueryTraceRecorder(QueryTraceAnalyzer.Analysis analysis) {
 		this.distinct = analysis.isDistinct();
 		this.filters = new ArrayList<>(analysis.getFilters());
+		initializeLines(analysis.getCollectedLines());
 		initializePatterns(analysis.getCollectedPatterns());
 	}
 
@@ -73,21 +76,37 @@ public final class QueryTraceRecorder {
 		}
 	}
 
-	// Flow: StatementPattern.evaluate -> probe frame, wrapped iterator.next -> match frame, top-level result -> result.
-	public void recordProbe(StatementPattern statementPattern, BindingSet inputBindings) {
-		PatternRef ref = patternRefs.get(statementPattern);
-		if (ref == null) {
-			return;
+	private void initializeLines(List<QueryTraceAnalyzer.CollectedLine> collectedLines) {
+		for (QueryTraceAnalyzer.CollectedLine collectedLine : collectedLines) {
+			QueryTrace.Line line = new QueryTrace.Line("line-" + collectedLine.getDisplayIndex(),
+					collectedLine.getDisplayIndex(), collectedLine.getStepIndex(), collectedLine.getKind(),
+					collectedLine.getText(), collectedLine.getIndentDepth());
+			lines.add(line);
+			if (collectedLine.getTraceTarget() != null) {
+				lineRefs.put(collectedLine.getTraceTarget(), new LineRef(line));
+			}
 		}
-		addFrame("probe", ref, inputBindings, null, null);
+	}
+
+	// Flow: StatementPattern.evaluate -> probe frame, wrapped iterator.next -> match frame, top-level result -> result.
+	public void recordProbe(Object traceTarget, BindingSet inputBindings) {
+		addFrame("probe", traceTarget, inputBindings, null, null);
+	}
+
+	public void recordProbe(StatementPattern statementPattern, BindingSet inputBindings) {
+		recordProbe((Object) statementPattern, inputBindings);
+	}
+
+	public void recordMatch(Object traceTarget, BindingSet inputBindings, BindingSet outputBindings) {
+		addFrame("match", traceTarget, inputBindings, outputBindings, null);
 	}
 
 	public void recordMatch(StatementPattern statementPattern, BindingSet inputBindings, BindingSet outputBindings) {
-		PatternRef ref = patternRefs.get(statementPattern);
-		if (ref == null) {
-			return;
-		}
-		addFrame("match", ref, inputBindings, outputBindings, null);
+		recordMatch((Object) statementPattern, inputBindings, outputBindings);
+	}
+
+	public void recordDrop(Object traceTarget, BindingSet inputBindings) {
+		addFrame("drop", traceTarget, inputBindings, null, null);
 	}
 
 	public void recordResult(BindingSet resultBindings) {
@@ -95,17 +114,24 @@ public final class QueryTraceRecorder {
 	}
 
 	public QueryTrace toTrace() {
-		return QueryTrace.success(patterns, frames, distinct, filters);
+		return QueryTrace.success(lines, patterns, frames, distinct, filters);
 	}
 
-	private void addFrame(String event, PatternRef ref, BindingSet inputBindings, BindingSet outputBindings,
+	private void addFrame(String event, Object traceTarget, BindingSet inputBindings, BindingSet outputBindings,
 			BindingSet resultBindings) {
+		LineRef lineRef = traceTarget == null ? null : lineRefs.get(traceTarget);
+		PatternRef patternRef = traceTarget instanceof StatementPattern ? patternRefs.get(traceTarget) : null;
+		if (traceTarget != null && lineRef == null && patternRef == null) {
+			return;
+		}
 		if (frames.size() >= FRAME_LIMIT) {
 			throw new TraceLimitExceededException("Trace exceeded " + FRAME_LIMIT + " frames.");
 		}
 		frames.add(new QueryTrace.Frame(nextFrameIndex++, event,
-				ref == null ? null : ref.pattern.getId(),
-				ref == null ? -1 : ref.pattern.getIndex(),
+				lineRef == null ? null : lineRef.line.getId(),
+				lineRef == null ? -1 : lineRef.line.getStepIndex(),
+				patternRef == null ? null : patternRef.pattern.getId(),
+				patternRef == null ? -1 : patternRef.pattern.getIndex(),
 				asBindingMap(inputBindings),
 				asBindingMap(outputBindings),
 				asBindingMap(resultBindings)));
@@ -127,6 +153,14 @@ public final class QueryTraceRecorder {
 
 		private PatternRef(QueryTrace.Pattern pattern) {
 			this.pattern = pattern;
+		}
+	}
+
+	private static final class LineRef {
+		private final QueryTrace.Line line;
+
+		private LineRef(QueryTrace.Line line) {
+			this.line = line;
 		}
 	}
 

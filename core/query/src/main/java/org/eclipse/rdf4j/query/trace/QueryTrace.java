@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonIgnoreProperties("success")
 public class QueryTrace {
 
+	private List<Line> lines = new ArrayList<>();
 	private List<Pattern> patterns = new ArrayList<>();
 	private List<Frame> frames = new ArrayList<>();
 	@JsonInclude(JsonInclude.Include.NON_DEFAULT)
@@ -36,12 +37,18 @@ public class QueryTrace {
 	}
 
 	public static QueryTrace success(List<Pattern> patterns, List<Frame> frames) {
-		return success(patterns, frames, false, List.of());
+		return success(List.of(), patterns, frames, false, List.of());
 	}
 
 	public static QueryTrace success(List<Pattern> patterns, List<Frame> frames, boolean distinct,
 			List<String> filters) {
+		return success(List.of(), patterns, frames, distinct, filters);
+	}
+
+	public static QueryTrace success(List<Line> lines, List<Pattern> patterns, List<Frame> frames, boolean distinct,
+			List<String> filters) {
 		QueryTrace trace = new QueryTrace();
+		trace.setLines(lines);
 		trace.setPatterns(patterns);
 		trace.setFrames(frames);
 		trace.setDistinct(distinct);
@@ -59,12 +66,20 @@ public class QueryTrace {
 		return error == null;
 	}
 
+	public List<Line> getLines() {
+		return lines;
+	}
+
+	public void setLines(List<Line> lines) {
+		this.lines = lines == null ? new ArrayList<>() : new ArrayList<>(lines);
+	}
+
 	public List<Pattern> getPatterns() {
 		return patterns;
 	}
 
 	public void setPatterns(List<Pattern> patterns) {
-		this.patterns = patterns;
+		this.patterns = patterns == null ? new ArrayList<>() : new ArrayList<>(patterns);
 	}
 
 	public List<Frame> getFrames() {
@@ -72,7 +87,7 @@ public class QueryTrace {
 	}
 
 	public void setFrames(List<Frame> frames) {
-		this.frames = frames;
+		this.frames = frames == null ? new ArrayList<>() : new ArrayList<>(frames);
 	}
 
 	public boolean isDistinct() {
@@ -97,6 +112,75 @@ public class QueryTrace {
 
 	public void setError(Error error) {
 		this.error = error;
+	}
+
+	public static class Line {
+		private String id;
+		private int displayIndex;
+		private int stepIndex = -1;
+		private String kind;
+		private String text;
+		private int indentDepth;
+
+		public Line() {
+		}
+
+		public Line(String id, int displayIndex, int stepIndex, String kind, String text, int indentDepth) {
+			this.id = id;
+			this.displayIndex = displayIndex;
+			this.stepIndex = stepIndex;
+			this.kind = kind;
+			this.text = text;
+			this.indentDepth = indentDepth;
+		}
+
+		public String getId() {
+			return id;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public int getDisplayIndex() {
+			return displayIndex;
+		}
+
+		public void setDisplayIndex(int displayIndex) {
+			this.displayIndex = displayIndex;
+		}
+
+		public int getStepIndex() {
+			return stepIndex;
+		}
+
+		public void setStepIndex(int stepIndex) {
+			this.stepIndex = stepIndex;
+		}
+
+		public String getKind() {
+			return kind;
+		}
+
+		public void setKind(String kind) {
+			this.kind = kind;
+		}
+
+		public String getText() {
+			return text;
+		}
+
+		public void setText(String text) {
+			this.text = text;
+		}
+
+		public int getIndentDepth() {
+			return indentDepth;
+		}
+
+		public void setIndentDepth(int indentDepth) {
+			this.indentDepth = indentDepth;
+		}
 	}
 
 	public static class Pattern {
@@ -156,6 +240,8 @@ public class QueryTrace {
 	public static class Frame {
 		private int index;
 		private String event;
+		private String lineId;
+		private int stepIndex = -1;
 		private String patternId;
 		private int patternIndex;
 		private Map<String, String> inputBindings;
@@ -167,8 +253,16 @@ public class QueryTrace {
 
 		public Frame(int index, String event, String patternId, int patternIndex, Map<String, String> inputBindings,
 				Map<String, String> outputBindings, Map<String, String> resultBindings) {
+			this(index, event, null, -1, patternId, patternIndex, inputBindings, outputBindings, resultBindings);
+		}
+
+		public Frame(int index, String event, String lineId, int stepIndex, String patternId, int patternIndex,
+				Map<String, String> inputBindings, Map<String, String> outputBindings,
+				Map<String, String> resultBindings) {
 			this.index = index;
 			this.event = event;
+			this.lineId = lineId;
+			this.stepIndex = stepIndex;
 			this.patternId = patternId;
 			this.patternIndex = patternIndex;
 			this.inputBindings = inputBindings;
@@ -190,6 +284,22 @@ public class QueryTrace {
 
 		public void setEvent(String event) {
 			this.event = event;
+		}
+
+		public String getLineId() {
+			return lineId;
+		}
+
+		public void setLineId(String lineId) {
+			this.lineId = lineId;
+		}
+
+		public int getStepIndex() {
+			return stepIndex;
+		}
+
+		public void setStepIndex(int stepIndex) {
+			this.stepIndex = stepIndex;
 		}
 
 		public String getPatternId() {

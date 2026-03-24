@@ -27,9 +27,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 class QueryTraceExecutionTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final ObjectMapper MAPPER = new ObjectMapper();
 	private static final String EX = "urn:trace:";
 
 	private static final IRI ALICE = VF.createIRI(EX, "alice");
@@ -322,6 +326,211 @@ class QueryTraceExecutionTest {
 				assertThat(trace.getError()).isNotNull();
 				assertThat(trace.getError().getCode()).isEqualTo("traceLimitExceeded");
 				assertThat(trace.getFrames()).isEmpty();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void traceShouldSupportValuesBindAndMinusWithLineMetadata() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+
+		try {
+			addMinimalTraceData(repository);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery query = connection.prepareTupleQuery(
+						"SELECT * WHERE { VALUES ?a { <urn:trace:alice> } "
+								+ "?a <urn:trace:knows> ?b . "
+								+ "BIND(?b AS ?who) "
+								+ "MINUS { ?a <urn:trace:name> ?name } }");
+				String optimizedPlan = query.explain(Explanation.Level.Optimized).toString();
+
+				QueryTrace trace = query.trace();
+				JsonNode traceJson = MAPPER.valueToTree(trace);
+
+				assertThat(optimizedPlan)
+						.contains("BindingSetAssignment")
+						.contains("Extension")
+						.contains("Difference");
+				assertThat(trace.isSuccess())
+						.withFailMessage("trace error %s:%s%nplan:%n%s",
+								trace.getError() == null ? "<none>" : trace.getError().getCode(),
+								trace.getError() == null ? "<none>" : trace.getError().getMessage(),
+								optimizedPlan)
+						.isTrue();
+				assertThat(traceJson.path("lines"))
+						.extracting(JsonNode::toString)
+						.contains(
+								"{\"id\":\"line-0\",\"displayIndex\":0,\"stepIndex\":0,\"kind\":\"values\",\"text\":\"VALUES ?a { <urn:trace:alice> }\",\"indentDepth\":1}",
+								"{\"id\":\"line-2\",\"displayIndex\":2,\"stepIndex\":2,\"kind\":\"bind\",\"text\":\"BIND(?b AS ?who)\",\"indentDepth\":1}",
+								"{\"id\":\"line-3\",\"displayIndex\":3,\"stepIndex\":3,\"kind\":\"minus\",\"text\":\"MINUS {\",\"indentDepth\":1}");
+				assertThat(traceJson.path("frames"))
+						.extracting(node -> node.path("lineId").asText(), node -> node.path("event").asText())
+						.contains(
+								org.assertj.core.groups.Tuple.tuple("line-0", "probe"),
+								org.assertj.core.groups.Tuple.tuple("line-0", "match"),
+								org.assertj.core.groups.Tuple.tuple("line-2", "probe"),
+								org.assertj.core.groups.Tuple.tuple("line-2", "match"),
+								org.assertj.core.groups.Tuple.tuple("line-3", "probe"),
+								org.assertj.core.groups.Tuple.tuple("line-3", "match"));
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void traceShouldSupportStandaloneValuesStep() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery query = connection
+					.prepareTupleQuery("SELECT * WHERE { VALUES ?a { <urn:trace:alice> <urn:trace:bob> } }");
+
+			QueryTrace trace = query.trace();
+
+			assertThat(trace.isSuccess()).isTrue();
+			assertThat(trace.getLines())
+					.extracting(QueryTrace.Line::getId, QueryTrace.Line::getDisplayIndex,
+							QueryTrace.Line::getStepIndex, QueryTrace.Line::getKind, QueryTrace.Line::getText,
+							QueryTrace.Line::getIndentDepth)
+					.containsExactly(org.assertj.core.groups.Tuple.tuple("line-0", 0, 0, "values",
+							"VALUES ?a { <urn:trace:alice> <urn:trace:bob> }", 1));
+			assertThat(trace.getFrames())
+					.extracting(QueryTrace.Frame::getEvent, QueryTrace.Frame::getLineId, QueryTrace.Frame::getStepIndex)
+					.containsExactly(
+							org.assertj.core.groups.Tuple.tuple("probe", "line-0", 0),
+							org.assertj.core.groups.Tuple.tuple("match", "line-0", 0),
+							org.assertj.core.groups.Tuple.tuple("result", null, -1),
+							org.assertj.core.groups.Tuple.tuple("match", "line-0", 0),
+							org.assertj.core.groups.Tuple.tuple("result", null, -1));
+			assertThat(trace.getFrames().get(2).getResultBindings()).containsEntry("a", "<urn:trace:alice>");
+			assertThat(trace.getFrames().get(4).getResultBindings()).containsEntry("a", "<urn:trace:bob>");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void traceShouldSupportStandaloneBindStep() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { BIND(<urn:trace:alice> AS ?a) }");
+
+			QueryTrace trace = query.trace();
+
+			assertThat(trace.isSuccess()).isTrue();
+			assertThat(trace.getLines())
+					.extracting(QueryTrace.Line::getId, QueryTrace.Line::getDisplayIndex,
+							QueryTrace.Line::getStepIndex, QueryTrace.Line::getKind, QueryTrace.Line::getText,
+							QueryTrace.Line::getIndentDepth)
+					.containsExactly(org.assertj.core.groups.Tuple.tuple("line-0", 0, 0, "bind",
+							"BIND(<urn:trace:alice> AS ?a)", 1));
+			assertThat(trace.getFrames())
+					.extracting(QueryTrace.Frame::getEvent, QueryTrace.Frame::getLineId, QueryTrace.Frame::getStepIndex)
+					.containsExactly(
+							org.assertj.core.groups.Tuple.tuple("probe", "line-0", 0),
+							org.assertj.core.groups.Tuple.tuple("match", "line-0", 0),
+							org.assertj.core.groups.Tuple.tuple("result", null, -1));
+			assertThat(trace.getFrames().get(1).getOutputBindings()).containsEntry("a", "<urn:trace:alice>");
+			assertThat(trace.getFrames().get(2).getResultBindings()).containsEntry("a", "<urn:trace:alice>");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void traceShouldSupportStandaloneMinusStep() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+
+		try {
+			addMinimalTraceData(repository);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery query = connection.prepareTupleQuery(
+						"SELECT * WHERE { VALUES ?a { <urn:trace:alice> } MINUS { ?a <urn:trace:name> ?name } }");
+
+				QueryTrace trace = query.trace();
+
+				assertThat(trace.isSuccess()).isTrue();
+				assertThat(trace.getLines())
+						.extracting(QueryTrace.Line::getId, QueryTrace.Line::getDisplayIndex,
+								QueryTrace.Line::getStepIndex, QueryTrace.Line::getKind, QueryTrace.Line::getText,
+								QueryTrace.Line::getIndentDepth)
+						.containsExactly(
+								org.assertj.core.groups.Tuple.tuple("line-0", 0, 0, "values",
+										"VALUES ?a { <urn:trace:alice> }", 1),
+								org.assertj.core.groups.Tuple.tuple("line-1", 1, 1, "minus", "MINUS {", 1),
+								org.assertj.core.groups.Tuple.tuple("line-2", 2, 2, "pattern",
+										"?a <urn:trace:name> ?name", 2),
+								org.assertj.core.groups.Tuple.tuple("line-3", 3, -1, "minusEnd", "}", 1));
+				assertThat(trace.getFrames())
+						.extracting(QueryTrace.Frame::getEvent, QueryTrace.Frame::getLineId,
+								QueryTrace.Frame::getStepIndex)
+						.contains(
+								org.assertj.core.groups.Tuple.tuple("probe", "line-0", 0),
+								org.assertj.core.groups.Tuple.tuple("match", "line-0", 0),
+								org.assertj.core.groups.Tuple.tuple("probe", "line-2", 2),
+								org.assertj.core.groups.Tuple.tuple("match", "line-2", 2),
+								org.assertj.core.groups.Tuple.tuple("probe", "line-1", 1),
+								org.assertj.core.groups.Tuple.tuple("match", "line-1", 1),
+								org.assertj.core.groups.Tuple.tuple("result", null, -1));
+				assertThat(trace.getFrames())
+						.noneMatch(frame -> "drop".equals(frame.getEvent()));
+				assertThat(trace.getFrames().get(trace.getFrames().size() - 1).getResultBindings())
+						.containsEntry("a", "<urn:trace:alice>");
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void traceShouldRecordMinusDropForMatchingRows() {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+
+		try {
+			addMinimalTraceData(repository);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery query = connection.prepareTupleQuery(
+						"SELECT * WHERE { VALUES ?a { <urn:trace:bob> } "
+								+ "BIND(?a AS ?who) "
+								+ "MINUS { ?a <urn:trace:name> ?name } }");
+
+				QueryTrace trace = query.trace();
+
+				assertThat(trace.isSuccess()).isTrue();
+				assertThat(trace.getFrames())
+						.extracting(QueryTrace.Frame::getEvent, QueryTrace.Frame::getLineId,
+								QueryTrace.Frame::getStepIndex)
+						.contains(
+								org.assertj.core.groups.Tuple.tuple("probe", "line-0", 0),
+								org.assertj.core.groups.Tuple.tuple("match", "line-0", 0),
+								org.assertj.core.groups.Tuple.tuple("probe", "line-1", 1),
+								org.assertj.core.groups.Tuple.tuple("match", "line-1", 1),
+								org.assertj.core.groups.Tuple.tuple("probe", "line-3", 3),
+								org.assertj.core.groups.Tuple.tuple("match", "line-3", 3),
+								org.assertj.core.groups.Tuple.tuple("probe", "line-2", 2),
+								org.assertj.core.groups.Tuple.tuple("drop", "line-2", 2));
+				assertThat(trace.getFrames())
+						.noneMatch(frame -> "result".equals(frame.getEvent()));
+				QueryTrace.Frame dropFrame = trace.getFrames()
+						.stream()
+						.filter(frame -> "drop".equals(frame.getEvent()))
+						.findFirst()
+						.orElseThrow();
+				assertThat(dropFrame.getInputBindings())
+						.containsEntry("a", "<urn:trace:bob>")
+						.containsEntry("who", "<urn:trace:bob>");
 			}
 		} finally {
 			repository.shutDown();

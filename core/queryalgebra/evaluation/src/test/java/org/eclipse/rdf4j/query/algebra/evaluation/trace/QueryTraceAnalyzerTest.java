@@ -13,20 +13,32 @@ package org.eclipse.rdf4j.query.algebra.evaluation.trace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class QueryTraceAnalyzerTest {
@@ -69,8 +81,70 @@ class QueryTraceAnalyzerTest {
 		assertThat(analysis.getFilters()).containsExactly("FILTER(?a != ?person)");
 	}
 
+	@Test
+	void analyzeShouldCollectValuesBindAndMinusLinesInDisplayOrder() {
+		QueryTraceAnalyzer.Analysis analysis = QueryTraceAnalyzer.analyze(createValuesBindMinusQuery());
+
+		assertThat(analysis.isSupported()).isTrue();
+		assertThat(analysis.getCollectedLines())
+				.extracting(QueryTraceAnalyzer.CollectedLine::getDisplayIndex,
+						QueryTraceAnalyzer.CollectedLine::getStepIndex,
+						QueryTraceAnalyzer.CollectedLine::getKind,
+						QueryTraceAnalyzer.CollectedLine::getText,
+						QueryTraceAnalyzer.CollectedLine::getIndentDepth)
+				.containsExactly(
+						org.assertj.core.groups.Tuple.tuple(0, 0, "values", "VALUES ?a { <urn:trace:alice> }", 1),
+						org.assertj.core.groups.Tuple.tuple(1, 1, "pattern", "?a <urn:trace:knows> ?b", 1),
+						org.assertj.core.groups.Tuple.tuple(2, 2, "bind", "BIND(?b AS ?who)", 1),
+						org.assertj.core.groups.Tuple.tuple(3, 3, "minus", "MINUS {", 1),
+						org.assertj.core.groups.Tuple.tuple(4, 4, "pattern", "?a <urn:trace:name> ?name", 2),
+						org.assertj.core.groups.Tuple.tuple(5, -1, "minusEnd", "}", 1));
+		assertThat(analysis.getCollectedPatterns())
+				.extracting(pattern -> QueryTraceRenderUtils.renderStatementPattern(pattern.getStatementPattern()),
+						QueryTraceAnalyzer.CollectedPattern::getOptionalDepth)
+				.containsExactly(
+						org.assertj.core.groups.Tuple.tuple("?a <urn:trace:knows> ?b", 0),
+						org.assertj.core.groups.Tuple.tuple("?a <urn:trace:name> ?name", 0));
+		assertThat(analysis.getFilters()).isEmpty();
+	}
+
+	@Test
+	void analyzeShouldRejectUnsupportedBindExpression() {
+		QueryTraceAnalyzer.Analysis analysis = QueryTraceAnalyzer.analyze(createUnsupportedBindQuery());
+
+		assertThat(analysis.isSupported()).isFalse();
+		assertThat(analysis.getMessage()).contains("VALUES/BIND/MINUS");
+	}
+
 	private static QueryRoot createOptionalQuery(boolean leftJoinCondition) {
 		return createOptionalQuery(leftJoinCondition, true);
+	}
+
+	private static QueryRoot createValuesBindMinusQuery() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		MapBindingSet valuesBinding = new MapBindingSet();
+		valuesBinding.addBinding("a", SimpleValueFactory.getInstance().createIRI("urn:trace:alice"));
+		values.setBindingSets(List.of(valuesBinding));
+
+		StatementPattern knows = statementPattern("a", "urn:trace:knows", "b");
+		Join join = new Join(values, knows);
+		join.setAlgorithm(org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator.class.getSimpleName());
+
+		Extension extension = new Extension(join);
+		extension.addElement(new ExtensionElem(new Var("b"), "who"));
+
+		StatementPattern name = statementPattern("a", "urn:trace:name", "name");
+		return new QueryRoot(new Difference(extension, name));
+	}
+
+	private static QueryRoot createUnsupportedBindQuery() {
+		Extension extension = new Extension(new SingletonSet());
+		extension.addElement(new ExtensionElem(
+				new MathExpr(new Var("a"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1)),
+						MathOp.PLUS),
+				"sum"));
+		return new QueryRoot(extension);
 	}
 
 	private static QueryRoot createOptionalQuery(boolean leftJoinCondition, boolean resolvedAlgorithm) {

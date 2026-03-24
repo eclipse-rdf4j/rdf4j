@@ -606,6 +606,33 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testSendQueryTraceAcceptsLineOnlySuccessResponse(MockServerClient client) throws Exception {
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("trace", "true"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"lines\":[{\"id\":\"line-0\",\"displayIndex\":0,\"stepIndex\":0,"
+										+ "\"kind\":\"values\",\"text\":\"VALUES ?s { <urn:test> }\",\"indentDepth\":1}],"
+										+ "\"frames\":[{\"index\":0,\"event\":\"probe\",\"lineId\":\"line-0\","
+										+ "\"stepIndex\":0,\"inputBindings\":{},\"outputBindings\":{},"
+										+ "\"resultBindings\":{}}]}")
+								.withContentType(MediaType.APPLICATION_JSON)
+				);
+
+		QueryTrace trace = getRDF4JSession().sendQueryTrace(QueryLanguage.SPARQL,
+				"SELECT * WHERE { VALUES ?s { <urn:test> } }", null, null, true, 0);
+
+		assertThat(trace.isSuccess()).isTrue();
+		assertThat(trace.getLines()).hasSize(1);
+		assertThat(trace.getPatterns()).isEmpty();
+		assertThat(trace.getFrames()).hasSize(1);
+	}
+
+	@Test
 	public void testSendQueryTraceIncludesTraceRequestId(MockServerClient client) throws Exception {
 		client.when(
 				request()

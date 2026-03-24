@@ -2612,13 +2612,13 @@ var workbench;
                 .addClass('query-trace-meta-item')
                 .text(text);
         }
-        function renderTraceMeta(frame, patternCount, frameIndex, frameCount) {
+        function renderTraceMeta(frame, stepCount, activeDisplayIndex, frameIndex, frameCount) {
             var summary = $('#query-trace-summary');
             var frameLabel = $('#query-trace-frame-label');
             summary.empty();
             frameLabel.empty();
-            if (patternCount > 0) {
-                summary.append(createTraceMetaItem(patternCount + ' patterns'));
+            if (stepCount > 0) {
+                summary.append(createTraceMetaItem(stepCount + ' steps'));
             }
             if (frameCount > 0) {
                 summary.append(createTraceMetaItem(frameCount + ' frames'));
@@ -2629,8 +2629,8 @@ var workbench;
             frameLabel
                 .append(createTraceMetaItem('Frame ' + (frameIndex + 1) + ' of ' + frameCount))
                 .append(createTraceMetaItem('Event ' + frame.event));
-            if (frame.patternIndex >= 0) {
-                frameLabel.append(createTraceMetaItem('Line ' + (frame.patternIndex + 1)));
+            if (activeDisplayIndex >= 0) {
+                frameLabel.append(createTraceMetaItem('Line ' + (activeDisplayIndex + 1)));
             }
         }
         function renderTraceStepLabel(frame, frameIndex, frameCount) {
@@ -2641,8 +2641,8 @@ var workbench;
             }
             var label = 'Step ' + (frameIndex + 1) + ' / ' + frameCount + '  ·  '
                 + frame.event.charAt(0).toUpperCase() + frame.event.substring(1);
-            if (frame.patternIndex >= 0) {
-                label += '  ·  Line ' + (frame.patternIndex + 1);
+            if (typeof frame.stepIndex === 'number' && frame.stepIndex >= 0) {
+                label += '  ·  Step ' + (frame.stepIndex + 1);
             }
             stepLabel.text(label);
         }
@@ -2672,32 +2672,32 @@ var workbench;
                 : null;
         }
         function getRollbackWaveDelayMs(queryLine, activePatternIndex, rollbackFromPatternIndex) {
-            if (!queryLine || !queryLine.pattern || activePatternIndex === null || rollbackFromPatternIndex === null) {
+            if (!queryLine || queryLine.stepIndex < 0 || activePatternIndex === null || rollbackFromPatternIndex === null) {
                 return -1;
             }
             if (activePatternIndex >= rollbackFromPatternIndex) {
                 return -1;
             }
-            if (queryLine.pattern.index < activePatternIndex || queryLine.pattern.index > rollbackFromPatternIndex) {
+            if (queryLine.stepIndex < activePatternIndex || queryLine.stepIndex > rollbackFromPatternIndex) {
                 return -1;
             }
-            return (rollbackFromPatternIndex - queryLine.pattern.index) * 48;
+            return (rollbackFromPatternIndex - queryLine.stepIndex) * 48;
         }
-        function computeTraceActiveMarkerOffset(activePatternIndex) {
-            return ((activePatternIndex + 1) * 4) + 'em';
+        function computeTraceActiveMarkerOffset(activeDisplayIndex) {
+            return ((activeDisplayIndex + 1) * 4) + 'em';
         }
-        function renderTraceActiveMarker(query, activePatternIndex) {
+        function renderTraceActiveMarker(query, activeDisplayIndex) {
             if (pendingTraceMarkerAnimationFrame !== null) {
                 window.cancelAnimationFrame(pendingTraceMarkerAnimationFrame);
                 pendingTraceMarkerAnimationFrame = null;
             }
-            if (activePatternIndex === null) {
+            if (activeDisplayIndex === null) {
                 previousTraceMarkerOffset = null;
                 return;
             }
             var marker = $('<span class="query-trace-query__active-marker" aria-hidden="true"></span>');
             query.append(marker);
-            var targetOffset = computeTraceActiveMarkerOffset(activePatternIndex);
+            var targetOffset = computeTraceActiveMarkerOffset(activeDisplayIndex);
             var startOffset = previousTraceMarkerOffset !== null ? previousTraceMarkerOffset : targetOffset;
             marker.css('transform', 'translate3d(0, ' + startOffset + ', 0)');
             previousTraceMarkerOffset = targetOffset;
@@ -2779,6 +2779,10 @@ var workbench;
                 && snapshot.activePatternIndex >= 0
                 ? snapshot.activePatternIndex
                 : null;
+            var activeDisplayIndex = snapshot && typeof snapshot.activeDisplayIndex === 'number'
+                && snapshot.activeDisplayIndex >= 0
+                ? snapshot.activeDisplayIndex
+                : null;
             var rollbackFromPatternIndex = snapshot.direction === 'rollback'
                 && previousTraceActivePatternIndex !== null
                 ? previousTraceActivePatternIndex
@@ -2789,7 +2793,7 @@ var workbench;
             }
             query.append(createTraceQueryShellLine(snapshot.queryTail, 'query-trace-query__line--tail'));
             patternContainer.append(query);
-            renderTraceActiveMarker(query, activePatternIndex);
+            renderTraceActiveMarker(query, activeDisplayIndex);
             previousTraceActivePatternIndex = activePatternIndex;
         }
         function continueTraceRollbackBridge(bridgeSnapshots, finalSnapshot, finalFrameIndex, bridgeIndex) {
@@ -2865,7 +2869,7 @@ var workbench;
             $('#trace-reset').prop('disabled', frameCount <= 0);
             $('#download-trace').prop('disabled', false);
             var frame = snapshot.frame;
-            renderTraceMeta(frame, currentTrace.patterns.length, currentTraceState.frameIndex, frameCount);
+            renderTraceMeta(frame, currentTrace.patterns.length, snapshot.activeDisplayIndex, currentTraceState.frameIndex, frameCount);
             renderTraceStepLabel(frame, currentTraceState.frameIndex, frameCount);
             if (!frame) {
                 renderTraceEmptyState('No trace frames were returned.');
@@ -2913,6 +2917,7 @@ var workbench;
                     }
                     stopTracePlayback();
                     currentTrace = {
+                        lines: [],
                         patterns: [],
                         frames: [],
                         error: {

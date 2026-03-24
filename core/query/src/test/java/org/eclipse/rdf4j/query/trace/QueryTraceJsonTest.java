@@ -78,4 +78,22 @@ class QueryTraceJsonTest {
 		assertEquals(0, trace.getPatterns().get(0).getOptionalDepth());
 		assertEquals(1, trace.getPatterns().get(1).getOptionalDepth());
 	}
+
+	@Test
+	void roundTripPreservesLinesAndFrameReferences() throws Exception {
+		QueryTrace trace = mapper.readValue(
+				"{\"lines\":[{\"id\":\"line-0\",\"displayIndex\":0,\"stepIndex\":0,\"kind\":\"pattern\","
+						+ "\"text\":\"?s ?p ?o\",\"indentDepth\":1}],"
+						+ "\"frames\":[{\"index\":0,\"event\":\"probe\",\"lineId\":\"line-0\",\"stepIndex\":0,"
+						+ "\"patternId\":\"sp-0\",\"patternIndex\":0,\"inputBindings\":{},\"outputBindings\":{},"
+						+ "\"resultBindings\":{}}]}",
+				QueryTrace.class);
+
+		String json = mapper.writeValueAsString(trace);
+
+		assertTrue(json.contains("\"lines\":[{\"id\":\"line-0\""), json);
+		assertTrue(json.contains("\"displayIndex\":0"), json);
+		assertTrue(json.contains("\"stepIndex\":0"), json);
+		assertTrue(json.contains("\"lineId\":\"line-0\""), json);
+	}
 }

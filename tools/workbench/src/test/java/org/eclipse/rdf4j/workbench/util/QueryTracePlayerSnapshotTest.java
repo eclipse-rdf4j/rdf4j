@@ -525,6 +525,65 @@ class QueryTracePlayerSnapshotTest {
 			+ "  lineActive: snapshot.queryLines.map(line => line.active)\n"
 			+ "}));\n";
 
+	private static final String LINE_ONLY_DROP_NODE_SCRIPT = "const fs = require('fs');\n"
+			+ "const vm = require('vm');\n"
+			+ "const source = fs.readFileSync(process.argv[1], 'utf8');\n"
+			+ "vm.runInThisContext(source);\n"
+			+ "const trace = workbench.queryTracePlayer.normalizeTrace({\n"
+			+ "  lines: [\n"
+			+ "    { id: 'line-0', displayIndex: 0, stepIndex: 0, kind: 'values', text: 'VALUES ?a { <urn:bob> }', indentDepth: 1 },\n"
+			+ "    { id: 'line-1', displayIndex: 1, stepIndex: 1, kind: 'bind', text: 'BIND(?a AS ?who)', indentDepth: 1 },\n"
+			+ "    { id: 'line-2', displayIndex: 2, stepIndex: 2, kind: 'minus', text: 'MINUS {', indentDepth: 1 },\n"
+			+ "    { id: 'line-3', displayIndex: 3, stepIndex: 3, kind: 'pattern', text: '?a <urn:name> ?name', indentDepth: 2 },\n"
+			+ "    { id: 'line-4', displayIndex: 4, stepIndex: -1, kind: 'minusEnd', text: '}', indentDepth: 1 }\n"
+			+ "  ],\n"
+			+ "  frames: [\n"
+			+ "    {\n"
+			+ "      index: 0,\n"
+			+ "      event: 'match',\n"
+			+ "      lineId: 'line-0',\n"
+			+ "      stepIndex: 0,\n"
+			+ "      outputBindings: { a: '<urn:bob>' }\n"
+			+ "    },\n"
+			+ "    {\n"
+			+ "      index: 1,\n"
+			+ "      event: 'match',\n"
+			+ "      lineId: 'line-1',\n"
+			+ "      stepIndex: 1,\n"
+			+ "      outputBindings: { a: '<urn:bob>', who: '<urn:bob>' }\n"
+			+ "    },\n"
+			+ "    {\n"
+			+ "      index: 2,\n"
+			+ "      event: 'match',\n"
+			+ "      lineId: 'line-3',\n"
+			+ "      stepIndex: 3,\n"
+			+ "      outputBindings: { a: '<urn:bob>', name: '\"Bob\"' }\n"
+			+ "    },\n"
+			+ "    {\n"
+			+ "      index: 3,\n"
+			+ "      event: 'drop',\n"
+			+ "      lineId: 'line-2',\n"
+			+ "      stepIndex: 2,\n"
+			+ "      inputBindings: { a: '<urn:bob>', who: '<urn:bob>' }\n"
+			+ "    }\n"
+			+ "  ]\n"
+			+ "});\n"
+			+ "const snapshot = workbench.queryTracePlayer.snapshot(\n"
+			+ "  workbench.queryTracePlayer.seek(workbench.queryTracePlayer.createState(trace), 3)\n"
+			+ ");\n"
+			+ "process.stdout.write(JSON.stringify({\n"
+			+ "  patternIds: trace.patterns.map(pattern => pattern.id),\n"
+			+ "  patternIndexes: trace.patterns.map(pattern => pattern.index),\n"
+			+ "  activeDisplayIndex: snapshot.activeDisplayIndex,\n"
+			+ "  frameEvent: snapshot.frame ? snapshot.frame.event : null,\n"
+			+ "  framePatternId: snapshot.frame ? snapshot.frame.patternId : null,\n"
+			+ "  frameInputBindings: snapshot.frame ? snapshot.frame.inputBindings : null,\n"
+			+ "  lineKinds: snapshot.queryLines.map(line => line.kind),\n"
+			+ "  lineTexts: snapshot.queryLines.map(line => line.sparqlText),\n"
+			+ "  lineActive: snapshot.queryLines.map(line => line.active),\n"
+			+ "  linePending: snapshot.queryLines.map(line => line.pending)\n"
+			+ "}));\n";
+
 	@Test
 	void activeTraceLineShouldExposeQueryLikeTooltipBindings() throws Exception {
 		assertThat(runNodeScript(NODE_SCRIPT)).isEqualTo(
@@ -625,6 +684,22 @@ class QueryTracePlayerSnapshotTest {
 						+ "\"lineTexts\":[\"  ?a <urn:trace:knows> ?person .\",\"  OPTIONAL {\","
 						+ "\"    ?person <urn:trace:name> ?name .\",\"  }\",\"  FILTER(?a != ?person)\"],"
 						+ "\"lineActive\":[false,false,true,false,false]}");
+	}
+
+	@Test
+	void lineOnlyTraceShouldResolveDropFramesAgainstStepLines() throws Exception {
+		assertThat(runNodeScript(LINE_ONLY_DROP_NODE_SCRIPT)).isEqualTo(
+				"{\"patternIds\":[\"line-0\",\"line-1\",\"line-2\",\"line-3\"],"
+						+ "\"patternIndexes\":[0,1,2,3],"
+						+ "\"activeDisplayIndex\":2,"
+						+ "\"frameEvent\":\"drop\","
+						+ "\"framePatternId\":\"line-2\","
+						+ "\"frameInputBindings\":{\"a\":\"<urn:bob>\",\"who\":\"<urn:bob>\"},"
+						+ "\"lineKinds\":[\"values\",\"bind\",\"minus\",\"pattern\",\"minusEnd\"],"
+						+ "\"lineTexts\":[\"  VALUES ?a { <urn:bob> }\",\"  BIND(?a AS ?who)\",\"  MINUS {\","
+						+ "\"    ?a <urn:name> ?name .\",\"  }\"],"
+						+ "\"lineActive\":[false,false,true,false,false],"
+						+ "\"linePending\":[false,false,false,true,false]}");
 	}
 
 	private static String runNodeScript(String script) throws Exception {

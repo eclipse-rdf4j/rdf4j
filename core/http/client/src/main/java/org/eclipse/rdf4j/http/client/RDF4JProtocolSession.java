@@ -1362,7 +1362,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			}
 
 			QueryTrace trace = TRACE_MAPPER.readValue(response.getEntity().getContent(), QueryTrace.class);
-			if (trace.getError() == null && (trace.getPatterns() == null || trace.getPatterns().isEmpty())) {
+			boolean hasLegacyPatterns = trace.getPatterns() != null && !trace.getPatterns().isEmpty();
+			boolean hasLines = trace.getLines() != null && !trace.getLines().isEmpty();
+			if (trace.getError() == null && !hasLegacyPatterns && !hasLines) {
 				throw new RepositoryException("Server returned an invalid trace response.");
 			}
 			return trace;

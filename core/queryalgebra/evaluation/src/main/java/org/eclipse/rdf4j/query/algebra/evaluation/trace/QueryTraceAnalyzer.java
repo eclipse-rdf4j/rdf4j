@@ -15,53 +15,58 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
- * Supported demo shape: top-level QueryRoot/Projection/Slice/Distinct/Filter wrappers over a single StatementPattern or
- * a JoinIterator tree with only StatementPattern leaves.
+ * Supported demo shape: top-level QueryRoot/Projection/Slice/Distinct wrappers over a JoinIterator tree that may
+ * contain statement patterns, OPTIONAL branches, FILTER lines, VALUES, BIND, and MINUS.
  */
 public final class QueryTraceAnalyzer {
 
 	private static final String UNSUPPORTED_MESSAGE = "Trace demo only supports simple queries with optional "
-			+ "projection/root/limit/distinct/filter wrappers, JoinIterator joins, and OPTIONAL "
-			+ "branches over statement patterns.";
+			+ "projection/root/limit/distinct wrappers, JoinIterator joins, FILTER/OPTIONAL display lines, and "
+			+ "VALUES/BIND/MINUS steps over supported expressions.";
 
 	private QueryTraceAnalyzer() {
 	}
 
 	public static Analysis analyze(TupleExpr tupleExpr) {
-		List<CollectedPattern> patterns = new ArrayList<>();
-		List<String> filters = new ArrayList<>();
-		UnwrappedQuery unwrappedQuery = unwrap(tupleExpr, filters);
+		Collector collector = new Collector();
+		UnwrappedQuery unwrappedQuery = unwrap(tupleExpr);
 		TupleExpr current = unwrappedQuery.current;
-		if (!collectPatterns(current, patterns, filters, 0)) {
+		if (current == null || !collector.collect(current, 1, 0)) {
 			return Analysis.unsupported(UNSUPPORTED_MESSAGE);
 		}
-		if (patterns.isEmpty()) {
+		if (!collector.hasSteps()) {
 			return Analysis.unsupported(UNSUPPORTED_MESSAGE);
 		}
-		Collections.reverse(filters);
-		return Analysis.supported(patterns, unwrappedQuery.distinct, filters);
+		return Analysis.supported(collector.getLines(), collector.getPatterns(), unwrappedQuery.distinct,
+				collector.getFilters());
 	}
 
-	private static UnwrappedQuery unwrap(TupleExpr tupleExpr, List<String> filters) {
+	private static UnwrappedQuery unwrap(TupleExpr tupleExpr) {
 		TupleExpr current = tupleExpr;
 		boolean distinct = false;
 		while (current instanceof QueryRoot || current instanceof Projection || current instanceof Slice
-				|| current instanceof Distinct || current instanceof Filter) {
+				|| current instanceof Distinct) {
 			if (current instanceof QueryRoot) {
 				current = ((QueryRoot) current).getArg();
 			} else if (current instanceof Slice) {
@@ -69,59 +74,11 @@ public final class QueryTraceAnalyzer {
 			} else if (current instanceof Distinct) {
 				distinct = true;
 				current = ((Distinct) current).getArg();
-			} else if (current instanceof Filter) {
-				try {
-					filters.add(QueryTraceRenderUtils.renderFilter(((Filter) current).getCondition()));
-				} catch (IllegalArgumentException e) {
-					return UnwrappedQuery.unsupported();
-				}
-				current = ((Filter) current).getArg();
 			} else {
 				current = ((Projection) current).getArg();
 			}
 		}
 		return UnwrappedQuery.supported(current, distinct);
-	}
-
-	private static boolean collectPatterns(TupleExpr tupleExpr, List<CollectedPattern> patterns, List<String> filters,
-			int optionalDepth) {
-		if (tupleExpr instanceof StatementPattern) {
-			patterns.add(new CollectedPattern((StatementPattern) tupleExpr, optionalDepth));
-			return true;
-		}
-		if (tupleExpr instanceof Filter) {
-			Filter filter = (Filter) tupleExpr;
-			try {
-				filters.add(QueryTraceRenderUtils.renderFilter(filter.getCondition()));
-			} catch (IllegalArgumentException e) {
-				return false;
-			}
-			return collectPatterns(filter.getArg(), patterns, filters, optionalDepth);
-		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
-			if (!JoinIterator.class.getSimpleName().equals(join.getAlgorithmName())) {
-				return false;
-			}
-			if (!collectPatterns(join.getLeftArg(), patterns, filters, optionalDepth)) {
-				return false;
-			}
-			return collectPatterns(join.getRightArg(), patterns, filters, optionalDepth);
-		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
-			if (!isSupportedLeftJoinAlgorithm(leftJoin.getAlgorithmName())) {
-				return false;
-			}
-			if (leftJoin.hasCondition() && !collectLeftJoinCondition(leftJoin, filters)) {
-				return false;
-			}
-			if (!collectPatterns(leftJoin.getLeftArg(), patterns, filters, optionalDepth)) {
-				return false;
-			}
-			return collectPatterns(leftJoin.getRightArg(), patterns, filters, optionalDepth + 1);
-		}
-		return false;
 	}
 
 	private static boolean isSupportedLeftJoinAlgorithm(String algorithmName) {
@@ -132,41 +89,49 @@ public final class QueryTraceAnalyzer {
 				|| BadlyDesignedLeftJoinIterator.class.getSimpleName().equals(algorithmName);
 	}
 
-	private static boolean collectLeftJoinCondition(LeftJoin leftJoin, List<String> filters) {
+	private static boolean isSupportedLeftJoinCondition(LeftJoin leftJoin) {
 		if (!leftJoin.getAssuredBindingNames().containsAll(VarNameCollector.process(leftJoin.getCondition()))) {
 			return false;
 		}
+		return renderFilter(leftJoin.getCondition()) != null;
+	}
+
+	private static String renderFilter(ValueExpr condition) {
 		try {
-			filters.add(QueryTraceRenderUtils.renderFilter(leftJoin.getCondition()));
+			return QueryTraceRenderUtils.renderFilter(condition);
 		} catch (IllegalArgumentException e) {
-			return false;
+			return null;
 		}
-		return true;
 	}
 
 	public static final class Analysis {
 		private final boolean supported;
 		private final String message;
+		private final List<CollectedLine> lines;
 		private final List<CollectedPattern> patterns;
 		private final boolean distinct;
 		private final List<String> filters;
 
-		private Analysis(boolean supported, String message, List<CollectedPattern> patterns, boolean distinct,
-				List<String> filters) {
+		private Analysis(boolean supported, String message, List<CollectedLine> lines, List<CollectedPattern> patterns,
+				boolean distinct, List<String> filters) {
 			this.supported = supported;
 			this.message = message;
+			this.lines = lines;
 			this.patterns = patterns;
 			this.distinct = distinct;
 			this.filters = filters;
 		}
 
-		public static Analysis supported(List<CollectedPattern> patterns, boolean distinct, List<String> filters) {
-			return new Analysis(true, null, Collections.unmodifiableList(new ArrayList<>(patterns)), distinct,
+		public static Analysis supported(List<CollectedLine> lines, List<CollectedPattern> patterns, boolean distinct,
+				List<String> filters) {
+			return new Analysis(true, null,
+					Collections.unmodifiableList(new ArrayList<>(lines)),
+					Collections.unmodifiableList(new ArrayList<>(patterns)), distinct,
 					Collections.unmodifiableList(new ArrayList<>(filters)));
 		}
 
 		public static Analysis unsupported(String message) {
-			return new Analysis(false, message, List.of(), false, List.of());
+			return new Analysis(false, message, List.of(), List.of(), false, List.of());
 		}
 
 		public boolean isSupported() {
@@ -175,6 +140,10 @@ public final class QueryTraceAnalyzer {
 
 		public String getMessage() {
 			return message;
+		}
+
+		List<CollectedLine> getCollectedLines() {
+			return lines;
 		}
 
 		public List<StatementPattern> getPatterns() {
@@ -198,6 +167,48 @@ public final class QueryTraceAnalyzer {
 		}
 	}
 
+	static final class CollectedLine {
+		private final Object traceTarget;
+		private final int displayIndex;
+		private final int stepIndex;
+		private final String kind;
+		private final String text;
+		private final int indentDepth;
+
+		CollectedLine(Object traceTarget, int displayIndex, int stepIndex, String kind, String text, int indentDepth) {
+			this.traceTarget = traceTarget;
+			this.displayIndex = displayIndex;
+			this.stepIndex = stepIndex;
+			this.kind = kind;
+			this.text = text;
+			this.indentDepth = indentDepth;
+		}
+
+		Object getTraceTarget() {
+			return traceTarget;
+		}
+
+		int getDisplayIndex() {
+			return displayIndex;
+		}
+
+		int getStepIndex() {
+			return stepIndex;
+		}
+
+		String getKind() {
+			return kind;
+		}
+
+		String getText() {
+			return text;
+		}
+
+		int getIndentDepth() {
+			return indentDepth;
+		}
+	}
+
 	static final class CollectedPattern {
 		private final StatementPattern statementPattern;
 		private final int optionalDepth;
@@ -213,6 +224,136 @@ public final class QueryTraceAnalyzer {
 
 		int getOptionalDepth() {
 			return optionalDepth;
+		}
+	}
+
+	private static final class Collector {
+		private final List<CollectedLine> lines = new ArrayList<>();
+		private final List<CollectedPattern> patterns = new ArrayList<>();
+		private final List<String> filters = new ArrayList<>();
+		private int nextStepIndex;
+
+		private boolean collect(TupleExpr tupleExpr, int indentDepth, int optionalDepth) {
+			if (tupleExpr instanceof StatementPattern) {
+				StatementPattern statementPattern = (StatementPattern) tupleExpr;
+				patterns.add(new CollectedPattern(statementPattern, optionalDepth));
+				addStepLine(statementPattern, "pattern",
+						QueryTraceRenderUtils.renderStatementPattern(statementPattern), indentDepth);
+				return true;
+			}
+			if (tupleExpr instanceof Filter) {
+				Filter filter = (Filter) tupleExpr;
+				if (!collect(filter.getArg(), indentDepth, optionalDepth)) {
+					return false;
+				}
+				return addFilterLine(filter.getCondition(), indentDepth);
+			}
+			if (tupleExpr instanceof SingletonSet) {
+				return true;
+			}
+			if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
+				if (!JoinIterator.class.getSimpleName().equals(join.getAlgorithmName())) {
+					return false;
+				}
+				return collect(join.getLeftArg(), indentDepth, optionalDepth)
+						&& collect(join.getRightArg(), indentDepth, optionalDepth);
+			}
+			if (tupleExpr instanceof LeftJoin) {
+				LeftJoin leftJoin = (LeftJoin) tupleExpr;
+				if (!isSupportedLeftJoinAlgorithm(leftJoin.getAlgorithmName())) {
+					return false;
+				}
+				if (!collect(leftJoin.getLeftArg(), indentDepth, optionalDepth)) {
+					return false;
+				}
+				addDisplayLine("optionalStart", "OPTIONAL {", indentDepth);
+				if (!collect(leftJoin.getRightArg(), indentDepth + 1, optionalDepth + 1)) {
+					return false;
+				}
+				if (leftJoin.hasCondition()) {
+					if (!isSupportedLeftJoinCondition(leftJoin)) {
+						return false;
+					}
+					if (!addFilterLine(leftJoin.getCondition(), indentDepth + 1)) {
+						return false;
+					}
+				}
+				addDisplayLine("optionalEnd", "}", indentDepth);
+				return true;
+			}
+			if (tupleExpr instanceof BindingSetAssignment) {
+				BindingSetAssignment bindingSetAssignment = (BindingSetAssignment) tupleExpr;
+				try {
+					addStepLine(bindingSetAssignment, "values",
+							QueryTraceRenderUtils.renderValues(bindingSetAssignment), indentDepth);
+					return true;
+				} catch (IllegalArgumentException e) {
+					return false;
+				}
+			}
+			if (tupleExpr instanceof Extension) {
+				Extension extension = (Extension) tupleExpr;
+				if (!collect(extension.getArg(), indentDepth, optionalDepth)) {
+					return false;
+				}
+				for (ExtensionElem extensionElem : extension.getElements()) {
+					try {
+						addStepLine(extensionElem, "bind", QueryTraceRenderUtils.renderBind(extensionElem),
+								indentDepth);
+					} catch (IllegalArgumentException e) {
+						return false;
+					}
+				}
+				return true;
+			}
+			if (tupleExpr instanceof Difference) {
+				Difference difference = (Difference) tupleExpr;
+				if (!collect(difference.getLeftArg(), indentDepth, optionalDepth)) {
+					return false;
+				}
+				addStepLine(difference, "minus", "MINUS {", indentDepth);
+				if (!collect(difference.getRightArg(), indentDepth + 1, optionalDepth)) {
+					return false;
+				}
+				addDisplayLine("minusEnd", "}", indentDepth);
+				return true;
+			}
+			return false;
+		}
+
+		private boolean addFilterLine(ValueExpr condition, int indentDepth) {
+			String renderedFilter = renderFilter(condition);
+			if (renderedFilter == null) {
+				return false;
+			}
+			filters.add(renderedFilter);
+			addDisplayLine("filter", renderedFilter, indentDepth);
+			return true;
+		}
+
+		private void addStepLine(Object traceTarget, String kind, String text, int indentDepth) {
+			lines.add(new CollectedLine(traceTarget, lines.size(), nextStepIndex++, kind, text, indentDepth));
+		}
+
+		private void addDisplayLine(String kind, String text, int indentDepth) {
+			lines.add(new CollectedLine(null, lines.size(), -1, kind, text, indentDepth));
+		}
+
+		private boolean hasSteps() {
+			return nextStepIndex > 0;
+		}
+
+		private List<CollectedLine> getLines() {
+			return lines;
+		}
+
+		private List<CollectedPattern> getPatterns() {
+			return patterns;
+		}
+
+		private List<String> getFilters() {
+			return filters;
 		}
 	}
 
