@@ -1228,4 +1228,18 @@ public final class ThemeQueryCatalog {
 		return new BenchmarkQuery(name, query, expectedCount);
 	}
 
+	public static void main(String[] args) {
+		for (Theme value : Theme.values()) {
+			System.out.println("# "+value);
+			List<BenchmarkQuery> benchmarkQueries = queriesForTheme(value);
+			for (BenchmarkQuery query : benchmarkQueries) {
+				System.out.println();
+				System.out.println(query.getQuery());
+			}
+			System.out.println();
+			System.out.println();
+
+		}
+	}
+
 }
