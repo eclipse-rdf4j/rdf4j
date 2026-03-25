@@ -306,7 +306,7 @@
     padding: clamp(1rem, 2vw, 1.35rem);
     border: 1px solid rgba(35, 50, 64, 0.12);
     border-radius: 1rem;
-    background: linear-gradient(180deg, rgba(251, 250, 247, 0.98) 0%, rgba(255, 255, 253, 0.99) 100%);
+    background: rgba(251, 250, 247, 0.98);
     box-sizing: border-box;
 }
 
@@ -594,8 +594,8 @@
 
 .query-trace-query__line--active .query-trace-query__line-content {
     background: rgba(31, 92, 135, 0.1);
-    border: 1px solid rgba(31, 92, 135, 0.18);
-    box-shadow: 0 12px 26px rgba(31, 92, 135, 0.08);
+    border: 1px solid rgba(31, 92, 135, 0.7);
+    /*box-shadow: 0 12px 26px rgba(31, 92, 135, 0.08);*/
 }
 
 .query-trace-query__line--pending .query-trace-query__gutter {
