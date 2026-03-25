@@ -167,76 +167,78 @@
 /* ── Text explanation syntax highlighting ── */
 
 .explain-hl--node {
-    color: #0b5da8;
+    color: #0842a0;
     font-weight: 700;
 }
 
 .explain-hl--connector {
-    color: #9da5ae;
+    color: #8590a0;
 }
 
 .explain-hl--new-scope {
-    background: #fff7dc;
-    color: #715400;
+    background: #ffedb3;
+    color: #5a4000;
     border-radius: 3px;
     padding: 0 4px;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .explain-hl--cartesian {
-    background: #fdeaea;
-    color: #8d1f1f;
+    background: #fcd4d4;
+    color: #6e1010;
     border-radius: 3px;
     padding: 0 4px;
     font-weight: 700;
 }
 
 .explain-hl--unbound {
-    color: #cf222e;
-    font-weight: 600;
+    color: #b91c1c;
 }
 
 .explain-hl--bound {
-    color: #0a7a36;
+    color: #056e2a;
 }
 
 .explain-hl--algorithm {
-    color: #7c3aad;
-    font-weight: 600;
+    color: #6b21a8;
+    font-weight: 700;
 }
 
 .explain-hl--side-label {
-    color: #6e7781;
+    color: #2d333b;
     font-style: italic;
 }
 
 .explain-hl--spoc {
-    color: #0e7c86;
-    font-weight: 600;
+    color: #0a6570;
+    font-weight: 700;
 }
 
 .explain-hl--metric-key {
-    color: #6e7781;
+    color: #2d333b;
 }
 
 .explain-hl--metric-value {
-    color: #7a3e0a;
+    color: #92400e;
 }
 
 .explain-hl--metric-paren {
-    color: #9da5ae;
+    color: #8590a0;
 }
 
 .explain-hl--index {
-    color: #0e7c86;
+    color: #0a6570;
+    font-weight: 600;
 }
 
 .explain-hl--constant {
-    color: #0a7a36;
+    color: #056e2a;
+    font-weight: 600;
 }
 
 .explain-hl--varname {
-    color: #5a3db5;
+    color: #4c1d95;
+    font-weight: 600;
 }
 
 #query-explanation-dot-view,
