@@ -21,7 +21,8 @@ var workbench;
     // function to add
     function addLoad(fn) {
         window.onload = typeof (window.onload) == 'function' ? chain([
-            window.onload, fn]) : fn;
+            window.onload, fn
+        ]) : fn;
     }
     workbench.addLoad = addLoad;
     /**

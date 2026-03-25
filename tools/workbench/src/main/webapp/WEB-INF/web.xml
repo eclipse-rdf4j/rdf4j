@@ -82,6 +82,10 @@
 			<param-value>true</param-value>
 		</init-param>
 		<init-param>
+			<param-name>default-query-timeout</param-name>
+			<param-value>0</param-value>
+		</init-param>
+		<init-param>
 			<param-name>default-Accept</param-name>
 			<param-value>application/rdf+xml</param-value>
 		</init-param>

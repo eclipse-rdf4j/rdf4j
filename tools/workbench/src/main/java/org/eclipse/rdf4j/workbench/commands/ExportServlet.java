@@ -60,12 +60,10 @@ public class ExportServlet extends TupleServlet {
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, TupleResultBuilder builder,
 			RepositoryConnection con) throws Exception {
-		int limit = ExploreServlet.LIMIT_DEFAULT;
-		if (req.getInt(ExploreServlet.LIMIT) > 0) {
-			limit = req.getInt(ExploreServlet.LIMIT);
-		}
+		int requestedLimit = req.getInt(ExploreServlet.LIMIT);
+		int limit = requestedLimit > 0 ? requestedLimit : ExploreServlet.LIMIT_DEFAULT;
 		try (RepositoryResult<Statement> result = con.getStatements(null, null, null, false)) {
-			for (int i = 0; result.hasNext() && (i < limit || limit < 1); i++) {
+			for (int i = 0; result.hasNext() && i < limit; i++) {
 				Statement st = result.next();
 				builder.result(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 			}

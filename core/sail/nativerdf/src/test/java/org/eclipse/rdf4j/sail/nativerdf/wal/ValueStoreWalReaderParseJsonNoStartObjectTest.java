@@ -18,6 +18,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Covers the parseJson branch where the first token is not START_OBJECT, by writing a frame with a single newline as
  * JSON payload. The reader should ignore the frame and proceed without errors.
  */
+@Tag("slow")
 class ValueStoreWalReaderParseJsonNoStartObjectTest {
 
 	@TempDir

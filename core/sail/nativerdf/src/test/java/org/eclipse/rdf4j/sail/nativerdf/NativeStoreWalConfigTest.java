@@ -31,9 +31,11 @@ import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreConfig;
 import org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreFactory;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+@Tag("slow")
 class NativeStoreWalConfigTest {
 
 	@TempDir

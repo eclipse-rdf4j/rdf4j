@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -29,6 +30,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 /**
  * Ensures ValueStoreWalRecovery keeps the first occurrence of a duplicated id encountered across segments.
  */
+@Tag("slow")
 class ValueStoreWalRecoveryDedupTest {
 
 	@TempDir

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.nativerdf.testutil.FailureInjectingFileChannel;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Proves that a NativeStore with forceSync disabled can be fully recovered from a WAL that runs with SyncPolicy.COMMIT
  * and synchronous bootstrap on open ensuring durability before commit returns.
  */
+@Tag("slow")
 class ValueStoreWalDurabilityRecoveryTest {
 
 	@TempDir

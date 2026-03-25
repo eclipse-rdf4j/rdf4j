@@ -28,3 +28,5 @@ jobs:
       - name: Print Dash Summary
         if: always()
         run: cat DEPENDENCIES
+
+# To automatically fix license issues, you can use the following command: mvn -Plicence-check  org.eclipse.dash:license-tool-plugin:license-check -Ddash.iplab.token=TOKEN_HERE -Ddash.projectId=technology.rdf4j

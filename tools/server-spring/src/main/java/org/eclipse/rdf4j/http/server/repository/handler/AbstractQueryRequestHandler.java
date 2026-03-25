@@ -23,6 +23,8 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
+import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
@@ -36,6 +38,8 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -51,8 +55,29 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 	private final RepositoryResolver repositoryResolver;
 
+	private final AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
+
 	public AbstractQueryRequestHandler(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
+	}
+
+	@Override
+	public boolean handleCancelExplain(HttpServletRequest request, HttpServletResponse response) throws IOException {
+		if (!RequestMethod.POST.name().equals(request.getMethod())
+				|| request.getParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME) == null) {
+			return false;
+		}
+
+		String explainRequestId = request.getParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+		if (explainRequestId == null || explainRequestId.trim().isEmpty()) {
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+					"Missing parameter: " + Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+			return true;
+		}
+
+		asyncExplainCoordinator.cancel(explainRequestId.trim());
+		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+		return true;
 	}
 
 	@Override
@@ -79,12 +104,26 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
+			final Optional<String> explainRequestId = getExplainRequestId(request);
+
+			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
+				return handleRegisteredExplainRequest(request, response, repository, repositoryCon, query,
+						explainLevel.get(),
+						explainRequestId.get());
+			}
+
 			try {
 				if (!headersOnly) {
 					// explain param is present, return the query explanation
 					if (explainLevel.isPresent()) {
-						final Explanation explanation = explainQuery(query, explainLevel.get());
-						return getExplainQueryResponse(request, response, explanation);
+						try {
+							Explanation explanation = explainQuery(query, explainLevel.get());
+							return getExplainQueryResponse(request, response, explanation);
+						} finally {
+							// explanation is fully evaluated at this point, so we can safely close the connection
+							// before returning the response
+							repositoryCon.close();
+						}
 					}
 					queryResponse = evaluateQuery(query, limit, offset, distinct);
 				}
@@ -146,6 +185,82 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		throw new ServerHTTPException("unimplemented explainQuery feature");
 	}
 
+	private ModelAndView handleRegisteredExplainRequest(HttpServletRequest request, HttpServletResponse response,
+			Repository repository, RepositoryConnection repositoryCon, Query query, Explanation.Level explainLevel,
+			String explainRequestId)
+			throws IOException, HTTPException {
+		final AsyncExplainCoordinator.Handle handle;
+		try {
+			handle = asyncExplainCoordinator.register(explainRequestId, createRemoteCancelAction(repository,
+					explainRequestId));
+		} catch (IllegalStateException e) {
+			closeConnection(repositoryCon);
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+			return null;
+		}
+
+		try {
+			Explanation explanation = asyncExplainCoordinator.execute(handle, repositoryCon,
+					currentHandle -> QueryExplanationRequestContext
+							.activate(currentHandle.getExplainRequestId())::close,
+					() -> explainQuery(query, explainLevel));
+			if (explanation == null) {
+				return null;
+			}
+
+			return getExplainQueryResponse(request, response, explanation);
+		} catch (QueryInterruptedException e) {
+			logger.info("Query interrupted", e);
+			if (!handle.isActive()) {
+				return null;
+			}
+			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query evaluation took too long");
+		} catch (QueryEvaluationException e) {
+			logger.info("Query evaluation error", e);
+			if (!handle.isActive()) {
+				return null;
+			}
+			if (e.getCause() instanceof HTTPException) {
+				throw (HTTPException) e.getCause();
+			}
+			throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
+		} catch (HTTPException e) {
+			if (!handle.isActive()) {
+				return null;
+			}
+			throw e;
+		} finally {
+			try {
+				closeConnection(repositoryCon);
+			} finally {
+				asyncExplainCoordinator.complete(handle);
+			}
+		}
+	}
+
+	private void closeConnection(RepositoryConnection repositoryCon) {
+		try {
+			repositoryCon.close();
+		} catch (Exception qre) {
+			logger.warn("Connection closing error", qre);
+		}
+	}
+
+	private Runnable createRemoteCancelAction(Repository repository, String explainRequestId) {
+		if (!(repository instanceof HTTPRepository)) {
+			return null;
+		}
+
+		HTTPRepository httpRepository = (HTTPRepository) repository;
+		return () -> {
+			try {
+				httpRepository.cancelQueryExplanation(explainRequestId);
+			} catch (RepositoryException e) {
+				logger.debug("Remote explain cancellation failed for request {}", explainRequestId, e);
+			}
+		};
+	}
+
 	protected abstract ModelAndView getExplainQueryResponse(
 			final HttpServletRequest request, final HttpServletResponse response, final Explanation explanation);
 
@@ -200,6 +315,18 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		} catch (final IllegalArgumentException e) {
 			throw new ClientHTTPException("Invalid explanation level: " + explainString, e);
 		}
+	}
+
+	protected Optional<String> getExplainRequestId(HttpServletRequest request) {
+		String explainRequestId = request.getParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+		if (explainRequestId == null) {
+			return Optional.empty();
+		}
+		String normalizedExplainRequestId = explainRequestId.trim();
+		if (normalizedExplainRequestId.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(normalizedExplainRequestId);
 	}
 
 	<T> T getParam(HttpServletRequest request, String distinctParamName, T defaultValue, Class<T> clazz)

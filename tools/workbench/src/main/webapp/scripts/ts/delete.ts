@@ -10,7 +10,7 @@
  * DeleteServlet whether the given ID has been proxied, giving a chance to back
  * out if it is.
  */
-function checkIsSafeToDelete(event) {
+function checkIsSafeToDelete(event: JQueryEventObject) {
 	event.preventDefault();
 	var id = $('#id').val();
 	var submitForm = false;
@@ -42,7 +42,10 @@ function checkIsSafeToDelete(event) {
 						submitForm = confirm('WARNING: You are about to delete a repository that has been proxied by another repository!');
 					}
 					if (submitForm) {
-						$(event.target).closest('form')[0].submit();
+						var form = <HTMLFormElement>$(event.target).closest('form').get(0);
+						if (form) {
+							form.submit();
+						}
 					}
 				}
 			});

@@ -19,6 +19,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -28,6 +29,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 /**
  * Verifies that encountering an unknown value kind code causes parsing to fail with IllegalArgumentException.
  */
+@Tag("slow")
 class ValueStoreWalReaderUnknownValueKindTest {
 
 	@TempDir

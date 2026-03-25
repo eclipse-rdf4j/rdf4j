@@ -19,6 +19,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -29,6 +30,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
  * Ensures listSegments tolerates unreadable/mis-typed entries that match the filename pattern by creating a directory
  * named like a segment. This exercises the catch(IOException) branch in the segment header read.
  */
+@Tag("slow")
 class ValueStoreWalReaderListSegmentsUnreadableTest {
 
 	@TempDir

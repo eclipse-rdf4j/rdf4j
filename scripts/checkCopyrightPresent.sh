@@ -238,3 +238,5 @@ if [ ${#filesWithOutSPDX[@]} -ne 0 ]; then
   fi
   exit 2
 fi
+
+echo "All files have valid copyright headers and SPDX lines."

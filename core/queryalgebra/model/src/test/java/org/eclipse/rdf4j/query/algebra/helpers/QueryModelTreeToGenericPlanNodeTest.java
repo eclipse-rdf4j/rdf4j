@@ -14,17 +14,23 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
@@ -119,6 +125,252 @@ public class QueryModelTreeToGenericPlanNodeTest {
 						"derived");
 	}
 
+	@Test
+	public void annotatesJoinIteratorRightSideVarsAsBound() {
+		Join tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setAlgorithm("JoinIterator");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
+		tupleExpr.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.getStringMetricsActual()).isNull();
+		assertThat(statementPattern(root, 0).getPlans().get(0).getStringMetricsActual())
+				.containsEntry("bindingState", "unbound");
+		assertThat(statementPattern(root, 1).getPlans().get(0).getStringMetricsActual())
+				.containsEntry("bindingState", "bound");
+		assertThat(statementPattern(root, 1).getPlans().get(1).getStringMetricsActual())
+				.containsEntry("bindingState", "unbound");
+	}
+
+	@Test
+	public void annotatesHashJoinRightSideVarsAsUnbound() {
+		Join hashJoin = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		hashJoin.setAlgorithm("HashJoinIteration");
+
+		QueryModelTreeToGenericPlanNode hashConverter = new QueryModelTreeToGenericPlanNode(hashJoin);
+		hashJoin.visit(hashConverter);
+		GenericPlanNode hashPlan = hashConverter.getGenericPlanNode();
+
+		assertThat(hashPlan.getStringMetricsActual()).isNull();
+		assertThat(statementPattern(hashPlan, 1).getPlans().get(0).getStringMetricsActual())
+				.containsEntry("bindingState", "unbound");
+	}
+
+	@Test
+	public void annotatesDisconnectedJoinAsDisconnectedJoin() {
+		Join join = new Join(
+				new StatementPattern(plainVar("s"), plainVar("p"), plainVar("o")),
+				new StatementPattern(plainVar("x"), plainVar("p2"), plainVar("o2")));
+		join.setAlgorithm("JoinIterator");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
+		join.visit(converter);
+
+		assertThat(converter.getGenericPlanNode().getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.JOIN_TYPE, "Cartesian product");
+	}
+
+	@Test
+	public void doesNotAnnotateConnectedJoinAsCartesianJoin() {
+		Join join = new Join(
+				new StatementPattern(plainVar("s"), plainVar("p"), plainVar("o")),
+				new StatementPattern(plainVar("s"), plainVar("p2"), plainVar("o2")));
+		join.setAlgorithm("JoinIterator");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
+		join.visit(converter);
+
+		assertThat(converter.getGenericPlanNode().getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
+	}
+
+	@Test
+	public void skipsCartesianAnnotationForUnsupportedVarSubclass() {
+		Join join = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("x"), Var.of("p2"), Var.of("o2")));
+		join.setAlgorithm("JoinIterator");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join);
+		join.visit(converter);
+
+		assertThat(converter.getGenericPlanNode().getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
+	}
+
+	@Test
+	public void annotatesDisconnectedJoinUnderFilter() {
+		Join join = new Join(
+				new StatementPattern(plainVar("s"), plainVar("p"), plainVar("o")),
+				new StatementPattern(plainVar("x"), plainVar("p2"), plainVar("o2")));
+		join.setAlgorithm("JoinIterator");
+		Filter filter = new Filter(join, new Bound(plainVar("s")));
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(filter);
+		filter.visit(converter);
+
+		GenericPlanNode joinPlan = findFirstPlan(converter.getGenericPlanNode(),
+				node -> "Cartesian product".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
+		assertThat(joinPlan).isNotNull();
+	}
+
+	@Test
+	public void doesNotAnnotateConnectedJoinWhenSharedVarIsAlreadyGuaranteedBound() {
+		Join innerJoin = new Join(
+				new StatementPattern(plainVar("a"), plainVar("p2"), plainVar("x")),
+				new StatementPattern(plainVar("b"), plainVar("p3"), plainVar("x")));
+		innerJoin.setAlgorithm("JoinIterator");
+		Join outerJoin = new Join(
+				new StatementPattern(plainVar("x"), plainVar("p1"), plainVar("o1")),
+				innerJoin);
+		outerJoin.setAlgorithm("JoinIterator");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(outerJoin);
+		outerJoin.visit(converter);
+		GenericPlanNode outerPlan = converter.getGenericPlanNode();
+
+		assertThat(outerPlan.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
+		assertThat(findFirstPlan(outerPlan.getPlans().get(1),
+				node -> node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE) != null))
+				.isNull();
+	}
+
+	@Test
+	public void doesNotAnnotateJoinWhenMandatoryRegionReconnectsSidesThroughSiblingAtoms() {
+		StatementPattern personType = new StatementPattern(plainVar("person"), plainVar("typePred"),
+				plainVar("personType"));
+		StatementPattern hasCondition = new StatementPattern(plainVar("encounter"), plainVar("conditionPred"),
+				plainVar("condition"));
+		StatementPattern handledBy = new StatementPattern(plainVar("encounter"), plainVar("handledByPred"),
+				plainVar("person"));
+		StatementPattern personName = new StatementPattern(plainVar("person"), plainVar("namePred"), plainVar("name"));
+		StatementPattern conditionCode = new StatementPattern(plainVar("condition"), plainVar("codePred"),
+				plainVar("code"));
+
+		Join locallyDisconnectedJoin = new Join(personType, hasCondition);
+		Join rightRegion = new Join(handledBy, new Join(personName, conditionCode));
+		Join rootJoin = new Join(locallyDisconnectedJoin, rightRegion);
+		Distinct distinct = new Distinct(new Slice(rootJoin, 0, 100));
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(distinct);
+		distinct.visit(converter);
+
+		GenericPlanNode targetJoin = findFirstPlan(converter.getGenericPlanNode(),
+				node -> node.getType().startsWith("Join")
+						&& node.toString().contains("name=typePred")
+						&& node.toString().contains("name=conditionPred"));
+		assertThat(targetJoin).isNotNull();
+		assertThat(targetJoin.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
+	}
+
+	@Test
+	public void omitsCartesianAnnotationAtUnoptimizedLevel() {
+		Join join = new Join(
+				new StatementPattern(plainVar("s"), plainVar("p"), plainVar("o")),
+				new StatementPattern(plainVar("x"), plainVar("p2"), plainVar("o2")));
+		join.setAlgorithm("JoinIterator");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Unoptimized);
+		join.visit(converter);
+
+		assertThat(converter.getGenericPlanNode().getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
+		assertThat(converter.getGenericPlanNode().toString()).doesNotContain("joinType=");
+	}
+
+	@Test
+	public void respectsSharedExplanationLevelVisibilityPolicy() {
+		GenericPlanNode unoptimized = convertWithLevel(Explanation.Level.Unoptimized);
+		assertThat(unoptimized.getSourceRowsScannedActual()).isNull();
+		assertThat(rightSubjectVar(unoptimized).getStringMetricsActual()).isNull();
+		assertThat(unoptimized.toString()).doesNotContain("sampleCountActual=");
+
+		GenericPlanNode optimized = convertWithLevel(Explanation.Level.Optimized);
+		assertThat(optimized.getSourceRowsScannedActual()).isNull();
+		assertThat(rightSubjectVar(optimized).getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
+		assertThat(optimized.toString()).doesNotContain("sampleCountActual=");
+
+		GenericPlanNode executed = convertWithLevel(Explanation.Level.Executed);
+		assertThat(executed.getSourceRowsScannedActual()).isNull();
+		assertThat(rightSubjectVar(executed).getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
+		assertThat(executed.toString()).doesNotContain("sampleCountActual=");
+
+		GenericPlanNode timed = convertWithLevel(Explanation.Level.Timed);
+		assertThat(rightSubjectVar(timed).getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
+		assertThat(timed.toString()).doesNotContain("sampleCountActual=");
+
+		GenericPlanNode telemetry = convertWithLevel(Explanation.Level.Telemetry);
+		assertThat(telemetry.getSourceRowsScannedActual()).isEqualTo(13L);
+		assertThat(rightSubjectVar(telemetry).getStringMetricsActual())
+				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
+		assertThat(telemetry.toString()).contains("sampleCountActual=");
+		assertThat(telemetry.toString()).contains("varianceActual=");
+	}
+
+	private static GenericPlanNode statementPattern(GenericPlanNode join, int index) {
+		return join.getPlans().get(index);
+	}
+
+	private static GenericPlanNode rightSubjectVar(GenericPlanNode join) {
+		return statementPattern(join, 1).getPlans().get(0);
+	}
+
+	private static GenericPlanNode convertWithLevel(Explanation.Level level) {
+		Join join = joinWithTelemetry();
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null, level);
+		join.visit(converter);
+		return converter.getGenericPlanNode();
+	}
+
+	private static Join joinWithTelemetry() {
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		left.setResultSizeEstimate(2.0);
+		left.setResultSizeActual(3);
+		left.setSourceRowsScannedActual(5);
+		left.setRuntimeTelemetryEnabled(true);
+
+		StatementPattern right = new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2"));
+		right.setResultSizeEstimate(8.0);
+		right.setResultSizeActual(2);
+		right.setSourceRowsScannedActual(7);
+		right.setRuntimeTelemetryEnabled(true);
+
+		Join join = new Join(left, right);
+		join.setAlgorithm("JoinIterator");
+		join.setResultSizeActual(5);
+		join.setSourceRowsScannedActual(13);
+		join.setRuntimeTelemetryEnabled(true);
+		return join;
+	}
+
+	@SuppressWarnings("removal")
+	private static Var plainVar(String name) {
+		return new Var(name);
+	}
+
+	private static GenericPlanNode findFirstPlan(GenericPlanNode node, Predicate<GenericPlanNode> predicate) {
+		if (predicate.test(node)) {
+			return node;
+		}
+		List<GenericPlanNode> plans = node.getPlans();
+		if (plans == null) {
+			return null;
+		}
+		for (GenericPlanNode child : plans) {
+			GenericPlanNode match = findFirstPlan(child, predicate);
+			if (match != null) {
+				return match;
+			}
+		}
+		return null;
+	}
+
 	private static void assertTelemetryRecursively(GenericPlanNode node) {
 		assertThat(node.getHasNextCallCountActual()).isEqualTo(11);
 		assertThat(node.getHasNextTrueCountActual()).isEqualTo(7);
@@ -159,7 +411,13 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(node.getSourceRowsFilteredActual()).isNull();
 		assertThat(node.getLongMetricsActual()).isNull();
 		assertThat(node.getDoubleMetricsActual()).isNull();
-		assertThat(node.getStringMetricsActual()).isNull();
+		if (node.getStringMetricsActual() != null) {
+			assertThat(node.getStringMetricsActual().keySet())
+					.isSubsetOf(
+							TelemetryMetricNames.BINDING_STATE,
+							TelemetryMetricNames.INDEX_NAME,
+							TelemetryMetricNames.INDEX_NAMES);
+		}
 
 		List<GenericPlanNode> children = node.getPlans();
 		if (children != null) {

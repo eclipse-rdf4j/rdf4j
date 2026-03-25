@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.zip.CRC32C;
 import java.util.zip.GZIPOutputStream;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 /**
  * Validates that a compressed segment lacking a summary frame results in incomplete scan.
  */
+@Tag("slow")
 class ValueStoreWalCompressedNoSummaryTest {
 
 	@TempDir

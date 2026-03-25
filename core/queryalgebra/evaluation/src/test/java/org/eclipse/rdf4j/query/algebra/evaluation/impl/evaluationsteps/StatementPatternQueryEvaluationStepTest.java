@@ -93,6 +93,32 @@ class StatementPatternQueryEvaluationStepTest {
 	}
 
 	@Test
+	void wrappedUnionIterationPreservesMultipleIndexNames() {
+		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
+		MultiIndexUnionReportingTripleSource tripleSource = new MultiIndexUnionReportingTripleSource();
+		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(context.createBindingSet())) {
+			assertThat(iteration).isInstanceOf(IndexReportingIterator.class);
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
+
+			IndexReportingIterator metrics = (IndexReportingIterator) iteration;
+			assertThat(metrics.getIndexName()).isEqualTo("spoc, posc");
+			assertThat(metrics.getSourceRowsScannedActual()).isEqualTo(10);
+			assertThat(metrics.getSourceRowsMatchedActual()).isEqualTo(7);
+			assertThat(metrics.getSourceRowsFilteredActual()).isEqualTo(3);
+		}
+	}
+
+	@Test
 	void wrappedFilterIterationReportsLocalFilterTelemetry() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		FilterIndexReportingTripleSource tripleSource = new FilterIndexReportingTripleSource();
@@ -228,6 +254,32 @@ class StatementPatternQueryEvaluationStepTest {
 			return new TestIndexReportingStatementIteration(
 					List.of(acceptedStatement, rejectedStatement),
 					"spoc", 2, 2, 0);
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return valueFactory;
+		}
+	}
+
+	private static final class MultiIndexUnionReportingTripleSource implements TripleSource {
+
+		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		private final Statement firstStatement = valueFactory.createStatement(
+				valueFactory.createIRI("urn:first-subj"),
+				valueFactory.createIRI("urn:pred"),
+				valueFactory.createLiteral("first-obj"));
+		private final Statement secondStatement = valueFactory.createStatement(
+				valueFactory.createIRI("urn:second-subj"),
+				valueFactory.createIRI("urn:pred"),
+				valueFactory.createLiteral("second-obj"));
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return new UnionIteration<>(
+					new TestIndexReportingStatementIteration(List.of(firstStatement), "spoc", 6, 4, 2),
+					new TestIndexReportingStatementIteration(List.of(secondStatement), "posc", 4, 3, 1));
 		}
 
 		@Override

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0"
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-	xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns="http://www.w3.org/1999/xhtml">
+	xmlns:sparql="http://www.w3.org/2005/sparql-results#"
+	xmlns:workbench="https://rdf4j.org/schema/workbench#" xmlns="http://www.w3.org/1999/xhtml">
 
 	<xsl:include href="../locale/messages.xsl" />
 
@@ -17,6 +18,10 @@
 	<xsl:include href="table.xsl" />
 
 	<xsl:template match="sparql:sparql">
+		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:query-text">
+			<textarea id="wb-query-text" style="display:none;"><xsl:value-of
+				select="/sparql:sparql/workbench:metadata/workbench:query-text" /></textarea>
+		</xsl:if>
 		<form>
 			<table class="dataentry">
 				<tbody>
@@ -42,6 +47,17 @@
 							<input type="submit" onclick="workbench.paging.addGraphParam('Accept');return false"
 								value="{$download.label}" />
 						</td>
+					</tr>
+					<tr>
+						<th>
+							<xsl:value-of select="$download-limit.label" />
+						</th>
+						<td>
+							<xsl:call-template name="limit-select">
+								<xsl:with-param name="limit_id">download_limit</xsl:with-param>
+							</xsl:call-template>
+						</td>
+						<td></td>
 					</tr>
 				</tbody>
 			</table>
@@ -72,10 +88,36 @@
 			</table>
 		</form>
 		<table class="data">
-			<xsl:apply-templates select="*" />
+			<xsl:apply-templates select="sparql:head | sparql:results" />
 		</table>
 		<script src="../../scripts/paging.js" type="text/javascript">
 		</script>
+	</xsl:template>
+
+	<xsl:template match="sparql:head">
+		<thead>
+			<tr>
+				<xsl:apply-templates select="sparql:variable" />
+			</tr>
+		</thead>
+	</xsl:template>
+
+	<xsl:template match="sparql:results">
+		<tbody>
+			<xsl:apply-templates select="sparql:result" />
+		</tbody>
+	</xsl:template>
+
+	<xsl:template match="sparql:result">
+		<xsl:variable name="result" select="." />
+		<tr>
+			<xsl:for-each select="../../sparql:head/sparql:variable">
+				<xsl:variable name="name" select="@name" />
+				<td>
+					<xsl:apply-templates select="$result/sparql:binding[@name=$name]" />
+				</td>
+			</xsl:for-each>
+		</tr>
 	</xsl:template>
 
 </xsl:stylesheet>

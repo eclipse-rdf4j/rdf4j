@@ -16,7 +16,9 @@ import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.ToLongFunction;
 
 /**
@@ -128,13 +130,14 @@ public class UnionIteration<E> extends LookAheadIteration<E> implements IndexRep
 
 	@Override
 	public String getIndexName() {
+		Set<String> indexNames = new LinkedHashSet<>();
 		for (IndexReportingIterator indexReporter : indexReporters) {
 			String indexName = indexReporter.getIndexName();
 			if (indexName != null && !indexName.isEmpty()) {
-				return indexName;
+				indexNames.add(indexName);
 			}
 		}
-		return "";
+		return String.join(", ", indexNames);
 	}
 
 	@Override

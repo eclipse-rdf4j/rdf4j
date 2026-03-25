@@ -61,8 +61,8 @@ public class WorkbenchGateway extends AbstractServlet {
 		if (config.getInitParameter(TRANSFORMATIONS) == null) {
 			throw new MissingInitParameterException(TRANSFORMATIONS);
 		}
-		this.cookies = new CookieHandler(config);
-		this.serverValidator = new ServerValidator(config);
+		this.cookies = createCookieHandler(config);
+		this.serverValidator = createServerValidator(config);
 	}
 
 	@Override
@@ -243,8 +243,8 @@ public class WorkbenchGateway extends AbstractServlet {
 						params.put(SERVER_PARAM, server);
 						params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
 						params.put(TRANSFORMATIONS, this.config.getInitParameter(TRANSFORMATIONS));
-						final ServletConfig cfg = new BasicServletConfig(server, config, params);
-						servlet = new WorkbenchServlet();
+						final ServletConfig cfg = createWorkbenchServletConfig(server, params);
+						servlet = createWorkbenchServlet();
 						servlet.init(cfg);
 						servlets.put(server, servlet);
 					}
@@ -294,5 +294,21 @@ public class WorkbenchGateway extends AbstractServlet {
 	private String getTransformationUrl(final HttpServletRequest req) {
 		final String contextPath = req.getContextPath();
 		return contextPath + config.getInitParameter(TRANSFORMATIONS);
+	}
+
+	protected CookieHandler createCookieHandler(final ServletConfig config) {
+		return new CookieHandler(config);
+	}
+
+	protected ServerValidator createServerValidator(final ServletConfig config) {
+		return new ServerValidator(config);
+	}
+
+	protected WorkbenchServlet createWorkbenchServlet() {
+		return new WorkbenchServlet();
+	}
+
+	protected ServletConfig createWorkbenchServletConfig(final String server, final Map<String, String> params) {
+		return new BasicServletConfig(server, config, params);
 	}
 }
