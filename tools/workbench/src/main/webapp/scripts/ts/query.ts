@@ -1714,6 +1714,262 @@ module workbench {
             clearExplanationDimensionLock(paneKey);
         }
 
+        function highlightExplanationText(text: string): HTMLElement {
+            var code = document.createElement('code');
+
+            // Known node type names that appear at the start of a line (after box-drawing prefix)
+            var nodeTypes = [
+                'Join', 'LeftJoin', 'Filter', 'StatementPattern', 'Projection',
+                'Extension', 'Slice', 'Order', 'Group', 'Distinct', 'Reduced',
+                'Union', 'Service', 'EmptySet', 'SingletonSet', 'Var',
+                'BNodeGenerator', 'If', 'Regex', 'FunctionCall', 'BindingSetAssignment',
+                'ArbitraryLengthPath', 'ZeroLengthPath', 'Intersection', 'Difference',
+                'MultiProjection', 'Exists', 'Not', 'Compare', 'And', 'Or',
+                'MathExpr', 'Count', 'Sum', 'Avg', 'Min', 'Max', 'GroupConcat',
+                'Sample', 'Coalesce', 'Str', 'Lang', 'Datatype', 'Bound',
+                'IsURI', 'IsLiteral', 'IsNumeric', 'ValueConstant', 'ListMemberOperator',
+                'Like', 'In', 'CompareAll', 'CompareAny', 'Describe', 'Modify',
+                'InsertData', 'DeleteData', 'Create', 'Clear', 'Load', 'QueryRoot',
+                'DescribeOperator', 'ProjectionElemList', 'ProjectionElem',
+                'ExtensionElem', 'OrderElem', 'GroupElem', 'Subselect'
+            ];
+
+            var lines = text.split('\n');
+            for (var li = 0; li < lines.length; li++) {
+                var line = lines[li];
+                if (li > 0) {
+                    code.appendChild(document.createTextNode('\n'));
+                }
+                if (line.length === 0) {
+                    continue;
+                }
+
+                var pos = 0;
+
+                // 1. Extract leading box-drawing / whitespace prefix
+                var prefixMatch = line.match(/^([\s╠═║╚├─│└]*)/);
+                if (prefixMatch && prefixMatch[1].length > 0) {
+                    var prefixText = prefixMatch[1];
+                    var prefixSpan = document.createElement('span');
+                    prefixSpan.className = 'explain-hl--connector';
+                    prefixSpan.textContent = prefixText;
+                    code.appendChild(prefixSpan);
+                    pos = prefixText.length;
+                }
+
+                // 2. Check for SPOC label (s: p: o: c:) before node type
+                var spocPrefixMatch = line.substring(pos).match(/^([spoc]): /);
+                if (spocPrefixMatch) {
+                    var spocSpan = document.createElement('span');
+                    spocSpan.className = 'explain-hl--spoc';
+                    spocSpan.textContent = spocPrefixMatch[0];
+                    code.appendChild(spocSpan);
+                    pos += spocPrefixMatch[0].length;
+                }
+
+                // 3. Match node type name
+                var rest = line.substring(pos);
+                var nodeMatched = false;
+                for (var ni = 0; ni < nodeTypes.length; ni++) {
+                    var nt = nodeTypes[ni];
+                    if (rest.indexOf(nt) === 0 && (rest.length === nt.length || /[^a-zA-Z0-9]/.test(rest.charAt(nt.length)))) {
+                        var nodeSpan = document.createElement('span');
+                        nodeSpan.className = 'explain-hl--node';
+                        nodeSpan.textContent = nt;
+                        code.appendChild(nodeSpan);
+                        pos += nt.length;
+                        nodeMatched = true;
+                        break;
+                    }
+                }
+
+                // 4. Process remaining content on the line
+                rest = line.substring(pos);
+                if (rest.length === 0) {
+                    continue;
+                }
+
+                // Tokenize the rest of the line
+                highlightLineRemainder(code, rest);
+            }
+
+            return code;
+        }
+
+        function highlightLineRemainder(parent: HTMLElement, text: string): void {
+            // Patterns to match, in priority order
+            var patterns: Array<{ regex: RegExp; className: string; handler?: (match: RegExpMatchArray, parent: HTMLElement) => void }> = [
+                // Side labels
+                { regex: /^\[left\]/, className: 'explain-hl--side-label' },
+                { regex: /^\[right\]/, className: 'explain-hl--side-label' },
+                // Cartesian product annotation
+                { regex: /^\(Cartesian product\)/, className: 'explain-hl--cartesian' },
+                // Disconnected join boundaries
+                { regex: /^\(disconnected join boundaries: [^)]*\)/, className: 'explain-hl--cartesian' },
+                // New scope annotation
+                { regex: /^\(new scope\)/, className: 'explain-hl--new-scope' },
+                // Algorithm annotations - common algorithm names in parens
+                { regex: /^\(hash join\)/, className: 'explain-hl--algorithm' },
+                { regex: /^\(nestedLoops\)/, className: 'explain-hl--algorithm' },
+                { regex: /^\(bind join\)/, className: 'explain-hl--algorithm' },
+                { regex: /^\(merge join\)/, className: 'explain-hl--algorithm' },
+                { regex: /^\(synchronous join\)/, className: 'explain-hl--algorithm' },
+                // Metrics parenthetical: (key=val, key=val, ...)
+                { regex: /^\([a-zA-Z][\w]*=/, className: '', handler: highlightMetricsParenthetical },
+                // SPOC labels when they appear after box chars on continuation lines
+                { regex: /^([spoc]): /, className: 'explain-hl--spoc' },
+            ];
+
+            var pos = 0;
+            while (pos < text.length) {
+                var matched = false;
+                var remaining = text.substring(pos);
+
+                for (var pi = 0; pi < patterns.length; pi++) {
+                    var pat = patterns[pi];
+                    var m = remaining.match(pat.regex);
+                    if (m) {
+                        if (pat.handler) {
+                            var consumed = pat.handler(m, parent);
+                            // handler processes and returns how many chars it consumed from remaining
+                            // We need to find the full parenthetical
+                            var parenEnd = findMatchingParen(remaining, 0);
+                            if (parenEnd >= 0) {
+                                var fullMetrics = remaining.substring(0, parenEnd + 1);
+                                highlightMetricsContent(parent, fullMetrics);
+                                pos += fullMetrics.length;
+                            } else {
+                                parent.appendChild(document.createTextNode(remaining.charAt(0)));
+                                pos++;
+                            }
+                        } else {
+                            var span = document.createElement('span');
+                            span.className = pat.className;
+                            span.textContent = m[0];
+                            parent.appendChild(span);
+                            pos += m[0].length;
+                        }
+                        matched = true;
+                        break;
+                    }
+                }
+
+                if (!matched) {
+                    // Consume one character as plain text, but batch consecutive plain chars
+                    var plainEnd = pos + 1;
+                    while (plainEnd < text.length) {
+                        var nextRemaining = text.substring(plainEnd);
+                        var anyMatch = false;
+                        for (var pi2 = 0; pi2 < patterns.length; pi2++) {
+                            if (patterns[pi2].regex.test(nextRemaining)) {
+                                anyMatch = true;
+                                break;
+                            }
+                        }
+                        if (anyMatch) break;
+                        plainEnd++;
+                    }
+                    parent.appendChild(document.createTextNode(text.substring(pos, plainEnd)));
+                    pos = plainEnd;
+                }
+            }
+        }
+
+        function findMatchingParen(text: string, openPos: number): number {
+            if (text.charAt(openPos) !== '(') return -1;
+            var depth = 0;
+            for (var i = openPos; i < text.length; i++) {
+                if (text.charAt(i) === '(') depth++;
+                else if (text.charAt(i) === ')') {
+                    depth--;
+                    if (depth === 0) return i;
+                }
+            }
+            return -1;
+        }
+
+        function highlightMetricsContent(parent: HTMLElement, metricsStr: string): void {
+            // metricsStr is like "(costEstimate=1.23K, resultSizeEstimate=500, bindingState=bound)"
+            // Strip outer parens
+            var inner = metricsStr.substring(1, metricsStr.length - 1);
+            var openSpan = document.createElement('span');
+            openSpan.className = 'explain-hl--metric-paren';
+            openSpan.textContent = '(';
+            parent.appendChild(openSpan);
+
+            // Split on ", " but need to be careful with values that contain commas
+            // Use a simple state machine to split
+            var kvPairs: string[] = [];
+            var current = '';
+            var depth = 0;
+            for (var ci = 0; ci < inner.length; ci++) {
+                var ch = inner.charAt(ci);
+                if (ch === '(') depth++;
+                else if (ch === ')') depth--;
+                if (ch === ',' && depth === 0 && ci + 1 < inner.length && inner.charAt(ci + 1) === ' ') {
+                    kvPairs.push(current);
+                    current = '';
+                    ci++; // skip the space
+                } else {
+                    current += ch;
+                }
+            }
+            if (current.length > 0) {
+                kvPairs.push(current);
+            }
+
+            for (var ki = 0; ki < kvPairs.length; ki++) {
+                if (ki > 0) {
+                    parent.appendChild(document.createTextNode(', '));
+                }
+                var kv = kvPairs[ki];
+                var eqIdx = kv.indexOf('=');
+                if (eqIdx < 0) {
+                    parent.appendChild(document.createTextNode(kv));
+                    continue;
+                }
+                var key = kv.substring(0, eqIdx);
+                var val = kv.substring(eqIdx + 1);
+
+                // Determine class for key and value
+                var keyClass = 'explain-hl--metric-key';
+                var valClass = 'explain-hl--metric-value';
+
+                if (key === 'bindingState') {
+                    if (val === 'unbound') {
+                        valClass = 'explain-hl--unbound';
+                    } else if (val === 'bound') {
+                        valClass = 'explain-hl--bound';
+                    }
+                } else if (key === 'joinType') {
+                    if (val === 'Cartesian product' || val.indexOf('disconnected') >= 0) {
+                        valClass = 'explain-hl--cartesian';
+                    }
+                } else if (key === 'indexName' || key === 'indexNames') {
+                    valClass = 'explain-hl--index';
+                } else if (key === 'name') {
+                    valClass = 'explain-hl--varname';
+                } else if (key === 'value') {
+                    valClass = 'explain-hl--constant';
+                }
+
+                var keySpan = document.createElement('span');
+                keySpan.className = keyClass;
+                keySpan.textContent = key;
+                parent.appendChild(keySpan);
+                parent.appendChild(document.createTextNode('='));
+                var valSpan = document.createElement('span');
+                valSpan.className = valClass;
+                valSpan.textContent = val;
+                parent.appendChild(valSpan);
+            }
+
+            var closeSpan = document.createElement('span');
+            closeSpan.className = 'explain-hl--metric-paren';
+            closeSpan.textContent = ')';
+            parent.appendChild(closeSpan);
+        }
+
         function renderDotView(paneKey: string, explanationText: string, format: string) {
             var paneState = getPaneState(paneKey);
             var dotView = $('#' + paneState.dotViewId);
@@ -2034,7 +2290,10 @@ module workbench {
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
                 $('#' + paneState.explanationId).text('').attr('data-format', normalizedFormat);
             } else {
-                $('#' + paneState.explanationId).text(explanationText).attr('data-format', normalizedFormat);
+                var pre = document.getElementById(paneState.explanationId);
+                pre.innerHTML = '';
+                pre.setAttribute('data-format', normalizedFormat);
+                pre.appendChild(highlightExplanationText(explanationText));
             }
             setExplanationDisplayMode(paneKey, normalizedFormat);
             paneState.latestExplanation = explanationText;
@@ -2642,12 +2901,20 @@ module workbench {
             }
         }
 
+        function stripDiffNoise(line: string): string {
+            return line.replace(/[\s╠═║╚├─│└╗╔╦╩╬╟╢╤╧╨╪──══╞╡╥╘╛╙╜╓╖╒╕]/g, '');
+        }
+
         function buildDiffRows(leftText: string, rightText: string): DiffRow[] {
             if (!Diff || typeof Diff.diffLines !== 'function') {
                 return [];
             }
             var diffRows: DiffRow[] = [];
-            var diffChunks = Diff.diffLines(leftText || '', rightText || '');
+            var diffChunks = Diff.diffLines(leftText || '', rightText || '', {
+                comparator: function(left: string, right: string) {
+                    return stripDiffNoise(left) === stripDiffNoise(right);
+                }
+            });
             for (var i = 0; i < diffChunks.length; i++) {
                 var diffChunk = diffChunks[i];
                 var nextDiffChunk = diffChunks[i + 1];
