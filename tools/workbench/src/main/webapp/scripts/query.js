@@ -2775,6 +2775,9 @@ var workbench;
             if (snapshot.direction === 'rollback') {
                 query.addClass('query-trace-query--rollback');
             }
+            if (snapshot.frame && snapshot.frame.event === 'result') {
+                query.addClass('query-trace-query--result');
+            }
             var activePatternIndex = snapshot && typeof snapshot.activePatternIndex === 'number'
                 && snapshot.activePatternIndex >= 0
                 ? snapshot.activePatternIndex

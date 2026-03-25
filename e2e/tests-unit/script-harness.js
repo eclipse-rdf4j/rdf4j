@@ -152,6 +152,8 @@ function createScriptHarness(options = {}) {
 
     const window = Object.assign({
         clearTimeout: (id) => timers.clearTimeout(id),
+        cancelAnimationFrame() {
+        },
         confirm(message) {
             confirms.push(message);
             return getNextConfirmResponse();

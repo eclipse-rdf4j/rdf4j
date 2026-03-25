@@ -669,6 +669,13 @@
     box-shadow: 0 8px 14px rgba(78, 97, 110, 0.08);
 }
 
+.query-trace-query--result .query-trace-query__binding {
+    border-color: rgba(203, 235, 195, 0.48);
+    background: rgba(46, 125, 50, 0.84);
+    color: #f6fff4;
+    box-shadow: 0 12px 24px rgba(46, 125, 50, 0.2);
+}
+
 .query-trace-query__binding::after {
     content: '';
     position: absolute;
@@ -682,6 +689,10 @@
 
 .query-trace-query__line--pending .query-trace-query__binding::after {
     border-color: rgba(220, 229, 234, 0.72) transparent transparent;
+}
+
+.query-trace-query--result .query-trace-query__binding::after {
+    border-color: rgba(46, 125, 50, 0.84) transparent transparent;
 }
 
 .query-trace-query__active-marker {

@@ -3,6 +3,17 @@ const assert = require('node:assert/strict');
 
 const { createQueryBrowserHarness } = require('./query-browser-harness.js');
 
+function findElementsByClass(root, className, matches = []) {
+    if (!root) {
+        return matches;
+    }
+    if (root.classList && root.classList.contains(className)) {
+        matches.push(root);
+    }
+    (root.children || []).forEach((child) => findElementsByClass(child, className, matches));
+    return matches;
+}
+
 test('query page load initializes editors, fetches saved query text, and hydrates explanation state', () => {
     const harness = createQueryBrowserHarness({
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query?query=saved-query&ref=id',
@@ -139,6 +150,44 @@ test('query explanation copy writes the current pane explanation to the clipboar
 
     await harness.context.workbench.query.copyExplanation('compare');
     assert.deepEqual(clipboardWrites, ['Primary plan', 'Compare plan']);
+});
+
+test('trace result frames mark bound-variable hints as result highlights', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['trace-request-1']
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runTrace();
+    harness.pendingTraceRequests[0].resolve({
+        lines: [
+            { id: 'line-0', displayIndex: 0, stepIndex: 0, kind: 'pattern', text: '?a <urn:hasCondition> ?d', indentDepth: 1 },
+            { id: 'line-1', displayIndex: 1, stepIndex: 1, kind: 'pattern', text: '?d <urn:code> ?code', indentDepth: 1 }
+        ],
+        frames: [
+            {
+                index: 0,
+                event: 'match',
+                lineId: 'line-0',
+                stepIndex: 0,
+                outputBindings: { a: '<urn:encounter:1>', d: '<urn:condition:1>' }
+            },
+            {
+                index: 1,
+                event: 'result',
+                lineId: 'line-1',
+                stepIndex: 1,
+                resultBindings: { a: '<urn:encounter:1>', d: '<urn:condition:1>', code: '"DX-1"' }
+            }
+        ]
+    });
+    harness.context.workbench.query.stepTrace(1);
+
+    const renderedQuery = harness.document.getElementById('query-trace-patterns').children[0];
+    const bindingHints = findElementsByClass(renderedQuery, 'query-trace-query__binding');
+
+    assert.equal(bindingHints.length >= 2, true);
+    assert.equal(renderedQuery.classList.contains('query-trace-query--result'), true);
 });
 
 test('large primary query edits preserve existing hash-backed cookie state', () => {

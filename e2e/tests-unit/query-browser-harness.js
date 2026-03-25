@@ -92,6 +92,7 @@ function createQueryBrowserHarness(options = {}) {
     const getJSONRequests = [];
     const pendingGetJSONRequests = [];
     const pendingExplainRequests = [];
+    const pendingTraceRequests = [];
     const getJSONResponses = Array.from(options.getJSONResponses || []);
     const harness = createScriptHarness(Object.assign({}, options, {
         ajaxHandler(ajaxOptions, helpers) {
@@ -102,6 +103,10 @@ function createQueryBrowserHarness(options = {}) {
             helpers.ajaxRequests.push(request);
             if (request.action === 'explain') {
                 pendingExplainRequests.push(request);
+                return request.jqXHR;
+            }
+            if (request.action === 'trace') {
+                pendingTraceRequests.push(request);
                 return request.jqXHR;
             }
             if (request.action === 'cancel-explain') {
@@ -119,6 +124,7 @@ function createQueryBrowserHarness(options = {}) {
     context.sparqlNamespaces = Object.assign({
         ex: 'http://example.com/'
     }, options.sparqlNamespaces || {});
+    context.traceNamespaces = Object.assign({}, options.traceNamespaces || {});
     context.Blob = function Blob(parts, options) {
         this.parts = parts;
         this.options = options;
@@ -200,6 +206,12 @@ function createQueryBrowserHarness(options = {}) {
     const limitQuery = registerElement('input', { id: 'limit_query', name: 'limit_query', value: options.limitQuery || '25' });
     const queryTimeout = registerElement('input', { id: 'query-timeout', name: 'query-timeout', value: options.queryTimeout || '0' });
     const infer = registerElement('input', { id: 'infer', name: 'infer', type: 'checkbox', checked: !!options.infer });
+    const preserveQueryOrder = registerElement('input', {
+        id: 'preserve-query-order',
+        name: 'preserve-query-order',
+        type: 'checkbox',
+        checked: !!options.preserveQueryOrder
+    });
     const includeQueryText = registerElement('input', {
         id: 'include-query-text',
         name: 'include-query-text',
@@ -217,6 +229,7 @@ function createQueryBrowserHarness(options = {}) {
         limitQuery,
         queryTimeout,
         infer,
+        preserveQueryOrder,
         includeQueryText,
         queryName,
         savePrivate
@@ -265,6 +278,36 @@ function createQueryBrowserHarness(options = {}) {
         disabled: true,
         attributes: { 'aria-hidden': 'true' }
     });
+    const traceTrigger = registerElement('input', { id: 'trace-trigger', type: 'button' });
+    const traceTriggerSpinner = registerElement('span', {
+        id: 'trace-trigger-spinner',
+        className: 'query-explain-spinner',
+        attributes: { 'aria-hidden': 'true' }
+    });
+    const traceTriggerCancel = registerElement('input', {
+        id: 'trace-trigger-cancel',
+        type: 'button',
+        className: 'query-explain-cancel',
+        disabled: true,
+        attributes: { 'aria-hidden': 'true' }
+    });
+    const queryTraceRow = registerElement('div', { id: 'query-trace-row' });
+    const queryTraceStatus = registerElement('div', { id: 'query-trace-status' });
+    const queryTraceSummary = registerElement('div', { id: 'query-trace-summary' });
+    const queryTraceFrameLabel = registerElement('div', { id: 'query-trace-frame-label' });
+    const queryTraceStepLabel = registerElement('div', { id: 'query-trace-step-label' });
+    const downloadTrace = registerElement('input', { id: 'download-trace', type: 'button', disabled: true });
+    const tracePlaybackToggle = registerElement('input', { id: 'trace-playback-toggle', type: 'button', disabled: true });
+    const tracePrevious = registerElement('input', { id: 'trace-previous', type: 'button', disabled: true });
+    const traceNext = registerElement('input', { id: 'trace-next', type: 'button', disabled: true });
+    const traceReset = registerElement('input', { id: 'trace-reset', type: 'button', disabled: true });
+    const queryTraceScrubber = registerElement('input', {
+        id: 'query-trace-scrubber',
+        type: 'range',
+        value: '0',
+        disabled: true
+    });
+    const queryTracePatterns = registerElement('div', { id: 'query-trace-patterns' });
 
     const queryExplanationRow = registerElement('div', { id: 'query-explanation-row' });
     const queryExplanationControlsRow = registerElement('div', { id: 'query-explanation-controls-row' });
@@ -325,6 +368,7 @@ function createQueryBrowserHarness(options = {}) {
         limitQuery,
         queryTimeout,
         infer,
+        preserveQueryOrder,
         includeQueryText,
         queryName,
         savePrivate,
@@ -341,6 +385,21 @@ function createQueryBrowserHarness(options = {}) {
         rerunExplanationCancel,
         explainCompareTrigger,
         explainCompareCancel,
+        traceTrigger,
+        traceTriggerSpinner,
+        traceTriggerCancel,
+        queryTraceRow,
+        queryTraceStatus,
+        queryTraceSummary,
+        queryTraceFrameLabel,
+        queryTraceStepLabel,
+        downloadTrace,
+        tracePlaybackToggle,
+        tracePrevious,
+        traceNext,
+        traceReset,
+        queryTraceScrubber,
+        queryTracePatterns,
         queryExplanationRow,
         queryExplanationControlsRow,
         queryExplanationStatus,
@@ -378,6 +437,7 @@ function createQueryBrowserHarness(options = {}) {
         harness.runScript('tools/workbench/src/main/webapp/scripts/diff.min.js');
     }
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
+    harness.runScript('tools/workbench/src/main/webapp/scripts/query-trace-player.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/query.js');
 
     explainTrigger.onclick = () => context.workbench.query.runExplain(null, 'explain-trigger');
@@ -386,6 +446,13 @@ function createQueryBrowserHarness(options = {}) {
     rerunExplanationCancel.onclick = () => context.workbench.query.cancelExplain();
     explainCompareTrigger.onclick = () => context.workbench.query.runCompareExplain('explain-compare-trigger');
     explainCompareCancel.onclick = () => context.workbench.query.cancelCompareExplain();
+    traceTrigger.onclick = () => context.workbench.query.runTrace();
+    traceTriggerCancel.onclick = () => context.workbench.query.cancelTrace();
+    tracePlaybackToggle.onclick = () => context.workbench.query.toggleTracePlayback();
+    tracePrevious.onclick = () => context.workbench.query.stepTrace(-1);
+    traceNext.onclick = () => context.workbench.query.stepTrace(1);
+    traceReset.onclick = () => context.workbench.query.resetTracePlayback();
+    queryTraceScrubber.onchange = () => context.workbench.query.seekTrace(queryTraceScrubber.value);
     explainLevel.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
     explainFormat.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
 
@@ -393,6 +460,7 @@ function createQueryBrowserHarness(options = {}) {
         getJSONRequests,
         pendingGetJSONRequests,
         pendingExplainRequests,
+        pendingTraceRequests,
         yasqeState: yasqe.state,
         requestsByAction(action) {
             return harness.ajaxRequests.filter((request) => request.action === action);
