@@ -325,8 +325,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 
 			Set<String> incomingBindings = bindings == null ? Collections.emptySet() : bindings.getBindingNames();
+			Map<String, String> namespaces = collectSailNamespaces();
 			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr,
-					incomingBindings, level);
+					incomingBindings, level, namespaces);
 			tupleExpr.visit(converter);
 
 			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, tupleExpr);
@@ -365,12 +366,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			logger.trace("Optimized trace model:\n{}", tupleExpr);
 
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
-			QueryTraceAnalyzer.Analysis analysis = QueryTraceAnalyzer.analyze(tupleExpr);
+			Map<String, String> sailNamespaces = collectNamespaces(rdfDataset);
+			QueryTraceAnalyzer.Analysis analysis = QueryTraceAnalyzer.analyze(tupleExpr, sailNamespaces);
 			if (!analysis.isSupported()) {
 				return QueryTrace.error(QueryTraceRecorder.UNSUPPORTED_SHAPE, analysis.getMessage());
 			}
 
-			QueryTraceRecorder recorder = new QueryTraceRecorder(analysis);
+			QueryTraceRecorder recorder = new QueryTraceRecorder(analysis, sailNamespaces);
 			try (QueryTraceContext.Activation ignored = QueryTraceContext.activate(recorder)) {
 				iteration = qes.evaluate(EmptyBindingSet.getInstance());
 				while (iteration.hasNext()) {
@@ -393,6 +395,28 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		} finally {
 			closeQueryResources(iteration, rdfDataset, branch);
 		}
+	}
+
+	private Map<String, String> collectSailNamespaces() {
+		Map<String, String> namespaces = new HashMap<>();
+		try (CloseableIteration<? extends Namespace> iter = getNamespacesInternal()) {
+			while (iter.hasNext()) {
+				Namespace ns = iter.next();
+				namespaces.put(ns.getName(), ns.getPrefix());
+			}
+		}
+		return namespaces;
+	}
+
+	private static Map<String, String> collectNamespaces(SailDataset dataset) {
+		Map<String, String> namespaces = new HashMap<>();
+		try (CloseableIteration<? extends Namespace> iter = dataset.getNamespaces()) {
+			while (iter.hasNext()) {
+				Namespace ns = iter.next();
+				namespaces.put(ns.getName(), ns.getPrefix());
+			}
+		}
+		return namespaces;
 	}
 
 	private void closeQueryResources(CloseableIteration<?> iteration, SailDataset rdfDataset, SailSource branch) {

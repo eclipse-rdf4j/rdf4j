@@ -36,6 +36,7 @@ public final class QueryTraceRecorder {
 	private final Map<StatementPattern, PatternRef> patternRefs = new IdentityHashMap<>();
 	private final boolean distinct;
 	private final List<String> filters;
+	private final QueryTraceRenderUtils renderUtils;
 
 	private int nextFrameIndex;
 
@@ -44,6 +45,15 @@ public final class QueryTraceRecorder {
 	}
 
 	public QueryTraceRecorder(QueryTraceAnalyzer.Analysis analysis) {
+		this(analysis, QueryTraceRenderUtils.DEFAULT);
+	}
+
+	public QueryTraceRecorder(QueryTraceAnalyzer.Analysis analysis, Map<String, String> sailNamespaces) {
+		this(analysis, new QueryTraceRenderUtils(sailNamespaces));
+	}
+
+	QueryTraceRecorder(QueryTraceAnalyzer.Analysis analysis, QueryTraceRenderUtils renderUtils) {
+		this.renderUtils = renderUtils;
 		this.distinct = analysis.isDistinct();
 		this.filters = new ArrayList<>(analysis.getFilters());
 		initializeLines(analysis.getCollectedLines());
@@ -51,6 +61,7 @@ public final class QueryTraceRecorder {
 	}
 
 	public QueryTraceRecorder(List<StatementPattern> statementPatterns, boolean distinct, List<String> filters) {
+		this.renderUtils = QueryTraceRenderUtils.DEFAULT;
 		this.distinct = distinct;
 		this.filters = new ArrayList<>(filters);
 		initializePatterns(asCollectedPatterns(statementPatterns));
@@ -69,7 +80,7 @@ public final class QueryTraceRecorder {
 		for (int i = 0; i < statementPatterns.size(); i++) {
 			QueryTraceAnalyzer.CollectedPattern statementPattern = statementPatterns.get(i);
 			QueryTrace.Pattern pattern = new QueryTrace.Pattern("sp-" + i, i,
-					QueryTraceRenderUtils.renderStatementPattern(statementPattern.getStatementPattern()),
+					renderUtils.renderStatementPattern(statementPattern.getStatementPattern()),
 					statementPattern.getOptionalDepth());
 			patterns.add(pattern);
 			patternRefs.put(statementPattern.getStatementPattern(), new PatternRef(pattern));
@@ -137,13 +148,13 @@ public final class QueryTraceRecorder {
 				asBindingMap(resultBindings)));
 	}
 
-	private static Map<String, String> asBindingMap(BindingSet bindingSet) {
+	private Map<String, String> asBindingMap(BindingSet bindingSet) {
 		Map<String, String> values = new LinkedHashMap<>();
 		if (bindingSet == null) {
 			return values;
 		}
 		for (Binding binding : bindingSet) {
-			values.put(binding.getName(), QueryTraceRenderUtils.renderValue(binding.getValue()));
+			values.put(binding.getName(), renderUtils.renderValue(binding.getValue()));
 		}
 		return values;
 	}

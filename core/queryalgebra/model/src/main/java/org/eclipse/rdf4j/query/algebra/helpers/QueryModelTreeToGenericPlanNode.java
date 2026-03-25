@@ -16,10 +16,14 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.VocabularyNamespaceMap;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -62,6 +66,8 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	private final Explanation.Level level;
 	private final Set<String> rootIncomingBindings;
 	private final CartesianJoinExplainAnalyzer cartesianJoinExplainAnalyzer;
+	// namespace URI -> prefix, for rendering prefixed names in explanations
+	private final Map<String, String> namespacePrefixes;
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this(topTupleExpr, Collections.emptySet(), defaultExplanationLevel(topTupleExpr));
@@ -73,6 +79,11 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr, Set<String> rootIncomingBindings,
 			Explanation.Level level) {
+		this(topTupleExpr, rootIncomingBindings, level, Collections.emptyMap());
+	}
+
+	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr, Set<String> rootIncomingBindings,
+			Explanation.Level level, Map<String, String> namespacePrefixes) {
 		if (topTupleExpr instanceof QueryRoot) {
 			topTupleExpr = ((QueryRoot) topTupleExpr).getArg();
 		}
@@ -83,6 +94,13 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		this.cartesianJoinExplainAnalyzer = this.level.includesEvaluationAnnotations()
 				? new CartesianJoinExplainAnalyzer(this.topTupleExpr, this.rootIncomingBindings)
 				: null;
+		if (namespacePrefixes == null || namespacePrefixes.isEmpty()) {
+			this.namespacePrefixes = VocabularyNamespaceMap.NAMESPACE_TO_PREFIX;
+		} else {
+			Map<String, String> merged = new LinkedHashMap<>(VocabularyNamespaceMap.NAMESPACE_TO_PREFIX);
+			merged.putAll(namespacePrefixes);
+			this.namespacePrefixes = Collections.unmodifiableMap(merged);
+		}
 	}
 
 	public GenericPlanNode getGenericPlanNode() {
@@ -103,7 +121,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	}
 
 	private GenericPlanNode buildPlanNode(QueryModelNode node, Set<String> incomingBindings) {
-		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
+		GenericPlanNode genericPlanNode = new GenericPlanNode(getNodeSignature(node));
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
@@ -143,6 +161,52 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 
 		return genericPlanNode;
+	}
+
+	private String getNodeSignature(QueryModelNode node) {
+		if (!namespacePrefixes.isEmpty() && node instanceof Var) {
+			Var var = (Var) node;
+			Value value = var.getValue();
+			if (value instanceof IRI) {
+				String prefixed = toPrefixedName((IRI) value);
+				if (prefixed != null) {
+					StringBuilder sb = new StringBuilder(64);
+					sb.append("Var");
+					sb.append(" (name=").append(var.getName());
+					sb.append(", value=").append(prefixed);
+					if (var.isAnonymous()) {
+						sb.append(", anonymous");
+					}
+					sb.append(")");
+					return sb.toString();
+				}
+			}
+		}
+		return node.getSignature();
+	}
+
+	private String toPrefixedName(IRI iri) {
+		String iriString = iri.stringValue();
+		for (Map.Entry<String, String> entry : namespacePrefixes.entrySet()) {
+			String namespace = entry.getKey();
+			if (iriString.startsWith(namespace)) {
+				String localName = iriString.substring(namespace.length());
+				if (!localName.isEmpty() && isValidLocalName(localName)) {
+					return entry.getValue() + ":" + localName;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static boolean isValidLocalName(String localName) {
+		for (int i = 0; i < localName.length(); i++) {
+			char c = localName.charAt(i);
+			if (c == '/' || c == '#' || c == '?' || c == '&' || c == ' ') {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private long runtimeTelemetryMetric(long value) {

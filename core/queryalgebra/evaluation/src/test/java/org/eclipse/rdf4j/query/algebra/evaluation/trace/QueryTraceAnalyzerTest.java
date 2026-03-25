@@ -51,7 +51,7 @@ class QueryTraceAnalyzerTest {
 		assertThat(analysis.isDistinct()).isTrue();
 		assertThat(analysis.getFilters()).containsExactly("FILTER(?a != ?person)");
 		assertThat(analysis.getCollectedPatterns())
-				.extracting(pattern -> QueryTraceRenderUtils.renderStatementPattern(pattern.getStatementPattern()),
+				.extracting(pattern -> QueryTraceRenderUtils.DEFAULT.renderStatementPattern(pattern.getStatementPattern()),
 						QueryTraceAnalyzer.CollectedPattern::getOptionalDepth)
 				.containsExactly(
 						org.assertj.core.groups.Tuple.tuple("?a <urn:trace:knows> ?person", 0),
@@ -66,7 +66,7 @@ class QueryTraceAnalyzerTest {
 		assertThat(analysis.isDistinct()).isTrue();
 		assertThat(analysis.getFilters()).containsExactly("FILTER(?a != ?person)");
 		assertThat(analysis.getCollectedPatterns())
-				.extracting(pattern -> QueryTraceRenderUtils.renderStatementPattern(pattern.getStatementPattern()),
+				.extracting(pattern -> QueryTraceRenderUtils.DEFAULT.renderStatementPattern(pattern.getStatementPattern()),
 						QueryTraceAnalyzer.CollectedPattern::getOptionalDepth)
 				.containsExactly(
 						org.assertj.core.groups.Tuple.tuple("?a <urn:trace:knows> ?person", 0),
@@ -100,7 +100,7 @@ class QueryTraceAnalyzerTest {
 						org.assertj.core.groups.Tuple.tuple(4, 4, "pattern", "?a <urn:trace:name> ?name", 2),
 						org.assertj.core.groups.Tuple.tuple(5, -1, "minusEnd", "}", 1));
 		assertThat(analysis.getCollectedPatterns())
-				.extracting(pattern -> QueryTraceRenderUtils.renderStatementPattern(pattern.getStatementPattern()),
+				.extracting(pattern -> QueryTraceRenderUtils.DEFAULT.renderStatementPattern(pattern.getStatementPattern()),
 						QueryTraceAnalyzer.CollectedPattern::getOptionalDepth)
 				.containsExactly(
 						org.assertj.core.groups.Tuple.tuple("?a <urn:trace:knows> ?b", 0),

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.trace;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -49,7 +50,15 @@ public final class QueryTraceAnalyzer {
 	}
 
 	public static Analysis analyze(TupleExpr tupleExpr) {
-		Collector collector = new Collector();
+		return analyze(tupleExpr, QueryTraceRenderUtils.DEFAULT);
+	}
+
+	public static Analysis analyze(TupleExpr tupleExpr, Map<String, String> sailNamespaces) {
+		return analyze(tupleExpr, new QueryTraceRenderUtils(sailNamespaces));
+	}
+
+	static Analysis analyze(TupleExpr tupleExpr, QueryTraceRenderUtils renderUtils) {
+		Collector collector = new Collector(renderUtils);
 		UnwrappedQuery unwrappedQuery = unwrap(tupleExpr);
 		TupleExpr current = unwrappedQuery.current;
 		if (current == null || !collector.collect(current, 1, 0)) {
@@ -89,16 +98,16 @@ public final class QueryTraceAnalyzer {
 				|| BadlyDesignedLeftJoinIterator.class.getSimpleName().equals(algorithmName);
 	}
 
-	private static boolean isSupportedLeftJoinCondition(LeftJoin leftJoin) {
+	private static boolean isSupportedLeftJoinCondition(LeftJoin leftJoin, QueryTraceRenderUtils renderUtils) {
 		if (!leftJoin.getAssuredBindingNames().containsAll(VarNameCollector.process(leftJoin.getCondition()))) {
 			return false;
 		}
-		return renderFilter(leftJoin.getCondition()) != null;
+		return renderFilter(leftJoin.getCondition(), renderUtils) != null;
 	}
 
-	private static String renderFilter(ValueExpr condition) {
+	private static String renderFilter(ValueExpr condition, QueryTraceRenderUtils renderUtils) {
 		try {
-			return QueryTraceRenderUtils.renderFilter(condition);
+			return renderUtils.renderFilter(condition);
 		} catch (IllegalArgumentException e) {
 			return null;
 		}
@@ -231,14 +240,19 @@ public final class QueryTraceAnalyzer {
 		private final List<CollectedLine> lines = new ArrayList<>();
 		private final List<CollectedPattern> patterns = new ArrayList<>();
 		private final List<String> filters = new ArrayList<>();
+		private final QueryTraceRenderUtils renderUtils;
 		private int nextStepIndex;
+
+		private Collector(QueryTraceRenderUtils renderUtils) {
+			this.renderUtils = renderUtils;
+		}
 
 		private boolean collect(TupleExpr tupleExpr, int indentDepth, int optionalDepth) {
 			if (tupleExpr instanceof StatementPattern) {
 				StatementPattern statementPattern = (StatementPattern) tupleExpr;
 				patterns.add(new CollectedPattern(statementPattern, optionalDepth));
 				addStepLine(statementPattern, "pattern",
-						QueryTraceRenderUtils.renderStatementPattern(statementPattern), indentDepth);
+						renderUtils.renderStatementPattern(statementPattern), indentDepth);
 				return true;
 			}
 			if (tupleExpr instanceof Filter) {
@@ -272,7 +286,7 @@ public final class QueryTraceAnalyzer {
 					return false;
 				}
 				if (leftJoin.hasCondition()) {
-					if (!isSupportedLeftJoinCondition(leftJoin)) {
+					if (!isSupportedLeftJoinCondition(leftJoin, renderUtils)) {
 						return false;
 					}
 					if (!addFilterLine(leftJoin.getCondition(), indentDepth + 1)) {
@@ -286,7 +300,7 @@ public final class QueryTraceAnalyzer {
 				BindingSetAssignment bindingSetAssignment = (BindingSetAssignment) tupleExpr;
 				try {
 					addStepLine(bindingSetAssignment, "values",
-							QueryTraceRenderUtils.renderValues(bindingSetAssignment), indentDepth);
+							renderUtils.renderValues(bindingSetAssignment), indentDepth);
 					return true;
 				} catch (IllegalArgumentException e) {
 					return false;
@@ -299,7 +313,7 @@ public final class QueryTraceAnalyzer {
 				}
 				for (ExtensionElem extensionElem : extension.getElements()) {
 					try {
-						addStepLine(extensionElem, "bind", QueryTraceRenderUtils.renderBind(extensionElem),
+						addStepLine(extensionElem, "bind", renderUtils.renderBind(extensionElem),
 								indentDepth);
 					} catch (IllegalArgumentException e) {
 						return false;
@@ -323,7 +337,7 @@ public final class QueryTraceAnalyzer {
 		}
 
 		private boolean addFilterLine(ValueExpr condition, int indentDepth) {
-			String renderedFilter = renderFilter(condition);
+			String renderedFilter = renderFilter(condition, renderUtils);
 			if (renderedFilter == null) {
 				return false;
 			}

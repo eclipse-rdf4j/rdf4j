@@ -12,12 +12,16 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.trace;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.VocabularyNamespaceMap;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -36,10 +40,19 @@ import org.eclipse.rdf4j.query.algebra.Var;
 
 final class QueryTraceRenderUtils {
 
-	private QueryTraceRenderUtils() {
+	static final QueryTraceRenderUtils DEFAULT = new QueryTraceRenderUtils(Collections.emptyMap());
+
+	// namespace URI -> prefix
+	private final Map<String, String> namespacePrefixes;
+
+	QueryTraceRenderUtils(Map<String, String> additionalNamespaces) {
+		Map<String, String> merged = new LinkedHashMap<>(VocabularyNamespaceMap.NAMESPACE_TO_PREFIX);
+		// sail-configured namespaces override vocabulary defaults
+		merged.putAll(additionalNamespaces);
+		this.namespacePrefixes = Collections.unmodifiableMap(merged);
 	}
 
-	static String renderStatementPattern(StatementPattern statementPattern) {
+	String renderStatementPattern(StatementPattern statementPattern) {
 		StringBuilder builder = new StringBuilder();
 		builder.append(renderVar(statementPattern.getSubjectVar()))
 				.append(' ')
@@ -52,15 +65,15 @@ final class QueryTraceRenderUtils {
 		return builder.toString();
 	}
 
-	static String renderFilter(ValueExpr condition) {
+	String renderFilter(ValueExpr condition) {
 		return "FILTER(" + renderValueExpr(condition) + ")";
 	}
 
-	static String renderBind(ExtensionElem extensionElem) {
+	String renderBind(ExtensionElem extensionElem) {
 		return "BIND(" + renderValueExpr(extensionElem.getExpr()) + " AS ?" + extensionElem.getName() + ")";
 	}
 
-	static String renderValues(BindingSetAssignment bindingSetAssignment) {
+	String renderValues(BindingSetAssignment bindingSetAssignment) {
 		List<String> bindingNames = new ArrayList<>(bindingSetAssignment.getBindingNames());
 		StringBuilder builder = new StringBuilder("VALUES ");
 		if (bindingNames.size() == 1) {
@@ -99,12 +112,12 @@ final class QueryTraceRenderUtils {
 	}
 
 	static String renderMinusStart(boolean newScope) {
-		if(newScope)
-		return "MINUS (new scope) {";
+		if (newScope)
+			return "MINUS (new scope) {";
 		return "MINUS {";
 	}
 
-	static String renderVar(Var var) {
+	String renderVar(Var var) {
 		if (var == null) {
 			return "()";
 		}
@@ -114,11 +127,15 @@ final class QueryTraceRenderUtils {
 		return "?" + var.getName();
 	}
 
-	static String renderValue(Value value) {
+	String renderValue(Value value) {
 		if (value == null) {
 			return "UNDEF";
 		}
 		if (value instanceof IRI) {
+			String prefixed = toPrefixedName((IRI) value);
+			if (prefixed != null) {
+				return prefixed;
+			}
 			return "<" + value.stringValue() + ">";
 		}
 		if (value instanceof BNode) {
@@ -131,12 +148,41 @@ final class QueryTraceRenderUtils {
 		if (literal.getLanguage().isPresent()) {
 			builder.append('@').append(literal.getLanguage().get());
 		} else if (literal.getDatatype() != null && !XSD.STRING.equals(literal.getDatatype())) {
-			builder.append("^^<").append(literal.getDatatype().stringValue()).append(">");
+			String prefixedDatatype = toPrefixedName(literal.getDatatype());
+			if (prefixedDatatype != null) {
+				builder.append("^^").append(prefixedDatatype);
+			} else {
+				builder.append("^^<").append(literal.getDatatype().stringValue()).append(">");
+			}
 		}
 		return builder.toString();
 	}
 
-	static String renderValueExpr(ValueExpr valueExpr) {
+	private String toPrefixedName(IRI iri) {
+		String iriString = iri.stringValue();
+		for (Map.Entry<String, String> entry : namespacePrefixes.entrySet()) {
+			String namespace = entry.getKey();
+			if (iriString.startsWith(namespace)) {
+				String localName = iriString.substring(namespace.length());
+				if (!localName.isEmpty() && isValidLocalName(localName)) {
+					return entry.getValue() + ":" + localName;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static boolean isValidLocalName(String localName) {
+		for (int i = 0; i < localName.length(); i++) {
+			char c = localName.charAt(i);
+			if (c == '/' || c == '#' || c == '?' || c == '&' || c == ' ') {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	String renderValueExpr(ValueExpr valueExpr) {
 		if (valueExpr instanceof Var) {
 			return renderVar((Var) valueExpr);
 		}
@@ -169,11 +215,11 @@ final class QueryTraceRenderUtils {
 		throw new IllegalArgumentException("Unsupported filter condition: " + valueExpr.getClass().getSimpleName());
 	}
 
-	private static String renderBinary(BinaryValueOperator operator, String symbol) {
+	private String renderBinary(BinaryValueOperator operator, String symbol) {
 		return renderOperand(operator.getLeftArg()) + " " + symbol + " " + renderOperand(operator.getRightArg());
 	}
 
-	private static String renderOperand(ValueExpr valueExpr) {
+	private String renderOperand(ValueExpr valueExpr) {
 		if (valueExpr instanceof Compare || valueExpr instanceof And || valueExpr instanceof Or) {
 			return "(" + renderValueExpr(valueExpr) + ")";
 		}
@@ -188,7 +234,7 @@ final class QueryTraceRenderUtils {
 				.replace("\t", "\\t");
 	}
 
-	private static void appendSingleBindingValues(StringBuilder builder, BindingSetAssignment bindingSetAssignment,
+	private void appendSingleBindingValues(StringBuilder builder, BindingSetAssignment bindingSetAssignment,
 			String bindingName) {
 		for (BindingSet bindingSet : bindingSetAssignment.getBindingSets()) {
 			builder.append(' ').append(renderValue(bindingSet.getValue(bindingName)));
