@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -45,6 +47,35 @@ import org.junit.jupiter.api.Test;
 class QueryServletExplainCoverageTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
+
+	@Test
+	void syncExplainSuccessReturnsRenderedQueryAlongsideExplanation() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		WorkbenchRequest request = mockExplainRequest(false, "sync-success");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("optimized plan");
+		when(explanation.tupleExpr()).thenReturn(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, SHORT_QUERY, null)
+				.getTupleExpr());
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		servlet.setRepository(repository);
+
+		servlet.service(request, response, "/transform");
+
+		verify(response).setStatus(HttpServletResponse.SC_OK);
+		assertThat(body.toString())
+				.contains("\"content\":\"optimized plan\"")
+				.contains("\"renderedQuery\":\"SELECT")
+				.contains("?s ?p ?o");
+	}
 
 	@Test
 	void syncExplainPrefersMalformedCauseMessage() throws Exception {

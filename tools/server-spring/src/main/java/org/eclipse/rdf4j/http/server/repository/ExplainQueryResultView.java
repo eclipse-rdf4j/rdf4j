@@ -22,13 +22,20 @@ import javax.servlet.http.HttpServletResponse;
 import org.apache.http.HttpStatus;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleExprJsonCodec;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class ExplainQueryResultView extends QueryResultView {
 
 	private static final String MIME_PLAIN = "text/plain";
 	private static final String MIME_JSON = "application/json";
 	private static final String UNSUPPORTED_MIME_TYPE_MESSAGE = "Must be either text/plain or application/json.";
+	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
+	private static final TupleExprJsonCodec TUPLE_EXPR_JSON_CODEC = new TupleExprJsonCodec();
 
 	@Override
 	protected void renderInternal(
@@ -58,8 +65,25 @@ public class ExplainQueryResultView extends QueryResultView {
 		response.setContentType(mimeType);
 
 		try (PrintWriter writer = response.getWriter()) {
-			writer.write(MIME_JSON.equals(mimeType) ? explanation.toJson() : explanation.toString());
+			writer.write(
+					MIME_JSON.equals(mimeType) ? renderJsonExplanation(request, explanation) : explanation.toString());
 		}
+	}
+
+	private String renderJsonExplanation(HttpServletRequest request, Explanation explanation) throws IOException {
+		if (!Boolean.parseBoolean(request.getParameter(Protocol.EXPLAIN_TUPLE_EXPR_PARAM_NAME))) {
+			return explanation.toJson();
+		}
+
+		ObjectNode envelope = EXPLANATION_MAPPER.createObjectNode();
+		envelope.set("plan", EXPLANATION_MAPPER.readTree(explanation.toJson()));
+		Object tupleExpr = explanation.tupleExpr();
+		if (tupleExpr instanceof TupleExpr) {
+			envelope.put("tupleExprJson", TUPLE_EXPR_JSON_CODEC.toJson((TupleExpr) tupleExpr));
+		} else {
+			envelope.putNull("tupleExprJson");
+		}
+		return EXPLANATION_MAPPER.writeValueAsString(envelope);
 	}
 
 	private String getRequestedMimeType(HttpServletRequest request, HttpServletResponse response) {

@@ -153,6 +153,7 @@
 	<variable name="query-options.label">Action Options</variable>
 	<variable name="query-actions.label">Actions</variable>
 	<variable name="query-explanation.label">Query Explanation</variable>
+	<variable name="rendered-query.label">Rendered Query</variable>
 	<variable name="query-timeout.label">Query timeout (seconds)</variable>
 	<variable name="query-language.label">Query Language</variable>
 	<variable name="query-string.label">Query</variable>

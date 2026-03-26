@@ -326,7 +326,8 @@ public final class QueryTraceAnalyzer {
 				if (!collect(difference.getLeftArg(), indentDepth, optionalDepth)) {
 					return false;
 				}
-				addStepLine(difference, "minus", QueryTraceRenderUtils.renderMinusStart(difference.isVariableScopeChange()), indentDepth);
+				addStepLine(difference, "minus",
+						QueryTraceRenderUtils.renderMinusStart(difference.isVariableScopeChange()), indentDepth);
 				if (!collect(difference.getRightArg(), indentDepth + 1, optionalDepth)) {
 					return false;
 				}

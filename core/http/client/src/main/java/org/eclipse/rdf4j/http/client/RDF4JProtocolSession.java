@@ -82,6 +82,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleExprJsonCodec;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
@@ -100,6 +102,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -112,6 +115,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
+	private static final TupleExprJsonCodec TUPLE_EXPR_JSON_CODEC = new TupleExprJsonCodec();
 	private static final ObjectMapper TRACE_MAPPER = new ObjectMapper();
 
 	/**
@@ -999,6 +1003,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpUriRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
 				preserveQueryOrder, bindings);
 		HttpUriRequest explainMethod = addQueryParameter(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
+		explainMethod = addQueryParameter(explainMethod, Protocol.EXPLAIN_TUPLE_EXPR_PARAM_NAME,
+				Boolean.TRUE.toString());
 		String explainRequestId = getTransactionURL() == null ? QueryExplanationRequestContext.getExplainRequestId()
 				: null;
 		if (explainRequestId != null) {
@@ -1341,10 +1347,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				throw new RepositoryException("Server responded with an unsupported explanation format: " + mimeType);
 			}
 
-			GenericPlanNode planNode = EXPLANATION_MAPPER.readValue(response.getEntity().getContent(),
-					GenericPlanNode.class);
+			JsonNode root = EXPLANATION_MAPPER.readTree(response.getEntity().getContent());
+			JsonNode planJson = root.hasNonNull("plan") ? root.get("plan") : root;
+			GenericPlanNode planNode = EXPLANATION_MAPPER.treeToValue(planJson, GenericPlanNode.class);
 			planNode.applyExplanationLevel(level);
-			return new ExplanationImpl(planNode, Boolean.TRUE.equals(planNode.getTimedOut()), null);
+			TupleExpr tupleExpr = null;
+			JsonNode tupleExprJson = root.get("tupleExprJson");
+			if (tupleExprJson != null && tupleExprJson.isTextual() && !tupleExprJson.asText().isBlank()) {
+				tupleExpr = TUPLE_EXPR_JSON_CODEC.fromJson(tupleExprJson.asText());
+			}
+			return new ExplanationImpl(planNode, Boolean.TRUE.equals(planNode.getTimedOut()), tupleExpr);
 		} finally {
 			EntityUtils.consumeQuietly(response.getEntity());
 		}

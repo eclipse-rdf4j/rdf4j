@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -31,14 +32,24 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.FallbackDataset;
+import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.trace.QueryTrace;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -46,6 +57,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Evaluates queries for QueryServlet.
  */
 public final class QueryEvaluator {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(QueryEvaluator.class);
 
 	private static final String INFO = "info";
 
@@ -64,6 +77,8 @@ public final class QueryEvaluator {
 	private static final String EXPLANATION_FORMAT = "explanation-format";
 
 	private static final String EXPLANATION_LEVEL = "explanation-level";
+
+	private static final String RENDERED_QUERY = "rendered-query";
 
 	private static final String PRESERVE_QUERY_ORDER = "preserve-query-order";
 
@@ -85,11 +100,13 @@ public final class QueryEvaluator {
 		private final String content;
 		private final String format;
 		private final String level;
+		private final String renderedQuery;
 
-		private ExplainQueryResult(String content, String format, String level) {
+		private ExplainQueryResult(String content, String format, String level, String renderedQuery) {
 			this.content = content;
 			this.format = format;
 			this.level = level;
+			this.renderedQuery = renderedQuery;
 		}
 
 		public String getContent() {
@@ -102,6 +119,10 @@ public final class QueryEvaluator {
 
 		public String getLevel() {
 			return level;
+		}
+
+		public String getRenderedQuery() {
+			return renderedQuery;
 		}
 	}
 
@@ -198,7 +219,7 @@ public final class QueryEvaluator {
 			return;
 		}
 		if (req.isParameterPresent(EXPLAIN)) {
-			ExplainQueryResult explainQueryResult = explain(query, req);
+			ExplainQueryResult explainQueryResult = explain(query, queryText, req);
 			explainQuery(builder, xslPath, explainQueryResult, traceNamespacesJson);
 			return;
 		}
@@ -259,7 +280,7 @@ public final class QueryEvaluator {
 			final ExplainRequest explainRequest)
 			throws RDF4JException, BadRequestException {
 		Query query = prepareQuery(con, queryText, explainRequest);
-		return explain(query, explainRequest);
+		return explain(query, queryText, explainRequest);
 	}
 
 	private Query prepareQuery(final RepositoryConnection con, final String queryText, final WorkbenchRequest req)
@@ -300,11 +321,13 @@ public final class QueryEvaluator {
 		return req.getInt("limit_query");
 	}
 
-	private ExplainQueryResult explain(final Query query, final WorkbenchRequest req) throws BadRequestException {
-		return explain(query, extractExplainRequest(req));
+	private ExplainQueryResult explain(final Query query, final String queryText, final WorkbenchRequest req)
+			throws BadRequestException {
+		return explain(query, queryText, extractExplainRequest(req));
 	}
 
-	private ExplainQueryResult explain(final Query query, final ExplainRequest req) throws BadRequestException {
+	private ExplainQueryResult explain(final Query query, final String queryText, final ExplainRequest req)
+			throws BadRequestException {
 		Explanation explanation;
 		try {
 			explanation = query.explain(req.getExplainLevel());
@@ -312,18 +335,88 @@ public final class QueryEvaluator {
 			throw new BadRequestException("Explain is not supported for this query or repository.", e);
 		}
 		return new ExplainQueryResult(formatExplanation(explanation, req.getExplainFormat()),
-				req.getExplainFormatValue(), req.getExplainLevelName());
+				req.getExplainFormatValue(), req.getExplainLevelName(),
+				renderExplainedQuery(query, queryText, req.getQueryLanguage(), explanation));
 	}
 
 	private void explainQuery(final TupleResultBuilder builder, final String xslPath,
 			final ExplainQueryResult explainQueryResult, final String traceNamespacesJson)
 			throws QueryResultHandlerException {
 		builder.transform(xslPath, "query.xsl");
-		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL);
+		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL, RENDERED_QUERY);
 		builder.link(List.of(INFO, "namespaces"));
 		builder.metadata(TraceNamespaceCatalog.METADATA_NAME, traceNamespacesJson);
-		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel());
+		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel(),
+				explainQueryResult.getRenderedQuery());
 		builder.end();
+	}
+
+	private String renderExplainedQuery(final Query query, final String queryText, final QueryLanguage queryLanguage,
+			final Explanation explanation) {
+		TupleExpr tupleExpr = extractTupleExpr(explanation);
+		if (tupleExpr == null) {
+			return null;
+		}
+		ParsedQuery parsedQuery = parseRenderedQuery(queryText, queryLanguage);
+		if (query instanceof GraphQuery || parsedQuery instanceof ParsedGraphQuery) {
+			return null;
+		}
+
+		TupleExprIRRenderer renderer = new TupleExprIRRenderer();
+		TupleExprIRRenderer.DatasetView datasetView = toDatasetView(resolveDataset(query, parsedQuery));
+		try {
+			if (query instanceof BooleanQuery || parsedQuery instanceof ParsedBooleanQuery) {
+				return renderer.renderAsk(tupleExpr, datasetView);
+			}
+			if (query instanceof TupleQuery || parsedQuery instanceof ParsedTupleQuery) {
+				return renderer.render(tupleExpr, datasetView);
+			}
+		} catch (RuntimeException e) {
+			LOGGER.debug("Unable to render explained query for workbench.", e);
+		}
+		return null;
+	}
+
+	private ParsedQuery parseRenderedQuery(final String queryText, final QueryLanguage queryLanguage) {
+		if (queryText == null || queryLanguage == null) {
+			return null;
+		}
+		try {
+			return QueryParserUtil.parseQuery(queryLanguage, queryText, null);
+		} catch (RuntimeException e) {
+			LOGGER.debug("Unable to parse query text for workbench explain rendering.", e);
+			return null;
+		}
+	}
+
+	private TupleExpr extractTupleExpr(final Explanation explanation) {
+		Object tupleExpr = explanation == null ? null : explanation.tupleExpr();
+		if (tupleExpr instanceof TupleExpr) {
+			return (TupleExpr) tupleExpr;
+		}
+		return null;
+	}
+
+	private Dataset resolveDataset(final Query query, final ParsedQuery parsedQuery) {
+		Dataset parsedDataset = parsedQuery == null ? null : parsedQuery.getDataset();
+		return FallbackDataset.fallback(query == null ? null : query.getDataset(), parsedDataset);
+	}
+
+	private TupleExprIRRenderer.DatasetView toDatasetView(final Dataset dataset) {
+		if (dataset == null) {
+			return null;
+		}
+		TupleExprIRRenderer.DatasetView datasetView = new TupleExprIRRenderer.DatasetView();
+		if (dataset.getDefaultGraphs() != null) {
+			dataset.getDefaultGraphs().forEach(datasetView::addDefault);
+		}
+		if (dataset.getNamedGraphs() != null) {
+			dataset.getNamedGraphs().forEach(datasetView::addNamed);
+		}
+		if (datasetView.defaultGraphs.isEmpty() && datasetView.namedGraphs.isEmpty()) {
+			return null;
+		}
+		return datasetView;
 	}
 
 	private TraceQueryResult trace(final Query query) throws BadRequestException {
