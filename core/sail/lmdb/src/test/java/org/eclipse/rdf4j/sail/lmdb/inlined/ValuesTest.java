@@ -144,14 +144,18 @@ class ValuesTest {
 	@Test
 	void testPackAndUnpack_AllLiteralTypesWithEdgeAndStandardCases() {
 		for (Literal literal : literals) {
-			long packed = Values.packLiteral(literal);
-			// If the literal is not inlined, packed==0. Only test roundtrip if it is inlined.
-			if (packed != 0L) {
-				Literal unpacked = Values.unpackLiteral(packed, vf);
-				assertEqualLiterals(unpacked, literal);
-			} else {
-				// (optional) ensure non-inlined values can be detected
-				assertThat(packed).isZero();
+			try {
+				long packed = Values.packLiteral(literal);
+				// If the literal is not inlined, packed==0. Only test roundtrip if it is inlined.
+				if (packed != 0L) {
+					Literal unpacked = Values.unpackLiteral(packed, vf);
+					assertEqualLiterals(unpacked, literal);
+				} else {
+					// (optional) ensure non-inlined values can be detected
+					assertThat(packed).isZero();
+				}
+			} catch (Throwable e) {
+				throw new AssertionError("Failed to pack/unpack literal: " + literal, e);
 			}
 		}
 	}

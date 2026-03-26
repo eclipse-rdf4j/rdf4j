@@ -35,106 +35,59 @@ public class Values {
 		if (xsdDataType == null) {
 			return 0L;
 		}
-		switch (xsdDataType) {
-		case DECIMAL:
-			return packDecimal(literal.decimalValue());
-		case DOUBLE:
-			return packDouble(literal.doubleValue());
-		case FLOAT:
-			return packFloat(literal.floatValue());
-		case INTEGER:
-			return packInteger(literal);
-		case LONG:
-			return packLong(literal);
-		case INT:
-			return packInt(literal);
-		case SHORT:
-			return packShort(literal);
-		case BYTE:
-			return packByte(literal);
-		case UNSIGNED_LONG:
-			return packUnsignedLong(literal);
-		case UNSIGNED_INT:
-			return packUnsignedInt(literal);
-		case UNSIGNED_SHORT:
-			return packUnsignedShort(literal);
-		case UNSIGNED_BYTE:
-			return packUnsignedByte(literal);
-		case POSITIVE_INTEGER:
-			return packPositiveInteger(literal);
-		case NEGATIVE_INTEGER:
-			return packNegativeInteger(literal);
-		case NON_NEGATIVE_INTEGER:
-			return packNonNegativeInteger(literal);
-		case NON_POSITIVE_INTEGER:
-			return packNonPositiveInteger(literal);
-		case STRING:
-			return packString(literal);
-		case DATETIME:
-			return packDateTime(literal);
-		case DATETIMESTAMP:
-			return packDateTimeStamp(literal);
-		case DATE:
-			return packDate(literal);
-		case BOOLEAN:
-			return packBoolean(literal);
-		default:
+		return switch (xsdDataType) {
+		case DECIMAL -> packDecimal(literal.decimalValue());
+		case DOUBLE -> packDouble(literal.doubleValue());
+		case FLOAT -> packFloat(literal.floatValue());
+		case INTEGER -> packInteger(literal);
+		case LONG -> packLong(literal);
+		case INT -> packInt(literal);
+		case SHORT -> packShort(literal);
+		case BYTE -> packByte(literal);
+		case UNSIGNED_LONG -> packUnsignedLong(literal);
+		case UNSIGNED_INT -> packUnsignedInt(literal);
+		case UNSIGNED_SHORT -> packUnsignedShort(literal);
+		case UNSIGNED_BYTE -> packUnsignedByte(literal);
+		case POSITIVE_INTEGER -> packPositiveInteger(literal);
+		case NEGATIVE_INTEGER -> packNegativeInteger(literal);
+		case NON_NEGATIVE_INTEGER -> packNonNegativeInteger(literal);
+		case NON_POSITIVE_INTEGER -> packNonPositiveInteger(literal);
+		case STRING -> packString(literal);
+		case DATETIME -> packDateTime(literal);
+		case DATETIMESTAMP -> packDateTimeStamp(literal);
+		case DATE -> packDate(literal);
+		case BOOLEAN -> packBoolean(literal);
+		default ->
 			// unsupported type
-			return 0L;
-		}
+			0L;
+		};
 	}
 
 	public static Literal unpackLiteral(long value, ValueFactory valueFactory) {
-		// special handling for double values
-		if (isDouble(value)) {
-			return unpackDouble(value, valueFactory);
-		}
-
 		int idType = ValueIds.getIdType(value);
-
-		switch (idType) {
-		case ValueIds.T_DECIMAL:
-			return unpackDecimal(value, valueFactory);
-		case ValueIds.T_FLOAT:
-			return unpackFloat(value, valueFactory);
-		case ValueIds.T_INTEGER:
-			return unpackInteger(value, valueFactory);
-		case ValueIds.T_LONG:
-			return unpackLong(value, valueFactory);
-		case ValueIds.T_INT:
-			return unpackInt(value, valueFactory);
-		case ValueIds.T_SHORT:
-			return unpackShort(value, valueFactory);
-		case ValueIds.T_BYTE:
-			return unpackByte(value, valueFactory);
-		case ValueIds.T_UNSIGNEDLONG:
-			return unpackUnsignedLong(value, valueFactory);
-		case ValueIds.T_UNSIGNEDINT:
-			return unpackUnsignedInt(value, valueFactory);
-		case ValueIds.T_UNSIGNEDSHORT:
-			return unpackUnsignedShort(value, valueFactory);
-		case ValueIds.T_UNSIGNEDBYTE:
-			return unpackUnsignedByte(value, valueFactory);
-		case ValueIds.T_POSITIVE_INTEGER:
-			return unpackPositiveInteger(value, valueFactory);
-		case ValueIds.T_NEGATIVE_INTEGER:
-			return unpackNegativeInteger(value, valueFactory);
-		case ValueIds.T_NON_NEGATIVE_INTEGER:
-			return unpackNonNegativeInteger(value, valueFactory);
-		case ValueIds.T_NON_POSITIVE_INTEGER:
-			return unpackNonPositiveInteger(value, valueFactory);
-		case ValueIds.T_SHORTSTRING:
-			return unpackString(value, valueFactory);
-		case ValueIds.T_DATETIME:
-			return unpackDateTime(value, valueFactory);
-		case ValueIds.T_DATETIMESTAMP:
-			return unpackDateTimeStamp(value, valueFactory);
-		case ValueIds.T_DATE:
-			return unpackDate(value, valueFactory);
-		case ValueIds.T_BOOLEAN:
-			return unpackBoolean(value, valueFactory);
-		default:
-			throw new IllegalArgumentException("Invalid packed value with id type: " + idType);
-		}
+		return switch (idType) {
+		case ValueIds.T_DOUBLE -> unpackDouble(value, valueFactory);
+		case ValueIds.T_DECIMAL -> unpackDecimal(value, valueFactory);
+		case ValueIds.T_FLOAT -> unpackFloat(value, valueFactory);
+		case ValueIds.T_INTEGER -> unpackInteger(value, valueFactory);
+		case ValueIds.T_LONG -> unpackLong(value, valueFactory);
+		case ValueIds.T_INT -> unpackInt(value, valueFactory);
+		case ValueIds.T_SHORT -> unpackShort(value, valueFactory);
+		case ValueIds.T_BYTE -> unpackByte(value, valueFactory);
+		case ValueIds.T_UNSIGNEDLONG -> unpackUnsignedLong(value, valueFactory);
+		case ValueIds.T_UNSIGNEDINT -> unpackUnsignedInt(value, valueFactory);
+		case ValueIds.T_UNSIGNEDSHORT -> unpackUnsignedShort(value, valueFactory);
+		case ValueIds.T_UNSIGNEDBYTE -> unpackUnsignedByte(value, valueFactory);
+		case ValueIds.T_POSITIVE_INTEGER -> unpackPositiveInteger(value, valueFactory);
+		case ValueIds.T_NEGATIVE_INTEGER -> unpackNegativeInteger(value, valueFactory);
+		case ValueIds.T_NON_NEGATIVE_INTEGER -> unpackNonNegativeInteger(value, valueFactory);
+		case ValueIds.T_NON_POSITIVE_INTEGER -> unpackNonPositiveInteger(value, valueFactory);
+		case ValueIds.T_SHORTSTRING -> unpackString(value, valueFactory);
+		case ValueIds.T_DATETIME -> unpackDateTime(value, valueFactory);
+		case ValueIds.T_DATETIMESTAMP -> unpackDateTimeStamp(value, valueFactory);
+		case ValueIds.T_DATE -> unpackDate(value, valueFactory);
+		case ValueIds.T_BOOLEAN -> unpackBoolean(value, valueFactory);
+		default -> throw new IllegalArgumentException("Invalid packed value " + value + " with id type: " + idType);
+		};
 	}
 }

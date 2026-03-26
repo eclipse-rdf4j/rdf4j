@@ -15,6 +15,12 @@ package org.eclipse.rdf4j.sail.lmdb;
  */
 public class ValueIds {
 	/**
+	 * An inlined double value. The least significant bit of the value is set to 1 to distinguish it from other inlined
+	 * values and references.
+	 */
+	public static final int T_DOUBLE = -1;
+
+	/**
 	 * Pointer to an arbitrary value in the value store. This is not used as RDF value.
 	 */
 	public static final int T_PTR = 0;
@@ -57,6 +63,9 @@ public class ValueIds {
 	 * @return The id's type.
 	 */
 	public static int getIdType(long id) {
+		if (isDouble(id)) {
+			return T_DOUBLE;
+		}
 		return (int) ((id >> 1) & 0x3F);
 	}
 
@@ -78,7 +87,7 @@ public class ValueIds {
 	 * @return A composite id.
 	 */
 	public static long createId(int idType, long value) {
-		return value << 7 | idType << 1;
+		return value << 7 | (long) idType << 1;
 	}
 
 	/**
@@ -88,6 +97,17 @@ public class ValueIds {
 	 * @return <code>true</code> if the value is inlined, else <code>false</code>
 	 */
 	public static boolean isInlined(long id) {
-		return getIdType(id) >= T_INTEGER;
+		return isDouble(id) || getIdType(id) >= T_INTEGER;
+	}
+
+	/**
+	 * Tests if the given id is an inlined double value, which is identified by the least significant bit being set to
+	 * 1.
+	 *
+	 * @param value The id's value
+	 * @return <code>true</code> if the value is an inlined double, else <code>false</code>
+	 */
+	public static boolean isDouble(long value) {
+		return (value & 1L) != 0;
 	}
 }

@@ -630,7 +630,9 @@ class TripleStore implements Closeable {
 								if (component != 2) {
 									// optimization: ensure that literals are only tested if they appear in object
 									// position
-									if (ValueIds.getIdType(id) == ValueIds.T_LITERAL) {
+									switch (ValueIds.getIdType(id)) {
+									case ValueIds.T_DOUBLE:
+									case ValueIds.T_LITERAL:
 										// id is a literal, don't test it
 										continue;
 									}

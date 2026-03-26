@@ -405,24 +405,13 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long nextId(byte valueType) throws IOException {
-		int idType;
-		switch (valueType) {
-		case URI_VALUE:
-			idType = ValueIds.T_URI;
-			break;
-		case BNODE_VALUE:
-			idType = ValueIds.T_BNODE;
-			break;
-		case LITERAL_VALUE:
-			idType = ValueIds.T_LITERAL;
-			break;
-		case NAMESPACE_VALUE:
-			idType = ValueIds.T_PTR;
-			break;
-		default:
-			throw new IllegalArgumentException("Unexpected value type: " + valueType);
-
-		}
+		int idType = switch (valueType) {
+		case URI_VALUE -> ValueIds.T_URI;
+		case BNODE_VALUE -> ValueIds.T_BNODE;
+		case LITERAL_VALUE -> ValueIds.T_LITERAL;
+		case NAMESPACE_VALUE -> ValueIds.T_PTR;
+		default -> throw new IllegalArgumentException("Unexpected value type: " + valueType);
+		};
 		if (freeIdsAvailable) {
 			// next id from store
 			Long reusedId = writeTransaction((stack, txn) -> {
@@ -569,6 +558,7 @@ class ValueStore extends AbstractValueFactory {
 				case ValueIds.T_URI:
 					resultValue = new LmdbIRI(lazyRevision, id);
 					break;
+				case ValueIds.T_DOUBLE:
 				case ValueIds.T_LITERAL:
 					resultValue = new LmdbLiteral(lazyRevision, id);
 					break;
@@ -580,7 +570,7 @@ class ValueStore extends AbstractValueFactory {
 						resultValue = new LmdbLiteral(lazyRevision, id);
 						break;
 					}
-					throw new IOException("Unsupported value with id type: " + idType);
+					throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
 				}
 			}
 
