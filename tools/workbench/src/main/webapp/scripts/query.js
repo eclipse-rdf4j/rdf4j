@@ -1320,6 +1320,7 @@ var workbench;
         }
         function highlightExplanationText(text) {
             var code = document.createElement('code');
+            // Known node type names that appear at the start of a line (after box-drawing prefix)
             var nodeTypes = [
                 'Join', 'LeftJoin', 'Filter', 'StatementPattern', 'Projection',
                 'Extension', 'Slice', 'Order', 'Group', 'Distinct', 'Reduced',
@@ -1345,6 +1346,7 @@ var workbench;
                     continue;
                 }
                 var pos = 0;
+                // 1. Extract leading box-drawing / whitespace prefix
                 var prefixMatch = line.match(/^([\s╠═║╚├─│└]*)/);
                 if (prefixMatch && prefixMatch[1].length > 0) {
                     var prefixText = prefixMatch[1];
@@ -1354,6 +1356,7 @@ var workbench;
                     code.appendChild(prefixSpan);
                     pos = prefixText.length;
                 }
+                // 2. Check for SPOC label (s: p: o: c:) before node type
                 var spocPrefixMatch = line.substring(pos).match(/^([spoc]): /);
                 if (spocPrefixMatch) {
                     var spocSpan = document.createElement('span');
@@ -1362,6 +1365,7 @@ var workbench;
                     code.appendChild(spocSpan);
                     pos += spocPrefixMatch[0].length;
                 }
+                // 3. Match node type name
                 var rest = line.substring(pos);
                 var nodeMatched = false;
                 for (var ni = 0; ni < nodeTypes.length; ni++) {
@@ -1376,28 +1380,38 @@ var workbench;
                         break;
                     }
                 }
+                // 4. Process remaining content on the line
                 rest = line.substring(pos);
                 if (rest.length === 0) {
                     continue;
                 }
+                // Tokenize the rest of the line
                 highlightLineRemainder(code, rest);
             }
             return code;
         }
         function highlightLineRemainder(parent, text) {
+            // Patterns to match, in priority order
             var patterns = [
+                // Side labels
                 { regex: /^\[left\]/, className: 'explain-hl--side-label' },
                 { regex: /^\[right\]/, className: 'explain-hl--side-label' },
+                // Cartesian product annotation
                 { regex: /^\(Cartesian product\)/, className: 'explain-hl--cartesian' },
+                // Disconnected join boundaries
                 { regex: /^\(disconnected join boundaries: [^)]*\)/, className: 'explain-hl--cartesian' },
+                // New scope annotation
                 { regex: /^\(new scope\)/, className: 'explain-hl--new-scope' },
+                // Algorithm annotations - common algorithm names in parens
                 { regex: /^\(hash join\)/, className: 'explain-hl--algorithm' },
                 { regex: /^\(nestedLoops\)/, className: 'explain-hl--algorithm' },
                 { regex: /^\(bind join\)/, className: 'explain-hl--algorithm' },
                 { regex: /^\(merge join\)/, className: 'explain-hl--algorithm' },
                 { regex: /^\(synchronous join\)/, className: 'explain-hl--algorithm' },
-                { regex: /^\([a-zA-Z][\w]*=/, className: '', handler: true },
-                { regex: /^([spoc]): /, className: 'explain-hl--spoc' }
+                // Metrics parenthetical: (key=val, key=val, ...)
+                { regex: /^\([a-zA-Z][\w]*=/, className: '', handler: highlightMetricsParenthetical },
+                // SPOC labels when they appear after box chars on continuation lines
+                { regex: /^([spoc]): /, className: 'explain-hl--spoc' },
             ];
             var pos = 0;
             while (pos < text.length) {
@@ -1408,6 +1422,9 @@ var workbench;
                     var m = remaining.match(pat.regex);
                     if (m) {
                         if (pat.handler) {
+                            pat.handler(m, parent);
+                            // handler processes and returns how many chars it consumed from remaining
+                            // We need to find the full parenthetical
                             var parenEnd = findMatchingParen(remaining, 0);
                             if (parenEnd >= 0) {
                                 var fullMetrics = remaining.substring(0, parenEnd + 1);
@@ -1431,6 +1448,7 @@ var workbench;
                     }
                 }
                 if (!matched) {
+                    // Consume one character as plain text, but batch consecutive plain chars
                     var plainEnd = pos + 1;
                     while (plainEnd < text.length) {
                         var nextRemaining = text.substring(plainEnd);
@@ -1450,6 +1468,10 @@ var workbench;
                 }
             }
         }
+        function highlightMetricsParenthetical(_match, _parent) {
+            // Marker handler; the actual metrics rendering happens below once
+            // the full parenthetical range has been located.
+        }
         function findMatchingParen(text, openPos) {
             if (text.charAt(openPos) !== '(')
                 return -1;
@@ -1466,11 +1488,15 @@ var workbench;
             return -1;
         }
         function highlightMetricsContent(parent, metricsStr) {
+            // metricsStr is like "(costEstimate=1.23K, resultSizeEstimate=500, bindingState=bound)"
+            // Strip outer parens
             var inner = metricsStr.substring(1, metricsStr.length - 1);
             var openSpan = document.createElement('span');
             openSpan.className = 'explain-hl--metric-paren';
             openSpan.textContent = '(';
             parent.appendChild(openSpan);
+            // Split on ", " but need to be careful with values that contain commas
+            // Use a simple state machine to split
             var kvPairs = [];
             var current = '';
             var depth = 0;
@@ -1483,7 +1509,7 @@ var workbench;
                 if (ch === ',' && depth === 0 && ci + 1 < inner.length && inner.charAt(ci + 1) === ' ') {
                     kvPairs.push(current);
                     current = '';
-                    ci++;
+                    ci++; // skip the space
                 }
                 else {
                     current += ch;
@@ -1504,6 +1530,7 @@ var workbench;
                 }
                 var key = kv.substring(0, eqIdx);
                 var val = kv.substring(eqIdx + 1);
+                // Determine class for key and value
                 var keyClass = 'explain-hl--metric-key';
                 var valClass = 'explain-hl--metric-value';
                 if (key === 'bindingState') {

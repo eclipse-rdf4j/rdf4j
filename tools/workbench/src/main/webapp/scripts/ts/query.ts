@@ -1830,7 +1830,7 @@ module workbench {
                     var m = remaining.match(pat.regex);
                     if (m) {
                         if (pat.handler) {
-                            var consumed = pat.handler(m, parent);
+                            pat.handler(m, parent);
                             // handler processes and returns how many chars it consumed from remaining
                             // We need to find the full parenthetical
                             var parenEnd = findMatchingParen(remaining, 0);
@@ -1873,6 +1873,11 @@ module workbench {
                     pos = plainEnd;
                 }
             }
+        }
+
+        function highlightMetricsParenthetical(_match: RegExpMatchArray, _parent: HTMLElement): void {
+            // Marker handler; the actual metrics rendering happens below once
+            // the full parenthetical range has been located.
         }
 
         function findMatchingParen(text: string, openPos: number): number {
@@ -3353,6 +3358,7 @@ module workbench {
                 return false;
             }
             return window.navigator.clipboard.writeText(paneDisplayExplanation.rawContent);
+        }
         function generateTraceServerRequestId(): string {
             traceServerRequestIdCounter += 1;
             return 'workbench-trace-' + traceServerRequestIdCounter + '-' + new Date().getTime();
