@@ -594,8 +594,6 @@ class TripleStore implements Closeable {
 			// TODO currently this does not test for contexts (component == 3)
 			// because in most cases context indexes do not exist
 			for (int component = 0; component <= 2; component++) {
-				int c = component;
-
 				TripleIndex index = getBestIndex(component == 0 ? 1 : -1, component == 1 ? 1 : -1,
 						component == 2 ? 1 : -1, component == 3 ? 1 : -1);
 
@@ -632,19 +630,14 @@ class TripleStore implements Closeable {
 								if (component != 2) {
 									// optimization: ensure that literals are only tested if they appear in object
 									// position
-									switch (ValueIds.getIdType(id)) {
-									case ValueIds.T_URI:
-									case ValueIds.T_BNODE:
-									case ValueIds.T_TRIPLE:
-										// fall through
-									default:
-										// id is a literal, do not test it
+									if (ValueIds.getIdType(id) == ValueIds.T_LITERAL) {
+										// id is a literal, don't test it
 										continue;
 									}
 								}
 
-								long subj = c == 0 ? id : -1, pred = c == 1 ? id : -1,
-										obj = c == 2 ? id : -1, context = c == 3 ? id : -1;
+								long subj = component == 0 ? id : -1, pred = component == 1 ? id : -1,
+										obj = component == 2 ? id : -1, context = component == 3 ? id : -1;
 
 								GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
 
