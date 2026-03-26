@@ -53,10 +53,9 @@ public class Decimals {
 	 * @return Encoded 10-bit exponent as int (0-1023), or -1 if not encodable.
 	 */
 	public static int encodeExponent10Bits(int exponent11) {
-		boolean isNaN = exponent11 == 0x7FF && (exponent11 & 0xFFFFFFFFFFFFFL) != 0;
-		boolean isInf = exponent11 == 0x7FF && (exponent11 & 0xFFFFFFFFFFFFFL) == 0;
-
-		if (isNaN || isInf) {
+		// isNaN or Inf - we do not distinguish between them in the compact representation, but reserve a special
+		// pattern for both
+		if (exponent11 == 0x7FF) {
 			// Reserve special pattern, e.g., 0x3FF (all 10 bits set) for NaN/Inf
 			return 0x3FF;
 		}
@@ -106,8 +105,7 @@ public class Decimals {
 			// encoding of exponent was possible
 			int sign = value < 0 ? 1 : 0;
 			long mantissa = valueBits & 0x000fffffffffffffL;
-			long encoded = ((long) exponent10) << 54 | mantissa << 2 | sign << 1 | 1;
-			return encoded;
+			return ((long) exponent10) << 54 | mantissa << 2 | sign << 1 | 1;
 		}
 		return 0L;
 	}
@@ -121,10 +119,6 @@ public class Decimals {
 		int scale = (byte) (encoded & 0xFF);
 		long unscaled = Integers.decodeZigZag(encoded >>> DECIMAL_SCALE_BITS);
 		return valueFactory.createLiteral(new BigDecimal(BigInteger.valueOf(unscaled), scale));
-	}
-
-	static boolean isDouble(long value) {
-		return (value & 1L) != 0;
 	}
 
 	static Literal unpackDouble(long value, ValueFactory valueFactory) {
