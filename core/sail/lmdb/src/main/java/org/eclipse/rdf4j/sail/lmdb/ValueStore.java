@@ -583,7 +583,8 @@ class ValueStore extends AbstractValueFactory {
 	public boolean resolveValue(long id, LmdbValue value) {
 		// Try to get from cache
 		LmdbValue cached = cachedValue(id);
-		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
+		if (cached != null && cached != value
+				&& this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
 			value.setFromInitializedValue(cached);
 			return true;
 		}
@@ -1674,8 +1675,10 @@ class ValueStore extends AbstractValueFactory {
 				value.setLanguage(lang);
 				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
 			} else if (datatype != null) {
+				value.setLanguage(null);
 				value.setDatatype(datatype);
 			} else {
+				value.setLanguage(null);
 				value.setDatatype(CoreDatatype.XSD.STRING);
 			}
 			return value;

@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.model;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
 import java.util.Optional;
 
@@ -20,45 +23,25 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
 public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
-	/*-----------*
-	 * Constants *
-	 *-----------*/
-
 	private static final long serialVersionUID = 5198968663650168819L;
 
-	/*----------*
-	 * Variable *
-	 *----------*/
+	private transient StringSlot label;
 
-	/**
-	 * The literal's label.
-	 */
-	private String label;
+	private transient StringSlot language;
 
-	/**
-	 * The literal's language tag.
-	 */
-	private String language;
-
-	/**
-	 * The literal's datatype.
-	 */
 	private IRI datatype;
 
-	/**
-	 * The literal's core datatype. This value is null if there is no know datatype.
-	 */
 	private CoreDatatype coreDatatype;
 
 	private ValueStoreRevision revision;
 
-	private long internalID;
+	private long internalID = UNKNOWN_ID;
 
 	private boolean initialized = false;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	private transient boolean hashCodeInitialized;
+
+	private transient int hashCode;
 
 	public LmdbLiteral(ValueStoreRevision revision, long internalID) {
 		super();
@@ -67,10 +50,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, long internalID) {
-		assert label != null;
-		this.label = label;
-		coreDatatype = CoreDatatype.XSD.STRING;
-		datatype = CoreDatatype.XSD.STRING.getIri();
+		setLabel(label);
+		setDatatype(CoreDatatype.XSD.STRING);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -80,11 +61,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
-		assert label != null;
-		this.label = label;
-		this.language = lang;
-		coreDatatype = CoreDatatype.RDF.LANGSTRING;
-		datatype = CoreDatatype.RDF.LANGSTRING.getIri();
+		setLabel(label);
+		setLanguage(lang);
+		setDatatype(CoreDatatype.RDF.LANGSTRING);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -102,44 +81,44 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype, long internalID) {
-		assert label != null;
-		this.label = label;
-		this.datatype = datatype;
-		this.coreDatatype = null;
+		setLabel(label);
+		setDatatype(datatype);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype, CoreDatatype coreDatatype,
 			long internalID) {
-		assert label != null;
-		this.label = label;
+		setLabel(label);
 		assert datatype != null;
 		assert coreDatatype != null;
 		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri() == datatype;
-		this.datatype = datatype;
 		this.coreDatatype = coreDatatype;
+		this.datatype = datatype;
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, CoreDatatype coreDatatype, long internalID) {
-		assert label != null;
-		this.label = label;
-		this.coreDatatype = coreDatatype;
-		this.datatype = coreDatatype.getIri();
+		setLabel(label);
+		setDatatype(coreDatatype);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
 	@Override
 	public void setInternalID(long internalID, ValueStoreRevision revision) {
+		long previousInternalID = this.internalID;
 		this.internalID = internalID;
 		this.revision = revision;
+		if (previousInternalID == UNKNOWN_ID && internalID != UNKNOWN_ID) {
+			if (label != null) {
+				label.demote();
+			}
+			if (language != null) {
+				language.demote();
+			}
+		}
 	}
 
 	@Override
@@ -151,10 +130,14 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbLiteral) {
 			LmdbLiteral lmdbLiteral = (LmdbLiteral) initializedValue;
-			this.label = lmdbLiteral.label;
-			this.language = lmdbLiteral.language;
-			this.datatype = lmdbLiteral.datatype;
-			this.coreDatatype = lmdbLiteral.coreDatatype;
+			setLabel(lmdbLiteral.getLabel());
+			setLanguage(lmdbLiteral.getLanguage().orElse(null));
+			CoreDatatype initializedCoreDatatype = lmdbLiteral.getCoreDatatype();
+			if (initializedCoreDatatype != CoreDatatype.NONE) {
+				setDatatype(initializedCoreDatatype);
+			} else {
+				setDatatype(lmdbLiteral.getDatatype());
+			}
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
 		}
@@ -168,6 +151,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	@Override
 	public IRI getDatatype() {
 		init();
+		if (datatype != null) {
+			return datatype;
+		}
+		if (coreDatatype != null && coreDatatype != CoreDatatype.NONE) {
+			datatype = coreDatatype.getIri();
+		}
 		return datatype;
 	}
 
@@ -175,45 +164,76 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public CoreDatatype getCoreDatatype() {
 		init();
 		if (coreDatatype == null) {
-			coreDatatype = CoreDatatype.from(datatype);
+			coreDatatype = datatype == null ? CoreDatatype.NONE : CoreDatatype.from(datatype);
 		}
 		return coreDatatype;
 	}
 
 	public void setDatatype(IRI datatype) {
 		this.datatype = datatype;
-		coreDatatype = null;
+		this.coreDatatype = datatype == null ? CoreDatatype.NONE : CoreDatatype.from(datatype);
 	}
 
 	public void setDatatype(CoreDatatype coreDatatype) {
 		this.coreDatatype = coreDatatype;
-		datatype = coreDatatype.getIri();
+		if (coreDatatype == null) {
+			datatype = null;
+		} else if (coreDatatype != CoreDatatype.NONE) {
+			datatype = coreDatatype.getIri();
+		}
 	}
 
 	@Override
 	public String getLabel() {
 		init();
-		return label;
+		return label == null ? null : label.getIfPresent();
 	}
 
 	public void setLabel(String label) {
-		this.label = label;
+		assert label != null;
+		if (this.label == null) {
+			this.label = new StringSlot();
+		}
+		this.label.set(label, keepStrongStrings());
+		hashCode = label.hashCode();
+		hashCodeInitialized = true;
 	}
 
 	@Override
 	public Optional<String> getLanguage() {
-		init();
-		return Optional.ofNullable(language);
+		if (coreDatatype == null) {
+			init();
+		} else if (coreDatatype == CoreDatatype.RDF.LANGSTRING
+				&& (language == null || language.getIfPresent() == null)) {
+			init();
+		}
+		return Optional.ofNullable(language == null ? null : language.getIfPresent());
 	}
 
 	public void setLanguage(String language) {
-		this.language = language;
+		if (language == null) {
+			this.language = null;
+			return;
+		}
+		if (this.language == null) {
+			this.language = new StringSlot();
+		}
+		this.language.set(language, keepStrongStrings());
 	}
 
 	public void init() {
-		if (!initialized) {
+		if (internalID == UNKNOWN_ID) {
+			return;
+		}
+		if (!initialized || label == null || label.getIfPresent() == null || coreDatatype == null
+				|| coreDatatype == CoreDatatype.NONE && datatype == null
+				|| coreDatatype == CoreDatatype.RDF.LANGSTRING
+						&& (language == null || language.getIfPresent() == null)) {
 			synchronized (this) {
-				if (!initialized) {
+				if (!initialized || label == null || label.getIfPresent() == null || coreDatatype == null
+						|| coreDatatype == CoreDatatype.NONE && datatype == null
+						|| coreDatatype == CoreDatatype.RDF.LANGSTRING
+								&& (language == null || language.getIfPresent() == null)) {
 					boolean resolved = revision.resolveValue(internalID, this);
 					initialized = resolved;
 					assert resolved;
@@ -233,8 +253,6 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 			if (otherLmdbLiteral.internalID != UNKNOWN_ID
 					&& revision.equals(otherLmdbLiteral.revision)) {
-				// LmdbLiteral's from the same revision of the same lmdb store,
-				// with both ID's set
 				return internalID == otherLmdbLiteral.internalID;
 			}
 		}
@@ -245,8 +263,11 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public int hashCode() {
-		init();
-		return super.hashCode();
+		if (!hashCodeInitialized) {
+			hashCode = getLabel().hashCode();
+			hashCodeInitialized = true;
+		}
+		return hashCode;
 	}
 
 	@Override
@@ -258,5 +279,30 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	protected Object writeReplace() throws ObjectStreamException {
 		init();
 		return this;
+	}
+
+	private boolean keepStrongStrings() {
+		return internalID == UNKNOWN_ID;
+	}
+
+	private void writeObject(ObjectOutputStream out) throws IOException {
+		out.defaultWriteObject();
+		out.writeObject(getLabel());
+		out.writeObject(getLanguage().orElse(null));
+	}
+
+	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+		in.defaultReadObject();
+		label = new StringSlot();
+		label.setStrong((String) in.readObject());
+		String language = (String) in.readObject();
+		if (language != null) {
+			this.language = new StringSlot();
+			this.language.setStrong(language);
+		} else {
+			this.language = null;
+		}
+		hashCode = label.getIfPresent().hashCode();
+		hashCodeInitialized = true;
 	}
 }

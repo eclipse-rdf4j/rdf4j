@@ -10,12 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.model;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
 
-import org.eclipse.rdf4j.model.impl.SimpleBNode;
+import org.eclipse.rdf4j.model.base.AbstractBNode;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
-public class LmdbBNode extends SimpleBNode implements LmdbResource {
+public class LmdbBNode extends AbstractBNode implements LmdbResource {
 
 	/*-----------*
 	 * Constants *
@@ -29,16 +32,21 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	private ValueStoreRevision revision;
 
-	private long internalID;
+	private long internalID = UNKNOWN_ID;
 
 	private boolean initialized = false;
+
+	private transient StringSlot id;
+
+	private transient boolean hashCodeInitialized;
+
+	private transient int hashCode;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public LmdbBNode(ValueStoreRevision revision, long internalID) {
-		super();
 		setInternalID(internalID, revision);
 	}
 
@@ -47,7 +55,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	public LmdbBNode(ValueStoreRevision revision, String nodeID, long internalID) {
-		super(nodeID);
+		setID(nodeID);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -58,8 +66,12 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	@Override
 	public void setInternalID(long internalID, ValueStoreRevision revision) {
+		long previousInternalID = this.internalID;
 		this.internalID = internalID;
 		this.revision = revision;
+		if (previousInternalID == UNKNOWN_ID && internalID != UNKNOWN_ID && id != null) {
+			id.demote();
+		}
 	}
 
 	@Override
@@ -71,7 +83,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbBNode) {
 			LmdbBNode lmdbBNode = (LmdbBNode) initializedValue;
-			super.setID(lmdbBNode.getID());
+			setID(lmdbBNode.getID());
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
 		}
@@ -82,24 +94,31 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		return internalID;
 	}
 
-	@Override
 	public void setID(String id) {
-		super.setID(id);
+		if (this.id == null) {
+			this.id = new StringSlot();
+		}
+		this.id.set(id, keepStrongStrings());
+		hashCode = id == null ? 0 : id.hashCode();
+		hashCodeInitialized = id != null;
 	}
 
 	@Override
 	public String getID() {
 		init();
-		return super.getID();
+		return id == null ? null : id.getIfPresent();
 	}
 
 	public void init() {
-		if (!initialized) {
+		if (internalID == UNKNOWN_ID) {
+			return;
+		}
+		if (!initialized || id == null || id.getIfPresent() == null) {
 			synchronized (this) {
-				if (!initialized) {
+				if (!initialized || id == null || id.getIfPresent() == null) {
 					revision.resolveValue(internalID, this);
+					initialized = true;
 				}
-				initialized = true;
 			}
 		}
 	}
@@ -123,8 +142,34 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		return super.equals(o);
 	}
 
+	@Override
+	public int hashCode() {
+		if (!hashCodeInitialized) {
+			hashCode = getID().hashCode();
+			hashCodeInitialized = true;
+		}
+		return hashCode;
+	}
+
 	protected Object writeReplace() throws ObjectStreamException {
 		init();
 		return this;
+	}
+
+	private boolean keepStrongStrings() {
+		return internalID == UNKNOWN_ID;
+	}
+
+	private void writeObject(ObjectOutputStream out) throws IOException {
+		out.defaultWriteObject();
+		out.writeObject(getID());
+	}
+
+	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+		in.defaultReadObject();
+		id = new StringSlot();
+		id.setStrong((String) in.readObject());
+		hashCode = id.getIfPresent().hashCode();
+		hashCodeInitialized = true;
 	}
 }
