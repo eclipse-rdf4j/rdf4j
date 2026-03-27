@@ -9,6 +9,8 @@ Run Maven tests with repeatable commands and useful failure pointers.
 
 ## Quick start
 
+- Do not run `mvnf.py` in parallel with another `mvnf.py` invocation.
+  Each run does a root `-Pquick clean install`, so parallel runs can collide on generated artifacts and produce misleading failures.
 - Run a module's full test suite:
   - `python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/shacl`
 - Run a unit test class or method (module auto-detected):
@@ -24,6 +26,8 @@ Run Maven tests with repeatable commands and useful failure pointers.
 3. `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify` (optionally with `-Dtest=` / `-Dit.test=`)
 
 If the test run fails, it prints the list of Surefire/Failsafe report files under the module's `target/*-reports/` directories.
+
+Treat `mvnf` as a serialized runner: wait for one invocation to finish before starting the next.
 
 ## Options
 
