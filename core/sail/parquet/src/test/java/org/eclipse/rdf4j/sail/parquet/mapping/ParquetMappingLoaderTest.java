@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.avro.Schema;
@@ -25,6 +26,7 @@ import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.io.LocalOutputFile;
+import org.eclipse.rdf4j.sail.parquet.mapping.ParquetStoreMapping.ColumnStatistics;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -164,6 +166,116 @@ class ParquetMappingLoaderTest {
 		}
 	}
 
+	@Test
+	void datasetMountsExpandDirectoryGlobAndManifestFiles() throws Exception {
+		Path tempDir = Files.createTempDirectory("parquet-loader-datasets");
+		Path directoryRoot = tempDir.resolve("directory-dataset");
+		Path globRoot = tempDir.resolve("glob-dataset");
+		Path manifestRoot = tempDir.resolve("manifest-dataset");
+		Files.createDirectories(directoryRoot);
+		Files.createDirectories(globRoot);
+		Files.createDirectories(manifestRoot);
+		Path directoryFile = directoryRoot.resolve("dir.parquet");
+		Path globFile = globRoot.resolve("glob.parquet");
+		Path manifestFile = manifestRoot.resolve("manifest.parquet");
+		Path manifest = tempDir.resolve("dataset-manifest.json");
+		Path mappingFile = tempDir.resolve("mapping.json");
+
+		writeRecords(directoryFile, PEOPLE_SCHEMA,
+				List.of(record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10")));
+		writeRecords(globFile, PEOPLE_SCHEMA,
+				List.of(record(PEOPLE_SCHEMA, "id", "2", "name", "Bob", "city_id", "20")));
+		writeRecords(manifestFile, PEOPLE_SCHEMA,
+				List.of(record(PEOPLE_SCHEMA, "id", "3", "name", "Cara", "city_id", "30")));
+		writeDatasetManifest(manifest, List.of(manifestFile));
+		writeDatasetBackedMappingFile(mappingFile, directoryRoot, "glob-dataset/*.parquet", manifest);
+
+		ParquetStoreMapping mapping = loader.load(mappingFile);
+
+		assertThat(mapping.getSources().get("people").getPaths())
+				.containsExactly(directoryFile, globFile, manifestFile);
+		assertThat(mapping.getSources().get("people").getRowCount()).isEqualTo(3L);
+		assertThat(mapping.getSources().get("people").getSamplingStatistics().getSampledRows()).isEqualTo(3L);
+	}
+
+	@Test
+	void sidecarCatalogRefreshesWhenParquetFingerprintChanges() throws Exception {
+		Path tempDir = Files.createTempDirectory("parquet-loader-sidecar");
+		Path parquetFile = tempDir.resolve("people.parquet");
+		Path mappingFile = tempDir.resolve("mapping.json");
+		Path sidecarDir = tempDir.resolve("sidecars");
+		Files.createDirectories(sidecarDir);
+
+		writeRecords(parquetFile, PEOPLE_SCHEMA,
+				List.of(record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10")));
+		writeSingleSourceMappingFile(mappingFile, "people", List.of(parquetFile));
+
+		ParquetStoreMapping first = loader.load(mappingFile,
+				new ParquetMappingLoader.LoadOptions(sidecarDir, null, "full"));
+		assertThat(first.getSources().get("people").getRowCount()).isEqualTo(1L);
+		List<Path> sidecars = new ArrayList<>();
+		try (var stream = Files.list(sidecarDir)) {
+			stream.forEach(sidecars::add);
+		}
+		assertThat(sidecars).hasSize(1);
+
+		writeRecords(parquetFile, PEOPLE_SCHEMA, List.of(
+				record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10"),
+				record(PEOPLE_SCHEMA, "id", "2", "name", "Bob", "city_id", "20")));
+
+		ParquetStoreMapping refreshed = loader.load(mappingFile,
+				new ParquetMappingLoader.LoadOptions(sidecarDir, null, "full"));
+
+		assertThat(refreshed.getSources().get("people").getRowCount()).isEqualTo(2L);
+		assertThat(Files.readString(sidecars.get(0)))
+				.contains("\"rowCount\" : 2");
+	}
+
+	@Test
+	void fullSamplingBuildsColumnDistinctAndTopValueStats() throws Exception {
+		Path tempDir = Files.createTempDirectory("parquet-loader-sampling");
+		Path parquetFile = tempDir.resolve("people.parquet");
+		Path mappingFile = tempDir.resolve("mapping.json");
+
+		writeRecords(parquetFile, PEOPLE_SCHEMA, List.of(
+				record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10"),
+				record(PEOPLE_SCHEMA, "id", "2", "name", "Alice", "city_id", "20"),
+				record(PEOPLE_SCHEMA, "id", "3", "name", "Bob", "city_id", "20")));
+		writeSingleSourceMappingFile(mappingFile, "people", List.of(parquetFile));
+
+		ParquetStoreMapping mapping = loader.load(mappingFile);
+
+		ColumnStatistics idStatistics = mapping.getSources()
+				.get("people")
+				.getSamplingStatistics()
+				.getColumnStatistics("id");
+		ColumnStatistics nameStatistics = mapping.getSources()
+				.get("people")
+				.getSamplingStatistics()
+				.getColumnStatistics("name");
+
+		assertThat(mapping.getSources().get("people").getSamplingStatistics().getSampledRows()).isEqualTo(3L);
+		assertThat(idStatistics.getEstimatedDistinctValues()).isGreaterThan(2.0);
+		assertThat(nameStatistics.getTopValues()).containsEntry("Alice", 2L);
+	}
+
+	@Test
+	void noneSamplingModeSkipsColumnStats() throws Exception {
+		Path tempDir = Files.createTempDirectory("parquet-loader-no-sampling");
+		Path parquetFile = tempDir.resolve("people.parquet");
+		Path mappingFile = tempDir.resolve("mapping.json");
+
+		writeRecords(parquetFile, PEOPLE_SCHEMA,
+				List.of(record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10")));
+		writeSingleSourceMappingFile(mappingFile, "people", List.of(parquetFile));
+
+		ParquetStoreMapping mapping = loader.load(mappingFile,
+				new ParquetMappingLoader.LoadOptions(null, null, "none"));
+
+		assertThat(mapping.getSources().get("people").getSamplingStatistics().getSampledRows()).isZero();
+		assertThat(mapping.getSources().get("people").getSamplingStatistics().getColumnStatistics()).isEmpty();
+	}
+
 	private static void writeSingleSourceMappingFile(Path mappingFile, String sourceId, List<Path> sourcePaths)
 			throws Exception {
 		ObjectNode root = OBJECT_MAPPER.createObjectNode();
@@ -233,7 +345,45 @@ class ParquetMappingLoaderTest {
 		Files.writeString(mappingFile, OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root));
 	}
 
+	private static void writeDatasetBackedMappingFile(Path mappingFile, Path directoryRoot, String globPattern,
+			Path manifestFile) throws Exception {
+		ObjectNode root = OBJECT_MAPPER.createObjectNode();
+		root.putObject("prefixes").put("ex", "http://example.com/");
+
+		ArrayNode datasets = root.putArray("datasets");
+		ObjectNode dataset = datasets.addObject().put("id", "people-dataset");
+		ArrayNode mounts = dataset.putArray("mounts");
+		mounts.addObject().put("directory", directoryRoot.toString());
+		mounts.addObject().put("glob", globPattern);
+		mounts.addObject().put("manifest", manifestFile.toString());
+
+		root.putArray("sources").addObject().put("id", "people").put("dataset", "people-dataset");
+
+		ObjectNode mapping = root.putArray("mappings").addObject();
+		mapping.put("id", "people-mapping");
+		mapping.putObject("from").put("source", "people").put("alias", "p");
+		mapping.putObject("subject").put("termType", "iri").put("template", "ex:person/{p.id}");
+		mapping.putArray("triples")
+				.addObject()
+				.put("predicate", "ex:name")
+				.putObject("object")
+				.put("termType", "literal")
+				.put("column", "p.name");
+
+		Files.writeString(mappingFile, OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+	}
+
+	private static void writeDatasetManifest(Path manifestFile, List<Path> parquetFiles) throws Exception {
+		ObjectNode root = OBJECT_MAPPER.createObjectNode();
+		ArrayNode paths = root.putArray("paths");
+		for (Path parquetFile : parquetFiles) {
+			paths.add(parquetFile.toString());
+		}
+		Files.writeString(manifestFile, OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+	}
+
 	private static void writeRecords(Path file, Schema schema, List<GenericRecord> records) throws Exception {
+		Files.deleteIfExists(file);
 		try (ParquetWriter<GenericRecord> writer = AvroParquetWriter.<GenericRecord>builder(new LocalOutputFile(file))
 				.withSchema(schema)
 				.withCompressionCodec(CompressionCodecName.UNCOMPRESSED)

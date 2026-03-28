@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.parquet;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -28,6 +29,9 @@ import org.apache.parquet.io.LocalOutputFile;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -173,6 +177,115 @@ public class ParquetStoreReadTest {
 		}
 	}
 
+	@Test
+	void boundSubjectQueriesUseSelectivePhysicalReadsWithoutScanningUnusedJoins() throws Exception {
+		Path tempDir = Files.createTempDirectory("parquet-store-pushdown");
+		Path peopleFile = tempDir.resolve("people.parquet");
+		Path citiesFile = tempDir.resolve("cities.parquet");
+		Path mappingFile = tempDir.resolve("mapping.json");
+
+		writeRecords(peopleFile, PEOPLE_SCHEMA, List.of(
+				record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10"),
+				record(PEOPLE_SCHEMA, "id", "2", "name", "Bob", "city_id", "20")));
+		writeRecords(citiesFile, CITIES_SCHEMA, List.of(
+				record(CITIES_SCHEMA, "id", "10", "label", "Oslo"),
+				record(CITIES_SCHEMA, "id", "20", "label", "Bergen")));
+		writeMappingFile(mappingFile, peopleFile, citiesFile, null);
+
+		ParquetStore store = new ParquetStore(mappingFile);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection();
+					TupleQueryResult result = connection.prepareTupleQuery(
+							"PREFIX ex: <http://example.com/> "
+									+ "SELECT ?name WHERE { <http://example.com/person/1> ex:name ?name }")
+							.evaluate()) {
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("name").stringValue()).isEqualTo("Alice");
+				assertThat(result.hasNext()).isFalse();
+			}
+
+			Object metrics = invokeDeclared(store, "snapshotRuntimeMetrics");
+			assertThat(invokeLong(metrics, "getRowsRead", "people")).isEqualTo(1L);
+			assertThat(invokeLong(metrics, "getRowsRead", "cities")).isZero();
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void parquetAwareStatisticsPreferSelectiveSubjectLookups() throws Exception {
+		Path tempDir = Files.createTempDirectory("parquet-store-stats");
+		Path peopleFile = tempDir.resolve("people.parquet");
+		Path citiesFile = tempDir.resolve("cities.parquet");
+		Path mappingFile = tempDir.resolve("mapping.json");
+
+		writeRecords(peopleFile, PEOPLE_SCHEMA, List.of(
+				record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10"),
+				record(PEOPLE_SCHEMA, "id", "2", "name", "Bob", "city_id", "20")));
+		writeRecords(citiesFile, CITIES_SCHEMA, List.of(
+				record(CITIES_SCHEMA, "id", "10", "label", "Oslo"),
+				record(CITIES_SCHEMA, "id", "20", "label", "Bergen")));
+		writeMappingFile(mappingFile, peopleFile, citiesFile, null);
+
+		ParquetStore store = new ParquetStore(mappingFile);
+		store.init();
+
+		try {
+			EvaluationStatistics statistics = (EvaluationStatistics) invokeDeclared(store,
+					"getEvaluationStatisticsForTesting");
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			StatementPattern broad = new StatementPattern(new Var("s"),
+					new Var("p", valueFactory.createIRI("http://example.com/name")), new Var("o"));
+			StatementPattern selective = new StatementPattern(
+					new Var("s", valueFactory.createIRI("http://example.com/person/1")),
+					new Var("p", valueFactory.createIRI("http://example.com/name")), new Var("o"));
+
+			assertThat(statistics.getCardinality(selective)).isLessThan(statistics.getCardinality(broad));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void parquetAwareStatisticsUseSampledObjectFrequencies() throws Exception {
+		Path tempDir = Files.createTempDirectory("parquet-store-object-stats");
+		Path peopleFile = tempDir.resolve("people.parquet");
+		Path citiesFile = tempDir.resolve("cities.parquet");
+		Path mappingFile = tempDir.resolve("mapping.json");
+
+		writeRecords(peopleFile, PEOPLE_SCHEMA, List.of(
+				record(PEOPLE_SCHEMA, "id", "1", "name", "Alice", "city_id", "10"),
+				record(PEOPLE_SCHEMA, "id", "2", "name", "Alice", "city_id", "20"),
+				record(PEOPLE_SCHEMA, "id", "3", "name", "Alice", "city_id", "20"),
+				record(PEOPLE_SCHEMA, "id", "4", "name", "Bob", "city_id", "10")));
+		writeRecords(citiesFile, CITIES_SCHEMA, List.of(
+				record(CITIES_SCHEMA, "id", "10", "label", "Oslo"),
+				record(CITIES_SCHEMA, "id", "20", "label", "Bergen")));
+		writeMappingFile(mappingFile, peopleFile, citiesFile, null);
+
+		ParquetStore store = new ParquetStore(mappingFile);
+		store.init();
+
+		try {
+			EvaluationStatistics statistics = (EvaluationStatistics) invokeDeclared(store,
+					"getEvaluationStatisticsForTesting");
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			StatementPattern frequent = new StatementPattern(new Var("s"),
+					new Var("p", valueFactory.createIRI("http://example.com/name")),
+					new Var("o", valueFactory.createLiteral("Alice")));
+			StatementPattern rare = new StatementPattern(new Var("s"),
+					new Var("p", valueFactory.createIRI("http://example.com/name")),
+					new Var("o", valueFactory.createLiteral("Bob")));
+
+			assertThat(statistics.getCardinality(rare)).isLessThan(statistics.getCardinality(frequent));
+		} finally {
+			store.shutDown();
+		}
+	}
+
 	private static void writeRecords(Path file, Schema schema, List<GenericRecord> records) throws Exception {
 		try (ParquetWriter<GenericRecord> writer = AvroParquetWriter.<GenericRecord>builder(new LocalOutputFile(file))
 				.withSchema(schema)
@@ -247,5 +360,23 @@ public class ParquetStoreReadTest {
 				.put("column", "c.label");
 
 		Files.writeString(mappingFile, OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+	}
+
+	private static Object invokeDeclared(Object target, String methodName, Object... args) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName, parameterTypes(args));
+		method.setAccessible(true);
+		return method.invoke(target, args);
+	}
+
+	private static long invokeLong(Object target, String methodName, Object... args) throws Exception {
+		return ((Number) invokeDeclared(target, methodName, args)).longValue();
+	}
+
+	private static Class<?>[] parameterTypes(Object[] args) {
+		Class<?>[] parameterTypes = new Class<?>[args.length];
+		for (int i = 0; i < args.length; i++) {
+			parameterTypes[i] = args[i].getClass();
+		}
+		return parameterTypes;
 	}
 }

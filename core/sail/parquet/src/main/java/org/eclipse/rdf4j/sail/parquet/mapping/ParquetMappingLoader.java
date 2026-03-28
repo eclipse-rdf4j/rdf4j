@@ -22,12 +22,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import org.apache.parquet.format.converter.ParquetMetadataConverter;
-import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.metadata.ParquetMetadata;
-import org.apache.parquet.io.LocalInputFile;
-import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.Type;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.parquet.mapping.ParquetStoreMapping.JoinCondition;
@@ -49,16 +43,22 @@ public class ParquetMappingLoader {
 
 	private static final Logger logger = LoggerFactory.getLogger(ParquetMappingLoader.class);
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+	private final ParquetDatasetResolver datasetResolver = new ParquetDatasetResolver();
+	private final ParquetSourceMetadataCache sourceMetadataCache = new ParquetSourceMetadataCache();
 
 	public ParquetStoreMapping load(Path mappingFile) {
+		return load(mappingFile, LoadOptions.DEFAULT);
+	}
+
+	public ParquetStoreMapping load(Path mappingFile, LoadOptions options) {
 		try {
-			return loadInternal(mappingFile);
+			return loadInternal(mappingFile, options == null ? LoadOptions.DEFAULT : options);
 		} catch (IOException e) {
 			throw new IllegalArgumentException("Unable to read parquet mapping file " + mappingFile, e);
 		}
 	}
 
-	private ParquetStoreMapping loadInternal(Path mappingFile) throws IOException {
+	private ParquetStoreMapping loadInternal(Path mappingFile, LoadOptions options) throws IOException {
 		if (mappingFile == null) {
 			throw new IllegalArgumentException("Parquet mapping file is required");
 		}
@@ -73,18 +73,21 @@ public class ParquetMappingLoader {
 
 		List<String> warnings = new ArrayList<>();
 		ObjectNode root = (ObjectNode) rootNode;
-		warnUnknownFields(root, "", Set.of("prefixes", "sources", "mappings"), warnings);
+		warnUnknownFields(root, "", Set.of("prefixes", "datasets", "sources", "mappings"), warnings);
 
 		Map<String, String> prefixes = parsePrefixes(requireObject(root, "prefixes", "/prefixes"), warnings,
 				"/prefixes");
-		Map<String, SourceDraft> sourceDrafts = parseSources(mappingFile, requireArray(root, "sources", "/sources"),
-				warnings);
+		Map<String, List<Path>> datasets = datasetResolver.parseDatasets(mappingFile, optionalArray(root, "datasets"),
+				options.getDatasetManifest(), warnings);
+		Map<String, List<Path>> sourcePaths = parseSources(mappingFile, requireArray(root, "sources", "/sources"),
+				datasets, warnings);
 		List<MappingSpec> mappings = parseMappings(requireArray(root, "mappings", "/mappings"), prefixes,
-				sourceDrafts.keySet(),
+				sourcePaths.keySet(),
 				warnings);
 
-		Map<String, Set<String>> referencedColumns = collectReferencedColumns(sourceDrafts.keySet(), mappings);
-		Map<String, SourceSpec> sources = buildSourceSpecs(sourceDrafts, referencedColumns);
+		Map<String, Set<String>> referencedColumns = collectReferencedColumns(sourcePaths.keySet(), mappings);
+		Map<String, SourceSpec> sources = sourceMetadataCache.build(mappingFile, sourcePaths, referencedColumns,
+				options.getSidecarDirectory(), options.getStartupSamplingMode());
 		validateJoinTypes(mappings, sources);
 		logWarnings(mappingFile, warnings);
 
@@ -102,36 +105,49 @@ public class ParquetMappingLoader {
 		return prefixes;
 	}
 
-	private Map<String, SourceDraft> parseSources(Path mappingFile, ArrayNode node, List<String> warnings) {
-		Map<String, SourceDraft> sources = new LinkedHashMap<>();
+	private Map<String, List<Path>> parseSources(Path mappingFile, ArrayNode node, Map<String, List<Path>> datasets,
+			List<String> warnings) {
+		Map<String, List<Path>> sources = new LinkedHashMap<>();
 		for (int index = 0; index < node.size(); index++) {
 			String pointer = "/sources/" + index;
 			ObjectNode sourceNode = requireObject(node.get(index), pointer);
-			warnUnknownFields(sourceNode, pointer, Set.of("id", "paths"), warnings);
+			warnUnknownFields(sourceNode, pointer, Set.of("id", "paths", "dataset"), warnings);
 			String id = requireText(sourceNode, "id", pointer + "/id");
 			if (sources.containsKey(id)) {
 				throw new IllegalArgumentException(pointer + " has duplicate source id: " + id);
 			}
-			ArrayNode pathsNode = requireArray(sourceNode, "paths", pointer + "/paths");
+			int configured = present(sourceNode, "paths") + present(sourceNode, "dataset");
+			if (configured != 1) {
+				throw new IllegalArgumentException(pointer + " must define exactly one of paths or dataset");
+			}
 			List<Path> paths = new ArrayList<>();
-			for (int pathIndex = 0; pathIndex < pathsNode.size(); pathIndex++) {
-				JsonNode pathNode = pathsNode.get(pathIndex);
-				if (!pathNode.isTextual()) {
-					throw new IllegalArgumentException(pointer + "/paths/" + pathIndex + " must be a string");
+			if (sourceNode.has("paths")) {
+				ArrayNode pathsNode = requireArray(sourceNode, "paths", pointer + "/paths");
+				for (int pathIndex = 0; pathIndex < pathsNode.size(); pathIndex++) {
+					JsonNode pathNode = pathsNode.get(pathIndex);
+					if (!pathNode.isTextual()) {
+						throw new IllegalArgumentException(pointer + "/paths/" + pathIndex + " must be a string");
+					}
+					Path path = Path.of(pathNode.textValue());
+					if (!path.isAbsolute()) {
+						path = mappingFile.getParent() == null ? path.normalize()
+								: mappingFile.getParent().resolve(path).normalize();
+					}
+					paths.add(path.toAbsolutePath().normalize());
 				}
-				Path path = Path.of(pathNode.textValue());
-				if (!path.isAbsolute()) {
-					path = mappingFile.getParent() == null ? path.normalize()
-							: mappingFile.getParent().resolve(path).normalize();
+			} else {
+				String datasetId = requireText(sourceNode, "dataset", pointer + "/dataset");
+				if (!datasets.containsKey(datasetId)) {
+					throw new IllegalArgumentException(pointer + "/dataset references unknown dataset " + datasetId);
 				}
-				paths.add(path);
+				paths.addAll(datasets.get(datasetId));
 			}
 			if (paths.isEmpty()) {
 				throw new IllegalArgumentException(pointer + "/paths must contain at least one parquet file");
 			}
-			sources.put(id, new SourceDraft(id, paths));
+			sources.put(id, List.copyOf(paths));
 		}
-		return sources;
+		return Map.copyOf(sources);
 	}
 
 	private List<MappingSpec> parseMappings(ArrayNode node, Map<String, String> prefixes, Set<String> sourceIds,
@@ -328,41 +344,6 @@ public class ParquetMappingLoader {
 		return columnsBySource;
 	}
 
-	private Map<String, SourceSpec> buildSourceSpecs(Map<String, SourceDraft> sourceDrafts,
-			Map<String, Set<String>> referencedColumns) throws IOException {
-		Map<String, SourceSpec> sources = new LinkedHashMap<>();
-		for (SourceDraft sourceDraft : sourceDrafts.values()) {
-			Map<String, String> columnTypes = new LinkedHashMap<>();
-			long rowCount = 0;
-			for (Path path : sourceDraft.paths) {
-				if (!Files.exists(path)) {
-					throw new IllegalArgumentException("Referenced parquet file does not exist: " + path);
-				}
-				ParquetMetadata metadata = ParquetFileReader.readFooter(new LocalInputFile(path),
-						ParquetMetadataConverter.NO_FILTER);
-				MessageType schema = metadata.getFileMetaData().getSchema();
-				rowCount += metadata.getBlocks().stream().mapToLong(block -> block.getRowCount()).sum();
-				for (String column : referencedColumns.getOrDefault(sourceDraft.id, Set.of())) {
-					if (!schema.containsPath(new String[] { column })) {
-						throw new IllegalArgumentException(
-								"Parquet source " + sourceDraft.id + " is missing required column " + column + " in "
-										+ path);
-					}
-					Type type = schema.getType(column);
-					String typeDescription = normalizeType(type);
-					String existing = columnTypes.putIfAbsent(column, typeDescription);
-					if (existing != null && !existing.equals(typeDescription)) {
-						throw new IllegalArgumentException("Parquet source " + sourceDraft.id
-								+ " has incompatible schemas for column " + column + ": " + existing + " vs "
-								+ typeDescription);
-					}
-				}
-			}
-			sources.put(sourceDraft.id, new SourceSpec(sourceDraft.id, sourceDraft.paths, columnTypes, rowCount));
-		}
-		return Map.copyOf(sources);
-	}
-
 	private void validateJoinTypes(List<MappingSpec> mappings, Map<String, SourceSpec> sources) {
 		for (MappingSpec mapping : mappings) {
 			for (JoinSpec join : mapping.getJoins()) {
@@ -383,19 +364,6 @@ public class ParquetMappingLoader {
 				}
 			}
 		}
-	}
-
-	private String normalizeType(Type type) {
-		StringBuilder builder = new StringBuilder(type.getRepetition().name());
-		builder.append('|');
-		if (type.isPrimitive()) {
-			builder.append(type.asPrimitiveType().getPrimitiveTypeName().name());
-			builder.append('|').append(String.valueOf(type.asPrimitiveType().getOriginalType()));
-			builder.append('|').append(String.valueOf(type.getLogicalTypeAnnotation()));
-			return builder.toString();
-		}
-		builder.append("GROUP");
-		return builder.toString();
 	}
 
 	private void logWarnings(Path mappingFile, List<String> warnings) {
@@ -495,14 +463,29 @@ public class ParquetMappingLoader {
 		}
 	}
 
-	private static final class SourceDraft {
+	public static final class LoadOptions {
 
-		private final String id;
-		private final List<Path> paths;
+		private static final LoadOptions DEFAULT = new LoadOptions(null, null, "full");
+		private final Path sidecarDirectory;
+		private final Path datasetManifest;
+		private final String startupSamplingMode;
 
-		private SourceDraft(String id, List<Path> paths) {
-			this.id = id;
-			this.paths = List.copyOf(paths);
+		public LoadOptions(Path sidecarDirectory, Path datasetManifest, String startupSamplingMode) {
+			this.sidecarDirectory = sidecarDirectory;
+			this.datasetManifest = datasetManifest;
+			this.startupSamplingMode = startupSamplingMode;
+		}
+
+		public Path getSidecarDirectory() {
+			return sidecarDirectory;
+		}
+
+		public Path getDatasetManifest() {
+			return datasetManifest;
+		}
+
+		public String getStartupSamplingMode() {
+			return startupSamplingMode;
 		}
 	}
 }

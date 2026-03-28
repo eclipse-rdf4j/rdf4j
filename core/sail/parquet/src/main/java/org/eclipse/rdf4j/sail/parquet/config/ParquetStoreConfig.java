@@ -27,6 +27,10 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 public class ParquetStoreConfig extends BaseSailConfig {
 
 	private String mappingFile;
+	private String sidecarDirectory;
+	private String datasetManifest;
+	private String startupSamplingMode = "full";
+	private String layoutRewriteOutput;
 
 	public ParquetStoreConfig() {
 		super(ParquetStoreFactory.SAIL_TYPE);
@@ -41,11 +45,63 @@ public class ParquetStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public String getSidecarDirectory() {
+		return sidecarDirectory;
+	}
+
+	public ParquetStoreConfig setSidecarDirectory(String sidecarDirectory) {
+		this.sidecarDirectory = sidecarDirectory;
+		return this;
+	}
+
+	public String getDatasetManifest() {
+		return datasetManifest;
+	}
+
+	public ParquetStoreConfig setDatasetManifest(String datasetManifest) {
+		this.datasetManifest = datasetManifest;
+		return this;
+	}
+
+	public String getStartupSamplingMode() {
+		return startupSamplingMode;
+	}
+
+	public ParquetStoreConfig setStartupSamplingMode(String startupSamplingMode) {
+		this.startupSamplingMode = startupSamplingMode;
+		return this;
+	}
+
+	public String getLayoutRewriteOutput() {
+		return layoutRewriteOutput;
+	}
+
+	public ParquetStoreConfig setLayoutRewriteOutput(String layoutRewriteOutput) {
+		this.layoutRewriteOutput = layoutRewriteOutput;
+		return this;
+	}
+
 	public Path getResolvedMappingFile(File dataDir) {
-		if (mappingFile == null || mappingFile.isBlank()) {
+		return resolveOptionalPath(mappingFile, dataDir);
+	}
+
+	public Path getResolvedSidecarDirectory(File dataDir) {
+		return resolveOptionalPath(sidecarDirectory, dataDir);
+	}
+
+	public Path getResolvedDatasetManifest(File dataDir) {
+		return resolveOptionalPath(datasetManifest, dataDir);
+	}
+
+	public Path getResolvedLayoutRewriteOutput(File dataDir) {
+		return resolveOptionalPath(layoutRewriteOutput, dataDir);
+	}
+
+	private Path resolveOptionalPath(String configuredPath, File dataDir) {
+		if (configuredPath == null || configuredPath.isBlank()) {
 			return null;
 		}
-		Path path = Paths.get(mappingFile);
+		Path path = Paths.get(configuredPath);
 		if (path.isAbsolute() || dataDir == null) {
 			return path;
 		}
@@ -59,6 +115,18 @@ public class ParquetStoreConfig extends BaseSailConfig {
 		if (mappingFile != null) {
 			model.add(implNode, ParquetStoreSchema.MAPPING_FILE, literal(mappingFile));
 		}
+		if (sidecarDirectory != null) {
+			model.add(implNode, ParquetStoreSchema.SIDECAR_DIRECTORY, literal(sidecarDirectory));
+		}
+		if (datasetManifest != null) {
+			model.add(implNode, ParquetStoreSchema.DATASET_MANIFEST, literal(datasetManifest));
+		}
+		if (startupSamplingMode != null) {
+			model.add(implNode, ParquetStoreSchema.STARTUP_SAMPLING_MODE, literal(startupSamplingMode));
+		}
+		if (layoutRewriteOutput != null) {
+			model.add(implNode, ParquetStoreSchema.LAYOUT_REWRITE_OUTPUT, literal(layoutRewriteOutput));
+		}
 		return implNode;
 	}
 
@@ -69,5 +137,29 @@ public class ParquetStoreConfig extends BaseSailConfig {
 				.getLiteralValue(model, implNode, ParquetStoreSchema.MAPPING_FILE, ParquetStoreSchema.MAPPING_FILE)
 				.or(() -> Models.objectLiteral(model.getStatements(implNode, ParquetStoreSchema.MAPPING_FILE, null)))
 				.ifPresent(literal -> setMappingFile(literal.getLabel()));
+		Configurations
+				.getLiteralValue(model, implNode, ParquetStoreSchema.SIDECAR_DIRECTORY,
+						ParquetStoreSchema.SIDECAR_DIRECTORY)
+				.or(() -> Models
+						.objectLiteral(model.getStatements(implNode, ParquetStoreSchema.SIDECAR_DIRECTORY, null)))
+				.ifPresent(literal -> setSidecarDirectory(literal.getLabel()));
+		Configurations
+				.getLiteralValue(model, implNode, ParquetStoreSchema.DATASET_MANIFEST,
+						ParquetStoreSchema.DATASET_MANIFEST)
+				.or(() -> Models
+						.objectLiteral(model.getStatements(implNode, ParquetStoreSchema.DATASET_MANIFEST, null)))
+				.ifPresent(literal -> setDatasetManifest(literal.getLabel()));
+		Configurations
+				.getLiteralValue(model, implNode, ParquetStoreSchema.STARTUP_SAMPLING_MODE,
+						ParquetStoreSchema.STARTUP_SAMPLING_MODE)
+				.or(() -> Models.objectLiteral(
+						model.getStatements(implNode, ParquetStoreSchema.STARTUP_SAMPLING_MODE, null)))
+				.ifPresent(literal -> setStartupSamplingMode(literal.getLabel()));
+		Configurations
+				.getLiteralValue(model, implNode, ParquetStoreSchema.LAYOUT_REWRITE_OUTPUT,
+						ParquetStoreSchema.LAYOUT_REWRITE_OUTPUT)
+				.or(() -> Models.objectLiteral(
+						model.getStatements(implNode, ParquetStoreSchema.LAYOUT_REWRITE_OUTPUT, null)))
+				.ifPresent(literal -> setLayoutRewriteOutput(literal.getLabel()));
 	}
 }

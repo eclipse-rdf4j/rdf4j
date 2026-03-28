@@ -16,47 +16,30 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
-import org.eclipse.rdf4j.sail.UpdateContext;
-import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreConnection;
+import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 
-class ParquetStoreConnection extends ExtensibleStoreConnection<ParquetStore> {
+class ParquetStoreConnection extends SailSourceConnection {
 
 	private static final String READ_ONLY_MESSAGE = "ParquetStore is read-only";
 
 	ParquetStoreConnection(ParquetStore sail) {
-		super(sail);
+		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 	}
 
 	@Override
-	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		throw new SailReadOnlyException(READ_ONLY_MESSAGE);
 	}
 
 	@Override
-	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
-		throw new SailReadOnlyException(READ_ONLY_MESSAGE);
-	}
-
-	@Override
-	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		throw new SailReadOnlyException(READ_ONLY_MESSAGE);
-	}
-
-	@Override
-	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
+	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
 		throw new SailReadOnlyException(READ_ONLY_MESSAGE);
 	}
 
 	@Override
 	protected void clearInternal(Resource... contexts) throws SailException {
-		throw new SailReadOnlyException(READ_ONLY_MESSAGE);
-	}
-
-	@Override
-	public void clearInferred(Resource... contexts) throws SailException {
 		throw new SailReadOnlyException(READ_ONLY_MESSAGE);
 	}
 

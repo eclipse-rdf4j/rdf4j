@@ -14,21 +14,34 @@ package org.eclipse.rdf4j.sail.parquet;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStore;
-import org.eclipse.rdf4j.sail.extensiblestore.SimpleMemoryNamespaceStore;
-import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
+import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.parquet.config.ParquetStoreConfig;
 import org.eclipse.rdf4j.sail.parquet.mapping.ParquetMappingLoader;
-import org.eclipse.rdf4j.sail.parquet.mapping.ParquetStoreMapping;
-import org.eclipse.rdf4j.sail.parquet.reader.ParquetDataStructure;
+import org.eclipse.rdf4j.sail.parquet.mapping.ParquetMappingLoader.LoadOptions;
+import org.eclipse.rdf4j.sail.parquet.runtime.ParquetQueryMetrics;
+import org.eclipse.rdf4j.sail.parquet.runtime.ParquetSailStore;
 
 @Experimental
-public class ParquetStore extends ExtensibleStore<ParquetDataStructure, SimpleMemoryNamespaceStore> {
+public class ParquetStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
 	private final ParquetStoreConfig config;
 	private final ParquetMappingLoader mappingLoader = new ParquetMappingLoader();
+	private ParquetSailStore sailStore;
+	private EvaluationStrategyFactory evalStratFactory;
+	private SPARQLServiceResolver dependentServiceResolver;
+	private FederatedServiceResolver serviceResolver;
 
 	public ParquetStore() {
 		this(new ParquetStoreConfig());
@@ -39,8 +52,10 @@ public class ParquetStore extends ExtensibleStore<ParquetDataStructure, SimpleMe
 	}
 
 	public ParquetStore(ParquetStoreConfig config) {
-		super(Cache.NONE);
 		this.config = config;
+		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
 		config.getDefaultQueryEvaluationMode().ifPresent(this::setDefaultQueryEvaluationMode);
 	}
 
@@ -59,17 +74,27 @@ public class ParquetStore extends ExtensibleStore<ParquetDataStructure, SimpleMe
 			throw new SailException("ParquetStore requires parquet:mappingFile");
 		}
 
-		ParquetStoreMapping mapping;
 		try {
-			mapping = mappingLoader.load(mappingFile);
+			sailStore = new ParquetSailStore(mappingLoader.load(mappingFile,
+					new LoadOptions(config.getResolvedSidecarDirectory(getDataDir()),
+							config.getResolvedDatasetManifest(getDataDir()), config.getStartupSamplingMode())));
 		} catch (RuntimeException e) {
 			throw new SailException("Unable to initialize ParquetStore from " + mappingFile + ": " + e.getMessage(), e);
 		}
+	}
 
-		namespaceStore = new SimpleMemoryNamespaceStore();
-		mapping.getPrefixes().forEach(namespaceStore::setNamespace);
-		dataStructure = new ParquetDataStructure(mapping);
-		super.initializeInternal();
+	@Override
+	protected synchronized void shutDownInternal() throws SailException {
+		try {
+			if (sailStore != null) {
+				sailStore.close();
+			}
+		} finally {
+			sailStore = null;
+			if (dependentServiceResolver != null) {
+				dependentServiceResolver.shutDown();
+			}
+		}
 	}
 
 	@Override
@@ -83,7 +108,48 @@ public class ParquetStore extends ExtensibleStore<ParquetDataStructure, SimpleMe
 	}
 
 	@Override
-	public EvaluationStatisticsEnum getEvaluationStatisticsType() {
-		return EvaluationStatisticsEnum.constant;
+	public ValueFactory getValueFactory() {
+		return SimpleValueFactory.getInstance();
+	}
+
+	@Override
+	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		this.serviceResolver = resolver;
+		if (resolver != null && evalStratFactory instanceof FederatedServiceResolverClient) {
+			((FederatedServiceResolverClient) evalStratFactory).setFederatedServiceResolver(resolver);
+		}
+	}
+
+	@Override
+	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
+		if (serviceResolver == null) {
+			if (dependentServiceResolver == null) {
+				dependentServiceResolver = new SPARQLServiceResolver();
+			}
+			setFederatedServiceResolver(dependentServiceResolver);
+		}
+		return serviceResolver;
+	}
+
+	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
+		if (evalStratFactory == null) {
+			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+		}
+		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
+		evalStratFactory.setTrackResultSize(isTrackResultSize());
+		evalStratFactory.setCollectionFactory(getCollectionFactory());
+		return evalStratFactory;
+	}
+
+	SailStore getSailStore() {
+		return sailStore;
+	}
+
+	ParquetQueryMetrics snapshotRuntimeMetrics() {
+		return sailStore == null ? ParquetQueryMetrics.empty() : sailStore.snapshotRuntimeMetrics();
+	}
+
+	EvaluationStatistics getEvaluationStatisticsForTesting() {
+		return sailStore == null ? null : sailStore.getEvaluationStatistics();
 	}
 }

@@ -19,6 +19,18 @@ public final class ParquetStoreSchema {
 	public static final String NAMESPACE = "http://rdf4j.org/config/sail/parquet#";
 
 	public static final IRI MAPPING_FILE = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "mappingFile");
+	public static final IRI SIDECAR_DIRECTORY = SimpleValueFactory.getInstance()
+			.createIRI(NAMESPACE,
+					"sidecarDirectory");
+	public static final IRI DATASET_MANIFEST = SimpleValueFactory.getInstance()
+			.createIRI(NAMESPACE,
+					"datasetManifest");
+	public static final IRI STARTUP_SAMPLING_MODE = SimpleValueFactory.getInstance()
+			.createIRI(NAMESPACE,
+					"startupSamplingMode");
+	public static final IRI LAYOUT_REWRITE_OUTPUT = SimpleValueFactory.getInstance()
+			.createIRI(NAMESPACE,
+					"layoutRewriteOutput");
 
 	private ParquetStoreSchema() {
 	}

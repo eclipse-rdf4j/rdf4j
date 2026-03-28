@@ -16,6 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.junit.jupiter.api.Test;
 
 class ParquetStoreSurfaceTest {
@@ -44,6 +47,29 @@ class ParquetStoreSurfaceTest {
 	}
 
 	@Test
+	void configCarriesAdvancedPerformancePaths() throws Exception {
+		Class<?> configClass = Class.forName("org.eclipse.rdf4j.sail.parquet.config.ParquetStoreConfig");
+		Object config = configClass.getConstructor().newInstance();
+
+		configClass.getMethod("setMappingFile", String.class).invoke(config, "mapping.json");
+		configClass.getMethod("setSidecarDirectory", String.class).invoke(config, "sidecars");
+		configClass.getMethod("setDatasetManifest", String.class).invoke(config, "datasets.json");
+		configClass.getMethod("setStartupSamplingMode", String.class).invoke(config, "full");
+		configClass.getMethod("setLayoutRewriteOutput", String.class).invoke(config, "rewrite");
+
+		Model model = new LinkedHashModel();
+		Object exportNode = configClass.getMethod("export", Model.class).invoke(config, model);
+		Object parsed = configClass.getConstructor().newInstance();
+		configClass.getMethod("parse", Model.class, Class.forName("org.eclipse.rdf4j.model.Resource"))
+				.invoke(parsed, model, exportNode);
+
+		assertThat(configClass.getMethod("getSidecarDirectory").invoke(parsed)).isEqualTo("sidecars");
+		assertThat(configClass.getMethod("getDatasetManifest").invoke(parsed)).isEqualTo("datasets.json");
+		assertThat(configClass.getMethod("getStartupSamplingMode").invoke(parsed)).isEqualTo("full");
+		assertThat(configClass.getMethod("getLayoutRewriteOutput").invoke(parsed)).isEqualTo("rewrite");
+	}
+
+	@Test
 	void factoryReportsParquetSailType() throws Exception {
 		Class<?> factoryClass = Class.forName("org.eclipse.rdf4j.sail.parquet.config.ParquetStoreFactory");
 		Object factory = factoryClass.getConstructor().newInstance();
@@ -51,5 +77,10 @@ class ParquetStoreSurfaceTest {
 		assertThat(factoryClass.getMethod("getSailType").invoke(factory)).isEqualTo("rdf4j:ParquetStore");
 		assertThat(factoryClass.getMethod("getConfig").invoke(factory))
 				.isNotNull();
+	}
+
+	@Test
+	void storeUsesNativeSailBaseInsteadOfExtensibleStore() {
+		assertThat(ParquetStore.class.getSuperclass()).isEqualTo(AbstractNotifyingSail.class);
 	}
 }

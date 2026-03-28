@@ -107,6 +107,38 @@ final class TermSpec {
 		return template.tryExtract(lexicalValue);
 	}
 
+	TermType getTermType() {
+		return termType;
+	}
+
+	ValueSource getValueSource() {
+		return valueSource;
+	}
+
+	String getConstantValue() {
+		return constantValue;
+	}
+
+	ColumnRef getColumnRef() {
+		return column;
+	}
+
+	Template getTemplate() {
+		return template;
+	}
+
+	IRI getDatatype() {
+		return datatype;
+	}
+
+	String getLanguage() {
+		return language;
+	}
+
+	ColumnRef getLanguageColumn() {
+		return languageColumn;
+	}
+
 	private String resolveLexicalValue(Map<String, Map<String, Object>> rowsByAlias) {
 		switch (valueSource) {
 		case VALUE:
@@ -226,6 +258,18 @@ final class Template {
 			return Optional.empty();
 		}
 		return Optional.of(value.substring(prefix.length(), value.length() - suffix.length()));
+	}
+
+	ColumnRef getSinglePlaceholder() {
+		return singlePlaceholder;
+	}
+
+	String getPrefix() {
+		return prefix;
+	}
+
+	String getSuffix() {
+		return suffix;
 	}
 }
 

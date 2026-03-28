@@ -15,7 +15,7 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-extensible-store</artifactId>
+			<artifactId>rdf4j-sail-base</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
@@ -150,6 +150,11 @@
 					<artifactId>*</artifactId>
 				</exclusion>
 			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>net.agkn</groupId>
+			<artifactId>hll</artifactId>
+			<version>1.6.0</version>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

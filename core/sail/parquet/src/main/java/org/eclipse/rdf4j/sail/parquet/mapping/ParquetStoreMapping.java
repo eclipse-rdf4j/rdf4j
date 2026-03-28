@@ -155,12 +155,26 @@ public final class ParquetStoreMapping {
 		private final List<Path> paths;
 		private final Map<String, String> columnTypes;
 		private final long rowCount;
+		private final long rowGroupCount;
+		private final SamplingStatistics samplingStatistics;
 
 		public SourceSpec(String id, List<Path> paths, Map<String, String> columnTypes, long rowCount) {
+			this(id, paths, columnTypes, rowCount, 0L, SamplingStatistics.empty());
+		}
+
+		public SourceSpec(String id, List<Path> paths, Map<String, String> columnTypes, long rowCount,
+				long rowGroupCount) {
+			this(id, paths, columnTypes, rowCount, rowGroupCount, SamplingStatistics.empty());
+		}
+
+		public SourceSpec(String id, List<Path> paths, Map<String, String> columnTypes, long rowCount,
+				long rowGroupCount, SamplingStatistics samplingStatistics) {
 			this.id = id;
 			this.paths = List.copyOf(paths);
 			this.columnTypes = Map.copyOf(columnTypes);
 			this.rowCount = rowCount;
+			this.rowGroupCount = rowGroupCount;
+			this.samplingStatistics = samplingStatistics == null ? SamplingStatistics.empty() : samplingStatistics;
 		}
 
 		public String getId() {
@@ -177,6 +191,102 @@ public final class ParquetStoreMapping {
 
 		public long getRowCount() {
 			return rowCount;
+		}
+
+		public long getRowGroupCount() {
+			return rowGroupCount;
+		}
+
+		public SamplingStatistics getSamplingStatistics() {
+			return samplingStatistics;
+		}
+	}
+
+	public static final class SamplingStatistics {
+
+		private static final SamplingStatistics EMPTY = new SamplingStatistics("none", 0L, Map.of());
+
+		private final String mode;
+		private final long sampledRows;
+		private final Map<String, ColumnStatistics> columnStatistics;
+
+		public SamplingStatistics(String mode, long sampledRows, Map<String, ColumnStatistics> columnStatistics) {
+			this.mode = mode == null || mode.isBlank() ? "none" : mode;
+			this.sampledRows = sampledRows;
+			this.columnStatistics = Map.copyOf(columnStatistics);
+		}
+
+		public static SamplingStatistics empty() {
+			return EMPTY;
+		}
+
+		public String getMode() {
+			return mode;
+		}
+
+		public long getSampledRows() {
+			return sampledRows;
+		}
+
+		public Map<String, ColumnStatistics> getColumnStatistics() {
+			return columnStatistics;
+		}
+
+		public ColumnStatistics getColumnStatistics(String column) {
+			return columnStatistics.get(column);
+		}
+
+		public double estimateEquality(String column, String lexicalValue, long totalRows) {
+			ColumnStatistics statistics = columnStatistics.get(column);
+			if (statistics == null || sampledRows <= 0 || totalRows <= 0) {
+				return Double.NaN;
+			}
+			Long topFrequency = statistics.getTopValues().get(lexicalValue);
+			if (topFrequency != null && topFrequency > 0) {
+				return Math.max(1.0, Math.min(totalRows, (double) totalRows * topFrequency / sampledRows));
+			}
+			double nonNullRows = totalRows * statistics.getNonNullFraction(sampledRows);
+			double distinct = Math.max(1.0, statistics.getEstimatedDistinctValues());
+			return nonNullRows <= 0.0 ? 0.0 : Math.max(1.0, Math.min(totalRows, nonNullRows / distinct));
+		}
+	}
+
+	public static final class ColumnStatistics {
+
+		private final long sampledValues;
+		private final long nullValues;
+		private final double estimatedDistinctValues;
+		private final Map<String, Long> topValues;
+
+		public ColumnStatistics(long sampledValues, long nullValues, double estimatedDistinctValues,
+				Map<String, Long> topValues) {
+			this.sampledValues = sampledValues;
+			this.nullValues = nullValues;
+			this.estimatedDistinctValues = estimatedDistinctValues;
+			this.topValues = Map.copyOf(topValues);
+		}
+
+		public long getSampledValues() {
+			return sampledValues;
+		}
+
+		public long getNullValues() {
+			return nullValues;
+		}
+
+		public double getEstimatedDistinctValues() {
+			return estimatedDistinctValues;
+		}
+
+		public Map<String, Long> getTopValues() {
+			return topValues;
+		}
+
+		public double getNonNullFraction(long sampledRows) {
+			if (sampledRows <= 0) {
+				return 0.0;
+			}
+			return Math.max(0.0, Math.min(1.0, (double) sampledValues / sampledRows));
 		}
 	}
 
