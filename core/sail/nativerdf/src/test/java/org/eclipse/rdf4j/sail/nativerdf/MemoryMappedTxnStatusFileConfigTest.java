@@ -20,7 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies that the implementation used for the transaction status file can be controlled via a system property.
+ * Verifies that the implementation used for the transaction status file is controlled through configuration rather than
+ * a JVM system property.
  */
 public class MemoryMappedTxnStatusFileConfigTest {
 
@@ -52,7 +53,7 @@ public class MemoryMappedTxnStatusFileConfigTest {
 	}
 
 	@Test
-	public void memoryMappedEnabledUsesFixedSizeFile() throws Exception {
+	public void systemPropertyIsIgnored() throws Exception {
 		System.setProperty(MEMORY_MAPPED_ENABLED_PROP, "true");
 
 		TripleStore tripleStore = new TripleStore(dataDir, "spoc");
@@ -66,7 +67,7 @@ public class MemoryMappedTxnStatusFileConfigTest {
 
 		File txnStatusFile = new File(dataDir, TxnStatusFile.FILE_NAME);
 		assertTrue(txnStatusFile.exists(), "Transaction status file should exist");
-		assertEquals(1L, txnStatusFile.length(),
-				"Memory-mapped TxnStatusFile keeps a single status byte on disk for NONE status");
+		assertEquals(0L, txnStatusFile.length(),
+				"System property does not switch to memory-mapped TxnStatusFile");
 	}
 }
