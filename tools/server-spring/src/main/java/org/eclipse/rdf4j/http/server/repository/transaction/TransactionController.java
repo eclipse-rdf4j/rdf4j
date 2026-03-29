@@ -50,6 +50,8 @@ import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
@@ -105,6 +107,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 public class TransactionController extends AbstractController implements DisposableBean {
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final QueryCircuitBreaker queryCircuitBreaker = QueryCircuitBreaker.getInstance();
 
 	public TransactionController() throws ApplicationContextException {
 		setSupportedMethods(METHOD_POST, "PUT", "DELETE");
@@ -367,11 +370,16 @@ public class TransactionController extends AbstractController implements Disposa
 					"Canceling query explanations is not supported for transaction requests.");
 		}
 
-		View view;
-		Object queryResult;
-		FileFormatServiceRegistry<? extends FileFormat, ?> registry;
+		View view = null;
+		Object queryResult = null;
+		FileFormatServiceRegistry<? extends FileFormat, ?> registry = null;
+		QueryCircuitBreakerHandle breakerHandle = null;
+		boolean handedOffToView = false;
 
 		try {
+			breakerHandle = queryCircuitBreaker.register(QueryCircuitBreakerHandle.Source.TX,
+					RepositoryInterceptor.getRepositoryID(request), queryStr);
+			queryCircuitBreaker.beforeExecution(breakerHandle);
 			Query query = getQuery(txn, queryStr, request, response);
 			Optional<Explanation.Level> explainLevel = getExplain(request);
 
@@ -381,7 +389,9 @@ public class TransactionController extends AbstractController implements Disposa
 							"Tracked query explanations are only supported through the workbench UI.");
 				}
 				try {
-					Explanation explanation = txn.explain(query, explainLevel.get());
+					Explanation explanation = txn.explain(breakerHandle, query, explainLevel.get());
+					queryCircuitBreaker.complete(breakerHandle);
+					breakerHandle = null;
 					return explanation == null ? null : getExplainQueryResponse(explanation);
 				} catch (ExecutionException e) {
 					handleExplainExecutionException(query, e);
@@ -391,25 +401,42 @@ public class TransactionController extends AbstractController implements Disposa
 			if (query instanceof TupleQuery) {
 				TupleQuery tQuery = (TupleQuery) query;
 
-				queryResult = txn.evaluate(tQuery);
+				queryResult = txn.evaluate(breakerHandle, tQuery);
 				registry = TupleQueryResultWriterRegistry.getInstance();
 				view = TupleQueryResultView.getInstance();
 			} else if (query instanceof GraphQuery) {
 				GraphQuery gQuery = (GraphQuery) query;
 
-				queryResult = txn.evaluate(gQuery);
+				queryResult = txn.evaluate(breakerHandle, gQuery);
 				registry = RDFWriterRegistry.getInstance();
 				view = GraphQueryResultView.getInstance();
 			} else if (query instanceof BooleanQuery) {
 				BooleanQuery bQuery = (BooleanQuery) query;
 
-				queryResult = txn.evaluate(bQuery);
+				queryResult = txn.evaluate(breakerHandle, bQuery);
 				registry = BooleanQueryResultWriterRegistry.getInstance();
 				view = BooleanQueryResultView.getInstance();
 			} else {
 				throw new ClientHTTPException(SC_BAD_REQUEST, "Unsupported query type: " + query.getClass().getName());
 			}
+
+			Object factory = ProtocolUtil.getAcceptableService(request, response, registry);
+
+			Map<String, Object> model = new HashMap<>();
+			model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
+			model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
+			model.put(QueryResultView.FACTORY_KEY, factory);
+			model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
+			// requests.
+			model.put(QueryResultView.BREAKER_HANDLE_KEY, breakerHandle);
+			handedOffToView = true;
+			return new ModelAndView(view, model);
 		} catch (QueryInterruptedException | InterruptedException | ExecutionException e) {
+			QueryCircuitBreaker.CircuitBreakerException breakerException = findCircuitBreakerException(e);
+			if (breakerException != null) {
+				applyRetryAfter(response, breakerException);
+				throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, breakerException.getMessage(), e);
+			}
 			if (e.getCause() != null && e.getCause() instanceof MalformedQueryException) {
 				ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getCause().getMessage());
 				throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
@@ -426,16 +453,18 @@ public class TransactionController extends AbstractController implements Disposa
 			} else {
 				throw new ServerHTTPException("Query evaluation error: " + e.getMessage());
 			}
+		} finally {
+			if (!handedOffToView) {
+				if (queryResult instanceof AutoCloseable) {
+					try {
+						((AutoCloseable) queryResult).close();
+					} catch (Exception e) {
+						logger.warn("Query result closing error", e);
+					}
+				}
+				queryCircuitBreaker.complete(breakerHandle);
+			}
 		}
-		Object factory = ProtocolUtil.getAcceptableService(request, response, registry);
-
-		Map<String, Object> model = new HashMap<>();
-		model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
-		model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
-		model.put(QueryResultView.FACTORY_KEY, factory);
-		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
-		// requests.
-		return new ModelAndView(view, model);
 	}
 
 	private Optional<Explanation.Level> getExplain(HttpServletRequest request) throws ClientHTTPException {
@@ -480,6 +509,26 @@ public class TransactionController extends AbstractController implements Disposa
 			current = current.getCause();
 		}
 		return false;
+	}
+
+	private QueryCircuitBreaker.CircuitBreakerException findCircuitBreakerException(Throwable throwable) {
+		Throwable current = throwable;
+		while (current != null) {
+			QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
+					.asCircuitBreakerException(current);
+			if (breakerException != null) {
+				return breakerException;
+			}
+			current = current.getCause();
+		}
+		return null;
+	}
+
+	private void applyRetryAfter(HttpServletResponse response,
+			QueryCircuitBreaker.CircuitBreakerException breakerException) {
+		if (breakerException.getRetryAfterSeconds() > 0) {
+			response.setHeader("Retry-After", String.valueOf(breakerException.getRetryAfterSeconds()));
+		}
 	}
 
 	private static Charset getCharset(HttpServletRequest request) {

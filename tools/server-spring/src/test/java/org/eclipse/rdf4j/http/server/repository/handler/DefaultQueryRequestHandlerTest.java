@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.http.server.repository.handler;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -45,6 +47,11 @@ import org.springframework.web.servlet.ModelAndView;
 class DefaultQueryRequestHandlerTest {
 
 	private static final String SELECT_ALL_QUERY = "select * where { ?s ?p ?o }";
+	private static final String BREAKER_ENABLED = "rdf4j.query.breaker.enabled";
+	private static final String BREAKER_WARN_FREE_MB = "rdf4j.query.breaker.warn.free.mb";
+	private static final String BREAKER_HIGH_FREE_MB = "rdf4j.query.breaker.high.free.mb";
+	private static final String BREAKER_CRITICAL_FREE_MB = "rdf4j.query.breaker.critical.free.mb";
+	private static final String BREAKER_RETRY_AFTER_SECONDS = "rdf4j.query.breaker.retry.after.seconds";
 
 	@Test
 	void explainRequestIdShouldRunInlineAndCloseConnectionOnCancel() throws Exception {
@@ -174,6 +181,39 @@ class DefaultQueryRequestHandlerTest {
 	}
 
 	@Test
+	void shouldRejectNewQueriesWhenCircuitBreakerIsHighPressure() throws Exception {
+		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = mock(TupleQueryResult.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod(RequestMethod.POST.name());
+		request.setContentType(Protocol.FORM_MIME_TYPE);
+		request.setParameter(Protocol.QUERY_PARAM_NAME, SELECT_ALL_QUERY);
+		request.addHeader("Accept", "application/sparql-results+json");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		when(repositoryResolver.getRepository(request)).thenReturn(repository);
+		when(repositoryResolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQuery);
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		withBreakerProperties(() -> {
+			assertThatThrownBy(() -> handler.handleQueryRequest(request, RequestMethod.POST, response))
+					.isInstanceOfSatisfying(org.eclipse.rdf4j.http.server.ServerHTTPException.class, exception -> {
+						assertThat(exception.getStatusCode()).isEqualTo(MockHttpServletResponse.SC_SERVICE_UNAVAILABLE);
+						assertThat(exception.getMessage()).contains("circuit breaker");
+					});
+			assertThat(response.getHeader("Retry-After")).isEqualTo("17");
+		});
+
+		verify(connection).close();
+	}
+
+	@Test
 	void handleCancelExplainShouldRejectBlankRequestId() throws Exception {
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
 
@@ -288,5 +328,40 @@ class DefaultQueryRequestHandlerTest {
 		request.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, "true");
 		request.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
 		return request;
+	}
+
+	private void withBreakerProperties(ThrowingRunnable action) throws Exception {
+		String previousEnabled = System.getProperty(BREAKER_ENABLED);
+		String previousWarnFreeMb = System.getProperty(BREAKER_WARN_FREE_MB);
+		String previousHighFreeMb = System.getProperty(BREAKER_HIGH_FREE_MB);
+		String previousCriticalFreeMb = System.getProperty(BREAKER_CRITICAL_FREE_MB);
+		String previousRetryAfterSeconds = System.getProperty(BREAKER_RETRY_AFTER_SECONDS);
+		try {
+			System.setProperty(BREAKER_ENABLED, "true");
+			System.setProperty(BREAKER_WARN_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_HIGH_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_CRITICAL_FREE_MB, "0");
+			System.setProperty(BREAKER_RETRY_AFTER_SECONDS, "17");
+			action.run();
+		} finally {
+			restoreProperty(BREAKER_ENABLED, previousEnabled);
+			restoreProperty(BREAKER_WARN_FREE_MB, previousWarnFreeMb);
+			restoreProperty(BREAKER_HIGH_FREE_MB, previousHighFreeMb);
+			restoreProperty(BREAKER_CRITICAL_FREE_MB, previousCriticalFreeMb);
+			restoreProperty(BREAKER_RETRY_AFTER_SECONDS, previousRetryAfterSeconds);
+		}
+	}
+
+	private void restoreProperty(String propertyName, String value) {
+		if (value == null) {
+			System.clearProperty(propertyName);
+		} else {
+			System.setProperty(propertyName, value);
+		}
+	}
+
+	@FunctionalInterface
+	private interface ThrowingRunnable {
+		void run() throws Exception;
 	}
 }

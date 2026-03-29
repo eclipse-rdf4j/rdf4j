@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -83,6 +84,9 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFuncti
  * @author Tomas Kovachev
  */
 public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet> {
+
+	private static final int BUILD_CHECKPOINT_INTERVAL = 128;
+	private static final String OPERATOR_NAME = "GROUP_BY";
 
 	/*-----------*
 	 * Constants *
@@ -274,6 +278,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
+		QueryExecutionContext.markHeavy(OPERATOR_NAME);
+		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_START");
 		// store the arguments' iterator so it can be closed while building entries
 		this.argumentsIter = arguments.evaluate(parentBindings);
 		try (var iter = argumentsIter) {
@@ -300,6 +306,9 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			while (!isClosed() && iter.hasNext()) {
 				BindingSet sol = iter.next();
 				inputRows++;
+				if ((inputRows & (BUILD_CHECKPOINT_INTERVAL - 1)) == 0) {
+					QueryExecutionContext.checkpoint(OPERATOR_NAME + "_BUILD");
+				}
 				// The binding set key will be constant
 				BindingSetKey key = cf.createBindingSetKey(sol, getValues, hashMaker);
 				Entry entry = entries.get(key);

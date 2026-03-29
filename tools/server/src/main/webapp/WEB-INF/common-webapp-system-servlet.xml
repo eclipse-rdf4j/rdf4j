@@ -32,6 +32,7 @@
 				<prop key="/system/overview.view">commonWebappSystemOverviewController</prop>
 				<prop key="/system/info/overview.view">commonWebappSystemInfoController</prop>
 				<prop key="/system/info/debug.view">filenameViewController</prop>
+				<prop key="/system/breaker/status">commonWebappQueryCircuitBreakerStatusController</prop>
 				<prop key="/system/logging/overview.view">commonWebappLoggingOverviewController</prop>
 			</props>
 		</property>
@@ -55,4 +56,5 @@
 		<property name="view" value="system/info/overview" />
 		<property name="config" ref="commonAppConfig" />
 	</bean>
+	<bean id="commonWebappQueryCircuitBreakerStatusController" class="org.eclipse.rdf4j.common.webapp.system.QueryCircuitBreakerStatusController" />
 </beans>

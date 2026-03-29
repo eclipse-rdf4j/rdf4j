@@ -34,6 +34,7 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -241,7 +242,7 @@ public class QueryServlet extends TransformationServlet {
 		} catch (MalformedQueryException e) {
 			writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 		} catch (QueryInterruptedException e) {
-			writeExplainTimeoutResponse(resp);
+			writeExplainInterruptedResponse(resp, e);
 		} catch (HTTPQueryEvaluationException e) {
 			if (isExplainTimeout(e)) {
 				writeExplainTimeoutResponse(resp);
@@ -311,7 +312,7 @@ public class QueryServlet extends TransformationServlet {
 		} catch (MalformedQueryException e) {
 			writeTrackedExplainError(resp, handle, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 		} catch (QueryInterruptedException e) {
-			writeTrackedExplainTimeout(resp, handle);
+			writeTrackedExplainInterrupted(resp, handle, e);
 		} catch (HTTPQueryEvaluationException e) {
 			if (isExplainTimeout(e)) {
 				writeTrackedExplainTimeout(resp, handle);
@@ -353,6 +354,31 @@ public class QueryServlet extends TransformationServlet {
 
 	private void writeTrackedExplainTimeout(HttpServletResponse response, AsyncExplainCoordinator.Handle handle) {
 		writeTrackedExplainError(response, handle, HttpServletResponse.SC_SERVICE_UNAVAILABLE, EXPLAIN_TIMEOUT_MESSAGE);
+	}
+
+	private void writeExplainInterruptedResponse(HttpServletResponse response, QueryInterruptedException exception)
+			throws IOException {
+		QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
+				.asCircuitBreakerException(exception);
+		if (breakerException != null) {
+			applyRetryAfter(response, breakerException);
+			writeExplainErrorResponse(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+					breakerException.getMessage());
+			return;
+		}
+		writeExplainTimeoutResponse(response);
+	}
+
+	private void writeTrackedExplainInterrupted(HttpServletResponse response, AsyncExplainCoordinator.Handle handle,
+			QueryInterruptedException exception) {
+		if (!handle.isActive()) {
+			return;
+		}
+		try {
+			writeExplainInterruptedResponse(response, exception);
+		} catch (IOException e) {
+			LOGGER.debug("Explain error response write failed for request {}", handle.getExplainRequestId(), e);
+		}
 	}
 
 	private void closeConnection(RepositoryConnection con, Throwable failure) {
@@ -437,12 +463,19 @@ public class QueryServlet extends TransformationServlet {
 			service(req, resp, out, xslPath);
 		} catch (BadRequestException | HTTPQueryEvaluationException exc) {
 			LOGGER.warn(exc.toString(), exc);
-			TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
-			builder.transform(xslPath, "query.xsl");
-			builder.start("error-message");
-			builder.link(Arrays.asList(INFO, "namespaces"));
-			builder.result(exc.getMessage());
-			builder.end();
+			writeBrowserErrorResponse(req, resp, out, xslPath, exc.getMessage());
+		} catch (QueryInterruptedException exc) {
+			LOGGER.warn(exc.toString(), exc);
+			QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
+					.asCircuitBreakerException(exc);
+			if (breakerException != null) {
+				applyRetryAfter(resp, breakerException);
+				resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+				writeBrowserErrorResponse(req, resp, out, xslPath, breakerException.getMessage());
+			} else {
+				resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+				writeBrowserErrorResponse(req, resp, out, xslPath, "Query evaluation took too long");
+			}
 		} finally {
 			flushResponseOutputStream(out);
 		}
@@ -729,7 +762,7 @@ public class QueryServlet extends TransformationServlet {
 			} else {
 				try {
 					EVAL.extractQueryAndEvaluate(builder, resp, out, xslPath, con, query, req, this.cookies,
-							getResponseQueryText(req, query));
+							getResponseQueryText(req, query), getRepositoryReference());
 				} catch (MalformedQueryException exc) {
 					throw new BadRequestException(exc.getMessage(), exc);
 				} catch (HTTPQueryEvaluationException exc) {
@@ -751,6 +784,23 @@ public class QueryServlet extends TransformationServlet {
 			String hash = String.valueOf(queryValue.hashCode());
 			queryCache.put(hash, queryValue);
 			cookies.addCookie(req, resp, QUERY, hash);
+		}
+	}
+
+	private void writeBrowserErrorResponse(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
+			String xslPath, String message) throws IOException, QueryResultHandlerException {
+		TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
+		builder.transform(xslPath, "query.xsl");
+		builder.start("error-message");
+		builder.link(Arrays.asList(INFO, "namespaces"));
+		builder.result(message);
+		builder.end();
+	}
+
+	private void applyRetryAfter(HttpServletResponse response,
+			QueryCircuitBreaker.CircuitBreakerException breakerException) {
+		if (breakerException.getRetryAfterSeconds() > 0) {
+			response.setHeader("Retry-After", String.valueOf(breakerException.getRetryAfterSeconds()));
 		}
 	}
 
