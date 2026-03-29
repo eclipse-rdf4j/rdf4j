@@ -28,6 +28,11 @@
 			<artifactId>rdf4j-config</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-http-client</artifactId>
+			<version>${project.version}</version>
+		</dependency>
 		<!-- TODO rather include into rdf4j-storage, however,
 		requires resolving cyclic dependency on test scope -->
 		<dependency>

@@ -19,7 +19,9 @@ import java.util.Locale;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
-import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -66,6 +68,10 @@ public final class QueryEvaluator {
 	private static final String METADATA_INFER = "infer";
 
 	private static final String METADATA_QUERY_TIMEOUT = "query-timeout";
+
+	private static final int MATERIALIZATION_CHECKPOINT_INTERVAL = 128;
+
+	private static final QueryCircuitBreaker QUERY_CIRCUIT_BREAKER = QueryCircuitBreaker.getInstance();
 
 	private QueryEvaluator() {
 		// do nothing
@@ -160,6 +166,32 @@ public final class QueryEvaluator {
 			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText)
 			throws BadRequestException, RDF4JException {
+		extractQueryAndEvaluate(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+				extractRepositoryId(con));
+	}
+
+	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
+			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
+			final String repositoryId)
+			throws BadRequestException, RDF4JException {
+		QueryCircuitBreakerHandle breakerHandle = QUERY_CIRCUIT_BREAKER.register(
+				QueryCircuitBreakerHandle.Source.WORKBENCH, repositoryId, queryText);
+		try {
+			QUERY_CIRCUIT_BREAKER.execute(breakerHandle, con, () -> {
+				extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies,
+						responseQueryText);
+				return null;
+			});
+		} finally {
+			QUERY_CIRCUIT_BREAKER.complete(breakerHandle);
+		}
+	}
+
+	private void extractQueryAndEvaluateInternal(final TupleResultBuilder builder, final HttpServletResponse resp,
+			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText)
+			throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
 		Query query = prepareQuery(con, queryText, req);
 		if (req.isParameterPresent(EXPLAIN)) {
@@ -213,8 +245,16 @@ public final class QueryEvaluator {
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
 			final ExplainRequest explainRequest)
 			throws RDF4JException, BadRequestException {
-		Query query = prepareQuery(con, queryText, explainRequest);
-		return explain(query, explainRequest);
+		QueryCircuitBreakerHandle breakerHandle = QUERY_CIRCUIT_BREAKER.register(
+				QueryCircuitBreakerHandle.Source.WORKBENCH, extractRepositoryId(con), queryText);
+		try {
+			return QUERY_CIRCUIT_BREAKER.execute(breakerHandle, con, () -> {
+				Query query = prepareQuery(con, queryText, explainRequest);
+				return explain(query, explainRequest);
+			});
+		} finally {
+			QUERY_CIRCUIT_BREAKER.complete(breakerHandle);
+		}
 	}
 
 	private Query prepareQuery(final RepositoryConnection con, final String queryText, final WorkbenchRequest req)
@@ -354,9 +394,12 @@ public final class QueryEvaluator {
 			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
 			int offset, int limit, String responseQueryText)
 			throws QueryEvaluationException, QueryResultHandlerException {
-		final TupleQueryResult result = query.evaluate();
-		final String[] names = result.getBindingNames().toArray(new String[0]);
-		List<BindingSet> bindings = Iterations.asList(result);
+		List<BindingSet> bindings;
+		final String[] names;
+		try (TupleQueryResult result = query.evaluate()) {
+			names = result.getBindingNames().toArray(new String[0]);
+			bindings = collectBindingSets(result);
+		}
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, bindings.size());
 		}
@@ -427,7 +470,7 @@ public final class QueryEvaluator {
 			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
 			int offset, int limit, String responseQueryText)
 			throws QueryEvaluationException, QueryResultHandlerException {
-		List<Statement> statements = Iterations.asList(query.evaluate());
+		List<Statement> statements = collectStatements(query);
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
 		}
@@ -502,6 +545,37 @@ public final class QueryEvaluator {
 				req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer")) : false);
 		builder.metadata(METADATA_QUERY_TIMEOUT,
 				queryTimeout == null || queryTimeout.isBlank() ? Integer.valueOf(0) : queryTimeout);
+	}
+
+	private List<BindingSet> collectBindingSets(TupleQueryResult result) throws QueryEvaluationException {
+		List<BindingSet> bindings = new ArrayList<>();
+		while (result.hasNext()) {
+			if (bindings.size() % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+				QueryExecutionContext.checkpoint("WORKBENCH_TUPLE_RESULT");
+			}
+			bindings.add(result.next());
+		}
+		return bindings;
+	}
+
+	private List<Statement> collectStatements(GraphQuery query) throws QueryEvaluationException {
+		List<Statement> statements = new ArrayList<>();
+		try (var result = query.evaluate()) {
+			while (result.hasNext()) {
+				if (statements.size() % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+					QueryExecutionContext.checkpoint("WORKBENCH_GRAPH_RESULT");
+				}
+				statements.add(result.next());
+			}
+		}
+		return statements;
+	}
+
+	private String extractRepositoryId(RepositoryConnection connection) {
+		if (connection == null || connection.getRepository() == null) {
+			return "unknown-workbench-repository";
+		}
+		return connection.getRepository().getClass().getName();
 	}
 
 }
