@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Verifies that ValueStore resumes WAL bootstrap after a partial prior run (segments exist but no completion marker).
  */
+@Tag("slow")
 public class ValueStoreWalBootstrapResumeTest {
 
 	@TempDir

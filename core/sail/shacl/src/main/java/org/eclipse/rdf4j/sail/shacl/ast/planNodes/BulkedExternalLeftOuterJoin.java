@@ -48,7 +48,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			SparqlFragment query,
 			Function<BindingSet, ValidationTuple> mapper, ConnectionsGroup connectionsGroup,
 			List<StatementMatcher.Variable> vars) {
-		super(vars);
+		super(vars, connectionsGroup.isIncludeInferredStatements());
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode, connectionsGroup);
 		this.leftNode = leftNode;
 		this.query = query.getNamespacesForSparql()

@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
@@ -53,6 +54,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private static final Function<Value, Resource[]> RETURN_NULL_VALUE_RESOURCE_ARRAY = v -> null;
 
 	private final StatementPattern statementPattern;
+	private final StatementPattern statementPatternForMetrics;
 	private final TripleSource tripleSource;
 	private final boolean emptyGraph;
 	private final Function<Value, Resource[]> contextSup;
@@ -78,6 +80,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
 			TripleSource tripleSource) {
 		super();
+		this.statementPatternForMetrics = statementPattern;
 		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
@@ -327,6 +330,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
+			incrementIndexLookupCount();
 			if (order != null) {
 				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
 
@@ -335,7 +339,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 
 			if (iteration instanceof IndexReportingIterator) {
-				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+				String indexName = ((IndexReportingIterator) iteration).getIndexName();
+				statementPattern.setIndexName(indexName);
+				statementPatternForMetrics.setIndexName(indexName);
 			}
 
 			if (iteration instanceof EmptyIteration) {
@@ -382,13 +388,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
+			incrementIndexLookupCount();
 			if (order != null) {
 				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
 			} else {
 				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			}
 			if (iteration instanceof IndexReportingIterator) {
-				statementPattern.setIndexName(((IndexReportingIterator) iteration).getIndexName());
+				String indexName = ((IndexReportingIterator) iteration).getIndexName();
+				statementPattern.setIndexName(indexName);
+				statementPatternForMetrics.setIndexName(indexName);
 			}
 
 			if (iteration instanceof EmptyIteration) {
@@ -448,18 +457,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		if (filter != null) {
 			// Only if there is filter code to execute do we make this filter iteration.
-			return new FilterIteration<Statement>(iteration) {
-
-				@Override
-				protected boolean accept(Statement object) throws QueryEvaluationException {
-					return filter.test(object);
-				}
-
-				@Override
-				protected void handleClose() {
-
-				}
-			};
+			return new MetricsReportingFilterIteration(iteration, filter);
 		} else {
 			return iteration;
 		}
@@ -615,6 +613,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return contexts;
 	}
 
+	private void incrementIndexLookupCount() {
+		long next = Math.max(0L,
+				statementPatternForMetrics.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)) + 1L;
+		statementPatternForMetrics.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+		statementPattern.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+	}
+
 	/**
 	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
 	 * invokedynamic code with lambdas for the actual conversion.
@@ -623,7 +628,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			implements CloseableIteration<BindingSet> {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -667,10 +672,38 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				iteration.close();
 			}
 		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
+		}
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
-			implements CloseableIteration<BindingSet> {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -718,6 +751,115 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				closed = true;
 				iteration.close();
 			}
+		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
+		}
+	}
+
+	private static final class MetricsReportingFilterIteration extends FilterIteration<Statement>
+			implements IndexReportingIterator {
+
+		private final CloseableIteration<? extends Statement> iteration;
+		private final Predicate<Statement> filter;
+		private long locallyMatchedRows;
+		private long locallyFilteredRows;
+
+		private MetricsReportingFilterIteration(CloseableIteration<? extends Statement> iteration,
+				Predicate<Statement> filter) {
+			super(iteration);
+			this.iteration = iteration;
+			this.filter = filter;
+		}
+
+		@Override
+		protected boolean accept(Statement object) throws QueryEvaluationException {
+			boolean accepted = filter.test(object);
+			if (accepted) {
+				locallyMatchedRows++;
+			} else {
+				locallyFilteredRows++;
+			}
+			return accepted;
+		}
+
+		@Override
+		protected void handleClose() {
+			// no-op
+		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			if (metrics != null) {
+				long sourceRowsScannedActual = metrics.getSourceRowsScannedActual();
+				if (sourceRowsScannedActual >= 0) {
+					return sourceRowsScannedActual;
+				}
+			}
+			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
+			return locallySeenRows > 0 ? locallySeenRows : -1;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			if (metrics != null) {
+				long sourceRowsMatchedActual = metrics.getSourceRowsMatchedActual();
+				if (sourceRowsMatchedActual >= 0) {
+					return Math.max(0L, sourceRowsMatchedActual - locallyFilteredRows);
+				}
+			}
+			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
+			return locallySeenRows > 0 ? locallyMatchedRows : -1;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			if (metrics != null) {
+				long sourceRowsFilteredActual = metrics.getSourceRowsFilteredActual();
+				if (sourceRowsFilteredActual >= 0) {
+					return sourceRowsFilteredActual + locallyFilteredRows;
+				}
+			}
+			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
+			return locallySeenRows > 0 ? locallyFilteredRows : -1;
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
 		}
 	}
 

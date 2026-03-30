@@ -304,6 +304,7 @@ public class ShapesGraphTest {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository repository = new SailRepository(shaclSail);
+		boolean requiresRdfsSubClassReasoner = shaclSail.isRdfsSubClassReasoning();
 
 		shaclSail.setShapesGraphs(Set.of(
 				Values.iri(EX, "peopleKnowPeopleShapes"),
@@ -316,7 +317,7 @@ public class ShapesGraphTest {
 			connection.begin();
 			connection.addStatement(Values.bnode(), RDF.TYPE, FOAF.PERSON, data1);
 
-			connection.prepareValidation(new ValidationSettings());
+			connection.prepareValidation(new ValidationSettings(), requiresRdfsSubClassReasoner);
 
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 

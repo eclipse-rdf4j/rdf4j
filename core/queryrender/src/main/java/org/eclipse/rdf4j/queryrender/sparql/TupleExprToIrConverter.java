@@ -923,7 +923,8 @@ public class TupleExprToIrConverter {
 			// Keep BIND chains inside WHERE: stop peeling when we hit the first nested Extension, otherwise peel and
 			// remember bindings for reinsertion later.
 			if (cur instanceof Extension) {
-				if (((Extension) cur).getArg() instanceof Extension) {
+				if (((Extension) cur).getArg() instanceof Extension
+						&& !extensionChainLeadsToHavingFilter((Extension) cur)) {
 					break;
 				}
 				final Extension ext = (Extension) cur;
@@ -1458,6 +1459,22 @@ public class TupleExprToIrConverter {
 
 	private static boolean isAnonHavingName(String name) {
 		return name != null && name.startsWith("_anon_having_");
+	}
+
+	private static boolean extensionChainLeadsToHavingFilter(Extension ext) {
+		TupleExpr cur = ext;
+		while (cur instanceof Extension) {
+			cur = ((Extension) cur).getArg();
+		}
+		if (!(cur instanceof Filter)) {
+			return false;
+		}
+		for (String name : freeVars(((Filter) cur).getCondition())) {
+			if (isAnonHavingName(name)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// Render expressions for HAVING with substitution of _anon_having_* variables

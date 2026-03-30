@@ -14,22 +14,31 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.Result;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 
 	private final QueryValueEvaluationStep leftStep;
 	private final QueryValueEvaluationStep rightStep;
+	private final QueryModelNode metricTarget;
 
 	public AndValueEvaluationStep(QueryValueEvaluationStep leftStep, QueryValueEvaluationStep rightStep) {
+		this(leftStep, rightStep, null);
+	}
+
+	public AndValueEvaluationStep(QueryValueEvaluationStep leftStep, QueryValueEvaluationStep rightStep,
+			QueryModelNode metricTarget) {
 		super();
 		this.leftStep = leftStep;
 		this.rightStep = rightStep;
+		this.metricTarget = metricTarget;
 	}
 
 	@Override
@@ -40,6 +49,7 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 					.getEffectiveBooleanValue(leftStep.evaluate(bindings)) == QueryEvaluationUtility.Result._false) {
 				// Left argument evaluates to false, we don't need to look any
 				// further
+				incrementShortCircuitCount();
 				return BooleanLiteral.FALSE;
 			}
 		} catch (ValueExprEvaluationException e) {
@@ -61,6 +71,11 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 
 	public static QueryValueEvaluationStep supply(QueryValueEvaluationStep leftStep,
 			QueryValueEvaluationStep rightStep) {
+		return supply(leftStep, rightStep, null);
+	}
+
+	public static QueryValueEvaluationStep supply(QueryValueEvaluationStep leftStep,
+			QueryValueEvaluationStep rightStep, QueryModelNode metricTarget) {
 		if (leftStep.isConstant()) {
 			Result constantLeftValue = QueryEvaluationUtility
 					.getEffectiveBooleanValue(leftStep.evaluate(EmptyBindingSet.getInstance()));
@@ -83,6 +98,14 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
 			}
 		}
-		return new AndValueEvaluationStep(leftStep, rightStep);
+		return new AndValueEvaluationStep(leftStep, rightStep, metricTarget);
+	}
+
+	private void incrementShortCircuitCount() {
+		if (metricTarget == null) {
+			return;
+		}
+		metricTarget.setLongMetricActual(TelemetryMetricNames.SHORT_CIRCUIT_COUNT_ACTUAL,
+				Math.max(0L, metricTarget.getLongMetricActual(TelemetryMetricNames.SHORT_CIRCUIT_COUNT_ACTUAL)) + 1L);
 	}
 }

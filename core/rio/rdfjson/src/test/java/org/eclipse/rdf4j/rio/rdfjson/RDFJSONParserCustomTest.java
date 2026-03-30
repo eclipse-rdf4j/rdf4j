@@ -353,7 +353,7 @@ public class RDFJSONParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(2, cause.getLocation().getColumnNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
 			assertNotEquals(ContentReference.unknown(), cause.getLocation().contentReference());
 			assertEquals(source, cause.getLocation().contentReference().getRawContent());
 		}
@@ -371,7 +371,7 @@ public class RDFJSONParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(2, cause.getLocation().getColumnNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
 			assertNotEquals(ContentReference.unknown(), cause.getLocation().contentReference());
 			assertEquals(source, cause.getLocation().contentReference().getRawContent());
 		}
@@ -388,7 +388,7 @@ public class RDFJSONParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(2, cause.getLocation().getColumnNr());
+			assertEquals(1, cause.getLocation().getColumnNr());
 			assertEquals(ContentReference.unknown(), cause.getLocation().contentReference());
 		}
 	}

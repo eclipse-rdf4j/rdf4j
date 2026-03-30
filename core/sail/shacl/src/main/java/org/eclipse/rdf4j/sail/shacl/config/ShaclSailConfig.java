@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.config;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.INCLUDE_INFERRED_STATEMENTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
@@ -52,6 +53,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public static final boolean CACHE_SELECT_NODES_DEFAULT = true;
 	public static final boolean GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT = false;
 	public static final boolean RDFS_SUB_CLASS_REASONING_DEFAULT = true;
+	public static final boolean INCLUDE_INFERRED_STATEMENTS_DEFAULT = true;
 	public static final boolean PERFORMANCE_LOGGING_DEFAULT = false;
 	public static final boolean SERIALIZABLE_VALIDATION_DEFAULT = true;
 	public static final boolean ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT = false;
@@ -68,6 +70,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean cacheSelectNodes = CACHE_SELECT_NODES_DEFAULT;
 	private boolean globalLogValidationExecution = GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT;
 	private boolean rdfsSubClassReasoning = RDFS_SUB_CLASS_REASONING_DEFAULT;
+	private boolean includeInferredStatements = INCLUDE_INFERRED_STATEMENTS_DEFAULT;
 	private boolean performanceLogging = PERFORMANCE_LOGGING_DEFAULT;
 	private boolean serializableValidation = SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean eclipseRdf4jShaclExtensions = ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
@@ -139,6 +142,14 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 	public void setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
 		this.rdfsSubClassReasoning = rdfsSubClassReasoning;
+	}
+
+	public boolean isIncludeInferredStatements() {
+		return includeInferredStatements;
+	}
+
+	public void setIncludeInferredStatements(boolean includeInferredStatements) {
+		this.includeInferredStatements = includeInferredStatements;
 	}
 
 	public boolean isPerformanceLogging() {
@@ -222,6 +233,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		m.add(implNode, CONFIG.Shacl.globalLogValidationExecution,
 				BooleanLiteral.valueOf(isGlobalLogValidationExecution()));
 		m.add(implNode, CONFIG.Shacl.rdfsSubClassReasoning, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
+		m.add(implNode, CONFIG.Shacl.includeInferredStatements, BooleanLiteral.valueOf(isIncludeInferredStatements()));
 		m.add(implNode, CONFIG.Shacl.performanceLogging, BooleanLiteral.valueOf(isPerformanceLogging()));
 		m.add(implNode, CONFIG.Shacl.serializableValidation, BooleanLiteral.valueOf(isSerializableValidation()));
 		m.add(implNode, CONFIG.Shacl.eclipseRdf4jShaclExtensions,
@@ -266,6 +278,11 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.rdfsSubClassReasoning, RDFS_SUB_CLASS_REASONING)
 					.ifPresent(l -> setRdfsSubClassReasoning(l.booleanValue()));
+
+			Configurations
+					.getLiteralValue(m, implNode, CONFIG.Shacl.includeInferredStatements,
+							INCLUDE_INFERRED_STATEMENTS)
+					.ifPresent(l -> setIncludeInferredStatements(l.booleanValue()));
 
 			Configurations.getLiteralValue(m, implNode, CONFIG.Shacl.performanceLogging, PERFORMANCE_LOGGING)
 					.ifPresent(l -> setPerformanceLogging(l.booleanValue()));

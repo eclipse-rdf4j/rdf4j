@@ -36,6 +36,7 @@
 		Repository Location
 	</variable>
 	<variable name="repository-size.title">Repository Size</variable>
+	<variable name="config-model.title">Config Model</variable>
 	<variable name="bad-request.title">Bad Request</variable>
 	<variable name="super-classes.title">Super Classes</variable>
 	<variable name="sub-classes.title">Sub Classes</variable>
@@ -77,6 +78,20 @@
 	<variable name="show.label">Show</variable>
 	<variable name="clear.label">Clear</variable>
 	<variable name="execute.label">Execute</variable>
+	<variable name="explain-query.label">Explain Query</variable>
+	<variable name="compare.label">Compare</variable>
+	<variable name="compare-query.label">Compare query</variable>
+	<variable name="show-menu.label">Show menu</variable>
+	<variable name="hide-menu.label">Hide menu</variable>
+	<variable name="explain-both.label">Explain both</variable>
+	<variable name="refresh-explanations.label">Refresh explanations</variable>
+	<variable name="diff.label">Diff</variable>
+	<variable name="query-diff.title">Query diff</variable>
+	<variable name="explanation-diff.title">Explanation diff</variable>
+	<variable name="diff-not-ready.label">Run Explain both to compare explanations.</variable>
+	<variable name="explain-format.label">Explain format</variable>
+	<variable name="download-explanation.label">Download explanation</variable>
+	<variable name="copy-explanation.label">Copy explanation</variable>
 	<variable name="change-server.label">RDF4J Server URL</variable>
 	<variable name="change.label">Change</variable>
 	<variable name="server.label">RDF4J Server</variable>
@@ -85,11 +100,13 @@
 	<variable name="repository.label">Repository</variable>
 	<variable name="download.label">Download</variable>
 	<variable name="download-format.label">Download format</variable>
+	<variable name="download-limit.label">Download limit</variable>
 	<variable name="change-server.desc">for example: http://localhost:8080/rdf4j-server</variable>
 	<variable name="repository-create.label">New repository</variable>
 	<variable name="repository-delete.label">
 		Delete repository
 	</variable>
+	<variable name="config-model.label">Config Model</variable>
 	<variable name="show-datatypes.label">Show data types &amp; language tags</variable>
 
 	<!-- General labels -->
@@ -134,6 +151,8 @@
 	<variable name="predicate.label">Predicate</variable>
 	<variable name="query-options.label">Action Options</variable>
 	<variable name="query-actions.label">Actions</variable>
+	<variable name="query-explanation.label">Query Explanation</variable>
+	<variable name="query-timeout.label">Query timeout (seconds)</variable>
 	<variable name="query-language.label">Query Language</variable>
 	<variable name="query-string.label">Query</variable>
 	<variable name="update-string.label">Update</variable>

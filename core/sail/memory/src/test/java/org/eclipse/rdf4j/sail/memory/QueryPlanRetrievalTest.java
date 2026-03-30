@@ -19,6 +19,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Predicate;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
@@ -29,17 +30,28 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 public class QueryPlanRetrievalTest {
+
+	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
 	public static final String MAIN_QUERY = String.join("\n", "",
 			"{",
@@ -102,6 +114,21 @@ public class QueryPlanRetrievalTest {
 			"           }\n" +
 			"        }\n" +
 			"} GROUP BY ?countryID ?year";
+
+	public static final String MANDATORY_REGION_NEGATIVE_QUERY = String.join("\n", "",
+			"PREFIX medical: <http://example.com/theme/medical/>",
+			"select distinct * where {",
+			"",
+			"  ?person medical:name ?name.",
+			"",
+			"  ?a medical:handledBy ?person.",
+			"  ?a <http://example.com/theme/medical/hasCondition> ?d.",
+			"  ?d medical:code ?code.",
+			"",
+			"  ?person a ?personType.",
+			"  ?a a medical:Encounter.",
+			"",
+			"} limit 100");
 
 	public static final String CONSTRUCT = "PREFIX epo: <http://data.europa.eu/a4g/ontology#>\n" +
 			"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
@@ -186,7 +213,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertThat(actual).isEqualToNormalizingNewlines(
+			assertExplainTextEqualsIgnoringAnnotations(actual,
 					"Join (JoinIterator)\n" +
 							"╠══ Filter [left]\n" +
 							"║  ├── Compare (>)\n" +
@@ -256,7 +283,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+			assertExplainTextEqualsIgnoringAnnotations(actual, "Projection\n" +
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"s\"\n" +
 					"║     ProjectionElem \"p\"\n" +
@@ -387,7 +414,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+			assertExplainTextEqualsIgnoringAnnotations(actual, "Projection\n" +
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"s\"\n" +
 					"║     ProjectionElem \"o\"\n" +
@@ -507,7 +534,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Unoptimized).toString();
-			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+			assertExplainTextEqualsIgnoringAnnotations(actual, "Projection\n" +
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"s\"\n" +
 					"║     ProjectionElem \"o\"\n" +
@@ -533,7 +560,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertThat(actual).isEqualToNormalizingNewlines("Projection\n" +
+			assertExplainTextEqualsIgnoringAnnotations(actual, "Projection\n" +
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"s\"\n" +
 					"║     ProjectionElem \"o\"\n" +
@@ -600,7 +627,7 @@ public class QueryPlanRetrievalTest {
 					"            p: Var (name=e)\n" +
 					"            o: Var (name=f)\n";
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -648,7 +675,7 @@ public class QueryPlanRetrievalTest {
 					"         s: Var (name=d)\n" +
 					"         p: Var (name=e)\n" +
 					"         o: Var (name=f)\n";
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -729,7 +756,7 @@ public class QueryPlanRetrievalTest {
 					"         s: Var (name=d)\n" +
 					"         p: Var (name=e)\n" +
 					"         o: Var (name=f)\n";
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -782,7 +809,7 @@ public class QueryPlanRetrievalTest {
 					"         s: Var (name=d)\n" +
 					"         p: Var (name=e)\n" +
 					"         o: Var (name=f)\n";
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -790,7 +817,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testJsonPlanNode() {
+	public void testJsonPlanNode() throws IOException {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
@@ -798,117 +825,251 @@ public class QueryPlanRetrievalTest {
 			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
 			String actual = query.explain(Explanation.Level.Executed).toJson();
-			String expected = "{\n" +
-					"  \"type\" : \"Projection\",\n" +
-					"  \"resultSizeActual\" : 2,\n" +
-					"  \"plans\" : [ {\n" +
-					"    \"type\" : \"ProjectionElemList\",\n" +
-					"    \"plans\" : [ {\n" +
-					"      \"type\" : \"ProjectionElem \\\"a\\\"\"\n" +
-					"    } ]\n" +
-					"  }, {\n" +
-					"    \"type\" : \"LeftJoin\",\n" +
-					"    \"resultSizeActual\" : 2,\n" +
-					"    \"algorithm\" : \"LeftJoinIterator\",\n" +
-					"    \"plans\" : [ {\n" +
-					"      \"type\" : \"Join\",\n" +
-					"      \"resultSizeActual\" : 2,\n" +
-					"      \"algorithm\" : \"JoinIterator\",\n" +
-					"      \"plans\" : [ {\n" +
-					"        \"type\" : \"StatementPattern\",\n" +
-					"        \"costEstimate\" : 3.0,\n" +
-					"        \"resultSizeEstimate\" : 4.0,\n" +
-					"        \"resultSizeActual\" : 4,\n" +
-					"        \"plans\" : [ {\n" +
-					"          \"type\" : \"Var (name=a)\"\n" +
-					"        }, {\n" +
-					"          \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
-					+
-					"        }, {\n" +
-					"          \"type\" : \"Var (name=d)\"\n" +
-					"        } ]\n" +
-					"      }, {\n" +
-					"        \"type\" : \"Filter\",\n" +
-					"        \"resultSizeActual\" : 2,\n" +
-					"        \"plans\" : [ {\n" +
-					"          \"type\" : \"Compare (!=)\",\n" +
-					"          \"plans\" : [ {\n" +
-					"            \"type\" : \"Var (name=c)\"\n" +
-					"          }, {\n" +
-					"            \"type\" : \"Var (name=d)\"\n" +
-					"          } ]\n" +
-					"        }, {\n" +
-					"          \"type\" : \"Join\",\n" +
-					"          \"resultSizeActual\" : 6,\n" +
-					"          \"algorithm\" : \"HashJoinIteration\",\n" +
-					"          \"plans\" : [ {\n" +
-					"            \"type\" : \"Filter\",\n" +
-					"            \"resultSizeActual\" : 6,\n" +
-					"            \"plans\" : [ {\n" +
-					"              \"type\" : \"Compare (!=)\",\n" +
-					"              \"plans\" : [ {\n" +
-					"                \"type\" : \"Var (name=c)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"ValueConstant (value=\\\"<\\\")\"\n" +
-					"              } ]\n" +
-					"            }, {\n" +
-					"              \"type\" : \"StatementPattern\",\n" +
-					"              \"costEstimate\" : 3.0,\n" +
-					"              \"resultSizeEstimate\" : 4.0,\n" +
-					"              \"resultSizeActual\" : 6,\n" +
-					"              \"plans\" : [ {\n" +
-					"                \"type\" : \"Var (name=a)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
-					+
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=c)\"\n" +
-					"              } ]\n" +
-					"            } ]\n" +
-					"          }, {\n" +
-					"            \"type\" : \"LeftJoin\",\n" +
-					"            \"costEstimate\" : 6.611489018457944,\n" +
-					"            \"resultSizeEstimate\" : 12.0,\n" +
-					"            \"resultSizeActual\" : 4,\n" +
-					"            \"newScope\" : true,\n" +
-					"            \"algorithm\" : \"BadlyDesignedLeftJoinIterator\",\n" +
-					"            \"plans\" : [ {\n" +
-					"              \"type\" : \"SingletonSet\",\n" +
-					"              \"resultSizeActual\" : 4\n" +
-					"            }, {\n" +
-					"              \"type\" : \"StatementPattern\",\n" +
-					"              \"resultSizeEstimate\" : 12.0,\n" +
-					"              \"resultSizeActual\" : 48,\n" +
-					"              \"plans\" : [ {\n" +
-					"                \"type\" : \"Var (name=d)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=e)\"\n" +
-					"              }, {\n" +
-					"                \"type\" : \"Var (name=f)\"\n" +
-					"              } ]\n" +
-					"            } ]\n" +
-					"          } ]\n" +
-					"        } ]\n" +
-					"      } ]\n" +
-					"    }, {\n" +
-					"      \"type\" : \"StatementPattern\",\n" +
-					"      \"resultSizeEstimate\" : 12.0,\n" +
-					"      \"resultSizeActual\" : 2,\n" +
-					"      \"plans\" : [ {\n" +
-					"        \"type\" : \"Var (name=d)\"\n" +
-					"      }, {\n" +
-					"        \"type\" : \"Var (name=e)\"\n" +
-					"      }, {\n" +
-					"        \"type\" : \"Var (name=f)\"\n" +
-					"      } ]\n" +
-					"    } ]\n" +
-					"  } ]\n" +
-					"}";
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			JsonNode root = OBJECT_MAPPER.readTree(actual);
+			assertThat(root.path("type").asText()).isEqualTo("Projection");
+			assertThat(root.path("resultSizeActual").asLong()).isEqualTo(2L);
+			assertTelemetryFieldsAbsentRecursively(root);
+			assertThat(root.path("longMetricsActual").has("outputRowsActual")).isFalse();
+		}
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testJsonPlanNodeTelemetry() throws IOException {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+
+			String actual = query.explain(Explanation.Level.Telemetry).toJson();
+			JsonNode root = OBJECT_MAPPER.readTree(actual);
+			assertThat(root.path("type").asText()).isEqualTo("Projection");
+			assertThat(root.path("resultSizeActual").asLong()).isEqualTo(2L);
+			assertTelemetryFieldsPresentRecursively(root);
+			assertThat(root.path("nextCallCountActual").asLong()).isGreaterThan(0L);
+			assertThat(root.path("longMetricsActual").has("outputRowsActual")).isFalse();
 
 		}
 		sailRepository.shutDown();
 
+	}
+
+	@Test
+	public void testEstimateStabilityStatsAreHiddenUntilTelemetryLevel() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+
+			String optimized = query.explain(Explanation.Level.Optimized).toString();
+			String executed = query.explain(Explanation.Level.Executed).toString();
+			String timed = query.explain(Explanation.Level.Timed).toString();
+			String telemetry = query.explain(Explanation.Level.Telemetry).toString();
+
+			assertThat(optimized).doesNotContain("sampleCountActual=");
+			assertThat(optimized).doesNotContain("varianceActual=");
+			assertThat(optimized).doesNotContain("stddevActual=");
+			assertThat(optimized).doesNotContain("confidenceScoreActual=");
+
+			assertThat(executed).doesNotContain("sampleCountActual=");
+			assertThat(executed).doesNotContain("varianceActual=");
+			assertThat(executed).doesNotContain("stddevActual=");
+			assertThat(executed).doesNotContain("confidenceScoreActual=");
+
+			assertThat(timed).doesNotContain("sampleCountActual=");
+			assertThat(timed).doesNotContain("varianceActual=");
+			assertThat(timed).doesNotContain("stddevActual=");
+			assertThat(timed).doesNotContain("confidenceScoreActual=");
+
+			assertThat(telemetry).contains("sampleCountActual=");
+			assertThat(telemetry).contains("varianceActual=");
+			assertThat(telemetry).contains("stddevActual=");
+			assertThat(telemetry).contains("confidenceScoreActual=");
+		}
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testExplainAnnotationsEmitDisconnectedJoinTypeTextAndJson() throws IOException {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("SELECT * WHERE { ?a a ?c . ?d ?e ?f }");
+
+			Explanation explain = query.explain(Explanation.Level.Optimized);
+			String text = explain.toString();
+			String dot = explain.toDot();
+			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
+			JsonNode joinNode = findFirstPlanNode(root,
+					node -> "Cartesian product".equals(node.path("stringMetricsActual").path("joinType").asText(null)));
+
+			assertThat(text).doesNotContain("joinType=regular join");
+			assertThat(text).contains("joinType=Cartesian product");
+			assertThat(text).contains("bindingState=unbound");
+			assertThat(dot).contains("<tr><td>Join type</td><td>Cartesian product</td></tr>");
+			assertThat(joinNode).isNotNull();
+			assertThat(joinNode.path("stringMetricsActual").path("joinType").asText()).isEqualTo("Cartesian product");
+			assertThat(joinNode.path("plans")
+					.get(0)
+					.path("plans")
+					.get(0)
+					.path("stringMetricsActual")
+					.path("bindingState")
+					.asText()).isEqualTo("unbound");
+			assertThat(joinNode.path("plans")
+					.get(1)
+					.path("plans")
+					.get(0)
+					.path("stringMetricsActual")
+					.path("bindingState")
+					.asText()).isEqualTo("unbound");
+		}
+		sailRepository.shutDown();
+	}
+
+	@Test
+	public void testMandatoryRegionNegativeQueryDoesNotEmitDisconnectedJoinType() throws MalformedQueryException {
+		ParsedTupleQuery parsed = (ParsedTupleQuery) new SPARQLParser().parseQuery(MANDATORY_REGION_NEGATIVE_QUERY,
+				null);
+		TupleExpr tupleExpr = parsed.getTupleExpr();
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr, null,
+				Explanation.Level.Optimized);
+		tupleExpr.visit(converter);
+
+		GenericPlanNode joinNode = findFirstGenericPlanNode(converter.getGenericPlanNode(),
+				node -> "Cartesian product".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)));
+		assertThat(joinNode).isNull();
+	}
+
+	@Test
+	public void testExplainAnnotationsKeepHashJoinRightSideUnbound() throws IOException {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(SUB_QUERY);
+
+			Explanation explain = query.explain(Explanation.Level.Executed);
+			String text = explain.toString();
+			JsonNode root = OBJECT_MAPPER.readTree(explain.toJson());
+			JsonNode hashJoinNode = findFirstPlanNode(root,
+					node -> "HashJoinIteration".equals(node.path("algorithm").asText(null)));
+			JsonNode unboundVar = findFirstPlanNode(hashJoinNode.path("plans").get(1),
+					node -> node.path("type").asText("").startsWith("Var (name=a)")
+							&& "unbound".equals(node.path("stringMetricsActual").path("bindingState").asText(null)));
+
+			assertThat(text).contains("HashJoinIteration");
+			assertThat(text).contains("bindingState=unbound");
+			assertThat(hashJoinNode).isNotNull();
+			assertThat(unboundVar).isNotNull();
+		}
+		sailRepository.shutDown();
+	}
+
+	private static void assertExplainTextEqualsIgnoringAnnotations(String actual, String expected) {
+		assertThat(stripExplainTextAnnotations(actual))
+				.isEqualToNormalizingNewlines(stripExplainTextAnnotations(expected));
+	}
+
+	private static void assertExplainDotEqualsIgnoringAnnotations(String actual, String expected) {
+		assertThat(stripExplainDotAnnotations(actual))
+				.isEqualToNormalizingNewlines(stripExplainDotAnnotations(expected));
+	}
+
+	private static String stripExplainTextAnnotations(String text) {
+		return text.replaceAll(", (bindingState|joinType|indexName|indexNames)=[^)]*", "")
+				.replaceAll(" \\((bindingState|joinType|indexName|indexNames)=[^)]*\\)", "");
+	}
+
+	private static String stripExplainDotAnnotations(String dot) {
+		return dot.replaceAll(" ?<tr><td>(Binding state|Join type|Index|Indexes)</td><td>.*?</td></tr>", "");
+	}
+
+	private static void assertTelemetryFieldsPresentRecursively(JsonNode node) {
+		assertThat(node.has("hasNextCallCountActual")).isTrue();
+		assertThat(node.has("hasNextTrueCountActual")).isTrue();
+		assertThat(node.has("hasNextTimeNanosActual")).isTrue();
+		assertThat(node.has("nextCallCountActual")).isTrue();
+		assertThat(node.has("nextTimeNanosActual")).isTrue();
+		assertThat(node.has("joinRightIteratorsCreatedActual")).isTrue();
+		assertThat(node.has("joinLeftBindingsConsumedActual")).isTrue();
+		assertThat(node.has("joinRightBindingsConsumedActual")).isTrue();
+		assertThat(node.has("sourceRowsScannedActual")).isTrue();
+		assertThat(node.has("sourceRowsMatchedActual")).isTrue();
+		assertThat(node.has("sourceRowsFilteredActual")).isTrue();
+
+		JsonNode plans = node.path("plans");
+		if (plans.isArray()) {
+			for (JsonNode child : plans) {
+				assertTelemetryFieldsPresentRecursively(child);
+			}
+		}
+	}
+
+	private static void assertTelemetryFieldsAbsentRecursively(JsonNode node) {
+		assertThat(node.has("hasNextCallCountActual")).isFalse();
+		assertThat(node.has("hasNextTrueCountActual")).isFalse();
+		assertThat(node.has("hasNextTimeNanosActual")).isFalse();
+		assertThat(node.has("nextCallCountActual")).isFalse();
+		assertThat(node.has("nextTimeNanosActual")).isFalse();
+		assertThat(node.has("joinRightIteratorsCreatedActual")).isFalse();
+		assertThat(node.has("joinLeftBindingsConsumedActual")).isFalse();
+		assertThat(node.has("joinRightBindingsConsumedActual")).isFalse();
+		assertThat(node.has("sourceRowsScannedActual")).isFalse();
+		assertThat(node.has("sourceRowsMatchedActual")).isFalse();
+		assertThat(node.has("sourceRowsFilteredActual")).isFalse();
+
+		JsonNode plans = node.path("plans");
+		if (plans.isArray()) {
+			for (JsonNode child : plans) {
+				assertTelemetryFieldsAbsentRecursively(child);
+			}
+		}
+	}
+
+	private static JsonNode findFirstPlanNode(JsonNode node, Predicate<JsonNode> predicate) {
+		if (node == null || node.isMissingNode() || node.isNull()) {
+			return null;
+		}
+		if (predicate.test(node)) {
+			return node;
+		}
+		JsonNode plans = node.path("plans");
+		if (plans.isArray()) {
+			for (JsonNode child : plans) {
+				JsonNode match = findFirstPlanNode(child, predicate);
+				if (match != null) {
+					return match;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static GenericPlanNode findFirstGenericPlanNode(GenericPlanNode node,
+			Predicate<GenericPlanNode> predicate) {
+		if (node == null) {
+			return null;
+		}
+		if (predicate.test(node)) {
+			return node;
+		}
+		if (node.getPlans() == null) {
+			return null;
+		}
+		for (GenericPlanNode child : node.getPlans()) {
+			GenericPlanNode match = findFirstGenericPlanNode(child, predicate);
+			if (match != null) {
+				return match;
+			}
+		}
+		return null;
 	}
 
 	@Test
@@ -955,7 +1116,7 @@ public class QueryPlanRetrievalTest {
 					"         s: Var (name=d)\n" +
 					"         p: Var (name=e)\n" +
 					"         o: Var (name=f)\n";
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -1020,7 +1181,7 @@ public class QueryPlanRetrievalTest {
 					"      ╚══ ExtensionElem (_const_f5e5585a_uri)\n" +
 					"            ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)\n";
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -1110,7 +1271,7 @@ public class QueryPlanRetrievalTest {
 					"               p: Var (name=e)\n" +
 					"               o: Var (name=f)\n";
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 
@@ -1281,7 +1442,7 @@ public class QueryPlanRetrievalTest {
 					"                  ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
 					"                  ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n";
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 
@@ -1340,7 +1501,7 @@ public class QueryPlanRetrievalTest {
 					"            p: Var (name=d)\n" +
 					"            o: Var (name=c)\n";
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 
@@ -1501,7 +1662,7 @@ public class QueryPlanRetrievalTest {
 					+
 					"\n" +
 					"}\n";
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainDotEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -1549,7 +1710,7 @@ public class QueryPlanRetrievalTest {
 			TupleQuery query = connection.prepareTupleQuery("select * where {?a ?b ?c.}");
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 		}
 		sailRepository.shutDown();
 
@@ -1583,7 +1744,7 @@ public class QueryPlanRetrievalTest {
 			TupleQuery query = connection.prepareTupleQuery("select * where {?a ?b ?c. ?c <http://a>* ?d}");
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -1788,7 +1949,7 @@ public class QueryPlanRetrievalTest {
 			GraphQuery query = connection.prepareGraphQuery(CONSTRUCT);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
@@ -1958,11 +2119,10 @@ public class QueryPlanRetrievalTest {
 							"order by ?nbTerm ?nameSjb1 ?idTerm3");
 			String actual = query.explain(Explanation.Level.Executed).toString();
 
-			assertThat(actual).isEqualToNormalizingNewlines(expected);
+			assertExplainTextEqualsIgnoringAnnotations(actual, expected);
 
 		}
 		sailRepository.shutDown();
 
 	}
-
 }

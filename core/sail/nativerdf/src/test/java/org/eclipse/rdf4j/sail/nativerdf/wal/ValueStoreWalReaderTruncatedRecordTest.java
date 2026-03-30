@@ -19,6 +19,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -28,6 +29,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 /**
  * Ensures the reader marks incomplete when a frame is truncated (length OK, payload/CRC missing).
  */
+@Tag("slow")
 class ValueStoreWalReaderTruncatedRecordTest {
 
 	@TempDir

@@ -37,6 +37,7 @@ public class ReduceNumberOfPlansTest {
 			throws RDFParseException, UnsupportedRDFormatException, IOException, InterruptedException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
+		boolean requiresRdfsSubClassReasoner = shaclSail.isRdfsSubClassReasoning();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.trig");
 
 		addDummyData(shaclSail);
@@ -44,7 +45,7 @@ public class ReduceNumberOfPlansTest {
 		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
 			connection.begin();
 
-			connection.prepareValidation(new ValidationSettings());
+			connection.prepareValidation(new ValidationSettings(), requiresRdfsSubClassReasoner);
 
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
@@ -61,7 +62,7 @@ public class ReduceNumberOfPlansTest {
 			IRI person1 = Utils.Ex.createIri();
 			connection.addStatement(person1, RDF.TYPE, Utils.Ex.Person);
 
-			connection.prepareValidation(new ValidationSettings());
+			connection.prepareValidation(new ValidationSettings(), requiresRdfsSubClassReasoner);
 
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
@@ -93,6 +94,7 @@ public class ReduceNumberOfPlansTest {
 			throws RDF4JException, UnsupportedRDFormatException, IOException, InterruptedException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
+		boolean requiresRdfsSubClassReasoner = shaclSail.isRdfsSubClassReasoning();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.trig");
 
 		addDummyData(shaclSail);
@@ -114,7 +116,7 @@ public class ReduceNumberOfPlansTest {
 
 			connection.removeStatements(person1, Utils.Ex.ssn, vf.createLiteral("b"));
 
-			connection.prepareValidation(new ValidationSettings());
+			connection.prepareValidation(new ValidationSettings(), requiresRdfsSubClassReasoner);
 
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
@@ -131,7 +133,7 @@ public class ReduceNumberOfPlansTest {
 
 			connection.removeStatements(person1, Utils.Ex.ssn, vf.createLiteral("a"));
 
-			connection.prepareValidation(new ValidationSettings());
+			connection.prepareValidation(new ValidationSettings(), requiresRdfsSubClassReasoner);
 
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
@@ -147,7 +149,7 @@ public class ReduceNumberOfPlansTest {
 			}
 			connection.removeStatements(person1, Utils.Ex.name, vf.createLiteral("c"));
 
-			connection.prepareValidation(new ValidationSettings());
+			connection.prepareValidation(new ValidationSettings(), requiresRdfsSubClassReasoner);
 
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 

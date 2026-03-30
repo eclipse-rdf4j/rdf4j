@@ -29,6 +29,7 @@ import java.util.zip.GZIPInputStream;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.nativerdf.ValueStore;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,6 +40,7 @@ import com.fasterxml.jackson.core.JsonToken;
 /**
  * Restores a value record from a compressed ValueStore WAL segment by performing a binary search on segment first LSNs.
  */
+@Tag("slow")
 class ValueStoreWalCompressedSegmentRestoreTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();

@@ -64,17 +64,18 @@ public class ReasoningUpdateBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
+		try {
+			try (SailRepositoryConnection connection = sail.getConnection()) {
+				connection.begin();
+				addRequiredResource(connection, "schema.ttl");
+				connection.commit();
 
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			connection.begin();
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE, schemaGraph);
-			connection.commit();
-
-			addAllDataMultipleTransactions(connection);
-
+				addAllDataMultipleTransactions(connection);
+			}
+			checkSize(sail);
+		} finally {
+			sail.shutDown();
 		}
-
-		checkSize(sail);
 	}
 
 	private void checkSize(SailRepository sail) {
@@ -104,9 +105,13 @@ public class ReasoningUpdateBenchmark {
 			}
 			connection.commit();
 
-			connection.begin();
-			connection.add(resourceAsStream("data" + i++ + ".ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
+			try (InputStream data = resourceAsStream("data" + i++ + ".ttl")) {
+				if (data != null) {
+					connection.begin();
+					connection.add(data, "", RDFFormat.TURTLE);
+					connection.commit();
+				}
+			}
 		}
 	}
 
@@ -117,9 +122,11 @@ public class ReasoningUpdateBenchmark {
 		this.expectedCount = Integer.parseInt(split[1]);
 		String filename = split[0] + "/" + resourceName;
 		String content = cache.computeIfAbsent(filename, (fn) -> {
-			try {
-				return IOUtils.toString(ReasoningUpdateBenchmark.class.getClassLoader().getResourceAsStream(fn),
-						StandardCharsets.UTF_8);
+			try (InputStream stream = ReasoningUpdateBenchmark.class.getClassLoader().getResourceAsStream(fn)) {
+				if (stream == null) {
+					throw new IllegalStateException("Resource not found: " + fn);
+				}
+				return IOUtils.toString(stream, StandardCharsets.UTF_8);
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
@@ -127,6 +134,15 @@ public class ReasoningUpdateBenchmark {
 
 		return new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
 
+	}
+
+	private void addRequiredResource(SailRepositoryConnection connection, String resourceName) throws IOException {
+		try (InputStream schemaStream = resourceAsStream(resourceName)) {
+			if (schemaStream == null) {
+				throw new IOException("Resource not found: " + resourceName);
+			}
+			connection.add(schemaStream, "", RDFFormat.TURTLE, schemaGraph);
+		}
 	}
 
 }

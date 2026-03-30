@@ -166,7 +166,7 @@ public class ValidationQuery {
 	}
 
 	public PlanNode getValidationPlan(SailConnection baseConnection, Resource[] dataGraph,
-			Resource[] shapesGraphs) {
+			Resource[] shapesGraphs, boolean includeInferredStatements) {
 
 		assert query != null;
 		assert shape != null;
@@ -198,7 +198,7 @@ public class ValidationQuery {
 
 			return validationTuple.addValidationResult(validationResultFunction);
 
-		}, dataGraph);
+		}, dataGraph, includeInferredStatements);
 
 		return select;
 
@@ -339,7 +339,7 @@ public class ValidationQuery {
 
 		@Override
 		public PlanNode getValidationPlan(SailConnection baseConnection, Resource[] dataGraph,
-				Resource[] shapesGraphs) {
+				Resource[] shapesGraphs, boolean includeInferredStatements) {
 			return EmptyNode.getInstance();
 		}
 

@@ -14,23 +14,38 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public class PreFilterQueryEvaluationStep implements QueryEvaluationStep {
 
 	private final QueryEvaluationStep wrapped;
 	private final Predicate<BindingSet> condition;
+	private final QueryModelNode metricTarget;
+
+	public PreFilterQueryEvaluationStep(QueryEvaluationStep wrapped, QueryValueEvaluationStep condition) {
+		this(wrapped, condition, null);
+	}
 
 	public PreFilterQueryEvaluationStep(QueryEvaluationStep wrapped,
-			QueryValueEvaluationStep condition) {
+			QueryValueEvaluationStep condition, QueryModelNode metricTarget) {
 		this.wrapped = wrapped;
 		this.condition = condition.asPredicate();
+		this.metricTarget = metricTarget;
 	}
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet leftBindings) {
 		if (!condition.test(leftBindings)) {
+			if (metricTarget != null) {
+				metricTarget.setLongMetricActual(TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL,
+						Math.max(0L,
+								metricTarget.getLongMetricActual(
+										TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL))
+								+ 1L);
+			}
 			// Usage of this method assume this instance is returned
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		}

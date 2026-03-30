@@ -18,6 +18,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -31,12 +32,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
-public class FilterIterator extends FilterIteration<BindingSet> {
+public class FilterIterator extends FilterIteration<BindingSet> implements IndexReportingIterator {
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
 	private final Function<BindingSet, BindingSet> retain;
+	private final Filter filterNode;
+	private final boolean runtimeTelemetryEnabled;
+	private long sourceRowsScannedActual;
+	private long sourceRowsMatchedActual;
+	private long sourceRowsFilteredActual;
+	private long predicateErrorCountActual;
+	private long exprEvalCountActual;
+	private long exprTrueCountActual;
+	private long exprFalseCountActual;
+	private long exprEvalTimeNanosActual;
 
 	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
@@ -56,7 +68,7 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 			retain = Function.identity();
 		}
 
-		return (bs) -> new FilterIterator(arg.evaluate(bs), ves, strategy, retain);
+		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain);
 	}
 
 	/*--------------*
@@ -66,6 +78,8 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter, QueryValueEvaluationStep condition,
 			EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
+		this.filterNode = filter;
+		this.runtimeTelemetryEnabled = filter != null && filter.isRuntimeTelemetryEnabled();
 		this.condition = condition;
 		this.strategy = strategy;
 		if (!isPartOfSubQuery(filter)) {
@@ -79,10 +93,12 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 		}
 	}
 
-	private FilterIterator(CloseableIteration<BindingSet> iter,
+	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain)
 			throws QueryEvaluationException {
 		super(iter);
+		this.filterNode = filterNode;
+		this.runtimeTelemetryEnabled = filterNode != null && filterNode.isRuntimeTelemetryEnabled();
 		this.condition = condition;
 		this.strategy = strategy;
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
@@ -121,14 +137,38 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
+		if (!runtimeTelemetryEnabled) {
+			try {
+				BindingSet scopeBindings = this.retain.apply(bindings);
+				return strategy.isTrue(condition, scopeBindings);
+			} catch (ValueExprEvaluationException e) {
+				return false;
+			}
+		}
+
+		sourceRowsScannedActual++;
+		exprEvalCountActual++;
+		long started = System.nanoTime();
 		try {
 
 			// Limit the bindings to the ones that are in scope for this filter
 			BindingSet scopeBindings = this.retain.apply(bindings);
-			return strategy.isTrue(condition, scopeBindings);
+			boolean accepted = strategy.isTrue(condition, scopeBindings);
+			if (accepted) {
+				sourceRowsMatchedActual++;
+				exprTrueCountActual++;
+			} else {
+				sourceRowsFilteredActual++;
+				exprFalseCountActual++;
+			}
+			return accepted;
 		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
+			sourceRowsFilteredActual++;
+			predicateErrorCountActual++;
 			return false;
+		} finally {
+			exprEvalTimeNanosActual += Math.max(0L, System.nanoTime() - started);
 		}
 	}
 
@@ -147,7 +187,43 @@ public class FilterIterator extends FilterIteration<BindingSet> {
 
 	@Override
 	protected void handleClose() {
+		if (filterNode != null && runtimeTelemetryEnabled) {
+			filterNode.setLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL,
+					Math.max(0L, filterNode.getLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL))
+							+ predicateErrorCountActual);
+			filterNode.setLongMetricActual(TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL,
+					Math.max(0L, filterNode.getLongMetricActual(TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL))
+							+ exprEvalCountActual);
+			filterNode.setLongMetricActual(TelemetryMetricNames.EXPR_TRUE_COUNT_ACTUAL,
+					Math.max(0L, filterNode.getLongMetricActual(TelemetryMetricNames.EXPR_TRUE_COUNT_ACTUAL))
+							+ exprTrueCountActual);
+			filterNode.setLongMetricActual(TelemetryMetricNames.EXPR_FALSE_COUNT_ACTUAL,
+					Math.max(0L, filterNode.getLongMetricActual(TelemetryMetricNames.EXPR_FALSE_COUNT_ACTUAL))
+							+ exprFalseCountActual);
+			filterNode.setDoubleMetricActual(TelemetryMetricNames.EXPR_EVAL_TIME_NANOS_ACTUAL,
+					Math.max(0D, filterNode.getDoubleMetricActual(TelemetryMetricNames.EXPR_EVAL_TIME_NANOS_ACTUAL))
+							+ exprEvalTimeNanosActual);
+		}
+	}
 
+	@Override
+	public String getIndexName() {
+		return "";
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		return sourceRowsScannedActual;
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		return sourceRowsMatchedActual;
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		return sourceRowsFilteredActual;
 	}
 
 }

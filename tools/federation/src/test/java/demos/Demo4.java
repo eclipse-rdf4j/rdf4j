@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 
+@Deprecated(forRemoval = true)
 public class Demo4 {
 
 	public static void main(String[] args) {

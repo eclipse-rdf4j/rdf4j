@@ -32,6 +32,11 @@ public class ShaclSailValidationException extends SailException implements Valid
 		this.validationReport = validationReport;
 	}
 
+	ShaclSailValidationException(String message) {
+		super(message);
+		this.validationReport = new ValidationReport(false);
+	}
+
 	/**
 	 * @return A Model containing the validation report as specified by the SHACL Recommendation
 	 */

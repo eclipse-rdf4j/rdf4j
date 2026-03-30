@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.CRC32C;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -32,6 +33,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
  * Verifies that encountering non-minted frames (header 'V' and summary 'S') does not alter lastValidLsn; it should
  * reflect the last minted record's LSN only.
  */
+@Tag("slow")
 class ValueStoreWalReaderLastLsnNonMintedTest {
 
 	@TempDir

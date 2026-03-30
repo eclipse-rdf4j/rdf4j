@@ -16,6 +16,10 @@ INSERT {
 ex:validPerson1 ex:iriOrMinLength5String [].
 
 }
-WHERE{?a ?b ?c.}
+WHERE{
+
+ex:validPerson1 ex:iriOrMinLength5String "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis id elementum turpis. Suspendisse metus.".
+
+}
 
 

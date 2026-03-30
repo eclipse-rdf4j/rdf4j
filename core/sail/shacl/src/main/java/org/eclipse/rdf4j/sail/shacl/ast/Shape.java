@@ -107,6 +107,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 	List<Target> target = new ArrayList<>();
 
 	boolean deactivated;
+	private Boolean rdfsSubClassReasoningOverride;
+	private Boolean includeInferredStatementsOverride;
 	List<Literal> message;
 	Severity severity;
 
@@ -119,6 +121,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 	public Shape(Shape shape) {
 		this.deactivated = shape.deactivated;
+		this.rdfsSubClassReasoningOverride = shape.rdfsSubClassReasoningOverride;
+		this.includeInferredStatementsOverride = shape.includeInferredStatementsOverride;
 		this.message = shape.message;
 		this.severity = shape.severity;
 		this.id = shape.id;
@@ -134,6 +138,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		this.id = properties.getId();
 		this.contexts = shapeSource.getActiveContexts();
 		this.severity = Severity.fromIri(properties.getSeverity());
+
+		if (parseSettings.parseEclipseRdf4jShaclExtensions()) {
+			this.rdfsSubClassReasoningOverride = properties.getRdfsSubClassReasoning();
+			this.includeInferredStatementsOverride = properties.getIncludeInferredStatements();
+		}
 
 		if (!properties.getTargetClass().isEmpty()) {
 			target.add(new TargetClass(properties.getTargetClass()));
@@ -217,6 +226,12 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		if (severity != null) {
 			modelBuilder.add(SHACL.SEVERITY_PROP, severity.getIri());
+		}
+		if (rdfsSubClassReasoningOverride != null) {
+			modelBuilder.add(RSX.rdfsSubClassReasoning, rdfsSubClassReasoningOverride);
+		}
+		if (includeInferredStatementsOverride != null) {
+			modelBuilder.add(RSX.includeInferredStatements, includeInferredStatementsOverride);
 		}
 
 		model.addAll(modelBuilder.build());
@@ -424,7 +439,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 							.generateSparqlValidationQuery(connectionsGroup, validationSettings, false, false,
 									Scope.none)
 							.getValidationPlan(connectionsGroup.getBaseConnection(), validationSettings.getDataGraph(),
-									getContexts()),
+									getContexts(), connectionsGroup.isIncludeInferredStatements()),
 							this, connectionsGroup);
 				} else {
 					logger.debug("Use fall back validation approach for bulk validation instead of SPARQL for shape {}",
@@ -477,6 +492,22 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 	public boolean isDeactivated() {
 		return deactivated;
+	}
+
+	public Boolean getRdfsSubClassReasoningOverride() {
+		return rdfsSubClassReasoningOverride;
+	}
+
+	public Boolean getIncludeInferredStatementsOverride() {
+		return includeInferredStatementsOverride;
+	}
+
+	public boolean usesRdfsSubClassReasoning(boolean defaultValue) {
+		return rdfsSubClassReasoningOverride == null ? defaultValue : rdfsSubClassReasoningOverride;
+	}
+
+	public boolean usesIncludeInferredStatements(boolean defaultValue) {
+		return includeInferredStatementsOverride == null ? defaultValue : includeInferredStatementsOverride;
 	}
 
 	@Override
@@ -574,6 +605,12 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		if (severity != shape.severity) {
 			return false;
 		}
+		if (!Objects.equals(rdfsSubClassReasoningOverride, shape.rdfsSubClassReasoningOverride)) {
+			return false;
+		}
+		if (!Objects.equals(includeInferredStatementsOverride, shape.includeInferredStatementsOverride)) {
+			return false;
+		}
 
 		if (constraintComponents.size() != shape.constraintComponents.size()) {
 			return false;
@@ -637,6 +674,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		result = 31 * result + (deactivated ? 1 : 0);
 		result = 31 * result + (message != null ? message.hashCode() : 0);
 		result = 31 * result + (severity != null ? severity.hashCode() : 0);
+		result = 31 * result + (rdfsSubClassReasoningOverride != null ? rdfsSubClassReasoningOverride.hashCode() : 0);
+		result = 31 * result
+				+ (includeInferredStatementsOverride != null ? includeInferredStatementsOverride.hashCode() : 0);
 
 		long temp = 0;
 

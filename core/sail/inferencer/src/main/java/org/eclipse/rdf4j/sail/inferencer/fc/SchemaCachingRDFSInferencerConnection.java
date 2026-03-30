@@ -114,7 +114,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			sail.addSubPropertyOfStatement(
 					sail.getValueFactory().createStatement(subject, RDFS.SUBPROPERTYOF, RDFS.MEMBER));
 			schemaChange = true;
-		} else if (predicate.equals(RDF.TYPE)) {
+		} else if (predicate.equals(RDF.TYPE) && object instanceof Resource) {
 			if (!sail.hasType(((Resource) object))) {
 				sail.addType((Resource) object);
 				schemaChange = true;
@@ -276,11 +276,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 			}
 
-			if (predicate.equals(RDF.TYPE)) {
-				if (!(object instanceof Resource)) {
-					throw new SailException("Expected object to a a Resource: " + object.toString());
-				}
-
+			if (predicate.equals(RDF.TYPE) && object instanceof Resource) {
 				sail.resolveTypes((Resource) object)
 						.stream()
 						.peek(inferredType -> {

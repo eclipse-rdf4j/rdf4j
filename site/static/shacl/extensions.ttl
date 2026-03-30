@@ -14,6 +14,22 @@ rsx:targetShape
 	rdfs:range sh:Shape ;
 	rdfs:isDefinedBy rsx: .
 
+rsx:rdfsSubClassReasoning
+	a rdf:Property ;
+	rdfs:label "rdfs subclass reasoning"@en ;
+	rdfs:comment "Overrides built-in RDFS subclass reasoning for a shape."@en ;
+	rdfs:domain sh:Shape ;
+	rdfs:range xsd:boolean ;
+	rdfs:isDefinedBy rsx: .
+
+rsx:includeInferredStatements
+	a rdf:Property ;
+	rdfs:label "include inferred statements"@en ;
+	rdfs:comment "Overrides inclusion of inferred statements during validation for a shape."@en ;
+	rdfs:domain sh:Shape ;
+	rdfs:range xsd:boolean ;
+	rdfs:isDefinedBy rsx: .
+
 
 rsx:dataGraph
 	a rdf:Property ;

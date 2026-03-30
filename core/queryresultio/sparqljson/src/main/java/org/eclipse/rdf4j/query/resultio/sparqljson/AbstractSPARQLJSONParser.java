@@ -564,10 +564,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			builder.configure(JsonReadFeature.ALLOW_TRAILING_COMMA,
 					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
-		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
-			builder.configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION,
-					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
-		}
+		builder.configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION,
+				getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		if (getParserConfig().isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
 			builder.configure(StreamReadFeature.STRICT_DUPLICATE_DETECTION,
 					getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));

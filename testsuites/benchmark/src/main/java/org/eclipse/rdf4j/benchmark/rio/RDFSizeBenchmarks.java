@@ -124,32 +124,33 @@ public class RDFSizeBenchmarks {
 	private static void reportSize(String dataset, InputStream is, String description, RDFFormat inputFormat,
 			RDFFormat outputFormat, WriterConfig writerConfig) throws IOException {
 
-		CountingOutputStream os = new CountingOutputStream(NULL_OUTPUT_STREAM);
-		RDFWriter writer = Rio.createWriter(outputFormat, os);
-		writer.setWriterConfig(writerConfig);
+		try (CountingOutputStream os = new CountingOutputStream(NULL_OUTPUT_STREAM)) {
+			RDFWriter writer = Rio.createWriter(outputFormat, os);
+			writer.setWriterConfig(writerConfig);
 
-		RDFParser parser = Rio.createParser(inputFormat);
-		parser.setRDFHandler(writer);
-		// Verification of datasets is disabled because of encoding issues in the input data and it's not a critical
-		// part of the benchmarking.
-		parser.setParserConfig(new ParserConfig()
-				.set(VERIFY_LANGUAGE_TAGS, false)
-				.set(VERIFY_RELATIVE_URIS, false)
-				.set(VERIFY_URI_SYNTAX, false));
+			RDFParser parser = Rio.createParser(inputFormat);
+			parser.setRDFHandler(writer);
+			// Verification of datasets is disabled because of encoding issues in the input data and it's not a critical
+			// part of the benchmarking.
+			parser.setParserConfig(new ParserConfig()
+					.set(VERIFY_LANGUAGE_TAGS, false)
+					.set(VERIFY_RELATIVE_URIS, false)
+					.set(VERIFY_URI_SYNTAX, false));
 
-		Instant start = Instant.now();
-		parser.parse(is);
-		Instant end = Instant.now();
-		Duration duration = Duration.between(start, end);
+			Instant start = Instant.now();
+			parser.parse(is);
+			Instant end = Instant.now();
+			Duration duration = Duration.between(start, end);
 
-		long size = os.getByteCount();
-		System.out.printf(
-				"%20s %8.2f MB in %-14s - %s%n",
-				dataset,
-				size / 1024 / 1024f,
-				duration,
-				description
-		);
+			long size = os.getByteCount();
+			System.out.printf(
+					"%20s %8.2f MB in %-14s - %s%n",
+					dataset,
+					size / 1024 / 1024f,
+					duration,
+					description
+			);
+		}
 	}
 
 }

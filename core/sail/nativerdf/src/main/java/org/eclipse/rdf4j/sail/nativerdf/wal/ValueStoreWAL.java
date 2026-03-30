@@ -135,6 +135,9 @@ public final class ValueStoreWAL implements AutoCloseable {
 		try {
 			directoryLock = lockChannel.tryLock();
 		} catch (IOException e) {
+			logger.error(
+					"Failed to acquire WAL directory lock {}. Another ValueStoreWAL may be active for this directory.",
+					lockFile.toAbsolutePath(), e);
 			lockChannel.close();
 			throw e;
 		}

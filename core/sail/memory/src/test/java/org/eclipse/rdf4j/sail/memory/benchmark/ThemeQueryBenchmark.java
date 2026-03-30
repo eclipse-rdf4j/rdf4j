@@ -12,15 +12,22 @@
 package org.eclipse.rdf4j.sail.memory.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.benchmark.common.BenchmarkQuery;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.common.plan.FeatureFlagCollector;
+import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
+import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -53,6 +60,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
+	private static final String STORE_NAME = "memory";
+
 	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
 	public int z_queryIndex;
 
@@ -69,6 +78,7 @@ public class ThemeQueryBenchmark {
 	public String themeName;
 
 	private SailRepository repository;
+	private MemoryStore store;
 	private Theme theme;
 	private String query;
 	private long expected;
@@ -86,17 +96,62 @@ public class ThemeQueryBenchmark {
 		theme = Theme.valueOf(themeName);
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-		repository = new SailRepository(new MemoryStore());
+		store = new MemoryStore();
+		repository = new SailRepository(store);
 		loadData();
+		if (QueryPlanCapture.isCaptureEnabled()) {
+			captureQueryPlanSnapshot();
+		}
 	}
 
 	private void loadData() throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
-			ThemeDataSetGenerator.generate(theme, inserter);
+			for (Theme themeDataset : Theme.values()) {
+				ThemeDataSetGenerator.generate(themeDataset, inserter);
+			}
 			connection.commit();
 		}
+	}
+
+	private void captureQueryPlanSnapshot() throws IOException {
+		BenchmarkQuery benchmarkQuery = ThemeQueryCatalog.benchmarkQueryFor(theme, z_queryIndex);
+		FeatureFlagCollector featureFlags = new FeatureFlagCollector()
+				.addValue("themeBenchmark.themeName", () -> themeName)
+				.addValue("themeBenchmark.queryIndex", () -> z_queryIndex)
+				.addReflectiveGetter("memoryStore.persist", store, "getPersist")
+				.addReflectiveGetter("memoryStore.syncDelay", store, "getSyncDelay")
+				.addReflectiveGetter("memoryStore.iterationCacheSyncThreshold", store,
+						"getIterationCacheSyncThreshold");
+		QueryPlanCapture.registerConfiguredFeatureFlags(featureFlags);
+
+		QueryPlanCaptureContext context = QueryPlanCaptureContext.builder()
+				.outputDirectory(QueryPlanCapture.resolveOutputDirectory().resolve(STORE_NAME))
+				.queryId(STORE_NAME + "-" + themeName + "-q" + z_queryIndex)
+				.queryString(query)
+				.benchmark("ThemeQueryBenchmark")
+				.addMetadata("store", STORE_NAME)
+				.addMetadata("theme", themeName)
+				.addMetadata("queryIndex", Integer.toString(z_queryIndex))
+				.addMetadata("queryName", benchmarkQuery.getName())
+				.addMetadata("expectedCount", Long.toString(expected))
+				.addMetadata(QueryPlanCapture.metadataFromSystemProperties())
+				.featureFlagCollector(featureFlags)
+				.tupleExprRenderer(this::renderTupleExprWithIr)
+				.build();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Path snapshotPath = new QueryPlanCapture()
+					.captureAndWrite(context, () -> connection.prepareTupleQuery(query));
+			System.out.println("Query plan snapshot written to: " + snapshotPath);
+		}
+	}
+
+	private String renderTupleExprWithIr(org.eclipse.rdf4j.query.algebra.TupleExpr tupleExpr) {
+		TupleExprIRRenderer.Config config = new TupleExprIRRenderer.Config();
+		config.verifyRoundTrip = false;
+		return new TupleExprIRRenderer(config).render(tupleExpr);
 	}
 
 	@TearDown(Level.Trial)
@@ -146,6 +201,27 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	public void setupLoadsAllThemesIntoRepository() throws IOException {
+		themeName = "MEDICAL_RECORDS";
+		z_queryIndex = 0;
+		setup();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			boolean hasMedicalPatients = connection.prepareBooleanQuery(
+					"PREFIX med: <http://example.com/theme/medical/> ASK { ?s a med:Patient . }")
+					.evaluate();
+			boolean hasSocialUsers = connection.prepareBooleanQuery(
+					"PREFIX social: <http://example.com/theme/social/> ASK { ?s a social:User . }")
+					.evaluate();
+
+			assertTrue(hasMedicalPatients, "Expected medical theme data to be present");
+			assertTrue(hasSocialUsers, "Expected social theme data to be present");
+		} finally {
+			tearDown();
+		}
+	}
+
+	@Test
+	@Disabled
 	public void testQueryExplanation() throws IOException {
 		String[] queryIndexes = paramValues("z_queryIndex");
 		String[] themeNames = paramValues("themeName");

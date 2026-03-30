@@ -55,3 +55,4 @@ e2e/test-results
 .m2_repo/
 .serena/
 .vscode
+/.codex/environments/environment.toml

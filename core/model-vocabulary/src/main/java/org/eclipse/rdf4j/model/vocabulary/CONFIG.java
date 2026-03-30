@@ -343,6 +343,12 @@ public class CONFIG {
 				"shacl.rdfsSubClassReasoning");
 
 		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.includeInferredStatements</code>
+		 */
+		public final static IRI includeInferredStatements = createIRI(NAMESPACE,
+				"shacl.includeInferredStatements");
+
+		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.performanceLogging</code>
 		 */
 		public final static IRI performanceLogging = createIRI(NAMESPACE, "shacl.performanceLogging");

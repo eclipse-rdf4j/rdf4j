@@ -44,7 +44,11 @@ public class CookieHandler {
 	}
 
 	public void updateCookies(final WorkbenchRequest req, final HttpServletResponse resp) {
-		for (String name : this.servlet.getCookieNames()) {
+		updateCookies(req, resp, this.servlet.getCookieNames());
+	}
+
+	public void updateCookies(final WorkbenchRequest req, final HttpServletResponse resp, String[] cookieNames) {
+		for (String name : cookieNames) {
 			if (req.isParameterPresent(name)) {
 				addCookie(req, resp, name);
 			}

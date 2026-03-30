@@ -27,12 +27,18 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -687,6 +693,21 @@ public class TupleExprIRRendererTest {
 		assertSameSparqlQuery(q, cfg(), false);
 	}
 
+	@Test
+	void having_detected_when_optimized_extension_wraps_filter() {
+		String q = "SELECT ?s (COUNT(?o) AS ?c) WHERE {\n" +
+				"  ?s ?p ?o .\n" +
+				"}\n" +
+				"GROUP BY ?s\n" +
+				"HAVING (COUNT(?o) >= 2)";
+
+		TupleExpr optimizedShape = liftInnerExtensionAboveHavingFilter(parseAlgebra(SPARQL_PREFIX + q));
+		String rendered = new TupleExprIRRenderer(cfg()).render(optimizedShape, null).trim();
+
+		assertThat(rendered).contains("HAVING");
+		assertThat(rendered).doesNotContain("_anon_having_");
+	}
+
 	// --- Subquery with aggregate and scope ---
 
 	@RepeatedTest(10)
@@ -701,6 +722,31 @@ public class TupleExprIRRendererTest {
 				"  }\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	private TupleExpr liftInnerExtensionAboveHavingFilter(TupleExpr tupleExpr) {
+		TupleExpr copy = tupleExpr.clone();
+		TupleExpr cur = copy;
+		if (cur instanceof QueryRoot) {
+			cur = ((QueryRoot) cur).getArg();
+		}
+
+		assertThat(cur).isInstanceOf(Projection.class);
+		Projection projection = (Projection) cur;
+		assertThat(projection.getArg()).isInstanceOf(Extension.class);
+		Extension outer = (Extension) projection.getArg();
+		assertThat(outer.getArg()).isInstanceOf(Filter.class);
+		Filter filter = (Filter) outer.getArg();
+		assertThat(filter.getArg()).isInstanceOf(Extension.class);
+		Extension inner = (Extension) filter.getArg();
+
+		filter.setArg(inner.getArg());
+		Extension lifted = new Extension(filter);
+		for (ExtensionElem elem : inner.getElements()) {
+			lifted.addElement(elem.clone());
+		}
+		outer.setArg(lifted);
+		return copy;
 	}
 
 	// --- GRAPH with IRI and variable ---

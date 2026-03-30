@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
  * @author Andreas Schwarte
  * @since 6.0
  */
+@Deprecated(forRemoval = true)
 public class HashJoin extends JoinExecutorBase<BindingSet> {
 
 	private final QueryEvaluationStep rightPrepared;

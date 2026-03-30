@@ -18,7 +18,11 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
@@ -127,6 +131,7 @@ public class ShaclSailFactoryTest {
 		config.setPerformanceLogging(!config.isPerformanceLogging());
 		config.setSerializableValidation(!config.isSerializableValidation());
 		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
+		config.setIncludeInferredStatements(!config.isIncludeInferredStatements());
 		config.setEclipseRdf4jShaclExtensions(!config.isEclipseRdf4jShaclExtensions());
 		config.setDashDataShapes(!config.isDashDataShapes());
 
@@ -136,6 +141,21 @@ public class ShaclSailFactoryTest {
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
 
+	}
+
+	@Test
+	public void getSailReadsIncludeInferredStatementsFromParsedConfig() {
+		ShaclSailFactory subject = new ShaclSailFactory();
+		ShaclSailConfig config = new ShaclSailConfig();
+		BNode implNode = SimpleValueFactory.getInstance().createBNode();
+		ModelBuilder mb = new ModelBuilder().subject(implNode);
+
+		mb.add(CONFIG.Shacl.includeInferredStatements, false);
+
+		config.parse(mb.build(), implNode);
+
+		ShaclSail sail = (ShaclSail) subject.getSail(config);
+		assertThat(sail.isIncludeInferredStatements()).isFalse();
 	}
 
 	private void assertMatchesConfig(ShaclSail sail, ShaclSailConfig config) {
@@ -148,6 +168,7 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
+		assertThat(sail.isIncludeInferredStatements()).isEqualTo(config.isIncludeInferredStatements());
 		assertThat(sail.isEclipseRdf4jShaclExtensions()).isEqualTo(config.isEclipseRdf4jShaclExtensions());
 		assertThat(sail.isDashDataShapes()).isEqualTo(config.isDashDataShapes());
 		assertThat(sail.getValidationResultsLimitTotal()).isEqualTo(config.getValidationResultsLimitTotal());

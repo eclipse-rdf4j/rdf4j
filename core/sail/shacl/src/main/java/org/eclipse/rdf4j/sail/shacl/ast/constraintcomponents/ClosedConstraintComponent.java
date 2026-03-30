@@ -163,7 +163,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						null, validationSettings.getDataGraph(),
 						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), (statement -> {
 							return !allAllowedPredicates.contains(statement.getPredicate());
-						}));
+						}), connectionsGroup.isIncludeInferredStatements());
 
 				addedByValue = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape,
@@ -259,7 +259,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 						null, validationSettings.getDataGraph(),
 						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), (statement -> {
 							return !allAllowedPredicates.contains(statement.getPredicate());
-						}));
+						}), connectionsGroup.isIncludeInferredStatements());
 
 				// then remove any that are in the addedTargets node
 				PlanNode notValuesIn = new ReduceTargets(unorderedSelect, addedTargets, connectionsGroup);
@@ -350,7 +350,8 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 					null, null,
 					null, dataGraph,
 					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
-					(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
+					(statement -> !allAllowedPredicates.contains(statement.getPredicate())),
+					connectionsGroup.isIncludeInferredStatements());
 
 			// then remove any that are in the targets node
 			statementsNotMatchingPredicateList = new ReduceTargets(statementsNotMatchingPredicateList,
@@ -367,7 +368,8 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 				PlanNode removed = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, null,
 						null, dataGraph,
 						UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope),
-						(statement -> !allAllowedPredicates.contains(statement.getPredicate())));
+						(statement -> !allAllowedPredicates.contains(statement.getPredicate())),
+						connectionsGroup.isIncludeInferredStatements());
 
 				removed = new ReduceTargets(removed, targets.getPlanNode(), connectionsGroup);
 
@@ -413,13 +415,13 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent imple
 					null, dataGraph,
 					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), (statement -> {
 						return !allAllowedPredicates.contains(statement.getPredicate());
-					}));
+					}), connectionsGroup.isIncludeInferredStatements());
 
 			PlanNode removedByValue = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, null,
 					null, dataGraph,
 					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), (statement -> {
 						return !allAllowedPredicates.contains(statement.getPredicate());
-					}));
+					}), connectionsGroup.isIncludeInferredStatements());
 
 			addedByValue = UnionNode.getInstance(connectionsGroup, addedByValue, removedByValue);
 

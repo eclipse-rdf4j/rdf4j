@@ -51,6 +51,9 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 
 	public void setArguments(List<ValueExpr> args) {
 		this.args = args;
+		for (ValueExpr arg : args) {
+			arg.setParentNode(this);
+		}
 	}
 
 	public List<ValueExpr> getArguments() {

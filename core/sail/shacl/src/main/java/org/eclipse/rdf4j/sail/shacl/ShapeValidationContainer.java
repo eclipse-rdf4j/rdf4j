@@ -36,16 +36,22 @@ class ShapeValidationContainer {
 	private final long effectiveValidationResultsLimitPerConstraint;
 	private final boolean performanceLogging;
 	private final Logger logger;
+	private final ConnectionsGroup connectionsGroup;
+	private final boolean closeConnectionsGroup;
 	private volatile CloseableIteration<? extends ValidationTuple> iterator;
+	private volatile boolean connectionsGroupClosed;
 
 	public ShapeValidationContainer(Shape shape, Supplier<PlanNode> planNodeSupplier, boolean logValidationExecution,
 			boolean logValidationViolations, long effectiveValidationResultsLimitPerConstraint,
-			boolean performanceLogging, boolean logValidationPlans, Logger logger, ConnectionsGroup connectionsGroup) {
+			boolean performanceLogging, boolean logValidationPlans, Logger logger, ConnectionsGroup connectionsGroup,
+			boolean closeConnectionsGroup) {
 		this.shape = shape;
 		this.logValidationViolations = logValidationViolations;
 		this.effectiveValidationResultsLimitPerConstraint = effectiveValidationResultsLimitPerConstraint;
 		this.performanceLogging = performanceLogging;
 		this.logger = logger;
+		this.connectionsGroup = connectionsGroup;
+		this.closeConnectionsGroup = closeConnectionsGroup;
 		try {
 			PlanNode planNode = planNodeSupplier.get();
 
@@ -108,6 +114,7 @@ class ShapeValidationContainer {
 				this.planNode = planNode;
 			}
 		} catch (Throwable e) {
+			closeConnectionsGroup("after plan construction failure");
 			logger.warn("Error processing SHACL Shape {}", shape.getId(), e);
 			logger.warn("Error processing SHACL Shape\n{}", shape, e);
 			if (e instanceof Error) {
@@ -123,7 +130,11 @@ class ShapeValidationContainer {
 	}
 
 	public boolean hasPlanNode() {
-		return !(planNode.isGuaranteedEmpty());
+		boolean hasPlanNode = !(planNode.isGuaranteedEmpty());
+		if (!hasPlanNode) {
+			closeConnectionsGroup("for guaranteed-empty plan");
+		}
+		return hasPlanNode;
 	}
 
 	public ValidationResultIterator performValidation() throws SailException {
@@ -154,8 +165,26 @@ class ShapeValidationContainer {
 			}
 		} finally {
 			this.iterator = null;
+			closeConnectionsGroup("after validation");
 		}
 
+	}
+
+	private void closeConnectionsGroup(String context) {
+		if (!closeConnectionsGroup || connectionsGroupClosed) {
+			return;
+		}
+		synchronized (this) {
+			if (connectionsGroupClosed) {
+				return;
+			}
+			connectionsGroupClosed = true;
+		}
+		try {
+			connectionsGroup.close();
+		} catch (Exception closeException) {
+			logger.debug("Error closing connections group {}", context, closeException);
+		}
 	}
 
 	private long getTimeStamp() {

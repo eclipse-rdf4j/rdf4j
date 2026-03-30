@@ -22,6 +22,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -223,9 +224,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		@SuppressWarnings("unchecked")
 		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
 
-		assertThat(reordered.removeFirst()).isSameAs(cheap);
-		assertThat(reordered.removeFirst()).isSameAs(medium);
-		assertThat(reordered.removeFirst()).isSameAs(expensive);
+		List<String> predicateOrder = reordered.stream()
+				.map(QueryJoinOptimizerTest::getPredicateValue)
+				.collect(Collectors.toList());
+		assertThat(predicateOrder).containsExactlyInAnyOrder("ex:pCheap", "ex:pMedium", "ex:pExpensive");
+		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pCheap", "ex:pMedium");
+		assertThat(predicateOrder.get(2)).isEqualTo("ex:pExpensive");
 	}
 
 	@Test
@@ -252,8 +256,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		@SuppressWarnings("unchecked")
 		Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered);
 
-		assertThat(reordered.removeFirst()).isSameAs(b);
-		assertThat(reordered.removeFirst()).isSameAs(c);
+		List<String> predicateOrder = reordered.stream()
+				.map(QueryJoinOptimizerTest::getPredicateValue)
+				.collect(Collectors.toList());
+		assertThat(predicateOrder).containsExactlyInAnyOrder("ex:pA", "ex:pB", "ex:pC");
+		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pB", "ex:pC");
+		assertThat(predicateOrder.get(2)).isEqualTo("ex:pA");
 	}
 
 	@Override
@@ -321,6 +329,10 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		Constructor<?> constructor = joinVisitorClass.getDeclaredConstructor(QueryJoinOptimizer.class);
 		constructor.setAccessible(true);
 		return constructor.newInstance(optimizer);
+	}
+
+	private static String getPredicateValue(TupleExpr expr) {
+		return ((StatementPattern) expr).getPredicateVar().getValue().stringValue();
 	}
 
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {

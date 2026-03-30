@@ -49,7 +49,8 @@ public class SimplePath extends Path {
 	public PlanNode getAllAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNodeWrapper planNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
-				dataGraph, UnorderedSelect.Mapper.SubjectObjectPropertyShapeMapper.getFunction(), null);
+				dataGraph, UnorderedSelect.Mapper.SubjectObjectPropertyShapeMapper.getFunction(), null,
+				connectionsGroup.isIncludeInferredStatements());
 
 		if (planNodeWrapper != null) {
 			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
@@ -97,8 +98,8 @@ public class SimplePath extends Path {
 									.map(currentStatement -> {
 										try (CloseableIteration<? extends Statement> statements = connectionsGroup
 												.getBaseConnection()
-												.getStatements(null, predicate, currentStatement.getSubject(), true,
-														dataGraph)) {
+												.getStatements(null, predicate, currentStatement.getSubject(),
+														connectionsGroup.isIncludeInferredStatements(), dataGraph)) {
 											return QueryResults.asList(statements);
 										}
 									})
@@ -112,8 +113,8 @@ public class SimplePath extends Path {
 									.map(currentStatement -> {
 										try (CloseableIteration<? extends Statement> statements = connectionsGroup
 												.getBaseConnection()
-												.getStatements(null, predicate, currentStatement.getObject(), true,
-														dataGraph)) {
+												.getStatements(null, predicate, currentStatement.getObject(),
+														connectionsGroup.isIncludeInferredStatements(), dataGraph)) {
 											return QueryResults.asList(statements);
 										}
 									})
