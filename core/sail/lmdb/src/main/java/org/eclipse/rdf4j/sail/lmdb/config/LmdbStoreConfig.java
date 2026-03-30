@@ -38,12 +38,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default value cache size.
 	 */
-	public static final int VALUE_CACHE_SIZE = 8192;
+	public static final int VALUE_CACHE_SIZE = 65536;
 
 	/**
 	 * The default value id cache size.
 	 */
-	public static final int VALUE_ID_CACHE_SIZE = 4096;
+	public static final int VALUE_ID_CACHE_SIZE = 32768;
 
 	/**
 	 * The default namespace cache size.
@@ -74,6 +74,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean autoGrow = true;
 
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
+
+	private boolean noReadAhead = false;
 
 	/*--------------*
 	 * Constructors *
@@ -190,6 +192,20 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean getNoReadAhead() {
+		return noReadAhead;
+	}
+
+	/**
+	 * Flag indicating whether OS readahead should be disabled (MDB_NORDAHEAD). Disabling readahead can improve
+	 * performance for random-access lookups on larger-than-RAM datasets by reducing page cache pollution. By default,
+	 * this feature is disabled (readahead is enabled).
+	 */
+	public LmdbStoreConfig setNoReadAhead(boolean noReadAhead) {
+		this.noReadAhead = noReadAhead;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -225,6 +241,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
+		}
+		if (noReadAhead) {
+			m.add(implNode, LmdbStoreSchema.NO_READ_AHEAD, vf.createLiteral(true));
 		}
 		return implNode;
 	}
@@ -330,6 +349,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.NO_READ_AHEAD, null)).ifPresent(lit -> {
+				try {
+					setNoReadAhead(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.NO_READ_AHEAD + " property, found "
+									+ lit);
+				}
+			});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

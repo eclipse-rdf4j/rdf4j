@@ -19,6 +19,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
@@ -26,6 +27,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.MDB_WRITEMAP;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -139,11 +141,14 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private final StampedLock revisionLock = new StampedLock();
 	/**
-	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
+	 * A 4-way set-associative cache containing the most-recently used values stored by their ID. Each set contains 4
+	 * slots; FIFO eviction within each set eliminates pathological collision eviction.
 	 */
+	private static final int CACHE_WAYS = 4;
 	private final LmdbValue[] valueCache;
 	private final long[] valueCacheId;
-	private final int valueCacheMask;
+	private final int setMask;
+	private final int[] cacheEvictIdx;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -217,6 +222,17 @@ class ValueStore extends AbstractValueFactory {
 	private Object[] previousNamespaceEntry;
 
 	private final long valueEvictionInterval;
+	private final boolean noReadAhead;
+
+	/**
+	 * Thread-local value cache to avoid CPU cache-line bouncing on the shared valueCache array under concurrent reads.
+	 */
+	private static final int TL_CACHE_SIZE = 256;
+	private static final int TL_CACHE_MASK = TL_CACHE_SIZE - 1;
+	private final ThreadLocal<LmdbValue[]> threadLocalValueCache = ThreadLocal.withInitial(
+			() -> new LmdbValue[TL_CACHE_SIZE]);
+	private final ThreadLocal<long[]> threadLocalValueCacheId = ThreadLocal.withInitial(
+			() -> new long[TL_CACHE_SIZE]);
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
@@ -224,12 +240,15 @@ class ValueStore extends AbstractValueFactory {
 		this.autoGrow = config.getAutoGrow();
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
+		this.noReadAhead = config.getNoReadAhead();
 		open();
 
-		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
-		valueCache = new LmdbValue[cacheSize];
-		valueCacheId = new long[cacheSize];
-		valueCacheMask = cacheSize - 1;
+		int numSets = nextPowerOfTwo(config.getValueCacheSize() / CACHE_WAYS);
+		int totalSlots = numSets * CACHE_WAYS;
+		valueCache = new LmdbValue[totalSlots];
+		valueCacheId = new long[totalSlots];
+		setMask = numSets - 1;
+		cacheEvictIdx = new int[numSets];
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -320,9 +339,12 @@ class ValueStore extends AbstractValueFactory {
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
-		int flags = MDB_NOTLS;
+		int flags = MDB_NOTLS | MDB_WRITEMAP;
 		if (!forceSync) {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
+		}
+		if (noReadAhead) {
+			flags |= MDB_NORDAHEAD;
 		}
 		E(mdb_env_open(env, dir.getAbsolutePath(), flags, 0664));
 
@@ -477,18 +499,17 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	LmdbValue cachedValue(long id) {
-		int idx = (int) (id & valueCacheMask);
+		int setBase = ((int) (id & setMask)) * CACHE_WAYS;
 
-		// Faster to read the long from an array than calling LmdbValue#getInternalID() on the value object. There may
-		// be race conditions, especially if the cache is small and has a high churn rate, but we can live with that
-		// since we anyway check the ID on the value object later on.
-		if (valueCacheId[idx] != id) {
-			return null;
-		}
-
-		LmdbValue value = valueCache[idx];
-		if (value != null && value.getInternalID() == id) {
-			return value;
+		// Check all 4 ways in the set. There may be race conditions, but we verify the ID on the value object.
+		for (int i = 0; i < CACHE_WAYS; i++) {
+			int idx = setBase + i;
+			if (valueCacheId[idx] == id) {
+				LmdbValue value = valueCache[idx];
+				if (value != null && value.getInternalID() == id) {
+					return value;
+				}
+			}
 		}
 		return null;
 	}
@@ -503,9 +524,14 @@ class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	void cacheValue(long id, LmdbValue value) {
-		int idx = (int) (id & valueCacheMask);
+		int setIndex = (int) (id & setMask);
+		int setBase = setIndex * CACHE_WAYS;
+		// FIFO eviction within the set
+		int evictSlot = cacheEvictIdx[setIndex];
+		int idx = setBase + evictSlot;
 		valueCacheId[idx] = id;
 		valueCache[idx] = value;
+		cacheEvictIdx[setIndex] = (evictSlot + 1) & (CACHE_WAYS - 1);
 	}
 
 	private static int nextPowerOfTwo(int n) {
@@ -524,6 +550,11 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
+		// Check cache first to avoid allocating a new lazy wrapper for frequently accessed values
+		LmdbValue cached = cachedValue(id);
+		if (cached != null) {
+			return cached;
+		}
 		switch ((byte) (id & 0x3)) {
 		case URI_VALUE:
 			return new LmdbIRI(lazyRevision, id);
@@ -544,12 +575,25 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getValue(long id) throws IOException {
-		// Optimistic: try cache first without lock (cache is designed for lock-free reads)
-		// Also verify revision matches to ensure MVCC safety
+		// Check thread-local cache first to avoid cache-line bouncing
+		long[] tlIds = threadLocalValueCacheId.get();
+		LmdbValue[] tlValues = threadLocalValueCache.get();
+		int tlIdx = (int) (id & TL_CACHE_MASK);
+		if (tlIds[tlIdx] == id) {
+			LmdbValue tlValue = tlValues[tlIdx];
+			if (tlValue != null && tlValue.getInternalID() == id) {
+				return tlValue;
+			}
+		}
+
+		// Optimistic: try shared cache without lock
 		LmdbValue resultValue = cachedValue(id);
 		if (resultValue != null
 				&& resultValue.getValueStoreRevision().getRevisionId() == revision.getRevisionId()) {
-			return resultValue; // Cache hit with valid revision - no lock needed
+			// Populate thread-local cache
+			tlIds[tlIdx] = id;
+			tlValues[tlIdx] = resultValue;
+			return resultValue;
 		}
 
 		// Cache miss or stale revision: acquire lock for database access
@@ -563,9 +607,15 @@ class ValueStore extends AbstractValueFactory {
 
 				if (data != null) {
 					resultValue = data2value(id, data, null);
-					// Store value in cache
+					// Store value in shared cache
 					cacheValue(id, resultValue);
 				}
+			}
+
+			if (resultValue != null) {
+				// Populate thread-local cache
+				tlIds[tlIdx] = id;
+				tlValues[tlIdx] = resultValue;
 			}
 
 			return resultValue;
@@ -582,10 +632,25 @@ class ValueStore extends AbstractValueFactory {
 	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
-		// Try to get from cache
+		// Check thread-local cache first
+		long[] tlIds = threadLocalValueCacheId.get();
+		LmdbValue[] tlValues = threadLocalValueCache.get();
+		int tlIdx = (int) (id & TL_CACHE_MASK);
+		if (tlIds[tlIdx] == id) {
+			LmdbValue tlValue = tlValues[tlIdx];
+			if (tlValue != null && tlValue.getInternalID() == id) {
+				value.setFromInitializedValue(tlValue);
+				return true;
+			}
+		}
+
+		// Try shared cache
 		LmdbValue cached = cachedValue(id);
 		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
 			value.setFromInitializedValue(cached);
+			// Populate thread-local cache
+			tlIds[tlIdx] = id;
+			tlValues[tlIdx] = cached;
 			return true;
 		}
 		try {
@@ -706,151 +771,155 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long findId(byte[] data, boolean create) throws IOException {
+		// Fast path: when write transaction is active, bypass readTransaction/writeTransaction wrappers
+		// to avoid txnLock acquisition and extra MemoryStack frames per call
+		if (writeTxn != 0) {
+			return findIdDirect(data, create, writeTxn);
+		}
 		Long id = readTransaction(env, (stack, txn) -> {
-			if (data.length <= MAX_KEY_SIZE) {
-				MDBVal dataVal = MDBVal.calloc(stack);
-				dataVal.mv_data(stack.bytes(data));
-				MDBVal idVal = MDBVal.calloc(stack);
-				if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+			return findIdInTxn(data, create, stack, txn);
+		});
+		return id != null ? id : LmdbValue.UNKNOWN_ID;
+	}
+
+	private long findIdDirect(byte[] data, boolean create, long txn) throws IOException {
+		txnLock.readLock().lock();
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			Long id = findIdInTxn(data, create, stack, txn);
+			return id != null ? id : LmdbValue.UNKNOWN_ID;
+		} finally {
+			txnLock.readLock().unlock();
+		}
+	}
+
+	private Long findIdInTxn(byte[] data, boolean create, MemoryStack stack, long txn) throws IOException {
+		if (data.length <= MAX_KEY_SIZE) {
+			MDBVal dataVal = MDBVal.calloc(stack);
+			dataVal.mv_data(stack.bytes(data));
+			MDBVal idVal = MDBVal.calloc(stack);
+			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+				return data2id(idVal.mv_data());
+			}
+			if (!create) {
+				return null;
+			}
+			// id was not found, create a new one
+			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+
+			long newId = nextId(data[0]);
+			// When writeTxn is active, txn IS writeTxn - use directly
+			idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+			E(mdb_put(txn, dbi, dataVal, idVal, 0));
+			E(mdb_put(txn, dbi, idVal, dataVal, 0));
+			incrementRefCount(stack, txn, data);
+			return newId;
+		} else {
+			MDBVal idVal = MDBVal.calloc(stack);
+
+			ByteBuffer dataBb = ByteBuffer.wrap(data);
+			long dataHash = hash(data);
+			int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
+			ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
+			hashBb.put(HASH_KEY);
+			Varint.writeUnsigned(hashBb, dataHash);
+			int hashLength = hashBb.position();
+			hashBb.flip();
+
+			MDBVal hashVal = MDBVal.calloc(stack);
+			hashVal.mv_data(hashBb);
+			MDBVal dataVal = MDBVal.calloc(stack);
+
+			// ID of first value is directly stored with hash as key
+			if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
+				idVal.mv_data(dataVal.mv_data());
+				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
 					return data2id(idVal.mv_data());
 				}
+			} else {
+				// no value for hash exists
 				if (!create) {
 					return null;
 				}
-				// id was not found, create a new one
+
 				resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
 				long newId = nextId(data[0]);
-				writeTransaction((stack2, writeTxn) -> {
-					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-
-					E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
-					E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
-
-					// update ref count if necessary
-					incrementRefCount(stack2, writeTxn, data);
-					return null;
-				});
-				return newId;
-			} else {
-				MDBVal idVal = MDBVal.calloc(stack);
-
-				ByteBuffer dataBb = ByteBuffer.wrap(data);
-				long dataHash = hash(data);
-				int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
-				ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
-				hashBb.put(HASH_KEY);
-				Varint.writeUnsigned(hashBb, dataHash);
-				int hashLength = hashBb.position();
-				hashBb.flip();
-
-				MDBVal hashVal = MDBVal.calloc(stack);
-				hashVal.mv_data(hashBb);
-				MDBVal dataVal = MDBVal.calloc(stack);
-
-				// ID of first value is directly stored with hash as key
-				if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
-					idVal.mv_data(dataVal.mv_data());
-					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
-						return data2id(idVal.mv_data());
-					}
-				} else {
-					// no value for hash exists
-					if (!create) {
-						return null;
-					}
-
-					resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
-
-					long newId = nextId(data[0]);
-					writeTransaction((stack2, writeTxn) -> {
-						dataVal.mv_size(data.length);
-						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-						// store mapping of hash -> ID
-						E(mdb_put(txn, dbi, hashVal, idVal, 0));
-						// store mapping of ID -> data
-						E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
-						dataVal.mv_data().put(data);
-
-						// update ref count if necessary
-						incrementRefCount(stack2, writeTxn, data);
-						return null;
-					});
-					return newId;
-				}
-
-				// test existing entries for hash key against given value
-				hashBb.put(0, HASHID_KEY);
-				hashVal.mv_data(hashBb);
-
-				long cursor = 0;
-				try {
-					PointerBuffer pp = stack.mallocPointer(1);
-					E(mdb_cursor_open(txn, dbi, pp));
-					cursor = pp.get(0);
-
-					// iterate all entries for hash value
-					if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
-						do {
-							if (compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) != 0) {
-								break;
-							}
-
-							// use only ID part of key for lookup of data
-							ByteBuffer hashIdBb = hashVal.mv_data();
-							hashIdBb.position(hashLength);
-							idVal.mv_data(hashIdBb);
-							if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
-									&& dataVal.mv_data().compareTo(dataBb) == 0) {
-								// id was found if stored value is equal to requested value
-								return data2id(hashIdBb);
-							}
-						} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
-					}
-				} finally {
-					if (cursor != 0) {
-						mdb_cursor_close(cursor);
-					}
-				}
-
-				if (!create) {
-					return null;
-				}
-
-				// id was not found, create a new one
-				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2L * data.length);
-
-				long newId = nextId(data[0]);
-				writeTransaction((stack2, writeTxn) -> {
-					// encode ID
-					ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
-					idVal.mv_data(idBb);
-
-					// encode hash and ID
-					hashBb.limit(hashBb.capacity());
-					hashBb.position(hashLength);
-					hashBb.put(idBb);
-					idBb.rewind();
-					hashBb.flip();
-					hashVal.mv_data(hashBb);
-
-					// store mapping of hash+ID -> []
-					dataVal.mv_data(stack.bytes());
-					E(mdb_put(txn, dbi, hashVal, dataVal, 0));
-
-					dataVal.mv_size(data.length);
-					// store mapping of ID -> data
-					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
-					dataVal.mv_data().put(data);
-
-					// update ref count if necessary
-					incrementRefCount(stack2, writeTxn, data);
-					return null;
-				});
+				dataVal.mv_size(data.length);
+				idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+				// store mapping of hash -> ID
+				E(mdb_put(txn, dbi, hashVal, idVal, 0));
+				// store mapping of ID -> data
+				E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+				dataVal.mv_data().put(data);
+				incrementRefCount(stack, txn, data);
 				return newId;
 			}
-		});
-		return id != null ? id : LmdbValue.UNKNOWN_ID;
+
+			// test existing entries for hash key against given value
+			hashBb.put(0, HASHID_KEY);
+			hashVal.mv_data(hashBb);
+
+			long cursor = 0;
+			try {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+
+				// iterate all entries for hash value
+				if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
+					do {
+						if (compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) != 0) {
+							break;
+						}
+
+						// use only ID part of key for lookup of data
+						ByteBuffer hashIdBb = hashVal.mv_data();
+						hashIdBb.position(hashLength);
+						idVal.mv_data(hashIdBb);
+						if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+								&& dataVal.mv_data().compareTo(dataBb) == 0) {
+							// id was found if stored value is equal to requested value
+							return data2id(hashIdBb);
+						}
+					} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+
+			if (!create) {
+				return null;
+			}
+
+			// id was not found, create a new one
+			resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2L * data.length);
+
+			long newId = nextId(data[0]);
+			// encode ID
+			ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
+			idVal.mv_data(idBb);
+
+			// encode hash and ID
+			hashBb.limit(hashBb.capacity());
+			hashBb.position(hashLength);
+			hashBb.put(idBb);
+			idBb.rewind();
+			hashBb.flip();
+			hashVal.mv_data(hashBb);
+
+			// store mapping of hash+ID -> []
+			dataVal.mv_data(stack.bytes());
+			E(mdb_put(txn, dbi, hashVal, dataVal, 0));
+
+			dataVal.mv_size(data.length);
+			// store mapping of ID -> data
+			E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+			dataVal.mv_data().put(data);
+			incrementRefCount(stack, txn, data);
+			return newId;
+		}
 	}
 
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
@@ -987,6 +1056,119 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		return LmdbValue.UNKNOWN_ID;
+	}
+
+	/**
+	 * Batch version of getId() that resolves multiple values with a single revisionLock acquisition. Pass 1 checks
+	 * caches lock-free; Pass 2 acquires one readLock for all remaining cache misses. If any non-null value resolves to
+	 * UNKNOWN_ID, returns early with that result.
+	 *
+	 * @param values The values to resolve (null entries are treated as UNKNOWN_ID).
+	 * @param ids    Output array that will be filled with the resolved IDs.
+	 * @return true if all non-null values were resolved, false if any resolved to UNKNOWN_ID.
+	 */
+	public boolean getIds(Value[] values, long[] ids) throws IOException {
+		boolean needsLock = false;
+
+		// Pass 1: resolve from caches without lock
+		for (int i = 0; i < values.length; i++) {
+			Value value = values[i];
+			if (value == null) {
+				ids[i] = LmdbValue.UNKNOWN_ID;
+				continue;
+			}
+
+			boolean isOwnValue = isOwnValue(value);
+			if (isOwnValue) {
+				LmdbValue lmdbValue = (LmdbValue) value;
+				if (revisionIsCurrent(lmdbValue)) {
+					long id = lmdbValue.getInternalID();
+					if (id != LmdbValue.UNKNOWN_ID) {
+						ids[i] = id;
+						continue;
+					}
+				}
+			}
+
+			Long cachedID = valueIDCache.get(value);
+			if (cachedID == null) {
+				cachedID = commonVocabulary.get(value);
+			}
+			if (cachedID != null) {
+				ids[i] = cachedID;
+				if (isOwnValue) {
+					((LmdbValue) value).setInternalID(cachedID, revision);
+				}
+				continue;
+			}
+
+			// Mark as needing database lookup
+			ids[i] = LmdbValue.UNKNOWN_ID;
+			needsLock = true;
+		}
+
+		if (!needsLock) {
+			return true;
+		}
+
+		// Pass 2: single lock acquisition for all cache misses
+		long stamp = revisionLock.readLock();
+		try {
+			for (int i = 0; i < values.length; i++) {
+				if (ids[i] != LmdbValue.UNKNOWN_ID || values[i] == null) {
+					continue;
+				}
+
+				Value value = values[i];
+				boolean isOwnValue = isOwnValue(value);
+
+				// Double-check cache
+				Long cachedID = valueIDCache.get(value);
+				if (cachedID == null) {
+					cachedID = commonVocabulary.get(value);
+				}
+				if (cachedID != null) {
+					ids[i] = cachedID;
+					if (isOwnValue) {
+						((LmdbValue) value).setInternalID(cachedID, revision);
+					}
+					continue;
+				}
+
+				// Database lookup
+				byte[] data = value2data(value, false);
+				if (data == null && value instanceof Literal) {
+					data = literal2legacy((Literal) value);
+				}
+
+				if (data != null) {
+					long id = findId(data, false);
+					if (id != LmdbValue.UNKNOWN_ID) {
+						ids[i] = id;
+						if (isOwnValue) {
+							((LmdbValue) value).setInternalID(id, revision);
+							valueIDCache.put((LmdbValue) value, id);
+						} else {
+							LmdbValue nv = getLmdbValue(value);
+							nv.setInternalID(id, revision);
+							if (nv.isIRI() && isCommonVocabulary(((IRI) nv))) {
+								commonVocabulary.put(value, id);
+							}
+							valueIDCache.put(nv, id);
+						}
+					} else {
+						// Value not found in store — early exit
+						return false;
+					}
+				} else {
+					// Could not convert value — early exit
+					return false;
+				}
+			}
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+		return true;
 	}
 
 	private static boolean isCommonVocabulary(IRI nv) {
@@ -1322,6 +1504,7 @@ class ValueStore extends AbstractValueFactory {
 	protected void clearCaches() {
 		Arrays.fill(valueCache, null);
 		Arrays.fill(valueCacheId, 0);
+		Arrays.fill(cacheEvictIdx, 0);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();

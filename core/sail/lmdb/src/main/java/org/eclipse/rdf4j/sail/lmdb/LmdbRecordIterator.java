@@ -24,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -91,6 +92,11 @@ class LmdbRecordIterator implements RecordIterator {
 	private int batchCounter = 0;
 	private long heldReadStamp = 0L;
 	private boolean lockHeld = false;
+
+	// Optimistic lock-free reads: when no writer is active, skip lock acquisition entirely.
+	// The AtomicInteger signals to closeInternal that a reader is actively using the cursor.
+	private final AtomicInteger optimisticReaderActive = new AtomicInteger(0);
+	private boolean optimisticBatch = false;
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
@@ -162,20 +168,40 @@ class LmdbRecordIterator implements RecordIterator {
 	@Override
 	public long[] next() {
 		// Acquire lock only when starting a new batch
-		if (!lockHeld) {
-			try {
-				heldReadStamp = txnLockManager.readLock();
-				lockHeld = true;
+		if (!lockHeld && !optimisticBatch) {
+			if (!txnLockManager.isWriterActive()) {
+				// Optimistic path: no writer active, skip lock acquisition
+				optimisticReaderActive.incrementAndGet();
+				optimisticBatch = true;
 				batchCounter = 0;
-			} catch (InterruptedException e) {
-				throw new SailException(e);
+				// Double-check: if closed or writer appeared after our signal, fall back to lock
+				if (closed || txnLockManager.isWriterActive()) {
+					optimisticReaderActive.decrementAndGet();
+					optimisticBatch = false;
+					// Fall through to locked path
+					try {
+						heldReadStamp = txnLockManager.readLock();
+						lockHeld = true;
+						batchCounter = 0;
+					} catch (InterruptedException e) {
+						throw new SailException(e);
+					}
+				}
+			} else {
+				try {
+					heldReadStamp = txnLockManager.readLock();
+					lockHeld = true;
+					batchCounter = 0;
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
 			}
 		}
 
 		try {
 			if (closed) {
 				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
-				releaseLockIfHeld();
+				releaseAnyHeldLock();
 				return null;
 			}
 
@@ -234,10 +260,10 @@ class LmdbRecordIterator implements RecordIterator {
 					// fetch next value
 					fetchNext = true;
 
-					// Increment batch counter and release lock if batch is complete
+					// Increment batch counter and release lock/signal if batch is complete
 					batchCounter++;
 					if (batchCounter >= LOCK_BATCH_SIZE) {
-						releaseLockIfHeld();
+						releaseAnyHeldLock();
 					}
 
 					return quad;
@@ -248,7 +274,7 @@ class LmdbRecordIterator implements RecordIterator {
 			return null;
 		} catch (Exception e) {
 			// On error, ensure lock is released
-			releaseLockIfHeld();
+			releaseAnyHeldLock();
 			throw e;
 		}
 	}
@@ -260,6 +286,21 @@ class LmdbRecordIterator implements RecordIterator {
 		if (lockHeld) {
 			txnLockManager.unlockRead(heldReadStamp);
 			lockHeld = false;
+			batchCounter = 0;
+		}
+	}
+
+	/**
+	 * Release any held lock or optimistic batch signal.
+	 */
+	private void releaseAnyHeldLock() {
+		if (lockHeld) {
+			txnLockManager.unlockRead(heldReadStamp);
+			lockHeld = false;
+			batchCounter = 0;
+		} else if (optimisticBatch) {
+			optimisticReaderActive.decrementAndGet();
+			optimisticBatch = false;
 			batchCounter = 0;
 		}
 	}
@@ -283,11 +324,15 @@ class LmdbRecordIterator implements RecordIterator {
 				} catch (InterruptedException e) {
 					throw new SailException(e);
 				}
+				// Wait for any optimistic reader to finish before closing the cursor
+				while (optimisticReaderActive.get() > 0) {
+					Thread.onSpinWait();
+				}
 			}
 			try {
 				if (!closed) {
-					// Release any held read lock before closing
-					releaseLockIfHeld();
+					// Release any held lock or optimistic signal before closing
+					releaseAnyHeldLock();
 
 					mdb_cursor_close(cursor);
 					pool.free(keyData);
