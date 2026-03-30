@@ -16,9 +16,27 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Locale;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class GenericPlanNodeTest {
+
+	private Locale defaultLocale;
+
+	@BeforeEach
+	void setUp() {
+		defaultLocale = Locale.getDefault();
+		// set EN local explicitly to avoid different number formatting across environment
+		Locale.setDefault(Locale.ENGLISH);
+	}
+
+	@AfterEach
+	void tearDown() {
+		Locale.setDefault(defaultLocale);
+	}
 
 	@Test
 	void toStringIncludesPopulatedTelemetryFields() {
