@@ -46,15 +46,21 @@ public final class QueryCircuitBreaker {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryCircuitBreaker.class);
 	private static final long DEFAULT_RECOVERY_COOLDOWN_MS = 1000;
+	private static final long DEFAULT_GC_MONITOR_POLL_MS = 250;
+	private static final long HIGH_MEMORY_GC_INTERVAL_MS = 5000;
+	private static final long CRITICAL_MEMORY_GC_INTERVAL_MS = 1000;
+	private static final String GC_MONITOR_THREAD_NAME = "rdf4j-query-breaker-gc-monitor";
 	private static final QueryCircuitBreaker INSTANCE = new QueryCircuitBreaker(new QueryPressureMonitor(),
 			Configuration::fromSystemProperties, System::currentTimeMillis, Thread::sleep,
-			DEFAULT_RECOVERY_COOLDOWN_MS);
+			System::gc, DEFAULT_RECOVERY_COOLDOWN_MS, DEFAULT_GC_MONITOR_POLL_MS, true);
 
 	private final QueryPressureMonitor pressureMonitor;
 	private final Supplier<Configuration> configurationSupplier;
 	private final LongSupplier clock;
 	private final Sleeper sleeper;
+	private final GcInvoker gcInvoker;
 	private final long recoveryCooldownMs;
+	private final long gcMonitorPollMs;
 	private final ConcurrentMap<String, QueryCircuitBreakerHandle> activeHandles = new ConcurrentHashMap<>();
 	private final AtomicLong handleSequence = new AtomicLong();
 	private final AtomicLong rejectCount = new AtomicLong();
@@ -63,6 +69,8 @@ public final class QueryCircuitBreaker {
 	private volatile QueryPressureState currentState = QueryPressureState.NORMAL;
 	private volatile Transition lastTransition = Transition.initial();
 	private volatile long lastCancelAt = Long.MIN_VALUE;
+	private volatile QueryPressureState lastMonitorMemoryState = QueryPressureState.NORMAL;
+	private volatile long lastMonitorGcAt = Long.MIN_VALUE;
 
 	public static QueryCircuitBreaker getInstance() {
 		return INSTANCE;
@@ -70,16 +78,28 @@ public final class QueryCircuitBreaker {
 
 	public QueryCircuitBreaker(QueryPressureMonitor pressureMonitor) {
 		this(pressureMonitor, Configuration::fromSystemProperties, System::currentTimeMillis, Thread::sleep,
-				DEFAULT_RECOVERY_COOLDOWN_MS);
+				System::gc, DEFAULT_RECOVERY_COOLDOWN_MS, DEFAULT_GC_MONITOR_POLL_MS, true);
 	}
 
 	QueryCircuitBreaker(QueryPressureMonitor pressureMonitor, Supplier<Configuration> configurationSupplier,
 			LongSupplier clock, Sleeper sleeper, long recoveryCooldownMs) {
+		this(pressureMonitor, configurationSupplier, clock, sleeper, System::gc, recoveryCooldownMs,
+				DEFAULT_GC_MONITOR_POLL_MS, false);
+	}
+
+	QueryCircuitBreaker(QueryPressureMonitor pressureMonitor, Supplier<Configuration> configurationSupplier,
+			LongSupplier clock, Sleeper sleeper, GcInvoker gcInvoker, long recoveryCooldownMs, long gcMonitorPollMs,
+			boolean startGcMonitorThread) {
 		this.pressureMonitor = Objects.requireNonNull(pressureMonitor, "Pressure monitor was null");
 		this.configurationSupplier = Objects.requireNonNull(configurationSupplier, "Configuration supplier was null");
 		this.clock = Objects.requireNonNull(clock, "Clock was null");
 		this.sleeper = Objects.requireNonNull(sleeper, "Sleeper was null");
+		this.gcInvoker = Objects.requireNonNull(gcInvoker, "GC invoker was null");
 		this.recoveryCooldownMs = recoveryCooldownMs;
+		this.gcMonitorPollMs = gcMonitorPollMs;
+		if (startGcMonitorThread) {
+			startGcMonitorThread();
+		}
 	}
 
 	public QueryCircuitBreakerHandle register(QueryCircuitBreakerHandle.Source source, String repositoryId,
@@ -118,14 +138,17 @@ public final class QueryCircuitBreaker {
 		}
 
 		if (state == QueryPressureState.WARN && configuration.getWarnAdmissionDelayMs() > 0) {
+			System.gc();
 			delay(configuration.getWarnAdmissionDelayMs(), configuration, false);
 		}
 
 		if (state.rejectsNewQueries()) {
 			rejectCount.incrementAndGet();
 			if (state == QueryPressureState.CRITICAL) {
+				System.gc();
 				cancelOneHeavyQueryIfNeeded(configuration, snapshot, "critical-admission");
 			}
+			System.gc();
 			throw CircuitBreakerException.rejected(state, configuration.getRetryAfterSeconds(),
 					buildPressureMessage("Query rejected by global memory circuit breaker", snapshot, state));
 		}
@@ -152,6 +175,7 @@ public final class QueryCircuitBreaker {
 		QueryPressureMonitor.Snapshot snapshot = pressureMonitor.sample();
 		QueryPressureState state = refreshState("checkpoint:" + operator, configuration, snapshot);
 		if (state == QueryPressureState.CRITICAL) {
+			System.gc();
 			cancelOneHeavyQueryIfNeeded(configuration, snapshot, "critical-checkpoint:" + operator);
 		}
 		if (handle.isCancelRequested()) {
@@ -231,20 +255,115 @@ public final class QueryCircuitBreaker {
 	}
 
 	private QueryPressureState determineState(Configuration configuration, QueryPressureMonitor.Snapshot snapshot) {
-		if (matches(snapshot, configuration.getCriticalGcMs(), configuration.getCriticalFreeMb())) {
+		QueryPressureState gcState = determineGcState(configuration, snapshot.getRollingGcMs());
+		QueryPressureState freeMemoryState = determineFreeMemoryState(configuration, snapshot.getFreeMemoryMb());
+		return max(freeMemoryState, capGcState(gcState, freeMemoryState));
+	}
+
+	void runGcMonitorCycle() {
+		Configuration configuration = configurationSupplier.get();
+		QueryPressureMonitor.Snapshot snapshot = pressureMonitor.sample();
+		refreshState("monitor", configuration, snapshot);
+
+		QueryPressureState freeMemoryState = configuration.isEnabled()
+				? determineFreeMemoryState(configuration, snapshot.getFreeMemoryMb())
+				: QueryPressureState.NORMAL;
+		if (freeMemoryState != lastMonitorMemoryState) {
+			lastMonitorMemoryState = freeMemoryState;
+			lastMonitorGcAt = Long.MIN_VALUE;
+		}
+
+		long intervalMs = gcMonitorIntervalMs(freeMemoryState);
+		if (intervalMs < 0) {
+			return;
+		}
+
+		long now = clock.getAsLong();
+		if (lastMonitorGcAt != Long.MIN_VALUE && now - lastMonitorGcAt < intervalMs) {
+			return;
+		}
+
+		lastMonitorGcAt = now;
+		LOGGER.info("Query circuit breaker requesting System.gc() monitorState={} freeMb={} rollingGcMs={}",
+				freeMemoryState, snapshot.getFreeMemoryMb(), snapshot.getRollingGcMs());
+		gcInvoker.runGc();
+	}
+
+	private void startGcMonitorThread() {
+		Thread gcMonitorThread = new Thread(this::runGcMonitorLoop, GC_MONITOR_THREAD_NAME);
+		gcMonitorThread.setDaemon(true);
+		gcMonitorThread.start();
+	}
+
+	private void runGcMonitorLoop() {
+		while (!Thread.currentThread().isInterrupted()) {
+			try {
+				runGcMonitorCycle();
+				Thread.sleep(gcMonitorPollMs);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
+			} catch (RuntimeException e) {
+				LOGGER.warn("Query circuit breaker GC monitor loop failed", e);
+			}
+		}
+	}
+
+	private long gcMonitorIntervalMs(QueryPressureState freeMemoryState) {
+		if (freeMemoryState == QueryPressureState.CRITICAL) {
+			return CRITICAL_MEMORY_GC_INTERVAL_MS;
+		}
+		if (freeMemoryState == QueryPressureState.HIGH) {
+			return HIGH_MEMORY_GC_INTERVAL_MS;
+		}
+		return -1;
+	}
+
+	private QueryPressureState determineGcState(Configuration configuration, int rollingGcMs) {
+		if (rollingGcMs >= configuration.getCriticalGcMs()) {
 			return QueryPressureState.CRITICAL;
 		}
-		if (matches(snapshot, configuration.getHighGcMs(), configuration.getHighFreeMb())) {
+		if (rollingGcMs >= configuration.getHighGcMs()) {
 			return QueryPressureState.HIGH;
 		}
-		if (matches(snapshot, configuration.getWarnGcMs(), configuration.getWarnFreeMb())) {
+		if (rollingGcMs >= configuration.getWarnGcMs()) {
 			return QueryPressureState.WARN;
 		}
 		return QueryPressureState.NORMAL;
 	}
 
-	private boolean matches(QueryPressureMonitor.Snapshot snapshot, int gcThresholdMs, int freeThresholdMb) {
-		return snapshot.getRollingGcMs() >= gcThresholdMs || snapshot.getFreeMemoryMb() <= freeThresholdMb;
+	private QueryPressureState determineFreeMemoryState(Configuration configuration, int freeMemoryMb) {
+		if (freeMemoryMb <= configuration.getCriticalFreeMb()) {
+			return QueryPressureState.CRITICAL;
+		}
+		if (freeMemoryMb <= configuration.getHighFreeMb()) {
+			return QueryPressureState.HIGH;
+		}
+		if (freeMemoryMb <= configuration.getWarnFreeMb()) {
+			return QueryPressureState.WARN;
+		}
+		return QueryPressureState.NORMAL;
+	}
+
+	private QueryPressureState capGcState(QueryPressureState gcState, QueryPressureState freeMemoryState) {
+		switch (freeMemoryState) {
+		case NORMAL:
+			return min(gcState, QueryPressureState.WARN);
+		case WARN:
+			return min(gcState, QueryPressureState.HIGH);
+		case HIGH:
+		case CRITICAL:
+		default:
+			return gcState;
+		}
+	}
+
+	private QueryPressureState min(QueryPressureState left, QueryPressureState right) {
+		return left.ordinal() <= right.ordinal() ? left : right;
+	}
+
+	private QueryPressureState max(QueryPressureState left, QueryPressureState right) {
+		return left.ordinal() >= right.ordinal() ? left : right;
 	}
 
 	private synchronized void cancelOneHeavyQueryIfNeeded(Configuration configuration,
@@ -310,6 +429,11 @@ public final class QueryCircuitBreaker {
 	@FunctionalInterface
 	interface Sleeper {
 		void sleep(long millis) throws InterruptedException;
+	}
+
+	@FunctionalInterface
+	interface GcInvoker {
+		void runGc();
 	}
 
 	public static final class CircuitBreakerException extends QueryInterruptedException {
@@ -518,13 +642,16 @@ public final class QueryCircuitBreaker {
 
 		static Configuration fromSystemProperties() {
 			return new Configuration(Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false")),
-					getIntProperty(WARN_GC_MS_PROPERTY, 100), getIntProperty(HIGH_GC_MS_PROPERTY, 200),
-					getIntProperty(CRITICAL_GC_MS_PROPERTY, 300), getIntProperty(WARN_FREE_MB_PROPERTY, 256),
-					getIntProperty(HIGH_FREE_MB_PROPERTY, 128), getIntProperty(CRITICAL_FREE_MB_PROPERTY, 64),
+					getIntProperty(WARN_GC_MS_PROPERTY, 100),
+					getIntProperty(HIGH_GC_MS_PROPERTY, 250),
+					getIntProperty(CRITICAL_GC_MS_PROPERTY, 400),
+					getIntProperty(WARN_FREE_MB_PROPERTY, 256),
+					getIntProperty(HIGH_FREE_MB_PROPERTY, 128),
+					getIntProperty(CRITICAL_FREE_MB_PROPERTY, 96),
 					getIntProperty(WARN_ADMISSION_DELAY_MS_PROPERTY, 50),
-					getIntProperty(CHECKPOINT_DELAY_MS_PROPERTY, 25),
-					getIntProperty(CANCEL_COOLDOWN_MS_PROPERTY, 5000),
-					getIntProperty(RETRY_AFTER_SECONDS_PROPERTY, 5));
+					getIntProperty(CHECKPOINT_DELAY_MS_PROPERTY, 10),
+					getIntProperty(CANCEL_COOLDOWN_MS_PROPERTY, 1000),
+					getIntProperty(RETRY_AFTER_SECONDS_PROPERTY, 3));
 		}
 
 		private static int getIntProperty(String propertyName, int defaultValue) {

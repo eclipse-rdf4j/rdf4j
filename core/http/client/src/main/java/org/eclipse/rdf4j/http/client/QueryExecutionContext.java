@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
  */
 public final class QueryExecutionContext {
 
+	private static final int CHECKPOINT_STRIDE = 16384;
+	private static final int CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1;
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
 
 	private QueryExecutionContext() {
@@ -57,9 +59,9 @@ public final class QueryExecutionContext {
 	}
 
 	public static void checkpoint(String operator) throws QueryInterruptedException {
-		QueryCircuitBreakerHandle handle = getHandle();
-		if (handle != null) {
-			QueryCircuitBreaker.getInstance().checkpoint(handle, operator);
+		State state = CURRENT.get();
+		if (state != null && state.shouldCheckpoint()) {
+			QueryCircuitBreaker.getInstance().checkpoint(state.handle, operator);
 		}
 	}
 
@@ -71,10 +73,15 @@ public final class QueryExecutionContext {
 	private static final class State {
 		private final QueryCircuitBreakerHandle handle;
 		private final State previous;
+		private int checkpointCalls;
 
 		private State(QueryCircuitBreakerHandle handle, State previous) {
 			this.handle = handle;
 			this.previous = previous;
+		}
+
+		private boolean shouldCheckpoint() {
+			return ((++checkpointCalls) & CHECKPOINT_MASK) == 0;
 		}
 	}
 }

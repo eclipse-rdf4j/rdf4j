@@ -31,7 +31,7 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	/**
 	 * The elements that have already been returned.
 	 */
-	private final Set<E> excludeSet;
+	private Set<E> excludeSet;
 
 	/*--------------*
 	 * Constructors *
@@ -80,8 +80,14 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	 */
 	@Override
 	protected boolean accept(E object) {
-		QueryExecutionContextBridge.markHeavy(OPERATOR_NAME);
-		QueryExecutionContextBridge.checkpoint(OPERATOR_NAME);
+		try {
+			QueryExecutionContextBridge.markHeavy(OPERATOR_NAME);
+			QueryExecutionContextBridge.checkpoint(OPERATOR_NAME);
+		}catch (Throwable t) {
+			excludeSet = null;
+			throw t;
+		}
+
 		if (inExcludeSet(object)) {
 			// object has already been returned
 			return false;
@@ -93,7 +99,7 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 
 	@Override
 	protected void handleClose() {
-
+		excludeSet = null;
 	}
 
 	/**
