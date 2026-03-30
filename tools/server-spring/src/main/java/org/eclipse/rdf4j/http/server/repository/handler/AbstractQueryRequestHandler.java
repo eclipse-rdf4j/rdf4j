@@ -317,8 +317,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	protected ModelAndView getModelAndView(
 			HttpServletRequest request, HttpServletResponse response,
 			boolean headersOnly, RepositoryConnection repositoryCon, View view, Object queryResult,
-			FileFormatServiceRegistry<? extends FileFormat, ?> registry,
-			QueryCircuitBreakerHandle breakerHandle
+			FileFormatServiceRegistry<? extends FileFormat, ?> registry
 	) throws ClientHTTPException {
 		Map<String, Object> model = new HashMap<>();
 		model.put(QueryResultView.FILENAME_HINT_KEY, "query-result");
@@ -326,9 +325,22 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		model.put(QueryResultView.FACTORY_KEY, ProtocolUtil.getAcceptableService(request, response, registry));
 		model.put(QueryResultView.HEADERS_ONLY, headersOnly);
 		model.put(QueryResultView.CONNECTION_KEY, repositoryCon);
-		model.put(QueryResultView.BREAKER_HANDLE_KEY, breakerHandle);
 
 		return new ModelAndView(view, model);
+	}
+
+	protected ModelAndView getModelAndView(
+			HttpServletRequest request, HttpServletResponse response,
+			boolean headersOnly, RepositoryConnection repositoryCon, View view, Object queryResult,
+			FileFormatServiceRegistry<? extends FileFormat, ?> registry,
+			QueryCircuitBreakerHandle breakerHandle
+	) throws ClientHTTPException {
+		ModelAndView modelAndView = getModelAndView(request, response, headersOnly, repositoryCon, view, queryResult,
+				registry);
+		if (breakerHandle != null) {
+			modelAndView.addObject(QueryResultView.BREAKER_HANDLE_KEY, breakerHandle);
+		}
+		return modelAndView;
 	}
 
 	private ServerHTTPException toServiceUnavailable(HttpServletResponse response, QueryInterruptedException exception,
