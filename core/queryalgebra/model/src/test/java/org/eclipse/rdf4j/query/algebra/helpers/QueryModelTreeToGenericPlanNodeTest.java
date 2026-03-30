@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.KindAwareVarProvider;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.WithVarProvider;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -189,6 +191,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
+	@WithVarProvider(KindAwareVarProvider.class)
 	public void skipsCartesianAnnotationForUnsupportedVarSubclass() {
 		Join join = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),

@@ -15,6 +15,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.util.Locale;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -47,6 +48,8 @@ public class LmdbSailStoreTest {
 
 	protected Repository repo;
 
+	private Locale defaultLocale;
+
 	protected final ValueFactory F = SimpleValueFactory.getInstance();
 
 	protected final IRI CTX_1 = F.createIRI("urn:one");
@@ -62,6 +65,8 @@ public class LmdbSailStoreTest {
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) {
+		defaultLocale = Locale.getDefault();
+		Locale.setDefault(Locale.ENGLISH);
 		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
 		repo.init();
 
@@ -258,5 +263,6 @@ public class LmdbSailStoreTest {
 	@AfterEach
 	public void after() {
 		repo.shutDown();
+		Locale.setDefault(defaultLocale);
 	}
 }

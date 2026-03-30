@@ -12,16 +12,34 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Locale;
+
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * Tests that cost estimates are printed as part of the plan
  */
 public class QueryCostEstimatesTest {
+
+	private Locale defaultLocale;
+
+	@BeforeEach
+	void setUp() {
+		defaultLocale = Locale.getDefault();
+		// set EN local explicitly to avoid different number formatting across environment
+		Locale.setDefault(Locale.ENGLISH);
+	}
+
+	@AfterEach
+	void tearDown() {
+		Locale.setDefault(defaultLocale);
+	}
 
 	@Test
 	public void testBindingSetAssignmentOptimization() throws RDF4JException {
