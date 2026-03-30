@@ -13,14 +13,18 @@ package org.eclipse.rdf4j.http.client;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
@@ -28,6 +32,63 @@ import org.junit.jupiter.api.Test;
 class QueryCircuitBreakerTest {
 
 	private static final Constructor<QueryCircuitBreaker.Configuration> CONFIGURATION_CONSTRUCTOR = configurationCtor();
+
+	@Test
+	void shouldStartBackgroundMonitorThreadForHighMemoryPressure() throws Exception {
+		PropertiesScope properties = new PropertiesScope()
+				.with(QueryCircuitBreaker.ENABLED_PROPERTY, "true")
+				.with(QueryCircuitBreaker.WARN_GC_MS_PROPERTY, "1000")
+				.with(QueryCircuitBreaker.HIGH_GC_MS_PROPERTY, "2000")
+				.with(QueryCircuitBreaker.CRITICAL_GC_MS_PROPERTY, "3000")
+				.with(QueryCircuitBreaker.WARN_FREE_MB_PROPERTY, "400")
+				.with(QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY, "300")
+				.with(QueryCircuitBreaker.CRITICAL_FREE_MB_PROPERTY, "200");
+		Set<Long> existingThreadIds = threadIds("rdf4j-query-breaker-gc-monitor");
+		Thread monitorThread = null;
+
+		try {
+			properties.apply();
+			AtomicLong freeMemoryMb = new AtomicLong(250);
+			QueryCircuitBreaker breaker = new QueryCircuitBreaker(
+					new QueryPressureMonitor(freeMemoryMb::get, System::currentTimeMillis, false));
+
+			monitorThread = waitForNewThread("rdf4j-query-breaker-gc-monitor", existingThreadIds, 2500);
+
+			assertNotNull(monitorThread);
+			assertTrue(monitorThread.isDaemon());
+			assertEquals(QueryPressureState.HIGH, waitForCurrentState(breaker, 2500));
+		} finally {
+			properties.restore();
+			if (monitorThread != null) {
+				monitorThread.interrupt();
+				monitorThread.join(1000);
+			}
+		}
+	}
+
+	@Test
+	void shouldThrottleExecutionContextCheckpointToEvery16384Calls() throws Exception {
+		PropertiesScope properties = new PropertiesScope().with(QueryCircuitBreaker.ENABLED_PROPERTY, "false");
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"checkpoint-throttle");
+
+		try {
+			properties.apply();
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(handle)) {
+				for (int i = 0; i < 16383; i++) {
+					QueryExecutionContext.checkpoint("JOIN");
+				}
+				assertEquals(-1L, handle.getLastHeavyCheckpointMillis());
+
+				QueryExecutionContext.checkpoint("JOIN");
+				assertTrue(handle.getLastHeavyCheckpointMillis() > 0);
+			}
+		} finally {
+			properties.restore();
+			breaker.complete(handle);
+		}
+	}
 
 	@Test
 	void shouldTransitionAcrossPressureLevelsUsingFreeMemoryThresholds() {
@@ -48,7 +109,7 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
-	void shouldEscalateFromGcPressureWithoutLowFreeMemory() {
+	void shouldRequireLowFreeMemoryBeforeEscalatingBeyondWarnFromGcPressure() {
 		Fixture fixture = new Fixture();
 		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
 				7), 1000);
@@ -58,11 +119,55 @@ class QueryCircuitBreakerTest {
 
 		fixture.clock.addAndGet(100);
 		fixture.monitor.recordGcPause(120);
+		assertEquals("WARN", breaker.snapshotStatus().getState());
+
+		fixture.freeMemoryMb.set(350);
 		assertEquals("HIGH", breaker.snapshotStatus().getState());
 
 		fixture.clock.addAndGet(100);
 		fixture.monitor.recordGcPause(120);
+		assertEquals("HIGH", breaker.snapshotStatus().getState());
+
+		fixture.freeMemoryMb.set(250);
 		assertEquals("CRITICAL", breaker.snapshotStatus().getState());
+	}
+
+	@Test
+	void shouldRunMonitorGcEveryFiveSecondsInHighMemoryMode() {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
+				7), 1000, () -> fixture.gcInvocations.add(fixture.clock.get()));
+
+		fixture.freeMemoryMb.set(250);
+		breaker.runGcMonitorCycle();
+		assertEquals(List.of(0L), fixture.gcInvocations);
+
+		fixture.clock.set(4999);
+		breaker.runGcMonitorCycle();
+		assertEquals(List.of(0L), fixture.gcInvocations);
+
+		fixture.clock.set(5000);
+		breaker.runGcMonitorCycle();
+		assertEquals(List.of(0L, 5000L), fixture.gcInvocations);
+	}
+
+	@Test
+	void shouldRunMonitorGcEverySecondInCriticalMemoryMode() {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
+				7), 1000, () -> fixture.gcInvocations.add(fixture.clock.get()));
+
+		fixture.freeMemoryMb.set(150);
+		breaker.runGcMonitorCycle();
+		assertEquals(List.of(0L), fixture.gcInvocations);
+
+		fixture.clock.set(999);
+		breaker.runGcMonitorCycle();
+		assertEquals(List.of(0L), fixture.gcInvocations);
+
+		fixture.clock.set(1000);
+		breaker.runGcMonitorCycle();
+		assertEquals(List.of(0L, 1000L), fixture.gcInvocations);
 	}
 
 	@Test
@@ -200,15 +305,89 @@ class QueryCircuitBreakerTest {
 		}
 	}
 
+	private static Set<Long> threadIds(String threadName) {
+		Set<Long> ids = new HashSet<>();
+		for (Thread thread : Thread.getAllStackTraces().keySet()) {
+			if (threadName.equals(thread.getName())) {
+				ids.add(thread.getId());
+			}
+		}
+		return ids;
+	}
+
+	private static Thread waitForNewThread(String threadName, Set<Long> existingThreadIds, long timeoutMs)
+			throws InterruptedException {
+		long deadline = System.currentTimeMillis() + timeoutMs;
+		while (System.currentTimeMillis() < deadline) {
+			for (Thread thread : Thread.getAllStackTraces().keySet()) {
+				if (threadName.equals(thread.getName()) && !existingThreadIds.contains(thread.getId())) {
+					return thread;
+				}
+			}
+			Thread.sleep(25);
+		}
+		return null;
+	}
+
+	private static QueryPressureState waitForCurrentState(QueryCircuitBreaker breaker, long timeoutMs)
+			throws Exception {
+		Field currentState = QueryCircuitBreaker.class.getDeclaredField("currentState");
+		currentState.setAccessible(true);
+		long deadline = System.currentTimeMillis() + timeoutMs;
+		QueryPressureState state = (QueryPressureState) currentState.get(breaker);
+		while (System.currentTimeMillis() < deadline && state == QueryPressureState.NORMAL) {
+			Thread.sleep(25);
+			state = (QueryPressureState) currentState.get(breaker);
+		}
+		return state;
+	}
+
+	private static final class PropertiesScope {
+		private final List<String> keys = new ArrayList<>();
+		private final List<String> previousValues = new ArrayList<>();
+		private final List<String> nextValues = new ArrayList<>();
+
+		private PropertiesScope with(String key, String value) {
+			keys.add(key);
+			previousValues.add(System.getProperty(key));
+			nextValues.add(value);
+			return this;
+		}
+
+		private void apply() {
+			for (int i = 0; i < keys.size(); i++) {
+				System.setProperty(keys.get(i), nextValues.get(i));
+			}
+		}
+
+		private void restore() {
+			for (int i = 0; i < keys.size(); i++) {
+				String previousValue = previousValues.get(i);
+				if (previousValue == null) {
+					System.clearProperty(keys.get(i));
+				} else {
+					System.setProperty(keys.get(i), previousValue);
+				}
+			}
+		}
+	}
+
 	private static final class Fixture {
 		private final AtomicLong clock = new AtomicLong();
 		private final AtomicLong freeMemoryMb = new AtomicLong(1024);
 		private final QueryPressureMonitor monitor = new QueryPressureMonitor(freeMemoryMb::get, clock::get, false);
+		private final List<Long> gcInvocations = new ArrayList<>();
 		private final List<Long> sleeps = new ArrayList<>();
 
 		private QueryCircuitBreaker breaker(QueryCircuitBreaker.Configuration configuration, long recoveryCooldownMs) {
 			return new QueryCircuitBreaker(monitor, () -> configuration, clock::get, sleeps::add,
 					recoveryCooldownMs);
+		}
+
+		private QueryCircuitBreaker breaker(QueryCircuitBreaker.Configuration configuration, long recoveryCooldownMs,
+				QueryCircuitBreaker.GcInvoker gcInvoker) {
+			return new QueryCircuitBreaker(monitor, () -> configuration, clock::get, sleeps::add, gcInvoker,
+					recoveryCooldownMs, 1, false);
 		}
 	}
 }

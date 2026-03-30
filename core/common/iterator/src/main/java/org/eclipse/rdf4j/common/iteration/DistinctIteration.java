@@ -80,8 +80,13 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	 */
 	@Override
 	protected boolean accept(E object) {
-		QueryExecutionContextBridge.markHeavy(OPERATOR_NAME);
-		QueryExecutionContextBridge.checkpoint(OPERATOR_NAME);
+		try {
+			QueryExecutionContextBridge.markHeavy(OPERATOR_NAME);
+			QueryExecutionContextBridge.checkpoint(OPERATOR_NAME);
+		}catch (Throwable t) {
+			excludeSet = null;
+			throw t;
+		}
 		return add(object);
 	}
 
@@ -89,6 +94,15 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	protected void handleClose() {
 		// help GC by removing link to set
 		excludeSet = null;
+		excludeSet = null;
+	}
+
+	/**
+	 * @param object
+	 * @return true if the object is in the excludeSet
+	 */
+	private boolean inExcludeSet(E object) {
+		return excludeSet.contains(object);
 	}
 
 	/**
