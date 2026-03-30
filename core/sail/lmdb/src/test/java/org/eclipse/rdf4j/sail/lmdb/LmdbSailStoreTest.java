@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -67,6 +68,8 @@ public class LmdbSailStoreTest {
 	protected Repository repo;
 	private File dataDir;
 
+	private Locale defaultLocale;
+
 	protected final ValueFactory F = SimpleValueFactory.getInstance();
 
 	protected final IRI CTX_1 = F.createIRI("urn:one");
@@ -82,6 +85,8 @@ public class LmdbSailStoreTest {
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) {
+		defaultLocale = Locale.getDefault();
+		Locale.setDefault(Locale.ENGLISH);
 		this.dataDir = dataDir;
 		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
 		repo.init();
@@ -433,6 +438,7 @@ public class LmdbSailStoreTest {
 			repo.shutDown();
 		} finally {
 			LmdbTestUtil.deleteDir(dataDir);
+			Locale.setDefault(defaultLocale);
 		}
 	}
 }
