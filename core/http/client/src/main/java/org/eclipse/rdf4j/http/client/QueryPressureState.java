@@ -20,7 +20,11 @@ public enum QueryPressureState {
 	HIGH,
 	CRITICAL;
 
-	public boolean rejectsNewQueries() {
+	public boolean throttlesRunningQueries() {
 		return this == HIGH || this == CRITICAL;
+	}
+
+	public boolean rejectsNewQueries() {
+		return throttlesRunningQueries();
 	}
 }

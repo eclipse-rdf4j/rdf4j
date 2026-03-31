@@ -118,20 +118,37 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
-	void shouldIgnoreCheckpointStrideOutsideNormalState() throws Exception {
-		Fixture fixture = new Fixture();
-		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 0,
-				7), 0);
+	void shouldIgnoreCheckpointStrideOnlyAtHighOrAbove() throws Exception {
+		PropertiesScope properties = new PropertiesScope()
+				.with(QueryCircuitBreaker.ENABLED_PROPERTY, "true")
+				.with(QueryCircuitBreaker.WARN_GC_MS_PROPERTY, Integer.toString(Integer.MAX_VALUE))
+				.with(QueryCircuitBreaker.HIGH_GC_MS_PROPERTY, Integer.toString(Integer.MAX_VALUE))
+				.with(QueryCircuitBreaker.CRITICAL_GC_MS_PROPERTY, Integer.toString(Integer.MAX_VALUE))
+				.with(QueryCircuitBreaker.WARN_FREE_MB_PROPERTY, Integer.toString(Integer.MAX_VALUE))
+				.with(QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY, "0")
+				.with(QueryCircuitBreaker.CRITICAL_FREE_MB_PROPERTY, "0")
+				.with(QueryCircuitBreaker.CHECKPOINT_DELAY_MS_PROPERTY, "0");
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"warn-checkpoint-stride");
 
-		retryAssertion(() -> assertFalse(readIgnoreCheckpointStride()));
+		try {
+			properties.apply();
+			resetCheckpointCalls();
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(handle)) {
+				for (int i = 0; i < 1023; i++) {
+					QueryExecutionContext.checkpoint("JOIN");
+				}
+				assertEquals(-1L, handle.getLastHeavyCheckpointMillis());
 
-		fixture.freeMemoryMb.set(350);
-		assertEquals("WARN", breaker.snapshotStatus().getState());
-		retryAssertion(() -> assertTrue(readIgnoreCheckpointStride()));
-
-		fixture.freeMemoryMb.set(1024);
-		assertEquals("NORMAL", breaker.snapshotStatus().getState());
-		retryAssertion(() -> assertFalse(readIgnoreCheckpointStride()));
+				QueryExecutionContext.checkpoint("JOIN");
+				assertTrue(handle.getLastHeavyCheckpointMillis() > 0);
+			}
+		} finally {
+			properties.restore();
+			breaker.complete(handle);
+			resetCheckpointCalls();
+		}
 	}
 
 	private static void retryAssertion(Runnable assertion) throws InterruptedException {
@@ -402,6 +419,12 @@ class QueryCircuitBreakerTest {
 		} catch (IllegalAccessException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	private static void resetCheckpointCalls() throws Exception {
+		Field field = QueryExecutionContext.class.getDeclaredField("checkpointCalls");
+		field.setAccessible(true);
+		field.setInt(null, 0);
 	}
 
 	private static Set<Long> threadIds(String threadName) {
