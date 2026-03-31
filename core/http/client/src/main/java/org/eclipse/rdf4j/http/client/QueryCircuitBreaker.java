@@ -138,7 +138,7 @@ public final class QueryCircuitBreaker {
 		}
 
 		if (state == QueryPressureState.WARN && configuration.getWarnAdmissionDelayMs() > 0) {
-			delay(configuration.getWarnAdmissionDelayMs(), configuration, false);
+			delay(configuration.getWarnAdmissionDelayMs(), state, configuration, false);
 		}
 
 		if (state.rejectsNewQueries()) {
@@ -180,8 +180,8 @@ public final class QueryCircuitBreaker {
 			throw CircuitBreakerException.cancelled(handle.getCancellationState(), configuration.getRetryAfterSeconds(),
 					handle.getCancellationReason());
 		}
-		if (state == QueryPressureState.WARN && configuration.getCheckpointDelayMs() > 0) {
-			delay(configuration.getCheckpointDelayMs(), configuration, true);
+		if (state.ordinal() >= QueryPressureState.HIGH.ordinal() && configuration.getCheckpointDelayMs() > 0) {
+			delay(configuration.getCheckpointDelayMs(), state, configuration, true);
 		}
 	}
 
@@ -224,13 +224,13 @@ public final class QueryCircuitBreaker {
 		return null;
 	}
 
-	private void delay(long delayMs, Configuration configuration, boolean checkpointDelay)
+	private void delay(long delayMs, QueryPressureState state, Configuration configuration, boolean checkpointDelay)
 			throws QueryInterruptedException {
 		try {
 			sleeper.sleep(delayMs);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw CircuitBreakerException.cancelled(QueryPressureState.WARN, configuration.getRetryAfterSeconds(),
+			throw CircuitBreakerException.cancelled(state, configuration.getRetryAfterSeconds(),
 					checkpointDelay ? "Query interrupted during breaker checkpoint delay"
 							: "Query interrupted during breaker admission delay",
 					e);
@@ -644,6 +644,8 @@ public final class QueryCircuitBreaker {
 	}
 
 	public static final class Configuration {
+		private static final long BYTES_PER_MB = 1024L * 1024L;
+
 		private final boolean enabled;
 		private final int warnGcMs;
 		private final int highGcMs;
@@ -677,13 +679,27 @@ public final class QueryCircuitBreaker {
 					getIntProperty(WARN_GC_MS_PROPERTY, 200),
 					getIntProperty(HIGH_GC_MS_PROPERTY, 400),
 					getIntProperty(CRITICAL_GC_MS_PROPERTY, 800),
-					getIntProperty(WARN_FREE_MB_PROPERTY, 256),
-					getIntProperty(HIGH_FREE_MB_PROPERTY, 128),
+					getIntProperty(WARN_FREE_MB_PROPERTY, defaultWarnFreeMb()),
+					getIntProperty(HIGH_FREE_MB_PROPERTY, defaultHighFreeMb()),
 					getIntProperty(CRITICAL_FREE_MB_PROPERTY, 96),
 					getIntProperty(WARN_ADMISSION_DELAY_MS_PROPERTY, 50),
 					getIntProperty(CHECKPOINT_DELAY_MS_PROPERTY, 1),
 					getIntProperty(CANCEL_COOLDOWN_MS_PROPERTY, 1000),
 					getIntProperty(RETRY_AFTER_SECONDS_PROPERTY, 3));
+		}
+
+		private static int defaultWarnFreeMb() {
+			return Math.max(256, percentOfMaxMemoryMb(2));
+		}
+
+		private static int defaultHighFreeMb() {
+			return Math.max(128, percentOfMaxMemoryMb(1));
+		}
+
+		private static int percentOfMaxMemoryMb(int percent) {
+			long scaledBytes = Runtime.getRuntime().maxMemory() * percent;
+			long divisor = 100L * BYTES_PER_MB;
+			return (int) ((scaledBytes + divisor - 1) / divisor);
 		}
 
 		private static int getIntProperty(String propertyName, int defaultValue) {
