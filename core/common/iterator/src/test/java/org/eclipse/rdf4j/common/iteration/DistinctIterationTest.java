@@ -40,4 +40,17 @@ class DistinctIterationTest {
 		assertTrue(QueryExecutionContext.getMarkHeavyCalls() > 0);
 		assertTrue(QueryExecutionContext.getCheckpointCalls() > 0);
 	}
+
+	@Test
+	void shouldAbortDistinctIterationWhenHeavyOperatorExecutionIsDisabled() {
+		QueryExecutionContext.disableHeavyOperatorExecution(new RuntimeException("critical-breaker-stop"));
+
+		DistinctIteration<Integer> iteration = new DistinctIteration<>(
+				new CloseableIteratorIteration<>(List.of(1, 2, 3).iterator()), java.util.HashSet::new);
+
+		RuntimeException exception = assertThrows(RuntimeException.class, iteration::hasNext);
+		assertEquals("critical-breaker-stop", exception.getMessage());
+		assertEquals(0, QueryExecutionContext.getMarkHeavyCalls());
+		assertEquals(0, QueryExecutionContext.getCheckpointCalls());
+	}
 }

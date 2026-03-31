@@ -81,9 +81,10 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	@Override
 	protected boolean accept(E object) {
 		try {
+			QueryExecutionContextBridge.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 			QueryExecutionContextBridge.markHeavy(OPERATOR_NAME);
 			QueryExecutionContextBridge.checkpoint(OPERATOR_NAME);
-		}catch (Throwable t) {
+		} catch (Throwable t) {
 			excludeSet = null;
 			throw t;
 		}
@@ -124,6 +125,7 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 		private static volatile boolean initialized;
 		private static volatile Method markHeavyMethod;
 		private static volatile Method checkpointMethod;
+		private static volatile Method throwIfHeavyOperatorExecutionDisabledMethod;
 
 		private QueryExecutionContextBridge() {
 		}
@@ -142,6 +144,15 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 			}
 		}
 
+		private static void throwIfHeavyOperatorExecutionDisabled(String operator) {
+			if (!initialized) {
+				initialize();
+			}
+			if (throwIfHeavyOperatorExecutionDisabledMethod != null) {
+				invoke(throwIfHeavyOperatorExecutionDisabledMethod, operator);
+			}
+		}
+
 		private static Method getMethod(boolean markHeavy) {
 			if (!initialized) {
 				initialize();
@@ -157,9 +168,12 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 				Class<?> contextType = Class.forName(QUERY_EXECUTION_CONTEXT_CLASS);
 				markHeavyMethod = contextType.getMethod("markHeavy", String.class);
 				checkpointMethod = contextType.getMethod("checkpoint", String.class);
+				throwIfHeavyOperatorExecutionDisabledMethod = contextType.getMethod(
+						"throwIfHeavyOperatorExecutionDisabled", String.class);
 			} catch (ClassNotFoundException | NoSuchMethodException e) {
 				markHeavyMethod = null;
 				checkpointMethod = null;
+				throwIfHeavyOperatorExecutionDisabledMethod = null;
 			}
 			initialized = true;
 		}

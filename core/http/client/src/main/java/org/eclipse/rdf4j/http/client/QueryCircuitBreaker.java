@@ -138,17 +138,15 @@ public final class QueryCircuitBreaker {
 		}
 
 		if (state == QueryPressureState.WARN && configuration.getWarnAdmissionDelayMs() > 0) {
-			System.gc();
 			delay(configuration.getWarnAdmissionDelayMs(), configuration, false);
 		}
 
 		if (state.rejectsNewQueries()) {
+			System.gc();
 			rejectCount.incrementAndGet();
 			if (state == QueryPressureState.CRITICAL) {
-				System.gc();
 				cancelOneHeavyQueryIfNeeded(configuration, snapshot, "critical-admission");
 			}
-			System.gc();
 			throw CircuitBreakerException.rejected(state, configuration.getRetryAfterSeconds(),
 					buildPressureMessage("Query rejected by global memory circuit breaker", snapshot, state));
 		}
@@ -213,6 +211,12 @@ public final class QueryCircuitBreaker {
 				transition.getTimestampMillis(), transition.getReason());
 	}
 
+	void refreshHeavyOperatorExecutionState() {
+		Configuration configuration = configurationSupplier.get();
+		QueryPressureMonitor.Snapshot snapshot = pressureMonitor.sample();
+		refreshState("activate", configuration, snapshot);
+	}
+
 	public static CircuitBreakerException asCircuitBreakerException(Throwable throwable) {
 		if (throwable instanceof CircuitBreakerException) {
 			return (CircuitBreakerException) throwable;
@@ -250,7 +254,11 @@ public final class QueryCircuitBreaker {
 			LOGGER.info(
 					"Query circuit breaker transition previous={} current={} freeMb={} rollingGcMs={} reason={}",
 					previous, next, snapshot.getFreeMemoryMb(), snapshot.getRollingGcMs(), reason);
+			if (currentState == QueryPressureState.HIGH || (currentState == QueryPressureState.WARN && determineFreeMemoryState(configuration, snapshot.getFreeMemoryMb()) == QueryPressureState.WARN)) {
+				System.gc();
+			}
 		}
+		QueryExecutionContext.setHeavyOperatorExecutionEnabled(currentState != QueryPressureState.CRITICAL);
 		return currentState;
 	}
 
@@ -402,6 +410,27 @@ public final class QueryCircuitBreaker {
 				candidate.getExecutionId(), candidate.getSource(), candidate.getRepositoryId(),
 				candidate.getQueryHash(),
 				candidate.getLastHeavyOperator(), reason);
+	}
+
+	void interruptForCriticalHeavyOperator(QueryCircuitBreakerHandle handle, String operator)
+			throws QueryInterruptedException {
+		if (handle == null) {
+			return;
+		}
+
+		Configuration configuration = configurationSupplier.get();
+		QueryPressureMonitor.Snapshot snapshot = pressureMonitor.sample();
+		handle.markHeavy(operator, clock.getAsLong());
+
+		String cancelReason = buildPressureMessage("Query cancelled by global memory circuit breaker", snapshot,
+				QueryPressureState.CRITICAL);
+		if (handle.requestCancel(QueryPressureState.CRITICAL, cancelReason)) {
+			cancelCount.incrementAndGet();
+		}
+
+		String effectiveReason = handle.getCancellationReason() != null ? handle.getCancellationReason() : cancelReason;
+		throw CircuitBreakerException.cancelled(handle.getCancellationState(), configuration.getRetryAfterSeconds(),
+				effectiveReason);
 	}
 
 	private String buildPressureMessage(String prefix, QueryPressureMonitor.Snapshot snapshot,
@@ -641,10 +670,10 @@ public final class QueryCircuitBreaker {
 		}
 
 		static Configuration fromSystemProperties() {
-			return new Configuration(Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false")),
-					getIntProperty(WARN_GC_MS_PROPERTY, 100),
-					getIntProperty(HIGH_GC_MS_PROPERTY, 250),
-					getIntProperty(CRITICAL_GC_MS_PROPERTY, 400),
+			return new Configuration(Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true")),
+					getIntProperty(WARN_GC_MS_PROPERTY, 200),
+					getIntProperty(HIGH_GC_MS_PROPERTY, 400),
+					getIntProperty(CRITICAL_GC_MS_PROPERTY, 800),
 					getIntProperty(WARN_FREE_MB_PROPERTY, 256),
 					getIntProperty(HIGH_FREE_MB_PROPERTY, 128),
 					getIntProperty(CRITICAL_FREE_MB_PROPERTY, 96),

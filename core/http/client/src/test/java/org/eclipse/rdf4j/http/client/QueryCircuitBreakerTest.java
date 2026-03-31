@@ -91,6 +91,23 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
+	void shouldDisableHeavyOperatorExecutionOnlyWhileCritical() throws Exception {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 0,
+				7), 0);
+
+		assertTrue(readHeavyOperatorExecutionEnabled());
+
+		fixture.freeMemoryMb.set(150);
+		assertEquals("CRITICAL", breaker.snapshotStatus().getState());
+		assertFalse(readHeavyOperatorExecutionEnabled());
+
+		fixture.freeMemoryMb.set(1024);
+		assertEquals("NORMAL", breaker.snapshotStatus().getState());
+		assertTrue(readHeavyOperatorExecutionEnabled());
+	}
+
+	@Test
 	void shouldTransitionAcrossPressureLevelsUsingFreeMemoryThresholds() {
 		Fixture fixture = new Fixture();
 		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
@@ -303,6 +320,12 @@ class QueryCircuitBreakerTest {
 		} catch (Exception e) {
 			throw new IllegalStateException("Unable to access query breaker configuration constructor", e);
 		}
+	}
+
+	private static boolean readHeavyOperatorExecutionEnabled() throws Exception {
+		Field field = QueryExecutionContext.class.getDeclaredField("heavyOperatorExecutionEnabled");
+		field.setAccessible(true);
+		return field.getBoolean(null);
 	}
 
 	private static Set<Long> threadIds(String threadName) {
