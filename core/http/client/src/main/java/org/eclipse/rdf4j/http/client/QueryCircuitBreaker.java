@@ -47,6 +47,9 @@ public final class QueryCircuitBreaker {
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryCircuitBreaker.class);
 	private static final long DEFAULT_RECOVERY_COOLDOWN_MS = 1000;
 	private static final long DEFAULT_GC_MONITOR_POLL_MS = 250;
+	private static final long CHECKPOINT_GC_BASE_INTERVAL_MS = 1000;
+	private static final int CHECKPOINT_GC_MAX_INTERVAL_STEPS = 10;
+	private static final long CHECKPOINT_GC_RESET_AFTER_MS = 30_000;
 	private static final long HIGH_MEMORY_GC_INTERVAL_MS = 5000;
 	private static final long CRITICAL_MEMORY_GC_INTERVAL_MS = 1000;
 	private static final long THROTTLE_WARNING_INTERVAL_MS = 60_000;
@@ -74,6 +77,8 @@ public final class QueryCircuitBreaker {
 	private volatile long lastCancelAt = Long.MIN_VALUE;
 	private volatile QueryPressureState lastMonitorMemoryState = QueryPressureState.NORMAL;
 	private volatile long lastMonitorGcAt = Long.MIN_VALUE;
+	private long lastCheckpointGcAt = Long.MIN_VALUE;
+	private int checkpointGcIntervalStep;
 
 	public static QueryCircuitBreaker getInstance() {
 		return INSTANCE;
@@ -180,15 +185,18 @@ public final class QueryCircuitBreaker {
 		QueryPressureMonitor.Snapshot snapshot = pressureMonitor.sample();
 		QueryPressureState state = refreshState("checkpoint:" + operator, configuration, snapshot);
 		warnAboutRunningQueryThrottlingIfNeeded(state, snapshot);
+		if (shouldRequestCheckpointGc(state, configuration, snapshot)) {
+			maybeRunCheckpointGc();
+		}
 		if (state == QueryPressureState.CRITICAL) {
-			System.gc();
 			cancelOneHeavyQueryIfNeeded(configuration, snapshot, "critical-checkpoint:" + operator);
 		}
 		if (handle.isCancelRequested()) {
 			throw CircuitBreakerException.cancelled(handle.getCancellationState(), configuration.getRetryAfterSeconds(),
 					handle.getCancellationReason());
 		}
-		if (state.throttlesRunningQueries() && configuration.getCheckpointDelayMs() > 0 && (throttleCount++)%256==0) {
+		if (state.throttlesRunningQueries() && configuration.getCheckpointDelayMs() > 0
+				&& (throttleCount++) % 256 == 0) {
 			delay(configuration.getCheckpointDelayMs(), state, configuration, true);
 		}
 	}
@@ -262,9 +270,7 @@ public final class QueryCircuitBreaker {
 			LOGGER.info(
 					"Query circuit breaker transition previous={} current={} freeMb={} rollingGcMs={} reason={}",
 					previous, next, snapshot.getFreeMemoryMb(), snapshot.getRollingGcMs(), reason);
-			if (currentState == QueryPressureState.HIGH
-					|| (currentState == QueryPressureState.WARN && determineFreeMemoryState(configuration,
-							snapshot.getFreeMemoryMb()) == QueryPressureState.WARN)) {
+			if (!isCheckpointReason(reason) && shouldRequestTransitionGc(currentState, configuration, snapshot)) {
 				System.gc();
 			}
 		}
@@ -303,6 +309,48 @@ public final class QueryCircuitBreaker {
 	private boolean throttlesNewQueriesAtEntry(QueryPressureState state, Configuration configuration) {
 		return (state == QueryPressureState.WARN && configuration.getWarnAdmissionDelayMs() > 0)
 				|| state.rejectsNewQueries();
+	}
+
+	private boolean isCheckpointReason(String reason) {
+		return reason.startsWith("checkpoint:");
+	}
+
+	private boolean shouldRequestTransitionGc(QueryPressureState state, Configuration configuration,
+			QueryPressureMonitor.Snapshot snapshot) {
+		return state == QueryPressureState.HIGH
+				|| (state == QueryPressureState.WARN
+						&& determineFreeMemoryState(configuration,
+								snapshot.getFreeMemoryMb()) == QueryPressureState.WARN);
+	}
+
+	private boolean shouldRequestCheckpointGc(QueryPressureState state, Configuration configuration,
+			QueryPressureMonitor.Snapshot snapshot) {
+		return state == QueryPressureState.CRITICAL || shouldRequestTransitionGc(state, configuration, snapshot);
+	}
+
+	private void maybeRunCheckpointGc() {
+		long now = clock.getAsLong();
+		if (!shouldRunCheckpointGc(now)) {
+			return;
+		}
+		gcInvoker.runGc();
+	}
+
+	private synchronized boolean shouldRunCheckpointGc(long now) {
+		if (lastCheckpointGcAt == Long.MIN_VALUE || now - lastCheckpointGcAt > CHECKPOINT_GC_RESET_AFTER_MS) {
+			lastCheckpointGcAt = now;
+			checkpointGcIntervalStep = 1;
+			return true;
+		}
+
+		long requiredDelayMs = checkpointGcIntervalStep * CHECKPOINT_GC_BASE_INTERVAL_MS;
+		if (now - lastCheckpointGcAt < requiredDelayMs) {
+			return false;
+		}
+
+		lastCheckpointGcAt = now;
+		checkpointGcIntervalStep = Math.min(checkpointGcIntervalStep + 1, CHECKPOINT_GC_MAX_INTERVAL_STEPS);
+		return true;
 	}
 
 	private boolean shouldLogThrottleWarning(AtomicLong lastWarningAt) {
@@ -728,7 +776,7 @@ public final class QueryCircuitBreaker {
 		}
 
 		static Configuration fromSystemProperties() {
-			return new Configuration(Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true")),
+			return new Configuration(Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false")),
 					getIntProperty(WARN_GC_MS_PROPERTY, 400),
 					getIntProperty(HIGH_GC_MS_PROPERTY, 600),
 					getIntProperty(CRITICAL_GC_MS_PROPERTY, 800),

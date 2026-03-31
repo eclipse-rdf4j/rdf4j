@@ -247,6 +247,53 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
+	void shouldBackOffCheckpointGcRequestsAndResetAfterLongPause() {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 0, 1000,
+				7), 0, () -> fixture.gcInvocations.add(fixture.clock.get()));
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"checkpoint-gc-backoff");
+
+		fixture.freeMemoryMb.set(250);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L), fixture.gcInvocations);
+
+		fixture.clock.set(999);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L), fixture.gcInvocations);
+
+		fixture.clock.set(1000);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L, 1000L), fixture.gcInvocations);
+
+		fixture.clock.set(2999);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L, 1000L), fixture.gcInvocations);
+
+		fixture.clock.set(3000);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L, 1000L, 3000L), fixture.gcInvocations);
+
+		fixture.clock.set(6000);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L, 1000L, 3000L, 6000L), fixture.gcInvocations);
+
+		fixture.clock.set(36001);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L, 1000L, 3000L, 6000L, 36001L), fixture.gcInvocations);
+
+		fixture.clock.set(37000);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L, 1000L, 3000L, 6000L, 36001L), fixture.gcInvocations);
+
+		fixture.clock.set(37001);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(0L, 1000L, 3000L, 6000L, 36001L, 37001L), fixture.gcInvocations);
+
+		breaker.complete(handle);
+	}
+
+	@Test
 	void shouldHoldCriticalStateUntilRecoveryCooldownExpires() {
 		Fixture fixture = new Fixture();
 		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
