@@ -20,9 +20,9 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
  */
 public final class QueryExecutionContext {
 
-	private static final int CHECKPOINT_STRIDE_DEFAULT = 1024;
-	private static int CHECKPOINT_STRIDE = CHECKPOINT_STRIDE_DEFAULT;
-	private static int CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1;
+	private static boolean ignoreCheckpointStride = false;
+	private static final int CHECKPOINT_STRIDE = 1024;
+	private static final int CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1;
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
 	private static boolean heavyOperatorExecutionEnabled = true;
 	private static int checkpointCalls;
@@ -96,6 +96,7 @@ public final class QueryExecutionContext {
 	}
 
 	private static boolean shouldCheckpoint() {
+		if(ignoreCheckpointStride) return true;
 		return ((++checkpointCalls) & CHECKPOINT_MASK) == 0;
 	}
 
