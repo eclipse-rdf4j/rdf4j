@@ -77,7 +77,7 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
-	void shouldThrottleExecutionContextCheckpointToEvery16384Calls() throws Exception {
+	void shouldThrottleExecutionContextCheckpointToEvery1024Calls() throws Exception {
 		PropertiesScope properties = new PropertiesScope().with(QueryCircuitBreaker.ENABLED_PROPERTY, "false");
 		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
 		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
@@ -86,7 +86,7 @@ class QueryCircuitBreakerTest {
 		try {
 			properties.apply();
 			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(handle)) {
-				for (int i = 0; i < 16383; i++) {
+				for (int i = 0; i < 1023; i++) {
 					QueryExecutionContext.checkpoint("JOIN");
 				}
 				assertEquals(-1L, handle.getLastHeavyCheckpointMillis());
