@@ -49,6 +49,7 @@ public final class QueryCircuitBreaker {
 	private static final long DEFAULT_GC_MONITOR_POLL_MS = 250;
 	private static final long HIGH_MEMORY_GC_INTERVAL_MS = 5000;
 	private static final long CRITICAL_MEMORY_GC_INTERVAL_MS = 1000;
+	private static final long THROTTLE_WARNING_INTERVAL_MS = 60_000;
 	private static final String GC_MONITOR_THREAD_NAME = "rdf4j-query-breaker-gc-monitor";
 	private static final QueryCircuitBreaker INSTANCE = new QueryCircuitBreaker(new QueryPressureMonitor(),
 			Configuration::fromSystemProperties, System::currentTimeMillis, Thread::sleep,
@@ -65,6 +66,8 @@ public final class QueryCircuitBreaker {
 	private final AtomicLong handleSequence = new AtomicLong();
 	private final AtomicLong rejectCount = new AtomicLong();
 	private final AtomicLong cancelCount = new AtomicLong();
+	private final AtomicLong lastEntryThrottleWarningAt = new AtomicLong(Long.MIN_VALUE);
+	private final AtomicLong lastRunningThrottleWarningAt = new AtomicLong(Long.MIN_VALUE);
 
 	private volatile QueryPressureState currentState = QueryPressureState.NORMAL;
 	private volatile Transition lastTransition = Transition.initial();
@@ -137,6 +140,8 @@ public final class QueryCircuitBreaker {
 			return;
 		}
 
+		warnAboutNewQueryThrottlingIfNeeded(state, configuration, snapshot);
+
 		if (state == QueryPressureState.WARN && configuration.getWarnAdmissionDelayMs() > 0) {
 			delay(configuration.getWarnAdmissionDelayMs(), state, configuration, false);
 		}
@@ -159,6 +164,8 @@ public final class QueryCircuitBreaker {
 		handle.markHeavy(operator, clock.getAsLong());
 	}
 
+	int throttleCount = 0;
+
 	public void checkpoint(QueryCircuitBreakerHandle handle, String operator) throws QueryInterruptedException {
 		if (handle == null) {
 			return;
@@ -172,6 +179,7 @@ public final class QueryCircuitBreaker {
 
 		QueryPressureMonitor.Snapshot snapshot = pressureMonitor.sample();
 		QueryPressureState state = refreshState("checkpoint:" + operator, configuration, snapshot);
+		warnAboutRunningQueryThrottlingIfNeeded(state, snapshot);
 		if (state == QueryPressureState.CRITICAL) {
 			System.gc();
 			cancelOneHeavyQueryIfNeeded(configuration, snapshot, "critical-checkpoint:" + operator);
@@ -180,7 +188,7 @@ public final class QueryCircuitBreaker {
 			throw CircuitBreakerException.cancelled(handle.getCancellationState(), configuration.getRetryAfterSeconds(),
 					handle.getCancellationReason());
 		}
-		if (state.ordinal() >= QueryPressureState.HIGH.ordinal() && configuration.getCheckpointDelayMs() > 0) {
+		if (state.throttlesRunningQueries() && configuration.getCheckpointDelayMs() > 0 && (throttleCount++)%256==0) {
 			delay(configuration.getCheckpointDelayMs(), state, configuration, true);
 		}
 	}
@@ -260,9 +268,54 @@ public final class QueryCircuitBreaker {
 				System.gc();
 			}
 		}
-		QueryExecutionContext.setIgnoreCheckpointStride(currentState != QueryPressureState.NORMAL);
+		if (!throttlesNewQueriesAtEntry(currentState, configuration)) {
+			lastEntryThrottleWarningAt.set(Long.MIN_VALUE);
+		}
+		if (!currentState.throttlesRunningQueries()) {
+			lastRunningThrottleWarningAt.set(Long.MIN_VALUE);
+		}
+		QueryExecutionContext.setIgnoreCheckpointStride(currentState.throttlesRunningQueries());
 		QueryExecutionContext.setHeavyOperatorExecutionEnabled(currentState != QueryPressureState.CRITICAL);
 		return currentState;
+	}
+
+	private void warnAboutNewQueryThrottlingIfNeeded(QueryPressureState state, Configuration configuration,
+			QueryPressureMonitor.Snapshot snapshot) {
+		if (!throttlesNewQueriesAtEntry(state, configuration)
+				|| !shouldLogThrottleWarning(lastEntryThrottleWarningAt)) {
+			return;
+		}
+		LOGGER.warn(
+				"Query circuit breaker is throttling new queries at entry state={} action={} freeMb={} rollingGcMs={}",
+				state, state.rejectsNewQueries() ? "reject" : "delay", snapshot.getFreeMemoryMb(),
+				snapshot.getRollingGcMs());
+	}
+
+	private void warnAboutRunningQueryThrottlingIfNeeded(QueryPressureState state,
+			QueryPressureMonitor.Snapshot snapshot) {
+		if (!state.throttlesRunningQueries() || !shouldLogThrottleWarning(lastRunningThrottleWarningAt)) {
+			return;
+		}
+		LOGGER.warn("Query circuit breaker is throttling running queries state={} freeMb={} rollingGcMs={}", state,
+				snapshot.getFreeMemoryMb(), snapshot.getRollingGcMs());
+	}
+
+	private boolean throttlesNewQueriesAtEntry(QueryPressureState state, Configuration configuration) {
+		return (state == QueryPressureState.WARN && configuration.getWarnAdmissionDelayMs() > 0)
+				|| state.rejectsNewQueries();
+	}
+
+	private boolean shouldLogThrottleWarning(AtomicLong lastWarningAt) {
+		long now = clock.getAsLong();
+		while (true) {
+			long previous = lastWarningAt.get();
+			if (previous != Long.MIN_VALUE && now - previous < THROTTLE_WARNING_INTERVAL_MS) {
+				return false;
+			}
+			if (lastWarningAt.compareAndSet(previous, now)) {
+				return true;
+			}
+		}
 	}
 
 	private QueryPressureState determineState(Configuration configuration, QueryPressureMonitor.Snapshot snapshot) {
@@ -676,8 +729,8 @@ public final class QueryCircuitBreaker {
 
 		static Configuration fromSystemProperties() {
 			return new Configuration(Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true")),
-					getIntProperty(WARN_GC_MS_PROPERTY, 200),
-					getIntProperty(HIGH_GC_MS_PROPERTY, 400),
+					getIntProperty(WARN_GC_MS_PROPERTY, 400),
+					getIntProperty(HIGH_GC_MS_PROPERTY, 600),
 					getIntProperty(CRITICAL_GC_MS_PROPERTY, 800),
 					getIntProperty(WARN_FREE_MB_PROPERTY, defaultWarnFreeMb()),
 					getIntProperty(HIGH_FREE_MB_PROPERTY, defaultHighFreeMb()),
