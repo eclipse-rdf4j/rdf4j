@@ -89,6 +89,10 @@ public final class QueryExecutionContext {
 		QueryExecutionContext.heavyOperatorExecutionEnabled = heavyOperatorExecutionEnabled;
 	}
 
+	static void setIgnoreCheckpointStride(boolean ignoreCheckpointStride) {
+		QueryExecutionContext.ignoreCheckpointStride = ignoreCheckpointStride;
+	}
+
 	public interface Activation extends AutoCloseable {
 		@Override
 		void close();

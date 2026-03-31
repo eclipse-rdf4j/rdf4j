@@ -108,6 +108,23 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
+	void shouldIgnoreCheckpointStrideOutsideNormalState() throws Exception {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 0,
+				7), 0);
+
+		assertFalse(readIgnoreCheckpointStride());
+
+		fixture.freeMemoryMb.set(350);
+		assertEquals("WARN", breaker.snapshotStatus().getState());
+		assertTrue(readIgnoreCheckpointStride());
+
+		fixture.freeMemoryMb.set(1024);
+		assertEquals("NORMAL", breaker.snapshotStatus().getState());
+		assertFalse(readIgnoreCheckpointStride());
+	}
+
+	@Test
 	void shouldTransitionAcrossPressureLevelsUsingFreeMemoryThresholds() {
 		Fixture fixture = new Fixture();
 		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
@@ -324,6 +341,12 @@ class QueryCircuitBreakerTest {
 
 	private static boolean readHeavyOperatorExecutionEnabled() throws Exception {
 		Field field = QueryExecutionContext.class.getDeclaredField("heavyOperatorExecutionEnabled");
+		field.setAccessible(true);
+		return field.getBoolean(null);
+	}
+
+	private static boolean readIgnoreCheckpointStride() throws Exception {
+		Field field = QueryExecutionContext.class.getDeclaredField("ignoreCheckpointStride");
 		field.setAccessible(true);
 		return field.getBoolean(null);
 	}

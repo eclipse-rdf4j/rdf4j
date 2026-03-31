@@ -260,6 +260,7 @@ public final class QueryCircuitBreaker {
 				System.gc();
 			}
 		}
+		QueryExecutionContext.setIgnoreCheckpointStride(currentState != QueryPressureState.NORMAL);
 		QueryExecutionContext.setHeavyOperatorExecutionEnabled(currentState != QueryPressureState.CRITICAL);
 		return currentState;
 	}
