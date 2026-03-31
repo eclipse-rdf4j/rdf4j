@@ -143,6 +143,13 @@ class ValueStore extends AbstractValueFactory {
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
 	private final File dir;
+
+	/**
+	 * Properties of the store, such as version and triple indexes specification. These properties are stored in a file
+	 * in the store directory and are loaded when the store is initialized.
+	 */
+	private final StoreProperties properties;
+
 	/**
 	 * Lock for clearing caches when values are removed.
 	 */
@@ -227,7 +234,12 @@ class ValueStore extends AbstractValueFactory {
 	private Object[] previousNamespaceEntry;
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
+		this(dir, new StoreProperties(dir), config);
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
+		this.properties = properties;
 		this.forceSync = config.getForceSync();
 		this.noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();

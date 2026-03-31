@@ -57,23 +57,17 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
@@ -127,25 +121,7 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_INDEXES = "spoc,posc";
-	/**
-	 * The file name for the properties file.
-	 */
-	private static final String PROPERTIES_FILE = "triples.prop";
-	/**
-	 * The key used to store the triple store version in the properties file.
-	 */
-	private static final String VERSION_KEY = "version";
-	/**
-	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
-	 */
-	private static final String INDEXES_KEY = "triple-indexes";
-	/**
-	 * The version number for the current triple store.
-	 * <ul>
-	 * <li>version 1: The first version with configurable triple indexes, a context field and a properties file.
-	 * </ul>
-	 */
-	private static final int SCHEME_VERSION = 1;
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -155,9 +131,10 @@ class TripleStore implements Closeable {
 	 */
 	private final File dir;
 	/**
-	 * Object containing meta-data for the triple store.
+	 * Properties of the store, such as version and triple indexes specification. These properties are stored in a file
+	 * in the store directory and are loaded when the store is initialized.
 	 */
-	private final Properties properties;
+	private final StoreProperties properties;
 	/**
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
@@ -175,29 +152,14 @@ class TripleStore implements Closeable {
 
 	private TxnRecordCache recordCache = null;
 
-	static final Comparator<ByteBuffer> COMPARATOR = new Comparator<ByteBuffer>() {
-		@Override
-		public int compare(ByteBuffer b1, ByteBuffer b2) {
-			int b1Len = b1.remaining();
-			int b2Len = b2.remaining();
-			int diff = compareRegion(b1, b1.position(), b2, b2.position(), Math.min(b1Len, b2Len));
-			if (diff != 0) {
-				return diff;
-			}
-			return b1Len > b2Len ? 1 : -1;
-		}
-
-		public int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
-			int result = 0;
-			for (int i = 0; result == 0 && i < length; i++) {
-				result = (array1.get(startIdx1 + i) & 0xff) - (array2.get(startIdx2 + i) & 0xff);
-			}
-			return result;
-		}
-	};
-
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
+		this(dir, new StoreProperties(dir), config, valueStore);
+	}
+
+	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore)
+			throws IOException, SailException {
 		this.dir = dir;
+		this.properties = properties;
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
@@ -238,12 +200,9 @@ class TripleStore implements Closeable {
 
 		txnManager = new TxnManager(env, Mode.RESET);
 
-		File propFile = new File(this.dir, PROPERTIES_FILE);
 		String indexSpecStr = config.getTripleIndexes();
-		if (!propFile.exists()) {
+		if (!properties.isLoaded()) {
 			// newly created lmdb store
-			properties = new Properties();
-
 			Set<String> indexSpecs = parseIndexSpecList(indexSpecStr);
 
 			if (indexSpecs.isEmpty()) {
@@ -254,10 +213,6 @@ class TripleStore implements Closeable {
 
 			initIndexes(indexSpecs, config.getTripleDBSize());
 		} else {
-			// Read triple properties file and check format version number
-			properties = loadProperties(propFile);
-			checkVersion();
-
 			// Initialize existing indexes
 			Set<String> indexSpecs = getIndexSpecs();
 			initIndexes(indexSpecs, config.getTripleDBSize());
@@ -267,50 +222,31 @@ class TripleStore implements Closeable {
 
 			if (reqIndexSpecs.isEmpty()) {
 				// No indexes specified, use the existing ones
-				indexSpecStr = properties.getProperty(INDEXES_KEY);
+				indexSpecStr = properties.getTripleIndexes();
 			} else if (!reqIndexSpecs.equals(indexSpecs)) {
 				// Set of indexes needs to be changed
 				reindex(indexSpecs, reqIndexSpecs);
 			}
 		}
 
-		if (!String.valueOf(SCHEME_VERSION).equals(properties.getProperty(VERSION_KEY))
-				|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {
+		if (!indexSpecStr.equals(properties.getTripleIndexes())) {
 			// Store up-to-date properties
-			properties.setProperty(VERSION_KEY, String.valueOf(SCHEME_VERSION));
-			properties.setProperty(INDEXES_KEY, indexSpecStr);
-			storeProperties(propFile);
-		}
-	}
-
-	private void checkVersion() throws SailException {
-		// Check version number
-		String versionStr = properties.getProperty(VERSION_KEY);
-		if (versionStr == null) {
-			logger.warn("{} missing in TripleStore's properties file", VERSION_KEY);
-		} else {
-			try {
-				int version = Integer.parseInt(versionStr);
-				if (version > SCHEME_VERSION) {
-					throw new SailException("Directory contains data that uses a newer data format");
-				}
-			} catch (NumberFormatException e) {
-				logger.warn("Malformed version number in TripleStore's properties file");
-			}
+			properties.setTripleIndexes(indexSpecStr);
 		}
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
-		String indexesStr = properties.getProperty(INDEXES_KEY);
+		String indexesStr = properties.getTripleIndexes();
 
-		if (indexesStr == null) {
-			throw new SailException(INDEXES_KEY + " missing in TripleStore's properties file");
+		if (indexesStr == null || indexesStr.trim().isEmpty()) {
+			throw new SailException(StoreProperties.INDEXES_KEY + " missing in " + StoreProperties.FILE_NAME + " file");
 		}
 
 		Set<String> indexSpecs = parseIndexSpecList(indexesStr);
 
 		if (indexSpecs.isEmpty()) {
-			throw new SailException("No " + INDEXES_KEY + " found in TripleStore's properties file");
+			throw new SailException(
+					"Invalid " + StoreProperties.INDEXES_KEY + " found in " + StoreProperties.FILE_NAME + " file");
 		}
 
 		return indexSpecs;
@@ -1191,20 +1127,6 @@ class TripleStore implements Closeable {
 
 	public void rollback() throws IOException {
 		endTransaction(false);
-	}
-
-	private Properties loadProperties(File propFile) throws IOException {
-		try (InputStream in = new FileInputStream(propFile)) {
-			Properties properties = new Properties();
-			properties.load(in);
-			return properties;
-		}
-	}
-
-	private void storeProperties(File propFile) throws IOException {
-		try (OutputStream out = new FileOutputStream(propFile)) {
-			properties.store(out, "triple indexes meta-data, DO NOT EDIT!");
-		}
 	}
 
 	class TripleIndex {
