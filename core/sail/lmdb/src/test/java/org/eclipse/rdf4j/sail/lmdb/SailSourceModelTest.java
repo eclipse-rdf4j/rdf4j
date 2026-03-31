@@ -58,6 +58,7 @@ public class SailSourceModelTest extends ModelTest {
 	protected SailSourceModel getNewModel() {
 		try {
 			LmdbSailStore store = new LmdbSailStore(Files.createTempDirectory("SailSourceModelTest-").toFile(),
+					new StoreProperties(),
 					new LmdbStoreConfig("spoc"));
 			stores.add(store);
 			return new SailSourceModel(store);

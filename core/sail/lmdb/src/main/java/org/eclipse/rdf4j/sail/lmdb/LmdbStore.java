@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -20,13 +19,11 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
-import org.eclipse.rdf4j.common.io.MavenUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -34,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -62,8 +59,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/*-----------*
 	 * Variables *
 	 *-----------*/
-
-	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-lmdb", "devel");
+	/**
+	 * The current version of the LMDB store.
+	 */
+	static final int VERSION = 2;
 
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
@@ -169,7 +168,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 */
 	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
 		if (evalStratFactory == null) {
-			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+			evalStratFactory = new DefaultEvaluationStrategyFactory(getFederatedServiceResolver());
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
@@ -252,18 +251,33 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Data dir is " + dataDir);
 
 		try {
-			File versionFile = new File(dataDir, "lmdbrdf.ver");
-			String version = versionFile.exists() ? FileUtils.readFileToString(versionFile, StandardCharsets.UTF_8)
-					: null;
-			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
-				FileUtils.writeStringToFile(versionFile, VERSION, StandardCharsets.UTF_8);
+			StoreProperties properties = new StoreProperties(dataDir);
+			// ensure that it is an error if an unsupported version of LmdbStore already exists
+			if (new File(dataDir, "lmdbrdf.ver").exists()) {
+				throw new SailException("Directory contains data from an older unsupported version of LmdbStore");
 			}
-			backingStore = new LmdbSailStore(dataDir, config);
+			boolean updateVersion = false;
+			if (properties.load()) {
+				if (!String.valueOf(VERSION).equals(properties.getVersion())) {
+					updateVersion = upgradeStore(dataDir, properties.getVersion());
+				}
+			} else {
+				properties.setVersion(String.valueOf(VERSION));
+			}
+
+			backingStore = new LmdbSailStore(dataDir, properties, config);
+
+			// update version afer loading and potential internal migration within value and triple store
+			if (updateVersion) {
+				properties.setVersion(String.valueOf(VERSION));
+			}
+			properties.save();
+
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel(false) {
 				@Override
 				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
-					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, config);
+					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, new StoreProperties(), config);
 					lmdbSailStore.enableMultiThreading = false;
 					return lmdbSailStore;
 				}

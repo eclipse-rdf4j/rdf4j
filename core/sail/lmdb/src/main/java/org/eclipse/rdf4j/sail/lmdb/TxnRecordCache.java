@@ -77,8 +77,8 @@ final class TxnRecordCache {
 
 			dbDir = Files.createTempDirectory(cacheDir.toPath(), "txncache");
 			E(mdb_env_open(env, dbDir.toAbsolutePath().toString(), flags, 0664));
-			dbiExplicit = openDatabase(env, "quads", MDB_CREATE, null);
-			dbiInferred = openDatabase(env, "quads-inf", MDB_CREATE, null);
+			dbiExplicit = openDatabase(env, "quads", MDB_CREATE);
+			dbiInferred = openDatabase(env, "quads-inf", MDB_CREATE);
 
 			MDBStat stat = MDBStat.malloc(stack);
 			readTransaction(env, (stack2, txn) -> {
