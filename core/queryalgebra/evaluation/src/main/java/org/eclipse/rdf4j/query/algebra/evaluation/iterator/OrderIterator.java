@@ -99,6 +99,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 	@Override
 	protected CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
+		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.markHeavy(OPERATOR_NAME);
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_START");
 		BindingSet threshold = null;
@@ -110,6 +111,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
 		try {
 			while (iter.hasNext()) {
+				QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 				if (list.size() >= syncThreshold && list.size() < limit) {
 					QueryExecutionContext.checkpoint(OPERATOR_NAME + "_SPILL");
 					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
@@ -186,6 +188,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 	}
 
 	private Stream<BindingSet> sort(Collection<BindingSet> collection) {
+		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_SORT");
 		BindingSet[] array = collection.toArray(new BindingSet[collection.size()]);
 		Arrays.parallelSort(array, comparator);

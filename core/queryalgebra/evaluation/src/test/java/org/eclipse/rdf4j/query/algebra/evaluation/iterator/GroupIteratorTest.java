@@ -483,6 +483,38 @@ public class GroupIteratorTest {
 		}
 	}
 
+	@Test
+	public void testHeavyOperatorKillSwitchInterruptsGroupIteratorWithoutBreakerCheckpoint() throws Exception {
+		String previousEnabled = System.getProperty(BREAKER_ENABLED);
+		Field heavyOperatorExecutionEnabled = QueryExecutionContext.class
+				.getDeclaredField("heavyOperatorExecutionEnabled");
+		heavyOperatorExecutionEnabled.setAccessible(true);
+		boolean previousHeavyOperatorExecutionEnabled = heavyOperatorExecutionEnabled.getBoolean(null);
+
+		Group group = new Group(NONEMPTY_ASSIGNMENT);
+		group.addGroupBindingName("a");
+
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.WORKBENCH, "test",
+				"select * where { ?s ?p ?o } group by ?a");
+		try {
+			resetGlobalBreaker();
+			System.setProperty(BREAKER_ENABLED, "false");
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(handle);
+					GroupIterator groupIterator = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(),
+							CONTEXT)) {
+				heavyOperatorExecutionEnabled.setBoolean(null, false);
+				assertThatExceptionOfType(QueryInterruptedException.class).isThrownBy(groupIterator::next);
+			}
+			assertThat(handle.isCancelRequested()).isTrue();
+		} finally {
+			heavyOperatorExecutionEnabled.setBoolean(null, previousHeavyOperatorExecutionEnabled);
+			restoreProperty(BREAKER_ENABLED, previousEnabled);
+			breaker.complete(handle);
+			resetGlobalBreaker();
+		}
+	}
+
 	private void resetGlobalBreaker() throws Exception {
 		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
 		Field activeHandlesField = QueryCircuitBreaker.class.getDeclaredField("activeHandles");

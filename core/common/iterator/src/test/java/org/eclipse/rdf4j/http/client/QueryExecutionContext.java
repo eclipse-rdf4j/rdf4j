@@ -18,7 +18,9 @@ public final class QueryExecutionContext {
 	private static final AtomicInteger MARK_HEAVY_CALLS = new AtomicInteger();
 	private static final AtomicInteger CHECKPOINT_CALLS = new AtomicInteger();
 
+	private static volatile boolean heavyOperatorExecutionEnabled = true;
 	private static volatile RuntimeException checkpointFailure;
+	private static volatile RuntimeException heavyOperatorExecutionFailure;
 
 	private QueryExecutionContext() {
 	}
@@ -34,8 +36,25 @@ public final class QueryExecutionContext {
 		}
 	}
 
+	public static void throwIfHeavyOperatorExecutionDisabled(String operator) {
+		if (!heavyOperatorExecutionEnabled) {
+			throw heavyOperatorExecutionFailure != null ? heavyOperatorExecutionFailure
+					: new RuntimeException("heavy operator execution disabled: " + operator);
+		}
+	}
+
 	public static void failOnCheckpoint(RuntimeException runtimeException) {
 		checkpointFailure = runtimeException;
+	}
+
+	public static void disableHeavyOperatorExecution(RuntimeException runtimeException) {
+		heavyOperatorExecutionEnabled = false;
+		heavyOperatorExecutionFailure = runtimeException;
+	}
+
+	public static void enableHeavyOperatorExecution() {
+		heavyOperatorExecutionEnabled = true;
+		heavyOperatorExecutionFailure = null;
 	}
 
 	public static int getMarkHeavyCalls() {
@@ -49,6 +68,8 @@ public final class QueryExecutionContext {
 	public static void reset() {
 		MARK_HEAVY_CALLS.set(0);
 		CHECKPOINT_CALLS.set(0);
+		heavyOperatorExecutionEnabled = true;
 		checkpointFailure = null;
+		heavyOperatorExecutionFailure = null;
 	}
 }

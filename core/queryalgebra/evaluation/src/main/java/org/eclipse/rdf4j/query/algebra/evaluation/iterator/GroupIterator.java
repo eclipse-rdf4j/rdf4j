@@ -278,6 +278,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
+		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.markHeavy(OPERATOR_NAME);
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_START");
 		// store the arguments' iterator so it can be closed while building entries
@@ -303,7 +304,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
 			// Make an optimized hash function valid during this query evaluation step.
 			ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
-			while (!isClosed() && iter.hasNext()) {
+			while (!isClosed()) {
+				QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
+				if (!iter.hasNext()) {
+					break;
+				}
 				BindingSet sol = iter.next();
 				inputRows++;
 				if ((inputRows & (BUILD_CHECKPOINT_INTERVAL - 1)) == 0) {
