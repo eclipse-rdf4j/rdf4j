@@ -359,7 +359,7 @@ class ValueStore extends AbstractValueFactory {
 		E(mdb_env_open(env, dir.getAbsolutePath(), flags, 0664));
 
 		// open main database
-		dbi = openDatabase(env, null, MDB_CREATE, null);
+		dbi = openDatabase(env, null, MDB_CREATE);
 
 		// initialize page size and set map size for env
 		readTransaction(env, (stack, txn) -> {
@@ -390,11 +390,11 @@ class ValueStore extends AbstractValueFactory {
 		});
 
 		// open unused IDs database
-		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE, null);
+		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE);
 		// open free IDs database
-		freeDbi = openDatabase(env, "free_ids", MDB_CREATE, null);
+		freeDbi = openDatabase(env, "free_ids", MDB_CREATE);
 		// open ref_counts database
-		refCountsDbi = openDatabase(env, "ref_counts", MDB_CREATE, null);
+		refCountsDbi = openDatabase(env, "ref_counts", MDB_CREATE);
 
 		// check if free IDs are available
 		readTransaction(env, (stack, txn) -> {

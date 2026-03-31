@@ -12,7 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.eclipse.rdf4j.sail.lmdb.Varint.readQuadUnsigned;
@@ -200,38 +200,50 @@ class TripleStore implements Closeable {
 
 		txnManager = new TxnManager(env, Mode.RESET);
 
-		String indexSpecStr = config.getTripleIndexes();
-		if (!properties.isLoaded()) {
-			// newly created lmdb store
-			Set<String> indexSpecs = parseIndexSpecList(indexSpecStr);
+		try {
+			String indexSpecStr = config.getTripleIndexes();
+			if (!properties.isLoaded()) {
+				// newly created lmdb store
+				Set<String> indexSpecs = parseIndexSpecList(indexSpecStr);
 
-			if (indexSpecs.isEmpty()) {
-				logger.debug("No indexes specified, using default indexes: {}", DEFAULT_INDEXES);
-				indexSpecStr = DEFAULT_INDEXES;
-				indexSpecs = parseIndexSpecList(indexSpecStr);
+				if (indexSpecs.isEmpty()) {
+					logger.debug("No indexes specified, using default indexes: {}", DEFAULT_INDEXES);
+					indexSpecStr = DEFAULT_INDEXES;
+					indexSpecs = parseIndexSpecList(indexSpecStr);
+				}
+
+				startTransaction();
+				initIndexes(indexSpecs);
+				endTransaction(true);
+				initializePageAndMapSize(config.getTripleDBSize());
+			} else {
+				// Initialize existing indexes
+				Set<String> indexSpecs = getIndexSpecs();
+				startTransaction();
+				initIndexes(indexSpecs);
+				endTransaction(true);
+				initializePageAndMapSize(config.getTripleDBSize());
+
+				// Compare the existing indexes with the requested indexes
+				Set<String> reqIndexSpecs = parseIndexSpecList(indexSpecStr);
+				if (reqIndexSpecs.isEmpty()) {
+					// No indexes specified, use the existing ones
+					indexSpecStr = properties.getTripleIndexes();
+				} else if (!reqIndexSpecs.equals(indexSpecs)) {
+					// Set of indexes needs to be changed
+					startTransaction();
+					reindex(indexSpecs, reqIndexSpecs);
+					endTransaction(true);
+				}
 			}
 
-			initIndexes(indexSpecs, config.getTripleDBSize());
-		} else {
-			// Initialize existing indexes
-			Set<String> indexSpecs = getIndexSpecs();
-			initIndexes(indexSpecs, config.getTripleDBSize());
-
-			// Compare the existing indexes with the requested indexes
-			Set<String> reqIndexSpecs = parseIndexSpecList(indexSpecStr);
-
-			if (reqIndexSpecs.isEmpty()) {
-				// No indexes specified, use the existing ones
-				indexSpecStr = properties.getTripleIndexes();
-			} else if (!reqIndexSpecs.equals(indexSpecs)) {
-				// Set of indexes needs to be changed
-				reindex(indexSpecs, reqIndexSpecs);
+			if (!indexSpecStr.equals(properties.getTripleIndexes())) {
+				// Store up-to-date properties
+				properties.setTripleIndexes(indexSpecStr);
 			}
-		}
-
-		if (!indexSpecStr.equals(properties.getTripleIndexes())) {
-			// Store up-to-date properties
-			properties.setTripleIndexes(indexSpecStr);
+		} catch (IOException | SailException e) {
+			endTransaction(false);
+			throw e;
 		}
 	}
 
@@ -284,16 +296,18 @@ class TripleStore implements Closeable {
 		return indexes;
 	}
 
-	private void initIndexes(Set<String> indexSpecs, long tripleDbSize) throws IOException {
+	private void initIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : indexSpecs) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(fieldSeq));
 		}
+	}
 
+	private void initializePageAndMapSize(long tripleDbSize) throws IOException {
 		// initialize page size and set map size for env
 		readTransaction(env, (stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
-			TripleIndex mainIndex = indexes.get(0);
+			TripleIndex mainIndex = indexes.getFirst();
 			mdb_stat(txn, mainIndex.getDB(true), stat);
 
 			boolean isEmpty = stat.ms_entries() == 0;
@@ -330,7 +344,7 @@ class TripleStore implements Closeable {
 		if (!addedIndexSpecs.isEmpty()) {
 			TripleIndex sourceIndex = indexes.get(0);
 			for (boolean explicit : new boolean[] { true, false }) {
-				transaction(env, (stack, txn) -> {
+				try (MemoryStack stack = stackPush()) {
 					MDBVal keyValue = MDBVal.callocStack(stack);
 					ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 					keyValue.mv_data(keyBuf);
@@ -342,7 +356,7 @@ class TripleStore implements Closeable {
 						RecordIterator[] sourceIter = { null };
 						try {
 							sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
-									explicit, txnManager.createTxn(txn));
+									explicit, txnManager.createReadTxn());
 
 							RecordIterator it = sourceIter[0];
 							long[] quad;
@@ -352,7 +366,34 @@ class TripleStore implements Closeable {
 										quad[CONTEXT_IDX]);
 								keyBuf.flip();
 
-								E(mdb_put(txn, addedIndex.getDB(explicit), keyValue, dataValue, 0));
+								if (requiresResize()) {
+									endTransaction(true);
+
+									// the lock is just a safety measure if reindex is somehow called outside of the
+									// constructor
+									StampedLongAdderLockManager lockManager = txnManager.lockManager();
+									long readStamp;
+									try {
+										readStamp = lockManager.readLock();
+									} catch (InterruptedException e) {
+										throw new SailException(e);
+									}
+									try {
+										txnManager.deactivate();
+										mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+										E(mdb_env_set_mapsize(env, mapSize));
+										logger.debug("resized map to {}", mapSize);
+									} finally {
+										try {
+											txnManager.activate();
+										} finally {
+											lockManager.unlockRead(readStamp);
+										}
+									}
+									startTransaction();
+								}
+
+								E(mdb_put(writeTxn, addedIndex.getDB(explicit), keyValue, dataValue, 0));
 							}
 						} finally {
 							if (sourceIter[0] != null) {
@@ -362,9 +403,7 @@ class TripleStore implements Closeable {
 
 						currentIndexes.put(fieldSeq, addedIndex);
 					}
-
-					return null;
-				});
+				}
 			}
 
 			logger.debug("New index(es) initialized");
@@ -375,19 +414,16 @@ class TripleStore implements Closeable {
 		removedIndexSpecs.removeAll(newIndexSpecs);
 
 		List<Throwable> removedIndexExceptions = new ArrayList<>();
-		transaction(env, (stack, txn) -> {
-			// Delete files for removed indexes
-			for (String fieldSeq : removedIndexSpecs) {
-				try {
-					TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
-					removedIndex.destroy(txn);
-					logger.debug("Deleted file(s) for removed {} index", fieldSeq);
-				} catch (Throwable e) {
-					removedIndexExceptions.add(e);
-				}
+		// Delete files for removed indexes
+		for (String fieldSeq : removedIndexSpecs) {
+			try {
+				TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
+				removedIndex.destroy(writeTxn);
+				logger.debug("Deleted file(s) for removed {} index", fieldSeq);
+			} catch (Throwable e) {
+				removedIndexExceptions.add(e);
 			}
-			return null;
-		});
+		}
 
 		if (!removedIndexExceptions.isEmpty()) {
 			throw new IOException(removedIndexExceptions.get(0));
@@ -849,7 +885,7 @@ class TripleStore implements Closeable {
 			}
 
 			if (recordCache != null) {
-				long quad[] = new long[] { subj, pred, obj, context };
+				long[] quad = new long[] { subj, pred, obj, context };
 				if (explicit) {
 					// remove implicit statement
 					recordCache.removeRecord(quad, false);
@@ -870,7 +906,6 @@ class TripleStore implements Closeable {
 
 			if (stAdded) {
 				for (int i = 1; i < indexes.size(); i++) {
-
 					TripleIndex index = indexes.get(i);
 					keyBuf.clear();
 					index.toKey(keyBuf, subj, pred, obj, context);
@@ -885,9 +920,7 @@ class TripleStore implements Closeable {
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
 
-				if (stAdded) {
-					incrementContext(stack, context);
-				}
+				incrementContext(stack, context);
 			}
 		}
 
@@ -1143,8 +1176,8 @@ class TripleStore implements Closeable {
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
 			this.indexMap = getIndexes(this.fieldSeq);
 			// open database and use native sort order without comparator
-			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
-			dbiInferred = openDatabase(env, fieldSeq + "-inf", MDB_CREATE, null);
+			dbiExplicit = openDatabaseWithTxn(writeTxn, fieldSeq, MDB_CREATE);
+			dbiInferred = openDatabaseWithTxn(writeTxn, fieldSeq + "-inf", MDB_CREATE);
 		}
 
 		public char[] getFieldSeq() {
@@ -1159,24 +1192,14 @@ class TripleStore implements Closeable {
 			int[] indexes = new int[fieldSeq.length];
 			for (int i = 0; i < fieldSeq.length; i++) {
 				char field = fieldSeq[i];
-				int fieldIdx;
-				switch (field) {
-				case 's':
-					fieldIdx = SUBJ_IDX;
-					break;
-				case 'p':
-					fieldIdx = PRED_IDX;
-					break;
-				case 'o':
-					fieldIdx = OBJ_IDX;
-					break;
-				case 'c':
-					fieldIdx = CONTEXT_IDX;
-					break;
-				default:
-					throw new IllegalArgumentException(
-							"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
-				}
+				int fieldIdx = switch (field) {
+				case 's' -> SUBJ_IDX;
+				case 'p' -> PRED_IDX;
+				case 'o' -> OBJ_IDX;
+				case 'c' -> CONTEXT_IDX;
+				default -> throw new IllegalArgumentException(
+						"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
+				};
 				indexes[i] = fieldIdx;
 			}
 			return indexes;
