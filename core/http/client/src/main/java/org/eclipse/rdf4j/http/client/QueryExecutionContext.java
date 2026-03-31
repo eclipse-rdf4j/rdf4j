@@ -27,8 +27,6 @@ public final class QueryExecutionContext {
 	private static boolean heavyOperatorExecutionEnabled = true;
 	private static int checkpointCalls;
 
-
-
 	private QueryExecutionContext() {
 	}
 
@@ -65,7 +63,8 @@ public final class QueryExecutionContext {
 	}
 
 	public static void checkpoint(String operator) throws QueryInterruptedException {
-		if(!shouldCheckpoint()) return;
+		if (!shouldCheckpoint())
+			return;
 		State state = CURRENT.get();
 		if (state != null) {
 			QueryCircuitBreaker.getInstance().checkpoint(state.handle, operator);
@@ -96,7 +95,8 @@ public final class QueryExecutionContext {
 	}
 
 	private static boolean shouldCheckpoint() {
-		if(ignoreCheckpointStride) return true;
+		if (ignoreCheckpointStride)
+			return true;
 		return ((++checkpointCalls) & CHECKPOINT_MASK) == 0;
 	}
 
@@ -108,7 +108,6 @@ public final class QueryExecutionContext {
 			this.handle = handle;
 			this.previous = previous;
 		}
-
 
 	}
 }

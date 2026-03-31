@@ -254,7 +254,9 @@ public final class QueryCircuitBreaker {
 			LOGGER.info(
 					"Query circuit breaker transition previous={} current={} freeMb={} rollingGcMs={} reason={}",
 					previous, next, snapshot.getFreeMemoryMb(), snapshot.getRollingGcMs(), reason);
-			if (currentState == QueryPressureState.HIGH || (currentState == QueryPressureState.WARN && determineFreeMemoryState(configuration, snapshot.getFreeMemoryMb()) == QueryPressureState.WARN)) {
+			if (currentState == QueryPressureState.HIGH
+					|| (currentState == QueryPressureState.WARN && determineFreeMemoryState(configuration,
+							snapshot.getFreeMemoryMb()) == QueryPressureState.WARN)) {
 				System.gc();
 			}
 		}
@@ -678,7 +680,7 @@ public final class QueryCircuitBreaker {
 					getIntProperty(HIGH_FREE_MB_PROPERTY, 128),
 					getIntProperty(CRITICAL_FREE_MB_PROPERTY, 96),
 					getIntProperty(WARN_ADMISSION_DELAY_MS_PROPERTY, 50),
-					getIntProperty(CHECKPOINT_DELAY_MS_PROPERTY, 10),
+					getIntProperty(CHECKPOINT_DELAY_MS_PROPERTY, 1),
 					getIntProperty(CANCEL_COOLDOWN_MS_PROPERTY, 1000),
 					getIntProperty(RETRY_AFTER_SECONDS_PROPERTY, 3));
 		}
