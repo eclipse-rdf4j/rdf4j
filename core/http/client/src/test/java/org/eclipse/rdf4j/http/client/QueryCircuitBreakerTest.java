@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -64,6 +66,14 @@ class QueryCircuitBreakerTest {
 				monitorThread.join(1000);
 			}
 		}
+	}
+
+	@Test
+	void shouldDeriveDefaultFreeMemoryThresholdsFromMaxHeap() throws Exception {
+		Thresholds thresholds = readDefaultThresholdsFromFreshJvm("12801m");
+
+		assertEquals(257, thresholds.warnFreeMb);
+		assertEquals(129, thresholds.highFreeMb);
 	}
 
 	@Test
@@ -219,6 +229,25 @@ class QueryCircuitBreakerTest {
 
 		fixture.clock.addAndGet(600);
 		assertEquals("NORMAL", breaker.snapshotStatus().getState());
+	}
+
+	@Test
+	void shouldThrottleCheckpointsOnlyAtHighOrAbove() {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
+				7), 1000);
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"checkpoint-query");
+
+		fixture.freeMemoryMb.set(350);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(), fixture.sleeps);
+
+		fixture.freeMemoryMb.set(250);
+		breaker.checkpoint(handle, "JOIN");
+		assertEquals(List.of(10L), fixture.sleeps);
+
+		breaker.complete(handle);
 	}
 
 	@Test
@@ -388,6 +417,23 @@ class QueryCircuitBreakerTest {
 		return state;
 	}
 
+	private static Thresholds readDefaultThresholdsFromFreshJvm(String maxHeap) throws Exception {
+		String classpath = System.getProperty("java.class.path");
+		String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process process = new ProcessBuilder(javaExecutable, "-Xmx" + maxHeap,
+				"-D" + QueryCircuitBreaker.WARN_FREE_MB_PROPERTY + "=",
+				"-D" + QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY + "=",
+				"-cp", classpath, DefaultThresholdProbe.class.getName())
+				.redirectErrorStream(true)
+				.start();
+		String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+		int exitCode = process.waitFor();
+		assertEquals(0, exitCode, output);
+
+		String[] parts = output.split(",");
+		return new Thresholds(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+	}
+
 	private static final class PropertiesScope {
 		private final List<String> keys = new ArrayList<>();
 		private final List<String> previousValues = new ArrayList<>();
@@ -400,9 +446,21 @@ class QueryCircuitBreakerTest {
 			return this;
 		}
 
+		private PropertiesScope without(String key) {
+			keys.add(key);
+			previousValues.add(System.getProperty(key));
+			nextValues.add(null);
+			return this;
+		}
+
 		private void apply() {
 			for (int i = 0; i < keys.size(); i++) {
-				System.setProperty(keys.get(i), nextValues.get(i));
+				String nextValue = nextValues.get(i);
+				if (nextValue == null) {
+					System.clearProperty(keys.get(i));
+				} else {
+					System.setProperty(keys.get(i), nextValue);
+				}
 			}
 		}
 
@@ -434,6 +492,25 @@ class QueryCircuitBreakerTest {
 				QueryCircuitBreaker.GcInvoker gcInvoker) {
 			return new QueryCircuitBreaker(monitor, () -> configuration, clock::get, sleeps::add, gcInvoker,
 					recoveryCooldownMs, 1, false);
+		}
+	}
+
+	public static final class DefaultThresholdProbe {
+		public static void main(String[] args) {
+			QueryCircuitBreaker.Configuration configuration = QueryCircuitBreaker.Configuration.fromSystemProperties();
+			System.out.print(configuration.getWarnFreeMb());
+			System.out.print(",");
+			System.out.print(configuration.getHighFreeMb());
+		}
+	}
+
+	private static final class Thresholds {
+		private final int warnFreeMb;
+		private final int highFreeMb;
+
+		private Thresholds(int warnFreeMb, int highFreeMb) {
+			this.warnFreeMb = warnFreeMb;
+			this.highFreeMb = highFreeMb;
 		}
 	}
 }
