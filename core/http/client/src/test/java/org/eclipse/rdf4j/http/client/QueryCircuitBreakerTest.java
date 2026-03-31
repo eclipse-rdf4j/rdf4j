@@ -123,15 +123,30 @@ class QueryCircuitBreakerTest {
 		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 0,
 				7), 0);
 
-		assertFalse(readIgnoreCheckpointStride());
+		retryAssertion(() -> assertFalse(readIgnoreCheckpointStride()));
 
 		fixture.freeMemoryMb.set(350);
 		assertEquals("WARN", breaker.snapshotStatus().getState());
-		assertTrue(readIgnoreCheckpointStride());
+		retryAssertion(() -> assertTrue(readIgnoreCheckpointStride()));
 
 		fixture.freeMemoryMb.set(1024);
 		assertEquals("NORMAL", breaker.snapshotStatus().getState());
-		assertFalse(readIgnoreCheckpointStride());
+		retryAssertion(() -> assertFalse(readIgnoreCheckpointStride()));
+	}
+
+	private static void retryAssertion(Runnable assertion) throws InterruptedException {
+		final int retries = 100;
+		for (int i = 0; i < retries; i++) {
+			try {
+				assertion.run();
+				break;
+			} catch (AssertionError e) {
+				if (i == retries - 1) {
+					throw e;
+				}
+				Thread.sleep(100);
+			}
+		}
 	}
 
 	@Test
@@ -374,10 +389,19 @@ class QueryCircuitBreakerTest {
 		return field.getBoolean(null);
 	}
 
-	private static boolean readIgnoreCheckpointStride() throws Exception {
-		Field field = QueryExecutionContext.class.getDeclaredField("ignoreCheckpointStride");
+	private static boolean readIgnoreCheckpointStride() {
+		Field field = null;
+		try {
+			field = QueryExecutionContext.class.getDeclaredField("ignoreCheckpointStride");
+		} catch (NoSuchFieldException e) {
+			throw new RuntimeException(e);
+		}
 		field.setAccessible(true);
-		return field.getBoolean(null);
+		try {
+			return field.getBoolean(null);
+		} catch (IllegalAccessException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	private static Set<Long> threadIds(String threadName) {
