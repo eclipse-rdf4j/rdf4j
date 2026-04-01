@@ -70,7 +70,8 @@ public abstract class AbstractHTTPQuery extends AbstractQuery {
 	@Override
 	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
 		super.setMaxExecutionTime(maxExecutionTimeSeconds);
-		this.httpClient.setConnectionTimeout(1000L * this.getMaxExecutionTime());
+		// TODO allow per query timeouts on the http connection used
+		// Note: connection timeout is now configured via HttpClientConfig when building the client.
 	}
 
 	@Override

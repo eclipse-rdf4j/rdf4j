@@ -10,20 +10,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client.util;
 
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
 
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
-import org.apache.http.client.HttpClient;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.ssl.SSLContextBuilder;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
 
 /**
- * Convenience utility class offering helper methods to configure {@link HttpClient}s and {@link HttpClientBuilders}.
+ * Convenience utility class offering helper methods to configure {@link RDF4JHttpClientConfig} instances.
  *
  * @author Andreas Schwarte
  * @see HttpClientDependent
@@ -31,22 +30,30 @@ import org.eclipse.rdf4j.http.client.HttpClientDependent;
 public class HttpClientBuilders {
 
 	/**
-	 * Return an {@link HttpClientBuilder} that can be used to build an {@link HttpClient} which trusts all certificates
-	 * (particularly including self-signed certificates).
+	 * Return an {@link RDF4JHttpClientConfig} configured to trust all SSL certificates, including self-signed
+	 * certificates.
 	 *
-	 * @return a {@link HttpClientBuilder} for <i>SSL trust all</i>
+	 * @return an {@link RDF4JHttpClientConfig} for <i>SSL trust all</i>
 	 */
-	public static HttpClientBuilder getSSLTrustAllHttpClientBuilder() {
+	public static RDF4JHttpClientConfig getSslTrustAllConfig() {
 		try {
-			SSLContextBuilder builder = new SSLContextBuilder();
-			builder.loadTrustMaterial(null, (X509Certificate[] chain, String authType) -> true);
+			SSLContext sslContext = SSLContext.getInstance("TLS");
+			sslContext.init(null, new TrustManager[] { new X509TrustManager() {
+				@Override
+				public void checkClientTrusted(X509Certificate[] chain, String authType) {
+				}
 
-			HostnameVerifier hostNameVerifier = (String hostname, SSLSession session) -> true;
-			SSLConnectionSocketFactory sslSF = new SSLConnectionSocketFactory(builder.build(), hostNameVerifier);
+				@Override
+				public void checkServerTrusted(X509Certificate[] chain, String authType) {
+				}
 
-			return HttpClients.custom().setSSLSocketFactory(sslSF).useSystemProperties();
-		} catch (Exception e) {
-			// key management exception, etc.
+				@Override
+				public X509Certificate[] getAcceptedIssuers() {
+					return new X509Certificate[0];
+				}
+			} }, null);
+			return RDF4JHttpClientConfig.newBuilder().sslContext(sslContext).build();
+		} catch (NoSuchAlgorithmException | KeyManagementException e) {
 			throw new RuntimeException(e);
 		}
 	}
