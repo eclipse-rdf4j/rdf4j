@@ -19,17 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 
 /**
- * Factory class for retrieving the {@link FederationEvalStrategy} to be used.
- *
- * <p>
- * Default strategies:
- * </p>
- *
- * <ul>
- * <li>local federation: {@link SailFederationEvalStrategy}</li>
- * <li>endpoint federation: {@link SparqlFederationEvalStrategy}</li>
- * <li>hybrid federation: {@link SparqlFederationEvalStrategy}</li>
- * </ul>
+ * Factory class for retrieving the {@link FederationEvaluationStrategy} to be used.
  *
  * <p>
  * Customized strategies can be supplied to the federation using
@@ -59,17 +49,17 @@ public class FederationEvaluationStrategyFactory extends StrictEvaluationStrateg
 	}
 
 	/**
-	 * Create the {@link FederationEvalStrategy} to be used.
+	 * Create the {@link FederationEvaluationStrategy} to be used.
 	 *
 	 * Note: all parameters may be <code>null</code>
 	 */
 	@Override
-	public FederationEvalStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+	public FederationEvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 
 		// Note: currently dataset, triplesource and statistics are explicitly ignored
 		// in the federation
 
-		return new FederationEvalStrategy(federationContext);
+		return new FederationEvaluationStrategy(federationContext);
 	}
 }

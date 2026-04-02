@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-public class FederationEvalStrategyTest extends SPARQLBaseTest {
+public class FederationEvaluationStrategyTest extends SPARQLBaseTest {
 
 	@Test
 	public void testOptimizeSingleSourceQuery() throws Exception {

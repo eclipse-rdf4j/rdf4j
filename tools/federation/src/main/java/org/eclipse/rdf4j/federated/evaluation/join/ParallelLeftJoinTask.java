@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -35,12 +35,12 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 	static final Logger log = LoggerFactory.getLogger(ParallelLeftJoinTask.class);
 
-	protected final FederationEvalStrategy strategy;
+	protected final FederationEvaluationStrategy strategy;
 	protected final LeftJoin join;
 	protected final BindingSet leftBindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
 
-	public ParallelLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
+	public ParallelLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
 			LeftJoin join, BindingSet leftBindings) {
 		this.strategy = strategy;
 		this.join = join;
@@ -62,7 +62,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 	static class FedXLeftJoinIteration extends LookAheadIteration<BindingSet> {
 
-		protected final FederationEvalStrategy strategy;
+		protected final FederationEvaluationStrategy strategy;
 
 		private final BindingSet leftBindings;
 
@@ -78,7 +78,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 		private final AtomicBoolean exhausted = new AtomicBoolean(false);
 
-		public FedXLeftJoinIteration(FederationEvalStrategy strategy, LeftJoin join, BindingSet leftBindings) {
+		public FedXLeftJoinIteration(FederationEvaluationStrategy strategy, LeftJoin join, BindingSet leftBindings) {
 			super();
 			this.strategy = strategy;
 			this.join = join;

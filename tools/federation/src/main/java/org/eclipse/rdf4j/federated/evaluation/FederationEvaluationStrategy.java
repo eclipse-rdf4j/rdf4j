@@ -149,9 +149,9 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  *
  */
-public class FederationEvalStrategy extends StrictEvaluationStrategy {
+public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
-	private static final Logger log = LoggerFactory.getLogger(FederationEvalStrategy.class);
+	private static final Logger log = LoggerFactory.getLogger(FederationEvaluationStrategy.class);
 
 	protected Executor executor;
 	protected SourceSelectionCache cache;
@@ -166,7 +166,7 @@ public class FederationEvalStrategy extends StrictEvaluationStrategy {
 			StandardQueryOptimizerPipeline.BINDING_SET_ASSIGNMENT_INLINER,
 			StandardQueryOptimizerPipeline.DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
 
-	public FederationEvalStrategy(FederationContext federationContext) {
+	public FederationEvaluationStrategy(FederationContext federationContext) {
 		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
 
 			@Override
@@ -660,8 +660,8 @@ public class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Returns the accessible federation members in the context of the query. By default this is all federation members.
 	 * <p>
-	 * Specialized implementations of the {@link FederationEvalStrategy} may override and define custom behavior (e.g.,
-	 * to support resilience).
+	 * Specialized implementations of the {@link FederationEvaluationStrategy} may override and define custom behavior
+	 * (e.g., to support resilience).
 	 * </p>
 	 *
 	 *
@@ -737,7 +737,8 @@ public class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	protected QueryEvaluationStep prepare(FedXArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return (bindings) -> new FedXPathIteration(FederationEvalStrategy.this, alp.getScope(), alp.getSubjectVar(),
+		return (bindings) -> new FedXPathIteration(FederationEvaluationStrategy.this, alp.getScope(),
+				alp.getSubjectVar(),
 				alp.getPathExpression(), alp.getObjectVar(), alp.getContextVar(), alp.getMinLength(), bindings,
 				alp.getQueryInfo());
 	}
@@ -831,7 +832,7 @@ public class FederationEvalStrategy extends StrictEvaluationStrategy {
 							joinCondition,
 							problemVars);
 					return new BadlyDesignedLeftJoinIterator(
-							FederationEvalStrategy.this,
+							FederationEvaluationStrategy.this,
 							leftJoin,
 							bindings,
 							problemVarsClone,
@@ -904,7 +905,7 @@ public class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * For endpoint federation use controlled worker bound join, for local federation use controlled worker join. The
 	 * other operators are there for completeness.
 	 *
-	 * Use {@link FederationEvalStrategy#executor} to execute the join (it is a runnable).
+	 * Use {@link FederationEvaluationStrategy#executor} to execute the join (it is a runnable).
 	 *
 	 * @param joinScheduler
 	 * @param leftIter

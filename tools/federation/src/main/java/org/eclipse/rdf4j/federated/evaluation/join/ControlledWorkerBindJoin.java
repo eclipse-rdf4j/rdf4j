@@ -15,7 +15,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
@@ -32,7 +32,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public class ControlledWorkerBindJoin extends ControlledWorkerBindJoinBase {
 
-	public ControlledWorkerBindJoin(ControlledWorkerScheduler<BindingSet> scheduler, FederationEvalStrategy strategy,
+	public ControlledWorkerBindJoin(ControlledWorkerScheduler<BindingSet> scheduler,
+			FederationEvaluationStrategy strategy,
 			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
@@ -55,11 +56,11 @@ public class ControlledWorkerBindJoin extends ControlledWorkerBindJoinBase {
 	}
 
 	protected class BoundJoinTaskCreator implements TaskCreator {
-		protected final FederationEvalStrategy _strategy;
+		protected final FederationEvaluationStrategy _strategy;
 		protected final StatementTupleExpr _expr;
 
 		public BoundJoinTaskCreator(
-				FederationEvalStrategy strategy, StatementTupleExpr expr) {
+				FederationEvaluationStrategy strategy, StatementTupleExpr expr) {
 			super();
 			_strategy = strategy;
 			_expr = expr;
@@ -72,11 +73,11 @@ public class ControlledWorkerBindJoin extends ControlledWorkerBindJoinBase {
 	}
 
 	protected class FedXServiceJoinTaskCreator implements TaskCreator {
-		protected final FederationEvalStrategy _strategy;
+		protected final FederationEvaluationStrategy _strategy;
 		protected final FedXService _expr;
 
 		public FedXServiceJoinTaskCreator(
-				FederationEvalStrategy strategy, FedXService expr) {
+				FederationEvaluationStrategy strategy, FedXService expr) {
 			super();
 			_strategy = strategy;
 			_expr = expr;

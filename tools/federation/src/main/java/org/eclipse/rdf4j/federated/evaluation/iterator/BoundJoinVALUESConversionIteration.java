@@ -14,7 +14,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.Binding;
@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * </p>
  *
  * @author Andreas Schwarte
- * @see FederationEvalStrategy
+ * @see FederationEvaluationStrategy
  * @since 3.0
  */
 public class BoundJoinVALUESConversionIteration

@@ -377,8 +377,6 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 		federationContext().getSourceSelectionCache()
 				.updateInformation(new SubQuery(null, FOAF.AGE, null), repo2Endpoint, true);
 
-		fedxRule.enableDebug();
-
 		try {
 			// run query which joins results from multiple repos
 			// the age does not exist for any person
