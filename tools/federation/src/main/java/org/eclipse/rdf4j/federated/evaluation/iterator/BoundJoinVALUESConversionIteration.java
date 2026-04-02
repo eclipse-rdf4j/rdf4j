@@ -14,7 +14,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.Binding;
@@ -23,15 +23,14 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
- * Inserts original bindings into the result. This implementation is used for bound joins with VALUES clauses, see
- * {@link SparqlFederationEvalStrategyWithValues}.
+ * Inserts original bindings into the result. This implementation is used for bound joins with VALUES clauses.
  * <p>
  * It is assumed the the query results contain a binding for "?__index" which corresponds to the index in the input
  * mappings. See {@link QueryStringUtil} for details
  * </p>
  *
  * @author Andreas Schwarte
- * @see SparqlFederationEvalStrategy
+ * @see FederationEvalStrategy
  * @since 3.0
  */
 public class BoundJoinVALUESConversionIteration

@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.BNode;
@@ -61,7 +60,7 @@ public class QueryStringUtil {
 	 * A dummy URI which is used as a replacement for {@link BNode}s in {@link #appendBNode(StringBuilder, BNode)} since
 	 * BNodes cannot be expressed in SPARQL queries
 	 */
-	public static final IRI BNODE_URI = FedXUtil.iri("http://fluidops.com/fedx/bnode");
+	public static final IRI BNODE_URI = FedXUtil.iri("tag:rdf4j.org,2026:bnode");
 
 	/**
 	 * returns true iff there is at least one free variable, i.e. there is no binding for any variable

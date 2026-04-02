@@ -117,7 +117,6 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 		return nWorkers;
 	}
 
-
 	/**
 	 * Create the {@link BlockingQueue} used for the thread pool. The default implementation creates a
 	 * {@link LinkedBlockingQueue}.

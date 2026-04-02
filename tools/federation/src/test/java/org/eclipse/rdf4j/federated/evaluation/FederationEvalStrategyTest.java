@@ -84,8 +84,6 @@ public class FederationEvalStrategyTest extends SPARQLBaseTest {
 
 		Repository fedxRepo = fedxRule.getRepository();
 
-		fedxRule.enableDebug();
-
 		try (var conn = fedxRepo.getConnection()) {
 
 			TupleQuery tq = conn.prepareTupleQuery("SELECT * WHERE { ?s a ?type }");
