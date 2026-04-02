@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.federated.evaluation.join;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
@@ -69,24 +68,6 @@ public class ControlledWorkerBindJoin extends ControlledWorkerBindJoinBase {
 		@Override
 		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings) {
 			return new ParallelBoundJoinTask(control, _strategy, _expr, bindings);
-		}
-	}
-
-	@Deprecated(forRemoval = true)
-	protected class CheckJoinTaskCreator implements TaskCreator {
-		protected final FederationEvalStrategy _strategy;
-		protected final CheckStatementPattern _expr;
-
-		public CheckJoinTaskCreator(
-				FederationEvalStrategy strategy, CheckStatementPattern expr) {
-			super();
-			_strategy = strategy;
-			_expr = expr;
-		}
-
-		@Override
-		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings) {
-			return new ParallelCheckJoinTask(control, _strategy, _expr, bindings);
 		}
 	}
 

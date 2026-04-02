@@ -997,21 +997,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
 
 	/**
-	 * Perform a grouped check at the relevant endpoints, i.e. for a group of bindings keep only those for which at
-	 * least one endpoint provides a result to the bound statement.
-	 *
-	 * @param stmt
-	 * @param bindings
-	 * @return the result iteration
-	 * @throws QueryEvaluationException
-	 * @deprecated with VALUES implementation, control flow goes via
-	 *             {@link #evaluateBoundJoinStatementPattern(StatementTupleExpr, List)}
-	 */
-	@Deprecated(forRemoval = true)
-	public abstract CloseableIteration<BindingSet> evaluateGroupedCheck(
-			CheckStatementPattern stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
-
-	/**
 	 * Evaluate the left bind join for the given {@link StatementTupleExpr} and bindings at the relevant endpoints.
 	 *
 	 * @param stmt

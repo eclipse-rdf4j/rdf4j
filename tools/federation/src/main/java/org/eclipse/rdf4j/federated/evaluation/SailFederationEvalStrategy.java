@@ -91,22 +91,6 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		return result;
 	}
 
-	@Override
-	public CloseableIteration<BindingSet> evaluateGroupedCheck(
-			CheckStatementPattern stmt, List<BindingSet> bindings)
-			throws QueryEvaluationException {
-
-		if (bindings.size() == 1) {
-			return stmt.evaluate(bindings.get(0));
-		}
-
-		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
-
-		CloseableIteration<BindingSet> result = evaluateAtStatementSources(preparedQuery,
-				stmt.getStatementSources(), stmt.getQueryInfo());
-
-		return new GroupedCheckConversionIteration(result, bindings);
-	}
 
 	@Override
 	public CloseableIteration<BindingSet> executeJoin(

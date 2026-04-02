@@ -346,63 +346,6 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Construct a SELECT query string for a bound union.
-	 *
-	 * Pattern:
-	 *
-	 * SELECT ?v_1 ?v_2 ?v_N WHERE { { ?v_1 p o } UNION { ?v_2 p o } UNION ... }
-	 *
-	 * Note that the filterExpr is not evaluated at the moment.
-	 *
-	 * @param stmt
-	 * @param unionBindings
-	 * @param filterExpr
-	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
-	 *                      in beginning
-	 *
-	 * @return the SELECT query string
-	 * @deprecated replaced with
-	 *             {@link #selectQueryStringBoundJoinVALUES(StatementPattern, List, FilterValueExpr, AtomicBoolean)}
-	 */
-	@Deprecated
-	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
-			FilterValueExpr filterExpr, Boolean evaluated, Dataset dataset) {
-
-		Set<String> varNames = new HashSet<>();
-		StringBuilder unions = new StringBuilder();
-		for (int i = 0; i < unionBindings.size(); i++) {
-			String s = constructStatementId(stmt, Integer.toString(i), varNames, unionBindings.get(i));
-			if (i > 0) {
-				unions.append(" UNION");
-			}
-			unions.append(" { ").append(s).append(" }");
-		}
-
-		StringBuilder res = new StringBuilder();
-
-		res.append("SELECT ");
-
-		for (String var : varNames) {
-			res.append(" ?").append(var);
-		}
-
-		res.append(" ");
-		appendDatasetClause(res, dataset);
-		res.append("WHERE { ");
-
-		res.append(unions);
-
-		// TODO evaluate filter expression remote
-//		if (filterExpr!=null) {
-//
-//		}
-
-		res.append(" }");
-
-		return res.toString();
-	}
-
-	/**
 	 * Creates a bound join subquery using the SPARQL 1.1 VALUES operator.
 	 * <p>
 	 * Example subquery:

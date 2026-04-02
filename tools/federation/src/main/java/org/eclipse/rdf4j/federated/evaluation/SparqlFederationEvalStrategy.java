@@ -116,64 +116,6 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		}
 	}
 
-	/**
-	 * Alternative evaluation implementation using UNION. Nowadays we use a VALUES clause based implementation
-	 *
-	 * @deprecated no longer used
-	 */
-	@Deprecated(forRemoval = true)
-	protected CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern_UNION(
-			StatementTupleExpr stmt, List<BindingSet> bindings)
-			throws QueryEvaluationException {
-
-		// we can omit the bound join handling
-		if (bindings.size() == 1) {
-			return evaluate(stmt, bindings.get(0));
-		}
-
-		FilterValueExpr filterExpr = null;
-		if (stmt instanceof FilterTuple) {
-			filterExpr = ((FilterTuple) stmt).getFilterExpr();
-		}
-
-		Boolean isEvaluated = false;
-		String preparedQuery = QueryStringUtil.selectQueryStringBoundUnion((StatementPattern) stmt, bindings,
-				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
-
-		CloseableIteration<BindingSet> result = evaluateAtStatementSources(preparedQuery,
-				stmt.getStatementSources(), stmt.getQueryInfo());
-
-		// apply filter and/or convert to original bindings
-		if (filterExpr != null && !isEvaluated) {
-			result = new BoundJoinConversionIteration(result, bindings); // apply conversion
-			result = new FilteringIteration(filterExpr, result, this); // apply filter
-			if (!result.hasNext()) {
-				return new EmptyIteration<>();
-			}
-		} else {
-			result = new BoundJoinConversionIteration(result, bindings);
-		}
-
-		return result;
-	}
-
-	@Override
-	public CloseableIteration<BindingSet> evaluateGroupedCheck(
-			CheckStatementPattern stmt, List<BindingSet> bindings)
-			throws QueryEvaluationException {
-
-		if (bindings.size() == 1) {
-			return stmt.evaluate(bindings.get(0));
-		}
-
-		String preparedQuery = QueryStringUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings,
-				stmt.getQueryInfo().getDataset());
-
-		CloseableIteration<BindingSet> result = evaluateAtStatementSources(preparedQuery,
-				stmt.getStatementSources(), stmt.getQueryInfo());
-
-		return new GroupedCheckConversionIteration(result, bindings);
-	}
 
 	@Override
 	public CloseableIteration<BindingSet> executeJoin(

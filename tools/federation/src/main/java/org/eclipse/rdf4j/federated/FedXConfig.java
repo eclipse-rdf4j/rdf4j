@@ -496,20 +496,4 @@ public class FedXConfig {
 	public int getConsumingIterationMax() {
 		return consumingIterationMax;
 	}
-
-	/**
-	 * Set the CollectionFactory to be used by the federation
-	 *
-	 * <p>
-	 * Can only be set before federation initialization.
-	 * </p>
-	 *
-	 * @param cf
-	 * @return the current config
-	 * @deprecated unusedO
-	 */
-	@Deprecated(forRemoval = true)
-	public FedXConfig withCollectionFactory(CollectionFactory cf) {
-		return this;
-	}
 }
