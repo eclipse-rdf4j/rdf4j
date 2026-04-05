@@ -81,6 +81,15 @@ final class LmdbLftjPatternPlan {
 		return false;
 	}
 
+	boolean containsBindingSlot(int bindingSlot) {
+		for (TermRef term : terms) {
+			if (term.bindingSlot() == bindingSlot) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	int componentFor(String variableName) {
 		for (TermRef term : terms) {
 			if (term.matchesName(variableName)) {
@@ -88,6 +97,15 @@ final class LmdbLftjPatternPlan {
 			}
 		}
 		throw new IllegalArgumentException("Pattern does not bind variable " + variableName);
+	}
+
+	int componentForBindingSlot(int bindingSlot) {
+		for (TermRef term : terms) {
+			if (term.bindingSlot() == bindingSlot) {
+				return term.component();
+			}
+		}
+		throw new IllegalArgumentException("Pattern does not bind slot " + bindingSlot);
 	}
 
 	int keyFieldIndex(String variableName) {
@@ -99,7 +117,16 @@ final class LmdbLftjPatternPlan {
 		throw new IllegalArgumentException("Pattern does not bind variable " + variableName);
 	}
 
-	int keyFieldIndex(int component) {
+	int keyFieldIndexForBindingSlot(int bindingSlot) {
+		for (int i = 0; i < keyTerms.length; i++) {
+			if (keyTerms[i].bindingSlot() == bindingSlot) {
+				return i;
+			}
+		}
+		throw new IllegalArgumentException("Pattern does not bind slot " + bindingSlot);
+	}
+
+	int keyFieldIndexForComponent(int component) {
 		for (int i = 0; i < keyTerms.length; i++) {
 			if (keyTerms[i].component() == component) {
 				return i;
@@ -182,6 +209,30 @@ final class LmdbLftjPatternPlan {
 			if (i < keyFieldIndex && fixedId < 0) {
 				throw new IllegalStateException("LMDB LFTJ requires a fully fixed prefix before " + variableName
 						+ " in index " + indexName);
+			}
+			if (fixedId >= 0) {
+				minKey[term.component()] = fixedId;
+				maxKey[term.component()] = fixedId;
+			}
+		}
+
+		TermRef currentTerm = keyTerms[keyFieldIndex];
+		minKey[currentTerm.component()] = lowerBound;
+		maxKey[currentTerm.component()] = Long.MAX_VALUE;
+	}
+
+	void fillRangeBounds(LmdbLftjBindingState state, int bindingSlot, long lowerBound, long[] minKey,
+			long[] maxKey) {
+		Arrays.fill(maxKey, Long.MAX_VALUE);
+
+		int keyFieldIndex = keyFieldIndexForBindingSlot(bindingSlot);
+		for (int i = 0; i < keyTerms.length; i++) {
+			TermRef term = keyTerms[i];
+			long fixedId = state.fixedId(term);
+			if (i < keyFieldIndex && fixedId < 0) {
+				throw new IllegalStateException(
+						"LMDB LFTJ requires a fully fixed prefix before slot " + bindingSlot + " in index "
+								+ indexName);
 			}
 			if (fixedId >= 0) {
 				minKey[term.component()] = fixedId;

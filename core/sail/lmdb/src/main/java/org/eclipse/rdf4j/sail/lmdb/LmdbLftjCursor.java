@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 interface LmdbLftjCursor extends AutoCloseable {
 
-	boolean open(String variableName);
+	boolean open(int bindingSlot);
 
 	boolean seek(long target);
 
@@ -21,7 +21,7 @@ interface LmdbLftjCursor extends AutoCloseable {
 
 	long value();
 
-	void release(String variableName);
+	void release(int bindingSlot);
 
 	@Override
 	void close();

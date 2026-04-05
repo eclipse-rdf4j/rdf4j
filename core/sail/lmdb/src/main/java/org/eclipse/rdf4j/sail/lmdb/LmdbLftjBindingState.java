@@ -25,6 +25,7 @@ final class LmdbLftjBindingState {
 	private final LmdbLftjPlan plan;
 	private final BindingSet inputBindings;
 	private final LmdbQueryAccess queryAccess;
+	private final String[] variableNames;
 	private final Map<String, Integer> variableSlots = new HashMap<>();
 	private final long[] fixedValues;
 	private final boolean[] fixedPresent;
@@ -38,13 +39,14 @@ final class LmdbLftjBindingState {
 		this.plan = plan;
 		this.inputBindings = inputBindings;
 		this.queryAccess = queryAccess;
-		int variableCount = plan.variableOrder().size();
+		this.variableNames = plan.variableOrder().toArray(new String[0]);
+		int variableCount = variableNames.length;
 		this.fixedValues = new long[variableCount];
 		this.fixedPresent = new boolean[variableCount];
 		this.assignedValues = new long[variableCount];
 		this.assignedPresent = new boolean[variableCount];
 		for (int i = 0; i < variableCount; i++) {
-			variableSlots.put(plan.variableOrder().get(i), i);
+			variableSlots.put(variableNames[i], i);
 		}
 	}
 
@@ -63,7 +65,7 @@ final class LmdbLftjBindingState {
 				}
 			}
 		}
-		for (String variableName : plan.variableOrder()) {
+		for (String variableName : variableNames) {
 			if (inputBindings.hasBinding(variableName)) {
 				long id = queryAccess.resolveId(inputBindings.getValue(variableName));
 				if (id == LmdbValue.UNKNOWN_ID) {
@@ -86,12 +88,18 @@ final class LmdbLftjBindingState {
 	}
 
 	boolean isBound(String variableName) {
-		int slot = slot(variableName);
+		return isBound(slot(variableName));
+	}
+
+	boolean isBound(int slot) {
 		return assignedPresent[slot] || fixedPresent[slot];
 	}
 
 	long value(String variableName) {
-		int slot = slot(variableName);
+		return value(slot(variableName));
+	}
+
+	long value(int slot) {
 		if (assignedPresent[slot]) {
 			return assignedValues[slot];
 		}
@@ -99,13 +107,20 @@ final class LmdbLftjBindingState {
 	}
 
 	void assign(String variableName, long value) {
-		int slot = slot(variableName);
+		assign(slot(variableName), value);
+	}
+
+	void assign(int slot, long value) {
 		assignedValues[slot] = value;
 		assignedPresent[slot] = true;
 	}
 
 	void clear(String variableName) {
-		assignedPresent[slot(variableName)] = false;
+		clear(slot(variableName));
+	}
+
+	void clear(int slot) {
+		assignedPresent[slot] = false;
 	}
 
 	long fixedId(LmdbLftjPatternPlan.TermRef term) {
@@ -126,12 +141,21 @@ final class LmdbLftjBindingState {
 
 	BindingSet materialize(QueryEvaluationContext context) {
 		MutableBindingSet result = context.createBindingSet(inputBindings);
-		for (String variableName : plan.variableOrder()) {
-			if (!result.hasBinding(variableName) && isBound(variableName)) {
-				context.setBinding(variableName).accept(queryAccess.resolveValue(value(variableName)), result);
+		for (int slot = 0; slot < variableNames.length; slot++) {
+			String variableName = variableNames[slot];
+			if (!result.hasBinding(variableName) && isBound(slot)) {
+				context.setBinding(variableName).accept(queryAccess.resolveValue(value(slot)), result);
 			}
 		}
 		return result;
+	}
+
+	int variableCount() {
+		return variableNames.length;
+	}
+
+	String variableName(int slot) {
+		return variableNames[slot];
 	}
 
 	void close() {

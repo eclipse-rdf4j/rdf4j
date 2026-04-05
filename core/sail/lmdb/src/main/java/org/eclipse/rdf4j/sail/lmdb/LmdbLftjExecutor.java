@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -64,9 +65,9 @@ final class LmdbLftjExecutor {
 		private final LmdbQueryAccess queryAccess;
 		private final LmdbLftjMetrics metrics;
 		private final LmdbPrefixFrontierProvider frontierProvider;
-		private final List<String> searchVariables;
-		private final List<LmdbLftjCursor> patternCursors;
-		private final List<List<LmdbLftjCursor>> cursorsByDepth;
+		private final int[] searchSlots;
+		private final LmdbLftjCursor[] patternCursors;
+		private final DepthRuntime[] depthRuntimes;
 		private final boolean[] initializedDepths;
 		private final boolean[] advanceDepths;
 
@@ -82,11 +83,11 @@ final class LmdbLftjExecutor {
 			this.queryAccess = queryAccess;
 			this.metrics = metrics;
 			this.frontierProvider = new LmdbPrefixFrontierProvider(queryAccess, state, metrics);
-			this.searchVariables = collectSearchVariables(plan, state);
+			this.searchSlots = collectSearchSlots(plan, state);
 			this.patternCursors = createPatternCursors(plan, frontierProvider);
-			this.cursorsByDepth = createDepthCursors(plan, searchVariables, patternCursors);
-			this.initializedDepths = new boolean[searchVariables.size()];
-			this.advanceDepths = new boolean[searchVariables.size()];
+			this.depthRuntimes = createDepthRuntimes(plan, searchSlots, patternCursors);
+			this.initializedDepths = new boolean[searchSlots.length];
+			this.advanceDepths = new boolean[searchSlots.length];
 			this.depth = 0;
 		}
 
@@ -115,7 +116,7 @@ final class LmdbLftjExecutor {
 
 		private BindingSet computeNextElement() {
 			while (depth >= 0) {
-				if (depth == searchVariables.size()) {
+				if (depth == searchSlots.length) {
 					long multiplicity = witnessMultiplicity(plan, metrics, frontierProvider);
 					backtrackAfterLeaf();
 					if (multiplicity > 0) {
@@ -155,22 +156,23 @@ final class LmdbLftjExecutor {
 		}
 
 		private boolean positionDepth(int depth, boolean advanceExisting) {
-			String variableName = searchVariables.get(depth);
-			List<LmdbLftjCursor> cursors = cursorsByDepth.get(depth);
-			state.clear(variableName);
+			DepthRuntime depthRuntime = depthRuntimes[depth];
+			int bindingSlot = depthRuntime.bindingSlot;
+			LmdbLftjCursor[] cursors = depthRuntime.cursors;
+			state.clear(bindingSlot);
 
-			if (cursors.isEmpty()) {
+			if (cursors.length == 0) {
 				return false;
 			}
 
 			if (!advanceExisting) {
 				for (LmdbLftjCursor cursor : cursors) {
 					metrics.recordCandidateScan();
-					if (!cursor.open(variableName)) {
+					if (!cursor.open(bindingSlot)) {
 						return false;
 					}
 				}
-			} else if (!cursors.get(0).next()) {
+			} else if (!cursors[0].next()) {
 				return false;
 			}
 
@@ -183,12 +185,12 @@ final class LmdbLftjExecutor {
 				return false;
 			}
 
-			state.assign(variableName, current);
+			state.assign(bindingSlot, current);
 			return true;
 		}
 
 		private void backtrackAfterLeaf() {
-			depth = searchVariables.size() - 1;
+			depth = searchSlots.length - 1;
 			if (depth >= 0) {
 				advanceDepths[depth] = true;
 			}
@@ -203,56 +205,58 @@ final class LmdbLftjExecutor {
 		}
 
 		private void releaseDepth(int depth) {
-			if (depth < 0 || depth >= searchVariables.size()) {
+			if (depth < 0 || depth >= searchSlots.length) {
 				return;
 			}
-			String variableName = searchVariables.get(depth);
-			state.clear(variableName);
+			DepthRuntime depthRuntime = depthRuntimes[depth];
+			state.clear(depthRuntime.bindingSlot);
 			initializedDepths[depth] = false;
 			advanceDepths[depth] = false;
-			for (LmdbLftjCursor cursor : cursorsByDepth.get(depth)) {
-				cursor.release(variableName);
+			for (LmdbLftjCursor cursor : depthRuntime.cursors) {
+				cursor.release(depthRuntime.bindingSlot);
 			}
 		}
 	}
 
-	private List<String> collectSearchVariables(LmdbLftjPlan plan, LmdbLftjBindingState state) {
-		List<String> searchVariables = new ArrayList<>(plan.variableOrder().size());
-		for (String variableName : plan.variableOrder()) {
-			if (!state.isBound(variableName)) {
-				searchVariables.add(variableName);
+	private int[] collectSearchSlots(LmdbLftjPlan plan, LmdbLftjBindingState state) {
+		int[] searchSlots = new int[plan.variableOrder().size()];
+		int count = 0;
+		for (int slot = 0; slot < state.variableCount(); slot++) {
+			if (!state.isBound(slot)) {
+				searchSlots[count++] = slot;
 			}
 		}
-		return searchVariables;
+		return Arrays.copyOf(searchSlots, count);
 	}
 
-	private List<LmdbLftjCursor> createPatternCursors(LmdbLftjPlan plan, LmdbPrefixFrontierProvider frontierProvider) {
-		List<LmdbLftjCursor> cursors = new ArrayList<>(plan.patternPlans().size());
-		for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
-			cursors.add(new LmdbCachedTrieCursor(patternPlan, frontierProvider));
+	private LmdbLftjCursor[] createPatternCursors(LmdbLftjPlan plan, LmdbPrefixFrontierProvider frontierProvider) {
+		LmdbLftjCursor[] cursors = new LmdbLftjCursor[plan.patternPlans().size()];
+		List<LmdbLftjPatternPlan> patternPlans = plan.patternPlans();
+		for (int i = 0; i < patternPlans.size(); i++) {
+			cursors[i] = new LmdbCachedTrieCursor(patternPlans.get(i), frontierProvider);
 		}
 		return cursors;
 	}
 
-	private List<List<LmdbLftjCursor>> createDepthCursors(LmdbLftjPlan plan, List<String> searchVariables,
-			List<LmdbLftjCursor> patternCursors) {
-		List<List<LmdbLftjCursor>> cursorsByDepth = new ArrayList<>(searchVariables.size());
+	private DepthRuntime[] createDepthRuntimes(LmdbLftjPlan plan, int[] searchSlots, LmdbLftjCursor[] patternCursors) {
+		DepthRuntime[] depthRuntimes = new DepthRuntime[searchSlots.length];
 		List<LmdbLftjPatternPlan> patternPlans = plan.patternPlans();
-		for (String variableName : searchVariables) {
+		for (int depth = 0; depth < searchSlots.length; depth++) {
+			int bindingSlot = searchSlots[depth];
 			List<LmdbLftjCursor> cursors = new ArrayList<>();
 			for (int i = 0; i < patternPlans.size(); i++) {
 				LmdbLftjPatternPlan patternPlan = patternPlans.get(i);
-				if (!patternPlan.containsVariable(variableName)) {
+				if (!patternPlan.containsBindingSlot(bindingSlot)) {
 					continue;
 				}
-				cursors.add(patternCursors.get(i));
+				cursors.add(patternCursors[i]);
 			}
-			cursorsByDepth.add(cursors);
+			depthRuntimes[depth] = new DepthRuntime(bindingSlot, cursors.toArray(new LmdbLftjCursor[0]));
 		}
-		return cursorsByDepth;
+		return depthRuntimes;
 	}
 
-	private long align(List<LmdbLftjCursor> cursors, long target) {
+	private long align(LmdbLftjCursor[] cursors, long target) {
 		long current = target;
 		while (true) {
 			boolean allMatch = true;
@@ -290,6 +294,16 @@ final class LmdbLftjExecutor {
 			LmdbPrefixFrontierProvider frontierProvider) {
 		metrics.recordWitnessScan();
 		return frontierProvider.countMatches(patternPlan);
+	}
+
+	private static final class DepthRuntime {
+		private final int bindingSlot;
+		private final LmdbLftjCursor[] cursors;
+
+		private DepthRuntime(int bindingSlot, LmdbLftjCursor[] cursors) {
+			this.bindingSlot = bindingSlot;
+			this.cursors = cursors;
+		}
 	}
 
 	private final class LazyFallbackStep {

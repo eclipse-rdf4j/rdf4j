@@ -14,43 +14,19 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
-
-import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbLftjExecutorTest {
 
-	private static final ValueFactory VF = SimpleValueFactory.getInstance();
-
 	@Test
 	void evaluateShouldStayLazyUntilConsumerReadsResults() {
-		TestQueryAccess queryAccess = new TestQueryAccess();
-		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess);
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
 
 		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
 			assertEquals(0, queryAccess.resolveValueCalls,
@@ -65,22 +41,22 @@ class LmdbLftjExecutorTest {
 
 	@Test
 	void evaluateShouldRespectFullyBoundInputBindings() {
-		TestQueryAccess queryAccess = new TestQueryAccess();
-		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess);
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
 
 		QueryBindingSet matchingBindings = new QueryBindingSet();
-		matchingBindings.setBinding("a", VF.createIRI("urn:person:1"));
-		matchingBindings.setBinding("b", VF.createIRI("urn:person:2"));
-		matchingBindings.setBinding("c", VF.createIRI("urn:person:3"));
+		matchingBindings.setBinding("a", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+		matchingBindings.setBinding("b", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:2"));
+		matchingBindings.setBinding("c", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:3"));
 
 		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(matchingBindings)) {
 			assertTrue(iteration.hasNext(), "fully bound matching cycles should still produce a result");
 		}
 
 		QueryBindingSet nonMatchingBindings = new QueryBindingSet();
-		nonMatchingBindings.setBinding("a", VF.createIRI("urn:person:1"));
-		nonMatchingBindings.setBinding("b", VF.createIRI("urn:person:1"));
-		nonMatchingBindings.setBinding("c", VF.createIRI("urn:person:2"));
+		nonMatchingBindings.setBinding("a", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+		nonMatchingBindings.setBinding("b", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+		nonMatchingBindings.setBinding("c", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:2"));
 
 		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(nonMatchingBindings)) {
 			assertTrue(!iteration.hasNext(), "fully bound non-matching cycles must not be reported");
@@ -89,8 +65,8 @@ class LmdbLftjExecutorTest {
 
 	@Test
 	void evaluateShouldCloseLiveScansOnEarlyClose() {
-		TestQueryAccess queryAccess = new TestQueryAccess();
-		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess);
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
 
 		CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance());
 		assertTrue(iteration.hasNext(), "expected a lazy result row");
@@ -105,8 +81,8 @@ class LmdbLftjExecutorTest {
 
 	@Test
 	void evaluateShouldReusePatternScansAcrossBacktracking() {
-		TestQueryAccess queryAccess = new TestQueryAccess();
-		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess);
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
 
 		long count = 0;
 		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
@@ -123,8 +99,8 @@ class LmdbLftjExecutorTest {
 
 	@Test
 	void evaluateShouldReuseDerivedRelationsAcrossEquivalentPatterns() {
-		TestQueryAccess queryAccess = new TestQueryAccess();
-		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess);
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
 
 		long count = 0;
 		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
@@ -141,8 +117,10 @@ class LmdbLftjExecutorTest {
 
 	@Test
 	void evaluateShouldAvoidRecordScansForHiddenContextMultiplicity() {
-		TestQueryAccess queryAccess = TestQueryAccess.withDuplicateContexts();
-		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess, createPlanWithHiddenContexts());
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = LmdbLftjSyntheticScenario.TestQueryAccess
+				.withDuplicateContexts();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess,
+				LmdbLftjSyntheticScenario.createPlanWithHiddenContexts());
 
 		long count = 0;
 		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
@@ -155,370 +133,5 @@ class LmdbLftjExecutorTest {
 		assertEquals(648, count, "hidden context multiplicity should still be preserved");
 		assertEquals(0, queryAccess.recordScanCalls,
 				"hidden context multiplicity should come from cached frontier counts, not RecordIterator rescans");
-	}
-
-	private QueryEvaluationStep createEvaluationStep(TestQueryAccess queryAccess) {
-		return createEvaluationStep(queryAccess, createPlan());
-	}
-
-	private QueryEvaluationStep createEvaluationStep(TestQueryAccess queryAccess, LmdbLftjPlan plan) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
-		LmdbLftjEvaluationStrategy strategy = new LmdbLftjEvaluationStrategy(
-				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess),
-				null,
-				null,
-				0L,
-				new EvaluationStatistics(),
-				false,
-				DefaultCollectionFactory::new);
-		LmdbLftjExecutor executor = new LmdbLftjExecutor(strategy);
-		return executor.prepare(new LmdbLftjTupleExpr(plan), context);
-	}
-
-	private LmdbLftjPlan createPlan() {
-		StatementPattern pattern1 = statementPattern("a", "b");
-		StatementPattern pattern2 = statementPattern("b", "c");
-		StatementPattern pattern3 = statementPattern("c", "a");
-		TupleExpr fallbackExpr = new Join(new Join(pattern1.clone(), pattern2.clone()), pattern3.clone());
-		return new LmdbLftjPlan(
-				fallbackExpr,
-				fallbackExpr.getBindingNames(),
-				fallbackExpr.getAssuredBindingNames(),
-				List.of("a", "b", "c"),
-				List.of(
-						new LmdbLftjPatternPlan(pattern1, "psoc"),
-						new LmdbLftjPatternPlan(pattern2, "psoc"),
-						new LmdbLftjPatternPlan(pattern3, "posc")));
-	}
-
-	private StatementPattern statementPattern(String subjectName, String objectName) {
-		return new StatementPattern(
-				new Var(subjectName),
-				new Var("pred", FOAF.KNOWS),
-				new Var(objectName));
-	}
-
-	private LmdbLftjPlan createPlanWithHiddenContexts() {
-		StatementPattern pattern1 = statementPattern("a", "b", "ctx1");
-		StatementPattern pattern2 = statementPattern("b", "c", "ctx2");
-		StatementPattern pattern3 = statementPattern("c", "a", "ctx3");
-		TupleExpr fallbackExpr = new Join(new Join(pattern1.clone(), pattern2.clone()), pattern3.clone());
-		return new LmdbLftjPlan(
-				fallbackExpr,
-				fallbackExpr.getBindingNames(),
-				fallbackExpr.getAssuredBindingNames(),
-				List.of("a", "b", "c"),
-				List.of(
-						new LmdbLftjPatternPlan(pattern1, "psoc"),
-						new LmdbLftjPatternPlan(pattern2, "psoc"),
-						new LmdbLftjPatternPlan(pattern3, "posc")));
-	}
-
-	private StatementPattern statementPattern(String subjectName, String objectName, String hiddenContextName) {
-		return new StatementPattern(
-				new Var(subjectName),
-				new Var("pred", FOAF.KNOWS),
-				new Var(objectName),
-				Var.of(hiddenContextName, true));
-	}
-
-	private static final class EmptyTripleSource implements TripleSource {
-
-		@Override
-		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
-			return new EmptyIteration<>();
-		}
-
-		@Override
-		public ValueFactory getValueFactory() {
-			return VF;
-		}
-	}
-
-	private static final class TestQueryAccess implements LmdbQueryAccess {
-
-		private final TxnManager txnManager = new TxnManager(0L, TxnManager.Mode.NONE);
-		private final TxnManager.Txn txn = txnManager.createTxn(1L);
-		private final List<long[]> quads = new ArrayList<>();
-		private final List<Value> valuesById = new ArrayList<>();
-
-		private int resolveValueCalls;
-		private int releaseReadTxnCalls;
-		private int openScanCalls;
-		private int recordScanCalls;
-		private int openTrieCursorCalls;
-		private int closedScanCalls;
-
-		private TestQueryAccess() {
-			this(false);
-		}
-
-		private TestQueryAccess(boolean duplicateContexts) {
-			valuesById.add(null);
-			valuesById.add(VF.createIRI("urn:person:1"));
-			valuesById.add(VF.createIRI("urn:person:2"));
-			valuesById.add(VF.createIRI("urn:person:3"));
-			valuesById.add(VF.createIRI("urn:person:4"));
-			valuesById.add(FOAF.KNOWS);
-			valuesById.add(VF.createIRI("urn:ctx:1"));
-			valuesById.add(VF.createIRI("urn:ctx:2"));
-
-			for (long subject = 1; subject <= 4; subject++) {
-				for (long object = 1; object <= 4; object++) {
-					if (subject != object) {
-						quads.add(new long[] { subject, 5L, object, 0L });
-						if (duplicateContexts) {
-							quads.add(new long[] { subject, 5L, object, 6L });
-							quads.add(new long[] { subject, 5L, object, 7L });
-						}
-					}
-				}
-			}
-		}
-
-		private static TestQueryAccess withDuplicateContexts() {
-			return new TestQueryAccess(true);
-		}
-
-		@Override
-		public TripleStore tripleStore() {
-			return null;
-		}
-
-		@Override
-		public TxnManager.Txn acquireReadTxn() {
-			return txn;
-		}
-
-		@Override
-		public void releaseReadTxn(TxnManager.Txn txn) {
-			assertTrue(txn == this.txn);
-			releaseReadTxnCalls++;
-		}
-
-		@Override
-		public long resolveId(Value value) {
-			if (FOAF.KNOWS.equals(value)) {
-				return 5L;
-			}
-
-			for (int i = 1; i < valuesById.size(); i++) {
-				if (value.equals(valuesById.get(i))) {
-					return i;
-				}
-			}
-
-			return -1L;
-		}
-
-		@Override
-		public Value resolveValue(long id) {
-			resolveValueCalls++;
-			return valuesById.get((int) id);
-		}
-
-		@Override
-		public boolean includeInferred() {
-			return false;
-		}
-
-		@Override
-		public Set<String> configuredIndexes() {
-			return Set.of("psoc", "posc");
-		}
-
-		@Override
-		public RecordIterator openScan(TxnManager.Txn txn, String indexName, long subj, long pred, long obj,
-				long context, boolean explicit) {
-			openScanCalls++;
-			recordScanCalls++;
-			return new TestRecordIterator(quads, subj, pred, obj, context, this::recordClosedScan);
-		}
-
-		@Override
-		public LmdbTrieKeyCursor openTrieCursor(TxnManager.Txn txn, String indexName, boolean explicit) {
-			openScanCalls++;
-			openTrieCursorCalls++;
-			return new TestTrieKeyCursor(quads, indexName, this::recordClosedScan);
-		}
-
-		private void recordClosedScan() {
-			closedScanCalls++;
-		}
-	}
-
-	private static final class TestRecordIterator implements RecordIterator {
-
-		private final List<long[]> quads;
-		private final long subj;
-		private final long pred;
-		private final long obj;
-		private final long context;
-		private final Runnable closeCallback;
-
-		private int position;
-		private boolean closed;
-
-		private TestRecordIterator(List<long[]> quads, long subj, long pred, long obj, long context,
-				Runnable closeCallback) {
-			this.quads = quads;
-			this.subj = subj;
-			this.pred = pred;
-			this.obj = obj;
-			this.context = context;
-			this.closeCallback = closeCallback;
-		}
-
-		@Override
-		public long[] next() {
-			while (position < quads.size()) {
-				long[] quad = quads.get(position++);
-				if (matches(subj, quad[0]) && matches(pred, quad[1]) && matches(obj, quad[2])
-						&& matches(context, quad[3])) {
-					return quad.clone();
-				}
-			}
-			return null;
-		}
-
-		private boolean matches(long expected, long actual) {
-			return expected < 0 || expected == actual;
-		}
-
-		@Override
-		public void close() {
-			if (!closed) {
-				closed = true;
-				closeCallback.run();
-			}
-		}
-	}
-
-	private static final class TestTrieKeyCursor implements LmdbTrieKeyCursor {
-
-		private final List<long[]> quads;
-		private final int[] order;
-		private final Runnable closeCallback;
-
-		private long[] lowerBound;
-		private long[] upperBound;
-		private int prefixLength;
-		private int position;
-		private long[] current;
-		private boolean closed;
-
-		private TestTrieKeyCursor(List<long[]> quads, String indexName, Runnable closeCallback) {
-			this.quads = quads.stream()
-					.map(long[]::clone)
-					.sorted(Comparator.comparingLong((long[] quad) -> quad[componentIndex(indexName, 0)])
-							.thenComparingLong(quad -> quad[componentIndex(indexName, 1)])
-							.thenComparingLong(quad -> quad[componentIndex(indexName, 2)])
-							.thenComparingLong(quad -> quad[componentIndex(indexName, 3)]))
-					.toList();
-			this.order = new int[] {
-					componentIndex(indexName, 0),
-					componentIndex(indexName, 1),
-					componentIndex(indexName, 2),
-					componentIndex(indexName, 3)
-			};
-			this.closeCallback = closeCallback;
-		}
-
-		@Override
-		public boolean position(long[] lowerBound, long[] upperBound, int prefixLength) {
-			this.lowerBound = lowerBound.clone();
-			this.upperBound = upperBound.clone();
-			this.prefixLength = prefixLength;
-			this.position = 0;
-			this.current = null;
-
-			while (position < quads.size()) {
-				long[] quad = quads.get(position);
-				if (comparePrefix(quad, this.lowerBound, this.prefixLength) < 0) {
-					position++;
-					continue;
-				}
-				if (compare(quad, this.upperBound) > 0) {
-					return false;
-				}
-				current = quad;
-				return true;
-			}
-			return false;
-		}
-
-		@Override
-		public boolean next() {
-			if (current == null) {
-				return false;
-			}
-
-			while (++position < quads.size()) {
-				long[] quad = quads.get(position);
-				if (compare(quad, upperBound) > 0) {
-					current = null;
-					return false;
-				}
-				current = quad;
-				return true;
-			}
-
-			current = null;
-			return false;
-		}
-
-		@Override
-		public boolean isPositioned() {
-			return current != null;
-		}
-
-		@Override
-		public long valueAt(int keyFieldIndex) {
-			return current[order[keyFieldIndex]];
-		}
-
-		@Override
-		public void close() {
-			if (!closed) {
-				closed = true;
-				closeCallback.run();
-			}
-		}
-
-		private int compare(long[] quad, long[] bounds) {
-			for (int component : order) {
-				int comparison = Long.compare(quad[component], bounds[component]);
-				if (comparison != 0) {
-					return comparison;
-				}
-			}
-			return 0;
-		}
-
-		private int comparePrefix(long[] quad, long[] bounds, int prefixLength) {
-			for (int i = 0; i < prefixLength; i++) {
-				int comparison = Long.compare(quad[order[i]], bounds[order[i]]);
-				if (comparison != 0) {
-					return comparison;
-				}
-			}
-			return 0;
-		}
-
-		private static int componentIndex(String indexName, int keyFieldIndex) {
-			switch (indexName.charAt(keyFieldIndex)) {
-			case 's':
-				return 0;
-			case 'p':
-				return 1;
-			case 'o':
-				return 2;
-			case 'c':
-				return 3;
-			default:
-				throw new IllegalArgumentException("Unsupported LMDB index field: " + indexName.charAt(keyFieldIndex));
-			}
-		}
 	}
 }

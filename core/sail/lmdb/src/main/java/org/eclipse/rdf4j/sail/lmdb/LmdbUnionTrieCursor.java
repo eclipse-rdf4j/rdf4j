@@ -23,9 +23,9 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	public boolean open(String variableName) {
-		boolean explicitOpened = explicitCursor.open(variableName);
-		boolean inferredOpened = inferredCursor.open(variableName);
+	public boolean open(int bindingSlot) {
+		boolean explicitOpened = explicitCursor.open(bindingSlot);
+		boolean inferredOpened = inferredCursor.open(bindingSlot);
 		if (!explicitOpened && !inferredOpened) {
 			return false;
 		}
@@ -76,9 +76,9 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	public void release(String variableName) {
-		explicitCursor.release(variableName);
-		inferredCursor.release(variableName);
+	public void release(int bindingSlot) {
+		explicitCursor.release(bindingSlot);
+		inferredCursor.release(bindingSlot);
 	}
 
 	@Override

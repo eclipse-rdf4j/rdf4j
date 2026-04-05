@@ -36,11 +36,11 @@ class LmdbTrieCursor implements LmdbLftjCursor {
 	}
 
 	@Override
-	public boolean open(String variableName) {
+	public boolean open(int bindingSlot) {
 		ensureCursor();
 		Frame frame = stack[stackSize++];
-		frame.variableName = variableName;
-		frame.keyFieldIndex = patternPlan.keyFieldIndex(variableName);
+		frame.bindingSlot = bindingSlot;
+		frame.keyFieldIndex = patternPlan.keyFieldIndexForBindingSlot(bindingSlot);
 		if (seek(0L)) {
 			return true;
 		}
@@ -60,7 +60,7 @@ class LmdbTrieCursor implements LmdbLftjCursor {
 			return true;
 		}
 
-		patternPlan.fillRangeBounds(state, frame.variableName, target, lowerBound, upperBound);
+		patternPlan.fillRangeBounds(state, frame.bindingSlot, target, lowerBound, upperBound);
 		if (!cursor.position(lowerBound, upperBound, frame.keyFieldIndex + 1)) {
 			frame.currentAvailable = false;
 			return false;
@@ -102,17 +102,17 @@ class LmdbTrieCursor implements LmdbLftjCursor {
 	}
 
 	@Override
-	public void release(String variableName) {
+	public void release(int bindingSlot) {
 		if (stackSize == 0) {
 			return;
 		}
 		Frame frame = stack[stackSize - 1];
-		if (!frame.matches(variableName)) {
+		if (!frame.matches(bindingSlot)) {
 			return;
 		}
 		stack[--stackSize].reset();
 		if (stackSize > 0 && currentFrame().currentAvailable && !restoreCurrentPosition()) {
-			throw new IllegalStateException("LMDB trie cursor failed to restore parent frame for " + variableName);
+			throw new IllegalStateException("LMDB trie cursor failed to restore parent frame for slot " + bindingSlot);
 		}
 	}
 
@@ -150,20 +150,20 @@ class LmdbTrieCursor implements LmdbLftjCursor {
 	}
 
 	private static final class Frame {
-		private String variableName;
+		private int bindingSlot = -1;
 		private int keyFieldIndex;
 		private long currentValue;
 		private boolean currentAvailable;
 
 		private void reset() {
-			variableName = null;
+			bindingSlot = -1;
 			keyFieldIndex = -1;
 			currentValue = 0L;
 			currentAvailable = false;
 		}
 
-		private boolean matches(String variableName) {
-			return this.variableName != null && this.variableName.equals(variableName);
+		private boolean matches(int bindingSlot) {
+			return this.bindingSlot == bindingSlot;
 		}
 	}
 }

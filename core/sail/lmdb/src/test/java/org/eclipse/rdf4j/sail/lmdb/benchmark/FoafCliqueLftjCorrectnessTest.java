@@ -28,6 +28,20 @@ class FoafCliqueLftjCorrectnessTest {
 
 	@Test
 	void cycle3ShouldMatchRegularJoinCount(@TempDir File disabledDir, @TempDir File enabledDir) {
+		assertCycleCountMatches(disabledDir, enabledDir, 3);
+	}
+
+	@Test
+	void cycle4ShouldMatchRegularJoinCount(@TempDir File disabledDir, @TempDir File enabledDir) {
+		assertCycleCountMatches(disabledDir, enabledDir, 4);
+	}
+
+	@Test
+	void cycle5ShouldMatchRegularJoinCount(@TempDir File disabledDir, @TempDir File enabledDir) {
+		assertCycleCountMatches(disabledDir, enabledDir, 5);
+	}
+
+	private void assertCycleCountMatches(File disabledDir, File enabledDir, int cycleSize) {
 		Repository disabledRepository = createRepository(disabledDir, false);
 		Repository enabledRepository = createRepository(enabledDir, true);
 
@@ -35,10 +49,10 @@ class FoafCliqueLftjCorrectnessTest {
 			populate(disabledRepository);
 			populate(enabledRepository);
 
-			long expected = executeCount(disabledRepository, cycleQuery(3));
-			long actual = executeCount(enabledRepository, cycleQuery(3));
+			long expected = executeCount(disabledRepository, cycleQuery(cycleSize));
+			long actual = executeCount(enabledRepository, cycleQuery(cycleSize));
 
-			assertEquals(expected, actual, "LFTJ must preserve the cycle3 result count");
+			assertEquals(expected, actual, "LFTJ must preserve the cycle" + cycleSize + " result count");
 		} finally {
 			disabledRepository.shutDown();
 			enabledRepository.shutDown();

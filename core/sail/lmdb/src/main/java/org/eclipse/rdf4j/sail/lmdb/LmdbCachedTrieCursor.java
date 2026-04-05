@@ -28,14 +28,14 @@ final class LmdbCachedTrieCursor implements LmdbLftjCursor {
 	}
 
 	@Override
-	public boolean open(String variableName) {
-		LmdbCachedFrontier frontier = provider.frontier(patternPlan, variableName);
+	public boolean open(int bindingSlot) {
+		LmdbCachedFrontier frontier = provider.frontier(patternPlan, bindingSlot);
 		if (frontier.isEmpty()) {
 			return false;
 		}
 
 		Frame frame = stack[stackSize++];
-		frame.variableName = variableName;
+		frame.bindingSlot = bindingSlot;
 		frame.frontier = frontier;
 		frame.position = 0;
 		return true;
@@ -85,12 +85,12 @@ final class LmdbCachedTrieCursor implements LmdbLftjCursor {
 	}
 
 	@Override
-	public void release(String variableName) {
+	public void release(int bindingSlot) {
 		if (stackSize == 0) {
 			return;
 		}
 		Frame frame = stack[stackSize - 1];
-		if (!frame.matches(variableName)) {
+		if (!frame.matches(bindingSlot)) {
 			return;
 		}
 		stack[--stackSize].reset();
@@ -111,18 +111,18 @@ final class LmdbCachedTrieCursor implements LmdbLftjCursor {
 	}
 
 	private static final class Frame {
-		private String variableName;
+		private int bindingSlot = -1;
 		private LmdbCachedFrontier frontier;
 		private int position;
 
 		private void reset() {
-			variableName = null;
+			bindingSlot = -1;
 			frontier = null;
 			position = -1;
 		}
 
-		private boolean matches(String variableName) {
-			return this.variableName != null && this.variableName.equals(variableName);
+		private boolean matches(int bindingSlot) {
+			return this.bindingSlot == bindingSlot;
 		}
 	}
 }

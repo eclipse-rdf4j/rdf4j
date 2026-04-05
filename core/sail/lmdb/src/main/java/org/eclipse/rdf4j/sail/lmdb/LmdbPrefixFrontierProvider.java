@@ -31,8 +31,8 @@ final class LmdbPrefixFrontierProvider {
 		this.metrics = metrics;
 	}
 
-	LmdbCachedFrontier frontier(LmdbLftjPatternPlan patternPlan, String variableName) {
-		FrontierKey key = FrontierKey.create(patternPlan, variableName, state);
+	LmdbCachedFrontier frontier(LmdbLftjPatternPlan patternPlan, int bindingSlot) {
+		FrontierKey key = FrontierKey.create(patternPlan, bindingSlot, state);
 		LmdbCachedFrontier frontier = frontierCache.get(key);
 		if (frontier != null) {
 			metrics.recordFrontierHit();
@@ -40,7 +40,7 @@ final class LmdbPrefixFrontierProvider {
 		}
 
 		metrics.recordFrontierLoad();
-		frontier = loadFrontier(patternPlan, variableName);
+		frontier = loadFrontier(patternPlan, bindingSlot);
 		frontierCache.put(key, frontier);
 		return frontier;
 	}
@@ -59,17 +59,17 @@ final class LmdbPrefixFrontierProvider {
 		return loaded;
 	}
 
-	private LmdbCachedFrontier loadFrontier(LmdbLftjPatternPlan patternPlan, String variableName) {
-		LmdbCachedFrontier derived = derivedFrontier(patternPlan, variableName);
+	private LmdbCachedFrontier loadFrontier(LmdbLftjPatternPlan patternPlan, int bindingSlot) {
+		LmdbCachedFrontier derived = derivedFrontier(patternPlan, bindingSlot);
 		if (derived != null) {
 			metrics.recordRelationUse();
 			return derived;
 		}
 
-		int keyFieldIndex = patternPlan.keyFieldIndex(variableName);
+		int keyFieldIndex = patternPlan.keyFieldIndexForBindingSlot(bindingSlot);
 		long[] lowerBound = new long[4];
 		long[] upperBound = new long[4];
-		patternPlan.fillRangeBounds(state, variableName, 0L, lowerBound, upperBound);
+		patternPlan.fillRangeBounds(state, bindingSlot, 0L, lowerBound, upperBound);
 
 		LmdbDerivedBinaryRelation.LongArrayBuilder values = new LmdbDerivedBinaryRelation.LongArrayBuilder();
 		long[] last = { Long.MIN_VALUE };
@@ -99,19 +99,19 @@ final class LmdbPrefixFrontierProvider {
 		return count[0];
 	}
 
-	private LmdbCachedFrontier derivedFrontier(LmdbLftjPatternPlan patternPlan, String variableName) {
-		if (!patternPlan.canUseDerivedBinaryRelation()) {
+	private LmdbCachedFrontier derivedFrontier(LmdbLftjPatternPlan patternPlan, int bindingSlot) {
+		if (!canUseDerivedRelation(patternPlan)) {
 			return null;
 		}
 
 		LmdbDerivedBinaryRelation relation = relation(patternPlan);
 		LmdbLftjPatternPlan.TermRef sourceTerm = patternPlan.termForComponent(relation.sourceComponent());
 		LmdbLftjPatternPlan.TermRef targetTerm = patternPlan.termForComponent(relation.targetComponent());
-		if (sourceTerm.matchesName(variableName)) {
+		if (sourceTerm.bindingSlot() == bindingSlot) {
 			return relation.rootFrontier();
 		}
 
-		if (!targetTerm.matchesName(variableName)) {
+		if (targetTerm.bindingSlot() != bindingSlot) {
 			return null;
 		}
 
@@ -120,7 +120,7 @@ final class LmdbPrefixFrontierProvider {
 	}
 
 	private Long derivedCount(LmdbLftjPatternPlan patternPlan) {
-		if (!patternPlan.canUseDerivedBinaryRelation()) {
+		if (!canUseDerivedRelation(patternPlan)) {
 			return null;
 		}
 
@@ -138,8 +138,10 @@ final class LmdbPrefixFrontierProvider {
 
 	private LmdbDerivedBinaryRelation relation(LmdbLftjPatternPlan patternPlan) {
 		long predicateId = state.fixedId(patternPlan.predicateTerm());
-		LmdbDerivedBinaryRelation.RelationKey key = new LmdbDerivedBinaryRelation.RelationKey(patternPlan.indexName(),
-				queryAccess.includeInferred(), predicateId);
+		LmdbDerivedBinaryRelation.RelationKey key = new LmdbDerivedBinaryRelation.RelationKey(
+				patternPlan.indexName(),
+				queryAccess.includeInferred(),
+				predicateId);
 		LmdbDerivedBinaryRelation relation = relationCache.get(key);
 		if (relation != null) {
 			metrics.recordRelationHit();
@@ -156,13 +158,17 @@ final class LmdbPrefixFrontierProvider {
 		Arrays.fill(upperBound, Long.MAX_VALUE);
 		lowerBound[TripleStore.PRED_IDX] = predicateId;
 		upperBound[TripleStore.PRED_IDX] = predicateId;
-		int sourceKeyField = patternPlan.keyFieldIndex(sourceComponent);
-		int targetKeyField = patternPlan.keyFieldIndex(targetComponent);
+		int sourceKeyField = patternPlan.keyFieldIndexForComponent(sourceComponent);
+		int targetKeyField = patternPlan.keyFieldIndexForComponent(targetComponent);
 		forEachUniqueRow(patternPlan, lowerBound, upperBound, 1,
 				row -> builder.add(row[sourceKeyField], row[targetKeyField]));
 		relation = builder.build();
 		relationCache.put(key, relation);
 		return relation;
+	}
+
+	private boolean canUseDerivedRelation(LmdbLftjPatternPlan patternPlan) {
+		return patternPlan.canUseDerivedBinaryRelation();
 	}
 
 	private void forEachUniqueRow(LmdbLftjPatternPlan patternPlan, long[] lowerBound, long[] upperBound,
@@ -260,22 +266,22 @@ final class LmdbPrefixFrontierProvider {
 
 	private static final class FrontierKey {
 		private final LmdbLftjPatternPlan patternPlan;
-		private final String variableName;
+		private final int bindingSlot;
 		private final long[] prefix;
 
-		private FrontierKey(LmdbLftjPatternPlan patternPlan, String variableName, long[] prefix) {
+		private FrontierKey(LmdbLftjPatternPlan patternPlan, int bindingSlot, long[] prefix) {
 			this.patternPlan = patternPlan;
-			this.variableName = variableName;
+			this.bindingSlot = bindingSlot;
 			this.prefix = prefix;
 		}
 
-		static FrontierKey create(LmdbLftjPatternPlan patternPlan, String variableName, LmdbLftjBindingState state) {
-			int keyFieldIndex = patternPlan.keyFieldIndex(variableName);
+		static FrontierKey create(LmdbLftjPatternPlan patternPlan, int bindingSlot, LmdbLftjBindingState state) {
+			int keyFieldIndex = patternPlan.keyFieldIndexForBindingSlot(bindingSlot);
 			long[] prefix = new long[keyFieldIndex];
 			for (int i = 0; i < keyFieldIndex; i++) {
 				prefix[i] = state.fixedId(patternPlan.keyTerm(i));
 			}
-			return new FrontierKey(patternPlan, variableName, prefix);
+			return new FrontierKey(patternPlan, bindingSlot, prefix);
 		}
 
 		@Override
@@ -285,13 +291,13 @@ final class LmdbPrefixFrontierProvider {
 			}
 			FrontierKey o = (FrontierKey) other;
 			return Objects.equals(patternPlan, o.patternPlan)
-					&& Objects.equals(variableName, o.variableName)
+					&& bindingSlot == o.bindingSlot
 					&& Arrays.equals(prefix, o.prefix);
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(patternPlan, variableName, Arrays.hashCode(prefix));
+			return Objects.hash(patternPlan, bindingSlot, Arrays.hashCode(prefix));
 		}
 	}
 
