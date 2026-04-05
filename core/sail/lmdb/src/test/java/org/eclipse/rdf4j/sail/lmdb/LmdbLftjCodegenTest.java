@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -73,7 +74,35 @@ class LmdbLftjCodegenTest {
 				.doesNotContain("LmdbLftjCursor")
 				.doesNotContain("private LmdbCachedFrontier frontier")
 				.doesNotContain("valueAt(")
-				.doesNotContain("long[] lowerBound");
+				.doesNotContain("long[] lowerBound")
+				.doesNotContain(".mv_data().duplicate()")
+				.doesNotContain("new long[65536]")
+				.doesNotContain("new boolean[65536]");
+	}
+
+	@Test
+	void fullStackCompilerSourceShouldEmitRawBoundChecksAndCursorTemplates() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+		String source = LmdbLftjFullCodegenCompiler.INSTANCE.sourceFor(plan, shape, true);
+
+		assertThat(source)
+				.contains("templateDirtyP")
+				.contains("prefixLengthP")
+				.contains("prepareTemplateP")
+				.contains("ensureTemplateP")
+				.contains("upperP")
+				.contains("return mdb_cmp(txn, dbi")
+				.contains(", upper")
+				.contains("return mdb_cmp(txn, dbiP0WExplicit, keyP0WExplicit, keyP0WInferred);");
+	}
+
+	@Test
+	void reusedSeekBufferShouldHandleVarintBoundaryGrowthAndShrink() {
+		assertPatchedSeekBuffer(7L, 240L, 241L);
+		assertPatchedSeekBuffer(7L, 241L, 240L);
+		assertPatchedSeekBuffer(7L, 2287L, 2288L);
+		assertPatchedSeekBuffer(7L, 2288L, 2287L);
 	}
 
 	@Test
@@ -385,6 +414,35 @@ class LmdbLftjCodegenTest {
 	private String render(BindingSet row) {
 		return row.getValue("a").stringValue() + "|" + row.getValue("b").stringValue() + "|"
 				+ row.getValue("c").stringValue();
+	}
+
+	private void assertPatchedSeekBuffer(long prefixValue, long firstTarget, long secondTarget) {
+		ByteBuffer keyBuffer = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
+		Varint.writeUnsigned(keyBuffer, prefixValue);
+		int prefixLength = keyBuffer.position();
+
+		patchSeekTail(keyBuffer, prefixLength, firstTarget);
+		assertThat(readPatchedPair(keyBuffer)).containsExactly(prefixValue, firstTarget);
+
+		patchSeekTail(keyBuffer, prefixLength, secondTarget);
+		assertThat(readPatchedPair(keyBuffer)).containsExactly(prefixValue, secondTarget);
+	}
+
+	private void patchSeekTail(ByteBuffer keyBuffer, int prefixLength, long target) {
+		keyBuffer.limit(keyBuffer.capacity());
+		keyBuffer.position(prefixLength);
+		Varint.writeUnsigned(keyBuffer, target);
+		keyBuffer.limit(keyBuffer.position());
+		keyBuffer.position(0);
+	}
+
+	private long[] readPatchedPair(ByteBuffer keyBuffer) {
+		ByteBuffer key = keyBuffer.duplicate();
+		key.position(0);
+		return new long[] {
+				Varint.readUnsigned(key),
+				Varint.readUnsigned(key)
+		};
 	}
 
 	private int countMatches(String source, String regex) {

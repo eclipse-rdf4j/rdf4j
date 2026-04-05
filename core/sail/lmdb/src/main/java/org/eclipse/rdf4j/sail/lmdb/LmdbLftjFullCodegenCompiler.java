@@ -70,6 +70,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;\n");
 			source.append("import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;\n");
 			source.append("import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;\n");
+			source.append("import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;\n");
 			source.append("import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;\n");
 			source.append("import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;\n");
 			source.append("import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;\n");
@@ -138,6 +139,11 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			for (int patternOrdinal = 0; patternOrdinal < shape.patternCount(); patternOrdinal++) {
 				appendPatternConstructor(source, patternOrdinal);
 			}
+			for (RelationGroup relationGroup : relationGroups) {
+				source.append("      this.relationGroup")
+						.append(relationGroup.groupId)
+						.append("Scratch = LmdbDerivedBinaryRelation.borrowScratch();\n");
+			}
 			source.append("      this.depth = firstDepth();\n");
 			source.append("    }\n\n");
 
@@ -187,66 +193,65 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 							.append(slot)
 							.append(";\n");
 				}
-				appendRawCursorFields(source, patternOrdinal, -1);
+				appendRawCursorFields(source, patternOrdinal, patternShape, -1);
 				return;
 			}
 			for (int slot : patternShape.visibleSlots()) {
-				appendRawCursorFields(source, patternOrdinal, slot);
+				appendRawCursorFields(source, patternOrdinal, patternShape, slot);
 			}
-			appendRawCursorFields(source, patternOrdinal, -1);
+			appendRawCursorFields(source, patternOrdinal, patternShape, -1);
 		}
 
 		private void appendRelationGroupFields(StringBuilder source, int groupId) {
 			source.append("    private LmdbDerivedBinaryRelation relationGroup").append(groupId).append(";\n");
+			source.append("    private final LmdbDerivedBinaryRelation.RelationScratch relationGroup")
+					.append(groupId)
+					.append("Scratch;\n");
 			source.append("    private boolean relationGroup").append(groupId).append("Loaded;\n");
 			source.append("    private long[] relationGroup").append(groupId).append("RootFrontierValues;\n");
 			source.append("    private boolean relationGroup").append(groupId).append("RootFrontierLoaded;\n");
-			source.append("    private final long[] relationGroup")
-					.append(groupId)
-					.append("FrontierKeys = new long[65536];\n");
-			source.append("    private final long[][] relationGroup")
-					.append(groupId)
-					.append("FrontierValues = new long[65536][];\n");
-			source.append("    private final boolean[] relationGroup")
-					.append(groupId)
-					.append("FrontierUsed = new boolean[65536];\n");
-			source.append("    private final long[] relationGroup")
-					.append(groupId)
-					.append("CountSourceKeys = new long[65536];\n");
-			source.append("    private final long[] relationGroup")
-					.append(groupId)
-					.append("CountTargetKeys = new long[65536];\n");
-			source.append("    private final long[] relationGroup")
-					.append(groupId)
-					.append("CountValues = new long[65536];\n");
-			source.append("    private final boolean[] relationGroup")
-					.append(groupId)
-					.append("CountUsed = new boolean[65536];\n");
 		}
 
-		private void appendRawCursorFields(StringBuilder source, int patternOrdinal, int slot) {
+		private void appendRawCursorFields(StringBuilder source, int patternOrdinal,
+				LmdbLftjExecutionShape.PatternShape patternShape, int slot) {
 			String suffix = slotSuffix(patternOrdinal, slot);
 			source.append("    private final int dbi").append(suffix).append("Explicit;\n");
 			source.append("    private final MDBVal key").append(suffix).append("Explicit;\n");
 			source.append("    private final MDBVal data").append(suffix).append("Explicit;\n");
 			source.append("    private final ByteBuffer lower").append(suffix).append("Explicit;\n");
+			source.append("    private final MDBVal upper").append(suffix).append("Explicit;\n");
+			source.append("    private final ByteBuffer upperBuffer").append(suffix).append("Explicit;\n");
 			source.append("    private final long cursor").append(suffix).append("Explicit;\n");
 			source.append("    private boolean available").append(suffix).append("Explicit;\n");
-			source.append("    private long subj").append(suffix).append("Explicit;\n");
-			source.append("    private long pred").append(suffix).append("Explicit;\n");
-			source.append("    private long obj").append(suffix).append("Explicit;\n");
-			source.append("    private long ctx").append(suffix).append("Explicit;\n");
+			source.append("    private int prefixLength").append(suffix).append("Explicit;\n");
+			source.append("    private boolean templateDirty").append(suffix).append("Explicit = true;\n");
+			if (slot >= 0) {
+				source.append("    private long value").append(suffix).append("Explicit;\n");
+			} else {
+				source.append("    private long subj").append(suffix).append("Explicit;\n");
+				source.append("    private long pred").append(suffix).append("Explicit;\n");
+				source.append("    private long obj").append(suffix).append("Explicit;\n");
+				source.append("    private long ctx").append(suffix).append("Explicit;\n");
+			}
 			if (includeInferred) {
 				source.append("    private final int dbi").append(suffix).append("Inferred;\n");
 				source.append("    private final MDBVal key").append(suffix).append("Inferred;\n");
 				source.append("    private final MDBVal data").append(suffix).append("Inferred;\n");
 				source.append("    private final ByteBuffer lower").append(suffix).append("Inferred;\n");
+				source.append("    private final MDBVal upper").append(suffix).append("Inferred;\n");
+				source.append("    private final ByteBuffer upperBuffer").append(suffix).append("Inferred;\n");
 				source.append("    private final long cursor").append(suffix).append("Inferred;\n");
 				source.append("    private boolean available").append(suffix).append("Inferred;\n");
-				source.append("    private long subj").append(suffix).append("Inferred;\n");
-				source.append("    private long pred").append(suffix).append("Inferred;\n");
-				source.append("    private long obj").append(suffix).append("Inferred;\n");
-				source.append("    private long ctx").append(suffix).append("Inferred;\n");
+				source.append("    private int prefixLength").append(suffix).append("Inferred;\n");
+				source.append("    private boolean templateDirty").append(suffix).append("Inferred = true;\n");
+				if (slot >= 0) {
+					source.append("    private long value").append(suffix).append("Inferred;\n");
+				} else {
+					source.append("    private long subj").append(suffix).append("Inferred;\n");
+					source.append("    private long pred").append(suffix).append("Inferred;\n");
+					source.append("    private long obj").append(suffix).append("Inferred;\n");
+					source.append("    private long ctx").append(suffix).append("Inferred;\n");
+				}
 			}
 			if (slot >= 0) {
 				source.append("    private long current").append(suffix).append(";\n");
@@ -262,16 +267,17 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 					.append(patternShape.indexName())
 					.append("\");\n");
 			if (patternShape.derivedBinaryRelation()) {
-				appendRawCursorConstructor(source, patternOrdinal, -1);
+				appendRawCursorConstructor(source, patternOrdinal, patternShape, -1);
 				return;
 			}
 			for (int slot : patternShape.visibleSlots()) {
-				appendRawCursorConstructor(source, patternOrdinal, slot);
+				appendRawCursorConstructor(source, patternOrdinal, patternShape, slot);
 			}
-			appendRawCursorConstructor(source, patternOrdinal, -1);
+			appendRawCursorConstructor(source, patternOrdinal, patternShape, -1);
 		}
 
-		private void appendRawCursorConstructor(StringBuilder source, int patternOrdinal, int slot) {
+		private void appendRawCursorConstructor(StringBuilder source, int patternOrdinal,
+				LmdbLftjExecutionShape.PatternShape patternShape, int slot) {
 			String suffix = slotSuffix(patternOrdinal, slot);
 			source.append("      this.dbi")
 					.append(suffix)
@@ -281,6 +287,8 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("      this.key").append(suffix).append("Explicit = pool.getVal();\n");
 			source.append("      this.data").append(suffix).append("Explicit = pool.getVal();\n");
 			source.append("      this.lower").append(suffix).append("Explicit = pool.getKeyBuffer();\n");
+			source.append("      this.upper").append(suffix).append("Explicit = pool.getVal();\n");
+			source.append("      this.upperBuffer").append(suffix).append("Explicit = pool.getKeyBuffer();\n");
 			source.append("      this.cursor")
 					.append(suffix)
 					.append("Explicit = openCursor(dbi")
@@ -295,6 +303,8 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				source.append("      this.key").append(suffix).append("Inferred = pool.getVal();\n");
 				source.append("      this.data").append(suffix).append("Inferred = pool.getVal();\n");
 				source.append("      this.lower").append(suffix).append("Inferred = pool.getKeyBuffer();\n");
+				source.append("      this.upper").append(suffix).append("Inferred = pool.getVal();\n");
+				source.append("      this.upperBuffer").append(suffix).append("Inferred = pool.getKeyBuffer();\n");
 				source.append("      this.cursor")
 						.append(suffix)
 						.append("Inferred = openCursor(dbi")
@@ -414,6 +424,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 		private void appendReleaseDepth(StringBuilder source, int slot) {
 			source.append("    private void releaseDepth").append(slot).append("() {\n");
 			source.append("      state().clear(").append(slot).append(");\n");
+			source.append("      markAllCursorTemplatesDirty();\n");
 			source.append("      depth").append(slot).append("Initialized = false;\n");
 			source.append("      depth").append(slot).append("Advance = false;\n");
 			for (int patternOrdinal : shape.cursorOrdinals(slot)) {
@@ -473,6 +484,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 						.append('_')
 						.append(slot)
 						.append("());\n");
+				source.append("      markAllCursorTemplatesDirty();\n");
 				source.append("      return true;\n");
 				source.append("    }\n\n");
 				return;
@@ -522,6 +534,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			}
 			source.append("        if (allMatch) {\n");
 			source.append("          state().assign(").append(slot).append(", current);\n");
+			source.append("          markAllCursorTemplatesDirty();\n");
 			source.append("          return true;\n");
 			source.append("        }\n");
 			source.append("        current = max;\n");
@@ -603,6 +616,13 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			}
 			source.append("      }\n");
 			source.append("      relationGroup").append(relationGroup.groupId).append(" = builder.build();\n");
+			source.append("      relationGroup")
+					.append(relationGroup.groupId)
+					.append("Scratch.prepare(relationGroup")
+					.append(relationGroup.groupId)
+					.append(".sourceCount(), relationGroup")
+					.append(relationGroup.groupId)
+					.append(".rootFrontierSize());\n");
 			source.append("      relationGroup").append(relationGroup.groupId).append("Loaded = true;\n");
 			source.append("      return relationGroup").append(relationGroup.groupId).append(";\n");
 			source.append("    }\n\n");
@@ -718,11 +738,11 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("    private long[] frontierValuesForRelationGroup")
 					.append(groupId)
 					.append("(long sourceValue) {\n");
-			source.append("      int mask = relationGroup").append(groupId).append("FrontierKeys.length - 1;\n");
+			source.append("      int mask = relationGroup").append(groupId).append("Scratch.frontierMask();\n");
 			source.append("      int slot = mixFrontierCacheKey(sourceValue) & mask;\n");
 			source.append("      int evictionSlot = slot;\n");
 			source.append("      for (int probe = 0; probe < 8; probe++) {\n");
-			source.append("        if (!relationGroup").append(groupId).append("FrontierUsed[slot]) {\n");
+			source.append("        if (!relationGroup").append(groupId).append("Scratch.frontierUsed(slot)) {\n");
 			source.append("          metrics().recordFrontierLoad();\n");
 			source.append("          boolean relationLoaded = relationGroup").append(groupId).append("Loaded;\n");
 			source.append("          long[] values = relationGroup")
@@ -732,14 +752,16 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("            metrics().recordRelationHit();\n");
 			source.append("          }\n");
 			source.append("          metrics().recordRelationUse();\n");
-			source.append("          relationGroup").append(groupId).append("FrontierUsed[slot] = true;\n");
-			source.append("          relationGroup").append(groupId).append("FrontierKeys[slot] = sourceValue;\n");
-			source.append("          relationGroup").append(groupId).append("FrontierValues[slot] = values;\n");
+			source.append("          relationGroup")
+					.append(groupId)
+					.append("Scratch.storeFrontier(slot, sourceValue, values);\n");
 			source.append("          return values;\n");
 			source.append("        }\n");
-			source.append("        if (relationGroup").append(groupId).append("FrontierKeys[slot] == sourceValue) {\n");
+			source.append("        if (relationGroup")
+					.append(groupId)
+					.append("Scratch.frontierKey(slot) == sourceValue) {\n");
 			source.append("          metrics().recordFrontierHit();\n");
-			source.append("          return relationGroup").append(groupId).append("FrontierValues[slot];\n");
+			source.append("          return relationGroup").append(groupId).append("Scratch.frontierValue(slot);\n");
 			source.append("        }\n");
 			source.append("        slot = (slot + 1) & mask;\n");
 			source.append("      }\n");
@@ -752,19 +774,19 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("        metrics().recordRelationHit();\n");
 			source.append("      }\n");
 			source.append("      metrics().recordRelationUse();\n");
-			source.append("      relationGroup").append(groupId).append("FrontierUsed[evictionSlot] = true;\n");
-			source.append("      relationGroup").append(groupId).append("FrontierKeys[evictionSlot] = sourceValue;\n");
-			source.append("      relationGroup").append(groupId).append("FrontierValues[evictionSlot] = values;\n");
+			source.append("      relationGroup")
+					.append(groupId)
+					.append("Scratch.storeFrontier(evictionSlot, sourceValue, values);\n");
 			source.append("      return values;\n");
 			source.append("    }\n\n");
 			source.append("    private long countForRelationGroup")
 					.append(groupId)
 					.append("(long sourceValue, long targetValue) {\n");
-			source.append("      int mask = relationGroup").append(groupId).append("CountSourceKeys.length - 1;\n");
+			source.append("      int mask = relationGroup").append(groupId).append("Scratch.countMask();\n");
 			source.append("      int slot = mixCountCacheKey(sourceValue, targetValue) & mask;\n");
 			source.append("      int evictionSlot = slot;\n");
 			source.append("      for (int probe = 0; probe < 8; probe++) {\n");
-			source.append("        if (!relationGroup").append(groupId).append("CountUsed[slot]) {\n");
+			source.append("        if (!relationGroup").append(groupId).append("Scratch.countUsed(slot)) {\n");
 			source.append("          metrics().recordCountLoad();\n");
 			source.append("          boolean relationLoaded = relationGroup").append(groupId).append("Loaded;\n");
 			source.append("          long count = relationGroup")
@@ -774,18 +796,19 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("            metrics().recordRelationHit();\n");
 			source.append("          }\n");
 			source.append("          metrics().recordRelationUse();\n");
-			source.append("          relationGroup").append(groupId).append("CountUsed[slot] = true;\n");
-			source.append("          relationGroup").append(groupId).append("CountSourceKeys[slot] = sourceValue;\n");
-			source.append("          relationGroup").append(groupId).append("CountTargetKeys[slot] = targetValue;\n");
-			source.append("          relationGroup").append(groupId).append("CountValues[slot] = count;\n");
+			source.append("          relationGroup")
+					.append(groupId)
+					.append("Scratch.storeCount(slot, sourceValue, targetValue, count);\n");
 			source.append("          return count;\n");
 			source.append("        }\n");
-			source.append("        if (relationGroup").append(groupId).append("CountSourceKeys[slot] == sourceValue\n");
+			source.append("        if (relationGroup")
+					.append(groupId)
+					.append("Scratch.countSourceKey(slot) == sourceValue\n");
 			source.append("            && relationGroup")
 					.append(groupId)
-					.append("CountTargetKeys[slot] == targetValue) {\n");
+					.append("Scratch.countTargetKey(slot) == targetValue) {\n");
 			source.append("          metrics().recordCountHit();\n");
-			source.append("          return relationGroup").append(groupId).append("CountValues[slot];\n");
+			source.append("          return relationGroup").append(groupId).append("Scratch.countValue(slot);\n");
 			source.append("        }\n");
 			source.append("        slot = (slot + 1) & mask;\n");
 			source.append("      }\n");
@@ -798,14 +821,9 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("        metrics().recordRelationHit();\n");
 			source.append("      }\n");
 			source.append("      metrics().recordRelationUse();\n");
-			source.append("      relationGroup").append(groupId).append("CountUsed[evictionSlot] = true;\n");
 			source.append("      relationGroup")
 					.append(groupId)
-					.append("CountSourceKeys[evictionSlot] = sourceValue;\n");
-			source.append("      relationGroup")
-					.append(groupId)
-					.append("CountTargetKeys[evictionSlot] = targetValue;\n");
-			source.append("      relationGroup").append(groupId).append("CountValues[evictionSlot] = count;\n");
+					.append("Scratch.storeCount(evictionSlot, sourceValue, targetValue, count);\n");
 			source.append("      return count;\n");
 			source.append("    }\n\n");
 		}
@@ -833,8 +851,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				source.append("      current")
 						.append(suffix)
 						.append(" = ")
-						.append(componentAccessor(patternOrdinal, slot, "Explicit",
-								patternShape.componentForSlot(slot)))
+						.append(cursorValueAccessor(patternOrdinal, slot, "Explicit"))
 						.append(";\n");
 				source.append("      return true;\n");
 			}
@@ -848,16 +865,14 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				source.append("      while (available")
 						.append(slotSuffix(patternOrdinal, slot))
 						.append("Explicit && ")
-						.append(componentAccessor(patternOrdinal, slot, "Explicit",
-								patternShape.componentForSlot(slot)))
+						.append(cursorValueAccessor(patternOrdinal, slot, "Explicit"))
 						.append(" == previous) {\n");
 				source.append("        advanceCursor").append(slotSuffix(patternOrdinal, slot)).append("Explicit();\n");
 				source.append("      }\n");
 				source.append("      while (available")
 						.append(slotSuffix(patternOrdinal, slot))
 						.append("Inferred && ")
-						.append(componentAccessor(patternOrdinal, slot, "Inferred",
-								patternShape.componentForSlot(slot)))
+						.append(cursorValueAccessor(patternOrdinal, slot, "Inferred"))
 						.append(" == previous) {\n");
 				source.append("        advanceCursor").append(slotSuffix(patternOrdinal, slot)).append("Inferred();\n");
 				source.append("      }\n");
@@ -871,8 +886,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 						.append(slotSuffix(patternOrdinal, slot))
 						.append("Explicit()) {\n");
 				source.append("        long candidate = ")
-						.append(componentAccessor(patternOrdinal, slot, "Explicit",
-								patternShape.componentForSlot(slot)))
+						.append(cursorValueAccessor(patternOrdinal, slot, "Explicit"))
 						.append(";\n");
 				source.append("        if (candidate != previous) {\n");
 				source.append("          current").append(suffix).append(" = candidate;\n");
@@ -904,7 +918,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("        current")
 					.append(suffix)
 					.append(" = ")
-					.append(componentAccessor(patternOrdinal, slot, "Explicit", component))
+					.append(cursorValueAccessor(patternOrdinal, slot, "Explicit"))
 					.append(";\n");
 			source.append("        currentAvailable").append(suffix).append(" = true;\n");
 			source.append("        return true;\n");
@@ -913,16 +927,16 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("        current")
 					.append(suffix)
 					.append(" = ")
-					.append(componentAccessor(patternOrdinal, slot, "Inferred", component))
+					.append(cursorValueAccessor(patternOrdinal, slot, "Inferred"))
 					.append(";\n");
 			source.append("        currentAvailable").append(suffix).append(" = true;\n");
 			source.append("        return true;\n");
 			source.append("      }\n");
 			source.append("      long explicitValue = ")
-					.append(componentAccessor(patternOrdinal, slot, "Explicit", component))
+					.append(cursorValueAccessor(patternOrdinal, slot, "Explicit"))
 					.append(";\n");
 			source.append("      long inferredValue = ")
-					.append(componentAccessor(patternOrdinal, slot, "Inferred", component))
+					.append(cursorValueAccessor(patternOrdinal, slot, "Inferred"))
 					.append(";\n");
 			source.append("      current")
 					.append(suffix)
@@ -971,18 +985,21 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 		private void appendMergedWitnessRowSelection(StringBuilder source, int patternOrdinal,
 				LmdbLftjExecutionShape.PatternShape patternShape, boolean buildRelation) {
 			String suffix = slotSuffix(patternOrdinal, -1);
+			source.append("        int rowCompare = available")
+					.append(suffix)
+					.append("Explicit && available")
+					.append(suffix)
+					.append("Inferred ? compareWitnessRows")
+					.append(patternOrdinal)
+					.append("() : 0;\n");
 			source.append("        if (!available")
 					.append(suffix)
 					.append("Inferred || (available")
 					.append(suffix)
-					.append("Explicit && compareWitnessRows")
-					.append(patternOrdinal)
-					.append("() <= 0)) {\n");
+					.append("Explicit && rowCompare <= 0)) {\n");
 			source.append("          boolean duplicate = available")
 					.append(suffix)
-					.append("Inferred && compareWitnessRows")
-					.append(patternOrdinal)
-					.append("() == 0;\n");
+					.append("Inferred && rowCompare == 0;\n");
 			if (buildRelation) {
 				source.append("          builder.add(")
 						.append(componentAccessor(patternOrdinal, -1, "Explicit",
@@ -1016,26 +1033,15 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 
 		private void appendCompareWitnessMethod(StringBuilder source, int patternOrdinal) {
 			source.append("    private int compareWitnessRows").append(patternOrdinal).append("() {\n");
-			appendCompareRows(source, patternOrdinal, -1);
+			String suffix = slotSuffix(patternOrdinal, -1);
+			source.append("      return mdb_cmp(txn, dbi")
+					.append(suffix)
+					.append("Explicit, key")
+					.append(suffix)
+					.append("Explicit, key")
+					.append(suffix)
+					.append("Inferred);\n");
 			source.append("    }\n\n");
-		}
-
-		private void appendCompareRows(StringBuilder source, int patternOrdinal, int slot) {
-			LmdbLftjExecutionShape.PatternShape patternShape = shape.pattern(patternOrdinal);
-			for (int i = 0; i < 4; i++) {
-				int component = patternShape.indexComponent(i);
-				source.append("      int compare")
-						.append(i)
-						.append(" = Long.compare(")
-						.append(componentAccessor(patternOrdinal, slot, "Explicit", component))
-						.append(", ")
-						.append(componentAccessor(patternOrdinal, slot, "Inferred", component))
-						.append(");\n");
-				source.append("      if (compare").append(i).append(" != 0) {\n");
-				source.append("        return compare").append(i).append(";\n");
-				source.append("      }\n");
-			}
-			source.append("      return 0;\n");
 		}
 
 		private void appendAdvanceWitnessMethod(StringBuilder source, int patternOrdinal, String kind) {
@@ -1048,43 +1054,44 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 		private void appendSeekCursorInvocation(StringBuilder source, int patternOrdinal,
 				LmdbLftjExecutionShape.PatternShape patternShape, int slot, String kind, String targetExpr) {
 			String suffix = slotSuffix(patternOrdinal, slot);
-			int keyFieldIndex = slot >= 0 ? patternShape.keyFieldIndexForSlot(slot)
-					: patternShape.visibleSlots().length == 0
-							? 0
-							: patternShape.indexFields().length - (patternShape.hasHiddenTerms() ? 1 : 0);
-			if (slot < 0) {
-				keyFieldIndex = patternShape.hasHiddenTerms() ? patternShape.indexFields().length - 1
-						: patternShape.indexFields().length;
-			}
-			source.append("      lower").append(suffix).append(kind).append(".clear();\n");
-			for (int i = 0; i < patternShape.indexFields().length; i++) {
-				int component = patternShape.indexComponent(i);
-				if (slot >= 0 && i == keyFieldIndex) {
-					source.append("      Varint.writeUnsigned(lower")
-							.append(suffix)
-							.append(kind)
-							.append(", ")
-							.append(targetExpr)
-							.append(");\n");
-					break;
-				}
-				if (slot < 0 && i == keyFieldIndex) {
-					break;
-				}
+			source.append("      ensureTemplate").append(suffix).append(kind).append("();\n");
+			source.append("      lower")
+					.append(suffix)
+					.append(kind)
+					.append(".limit(lower")
+					.append(suffix)
+					.append(kind)
+					.append(".capacity());\n");
+			source.append("      lower")
+					.append(suffix)
+					.append(kind)
+					.append(".position(prefixLength")
+					.append(suffix)
+					.append(kind)
+					.append(");\n");
+			if (slot >= 0) {
 				source.append("      Varint.writeUnsigned(lower")
 						.append(suffix)
 						.append(kind)
 						.append(", ")
-						.append(componentValueExpression(patternOrdinal, patternShape, component))
+						.append(targetExpr)
 						.append(");\n");
 			}
+			source.append("      lower")
+					.append(suffix)
+					.append(kind)
+					.append(".limit(lower")
+					.append(suffix)
+					.append(kind)
+					.append(".position());\n");
+			source.append("      lower").append(suffix).append(kind).append(".position(0);\n");
 			source.append("      key")
 					.append(suffix)
 					.append(kind)
 					.append(".mv_data(lower")
 					.append(suffix)
 					.append(kind)
-					.append(".flip());\n");
+					.append(");\n");
 			source.append("      if (mdb_cursor_get(cursor")
 					.append(suffix)
 					.append(kind)
@@ -1100,7 +1107,6 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				source.append("        return false;\n");
 			}
 			source.append("      } else {\n");
-			source.append("        decodeRow").append(suffix).append(kind).append("();\n");
 			source.append("        available")
 					.append(suffix)
 					.append(kind)
@@ -1108,6 +1114,9 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 					.append(suffix)
 					.append(kind)
 					.append("();\n");
+			source.append("        if (available").append(suffix).append(kind).append(") {\n");
+			appendDecodeInvocation(source, patternShape, slot, suffix, kind, "          ");
+			source.append("        }\n");
 			source.append("      }\n");
 			if (slot >= 0) {
 				source.append("      return available").append(suffix).append(kind).append(";\n");
@@ -1128,6 +1137,11 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				}
 				appendCloseCursorResources(source, patternOrdinal, -1);
 			}
+			for (RelationGroup relationGroup : relationGroups) {
+				source.append("      LmdbDerivedBinaryRelation.releaseScratch(relationGroup")
+						.append(relationGroup.groupId)
+						.append("Scratch);\n");
+			}
 			source.append("    }\n\n");
 		}
 
@@ -1137,11 +1151,15 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("      pool.free(key").append(suffix).append("Explicit);\n");
 			source.append("      pool.free(data").append(suffix).append("Explicit);\n");
 			source.append("      pool.free(lower").append(suffix).append("Explicit);\n");
+			source.append("      pool.free(upper").append(suffix).append("Explicit);\n");
+			source.append("      pool.free(upperBuffer").append(suffix).append("Explicit);\n");
 			if (includeInferred) {
 				source.append("      mdb_cursor_close(cursor").append(suffix).append("Inferred);\n");
 				source.append("      pool.free(key").append(suffix).append("Inferred);\n");
 				source.append("      pool.free(data").append(suffix).append("Inferred);\n");
 				source.append("      pool.free(lower").append(suffix).append("Inferred);\n");
+				source.append("      pool.free(upper").append(suffix).append("Inferred);\n");
+				source.append("      pool.free(upperBuffer").append(suffix).append("Inferred);\n");
 			}
 		}
 
@@ -1159,6 +1177,19 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				source.append("      return 31 * Long.hashCode(sourceValue) + Long.hashCode(targetValue);\n");
 				source.append("    }\n\n");
 			}
+			source.append("    private void markAllCursorTemplatesDirty() {\n");
+			for (int patternOrdinal = 0; patternOrdinal < shape.patternCount(); patternOrdinal++) {
+				LmdbLftjExecutionShape.PatternShape patternShape = shape.pattern(patternOrdinal);
+				if (patternShape.derivedBinaryRelation()) {
+					appendCursorTemplateDirtyAssignment(source, patternOrdinal, -1);
+					continue;
+				}
+				for (int slot : patternShape.visibleSlots()) {
+					appendCursorTemplateDirtyAssignment(source, patternOrdinal, slot);
+				}
+				appendCursorTemplateDirtyAssignment(source, patternOrdinal, -1);
+			}
+			source.append("    }\n\n");
 			source.append("    private long openCursor(int dbi) {\n");
 			source.append("      long readStamp = readLock();\n");
 			source.append("      MemoryStack stack = MemoryStack.stackPush();\n");
@@ -1199,28 +1230,105 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 		private void appendCursorRowHelpers(StringBuilder source, int patternOrdinal, int slot,
 				LmdbLftjExecutionShape.PatternShape patternShape) {
 			String suffix = slotSuffix(patternOrdinal, slot);
+			appendPrepareTemplateMethod(source, patternOrdinal, slot, patternShape, "Explicit");
+			appendEnsureTemplateMethod(source, suffix, "Explicit");
 			appendDecodeMethod(source, patternOrdinal, slot, patternShape, "Explicit");
 			appendWithinUpperBoundMethod(source, patternOrdinal, slot, patternShape, "Explicit");
 			appendAdvanceCursorMethod(source, patternOrdinal, slot, patternShape, "Explicit");
 			if (includeInferred) {
+				appendPrepareTemplateMethod(source, patternOrdinal, slot, patternShape, "Inferred");
+				appendEnsureTemplateMethod(source, suffix, "Inferred");
 				appendDecodeMethod(source, patternOrdinal, slot, patternShape, "Inferred");
 				appendWithinUpperBoundMethod(source, patternOrdinal, slot, patternShape, "Inferred");
 				appendAdvanceCursorMethod(source, patternOrdinal, slot, patternShape, "Inferred");
 			}
 		}
 
+		private void appendPrepareTemplateMethod(StringBuilder source, int patternOrdinal, int slot,
+				LmdbLftjExecutionShape.PatternShape patternShape, String kind) {
+			String suffix = slotSuffix(patternOrdinal, slot);
+			int keyFieldIndex = keyFieldIndex(patternShape, slot);
+			source.append("    private void prepareTemplate").append(suffix).append(kind).append("() {\n");
+			source.append("      lower").append(suffix).append(kind).append(".clear();\n");
+			for (int i = 0; i < keyFieldIndex; i++) {
+				int component = patternShape.indexComponent(i);
+				source.append("      Varint.writeUnsigned(lower")
+						.append(suffix)
+						.append(kind)
+						.append(", ")
+						.append(componentValueExpression(patternOrdinal, patternShape, component))
+						.append(");\n");
+			}
+			source.append("      prefixLength")
+					.append(suffix)
+					.append(kind)
+					.append(" = lower")
+					.append(suffix)
+					.append(kind)
+					.append(".position();\n");
+			source.append("      upperBuffer").append(suffix).append(kind).append(".clear();\n");
+			for (int i = 0; i < patternShape.indexFields().length; i++) {
+				int component = patternShape.indexComponent(i);
+				source.append("      Varint.writeUnsigned(upperBuffer")
+						.append(suffix)
+						.append(kind)
+						.append(", ")
+						.append(upperBoundExpression(patternOrdinal, patternShape, slot, component))
+						.append(");\n");
+			}
+			source.append("      upperBuffer").append(suffix).append(kind).append(".flip();\n");
+			source.append("      upper")
+					.append(suffix)
+					.append(kind)
+					.append(".mv_data(upperBuffer")
+					.append(suffix)
+					.append(kind)
+					.append(");\n");
+			source.append("      templateDirty").append(suffix).append(kind).append(" = false;\n");
+			source.append("    }\n\n");
+		}
+
+		private void appendEnsureTemplateMethod(StringBuilder source, String suffix, String kind) {
+			source.append("    private void ensureTemplate").append(suffix).append(kind).append("() {\n");
+			source.append("      if (templateDirty").append(suffix).append(kind).append(") {\n");
+			source.append("        prepareTemplate").append(suffix).append(kind).append("();\n");
+			source.append("      }\n");
+			source.append("    }\n\n");
+		}
+
 		private void appendDecodeMethod(StringBuilder source, int patternOrdinal, int slot,
 				LmdbLftjExecutionShape.PatternShape patternShape, String kind) {
 			String suffix = slotSuffix(patternOrdinal, slot);
-			source.append("    private void decodeRow").append(suffix).append(kind).append("() {\n");
-			source.append("      ByteBuffer key = key").append(suffix).append(kind).append(".mv_data().duplicate();\n");
-			for (int i = 0; i < patternShape.indexFields().length; i++) {
-				String fieldName = componentFieldName(patternShape.indexComponent(i));
-				source.append("      ")
-						.append(fieldName)
+			source.append("    private void decodeKeyValues").append(suffix).append(kind).append("() {\n");
+			if (slot >= 0) {
+				int keyFieldIndex = patternShape.keyFieldIndexForSlot(slot);
+				source.append("      ByteBuffer key = key").append(suffix).append(kind).append(".mv_data();\n");
+				source.append("      int offset = 0;\n");
+				for (int i = 0; i < keyFieldIndex; i++) {
+					source.append("      offset += Varint.firstToLength(key.get(offset));\n");
+				}
+				source.append("      value")
 						.append(suffix)
 						.append(kind)
-						.append(" = Varint.readUnsigned(key);\n");
+						.append(" = Varint.readUnsigned(key, offset);\n");
+			} else if (patternShape.derivedBinaryRelation()) {
+				source.append("      ByteBuffer key = key").append(suffix).append(kind).append(".mv_data();\n");
+				source.append("      int offset = 0;\n");
+				for (int i = 0; i < patternShape.indexFields().length; i++) {
+					int component = patternShape.indexComponent(i);
+					String fieldName = componentFieldName(component);
+					if (component == patternShape.derivedSourceComponent()
+							|| component == patternShape.derivedTargetComponent()) {
+						source.append("      ")
+								.append(fieldName)
+								.append(suffix)
+								.append(kind)
+								.append(" = Varint.readUnsigned(key, offset);\n");
+					}
+					if (i + 1 < patternShape.indexFields().length) {
+						source.append("      offset += Varint.firstToLength(key.get(offset));\n");
+					}
+				}
 			}
 			source.append("    }\n\n");
 		}
@@ -1229,22 +1337,16 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				LmdbLftjExecutionShape.PatternShape patternShape, String kind) {
 			String suffix = slotSuffix(patternOrdinal, slot);
 			source.append("    private boolean withinUpperBound").append(suffix).append(kind).append("() {\n");
-			for (int i = 0; i < patternShape.indexFields().length; i++) {
-				int component = patternShape.indexComponent(i);
-				String valueExpr = componentAccessor(patternOrdinal, slot, kind, component);
-				String upperExpr = upperBoundExpression(patternOrdinal, patternShape, slot, component);
-				source.append("      int compare")
-						.append(i)
-						.append(" = Long.compare(")
-						.append(valueExpr)
-						.append(", ")
-						.append(upperExpr)
-						.append(");\n");
-				source.append("      if (compare").append(i).append(" != 0) {\n");
-				source.append("        return compare").append(i).append(" < 0;\n");
-				source.append("      }\n");
-			}
-			source.append("      return true;\n");
+			source.append("      return mdb_cmp(txn, dbi")
+					.append(suffix)
+					.append(kind)
+					.append(", key")
+					.append(suffix)
+					.append(kind)
+					.append(", upper")
+					.append(suffix)
+					.append(kind)
+					.append(") <= 0;\n");
 			source.append("    }\n\n");
 		}
 
@@ -1270,7 +1372,6 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("          available").append(suffix).append(kind).append(" = false;\n");
 			source.append("          return false;\n");
 			source.append("        }\n");
-			source.append("        decodeRow").append(suffix).append(kind).append("();\n");
 			source.append("        available")
 					.append(suffix)
 					.append(kind)
@@ -1278,6 +1379,9 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 					.append(suffix)
 					.append(kind)
 					.append("();\n");
+			source.append("        if (available").append(suffix).append(kind).append(") {\n");
+			appendDecodeInvocation(source, patternShape, slot, suffix, kind, "          ");
+			source.append("        }\n");
 			source.append("        return available").append(suffix).append(kind).append(";\n");
 			source.append("      } finally {\n");
 			source.append("        txnLockManager.unlockRead(readStamp);\n");
@@ -1291,6 +1395,38 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 
 		private String componentAccessor(int patternOrdinal, int slot, String kind, int component) {
 			return componentFieldName(component) + slotSuffix(patternOrdinal, slot) + kind;
+		}
+
+		private String cursorValueAccessor(int patternOrdinal, int slot, String kind) {
+			return "value" + slotSuffix(patternOrdinal, slot) + kind;
+		}
+
+		private void appendCursorTemplateDirtyAssignment(StringBuilder source, int patternOrdinal, int slot) {
+			String suffix = slotSuffix(patternOrdinal, slot);
+			source.append("      templateDirty").append(suffix).append("Explicit = true;\n");
+			if (includeInferred) {
+				source.append("      templateDirty").append(suffix).append("Inferred = true;\n");
+			}
+		}
+
+		private void appendDecodeInvocation(StringBuilder source, LmdbLftjExecutionShape.PatternShape patternShape,
+				int slot, String suffix, String kind, String indent) {
+			if (!needsDecode(patternShape, slot)) {
+				return;
+			}
+			source.append(indent).append("decodeKeyValues").append(suffix).append(kind).append("();\n");
+		}
+
+		private boolean needsDecode(LmdbLftjExecutionShape.PatternShape patternShape, int slot) {
+			return slot >= 0 || patternShape.derivedBinaryRelation();
+		}
+
+		private int keyFieldIndex(LmdbLftjExecutionShape.PatternShape patternShape, int slot) {
+			if (slot >= 0) {
+				return patternShape.keyFieldIndexForSlot(slot);
+			}
+			return patternShape.hasHiddenTerms() ? patternShape.indexFields().length - 1
+					: patternShape.indexFields().length;
 		}
 
 		private String componentFieldName(int component) {
