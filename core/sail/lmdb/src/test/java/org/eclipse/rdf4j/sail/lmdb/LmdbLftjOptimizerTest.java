@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -38,24 +39,45 @@ import org.junit.jupiter.api.Test;
 
 class LmdbLftjOptimizerTest {
 
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
 	@Test
-	void optimizeShouldReusePreparedPlanAcrossEquivalentVariableRenames() {
+	void optimizeShouldNotReusePreparedPlanAcrossEquivalentVariableRenames() {
 		TestQueryAccess queryAccess = new TestQueryAccess();
 		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
 				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
 
 		TupleExpr first = new QueryRoot(cycle("a", "b", "c"));
 		TupleExpr second = new QueryRoot(cycle("x", "y", "z"));
+		Set<String> expectedBindingNames = second.getBindingNames();
+
+		optimizer.optimize(first, (Dataset) null, EmptyBindingSet.getInstance());
+		optimizer.optimize(second, (Dataset) null, EmptyBindingSet.getInstance());
+
+		assertEquals(2, queryAccess.cachedPlanPuts,
+				"renamed visible variables must produce a fresh prepared plan");
+		assertEquals(0, queryAccess.cachedPlanHits,
+				"prepared-plan reuse across renamed variables leaks stale binding names");
+		assertEquals(List.of("x", "y", "z"), lftjNode(second).plan().variableOrder());
+		assertEquals(expectedBindingNames, lftjNode(second).plan().bindingNames());
+	}
+
+	@Test
+	void optimizeShouldReusePreparedPlanAcrossEquivalentJoinReorders() {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr first = new QueryRoot(distinctPredicateCycle("a", "b", "c"));
+		TupleExpr second = new QueryRoot(reorderedDistinctPredicateCycle("a", "b", "c"));
 
 		optimizer.optimize(first, (Dataset) null, EmptyBindingSet.getInstance());
 		optimizer.optimize(second, (Dataset) null, EmptyBindingSet.getInstance());
 
 		assertEquals(1, queryAccess.cachedPlanPuts,
-				"first cyclic plan should populate the prepared-plan cache once");
+				"equivalent cyclic shapes should share one prepared plan entry");
 		assertEquals(1, queryAccess.cachedPlanHits,
-				"equivalent cyclic shape should reuse the cached prepared plan on the second optimize");
-		assertInstanceOf(LmdbLftjTupleExpr.class, assertInstanceOf(QueryRoot.class, first).getArg());
-		assertInstanceOf(LmdbLftjTupleExpr.class, assertInstanceOf(QueryRoot.class, second).getArg());
+				"commuted join order should still hit the normalized prepared-plan cache");
 	}
 
 	private TupleExpr cycle(String a, String b, String c) {
@@ -67,6 +89,24 @@ class LmdbLftjOptimizerTest {
 
 	private StatementPattern statementPattern(String subjectName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var("pred", FOAF.KNOWS), new Var(objectName));
+	}
+
+	private TupleExpr distinctPredicateCycle(String a, String b, String c) {
+		StatementPattern pattern1 = new StatementPattern(new Var(a), new Var("p1", VF.createIRI("urn:p1")), new Var(b));
+		StatementPattern pattern2 = new StatementPattern(new Var(b), new Var("p2", VF.createIRI("urn:p2")), new Var(c));
+		StatementPattern pattern3 = new StatementPattern(new Var(c), new Var("p3", VF.createIRI("urn:p3")), new Var(a));
+		return new Join(new Join(pattern1, pattern2), pattern3);
+	}
+
+	private TupleExpr reorderedDistinctPredicateCycle(String a, String b, String c) {
+		StatementPattern pattern1 = new StatementPattern(new Var(a), new Var("p1", VF.createIRI("urn:p1")), new Var(b));
+		StatementPattern pattern2 = new StatementPattern(new Var(b), new Var("p2", VF.createIRI("urn:p2")), new Var(c));
+		StatementPattern pattern3 = new StatementPattern(new Var(c), new Var("p3", VF.createIRI("urn:p3")), new Var(a));
+		return new Join(new Join(pattern2, pattern3), pattern1);
+	}
+
+	private LmdbLftjTupleExpr lftjNode(TupleExpr tupleExpr) {
+		return assertInstanceOf(LmdbLftjTupleExpr.class, assertInstanceOf(QueryRoot.class, tupleExpr).getArg());
 	}
 
 	private static final class EmptyTripleSource implements TripleSource {

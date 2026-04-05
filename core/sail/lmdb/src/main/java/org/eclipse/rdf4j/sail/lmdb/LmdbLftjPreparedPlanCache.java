@@ -44,24 +44,29 @@ final class LmdbLftjPreparedPlanCache {
 	}
 
 	static String normalizedKey(List<StatementPattern> patterns, Set<String> configuredIndexes) {
-		Map<String, String> aliases = new LinkedHashMap<>();
 		StringBuilder builder = new StringBuilder(configuredIndexes.size() * 6 + patterns.size() * 32);
 		builder.append("indexes=");
 		configuredIndexes.stream().sorted().forEach(indexName -> builder.append(indexName).append(','));
 		builder.append(";patterns=");
-		int[] nextAlias = { 0 };
-		for (StatementPattern pattern : patterns) {
-			builder.append('[').append(pattern.getScope().name()).append(';');
-			appendTerm(builder, pattern.getSubjectVar(), aliases, nextAlias);
-			appendTerm(builder, pattern.getPredicateVar(), aliases, nextAlias);
-			appendTerm(builder, pattern.getObjectVar(), aliases, nextAlias);
-			appendTerm(builder, pattern.getContextVar(), aliases, nextAlias);
-			builder.append(']');
-		}
+		patterns.stream()
+				.map(LmdbLftjPreparedPlanCache::patternKey)
+				.sorted()
+				.forEach(builder::append);
 		return builder.toString();
 	}
 
-	private static void appendTerm(StringBuilder builder, Var var, Map<String, String> aliases, int[] nextAlias) {
+	private static String patternKey(StatementPattern pattern) {
+		StringBuilder builder = new StringBuilder(48);
+		builder.append('[').append(pattern.getScope().name()).append(';');
+		appendTerm(builder, pattern.getSubjectVar());
+		appendTerm(builder, pattern.getPredicateVar());
+		appendTerm(builder, pattern.getObjectVar());
+		appendTerm(builder, pattern.getContextVar());
+		builder.append(']');
+		return builder.toString();
+	}
+
+	private static void appendTerm(StringBuilder builder, Var var) {
 		if (var == null) {
 			builder.append("null;");
 			return;
@@ -74,8 +79,7 @@ final class LmdbLftjPreparedPlanCache {
 			builder.append("hidden;");
 			return;
 		}
-		String alias = aliases.computeIfAbsent(var.getName(), ignored -> "v" + nextAlias[0]++);
-		builder.append(alias).append(';');
+		builder.append("var=").append(var.getName()).append(';');
 	}
 
 	private static String valueKey(Value value) {
