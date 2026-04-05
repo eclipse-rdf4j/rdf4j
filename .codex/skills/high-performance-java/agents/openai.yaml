@@ -1,0 +1,4 @@
+interface:
+  display_name: "High-Performance Java"
+  short_description: "Concise hot-path Java coding skill"
+  default_prompt: "Use $high-performance-java to write or review a Java hot path with benchmark and HotSpot evidence."
