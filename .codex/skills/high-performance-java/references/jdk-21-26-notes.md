@@ -5,7 +5,7 @@ Treat JDK behavior as version-sensitive.
 ## Defaults
 
 - Repository baseline: JDK 21
-- Current local runtime may be newer; in this workspace it is JDK 26
+- Current local runtime may be newer (e.g. JDK 26)
 - Advice about inlining, intrinsics, vectorization, and loop optimizations must be checked on the active runtime
 
 ## What stays stable enough
