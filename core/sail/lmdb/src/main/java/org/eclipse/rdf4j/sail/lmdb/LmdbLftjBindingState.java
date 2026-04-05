@@ -25,8 +25,11 @@ final class LmdbLftjBindingState {
 	private final LmdbLftjPlan plan;
 	private final BindingSet inputBindings;
 	private final LmdbQueryAccess queryAccess;
-	private final Map<String, Long> fixedValues = new HashMap<>();
-	private final Map<String, Long> assignedValues = new HashMap<>();
+	private final Map<String, Integer> variableSlots = new HashMap<>();
+	private final long[] fixedValues;
+	private final boolean[] fixedPresent;
+	private final long[] assignedValues;
+	private final boolean[] assignedPresent;
 	private final IdentityHashMap<LmdbLftjPatternPlan.TermRef, Long> constantIds = new IdentityHashMap<>();
 
 	private TxnManager.Txn txn;
@@ -35,6 +38,14 @@ final class LmdbLftjBindingState {
 		this.plan = plan;
 		this.inputBindings = inputBindings;
 		this.queryAccess = queryAccess;
+		int variableCount = plan.variableOrder().size();
+		this.fixedValues = new long[variableCount];
+		this.fixedPresent = new boolean[variableCount];
+		this.assignedValues = new long[variableCount];
+		this.assignedPresent = new boolean[variableCount];
+		for (int i = 0; i < variableCount; i++) {
+			variableSlots.put(plan.variableOrder().get(i), i);
+		}
 	}
 
 	boolean initialize() {
@@ -47,6 +58,9 @@ final class LmdbLftjBindingState {
 					}
 					constantIds.put(term, id);
 				}
+				if (term.isVisible()) {
+					term.bindSlot(slot(term.name()));
+				}
 			}
 		}
 		for (String variableName : plan.variableOrder()) {
@@ -55,7 +69,9 @@ final class LmdbLftjBindingState {
 				if (id == LmdbValue.UNKNOWN_ID) {
 					return false;
 				}
-				fixedValues.put(variableName, id);
+				int slot = slot(variableName);
+				fixedValues[slot] = id;
+				fixedPresent[slot] = true;
 			}
 		}
 		return true;
@@ -70,30 +86,40 @@ final class LmdbLftjBindingState {
 	}
 
 	boolean isBound(String variableName) {
-		return assignedValues.containsKey(variableName) || fixedValues.containsKey(variableName);
+		int slot = slot(variableName);
+		return assignedPresent[slot] || fixedPresent[slot];
 	}
 
 	long value(String variableName) {
-		if (assignedValues.containsKey(variableName)) {
-			return assignedValues.get(variableName);
+		int slot = slot(variableName);
+		if (assignedPresent[slot]) {
+			return assignedValues[slot];
 		}
-		return fixedValues.get(variableName);
+		return fixedValues[slot];
 	}
 
 	void assign(String variableName, long value) {
-		assignedValues.put(variableName, value);
+		int slot = slot(variableName);
+		assignedValues[slot] = value;
+		assignedPresent[slot] = true;
 	}
 
 	void clear(String variableName) {
-		assignedValues.remove(variableName);
+		assignedPresent[slot(variableName)] = false;
 	}
 
 	long fixedId(LmdbLftjPatternPlan.TermRef term) {
 		if (term.isConstant()) {
 			return constantIds.get(term);
 		}
-		if (term.isVisible() && isBound(term.name())) {
-			return value(term.name());
+		int slot = term.bindingSlot();
+		if (slot >= 0) {
+			if (assignedPresent[slot]) {
+				return assignedValues[slot];
+			}
+			if (fixedPresent[slot]) {
+				return fixedValues[slot];
+			}
 		}
 		return -1;
 	}
@@ -113,5 +139,13 @@ final class LmdbLftjBindingState {
 			queryAccess.releaseReadTxn(txn);
 			txn = null;
 		}
+	}
+
+	private int slot(String variableName) {
+		Integer slot = variableSlots.get(variableName);
+		if (slot == null) {
+			throw new IllegalArgumentException("Unknown LMDB LFTJ variable: " + variableName);
+		}
+		return slot;
 	}
 }

@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
@@ -30,12 +31,12 @@ final class LmdbLftjExecutor {
 	}
 
 	QueryEvaluationStep prepare(LmdbLftjTupleExpr node, QueryEvaluationContext context) {
-		QueryEvaluationStep fallback = strategy.precompile(node.plan().fallbackExpr().clone(), context);
+		LazyFallbackStep fallback = new LazyFallbackStep(node.plan().fallbackExpr().clone(), context);
 		return bindings -> evaluate(node.plan(), context, fallback, bindings);
 	}
 
 	private CloseableIteration<BindingSet> evaluate(LmdbLftjPlan plan, QueryEvaluationContext context,
-			QueryEvaluationStep fallback, BindingSet bindings) {
+			LazyFallbackStep fallback, BindingSet bindings) {
 		LmdbQueryAccess queryAccess = strategy.queryAccess();
 		if (queryAccess == null) {
 			return fallback.evaluate(bindings);
@@ -63,6 +64,7 @@ final class LmdbLftjExecutor {
 		private final LmdbQueryAccess queryAccess;
 		private final LmdbLftjMetrics metrics;
 		private final List<String> searchVariables;
+		private final List<LmdbTrieCursor> patternCursors;
 		private final List<List<LmdbTrieCursor>> cursorsByDepth;
 		private final boolean[] initializedDepths;
 		private final boolean[] advanceDepths;
@@ -79,7 +81,8 @@ final class LmdbLftjExecutor {
 			this.queryAccess = queryAccess;
 			this.metrics = metrics;
 			this.searchVariables = collectSearchVariables(plan, state);
-			this.cursorsByDepth = createDepthCursors(plan, queryAccess, searchVariables);
+			this.patternCursors = createPatternCursors(plan, queryAccess, state);
+			this.cursorsByDepth = createDepthCursors(plan, searchVariables, patternCursors);
 			this.initializedDepths = new boolean[searchVariables.size()];
 			this.advanceDepths = new boolean[searchVariables.size()];
 			this.depth = 0;
@@ -102,10 +105,8 @@ final class LmdbLftjExecutor {
 
 		@Override
 		protected void handleClose() {
-			for (List<LmdbTrieCursor> cursors : cursorsByDepth) {
-				for (LmdbTrieCursor cursor : cursors) {
-					cursor.close();
-				}
+			for (LmdbTrieCursor cursor : patternCursors) {
+				cursor.close();
 			}
 			state.close();
 		}
@@ -163,13 +164,11 @@ final class LmdbLftjExecutor {
 			if (!advanceExisting) {
 				for (LmdbTrieCursor cursor : cursors) {
 					metrics.recordCandidateScan();
-					if (!cursor.initialize(state)) {
-						releaseDepth(depth);
+					if (!cursor.open(variableName)) {
 						return false;
 					}
 				}
 			} else if (!cursors.get(0).next()) {
-				releaseDepth(depth);
 				return false;
 			}
 
@@ -179,7 +178,6 @@ final class LmdbLftjExecutor {
 			}
 			current = align(cursors, current);
 			if (current < 0) {
-				releaseDepth(depth);
 				return false;
 			}
 
@@ -206,11 +204,12 @@ final class LmdbLftjExecutor {
 			if (depth < 0 || depth >= searchVariables.size()) {
 				return;
 			}
-			state.clear(searchVariables.get(depth));
+			String variableName = searchVariables.get(depth);
+			state.clear(variableName);
 			initializedDepths[depth] = false;
 			advanceDepths[depth] = false;
 			for (LmdbTrieCursor cursor : cursorsByDepth.get(depth)) {
-				cursor.release();
+				cursor.release(variableName);
 			}
 		}
 	}
@@ -225,18 +224,29 @@ final class LmdbLftjExecutor {
 		return searchVariables;
 	}
 
-	private List<List<LmdbTrieCursor>> createDepthCursors(LmdbLftjPlan plan, LmdbQueryAccess queryAccess,
-			List<String> searchVariables) {
+	private List<LmdbTrieCursor> createPatternCursors(LmdbLftjPlan plan, LmdbQueryAccess queryAccess,
+			LmdbLftjBindingState state) {
+		List<LmdbTrieCursor> cursors = new ArrayList<>(plan.patternPlans().size());
+		for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
+			cursors.add(queryAccess.includeInferred()
+					? new LmdbUnionTrieCursor(patternPlan, queryAccess, state)
+					: new LmdbTrieCursor(patternPlan, queryAccess, state, true));
+		}
+		return cursors;
+	}
+
+	private List<List<LmdbTrieCursor>> createDepthCursors(LmdbLftjPlan plan, List<String> searchVariables,
+			List<LmdbTrieCursor> patternCursors) {
 		List<List<LmdbTrieCursor>> cursorsByDepth = new ArrayList<>(searchVariables.size());
+		List<LmdbLftjPatternPlan> patternPlans = plan.patternPlans();
 		for (String variableName : searchVariables) {
 			List<LmdbTrieCursor> cursors = new ArrayList<>();
-			for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
+			for (int i = 0; i < patternPlans.size(); i++) {
+				LmdbLftjPatternPlan patternPlan = patternPlans.get(i);
 				if (!patternPlan.containsVariable(variableName)) {
 					continue;
 				}
-				cursors.add(queryAccess.includeInferred()
-						? new LmdbUnionTrieCursor(patternPlan, variableName, queryAccess)
-						: new LmdbTrieCursor(patternPlan, variableName, queryAccess, true));
+				cursors.add(patternCursors.get(i));
 			}
 			cursorsByDepth.add(cursors);
 		}
@@ -347,5 +357,37 @@ final class LmdbLftjExecutor {
 			}
 		}
 		return 0;
+	}
+
+	private final class LazyFallbackStep {
+
+		private final TupleExpr fallbackExpr;
+		private final QueryEvaluationContext context;
+
+		private volatile QueryEvaluationStep compiledStep;
+
+		private LazyFallbackStep(TupleExpr fallbackExpr, QueryEvaluationContext context) {
+			this.fallbackExpr = fallbackExpr;
+			this.context = context;
+		}
+
+		private CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+			return step().evaluate(bindings);
+		}
+
+		private QueryEvaluationStep step() {
+			QueryEvaluationStep step = compiledStep;
+			if (step != null) {
+				return step;
+			}
+			synchronized (this) {
+				step = compiledStep;
+				if (step == null) {
+					step = strategy.precompile(fallbackExpr.clone(), context);
+					compiledStep = step;
+				}
+				return step;
+			}
+		}
 	}
 }

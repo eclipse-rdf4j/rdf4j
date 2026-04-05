@@ -15,101 +15,150 @@ class LmdbTrieCursor implements AutoCloseable {
 
 	private final LmdbLftjPatternPlan patternPlan;
 	private final LmdbQueryAccess queryAccess;
+	private final LmdbLftjBindingState state;
 	private final boolean explicit;
-	private final int valueComponent;
-	private final long[] scanKey = new long[4];
+	private final long[] lowerBound = new long[4];
+	private final long[] upperBound = new long[4];
+	private final Frame[] stack = new Frame[4];
 
-	private RecordIterator records;
+	private LmdbTrieKeyCursor cursor;
+	private int stackSize;
 
-	protected long currentValue;
-	protected boolean currentAvailable;
-
-	LmdbTrieCursor(LmdbLftjPatternPlan patternPlan, String variableName, LmdbQueryAccess queryAccess,
+	LmdbTrieCursor(LmdbLftjPatternPlan patternPlan, LmdbQueryAccess queryAccess, LmdbLftjBindingState state,
 			boolean explicit) {
 		this.patternPlan = patternPlan;
 		this.queryAccess = queryAccess;
+		this.state = state;
 		this.explicit = explicit;
-		this.valueComponent = patternPlan.componentFor(variableName);
+		for (int i = 0; i < stack.length; i++) {
+			stack[i] = new Frame();
+		}
 	}
 
-	boolean initialize(LmdbLftjBindingState state) {
-		release();
-		patternPlan.fillScanKey(state, scanKey);
-		records = queryAccess.openScan(state.txn(), patternPlan.indexName(), scanKey[0], scanKey[1], scanKey[2],
-				scanKey[3], explicit);
-		return advanceFirst();
+	boolean open(String variableName) {
+		ensureCursor();
+		Frame frame = stack[stackSize++];
+		frame.variableName = variableName;
+		frame.keyFieldIndex = patternPlan.keyFieldIndex(variableName);
+		if (seek(0L)) {
+			return true;
+		}
+		stackSize--;
+		frame.reset();
+		return false;
 	}
 
 	boolean seek(long target) {
-		while (currentAvailable && currentValue < target) {
-			if (!next()) {
-				return false;
-			}
+		if (stackSize == 0) {
+			return false;
 		}
-		return currentAvailable;
+
+		Frame frame = currentFrame();
+		if (frame.currentAvailable && cursor.isPositioned() && target <= frame.currentValue) {
+			return true;
+		}
+
+		patternPlan.fillRangeBounds(state, frame.variableName, target, lowerBound, upperBound);
+		if (!cursor.position(lowerBound, upperBound, frame.keyFieldIndex + 1)) {
+			frame.currentAvailable = false;
+			return false;
+		}
+
+		frame.currentValue = cursor.valueAt(frame.keyFieldIndex);
+		frame.currentAvailable = true;
+		return true;
 	}
 
 	boolean next() {
-		if (!currentAvailable) {
+		Frame frame = currentFrame();
+		if (!frame.currentAvailable || frame.currentValue == Long.MAX_VALUE) {
+			frame.currentAvailable = false;
 			return false;
 		}
-		return advanceBeyond(currentValue);
+
+		long previousValue = frame.currentValue;
+		while (cursor.next()) {
+			long nextValue = cursor.valueAt(frame.keyFieldIndex);
+			if (nextValue != previousValue) {
+				frame.currentValue = nextValue;
+				return true;
+			}
+		}
+
+		frame.currentAvailable = false;
+		return false;
 	}
 
 	long value() {
-		return currentValue;
+		return currentFrame().currentValue;
 	}
 
 	protected boolean available() {
-		return currentAvailable;
+		return stackSize > 0 && currentFrame().currentAvailable;
 	}
 
-	protected void setCurrentValue(long value) {
-		this.currentValue = value;
-		this.currentAvailable = true;
-	}
-
-	protected void clearCurrent() {
-		this.currentAvailable = false;
-	}
-
-	void release() {
-		clearCurrent();
-		if (records != null) {
-			records.close();
-			records = null;
+	void release(String variableName) {
+		if (stackSize == 0) {
+			return;
+		}
+		Frame frame = stack[stackSize - 1];
+		if (!frame.matches(variableName)) {
+			return;
+		}
+		stack[--stackSize].reset();
+		if (stackSize > 0 && currentFrame().currentAvailable && !restoreCurrentPosition()) {
+			throw new IllegalStateException("LMDB trie cursor failed to restore parent frame for " + variableName);
 		}
 	}
 
 	@Override
 	public void close() {
-		release();
-	}
-
-	private boolean advanceFirst() {
-		long[] quad = nextQuad();
-		if (quad == null) {
-			release();
-			return false;
+		stackSize = 0;
+		if (cursor != null) {
+			cursor.close();
+			cursor = null;
 		}
-		setCurrentValue(quad[valueComponent]);
-		return true;
 	}
 
-	private boolean advanceBeyond(long previousValue) {
-		long[] quad;
-		while ((quad = nextQuad()) != null) {
-			long nextValue = quad[valueComponent];
-			if (nextValue != previousValue) {
-				setCurrentValue(nextValue);
-				return true;
-			}
+	private void ensureCursor() {
+		if (cursor == null) {
+			cursor = queryAccess.openTrieCursor(state.txn(), patternPlan.indexName(), explicit);
 		}
-		release();
-		return false;
 	}
 
-	private long[] nextQuad() {
-		return records == null ? null : records.next();
+	private boolean restoreCurrentPosition() {
+		Frame frame = currentFrame();
+		long target = frame.currentValue;
+		if (cursor != null && cursor.isPositioned()
+				&& patternPlan.matchesPrefix(cursor, state, frame.keyFieldIndex)
+				&& cursor.valueAt(frame.keyFieldIndex) == target) {
+			return true;
+		}
+		return seek(target);
+	}
+
+	private Frame currentFrame() {
+		if (stackSize == 0) {
+			throw new IllegalStateException("LMDB trie cursor is not positioned");
+		}
+		return stack[stackSize - 1];
+	}
+
+	private static final class Frame {
+		private String variableName;
+		private int keyFieldIndex;
+		private long currentValue;
+		private boolean currentAvailable;
+
+		private void reset() {
+			variableName = null;
+			keyFieldIndex = -1;
+			currentValue = 0L;
+			currentAvailable = false;
+		}
+
+		private boolean matches(String variableName) {
+			return this.variableName != null && this.variableName.equals(variableName);
+		}
 	}
 }

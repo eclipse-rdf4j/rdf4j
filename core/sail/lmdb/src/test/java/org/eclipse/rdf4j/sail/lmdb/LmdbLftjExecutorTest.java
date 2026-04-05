@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
@@ -102,6 +103,24 @@ class LmdbLftjExecutorTest {
 				"closing a started iteration should still release the read transaction");
 	}
 
+	@Test
+	void evaluateShouldReusePatternScansAcrossBacktracking() {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess);
+
+		long count = 0;
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				iteration.next();
+				count++;
+			}
+		}
+
+		assertTrue(count > 0, "sanity check: the synthetic clique should still enumerate matching cycles");
+		assertEquals(3, queryAccess.openTrieCursorCalls,
+				"LFTJ should keep one shared scan per pattern instead of reopening scans while backtracking");
+	}
+
 	private QueryEvaluationStep createEvaluationStep(TestQueryAccess queryAccess) {
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 		LmdbLftjEvaluationStrategy strategy = new LmdbLftjEvaluationStrategy(
@@ -127,9 +146,9 @@ class LmdbLftjExecutorTest {
 				fallbackExpr.getAssuredBindingNames(),
 				List.of("a", "b", "c"),
 				List.of(
-						new LmdbLftjPatternPlan(pattern1, "spoc"),
-						new LmdbLftjPatternPlan(pattern2, "spoc"),
-						new LmdbLftjPatternPlan(pattern3, "spoc")));
+						new LmdbLftjPatternPlan(pattern1, "psoc"),
+						new LmdbLftjPatternPlan(pattern2, "psoc"),
+						new LmdbLftjPatternPlan(pattern3, "posc")));
 	}
 
 	private StatementPattern statementPattern(String subjectName, String objectName) {
@@ -163,6 +182,7 @@ class LmdbLftjExecutorTest {
 		private int resolveValueCalls;
 		private int releaseReadTxnCalls;
 		private int openScanCalls;
+		private int openTrieCursorCalls;
 		private int closedScanCalls;
 
 		private TestQueryAccess() {
@@ -226,7 +246,7 @@ class LmdbLftjExecutorTest {
 
 		@Override
 		public Set<String> configuredIndexes() {
-			return Set.of("spoc");
+			return Set.of("psoc", "posc");
 		}
 
 		@Override
@@ -234,6 +254,13 @@ class LmdbLftjExecutorTest {
 				long context, boolean explicit) {
 			openScanCalls++;
 			return new TestRecordIterator(quads, subj, pred, obj, context, this::recordClosedScan);
+		}
+
+		@Override
+		public LmdbTrieKeyCursor openTrieCursor(TxnManager.Txn txn, String indexName, boolean explicit) {
+			openScanCalls++;
+			openTrieCursorCalls++;
+			return new TestTrieKeyCursor(quads, indexName, this::recordClosedScan);
 		}
 
 		private void recordClosedScan() {
@@ -284,6 +311,133 @@ class LmdbLftjExecutorTest {
 			if (!closed) {
 				closed = true;
 				closeCallback.run();
+			}
+		}
+	}
+
+	private static final class TestTrieKeyCursor implements LmdbTrieKeyCursor {
+
+		private final List<long[]> quads;
+		private final int[] order;
+		private final Runnable closeCallback;
+
+		private long[] lowerBound;
+		private long[] upperBound;
+		private int prefixLength;
+		private int position;
+		private long[] current;
+		private boolean closed;
+
+		private TestTrieKeyCursor(List<long[]> quads, String indexName, Runnable closeCallback) {
+			this.quads = quads.stream()
+					.map(long[]::clone)
+					.sorted(Comparator.comparingLong((long[] quad) -> quad[componentIndex(indexName, 0)])
+							.thenComparingLong(quad -> quad[componentIndex(indexName, 1)])
+							.thenComparingLong(quad -> quad[componentIndex(indexName, 2)])
+							.thenComparingLong(quad -> quad[componentIndex(indexName, 3)]))
+					.toList();
+			this.order = new int[] {
+					componentIndex(indexName, 0),
+					componentIndex(indexName, 1),
+					componentIndex(indexName, 2),
+					componentIndex(indexName, 3)
+			};
+			this.closeCallback = closeCallback;
+		}
+
+		@Override
+		public boolean position(long[] lowerBound, long[] upperBound, int prefixLength) {
+			this.lowerBound = lowerBound.clone();
+			this.upperBound = upperBound.clone();
+			this.prefixLength = prefixLength;
+			this.position = 0;
+			this.current = null;
+
+			while (position < quads.size()) {
+				long[] quad = quads.get(position);
+				if (comparePrefix(quad, this.lowerBound, this.prefixLength) < 0) {
+					position++;
+					continue;
+				}
+				if (compare(quad, this.upperBound) > 0) {
+					return false;
+				}
+				current = quad;
+				return true;
+			}
+			return false;
+		}
+
+		@Override
+		public boolean next() {
+			if (current == null) {
+				return false;
+			}
+
+			while (++position < quads.size()) {
+				long[] quad = quads.get(position);
+				if (compare(quad, upperBound) > 0) {
+					current = null;
+					return false;
+				}
+				current = quad;
+				return true;
+			}
+
+			current = null;
+			return false;
+		}
+
+		@Override
+		public boolean isPositioned() {
+			return current != null;
+		}
+
+		@Override
+		public long valueAt(int keyFieldIndex) {
+			return current[order[keyFieldIndex]];
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				closeCallback.run();
+			}
+		}
+
+		private int compare(long[] quad, long[] bounds) {
+			for (int component : order) {
+				int comparison = Long.compare(quad[component], bounds[component]);
+				if (comparison != 0) {
+					return comparison;
+				}
+			}
+			return 0;
+		}
+
+		private int comparePrefix(long[] quad, long[] bounds, int prefixLength) {
+			for (int i = 0; i < prefixLength; i++) {
+				int comparison = Long.compare(quad[order[i]], bounds[order[i]]);
+				if (comparison != 0) {
+					return comparison;
+				}
+			}
+			return 0;
+		}
+
+		private static int componentIndex(String indexName, int keyFieldIndex) {
+			switch (indexName.charAt(keyFieldIndex)) {
+			case 's':
+				return 0;
+			case 'p':
+				return 1;
+			case 'o':
+				return 2;
+			case 'c':
+				return 3;
+			default:
+				throw new IllegalArgumentException("Unsupported LMDB index field: " + indexName.charAt(keyFieldIndex));
 			}
 		}
 	}

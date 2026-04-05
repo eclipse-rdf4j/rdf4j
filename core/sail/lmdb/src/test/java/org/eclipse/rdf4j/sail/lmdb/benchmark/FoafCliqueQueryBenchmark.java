@@ -39,7 +39,7 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 30, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
@@ -108,15 +108,15 @@ public class FoafCliqueQueryBenchmark {
 		return executeCount(QUERY_CYCLE_3);
 	}
 
-//	@Benchmark
-//	public long cycle4() {
-//		return executeCount(QUERY_CYCLE_4);
-//	}
-//
-//	@Benchmark
-//	public long cycle5() {
-//		return executeCount(QUERY_CYCLE_5);
-//	}
+	@Benchmark
+	public long cycle4() {
+		return executeCount(QUERY_CYCLE_4);
+	}
+
+	//@Benchmark
+	public long cycle5() {
+		return executeCount(QUERY_CYCLE_5);
+	}
 
 	private long executeCount(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {

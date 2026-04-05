@@ -534,6 +534,10 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
+	LmdbTrieKeyCursor openTrieCursor(Txn txn, String indexName, boolean explicit) {
+		return new LmdbTrieDbCursor(getIndex(indexName), explicit, txn);
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		return txnManager.doWith((stack, txn) -> {

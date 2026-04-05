@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -29,6 +30,7 @@ final class LmdbLftjPatternPlan {
 	private final TermRef object;
 	private final TermRef context;
 	private final TermRef[] terms;
+	private final TermRef[] keyTerms;
 
 	LmdbLftjPatternPlan(StatementPattern pattern, String indexName) {
 		this.pattern = pattern.clone();
@@ -38,6 +40,10 @@ final class LmdbLftjPatternPlan {
 		this.object = TermRef.of(TripleStore.OBJ_IDX, pattern.getObjectVar());
 		this.context = TermRef.of(TripleStore.CONTEXT_IDX, pattern.getContextVar());
 		this.terms = new TermRef[] { subject, predicate, object, context };
+		this.keyTerms = new TermRef[indexName.length()];
+		for (int i = 0; i < indexName.length(); i++) {
+			keyTerms[i] = term(indexName.charAt(i));
+		}
 	}
 
 	StatementPattern pattern() {
@@ -78,6 +84,48 @@ final class LmdbLftjPatternPlan {
 			}
 		}
 		throw new IllegalArgumentException("Pattern does not bind variable " + variableName);
+	}
+
+	int keyFieldIndex(String variableName) {
+		for (int i = 0; i < keyTerms.length; i++) {
+			if (keyTerms[i].matchesName(variableName)) {
+				return i;
+			}
+		}
+		throw new IllegalArgumentException("Pattern does not bind variable " + variableName);
+	}
+
+	void fillRangeBounds(LmdbLftjBindingState state, String variableName, long lowerBound, long[] minKey,
+			long[] maxKey) {
+		Arrays.fill(maxKey, Long.MAX_VALUE);
+
+		int keyFieldIndex = keyFieldIndex(variableName);
+		for (int i = 0; i < keyTerms.length; i++) {
+			TermRef term = keyTerms[i];
+			long fixedId = state.fixedId(term);
+			if (i < keyFieldIndex && fixedId < 0) {
+				throw new IllegalStateException("LMDB LFTJ requires a fully fixed prefix before " + variableName
+						+ " in index " + indexName);
+			}
+			if (fixedId >= 0) {
+				minKey[term.component()] = fixedId;
+				maxKey[term.component()] = fixedId;
+			}
+		}
+
+		TermRef currentTerm = keyTerms[keyFieldIndex];
+		minKey[currentTerm.component()] = lowerBound;
+		maxKey[currentTerm.component()] = Long.MAX_VALUE;
+	}
+
+	boolean matchesPrefix(LmdbTrieKeyCursor cursor, LmdbLftjBindingState state, int keyFieldIndex) {
+		for (int i = 0; i < keyFieldIndex; i++) {
+			long fixedId = state.fixedId(keyTerms[i]);
+			if (fixedId < 0 || cursor.valueAt(i) != fixedId) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	TermRef term(char field) {
@@ -141,6 +189,7 @@ final class LmdbLftjPatternPlan {
 		private final String name;
 		private final boolean anonymous;
 		private final Value constantValue;
+		private int bindingSlot = -1;
 
 		private TermRef(int component, String name, boolean anonymous, Value constantValue) {
 			this.component = component;
@@ -185,6 +234,16 @@ final class LmdbLftjPatternPlan {
 
 		boolean matchesName(String variableName) {
 			return isVisible() && name.equals(variableName);
+		}
+
+		void bindSlot(int bindingSlot) {
+			if (isVisible()) {
+				this.bindingSlot = bindingSlot;
+			}
+		}
+
+		int bindingSlot() {
+			return bindingSlot;
 		}
 	}
 }

@@ -326,6 +326,24 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	public void testExplainOptimizedUsesStableCycleIndexOrder(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
+		Repository repository = createRepository(dataDir, config, conn -> {
+		});
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			String actualPlan = connection.prepareTupleQuery(stableCycleQuery())
+					.explain(Explanation.Level.Optimized)
+					.toString();
+			assertTrue(actualPlan, actualPlan.contains("LmdbLftjTupleExpr"));
+			assertTrue(actualPlan, actualPlan.contains("varOrder=a,b,c"));
+			assertTrue(actualPlan, actualPlan.contains("indexes=psoc,psoc,posc"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	public void testCyclicQueryMatchesResultsWhenLftjActivates(@TempDir File disabledDir, @TempDir File enabledDir) {
 		LmdbStoreConfig disabled = new LmdbStoreConfig("spoc,posc");
 		LmdbStoreConfig enabled = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
@@ -384,6 +402,16 @@ public class LmdbSailStoreTest {
 				  ?a <urn:p1> ?b .
 				  ?b <urn:p2> ?c .
 				  ?c <urn:p3> ?a .
+				}
+				""";
+	}
+
+	private String stableCycleQuery() {
+		return """
+				SELECT ?a ?b ?c WHERE {
+				  ?a <urn:knows> ?b .
+				  ?b <urn:knows> ?c .
+				  ?c <urn:knows> ?a .
 				}
 				""";
 	}

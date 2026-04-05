@@ -16,16 +16,19 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	private final LmdbTrieCursor explicitCursor;
 	private final LmdbTrieCursor inferredCursor;
 
-	LmdbUnionTrieCursor(LmdbLftjPatternPlan patternPlan, String variableName, LmdbQueryAccess queryAccess) {
-		super(patternPlan, variableName, queryAccess, true);
-		this.explicitCursor = new LmdbTrieCursor(patternPlan, variableName, queryAccess, true);
-		this.inferredCursor = new LmdbTrieCursor(patternPlan, variableName, queryAccess, false);
+	LmdbUnionTrieCursor(LmdbLftjPatternPlan patternPlan, LmdbQueryAccess queryAccess, LmdbLftjBindingState state) {
+		super(patternPlan, queryAccess, state, true);
+		this.explicitCursor = new LmdbTrieCursor(patternPlan, queryAccess, state, true);
+		this.inferredCursor = new LmdbTrieCursor(patternPlan, queryAccess, state, false);
 	}
 
 	@Override
-	boolean initialize(LmdbLftjBindingState state) {
-		explicitCursor.initialize(state);
-		inferredCursor.initialize(state);
+	boolean open(String variableName) {
+		boolean explicitOpened = explicitCursor.open(variableName);
+		boolean inferredOpened = inferredCursor.open(variableName);
+		if (!explicitOpened && !inferredOpened) {
+			return false;
+		}
 		return mergeCurrent();
 	}
 
@@ -57,28 +60,34 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	void release() {
-		clearCurrent();
-		explicitCursor.release();
-		inferredCursor.release();
+	long value() {
+		if (explicitCursor.available() && inferredCursor.available()) {
+			return Math.min(explicitCursor.value(), inferredCursor.value());
+		}
+		if (explicitCursor.available()) {
+			return explicitCursor.value();
+		}
+		return inferredCursor.value();
+	}
+
+	@Override
+	protected boolean available() {
+		return explicitCursor.available() || inferredCursor.available();
+	}
+
+	@Override
+	void release(String variableName) {
+		explicitCursor.release(variableName);
+		inferredCursor.release(variableName);
+	}
+
+	@Override
+	public void close() {
+		explicitCursor.close();
+		inferredCursor.close();
 	}
 
 	private boolean mergeCurrent() {
-		boolean explicitAvailable = explicitCursor.available();
-		boolean inferredAvailable = inferredCursor.available();
-		if (!explicitAvailable && !inferredAvailable) {
-			clearCurrent();
-			return false;
-		}
-		if (!explicitAvailable) {
-			setCurrentValue(inferredCursor.value());
-			return true;
-		}
-		if (!inferredAvailable) {
-			setCurrentValue(explicitCursor.value());
-			return true;
-		}
-		setCurrentValue(Math.min(explicitCursor.value(), inferredCursor.value()));
-		return true;
+		return explicitCursor.available() || inferredCursor.available();
 	}
 }

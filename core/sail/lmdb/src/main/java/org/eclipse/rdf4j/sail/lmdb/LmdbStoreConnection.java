@@ -248,6 +248,11 @@ public class LmdbStoreConnection extends SailSourceConnection {
 					throw new SailException(e);
 				}
 			}
+
+			@Override
+			public LmdbTrieKeyCursor openTrieCursor(TxnManager.Txn txn, String indexName, boolean explicit) {
+				return tripleStore.openTrieCursor(txn, indexName, explicit);
+			}
 		};
 	}
 

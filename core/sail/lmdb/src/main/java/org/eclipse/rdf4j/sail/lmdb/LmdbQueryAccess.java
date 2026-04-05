@@ -33,4 +33,6 @@ interface LmdbQueryAccess {
 
 	RecordIterator openScan(TxnManager.Txn txn, String indexName, long subj, long pred, long obj, long context,
 			boolean explicit);
+
+	LmdbTrieKeyCursor openTrieCursor(TxnManager.Txn txn, String indexName, boolean explicit);
 }
