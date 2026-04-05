@@ -34,6 +34,8 @@ class LmdbStoreConfigTest {
 
 	private static final IRI LEGACY_APPEND_MODE = Values.iri(LmdbStoreSchema.NAMESPACE + "appendMode");
 
+	private static final IRI LFTJ_ENABLED = Values.iri(LmdbStoreSchema.NAMESPACE + "lftjEnabled");
+
 	private static final IRI NO_READAHEAD = Values.iri(LmdbStoreSchema.NAMESPACE + "noReadahead");
 
 	@Test
@@ -44,6 +46,11 @@ class LmdbStoreConfigTest {
 	@Test
 	void noReadaheadDefaultsToDisabled() {
 		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "getNoReadahead")).isFalse();
+	}
+
+	@Test
+	void lftjEnabledDefaultsToEnabled() {
+		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "isLftjEnabled")).isTrue();
 	}
 
 	@ParameterizedTest
@@ -67,6 +74,18 @@ class LmdbStoreConfigTest {
 				LmdbStoreConfig::getPageCardinalityEstimator,
 				pageCardinalityEstimator,
 				!pageCardinalityEstimator
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportLftjEnabled(final boolean lftjEnabled) {
+		testParseAndExportReflective(
+				LFTJ_ENABLED,
+				Values.literal(lftjEnabled),
+				"isLftjEnabled",
+				lftjEnabled,
+				!lftjEnabled
 		);
 	}
 

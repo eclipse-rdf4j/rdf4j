@@ -78,6 +78,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean pageCardinalityEstimator = true;
 
+	private boolean lftjEnabled = true;
+
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
 
 	/*--------------*
@@ -213,6 +215,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean isLftjEnabled() {
+		return lftjEnabled;
+	}
+
+	public LmdbStoreConfig setLftjEnabled(boolean lftjEnabled) {
+		this.lftjEnabled = lftjEnabled;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -251,6 +262,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (!pageCardinalityEstimator) {
 			m.add(implNode, LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR, vf.createLiteral(false));
+		}
+		if (!lftjEnabled) {
+			m.add(implNode, LmdbStoreSchema.LFTJ_ENABLED, vf.createLiteral(false));
 		}
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
@@ -368,6 +382,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.LFTJ_ENABLED, null)).ifPresent(lit -> {
+				try {
+					setLftjEnabled(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.LFTJ_ENABLED + " property, found "
+									+ lit);
+				}
+			});
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, null))
 					.ifPresent(lit -> {

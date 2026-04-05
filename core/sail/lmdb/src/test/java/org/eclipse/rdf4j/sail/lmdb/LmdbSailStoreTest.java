@@ -15,6 +15,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -36,6 +39,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -253,6 +257,166 @@ public class LmdbSailStoreTest {
 			assertFalse(actual, actual.contains("stddevActual="));
 			assertFalse(actual, actual.contains("confidenceScoreActual="));
 		}
+	}
+
+	@Test
+	public void testExplainOptimizedDoesNotUseLftjWithDefaultIndexes(@TempDir File dataDir) {
+		Repository repository = createRepository(dataDir, new LmdbStoreConfig("spoc,posc"), conn -> {
+		});
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			String actual = conn.prepareTupleQuery(cyclicQuery())
+					.explain(Explanation.Level.Optimized)
+					.toString();
+
+			assertFalse(actual, actual.contains("LmdbLftjTupleExpr"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainOptimizedDoesNotUseLftjForAcyclicQueryWithStrongIndexes(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
+		Repository repository = createRepository(dataDir, config, conn -> {
+		});
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			String actual = conn.prepareTupleQuery(chainQuery())
+					.explain(Explanation.Level.Optimized)
+					.toString();
+
+			assertFalse(actual, actual.contains("LmdbLftjTupleExpr"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainOptimizedDoesNotUseLftjWithoutFullStrongIndexCoverage(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc");
+		Repository repository = createRepository(dataDir, config, conn -> {
+		});
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			String actual = conn.prepareTupleQuery(cyclicQuery())
+					.explain(Explanation.Level.Optimized)
+					.toString();
+
+			assertFalse(actual, actual.contains("LmdbLftjTupleExpr"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainOptimizedUsesLftjForCyclicQueryWithStrongIndexes(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
+		Repository repository = createRepository(dataDir, config, conn -> {
+		});
+
+		try (RepositoryConnection enabledConnection = repository.getConnection()) {
+			String actualPlan = enabledConnection.prepareTupleQuery(cyclicQuery())
+					.explain(Explanation.Level.Optimized)
+					.toString();
+			assertTrue(actualPlan, actualPlan.contains("LmdbLftjTupleExpr"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testCyclicQueryMatchesResultsWhenLftjActivates(@TempDir File disabledDir, @TempDir File enabledDir) {
+		LmdbStoreConfig disabled = new LmdbStoreConfig("spoc,posc");
+		LmdbStoreConfig enabled = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
+
+		Repository disabledRepository = createRepository(disabledDir, disabled, this::seedCyclicData);
+		Repository enabledRepository = createRepository(enabledDir, enabled, this::seedCyclicData);
+		String query = cyclicQuery();
+
+		try (RepositoryConnection enabledConnection = enabledRepository.getConnection()) {
+			String actualPlan = enabledConnection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+			assertTrue(actualPlan, actualPlan.contains("LmdbLftjTupleExpr"));
+		}
+
+		try {
+			assertEquals(evaluate(disabledRepository, query), evaluate(enabledRepository, query));
+		} finally {
+			disabledRepository.shutDown();
+			enabledRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testRejectsCustomEvaluationStrategyFactoryWhenLftjEnabled() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStore store = new LmdbStore(config);
+		store.setEvaluationStrategyFactory(
+				new org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory());
+
+		Assertions.assertThrows(IllegalStateException.class, store::getEvaluationStrategyFactory);
+	}
+
+	private Repository createRepository(File dataDir, LmdbStoreConfig config, Consumer<RepositoryConnection> seed) {
+		Repository repository = new SailRepository(new LmdbStore(dataDir, config));
+		repository.init();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			seed.accept(connection);
+		}
+		return repository;
+	}
+
+	private String chainQuery() {
+		return """
+				SELECT * WHERE {
+				  ?a <urn:p1> ?b .
+				  ?b <urn:p2> ?c .
+				  ?c <urn:p3> ?d .
+				}
+				""";
+	}
+
+	private String cyclicQuery() {
+		return """
+				SELECT ?a ?b ?c WHERE {
+				  ?a <urn:p1> ?b .
+				  ?b <urn:p2> ?c .
+				  ?c <urn:p3> ?a .
+				}
+				""";
+	}
+
+	private void seedCyclicData(RepositoryConnection connection) {
+		IRI a1 = F.createIRI("urn:a1");
+		IRI a2 = F.createIRI("urn:a2");
+		IRI b1 = F.createIRI("urn:b1");
+		IRI b2 = F.createIRI("urn:b2");
+		IRI c1 = F.createIRI("urn:c1");
+		IRI c2 = F.createIRI("urn:c2");
+
+		connection.add(a1, F.createIRI("urn:p1"), b1);
+		connection.add(a2, F.createIRI("urn:p1"), b2);
+		connection.add(a1, F.createIRI("urn:p1"), b2);
+		connection.add(b1, F.createIRI("urn:p2"), c1);
+		connection.add(b2, F.createIRI("urn:p2"), c2);
+		connection.add(c1, F.createIRI("urn:p3"), a1);
+		connection.add(c2, F.createIRI("urn:p3"), a2);
+	}
+
+	private List<String> evaluate(Repository repository, String query) {
+		List<String> rows = new ArrayList<>();
+		try (RepositoryConnection connection = repository.getConnection();
+				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			while (result.hasNext()) {
+				var bindingSet = result.next();
+				rows.add(bindingSet.getValue("a").stringValue() + "|" + bindingSet.getValue("b").stringValue() + "|"
+						+ bindingSet.getValue("c").stringValue());
+			}
+		}
+		rows.sort(String::compareTo);
+		return rows;
 	}
 
 	@AfterEach

@@ -301,6 +301,14 @@ class LmdbSailStore implements SailStore {
 		return new LmdbSailSource(false);
 	}
 
+	TripleStore getTripleStore() {
+		return tripleStore;
+	}
+
+	ValueStore getValueStore() {
+		return valueStore;
+	}
+
 	CloseableIteration<Resource> getContexts() throws IOException {
 		Txn txn = tripleStore.getTxnManager().createReadTxn();
 		RecordIterator records = tripleStore.getAllTriplesSortedByContext(txn);

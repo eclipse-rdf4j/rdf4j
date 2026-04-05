@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -222,6 +223,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+		return evaluateWithTripleSource(tupleExpr, dataset, bindings, includeInferred,
+				rdfDataset -> new SailDatasetTripleSource(vf, rdfDataset));
+	}
+
+	protected CloseableIteration<? extends BindingSet> evaluateWithTripleSource(TupleExpr tupleExpr,
+			Dataset dataset, BindingSet bindings, boolean includeInferred,
+			Function<SailDataset, TripleSource> tripleSourceFactory) throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		if (cloneTupleExpression) {
@@ -243,7 +251,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
 			rdfDataset = branch.dataset(getIsolationLevel());
 
-			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
+			TripleSource tripleSource = tripleSourceFactory.apply(rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 			if (trackResultSize) {
 				strategy.setTrackResultSize(trackResultSize);

@@ -168,8 +168,18 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * @return Returns the {@link EvaluationStrategy}.
 	 */
 	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
+		if (config.isLftjEnabled() && evalStratFactory != null
+				&& !(evalStratFactory instanceof LmdbLftjEvaluationStrategyFactory)) {
+			throw new IllegalStateException(
+					"LMDB LFTJ requires " + LmdbLftjEvaluationStrategyFactory.class.getName()
+							+ " when lftjEnabled=true");
+		}
 		if (evalStratFactory == null) {
-			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+			if (config.isLftjEnabled()) {
+				evalStratFactory = new LmdbLftjEvaluationStrategyFactory(this);
+			} else {
+				evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+			}
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
@@ -405,6 +415,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	LmdbSailStore getBackingStore() {
 		return backingStore;
+	}
+
+	LmdbStoreConfig getLmdbStoreConfig() {
+		return config;
 	}
 
 	private boolean upgradeStore(File dataDir, String version) throws SailException {

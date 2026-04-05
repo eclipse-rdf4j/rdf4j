@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.io.IOException;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -21,8 +24,11 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -134,12 +140,113 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			BindingSet bindings, boolean includeInferred) throws SailException {
 		// ensure that all elements of the binding set are initialized (lazy values are resolved)
 		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
+				evaluateWithTripleSource(tupleExpr, dataset, bindings, includeInferred,
+						rdfDataset -> createTripleSource(rdfDataset, dataset, includeInferred))) {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
 				BindingSet bs = super.next();
 				bs.forEach(b -> initValue(b.getValue()));
 				return bs;
+			}
+		};
+	}
+
+	private TripleSource createTripleSource(SailDataset rdfDataset, Dataset dataset, boolean includeInferred) {
+		TripleSource delegate = new SailDatasetTripleSource(lmdbStore.getValueFactory(), rdfDataset);
+		if (!isLftjRuntimeSafe(dataset)) {
+			return delegate;
+		}
+		return new LmdbLftjTripleSource(delegate, createQueryAccess(includeInferred));
+	}
+
+	private boolean isLftjRuntimeSafe(Dataset dataset) {
+		return lmdbStore.getLmdbStoreConfig().isLftjEnabled()
+				&& hasStrongLftjIndexCoverage()
+				&& !hasPendingLocalChangesForLftj()
+				&& isDefaultDataset(dataset);
+	}
+
+	private boolean hasStrongLftjIndexCoverage() {
+		return LmdbLftjPlanner.hasRequiredIndexCoverage(lmdbStore.getBackingStore()
+				.getTripleStore()
+				.getConfiguredIndexSpecs());
+	}
+
+	private boolean hasPendingLocalChangesForLftj() {
+		return sailChangedEvent.statementsAdded() || sailChangedEvent.statementsRemoved();
+	}
+
+	private boolean isDefaultDataset(Dataset dataset) {
+		return dataset == null || (dataset.getDefaultGraphs().isEmpty()
+				&& dataset.getNamedGraphs().isEmpty()
+				&& dataset.getDefaultRemoveGraphs().isEmpty()
+				&& dataset.getDefaultInsertGraph() == null);
+	}
+
+	private LmdbQueryAccess createQueryAccess(boolean includeInferred) {
+		LmdbSailStore backingStore = lmdbStore.getBackingStore();
+		TripleStore tripleStore = backingStore.getTripleStore();
+		ValueStore valueStore = backingStore.getValueStore();
+		return new LmdbQueryAccess() {
+			@Override
+			public TripleStore tripleStore() {
+				return tripleStore;
+			}
+
+			@Override
+			public TxnManager.Txn acquireReadTxn() {
+				try {
+					return tripleStore.getTxnManager().createReadTxn();
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public void releaseReadTxn(TxnManager.Txn txn) {
+				txn.close();
+			}
+
+			@Override
+			public long resolveId(Value value) {
+				try {
+					return valueStore.getId(value);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public Value resolveValue(long id) {
+				try {
+					return valueStore.getValue(id);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public boolean includeInferred() {
+				return includeInferred;
+			}
+
+			@Override
+			public Set<String> configuredIndexes() {
+				try {
+					return tripleStore.getConfiguredIndexSpecs();
+				} catch (SailException e) {
+					throw e;
+				}
+			}
+
+			@Override
+			public RecordIterator openScan(TxnManager.Txn txn, String indexName, long subj, long pred, long obj,
+					long context, boolean explicit) {
+				try {
+					return tripleStore.getTriples(txn, indexName, subj, pred, obj, context, explicit);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
 			}
 		};
 	}

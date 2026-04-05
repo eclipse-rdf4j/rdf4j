@@ -320,6 +320,10 @@ class TripleStore implements Closeable {
 		return txnManager;
 	}
 
+	Set<String> getConfiguredIndexSpecs() throws SailException {
+		return new HashSet<>(getIndexSpecs());
+	}
+
 	/**
 	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
 	 * of 4 characters: 's', 'p', 'o' and 'c'.
@@ -523,6 +527,13 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
+	RecordIterator getTriples(Txn txn, String indexName, long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		TripleIndex index = getIndex(indexName);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		return txnManager.doWith((stack, txn) -> {
@@ -535,6 +546,15 @@ class TripleStore implements Closeable {
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
+	}
+
+	private TripleIndex getIndex(String indexName) {
+		for (TripleIndex index : indexes) {
+			if (index.toString().equals(indexName)) {
+				return index;
+			}
+		}
+		throw new IllegalArgumentException("Unknown LMDB index: " + indexName);
 	}
 
 	/**
