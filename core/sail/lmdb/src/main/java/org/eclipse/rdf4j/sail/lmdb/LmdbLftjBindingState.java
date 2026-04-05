@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -32,6 +34,8 @@ public final class LmdbLftjBindingState {
 	private final long[] assignedValues;
 	private final boolean[] assignedPresent;
 	private final IdentityHashMap<LmdbLftjPatternPlan.TermRef, Long> constantIds = new IdentityHashMap<>();
+	private BiConsumer<Value, MutableBindingSet>[] bindingSetters;
+	private QueryEvaluationContext bindingSettersContext;
 
 	private TxnManager.Txn txn;
 
@@ -145,10 +149,10 @@ public final class LmdbLftjBindingState {
 
 	BindingSet materialize(QueryEvaluationContext context) {
 		MutableBindingSet result = context.createBindingSet(inputBindings);
+		BiConsumer<Value, MutableBindingSet>[] setters = bindingSetters(context);
 		for (int slot = 0; slot < variableNames.length; slot++) {
-			String variableName = variableNames[slot];
-			if (!result.hasBinding(variableName) && isBound(slot)) {
-				context.setBinding(variableName).accept(queryAccess.resolveValue(value(slot)), result);
+			if (assignedPresent[slot]) {
+				setters[slot].accept(queryAccess.resolveValue(assignedValues[slot]), result);
 			}
 		}
 		return result;
@@ -167,6 +171,20 @@ public final class LmdbLftjBindingState {
 			queryAccess.releaseReadTxn(txn);
 			txn = null;
 		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private BiConsumer<Value, MutableBindingSet>[] bindingSetters(QueryEvaluationContext context) {
+		if (bindingSetters != null && bindingSettersContext == context) {
+			return bindingSetters;
+		}
+		BiConsumer<Value, MutableBindingSet>[] setters = new BiConsumer[variableNames.length];
+		for (int slot = 0; slot < variableNames.length; slot++) {
+			setters[slot] = context.setBinding(variableNames[slot]);
+		}
+		bindingSetters = setters;
+		bindingSettersContext = context;
+		return setters;
 	}
 
 	private int slot(String variableName) {
