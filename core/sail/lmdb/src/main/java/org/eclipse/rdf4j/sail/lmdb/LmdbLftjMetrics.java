@@ -16,6 +16,13 @@ final class LmdbLftjMetrics {
 	private long candidateScans;
 	private long witnessScans;
 	private long emittedBindings;
+	private long frontierLoads;
+	private long frontierHits;
+	private long countLoads;
+	private long countHits;
+	private long relationLoads;
+	private long relationHits;
+	private long relationUses;
 
 	void recordCandidateScan() {
 		candidateScans++;
@@ -29,6 +36,34 @@ final class LmdbLftjMetrics {
 		emittedBindings += count;
 	}
 
+	void recordFrontierLoad() {
+		frontierLoads++;
+	}
+
+	void recordFrontierHit() {
+		frontierHits++;
+	}
+
+	void recordCountLoad() {
+		countLoads++;
+	}
+
+	void recordCountHit() {
+		countHits++;
+	}
+
+	void recordRelationLoad() {
+		relationLoads++;
+	}
+
+	void recordRelationHit() {
+		relationHits++;
+	}
+
+	void recordRelationUse() {
+		relationUses++;
+	}
+
 	long candidateScans() {
 		return candidateScans;
 	}
@@ -39,5 +74,33 @@ final class LmdbLftjMetrics {
 
 	long emittedBindings() {
 		return emittedBindings;
+	}
+
+	long frontierLoads() {
+		return frontierLoads;
+	}
+
+	long frontierHits() {
+		return frontierHits;
+	}
+
+	long countLoads() {
+		return countLoads;
+	}
+
+	long countHits() {
+		return countHits;
+	}
+
+	long relationLoads() {
+		return relationLoads;
+	}
+
+	long relationHits() {
+		return relationHits;
+	}
+
+	long relationUses() {
+		return relationUses;
 	}
 }

@@ -23,7 +23,7 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	boolean open(String variableName) {
+	public boolean open(String variableName) {
 		boolean explicitOpened = explicitCursor.open(variableName);
 		boolean inferredOpened = inferredCursor.open(variableName);
 		if (!explicitOpened && !inferredOpened) {
@@ -33,7 +33,7 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	boolean seek(long target) {
+	public boolean seek(long target) {
 		if (explicitCursor.available()) {
 			explicitCursor.seek(target);
 		}
@@ -44,7 +44,7 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	boolean next() {
+	public boolean next() {
 		if (!available()) {
 			return false;
 		}
@@ -60,7 +60,7 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	long value() {
+	public long value() {
 		if (explicitCursor.available() && inferredCursor.available()) {
 			return Math.min(explicitCursor.value(), inferredCursor.value());
 		}
@@ -76,7 +76,7 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 	}
 
 	@Override
-	void release(String variableName) {
+	public void release(String variableName) {
 		explicitCursor.release(variableName);
 		inferredCursor.release(variableName);
 	}

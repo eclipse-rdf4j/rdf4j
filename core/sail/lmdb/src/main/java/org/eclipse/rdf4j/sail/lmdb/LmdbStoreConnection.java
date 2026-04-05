@@ -253,6 +253,16 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			public LmdbTrieKeyCursor openTrieCursor(TxnManager.Txn txn, String indexName, boolean explicit) {
 				return tripleStore.openTrieCursor(txn, indexName, explicit);
 			}
+
+			@Override
+			public LmdbLftjPlanner.PlanningResult cachedPlanningResult(String cacheKey) {
+				return lmdbStore.preparedPlanCache().get(cacheKey);
+			}
+
+			@Override
+			public void cachePlanningResult(String cacheKey, LmdbLftjPlanner.PlanningResult result) {
+				lmdbStore.preparedPlanCache().put(cacheKey, result);
+			}
 		};
 	}
 

@@ -63,9 +63,10 @@ final class LmdbLftjExecutor {
 		private final QueryEvaluationContext context;
 		private final LmdbQueryAccess queryAccess;
 		private final LmdbLftjMetrics metrics;
+		private final LmdbPrefixFrontierProvider frontierProvider;
 		private final List<String> searchVariables;
-		private final List<LmdbTrieCursor> patternCursors;
-		private final List<List<LmdbTrieCursor>> cursorsByDepth;
+		private final List<LmdbLftjCursor> patternCursors;
+		private final List<List<LmdbLftjCursor>> cursorsByDepth;
 		private final boolean[] initializedDepths;
 		private final boolean[] advanceDepths;
 
@@ -80,8 +81,9 @@ final class LmdbLftjExecutor {
 			this.context = context;
 			this.queryAccess = queryAccess;
 			this.metrics = metrics;
+			this.frontierProvider = new LmdbPrefixFrontierProvider(queryAccess, state, metrics);
 			this.searchVariables = collectSearchVariables(plan, state);
-			this.patternCursors = createPatternCursors(plan, queryAccess, state);
+			this.patternCursors = createPatternCursors(plan, frontierProvider);
 			this.cursorsByDepth = createDepthCursors(plan, searchVariables, patternCursors);
 			this.initializedDepths = new boolean[searchVariables.size()];
 			this.advanceDepths = new boolean[searchVariables.size()];
@@ -105,7 +107,7 @@ final class LmdbLftjExecutor {
 
 		@Override
 		protected void handleClose() {
-			for (LmdbTrieCursor cursor : patternCursors) {
+			for (LmdbLftjCursor cursor : patternCursors) {
 				cursor.close();
 			}
 			state.close();
@@ -114,7 +116,7 @@ final class LmdbLftjExecutor {
 		private BindingSet computeNextElement() {
 			while (depth >= 0) {
 				if (depth == searchVariables.size()) {
-					long multiplicity = witnessMultiplicity(plan, state, queryAccess, metrics, searchVariables);
+					long multiplicity = witnessMultiplicity(plan, metrics, frontierProvider);
 					backtrackAfterLeaf();
 					if (multiplicity > 0) {
 						BindingSet result = state.materialize(context);
@@ -154,7 +156,7 @@ final class LmdbLftjExecutor {
 
 		private boolean positionDepth(int depth, boolean advanceExisting) {
 			String variableName = searchVariables.get(depth);
-			List<LmdbTrieCursor> cursors = cursorsByDepth.get(depth);
+			List<LmdbLftjCursor> cursors = cursorsByDepth.get(depth);
 			state.clear(variableName);
 
 			if (cursors.isEmpty()) {
@@ -162,7 +164,7 @@ final class LmdbLftjExecutor {
 			}
 
 			if (!advanceExisting) {
-				for (LmdbTrieCursor cursor : cursors) {
+				for (LmdbLftjCursor cursor : cursors) {
 					metrics.recordCandidateScan();
 					if (!cursor.open(variableName)) {
 						return false;
@@ -173,7 +175,7 @@ final class LmdbLftjExecutor {
 			}
 
 			long current = Long.MIN_VALUE;
-			for (LmdbTrieCursor cursor : cursors) {
+			for (LmdbLftjCursor cursor : cursors) {
 				current = Math.max(current, cursor.value());
 			}
 			current = align(cursors, current);
@@ -208,7 +210,7 @@ final class LmdbLftjExecutor {
 			state.clear(variableName);
 			initializedDepths[depth] = false;
 			advanceDepths[depth] = false;
-			for (LmdbTrieCursor cursor : cursorsByDepth.get(depth)) {
+			for (LmdbLftjCursor cursor : cursorsByDepth.get(depth)) {
 				cursor.release(variableName);
 			}
 		}
@@ -224,23 +226,20 @@ final class LmdbLftjExecutor {
 		return searchVariables;
 	}
 
-	private List<LmdbTrieCursor> createPatternCursors(LmdbLftjPlan plan, LmdbQueryAccess queryAccess,
-			LmdbLftjBindingState state) {
-		List<LmdbTrieCursor> cursors = new ArrayList<>(plan.patternPlans().size());
+	private List<LmdbLftjCursor> createPatternCursors(LmdbLftjPlan plan, LmdbPrefixFrontierProvider frontierProvider) {
+		List<LmdbLftjCursor> cursors = new ArrayList<>(plan.patternPlans().size());
 		for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
-			cursors.add(queryAccess.includeInferred()
-					? new LmdbUnionTrieCursor(patternPlan, queryAccess, state)
-					: new LmdbTrieCursor(patternPlan, queryAccess, state, true));
+			cursors.add(new LmdbCachedTrieCursor(patternPlan, frontierProvider));
 		}
 		return cursors;
 	}
 
-	private List<List<LmdbTrieCursor>> createDepthCursors(LmdbLftjPlan plan, List<String> searchVariables,
-			List<LmdbTrieCursor> patternCursors) {
-		List<List<LmdbTrieCursor>> cursorsByDepth = new ArrayList<>(searchVariables.size());
+	private List<List<LmdbLftjCursor>> createDepthCursors(LmdbLftjPlan plan, List<String> searchVariables,
+			List<LmdbLftjCursor> patternCursors) {
+		List<List<LmdbLftjCursor>> cursorsByDepth = new ArrayList<>(searchVariables.size());
 		List<LmdbLftjPatternPlan> patternPlans = plan.patternPlans();
 		for (String variableName : searchVariables) {
-			List<LmdbTrieCursor> cursors = new ArrayList<>();
+			List<LmdbLftjCursor> cursors = new ArrayList<>();
 			for (int i = 0; i < patternPlans.size(); i++) {
 				LmdbLftjPatternPlan patternPlan = patternPlans.get(i);
 				if (!patternPlan.containsVariable(variableName)) {
@@ -253,12 +252,12 @@ final class LmdbLftjExecutor {
 		return cursorsByDepth;
 	}
 
-	private long align(List<LmdbTrieCursor> cursors, long target) {
+	private long align(List<LmdbLftjCursor> cursors, long target) {
 		long current = target;
 		while (true) {
 			boolean allMatch = true;
 			long max = current;
-			for (LmdbTrieCursor cursor : cursors) {
+			for (LmdbLftjCursor cursor : cursors) {
 				if (!cursor.seek(current)) {
 					return -1;
 				}
@@ -274,11 +273,11 @@ final class LmdbLftjExecutor {
 		}
 	}
 
-	private long witnessMultiplicity(LmdbLftjPlan plan, LmdbLftjBindingState state, LmdbQueryAccess queryAccess,
-			LmdbLftjMetrics metrics, List<String> searchVariables) {
+	private long witnessMultiplicity(LmdbLftjPlan plan, LmdbLftjMetrics metrics,
+			LmdbPrefixFrontierProvider frontierProvider) {
 		long multiplicity = 1;
 		for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
-			long witnesses = countMatches(patternPlan, state, queryAccess, metrics, searchVariables);
+			long witnesses = countMatches(patternPlan, metrics, frontierProvider);
 			if (witnesses == 0) {
 				return 0;
 			}
@@ -287,76 +286,10 @@ final class LmdbLftjExecutor {
 		return multiplicity;
 	}
 
-	private long countMatches(LmdbLftjPatternPlan patternPlan, LmdbLftjBindingState state, LmdbQueryAccess queryAccess,
-			LmdbLftjMetrics metrics, List<String> searchVariables) {
-		if (!patternPlan.hasHiddenTerms() && containsSearchVariable(patternPlan, searchVariables)) {
-			return 1;
-		}
-
-		long[] scanKey = patternPlan.scanKey(state);
+	private long countMatches(LmdbLftjPatternPlan patternPlan, LmdbLftjMetrics metrics,
+			LmdbPrefixFrontierProvider frontierProvider) {
 		metrics.recordWitnessScan();
-		if (!queryAccess.includeInferred()) {
-			return countMatches(queryAccess, state, patternPlan, scanKey, true);
-		}
-
-		return countUnionMatches(queryAccess, state, patternPlan, scanKey);
-	}
-
-	private boolean containsSearchVariable(LmdbLftjPatternPlan patternPlan, List<String> searchVariables) {
-		for (String searchVariable : searchVariables) {
-			if (patternPlan.containsVariable(searchVariable)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private long countMatches(LmdbQueryAccess queryAccess, LmdbLftjBindingState state, LmdbLftjPatternPlan patternPlan,
-			long[] scanKey, boolean explicit) {
-		long count = 0;
-		try (RecordIterator records = queryAccess.openScan(state.txn(), patternPlan.indexName(), scanKey[0], scanKey[1],
-				scanKey[2], scanKey[3], explicit)) {
-			while (records.next() != null) {
-				count++;
-			}
-		}
-		return count;
-	}
-
-	private long countUnionMatches(LmdbQueryAccess queryAccess, LmdbLftjBindingState state,
-			LmdbLftjPatternPlan patternPlan, long[] scanKey) {
-		long count = 0;
-		try (RecordIterator explicitRecords = queryAccess.openScan(state.txn(), patternPlan.indexName(), scanKey[0],
-				scanKey[1], scanKey[2], scanKey[3], true);
-				RecordIterator inferredRecords = queryAccess.openScan(state.txn(), patternPlan.indexName(), scanKey[0],
-						scanKey[1], scanKey[2], scanKey[3], false)) {
-			long[] explicitQuad = explicitRecords.next();
-			long[] inferredQuad = inferredRecords.next();
-			while (explicitQuad != null || inferredQuad != null) {
-				if (inferredQuad == null || explicitQuad != null && compareQuads(explicitQuad, inferredQuad) <= 0) {
-					count++;
-					long[] previous = explicitQuad;
-					explicitQuad = explicitRecords.next();
-					if (inferredQuad != null && compareQuads(previous, inferredQuad) == 0) {
-						inferredQuad = inferredRecords.next();
-					}
-				} else {
-					count++;
-					inferredQuad = inferredRecords.next();
-				}
-			}
-		}
-		return count;
-	}
-
-	private int compareQuads(long[] left, long[] right) {
-		for (int i = 0; i < 4; i++) {
-			int comparison = Long.compare(left[i], right[i]);
-			if (comparison != 0) {
-				return comparison;
-			}
-		}
-		return 0;
+		return frontierProvider.countMatches(patternPlan);
 	}
 
 	private final class LazyFallbackStep {

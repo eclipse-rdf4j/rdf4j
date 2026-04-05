@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -70,8 +71,14 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 			return false;
 		}
 
+		Set<String> configuredIndexes = queryAccess.configuredIndexes();
 		TupleExpr fallbackExpr = rebuildJoin(patterns.stream().map(TupleExpr::clone).toList());
-		LmdbLftjPlanner.PlanningResult plan = planner.plan(fallbackExpr, patterns, queryAccess.configuredIndexes());
+		String cacheKey = LmdbLftjPreparedPlanCache.normalizedKey(patterns, configuredIndexes);
+		LmdbLftjPlanner.PlanningResult plan = queryAccess.cachedPlanningResult(cacheKey);
+		if (plan == null) {
+			plan = planner.plan(fallbackExpr, patterns, configuredIndexes);
+			queryAccess.cachePlanningResult(cacheKey, plan);
+		}
 		if (!plan.planned()) {
 			logger.debug("Skipping LMDB LFTJ for {}: {}", node.getSignature(), plan.rejectionReason());
 			return false;

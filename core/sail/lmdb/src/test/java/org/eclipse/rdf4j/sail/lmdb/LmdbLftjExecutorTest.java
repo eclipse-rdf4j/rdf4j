@@ -117,11 +117,51 @@ class LmdbLftjExecutorTest {
 		}
 
 		assertTrue(count > 0, "sanity check: the synthetic clique should still enumerate matching cycles");
-		assertEquals(3, queryAccess.openTrieCursorCalls,
-				"LFTJ should keep one shared scan per pattern instead of reopening scans while backtracking");
+		assertTrue(queryAccess.openTrieCursorCalls <= 3,
+				"LFTJ should keep shared trie state instead of reopening scans while backtracking");
+	}
+
+	@Test
+	void evaluateShouldReuseDerivedRelationsAcrossEquivalentPatterns() {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess);
+
+		long count = 0;
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				iteration.next();
+				count++;
+			}
+		}
+
+		assertTrue(count > 0, "sanity check: the synthetic clique should still enumerate matching cycles");
+		assertTrue(queryAccess.openTrieCursorCalls <= 2,
+				"equivalent foaf:knows patterns should share derived relations instead of rebuilding one trie per pattern");
+	}
+
+	@Test
+	void evaluateShouldAvoidRecordScansForHiddenContextMultiplicity() {
+		TestQueryAccess queryAccess = TestQueryAccess.withDuplicateContexts();
+		QueryEvaluationStep evaluationStep = createEvaluationStep(queryAccess, createPlanWithHiddenContexts());
+
+		long count = 0;
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				iteration.next();
+				count++;
+			}
+		}
+
+		assertEquals(648, count, "hidden context multiplicity should still be preserved");
+		assertEquals(0, queryAccess.recordScanCalls,
+				"hidden context multiplicity should come from cached frontier counts, not RecordIterator rescans");
 	}
 
 	private QueryEvaluationStep createEvaluationStep(TestQueryAccess queryAccess) {
+		return createEvaluationStep(queryAccess, createPlan());
+	}
+
+	private QueryEvaluationStep createEvaluationStep(TestQueryAccess queryAccess, LmdbLftjPlan plan) {
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 		LmdbLftjEvaluationStrategy strategy = new LmdbLftjEvaluationStrategy(
 				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess),
@@ -132,7 +172,7 @@ class LmdbLftjExecutorTest {
 				false,
 				DefaultCollectionFactory::new);
 		LmdbLftjExecutor executor = new LmdbLftjExecutor(strategy);
-		return executor.prepare(new LmdbLftjTupleExpr(createPlan()), context);
+		return executor.prepare(new LmdbLftjTupleExpr(plan), context);
 	}
 
 	private LmdbLftjPlan createPlan() {
@@ -156,6 +196,30 @@ class LmdbLftjExecutorTest {
 				new Var(subjectName),
 				new Var("pred", FOAF.KNOWS),
 				new Var(objectName));
+	}
+
+	private LmdbLftjPlan createPlanWithHiddenContexts() {
+		StatementPattern pattern1 = statementPattern("a", "b", "ctx1");
+		StatementPattern pattern2 = statementPattern("b", "c", "ctx2");
+		StatementPattern pattern3 = statementPattern("c", "a", "ctx3");
+		TupleExpr fallbackExpr = new Join(new Join(pattern1.clone(), pattern2.clone()), pattern3.clone());
+		return new LmdbLftjPlan(
+				fallbackExpr,
+				fallbackExpr.getBindingNames(),
+				fallbackExpr.getAssuredBindingNames(),
+				List.of("a", "b", "c"),
+				List.of(
+						new LmdbLftjPatternPlan(pattern1, "psoc"),
+						new LmdbLftjPatternPlan(pattern2, "psoc"),
+						new LmdbLftjPatternPlan(pattern3, "posc")));
+	}
+
+	private StatementPattern statementPattern(String subjectName, String objectName, String hiddenContextName) {
+		return new StatementPattern(
+				new Var(subjectName),
+				new Var("pred", FOAF.KNOWS),
+				new Var(objectName),
+				Var.of(hiddenContextName, true));
 	}
 
 	private static final class EmptyTripleSource implements TripleSource {
@@ -182,24 +246,39 @@ class LmdbLftjExecutorTest {
 		private int resolveValueCalls;
 		private int releaseReadTxnCalls;
 		private int openScanCalls;
+		private int recordScanCalls;
 		private int openTrieCursorCalls;
 		private int closedScanCalls;
 
 		private TestQueryAccess() {
+			this(false);
+		}
+
+		private TestQueryAccess(boolean duplicateContexts) {
 			valuesById.add(null);
 			valuesById.add(VF.createIRI("urn:person:1"));
 			valuesById.add(VF.createIRI("urn:person:2"));
 			valuesById.add(VF.createIRI("urn:person:3"));
 			valuesById.add(VF.createIRI("urn:person:4"));
 			valuesById.add(FOAF.KNOWS);
+			valuesById.add(VF.createIRI("urn:ctx:1"));
+			valuesById.add(VF.createIRI("urn:ctx:2"));
 
 			for (long subject = 1; subject <= 4; subject++) {
 				for (long object = 1; object <= 4; object++) {
 					if (subject != object) {
 						quads.add(new long[] { subject, 5L, object, 0L });
+						if (duplicateContexts) {
+							quads.add(new long[] { subject, 5L, object, 6L });
+							quads.add(new long[] { subject, 5L, object, 7L });
+						}
 					}
 				}
 			}
+		}
+
+		private static TestQueryAccess withDuplicateContexts() {
+			return new TestQueryAccess(true);
 		}
 
 		@Override
@@ -253,6 +332,7 @@ class LmdbLftjExecutorTest {
 		public RecordIterator openScan(TxnManager.Txn txn, String indexName, long subj, long pred, long obj,
 				long context, boolean explicit) {
 			openScanCalls++;
+			recordScanCalls++;
 			return new TestRecordIterator(quads, subj, pred, obj, context, this::recordClosedScan);
 		}
 

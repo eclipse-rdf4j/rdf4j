@@ -101,6 +101,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * Lock manager used to prevent concurrent {@link #getTransactionLock(IsolationLevel)} calls.
 	 */
 	private final ReentrantLock txnLockManager = new ReentrantLock();
+	private final LmdbLftjPreparedPlanCache preparedPlanCache = new LmdbLftjPreparedPlanCache();
 
 	/**
 	 * Holds locks for all isolated transactions.
@@ -340,6 +341,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				}
 			}
 		}
+		preparedPlanCache.clear();
 		logger.debug("LmdbStore shut down");
 	}
 
@@ -365,6 +367,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	@Override
 	public ValueFactory getValueFactory() {
 		return store.getValueFactory();
+	}
+
+	LmdbLftjPreparedPlanCache preparedPlanCache() {
+		return preparedPlanCache;
 	}
 
 	/**

@@ -65,7 +65,8 @@ final class LmdbLftjPlan {
 	}
 
 	LmdbLftjPlan copy() {
-		return new LmdbLftjPlan(fallbackExpr.clone(), bindingNames, assuredBindingNames, variableOrder, patternPlans);
+		return new LmdbLftjPlan(fallbackExpr.clone(), bindingNames, assuredBindingNames, variableOrder,
+				patternPlans.stream().map(LmdbLftjPatternPlan::copy).collect(Collectors.toList()));
 	}
 
 	@Override

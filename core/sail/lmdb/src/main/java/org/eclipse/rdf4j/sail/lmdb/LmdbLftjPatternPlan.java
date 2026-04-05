@@ -54,6 +54,10 @@ final class LmdbLftjPatternPlan {
 		return indexName;
 	}
 
+	LmdbLftjPatternPlan copy() {
+		return new LmdbLftjPatternPlan(pattern, indexName);
+	}
+
 	List<TermRef> terms() {
 		return List.of(terms);
 	}
@@ -93,6 +97,78 @@ final class LmdbLftjPatternPlan {
 			}
 		}
 		throw new IllegalArgumentException("Pattern does not bind variable " + variableName);
+	}
+
+	int keyFieldIndex(int component) {
+		for (int i = 0; i < keyTerms.length; i++) {
+			if (keyTerms[i].component() == component) {
+				return i;
+			}
+		}
+		throw new IllegalArgumentException("Pattern does not bind LMDB component " + component);
+	}
+
+	TermRef keyTerm(int keyFieldIndex) {
+		return keyTerms[keyFieldIndex];
+	}
+
+	TermRef termForComponent(int component) {
+		switch (component) {
+		case TripleStore.SUBJ_IDX:
+			return subject;
+		case TripleStore.PRED_IDX:
+			return predicate;
+		case TripleStore.OBJ_IDX:
+			return object;
+		case TripleStore.CONTEXT_IDX:
+			return context;
+		default:
+			throw new IllegalArgumentException("Unknown LMDB component: " + component);
+		}
+	}
+
+	TermRef subjectTerm() {
+		return subject;
+	}
+
+	TermRef predicateTerm() {
+		return predicate;
+	}
+
+	TermRef objectTerm() {
+		return object;
+	}
+
+	int fixedPrefixLength(LmdbLftjBindingState state) {
+		for (int i = 0; i < keyTerms.length; i++) {
+			if (state.fixedId(keyTerms[i]) < 0) {
+				return i;
+			}
+		}
+		return keyTerms.length;
+	}
+
+	void fillMatchRange(LmdbLftjBindingState state, long[] minKey, long[] maxKey) {
+		Arrays.fill(maxKey, Long.MAX_VALUE);
+		for (TermRef term : keyTerms) {
+			long fixedId = state.fixedId(term);
+			if (fixedId >= 0) {
+				minKey[term.component()] = fixedId;
+				maxKey[term.component()] = fixedId;
+			} else if (!term.isHidden()) {
+				throw new IllegalStateException("LMDB LFTJ requires all visible terms to be fixed for match counting");
+			}
+		}
+	}
+
+	boolean canUseDerivedBinaryRelation() {
+		return predicate.isConstant()
+				&& subject.isVisible()
+				&& object.isVisible()
+				&& !context.isVisible()
+				&& !subject.isHidden()
+				&& !object.isHidden()
+				&& ("psoc".equals(indexName) || "posc".equals(indexName));
 	}
 
 	void fillRangeBounds(LmdbLftjBindingState state, String variableName, long lowerBound, long[] minKey,

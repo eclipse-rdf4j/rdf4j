@@ -35,4 +35,12 @@ interface LmdbQueryAccess {
 			boolean explicit);
 
 	LmdbTrieKeyCursor openTrieCursor(TxnManager.Txn txn, String indexName, boolean explicit);
+
+	default LmdbLftjPlanner.PlanningResult cachedPlanningResult(String cacheKey) {
+		return null;
+	}
+
+	default void cachePlanningResult(String cacheKey, LmdbLftjPlanner.PlanningResult result) {
+		// optional prepared-plan cache
+	}
 }
