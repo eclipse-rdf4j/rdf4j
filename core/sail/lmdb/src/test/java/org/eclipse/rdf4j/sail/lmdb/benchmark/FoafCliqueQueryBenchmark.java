@@ -39,10 +39,10 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, time = 1,  timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 2, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 3, time = 1,  timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class FoafCliqueQueryBenchmark {
 
@@ -68,6 +68,9 @@ public class FoafCliqueQueryBenchmark {
 	@Param({ "12345" })
 	public long seed;
 
+	@Param({ "true", "false" })
+	public boolean lftjEnabled;
+
 	private File dataDir;
 	private SailRepository repository;
 
@@ -81,7 +84,7 @@ public class FoafCliqueQueryBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		dataDir = Files.createTempDirectory("rdf4j-lmdb-foaf-cliques").toFile();
-		repository = new SailRepository(new LmdbStore(dataDir, createLftjBenchmarkConfig()));
+		repository = new SailRepository(new LmdbStore(dataDir, createLftjBenchmarkConfig(lftjEnabled)));
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -105,15 +108,15 @@ public class FoafCliqueQueryBenchmark {
 		return executeCount(QUERY_CYCLE_3);
 	}
 
-	@Benchmark
-	public long cycle4() {
-		return executeCount(QUERY_CYCLE_4);
-	}
-
-	@Benchmark
-	public long cycle5() {
-		return executeCount(QUERY_CYCLE_5);
-	}
+//	@Benchmark
+//	public long cycle4() {
+//		return executeCount(QUERY_CYCLE_4);
+//	}
+//
+//	@Benchmark
+//	public long cycle5() {
+//		return executeCount(QUERY_CYCLE_5);
+//	}
 
 	private long executeCount(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -121,8 +124,9 @@ public class FoafCliqueQueryBenchmark {
 		}
 	}
 
-	private static LmdbStoreConfig createLftjBenchmarkConfig() {
+	private static LmdbStoreConfig createLftjBenchmarkConfig(boolean lftjEnabled) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
+		config.setLftjEnabled(lftjEnabled);
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L);
 		config.setTripleDBSize(config.getValueDBSize());
