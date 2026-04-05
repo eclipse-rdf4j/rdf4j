@@ -45,11 +45,11 @@ final class LmdbLftjSyntheticScenario {
 	private LmdbLftjSyntheticScenario() {
 	}
 
-	static QueryEvaluationStep createEvaluationStep(TestQueryAccess queryAccess) {
+	static QueryEvaluationStep createEvaluationStep(LmdbQueryAccess queryAccess) {
 		return createEvaluationStep(queryAccess, createPlan());
 	}
 
-	static QueryEvaluationStep createEvaluationStep(TestQueryAccess queryAccess, LmdbLftjPlan plan) {
+	static QueryEvaluationStep createEvaluationStep(LmdbQueryAccess queryAccess, LmdbLftjPlan plan) {
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 		LmdbLftjEvaluationStrategy strategy = new LmdbLftjEvaluationStrategy(
 				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess),
@@ -68,6 +68,10 @@ final class LmdbLftjSyntheticScenario {
 	}
 
 	static LmdbLftjPlan createPlanWithHiddenContexts() {
+		return createPlanWithHiddenContexts("psoc", "psoc", "posc");
+	}
+
+	static LmdbLftjPlan createPlanWithHiddenContexts(String firstIndex, String secondIndex, String thirdIndex) {
 		StatementPattern pattern1 = statementPattern("a", "b", "ctx1");
 		StatementPattern pattern2 = statementPattern("b", "c", "ctx2");
 		StatementPattern pattern3 = statementPattern("c", "a", "ctx3");
@@ -78,9 +82,9 @@ final class LmdbLftjSyntheticScenario {
 				fallbackExpr.getAssuredBindingNames(),
 				List.of("a", "b", "c"),
 				List.of(
-						new LmdbLftjPatternPlan(pattern1, "psoc"),
-						new LmdbLftjPatternPlan(pattern2, "psoc"),
-						new LmdbLftjPatternPlan(pattern3, "posc")));
+						new LmdbLftjPatternPlan(pattern1, firstIndex),
+						new LmdbLftjPatternPlan(pattern2, secondIndex),
+						new LmdbLftjPatternPlan(pattern3, thirdIndex)));
 	}
 
 	static LmdbLftjPlan createPlan(String firstIndex, String secondIndex, String thirdIndex) {

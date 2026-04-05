@@ -12,18 +12,34 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 
 class LmdbLftjCodegenTest {
@@ -40,6 +56,44 @@ class LmdbLftjCodegenTest {
 	void syntheticQueryAccessShouldEnableCodegenByDefault() {
 		assertThat(invokeBooleanGetter(new LmdbLftjSyntheticScenario.TestQueryAccess(), "lftjCodegenEnabled"))
 				.isTrue();
+	}
+
+	@Test
+	void fullStackCompilerSourceShouldAvoidGenericTrieHelpers() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+		String source = LmdbLftjFullCodegenCompiler.INSTANCE.sourceFor(plan, shape, false);
+
+		assertThat(source)
+				.contains("AbstractLmdbFullStackCompiledLftjIteration")
+				.contains("mdb_cursor_open")
+				.doesNotContain("LmdbPrefixFrontierProvider")
+				.doesNotContain("LmdbTrieKeyCursor")
+				.doesNotContain("LmdbTrieDbCursor")
+				.doesNotContain("LmdbLftjCursor")
+				.doesNotContain("private LmdbCachedFrontier frontier")
+				.doesNotContain("valueAt(")
+				.doesNotContain("long[] lowerBound");
+	}
+
+	@Test
+	void fullStackCompilerShouldFingerprintIncludeInferredSeparately() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+
+		assertThat(LmdbLftjFullCodegenCompiler.INSTANCE.cacheKey(plan, shape, true))
+				.isNotEqualTo(LmdbLftjFullCodegenCompiler.INSTANCE.cacheKey(plan, shape, false));
+	}
+
+	@Test
+	void fullStackCompilerShouldShareDerivedRelationGroupsAcrossEquivalentPatterns() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+		String source = LmdbLftjFullCodegenCompiler.INSTANCE.sourceFor(plan, shape, false);
+
+		assertThat(countMatches(source, "private LmdbDerivedBinaryRelation relationGroup\\d+;")).isEqualTo(2);
+		assertThat(countMatches(source, "private boolean relationGroup\\d+Loaded;")).isEqualTo(2);
+		assertThat(countMatches(source, "private LmdbDerivedBinaryRelation relation\\d+\\(\\)")).isEqualTo(3);
 	}
 
 	@Test
@@ -89,6 +143,169 @@ class LmdbLftjCodegenTest {
 	}
 
 	@Test
+	void fullStackCompilerShouldProduceGeneratedIterationOnRealStore() throws Exception {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+		Files.writeString(Path.of("/tmp/lmdb-full-stack-generated.java"),
+				LmdbLftjFullCodegenCompiler.INSTANCE.sourceFor(plan, shape, false));
+		LmdbCompiledLftjFactory factory = LmdbLftjFullCodegenCompiler.INSTANCE.compile(plan, shape, false);
+		assertThat(factory.getClass().getName()).contains("GeneratedLmdbFullStackLftjFactory");
+		try (FullCodegenFixture fixture = new FullCodegenFixture()) {
+			QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(
+					fixture.connection.benchmarkQueryAccess(false), plan);
+
+			try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(iteration.getClass().getName())
+						.contains("GeneratedLmdbFullStackLftjFactory")
+						.doesNotContain("LmdbLftjExecutor$LmdbLftjIteration");
+				assertThat(iteration).hasNext();
+			}
+
+			LmdbLftjCodegenCache.CacheEntry cached = fixture.store.codegenCache()
+					.get(LmdbLftjFullCodegenCompiler.INSTANCE.cacheKey(plan, shape, false));
+			assertThat(cached).isNotNull();
+			assertThat(cached.compiled()).isTrue();
+		}
+	}
+
+	@Test
+	void fullStackCompilerShouldCompileSyntheticCycleWithIncludeInferred() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+		try {
+			Files.writeString(Path.of("/tmp/lmdb-full-stack-generated-inferred.java"),
+					LmdbLftjFullCodegenCompiler.INSTANCE.sourceFor(plan, shape, true));
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+		assertThat(LmdbLftjFullCodegenCompiler.INSTANCE.compile(plan, shape, true).getClass().getName())
+				.contains("GeneratedLmdbFullStackLftjFactory");
+	}
+
+	@Test
+	void fullCodegenBenchmarkCycleStateShouldUseGeneratedIteration() throws Exception {
+		LmdbLftjExecutorBenchmark.CycleState state = new LmdbLftjExecutorBenchmark.CycleState();
+		state.derivedRelationEnabled = true;
+		state.benchmarkMode = LmdbLftjBenchmarkMode.FULL_CODEGEN;
+		state.setup();
+		try {
+			QueryEvaluationStep evaluationStep = (QueryEvaluationStep) readField(state, "evaluationStep");
+			try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(iteration.getClass().getName())
+						.contains("GeneratedLmdbFullStackLftjFactory")
+						.doesNotContain("LmdbLftjExecutor$LmdbLftjIteration");
+				assertThat(iteration).hasNext();
+			}
+		} finally {
+			state.tearDown();
+		}
+	}
+
+	@Test
+	void fullCodegenFoafBenchmarkShouldCompileGeneratedFactory() throws Exception {
+		assertFoafBenchmarkQueryCompilesGeneratedFactory(3);
+	}
+
+	@Test
+	void fullCodegenFoafBenchmarkCycle4ShouldCompileGeneratedFactory() throws Exception {
+		assertFoafBenchmarkQueryCompilesGeneratedFactory(4);
+	}
+
+	@Test
+	void fullCodegenFoafBenchmarkCycle5ShouldCompileGeneratedFactory() throws Exception {
+		assertFoafBenchmarkQueryCompilesGeneratedFactory(5);
+	}
+
+	@Test
+	void fullCodegenFoafBenchmarkSequentialQueriesShouldKeepUsingGeneratedFactories() throws Exception {
+		FoafCliqueQueryBenchmark benchmark = new FoafCliqueQueryBenchmark();
+		benchmark.peopleCount = 300;
+		benchmark.cliquePercentage = 30;
+		benchmark.minCliqueSize = 3;
+		benchmark.maxCliqueSize = 6;
+		benchmark.randomKnowsEdges = 900;
+		benchmark.seed = 12345L;
+		benchmark.benchmarkMode = LmdbLftjBenchmarkMode.FULL_CODEGEN;
+		benchmark.setup();
+		try {
+			assertThat(benchmark.cycle3()).isPositive();
+			assertThat(benchmark.cycle4()).isPositive();
+			assertThat(benchmark.cycle5()).isPositive();
+			SailRepository repository = (SailRepository) readField(benchmark, "repository");
+			LmdbBenchmarkStore store = (LmdbBenchmarkStore) repository.getSail();
+			assertThat(compiledFactoryClassNames(store.codegenCache()))
+					.hasSizeGreaterThanOrEqualTo(3)
+					.allSatisfy(name -> assertThat(name).contains("GeneratedLmdbFullStackLftjFactory"));
+			assertThat(cacheEntryDescriptions(store.codegenCache()))
+					.allSatisfy(description -> assertThat(description).doesNotContain("Unable to compile"));
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
+	void defaultStoreConnectionShouldUseFullCodegenCompiler() throws Exception {
+		try (DefaultCodegenFixture fixture = new DefaultCodegenFixture()) {
+			assertThat(fixture.connection.benchmarkQueryAccess(false).codegenCompiler())
+					.isSameAs(LmdbLftjFullCodegenCompiler.INSTANCE);
+		}
+	}
+
+	@Test
+	void compileFailureShouldNotSilentlyFallbackToInterpretedIteration() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		CachingQueryAccess queryAccess = new CachingQueryAccess(new FailingCompiler());
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, plan);
+
+		assertThatThrownBy(() -> drain(evaluationStep, EmptyBindingSet.getInstance()))
+				.isInstanceOf(RuntimeException.class)
+				.hasMessageContaining("LMDB LFTJ execution failed")
+				.satisfies(throwable -> assertThat(rootCauseOf(throwable)).hasMessageContaining("forced failure"));
+	}
+
+	private void assertFoafBenchmarkQueryCompilesGeneratedFactory(int cycleSize) throws Exception {
+		FoafCliqueQueryBenchmark benchmark = new FoafCliqueQueryBenchmark();
+		benchmark.peopleCount = 300;
+		benchmark.cliquePercentage = 30;
+		benchmark.minCliqueSize = 3;
+		benchmark.maxCliqueSize = 6;
+		benchmark.randomKnowsEdges = 900;
+		benchmark.seed = 12345L;
+		benchmark.benchmarkMode = LmdbLftjBenchmarkMode.FULL_CODEGEN;
+		benchmark.setup();
+		try {
+			SailRepository repository = (SailRepository) readField(benchmark, "repository");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.prepareTupleQuery(foafCycleQuery(cycleSize))
+						.explain(Explanation.Level.Optimized)
+						.toString())
+						.contains("LmdbLftjTupleExpr");
+			}
+			assertThat(executeFoafBenchmarkCycle(benchmark, cycleSize)).isPositive();
+			LmdbBenchmarkStore store = (LmdbBenchmarkStore) repository.getSail();
+			assertThat(compiledFactoryClassNames(store.codegenCache()))
+					.withFailMessage("cache entries: %s", cacheEntryDescriptions(store.codegenCache()))
+					.anySatisfy(name -> assertThat(name).contains("GeneratedLmdbFullStackLftjFactory"));
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	private long executeFoafBenchmarkCycle(FoafCliqueQueryBenchmark benchmark, int cycleSize) {
+		switch (cycleSize) {
+		case 3:
+			return benchmark.cycle3();
+		case 4:
+			return benchmark.cycle4();
+		case 5:
+			return benchmark.cycle5();
+		default:
+			throw new IllegalArgumentException("Unsupported cycle size: " + cycleSize);
+		}
+	}
+
+	@Test
 	void codegenCacheShouldCompileOncePerExecutionKey() {
 		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
 		CountingCompiler compiler = new CountingCompiler();
@@ -113,10 +330,15 @@ class LmdbLftjCodegenTest {
 		CachingQueryAccess queryAccess = new CachingQueryAccess(compiler);
 		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, plan);
 
-		List<String> first = drain(evaluationStep, EmptyBindingSet.getInstance());
-		List<String> second = drain(evaluationStep, EmptyBindingSet.getInstance());
+		assertThatThrownBy(() -> drain(evaluationStep, EmptyBindingSet.getInstance()))
+				.isInstanceOf(RuntimeException.class)
+				.hasMessageContaining("LMDB LFTJ execution failed")
+				.satisfies(throwable -> assertThat(rootCauseOf(throwable)).hasMessageContaining("forced failure"));
+		assertThatThrownBy(() -> drain(evaluationStep, EmptyBindingSet.getInstance()))
+				.isInstanceOf(RuntimeException.class)
+				.hasMessageContaining("LMDB LFTJ execution failed")
+				.satisfies(throwable -> assertThat(rootCauseOf(throwable)).hasMessageContaining("forced failure"));
 
-		assertThat(second).containsExactlyElementsOf(first);
 		assertThat(compiler.compileCalls).isEqualTo(1);
 		assertThat(queryAccess.cachedEntry(plan.executionKey())).isNotNull();
 		assertThat(queryAccess.cachedEntry(plan.executionKey()).compiled()).isFalse();
@@ -130,6 +352,14 @@ class LmdbLftjCodegenTest {
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB codegen boolean getter: " + getterName, e);
 		}
+	}
+
+	private Throwable rootCauseOf(Throwable throwable) {
+		Throwable current = throwable;
+		while (current.getCause() != null) {
+			current = current.getCause();
+		}
+		return current;
 	}
 
 	private String invokeStringGetter(Object target, String getterName) {
@@ -155,6 +385,79 @@ class LmdbLftjCodegenTest {
 	private String render(BindingSet row) {
 		return row.getValue("a").stringValue() + "|" + row.getValue("b").stringValue() + "|"
 				+ row.getValue("c").stringValue();
+	}
+
+	private int countMatches(String source, String regex) {
+		int count = 0;
+		Matcher matcher = Pattern.compile(regex).matcher(source);
+		while (matcher.find()) {
+			count++;
+		}
+		return count;
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<String> compiledFactoryClassNames(LmdbLftjCodegenCache cache) throws Exception {
+		Field entriesField = LmdbLftjCodegenCache.class.getDeclaredField("entries");
+		entriesField.setAccessible(true);
+		Map<String, LmdbLftjCodegenCache.CacheEntry> entries = (LinkedHashMap<String, LmdbLftjCodegenCache.CacheEntry>) entriesField
+				.get(cache);
+		List<String> names = new ArrayList<>();
+		for (LmdbLftjCodegenCache.CacheEntry entry : entries.values()) {
+			if (entry.compiled()) {
+				names.add(entry.factory().getClass().getName());
+			}
+		}
+		return names;
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<String> cacheEntryDescriptions(LmdbLftjCodegenCache cache) throws Exception {
+		Field entriesField = LmdbLftjCodegenCache.class.getDeclaredField("entries");
+		entriesField.setAccessible(true);
+		Map<String, LmdbLftjCodegenCache.CacheEntry> entries = (LinkedHashMap<String, LmdbLftjCodegenCache.CacheEntry>) entriesField
+				.get(cache);
+		List<String> descriptions = new ArrayList<>();
+		for (Map.Entry<String, LmdbLftjCodegenCache.CacheEntry> entry : entries.entrySet()) {
+			LmdbLftjCodegenCache.CacheEntry cacheEntry = entry.getValue();
+			descriptions.add(entry.getKey() + "="
+					+ (cacheEntry.compiled() ? cacheEntry.factory().getClass().getName()
+							: cacheEntry.failureMessage()));
+		}
+		return descriptions;
+	}
+
+	private String foafCycleQuery(int size) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n");
+		builder.append("SELECT * WHERE {\n");
+		for (int i = 0; i < size; i++) {
+			builder.append("  ?")
+					.append((char) ('a' + i))
+					.append(" foaf:knows ?")
+					.append((char) ('a' + ((i + 1) % size)))
+					.append(" .\n");
+		}
+		builder.append("  FILTER (");
+		boolean first = true;
+		for (int i = 0; i < size; i++) {
+			for (int j = i + 1; j < size; j++) {
+				if (!first) {
+					builder.append(" && ");
+				}
+				builder.append("?").append((char) ('a' + i)).append(" != ?").append((char) ('a' + j));
+				first = false;
+			}
+		}
+		builder.append(")\n");
+		builder.append("}\n");
+		return builder.toString();
+	}
+
+	private Object readField(Object target, String name) throws Exception {
+		Field field = target.getClass().getDeclaredField(name);
+		field.setAccessible(true);
+		return field.get(target);
 	}
 
 	private static final class InterpretedQueryAccess extends LmdbLftjSyntheticScenario.TestQueryAccess {
@@ -242,6 +545,85 @@ class LmdbLftjCodegenTest {
 		LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape) {
 			compileCalls++;
 			throw new IllegalArgumentException("forced failure");
+		}
+	}
+
+	private static final class FullCodegenFixture implements AutoCloseable {
+		private final SailRepository repository;
+		private final LmdbBenchmarkStore store;
+		private final LmdbBenchmarkStore.BenchmarkStoreConnection connection;
+		private final File dataDir;
+
+		private FullCodegenFixture() throws IOException {
+			dataDir = Files.createTempDirectory("rdf4j-lmdb-full-codegen-test").toFile();
+			LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc");
+			config.setLftjEnabled(true);
+			config.setLftjCodegenEnabled(true);
+			config.setForceSync(false);
+			config.setValueDBSize(64L * 1024 * 1024);
+			config.setTripleDBSize(config.getValueDBSize());
+			store = new LmdbBenchmarkStore(dataDir, config, LmdbLftjFullCodegenCompiler.INSTANCE);
+			repository = new SailRepository(store);
+			repository.init();
+			populate(repository);
+			connection = (LmdbBenchmarkStore.BenchmarkStoreConnection) store.getConnection();
+		}
+
+		@Override
+		public void close() throws Exception {
+			try {
+				connection.close();
+			} finally {
+				repository.shutDown();
+				FileUtils.deleteDirectory(dataDir);
+			}
+		}
+
+		private static void populate(SailRepository repository) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (long subject = 1; subject <= 4; subject++) {
+					for (long object = 1; object <= 4; object++) {
+						if (subject != object) {
+							connection.add(person(subject), FOAF.KNOWS, person(object));
+						}
+					}
+				}
+			}
+		}
+
+		private static org.eclipse.rdf4j.model.IRI person(long id) {
+			return LmdbLftjSyntheticScenario.VF.createIRI("urn:person:" + id);
+		}
+	}
+
+	private static final class DefaultCodegenFixture implements AutoCloseable {
+		private final SailRepository repository;
+		private final LmdbBenchmarkStore store;
+		private final LmdbBenchmarkStore.BenchmarkStoreConnection connection;
+		private final File dataDir;
+
+		private DefaultCodegenFixture() throws IOException {
+			dataDir = Files.createTempDirectory("rdf4j-lmdb-default-codegen-test").toFile();
+			LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc");
+			config.setLftjEnabled(true);
+			config.setLftjCodegenEnabled(true);
+			config.setForceSync(false);
+			config.setValueDBSize(64L * 1024 * 1024);
+			config.setTripleDBSize(config.getValueDBSize());
+			store = new LmdbBenchmarkStore(dataDir, config, null);
+			repository = new SailRepository(store);
+			repository.init();
+			connection = (LmdbBenchmarkStore.BenchmarkStoreConnection) store.getConnection();
+		}
+
+		@Override
+		public void close() throws Exception {
+			try {
+				connection.close();
+			} finally {
+				repository.shutDown();
+				FileUtils.deleteDirectory(dataDir);
+			}
 		}
 	}
 }

@@ -22,9 +22,21 @@ class LmdbLftjCodegenCompiler {
 	private static final AtomicLong CLASS_COUNTER = new AtomicLong();
 	private static final String PACKAGE_NAME = LmdbLftjCodegenCompiler.class.getPackageName();
 
+	String cacheKey(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred) {
+		return plan.executionKey();
+	}
+
 	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape) {
 		String simpleClassName = "GeneratedLmdbLftjFactory" + CLASS_COUNTER.incrementAndGet();
-		String source = new SourceBuilder(simpleClassName, shape).build();
+		String source = sourceFor(simpleClassName, plan, shape, false);
+		return compileSource(plan.executionKey(), simpleClassName, source);
+	}
+
+	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred) {
+		return compile(plan, shape);
+	}
+
+	protected final LmdbCompiledLftjFactory compileSource(String executionKey, String simpleClassName, String source) {
 		try {
 			SimpleCompiler compiler = new SimpleCompiler();
 			compiler.setParentClassLoader(LmdbLftjCodegenCompiler.class.getClassLoader());
@@ -34,11 +46,20 @@ class LmdbLftjCodegenCompiler {
 			constructor.setAccessible(true);
 			return (LmdbCompiledLftjFactory) constructor.newInstance();
 		} catch (Exception e) {
-			throw new IllegalArgumentException("Unable to compile LMDB LFTJ codegen for " + plan.executionKey(), e);
+			throw new IllegalArgumentException("Unable to compile LMDB LFTJ codegen for " + executionKey, e);
 		}
 	}
 
-	private static final class SourceBuilder {
+	String sourceFor(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred) {
+		return sourceFor("GeneratedLmdbLftjSource", plan, shape, includeInferred);
+	}
+
+	protected String sourceFor(String simpleClassName, LmdbLftjPlan plan, LmdbLftjExecutionShape shape,
+			boolean includeInferred) {
+		return new SourceBuilder(simpleClassName, shape).build();
+	}
+
+	protected static final class SourceBuilder {
 
 		private final String simpleClassName;
 		private final LmdbLftjExecutionShape shape;

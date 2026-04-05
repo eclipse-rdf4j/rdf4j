@@ -19,7 +19,8 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbLftjBenchmarkMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -39,7 +40,7 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
@@ -68,11 +69,8 @@ public class FoafCliqueQueryBenchmark {
 	@Param({ "12345" })
 	public long seed;
 
-	@Param({ "true", "false" })
-	public boolean lftjEnabled;
-
-	@Param({ "true", "false" })
-	public boolean lftjCodegenEnabled;
+	@Param({ "interpreted", "executor_codegen", "full_codegen" })
+	public String benchmarkMode;
 
 	private File dataDir;
 	private SailRepository repository;
@@ -86,9 +84,10 @@ public class FoafCliqueQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+		LmdbLftjBenchmarkMode.validate(benchmarkMode);
 		dataDir = Files.createTempDirectory("rdf4j-lmdb-foaf-cliques").toFile();
-		repository = new SailRepository(new LmdbStore(dataDir, createLftjBenchmarkConfig(lftjEnabled,
-				lftjCodegenEnabled)));
+		repository = new SailRepository(new LmdbBenchmarkStore(dataDir, createLftjBenchmarkConfig(benchmarkMode),
+				LmdbLftjBenchmarkMode.compiler(benchmarkMode)));
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -128,10 +127,10 @@ public class FoafCliqueQueryBenchmark {
 		}
 	}
 
-	private static LmdbStoreConfig createLftjBenchmarkConfig(boolean lftjEnabled, boolean lftjCodegenEnabled) {
+	private static LmdbStoreConfig createLftjBenchmarkConfig(String benchmarkMode) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
-		config.setLftjEnabled(lftjEnabled);
-		config.setLftjCodegenEnabled(lftjCodegenEnabled);
+		config.setLftjEnabled(true);
+		config.setLftjCodegenEnabled(LmdbLftjBenchmarkMode.lftjCodegenEnabled(benchmarkMode));
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L);
 		config.setTripleDBSize(config.getValueDBSize());

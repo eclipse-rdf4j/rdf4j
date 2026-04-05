@@ -104,7 +104,7 @@ import org.slf4j.LoggerFactory;
  * an actual RDF value.
  */
 @SuppressWarnings("deprecation")
-class TripleStore implements Closeable {
+public class TripleStore implements Closeable {
 
 	static ConcurrentHashMap<TripleIndex.KeyStats, TripleIndex.KeyStats> stats = new ConcurrentHashMap<>();
 	static long hit = 0;
@@ -536,6 +536,10 @@ class TripleStore implements Closeable {
 
 	LmdbTrieKeyCursor openTrieCursor(Txn txn, String indexName, boolean explicit) {
 		return new LmdbTrieDbCursor(getIndex(indexName), explicit, txn);
+	}
+
+	public TripleIndex tripleIndex(String indexName) {
+		return getIndex(indexName);
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
@@ -1227,7 +1231,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	class TripleIndex {
+	public class TripleIndex {
 
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;

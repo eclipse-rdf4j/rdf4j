@@ -15,7 +15,8 @@ import java.util.Arrays;
 
 final class LmdbCachedFrontier {
 
-	static final LmdbCachedFrontier EMPTY = new LmdbCachedFrontier(new long[0], null);
+	static final long[] EMPTY_VALUES = new long[0];
+	static final LmdbCachedFrontier EMPTY = new LmdbCachedFrontier(EMPTY_VALUES, null);
 
 	private final long[] values;
 	private final long[] counts;
@@ -31,6 +32,10 @@ final class LmdbCachedFrontier {
 
 	int size() {
 		return values.length;
+	}
+
+	long[] values() {
+		return values;
 	}
 
 	long valueAt(int index) {

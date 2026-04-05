@@ -12,20 +12,38 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class LmdbLftjExecutionShape {
+
+	private static final int FULL_STACK_TEMPLATE_VERSION = 2;
 
 	private final int variableCount;
 	private final int[][] cursorOrdinalsBySlot;
 	private final int patternCount;
+	private final String[] variableNames;
+	private final PatternShape[] patterns;
 
 	LmdbLftjExecutionShape(LmdbLftjPlan plan) {
 		this.variableCount = plan.variableOrder().size();
 		this.patternCount = plan.patternCount();
+		this.variableNames = plan.variableOrder().toArray(new String[0]);
 		this.cursorOrdinalsBySlot = new int[variableCount][];
+		this.patterns = new PatternShape[patternCount];
+		Map<String, Integer> slotsByVariable = new HashMap<>(variableCount);
+		for (int slot = 0; slot < variableCount; slot++) {
+			slotsByVariable.put(variableNames[slot], slot);
+		}
 		List<String> variableOrder = plan.variableOrder();
 		List<LmdbLftjPatternPlan> patternPlans = plan.patternPlans();
+		for (int patternOrdinal = 0; patternOrdinal < patternPlans.size(); patternOrdinal++) {
+			patterns[patternOrdinal] = new PatternShape(patternOrdinal, patternPlans.get(patternOrdinal),
+					slotsByVariable,
+					variableCount);
+		}
 		for (int slot = 0; slot < variableCount; slot++) {
 			String variableName = variableOrder.get(slot);
 			List<Integer> cursorOrdinals = new ArrayList<>();
@@ -48,5 +66,156 @@ public final class LmdbLftjExecutionShape {
 
 	int patternCount() {
 		return patternCount;
+	}
+
+	String variableName(int slot) {
+		return variableNames[slot];
+	}
+
+	int templateVersion() {
+		return FULL_STACK_TEMPLATE_VERSION;
+	}
+
+	PatternShape pattern(int patternOrdinal) {
+		return patterns[patternOrdinal];
+	}
+
+	static final class PatternShape {
+
+		private final int ordinal;
+		private final String indexName;
+		private final char[] indexFields;
+		private final int[] indexComponents;
+		private final int[] slotByComponent = new int[4];
+		private final boolean[] constantByComponent = new boolean[4];
+		private final boolean[] hiddenByComponent = new boolean[4];
+		private final int[] visibleSlots;
+		private final int[] keyFieldIndexBySlot;
+		private final int[] componentBySlot;
+		private final boolean hasHiddenTerms;
+		private final boolean derivedBinaryRelation;
+		private final int derivedSourceComponent;
+		private final int derivedTargetComponent;
+
+		private PatternShape(int ordinal, LmdbLftjPatternPlan plan, Map<String, Integer> slotsByVariable,
+				int variableCount) {
+			this.ordinal = ordinal;
+			this.indexName = plan.indexName();
+			this.indexFields = plan.indexName().toCharArray();
+			this.indexComponents = new int[indexFields.length];
+			Arrays.fill(slotByComponent, -1);
+			this.keyFieldIndexBySlot = new int[variableCount];
+			Arrays.fill(keyFieldIndexBySlot, -1);
+			this.componentBySlot = new int[variableCount];
+			Arrays.fill(componentBySlot, -1);
+
+			List<Integer> visibleSlots = new ArrayList<>();
+			boolean hidden = false;
+			for (LmdbLftjPatternPlan.TermRef term : plan.terms()) {
+				int component = term.component();
+				if (term.isVisible()) {
+					Integer slot = slotsByVariable.get(term.name());
+					if (slot == null) {
+						throw new IllegalArgumentException(
+								"Unknown LMDB LFTJ variable in execution shape: " + term.name());
+					}
+					slotByComponent[component] = slot;
+					componentBySlot[slot] = component;
+					visibleSlots.add(slot);
+				} else if (term.isConstant()) {
+					constantByComponent[component] = true;
+				} else if (term.isHidden()) {
+					hiddenByComponent[component] = true;
+					hidden = true;
+				}
+			}
+			this.visibleSlots = visibleSlots.stream().mapToInt(Integer::intValue).toArray();
+			this.hasHiddenTerms = hidden;
+			for (int i = 0; i < indexFields.length; i++) {
+				indexComponents[i] = componentFor(indexFields[i]);
+				int slot = slotByComponent[indexComponents[i]];
+				if (slot >= 0) {
+					keyFieldIndexBySlot[slot] = i;
+				}
+			}
+			this.derivedBinaryRelation = plan.canUseDerivedBinaryRelation();
+			this.derivedSourceComponent = derivedBinaryRelation ? plan.keyTerm(1).component() : -1;
+			this.derivedTargetComponent = derivedBinaryRelation ? plan.keyTerm(2).component() : -1;
+		}
+
+		int ordinal() {
+			return ordinal;
+		}
+
+		String indexName() {
+			return indexName;
+		}
+
+		char[] indexFields() {
+			return indexFields.clone();
+		}
+
+		int indexComponent(int keyFieldIndex) {
+			return indexComponents[keyFieldIndex];
+		}
+
+		int slotForComponent(int component) {
+			return slotByComponent[component];
+		}
+
+		boolean isConstantComponent(int component) {
+			return constantByComponent[component];
+		}
+
+		boolean isHiddenComponent(int component) {
+			return hiddenByComponent[component];
+		}
+
+		int[] visibleSlots() {
+			return visibleSlots.clone();
+		}
+
+		boolean containsSlot(int slot) {
+			return componentBySlot[slot] >= 0;
+		}
+
+		int componentForSlot(int slot) {
+			return componentBySlot[slot];
+		}
+
+		int keyFieldIndexForSlot(int slot) {
+			return keyFieldIndexBySlot[slot];
+		}
+
+		boolean hasHiddenTerms() {
+			return hasHiddenTerms;
+		}
+
+		boolean derivedBinaryRelation() {
+			return derivedBinaryRelation;
+		}
+
+		int derivedSourceComponent() {
+			return derivedSourceComponent;
+		}
+
+		int derivedTargetComponent() {
+			return derivedTargetComponent;
+		}
+
+		private static int componentFor(char field) {
+			switch (field) {
+			case 's':
+				return TripleStore.SUBJ_IDX;
+			case 'p':
+				return TripleStore.PRED_IDX;
+			case 'o':
+				return TripleStore.OBJ_IDX;
+			case 'c':
+				return TripleStore.CONTEXT_IDX;
+			default:
+				throw new IllegalArgumentException("Unknown LMDB field: " + field);
+			}
+		}
 	}
 }

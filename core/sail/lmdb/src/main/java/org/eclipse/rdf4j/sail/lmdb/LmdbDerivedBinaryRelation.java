@@ -15,14 +15,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-final class LmdbDerivedBinaryRelation {
+public final class LmdbDerivedBinaryRelation {
 
 	private final int sourceComponent;
 	private final int targetComponent;
 	private final LmdbCachedFrontier rootFrontier;
 	private final Map<Long, LmdbCachedFrontier> adjacency;
 
-	LmdbDerivedBinaryRelation(int sourceComponent, int targetComponent, LmdbCachedFrontier rootFrontier,
+	public LmdbDerivedBinaryRelation(int sourceComponent, int targetComponent, LmdbCachedFrontier rootFrontier,
 			Map<Long, LmdbCachedFrontier> adjacency) {
 		this.sourceComponent = sourceComponent;
 		this.targetComponent = targetComponent;
@@ -42,15 +42,23 @@ final class LmdbDerivedBinaryRelation {
 		return rootFrontier;
 	}
 
+	public long[] rootFrontierValues() {
+		return rootFrontier.values();
+	}
+
 	LmdbCachedFrontier frontier(long sourceValue) {
 		return adjacency.getOrDefault(sourceValue, LmdbCachedFrontier.EMPTY);
 	}
 
-	long count(long sourceValue, long targetValue) {
+	public long[] frontierValues(long sourceValue) {
+		return frontier(sourceValue).values();
+	}
+
+	public long count(long sourceValue, long targetValue) {
 		return frontier(sourceValue).countFor(targetValue);
 	}
 
-	static final class Builder {
+	public static final class Builder {
 
 		private final int sourceComponent;
 		private final int targetComponent;
@@ -65,12 +73,12 @@ final class LmdbDerivedBinaryRelation {
 		private long currentTarget;
 		private long currentCount;
 
-		Builder(int sourceComponent, int targetComponent) {
+		public Builder(int sourceComponent, int targetComponent) {
 			this.sourceComponent = sourceComponent;
 			this.targetComponent = targetComponent;
 		}
 
-		void add(long sourceValue, long targetValue) {
+		public void add(long sourceValue, long targetValue) {
 			if (!sourceOpen || sourceValue != currentSource) {
 				finishPair();
 				finishSource();
@@ -90,7 +98,7 @@ final class LmdbDerivedBinaryRelation {
 			currentCount++;
 		}
 
-		LmdbDerivedBinaryRelation build() {
+		public LmdbDerivedBinaryRelation build() {
 			finishPair();
 			finishSource();
 			return new LmdbDerivedBinaryRelation(sourceComponent, targetComponent,

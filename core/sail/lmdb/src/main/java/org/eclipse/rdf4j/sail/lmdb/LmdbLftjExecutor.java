@@ -50,8 +50,8 @@ final class LmdbLftjExecutor {
 			return fallback.evaluate(bindings);
 		}
 
-		LmdbCompiledLftjFactory compiledFactory = compiledFactory(queryAccess, plan, shape);
 		try {
+			LmdbCompiledLftjFactory compiledFactory = compiledFactory(queryAccess, plan, shape);
 			state.attachTxn(queryAccess.acquireReadTxn());
 			if (compiledFactory != null) {
 				return compiledFactory.create(plan, shape, state, context, queryAccess, new LmdbLftjMetrics());
@@ -69,19 +69,32 @@ final class LmdbLftjExecutor {
 			return null;
 		}
 
-		LmdbLftjCodegenCache.CacheEntry cached = queryAccess.cachedCompiledPlan(plan.executionKey());
+		LmdbLftjCodegenCompiler compiler = queryAccess.codegenCompiler();
+		String cacheKey = compiler.cacheKey(plan, shape, queryAccess.includeInferred());
+		LmdbLftjCodegenCache.CacheEntry cached = queryAccess.cachedCompiledPlan(cacheKey);
 		if (cached != null) {
-			return cached.compiled() ? cached.factory() : null;
+			if (cached.compiled()) {
+				return cached.factory();
+			}
+			throw codegenFailure(cacheKey, cached.failureMessage(), null);
 		}
 
 		try {
-			LmdbCompiledLftjFactory factory = queryAccess.codegenCompiler().compile(plan, shape);
-			queryAccess.cacheCompiledPlanSuccess(plan.executionKey(), factory);
+			LmdbCompiledLftjFactory factory = compiler.compile(plan, shape, queryAccess.includeInferred());
+			queryAccess.cacheCompiledPlanSuccess(cacheKey, factory);
 			return factory;
 		} catch (RuntimeException e) {
-			queryAccess.cacheCompiledPlanFailure(plan.executionKey(), e.getMessage());
-			return null;
+			queryAccess.cacheCompiledPlanFailure(cacheKey, e.getMessage());
+			throw codegenFailure(cacheKey, e.getMessage(), e);
 		}
+	}
+
+	private IllegalStateException codegenFailure(String cacheKey, String message, RuntimeException cause) {
+		String detail = message == null || message.isBlank() ? "<no detail>" : message;
+		if (cause == null) {
+			return new IllegalStateException("LMDB LFTJ codegen failed for " + cacheKey + ": " + detail);
+		}
+		return new IllegalStateException("LMDB LFTJ codegen failed for " + cacheKey + ": " + detail, cause);
 	}
 
 	private final class LmdbLftjIteration extends LookAheadIteration<BindingSet> {

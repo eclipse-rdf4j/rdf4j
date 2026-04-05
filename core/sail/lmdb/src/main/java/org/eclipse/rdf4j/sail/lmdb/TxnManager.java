@@ -32,7 +32,7 @@ import org.lwjgl.system.MemoryStack;
 /**
  * Manager for LMDB transactions.
  */
-class TxnManager {
+public class TxnManager {
 
 	private final Mode mode;
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
@@ -160,7 +160,7 @@ class TxnManager {
 		NONE
 	}
 
-	class Txn implements Closeable, AutoCloseable {
+	public class Txn implements Closeable, AutoCloseable {
 
 		private final long txn;
 		private long version;
@@ -169,11 +169,11 @@ class TxnManager {
 			this.txn = txn;
 		}
 
-		long get() {
+		public long get() {
 			return txn;
 		}
 
-		StampedLongAdderLockManager lockManager() {
+		public StampedLongAdderLockManager lockManager() {
 			return lockManager;
 		}
 
@@ -226,7 +226,7 @@ class TxnManager {
 			}
 		}
 
-		long version() {
+		public long version() {
 			return version;
 		}
 	}

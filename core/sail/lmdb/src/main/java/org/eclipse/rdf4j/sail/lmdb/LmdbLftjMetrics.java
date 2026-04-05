@@ -24,43 +24,43 @@ public final class LmdbLftjMetrics {
 	private long relationHits;
 	private long relationUses;
 
-	void recordCandidateScan() {
+	public void recordCandidateScan() {
 		candidateScans++;
 	}
 
-	void recordWitnessScan() {
+	public void recordWitnessScan() {
 		witnessScans++;
 	}
 
-	void recordEmitted(long count) {
+	public void recordEmitted(long count) {
 		emittedBindings += count;
 	}
 
-	void recordFrontierLoad() {
+	public void recordFrontierLoad() {
 		frontierLoads++;
 	}
 
-	void recordFrontierHit() {
+	public void recordFrontierHit() {
 		frontierHits++;
 	}
 
-	void recordCountLoad() {
+	public void recordCountLoad() {
 		countLoads++;
 	}
 
-	void recordCountHit() {
+	public void recordCountHit() {
 		countHits++;
 	}
 
-	void recordRelationLoad() {
+	public void recordRelationLoad() {
 		relationLoads++;
 	}
 
-	void recordRelationHit() {
+	public void recordRelationHit() {
 		relationHits++;
 	}
 
-	void recordRelationUse() {
+	public void recordRelationUse() {
 		relationUses++;
 	}
 

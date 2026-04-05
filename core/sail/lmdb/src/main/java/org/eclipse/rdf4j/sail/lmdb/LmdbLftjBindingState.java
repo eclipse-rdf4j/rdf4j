@@ -54,7 +54,7 @@ public final class LmdbLftjBindingState {
 		}
 	}
 
-	boolean initialize() {
+	public boolean initialize() {
 		for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
 			for (LmdbLftjPatternPlan.TermRef term : patternPlan.terms()) {
 				if (term.isConstant() && !constantIds.containsKey(term)) {
@@ -83,11 +83,11 @@ public final class LmdbLftjBindingState {
 		return true;
 	}
 
-	void attachTxn(TxnManager.Txn txn) {
+	public void attachTxn(TxnManager.Txn txn) {
 		this.txn = txn;
 	}
 
-	TxnManager.Txn txn() {
+	public TxnManager.Txn txn() {
 		return txn;
 	}
 
@@ -95,11 +95,11 @@ public final class LmdbLftjBindingState {
 		return isBound(slot(variableName));
 	}
 
-	boolean isBound(int slot) {
+	public boolean isBound(int slot) {
 		return assignedPresent[slot] || fixedPresent[slot];
 	}
 
-	boolean isFixed(int slot) {
+	public boolean isFixed(int slot) {
 		return fixedPresent[slot];
 	}
 
@@ -107,7 +107,7 @@ public final class LmdbLftjBindingState {
 		return value(slot(variableName));
 	}
 
-	long value(int slot) {
+	public long value(int slot) {
 		if (assignedPresent[slot]) {
 			return assignedValues[slot];
 		}
@@ -147,7 +147,7 @@ public final class LmdbLftjBindingState {
 		return -1;
 	}
 
-	BindingSet materialize(QueryEvaluationContext context) {
+	public BindingSet materialize(QueryEvaluationContext context) {
 		MutableBindingSet result = context.createBindingSet(inputBindings);
 		BiConsumer<Value, MutableBindingSet>[] setters = bindingSetters(context);
 		for (int slot = 0; slot < variableNames.length; slot++) {
@@ -158,19 +158,23 @@ public final class LmdbLftjBindingState {
 		return result;
 	}
 
-	int variableCount() {
+	public int variableCount() {
 		return variableNames.length;
 	}
 
-	String variableName(int slot) {
+	public String variableName(int slot) {
 		return variableNames[slot];
 	}
 
-	void close() {
+	public void close() {
 		if (txn != null) {
 			queryAccess.releaseReadTxn(txn);
 			txn = null;
 		}
+	}
+
+	public long fixedIdForComponent(int patternOrdinal, int component) {
+		return fixedId(plan.patternPlans().get(patternOrdinal).termForComponent(component));
 	}
 
 	@SuppressWarnings("unchecked")

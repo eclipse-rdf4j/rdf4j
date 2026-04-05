@@ -183,7 +183,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 				&& dataset.getDefaultInsertGraph() == null);
 	}
 
-	private LmdbQueryAccess createQueryAccess(boolean includeInferred) {
+	protected LmdbQueryAccess createQueryAccess(boolean includeInferred) {
 		LmdbSailStore backingStore = lmdbStore.getBackingStore();
 		TripleStore tripleStore = backingStore.getTripleStore();
 		ValueStore valueStore = backingStore.getValueStore();
@@ -283,7 +283,16 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			public void cacheCompiledPlanFailure(String executionKey, String message) {
 				lmdbStore.codegenCache().putFailure(executionKey, message);
 			}
+
+			@Override
+			public LmdbLftjCodegenCompiler codegenCompiler() {
+				return LmdbStoreConnection.this.codegenCompiler();
+			}
 		};
+	}
+
+	protected LmdbLftjCodegenCompiler codegenCompiler() {
+		return LmdbLftjFullCodegenCompiler.INSTANCE;
 	}
 
 	@Override
