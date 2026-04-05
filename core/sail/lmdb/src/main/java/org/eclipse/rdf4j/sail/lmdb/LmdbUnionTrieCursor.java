@@ -24,31 +24,61 @@ final class LmdbUnionTrieCursor extends LmdbTrieCursor {
 
 	@Override
 	boolean initialize(LmdbLftjBindingState state) {
-		boolean explicitAvailable = explicitCursor.initialize(state);
-		boolean inferredAvailable = inferredCursor.initialize(state);
-		if (!explicitAvailable && !inferredAvailable) {
-			values = new long[0];
+		explicitCursor.initialize(state);
+		inferredCursor.initialize(state);
+		return mergeCurrent();
+	}
+
+	@Override
+	boolean seek(long target) {
+		if (explicitCursor.available()) {
+			explicitCursor.seek(target);
+		}
+		if (inferredCursor.available()) {
+			inferredCursor.seek(target);
+		}
+		return mergeCurrent();
+	}
+
+	@Override
+	boolean next() {
+		if (!available()) {
 			return false;
 		}
 
-		long[] left = explicitAvailable ? explicitCursor.values() : new long[0];
-		long[] right = inferredAvailable ? inferredCursor.values() : new long[0];
-		long[] merged = new long[left.length + right.length];
-		int size = 0;
-		int leftIndex = 0;
-		int rightIndex = 0;
-		while (leftIndex < left.length || rightIndex < right.length) {
-			long next;
-			if (rightIndex >= right.length || (leftIndex < left.length && left[leftIndex] <= right[rightIndex])) {
-				next = left[leftIndex++];
-			} else {
-				next = right[rightIndex++];
-			}
-			if (size == 0 || merged[size - 1] != next) {
-				merged[size++] = next;
-			}
+		long previous = value();
+		if (explicitCursor.available() && explicitCursor.value() == previous) {
+			explicitCursor.next();
 		}
-		values = java.util.Arrays.copyOf(merged, size);
-		return size > 0;
+		if (inferredCursor.available() && inferredCursor.value() == previous) {
+			inferredCursor.next();
+		}
+		return mergeCurrent();
+	}
+
+	@Override
+	void release() {
+		clearCurrent();
+		explicitCursor.release();
+		inferredCursor.release();
+	}
+
+	private boolean mergeCurrent() {
+		boolean explicitAvailable = explicitCursor.available();
+		boolean inferredAvailable = inferredCursor.available();
+		if (!explicitAvailable && !inferredAvailable) {
+			clearCurrent();
+			return false;
+		}
+		if (!explicitAvailable) {
+			setCurrentValue(inferredCursor.value());
+			return true;
+		}
+		if (!inferredAvailable) {
+			setCurrentValue(explicitCursor.value());
+			return true;
+		}
+		setCurrentValue(Math.min(explicitCursor.value(), inferredCursor.value()));
+		return true;
 	}
 }

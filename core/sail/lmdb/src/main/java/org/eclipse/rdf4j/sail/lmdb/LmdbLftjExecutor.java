@@ -12,13 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -51,79 +48,199 @@ final class LmdbLftjExecutor {
 
 		try {
 			state.attachTxn(queryAccess.acquireReadTxn());
-			List<BindingSet> results = new ArrayList<>();
-			LmdbLftjMetrics metrics = new LmdbLftjMetrics();
-			search(plan, state, context, queryAccess, metrics, results, 0);
-			if (results.isEmpty()) {
-				return QueryEvaluationStep.EMPTY_ITERATION;
-			}
-			return new CloseableIteratorIteration<>(results.iterator());
+			return new LmdbLftjIteration(plan, state, context, queryAccess, new LmdbLftjMetrics());
 		} catch (RuntimeException e) {
+			state.close();
 			throw new QueryEvaluationException("LMDB LFTJ execution failed", e);
-		} finally {
+		}
+	}
+
+	private final class LmdbLftjIteration extends LookAheadIteration<BindingSet> {
+
+		private final LmdbLftjPlan plan;
+		private final LmdbLftjBindingState state;
+		private final QueryEvaluationContext context;
+		private final LmdbQueryAccess queryAccess;
+		private final LmdbLftjMetrics metrics;
+		private final List<String> searchVariables;
+		private final List<List<LmdbTrieCursor>> cursorsByDepth;
+		private final boolean[] initializedDepths;
+		private final boolean[] advanceDepths;
+
+		private int depth;
+		private BindingSet repeatedBinding;
+		private long repeatedCount;
+
+		private LmdbLftjIteration(LmdbLftjPlan plan, LmdbLftjBindingState state, QueryEvaluationContext context,
+				LmdbQueryAccess queryAccess, LmdbLftjMetrics metrics) {
+			this.plan = plan;
+			this.state = state;
+			this.context = context;
+			this.queryAccess = queryAccess;
+			this.metrics = metrics;
+			this.searchVariables = collectSearchVariables(plan, state);
+			this.cursorsByDepth = createDepthCursors(plan, queryAccess, searchVariables);
+			this.initializedDepths = new boolean[searchVariables.size()];
+			this.advanceDepths = new boolean[searchVariables.size()];
+			this.depth = 0;
+		}
+
+		@Override
+		protected BindingSet getNextElement() {
+			if (repeatedCount > 0) {
+				repeatedCount--;
+				metrics.recordEmitted(1);
+				return repeatedBinding;
+			}
+
+			try {
+				return computeNextElement();
+			} catch (RuntimeException e) {
+				throw new QueryEvaluationException("LMDB LFTJ iteration failed", e);
+			}
+		}
+
+		@Override
+		protected void handleClose() {
+			for (List<LmdbTrieCursor> cursors : cursorsByDepth) {
+				for (LmdbTrieCursor cursor : cursors) {
+					cursor.close();
+				}
+			}
 			state.close();
 		}
-	}
 
-	private void search(LmdbLftjPlan plan, LmdbLftjBindingState state, QueryEvaluationContext context,
-			LmdbQueryAccess queryAccess, LmdbLftjMetrics metrics, List<BindingSet> results, int depth) {
-		if (depth >= plan.variableOrder().size()) {
-			long multiplicity = witnessMultiplicity(plan, state, queryAccess, metrics);
-			if (multiplicity <= 0) {
-				return;
+		private BindingSet computeNextElement() {
+			while (depth >= 0) {
+				if (depth == searchVariables.size()) {
+					long multiplicity = witnessMultiplicity(plan, state, queryAccess, metrics, searchVariables);
+					backtrackAfterLeaf();
+					if (multiplicity > 0) {
+						BindingSet result = state.materialize(context);
+						repeatedBinding = result;
+						repeatedCount = multiplicity - 1;
+						metrics.recordEmitted(1);
+						return result;
+					}
+					continue;
+				}
+
+				if (!initializedDepths[depth]) {
+					if (!positionDepth(depth, false)) {
+						backtrackFromDepth(depth);
+						continue;
+					}
+					initializedDepths[depth] = true;
+					depth++;
+					continue;
+				}
+
+				if (advanceDepths[depth]) {
+					if (!positionDepth(depth, true)) {
+						backtrackFromDepth(depth);
+						continue;
+					}
+					advanceDepths[depth] = false;
+					depth++;
+					continue;
+				}
+
+				depth++;
 			}
-			for (long i = 0; i < multiplicity; i++) {
-				results.add(state.materialize(context));
+
+			return null;
+		}
+
+		private boolean positionDepth(int depth, boolean advanceExisting) {
+			String variableName = searchVariables.get(depth);
+			List<LmdbTrieCursor> cursors = cursorsByDepth.get(depth);
+			state.clear(variableName);
+
+			if (cursors.isEmpty()) {
+				return false;
 			}
-			metrics.recordEmitted(multiplicity);
-			return;
-		}
 
-		String variableName = plan.variableOrder().get(depth);
-		if (state.isBound(variableName)) {
-			search(plan, state, context, queryAccess, metrics, results, depth + 1);
-			return;
-		}
+			if (!advanceExisting) {
+				for (LmdbTrieCursor cursor : cursors) {
+					metrics.recordCandidateScan();
+					if (!cursor.initialize(state)) {
+						releaseDepth(depth);
+						return false;
+					}
+				}
+			} else if (!cursors.get(0).next()) {
+				releaseDepth(depth);
+				return false;
+			}
 
-		List<LmdbTrieCursor> cursors = createCursors(plan, state, queryAccess, metrics, variableName);
-		if (cursors.isEmpty()) {
-			return;
-		}
-
-		long current = cursors.stream().mapToLong(LmdbTrieCursor::value).max().orElseThrow();
-		while (true) {
+			long current = Long.MIN_VALUE;
+			for (LmdbTrieCursor cursor : cursors) {
+				current = Math.max(current, cursor.value());
+			}
 			current = align(cursors, current);
 			if (current < 0) {
-				return;
+				releaseDepth(depth);
+				return false;
 			}
+
 			state.assign(variableName, current);
-			search(plan, state, context, queryAccess, metrics, results, depth + 1);
-			state.clear(variableName);
-			if (!cursors.get(0).next()) {
+			return true;
+		}
+
+		private void backtrackAfterLeaf() {
+			depth = searchVariables.size() - 1;
+			if (depth >= 0) {
+				advanceDepths[depth] = true;
+			}
+		}
+
+		private void backtrackFromDepth(int failedDepth) {
+			releaseDepth(failedDepth);
+			depth = failedDepth - 1;
+			if (depth >= 0) {
+				advanceDepths[depth] = true;
+			}
+		}
+
+		private void releaseDepth(int depth) {
+			if (depth < 0 || depth >= searchVariables.size()) {
 				return;
 			}
-			current = cursors.get(0).value();
+			state.clear(searchVariables.get(depth));
+			initializedDepths[depth] = false;
+			advanceDepths[depth] = false;
+			for (LmdbTrieCursor cursor : cursorsByDepth.get(depth)) {
+				cursor.release();
+			}
 		}
 	}
 
-	private List<LmdbTrieCursor> createCursors(LmdbLftjPlan plan, LmdbLftjBindingState state,
-			LmdbQueryAccess queryAccess,
-			LmdbLftjMetrics metrics, String variableName) {
-		List<LmdbTrieCursor> cursors = new ArrayList<>();
-		for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
-			if (!patternPlan.containsVariable(variableName)) {
-				continue;
+	private List<String> collectSearchVariables(LmdbLftjPlan plan, LmdbLftjBindingState state) {
+		List<String> searchVariables = new ArrayList<>(plan.variableOrder().size());
+		for (String variableName : plan.variableOrder()) {
+			if (!state.isBound(variableName)) {
+				searchVariables.add(variableName);
 			}
-			LmdbTrieCursor cursor = queryAccess.includeInferred()
-					? new LmdbUnionTrieCursor(patternPlan, variableName, queryAccess)
-					: new LmdbTrieCursor(patternPlan, variableName, queryAccess, true);
-			metrics.recordCandidateScan();
-			if (!cursor.initialize(state)) {
-				return List.of();
-			}
-			cursors.add(cursor);
 		}
-		return cursors;
+		return searchVariables;
+	}
+
+	private List<List<LmdbTrieCursor>> createDepthCursors(LmdbLftjPlan plan, LmdbQueryAccess queryAccess,
+			List<String> searchVariables) {
+		List<List<LmdbTrieCursor>> cursorsByDepth = new ArrayList<>(searchVariables.size());
+		for (String variableName : searchVariables) {
+			List<LmdbTrieCursor> cursors = new ArrayList<>();
+			for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
+				if (!patternPlan.containsVariable(variableName)) {
+					continue;
+				}
+				cursors.add(queryAccess.includeInferred()
+						? new LmdbUnionTrieCursor(patternPlan, variableName, queryAccess)
+						: new LmdbTrieCursor(patternPlan, variableName, queryAccess, true));
+			}
+			cursorsByDepth.add(cursors);
+		}
+		return cursorsByDepth;
 	}
 
 	private long align(List<LmdbTrieCursor> cursors, long target) {
@@ -148,10 +265,10 @@ final class LmdbLftjExecutor {
 	}
 
 	private long witnessMultiplicity(LmdbLftjPlan plan, LmdbLftjBindingState state, LmdbQueryAccess queryAccess,
-			LmdbLftjMetrics metrics) {
+			LmdbLftjMetrics metrics, List<String> searchVariables) {
 		long multiplicity = 1;
 		for (LmdbLftjPatternPlan patternPlan : plan.patternPlans()) {
-			long witnesses = countMatches(patternPlan, state, queryAccess, metrics);
+			long witnesses = countMatches(patternPlan, state, queryAccess, metrics, searchVariables);
 			if (witnesses == 0) {
 				return 0;
 			}
@@ -161,53 +278,74 @@ final class LmdbLftjExecutor {
 	}
 
 	private long countMatches(LmdbLftjPatternPlan patternPlan, LmdbLftjBindingState state, LmdbQueryAccess queryAccess,
-			LmdbLftjMetrics metrics) {
-		long[] scanKey = patternPlan.scanKey(state);
-		Set<QuadKey> matches = new HashSet<>();
-		metrics.recordWitnessScan();
-		collectMatches(matches, queryAccess, state, patternPlan, scanKey, true);
-		if (queryAccess.includeInferred()) {
-			collectMatches(matches, queryAccess, state, patternPlan, scanKey, false);
+			LmdbLftjMetrics metrics, List<String> searchVariables) {
+		if (!patternPlan.hasHiddenTerms() && containsSearchVariable(patternPlan, searchVariables)) {
+			return 1;
 		}
-		return matches.size();
+
+		long[] scanKey = patternPlan.scanKey(state);
+		metrics.recordWitnessScan();
+		if (!queryAccess.includeInferred()) {
+			return countMatches(queryAccess, state, patternPlan, scanKey, true);
+		}
+
+		return countUnionMatches(queryAccess, state, patternPlan, scanKey);
 	}
 
-	private void collectMatches(Set<QuadKey> matches, LmdbQueryAccess queryAccess, LmdbLftjBindingState state,
-			LmdbLftjPatternPlan patternPlan, long[] scanKey, boolean explicit) {
+	private boolean containsSearchVariable(LmdbLftjPatternPlan patternPlan, List<String> searchVariables) {
+		for (String searchVariable : searchVariables) {
+			if (patternPlan.containsVariable(searchVariable)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private long countMatches(LmdbQueryAccess queryAccess, LmdbLftjBindingState state, LmdbLftjPatternPlan patternPlan,
+			long[] scanKey, boolean explicit) {
+		long count = 0;
 		try (RecordIterator records = queryAccess.openScan(state.txn(), patternPlan.indexName(), scanKey[0], scanKey[1],
 				scanKey[2], scanKey[3], explicit)) {
-			long[] quad;
-			while ((quad = records.next()) != null) {
-				matches.add(new QuadKey(quad[0], quad[1], quad[2], quad[3]));
+			while (records.next() != null) {
+				count++;
 			}
 		}
+		return count;
 	}
 
-	private static final class QuadKey {
-		private final long subj;
-		private final long pred;
-		private final long obj;
-		private final long context;
-
-		private QuadKey(long subj, long pred, long obj, long context) {
-			this.subj = subj;
-			this.pred = pred;
-			this.obj = obj;
-			this.context = context;
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			if (!(other instanceof QuadKey)) {
-				return false;
+	private long countUnionMatches(LmdbQueryAccess queryAccess, LmdbLftjBindingState state,
+			LmdbLftjPatternPlan patternPlan, long[] scanKey) {
+		long count = 0;
+		try (RecordIterator explicitRecords = queryAccess.openScan(state.txn(), patternPlan.indexName(), scanKey[0],
+				scanKey[1], scanKey[2], scanKey[3], true);
+				RecordIterator inferredRecords = queryAccess.openScan(state.txn(), patternPlan.indexName(), scanKey[0],
+						scanKey[1], scanKey[2], scanKey[3], false)) {
+			long[] explicitQuad = explicitRecords.next();
+			long[] inferredQuad = inferredRecords.next();
+			while (explicitQuad != null || inferredQuad != null) {
+				if (inferredQuad == null || explicitQuad != null && compareQuads(explicitQuad, inferredQuad) <= 0) {
+					count++;
+					long[] previous = explicitQuad;
+					explicitQuad = explicitRecords.next();
+					if (inferredQuad != null && compareQuads(previous, inferredQuad) == 0) {
+						inferredQuad = inferredRecords.next();
+					}
+				} else {
+					count++;
+					inferredQuad = inferredRecords.next();
+				}
 			}
-			QuadKey o = (QuadKey) other;
-			return subj == o.subj && pred == o.pred && obj == o.obj && context == o.context;
 		}
+		return count;
+	}
 
-		@Override
-		public int hashCode() {
-			return Objects.hash(subj, pred, obj, context);
+	private int compareQuads(long[] left, long[] right) {
+		for (int i = 0; i < 4; i++) {
+			int comparison = Long.compare(left[i], right[i]);
+			if (comparison != 0) {
+				return comparison;
+			}
 		}
+		return 0;
 	}
 }
