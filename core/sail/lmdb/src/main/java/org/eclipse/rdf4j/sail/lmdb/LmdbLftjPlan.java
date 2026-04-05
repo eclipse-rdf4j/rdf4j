@@ -26,16 +26,28 @@ public final class LmdbLftjPlan {
 	private final Set<String> assuredBindingNames;
 	private final List<String> variableOrder;
 	private final List<LmdbLftjPatternPlan> patternPlans;
+	private final List<OutputBinding> outputBindings;
+	private final List<InequalityConstraint> inequalityConstraints;
 	private final String executionKey;
 
 	LmdbLftjPlan(TupleExpr fallbackExpr, Set<String> bindingNames, Set<String> assuredBindingNames,
 			List<String> variableOrder, List<LmdbLftjPatternPlan> patternPlans) {
+		this(fallbackExpr, bindingNames, assuredBindingNames, variableOrder, patternPlans,
+				identityOutputBindings(variableOrder), List.of());
+	}
+
+	LmdbLftjPlan(TupleExpr fallbackExpr, Set<String> bindingNames, Set<String> assuredBindingNames,
+			List<String> variableOrder, List<LmdbLftjPatternPlan> patternPlans, List<OutputBinding> outputBindings,
+			List<InequalityConstraint> inequalityConstraints) {
 		this.fallbackExpr = fallbackExpr;
 		this.bindingNames = Set.copyOf(new LinkedHashSet<>(bindingNames));
 		this.assuredBindingNames = Set.copyOf(new LinkedHashSet<>(assuredBindingNames));
 		this.variableOrder = List.copyOf(variableOrder);
 		this.patternPlans = List.copyOf(patternPlans);
-		this.executionKey = executionKey(this.variableOrder, this.patternPlans);
+		this.outputBindings = List.copyOf(outputBindings);
+		this.inequalityConstraints = List.copyOf(inequalityConstraints);
+		this.executionKey = executionKey(this.variableOrder, this.patternPlans, this.outputBindings,
+				this.inequalityConstraints);
 	}
 
 	TupleExpr fallbackExpr() {
@@ -58,6 +70,14 @@ public final class LmdbLftjPlan {
 		return patternPlans;
 	}
 
+	List<OutputBinding> outputBindings() {
+		return outputBindings;
+	}
+
+	List<InequalityConstraint> inequalityConstraints() {
+		return inequalityConstraints;
+	}
+
 	public String executionKey() {
 		return executionKey;
 	}
@@ -72,7 +92,8 @@ public final class LmdbLftjPlan {
 
 	LmdbLftjPlan copy() {
 		return new LmdbLftjPlan(fallbackExpr.clone(), bindingNames, assuredBindingNames, variableOrder,
-				patternPlans.stream().map(LmdbLftjPatternPlan::copy).collect(Collectors.toList()));
+				patternPlans.stream().map(LmdbLftjPatternPlan::copy).collect(Collectors.toList()), outputBindings,
+				inequalityConstraints);
 	}
 
 	@Override
@@ -85,16 +106,22 @@ public final class LmdbLftjPlan {
 				&& Objects.equals(bindingNames, o.bindingNames)
 				&& Objects.equals(assuredBindingNames, o.assuredBindingNames)
 				&& Objects.equals(variableOrder, o.variableOrder)
-				&& Objects.equals(patternPlans, o.patternPlans);
+				&& Objects.equals(patternPlans, o.patternPlans)
+				&& Objects.equals(outputBindings, o.outputBindings)
+				&& Objects.equals(inequalityConstraints, o.inequalityConstraints);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(fallbackExpr, bindingNames, assuredBindingNames, variableOrder, patternPlans);
+		return Objects.hash(fallbackExpr, bindingNames, assuredBindingNames, variableOrder, patternPlans,
+				outputBindings, inequalityConstraints);
 	}
 
-	private static String executionKey(List<String> variableOrder, List<LmdbLftjPatternPlan> patternPlans) {
-		StringBuilder builder = new StringBuilder(variableOrder.size() * 16 + patternPlans.size() * 48);
+	private static String executionKey(List<String> variableOrder, List<LmdbLftjPatternPlan> patternPlans,
+			List<OutputBinding> outputBindings, List<InequalityConstraint> inequalityConstraints) {
+		StringBuilder builder = new StringBuilder(
+				variableOrder.size() * 16 + patternPlans.size() * 48 + outputBindings.size() * 24
+						+ inequalityConstraints.size() * 24);
 		builder.append("varOrder=");
 		for (String variable : variableOrder) {
 			builder.append(variable).append(',');
@@ -103,7 +130,24 @@ public final class LmdbLftjPlan {
 		for (LmdbLftjPatternPlan patternPlan : patternPlans) {
 			builder.append(patternPlan.indexName()).append(':').append(patternKey(patternPlan.pattern())).append(';');
 		}
+		builder.append(";outputs=");
+		for (OutputBinding outputBinding : outputBindings) {
+			builder.append(outputBinding.outputName()).append('<').append(outputBinding.sourceVariable()).append(';');
+		}
+		builder.append(";ineq=");
+		for (InequalityConstraint inequalityConstraint : inequalityConstraints) {
+			builder.append(inequalityConstraint.leftVariable())
+					.append('!')
+					.append(inequalityConstraint.rightVariable())
+					.append(';');
+		}
 		return builder.toString();
+	}
+
+	private static List<OutputBinding> identityOutputBindings(List<String> variableOrder) {
+		return variableOrder.stream()
+				.map(variable -> new OutputBinding(variable, variable))
+				.collect(Collectors.toList());
 	}
 
 	private static String patternKey(org.eclipse.rdf4j.query.algebra.StatementPattern pattern) {
@@ -135,5 +179,69 @@ public final class LmdbLftjPlan {
 			return;
 		}
 		builder.append("var=").append(var.getName()).append(';');
+	}
+
+	static final class OutputBinding {
+		private final String outputName;
+		private final String sourceVariable;
+
+		OutputBinding(String outputName, String sourceVariable) {
+			this.outputName = outputName;
+			this.sourceVariable = sourceVariable;
+		}
+
+		String outputName() {
+			return outputName;
+		}
+
+		String sourceVariable() {
+			return sourceVariable;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (!(other instanceof OutputBinding)) {
+				return false;
+			}
+			OutputBinding o = (OutputBinding) other;
+			return Objects.equals(outputName, o.outputName) && Objects.equals(sourceVariable, o.sourceVariable);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(outputName, sourceVariable);
+		}
+	}
+
+	static final class InequalityConstraint {
+		private final String leftVariable;
+		private final String rightVariable;
+
+		InequalityConstraint(String leftVariable, String rightVariable) {
+			this.leftVariable = leftVariable;
+			this.rightVariable = rightVariable;
+		}
+
+		String leftVariable() {
+			return leftVariable;
+		}
+
+		String rightVariable() {
+			return rightVariable;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (!(other instanceof InequalityConstraint)) {
+				return false;
+			}
+			InequalityConstraint o = (InequalityConstraint) other;
+			return Objects.equals(leftVariable, o.leftVariable) && Objects.equals(rightVariable, o.rightVariable);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(leftVariable, rightVariable);
+		}
 	}
 }

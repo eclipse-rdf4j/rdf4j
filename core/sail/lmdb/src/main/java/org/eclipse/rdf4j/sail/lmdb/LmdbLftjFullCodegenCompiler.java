@@ -318,6 +318,10 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("    protected BindingSet computeNextElement() {\n");
 			source.append("      while (depth >= 0) {\n");
 			source.append("        if (depth == ").append(variableCount).append(") {\n");
+			source.append("          if (!passesInequalityConstraints()) {\n");
+			source.append("            backtrackAfterLeaf();\n");
+			source.append("            continue;\n");
+			source.append("          }\n");
 			source.append("          long multiplicity = 1L;\n");
 			for (int patternOrdinal = 0; patternOrdinal < shape.patternCount(); patternOrdinal++) {
 				source.append("          long witnesses")
@@ -1214,6 +1218,7 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("        throw new SailException(e);\n");
 			source.append("      }\n");
 			source.append("    }\n\n");
+			appendInequalityHelper(source);
 			for (int patternOrdinal = 0; patternOrdinal < shape.patternCount(); patternOrdinal++) {
 				LmdbLftjExecutionShape.PatternShape patternShape = shape.pattern(patternOrdinal);
 				if (patternShape.derivedBinaryRelation()) {
@@ -1225,6 +1230,28 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				}
 				appendCursorRowHelpers(source, patternOrdinal, -1, patternShape);
 			}
+		}
+
+		private void appendInequalityHelper(StringBuilder source) {
+			source.append("    private boolean passesInequalityConstraints() {\n");
+			if (plan.inequalityConstraints().isEmpty()) {
+				source.append("      return true;\n");
+			} else {
+				source.append("      return ");
+				for (int i = 0; i < plan.inequalityConstraints().size(); i++) {
+					LmdbLftjPlan.InequalityConstraint inequality = plan.inequalityConstraints().get(i);
+					if (i > 0) {
+						source.append("\n          && ");
+					}
+					source.append("state().value(")
+							.append(variableSlot(inequality.leftVariable()))
+							.append(") != state().value(")
+							.append(variableSlot(inequality.rightVariable()))
+							.append(')');
+				}
+				source.append(";\n");
+			}
+			source.append("    }\n\n");
 		}
 
 		private void appendCursorRowHelpers(StringBuilder source, int patternOrdinal, int slot,
@@ -1391,6 +1418,14 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 
 		private String slotSuffix(int patternOrdinal, int slot) {
 			return "P" + patternOrdinal + (slot >= 0 ? "S" + slot : "W");
+		}
+
+		private int variableSlot(String variableName) {
+			int slot = plan.variableOrder().indexOf(variableName);
+			if (slot < 0) {
+				throw new IllegalArgumentException("Unknown LMDB LFTJ variable in full-stack codegen: " + variableName);
+			}
+			return slot;
 		}
 
 		private String componentAccessor(int patternOrdinal, int slot, String kind, int component) {

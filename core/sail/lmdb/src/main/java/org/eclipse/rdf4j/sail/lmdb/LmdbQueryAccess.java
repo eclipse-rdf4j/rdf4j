@@ -27,6 +27,10 @@ public interface LmdbQueryAccess {
 
 	Value resolveValue(long id);
 
+	default Value lazyValue(long id) {
+		return resolveValue(id);
+	}
+
 	boolean includeInferred();
 
 	Set<String> configuredIndexes();

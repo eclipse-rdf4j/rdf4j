@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -28,6 +29,8 @@ public final class LmdbLftjBindingState {
 	private final BindingSet inputBindings;
 	private final LmdbQueryAccess queryAccess;
 	private final String[] variableNames;
+	private final String[] outputNames;
+	private final int[] outputSlots;
 	private final Map<String, Integer> variableSlots = new HashMap<>();
 	private final long[] fixedValues;
 	private final boolean[] fixedPresent;
@@ -51,6 +54,19 @@ public final class LmdbLftjBindingState {
 		this.assignedPresent = new boolean[variableCount];
 		for (int i = 0; i < variableCount; i++) {
 			variableSlots.put(variableNames[i], i);
+		}
+		List<LmdbLftjPlan.OutputBinding> outputBindings = plan.outputBindings();
+		this.outputNames = new String[outputBindings.size()];
+		this.outputSlots = new int[outputBindings.size()];
+		for (int i = 0; i < outputBindings.size(); i++) {
+			LmdbLftjPlan.OutputBinding outputBinding = outputBindings.get(i);
+			Integer slot = variableSlots.get(outputBinding.sourceVariable());
+			if (slot == null) {
+				throw new IllegalArgumentException(
+						"Unknown LMDB LFTJ output source variable: " + outputBinding.sourceVariable());
+			}
+			outputNames[i] = outputBinding.outputName();
+			outputSlots[i] = slot;
 		}
 	}
 
@@ -150,9 +166,10 @@ public final class LmdbLftjBindingState {
 	public BindingSet materialize(QueryEvaluationContext context) {
 		MutableBindingSet result = context.createBindingSet(inputBindings);
 		BiConsumer<Value, MutableBindingSet>[] setters = bindingSetters(context);
-		for (int slot = 0; slot < variableNames.length; slot++) {
-			if (assignedPresent[slot]) {
-				setters[slot].accept(queryAccess.resolveValue(assignedValues[slot]), result);
+		for (int outputIndex = 0; outputIndex < outputSlots.length; outputIndex++) {
+			int slot = outputSlots[outputIndex];
+			if (isBound(slot)) {
+				setters[outputIndex].accept(queryAccess.lazyValue(value(slot)), result);
 			}
 		}
 		return result;
@@ -182,9 +199,9 @@ public final class LmdbLftjBindingState {
 		if (bindingSetters != null && bindingSettersContext == context) {
 			return bindingSetters;
 		}
-		BiConsumer<Value, MutableBindingSet>[] setters = new BiConsumer[variableNames.length];
-		for (int slot = 0; slot < variableNames.length; slot++) {
-			setters[slot] = context.setBinding(variableNames[slot]);
+		BiConsumer<Value, MutableBindingSet>[] setters = new BiConsumer[outputNames.length];
+		for (int outputIndex = 0; outputIndex < outputNames.length; outputIndex++) {
+			setters[outputIndex] = context.setBinding(outputNames[outputIndex]);
 		}
 		bindingSetters = setters;
 		bindingSettersContext = context;

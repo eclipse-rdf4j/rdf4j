@@ -107,12 +107,12 @@ public class FoafCliqueQueryBenchmark {
 		}
 	}
 
-//	@Benchmark
+	@Benchmark
 	public long cycle3() {
 		return executeCount(QUERY_CYCLE_3);
 	}
 
-//	@Benchmark
+	@Benchmark
 	public long cycle4() {
 		return executeCount(QUERY_CYCLE_4);
 	}

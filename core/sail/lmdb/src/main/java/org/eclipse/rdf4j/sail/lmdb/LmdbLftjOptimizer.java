@@ -12,14 +12,28 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -63,20 +77,29 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 		List<TupleExpr> operands = new ArrayList<>();
 		collectOperands(node, operands);
 
-		List<StatementPattern> patterns = operands.stream()
-				.filter(StatementPattern.class::isInstance)
-				.map(StatementPattern.class::cast)
-				.toList();
+		FusionTarget fusionTarget = tryExtractFusionTarget(node, operands);
+		List<StatementPattern> patterns = (fusionTarget != null ? fusionTarget.patterns()
+				: operands.stream()
+						.filter(StatementPattern.class::isInstance)
+						.map(StatementPattern.class::cast)
+						.toList());
 		if (patterns.size() < 3) {
 			return false;
 		}
 
 		Set<String> configuredIndexes = queryAccess.configuredIndexes();
-		TupleExpr fallbackExpr = rebuildJoin(patterns.stream().map(TupleExpr::clone).toList());
-		String cacheKey = LmdbLftjPreparedPlanCache.normalizedKey(patterns, configuredIndexes);
+		TupleExpr fallbackExpr = fusionTarget != null ? fusionTarget.root().clone()
+				: rebuildJoin(patterns.stream().map(TupleExpr::clone).toList());
+		List<LmdbLftjPlan.OutputBinding> outputBindings = fusionTarget != null ? fusionTarget.outputBindings()
+				: List.of();
+		List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints = fusionTarget != null
+				? fusionTarget.inequalityConstraints()
+				: List.of();
+		String cacheKey = LmdbLftjPreparedPlanCache.normalizedKey(patterns, configuredIndexes, outputBindings,
+				inequalityConstraints);
 		LmdbLftjPlanner.PlanningResult plan = queryAccess.cachedPlanningResult(cacheKey);
 		if (plan == null) {
-			plan = planner.plan(fallbackExpr, patterns, configuredIndexes);
+			plan = planner.plan(fallbackExpr, patterns, configuredIndexes, outputBindings, inequalityConstraints);
 			queryAccess.cachePlanningResult(cacheKey, plan);
 		}
 		if (!plan.planned()) {
@@ -85,6 +108,10 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 		}
 
 		LmdbLftjTupleExpr lftjNode = new LmdbLftjTupleExpr(plan.plan());
+		if (fusionTarget != null) {
+			fusionTarget.root().replaceWith(lftjNode);
+			return true;
+		}
 		List<TupleExpr> rebuiltOperands = new ArrayList<>();
 		boolean inserted = false;
 		for (TupleExpr operand : operands) {
@@ -103,6 +130,219 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 
 		node.replaceWith(rebuildJoin(rebuiltOperands));
 		return true;
+	}
+
+	private FusionTarget tryExtractFusionTarget(Join node, List<TupleExpr> operands) {
+		List<ExtractedPattern> extractedPatterns = new ArrayList<>(operands.size());
+		for (TupleExpr operand : operands) {
+			ExtractedPattern extractedPattern = extractFilteredPattern(operand);
+			if (extractedPattern == null) {
+				return null;
+			}
+			extractedPatterns.add(extractedPattern);
+		}
+
+		List<StatementPattern> patterns = extractedPatterns.stream().map(ExtractedPattern::pattern).toList();
+		List<String> visibleVariables = collectVisibleVariables(patterns);
+		QueryModelNode current = node;
+		List<Filter> filters = new ArrayList<>();
+		Extension extension = null;
+		Projection projection = null;
+
+		while (current.getParentNode() instanceof UnaryTupleOperator
+				&& ((UnaryTupleOperator) current.getParentNode()).getArg() == current) {
+			QueryModelNode parent = current.getParentNode();
+			if (parent instanceof Filter) {
+				filters.add((Filter) parent);
+				current = parent;
+				continue;
+			}
+			if (parent instanceof Extension && extension == null) {
+				extension = (Extension) parent;
+				current = parent;
+				continue;
+			}
+			if (parent instanceof Projection && projection == null) {
+				projection = (Projection) parent;
+				current = parent;
+				continue;
+			}
+			break;
+		}
+
+		List<LmdbLftjPlan.InequalityConstraint> inequalities = new ArrayList<>();
+		for (ExtractedPattern extractedPattern : extractedPatterns) {
+			inequalities.addAll(extractedPattern.inequalityConstraints());
+		}
+		if (filters.isEmpty() && inequalities.isEmpty() && extension == null && projection == null) {
+			return null;
+		}
+
+		List<LmdbLftjPlan.InequalityConstraint> outerInequalities = collectInequalities(filters, visibleVariables);
+		if (outerInequalities == null) {
+			return null;
+		}
+		inequalities.addAll(outerInequalities);
+		if (!supportsVisibleVariables(inequalities, Set.copyOf(visibleVariables))) {
+			return null;
+		}
+
+		List<LmdbLftjPlan.OutputBinding> outputBindings = collectOutputBindings(projection, extension,
+				visibleVariables);
+		if (outputBindings == null) {
+			return null;
+		}
+
+		return new FusionTarget((TupleExpr) current, patterns, outputBindings, inequalities);
+	}
+
+	private ExtractedPattern extractFilteredPattern(TupleExpr operand) {
+		List<LmdbLftjPlan.InequalityConstraint> inequalities = new ArrayList<>();
+		TupleExpr current = operand;
+		while (current instanceof Filter) {
+			if (!appendInequalities(((Filter) current).getCondition(), inequalities)) {
+				return null;
+			}
+			current = ((Filter) current).getArg();
+		}
+		if (!(current instanceof StatementPattern)) {
+			return null;
+		}
+		return new ExtractedPattern((StatementPattern) current, inequalities);
+	}
+
+	private List<String> collectVisibleVariables(List<StatementPattern> patterns) {
+		LinkedHashSet<String> variableNames = new LinkedHashSet<>();
+		for (StatementPattern pattern : patterns) {
+			for (Var var : pattern.getVarList()) {
+				if (var != null && !var.hasValue() && !var.isAnonymous() && var.getName() != null) {
+					variableNames.add(var.getName());
+				}
+			}
+		}
+		return List.copyOf(variableNames);
+	}
+
+	private List<LmdbLftjPlan.InequalityConstraint> collectInequalities(List<Filter> filters,
+			List<String> visibleVariables) {
+		if (filters.isEmpty()) {
+			return List.of();
+		}
+		List<LmdbLftjPlan.InequalityConstraint> inequalities = new ArrayList<>();
+		for (Filter filter : filters) {
+			if (!appendInequalities(filter.getCondition(), inequalities)) {
+				return null;
+			}
+		}
+		if (!supportsVisibleVariables(inequalities, Set.copyOf(visibleVariables))) {
+			return null;
+		}
+		return inequalities;
+	}
+
+	private boolean appendInequalities(ValueExpr condition, List<LmdbLftjPlan.InequalityConstraint> inequalities) {
+		if (condition instanceof And) {
+			And and = (And) condition;
+			return appendInequalities(and.getLeftArg(), inequalities)
+					&& appendInequalities(and.getRightArg(), inequalities);
+		}
+		if (!(condition instanceof Compare)) {
+			return false;
+		}
+		Compare compare = (Compare) condition;
+		if (compare.getOperator() != Compare.CompareOp.NE) {
+			return false;
+		}
+		if (!(compare.getLeftArg() instanceof Var) || !(compare.getRightArg() instanceof Var)) {
+			return false;
+		}
+		Var left = (Var) compare.getLeftArg();
+		Var right = (Var) compare.getRightArg();
+		if (!isNamedVariable(left) || !isNamedVariable(right)) {
+			return false;
+		}
+		inequalities.add(new LmdbLftjPlan.InequalityConstraint(left.getName(), right.getName()));
+		return true;
+	}
+
+	private boolean supportsVisibleVariables(List<LmdbLftjPlan.InequalityConstraint> inequalities,
+			Set<String> visibleVariables) {
+		return inequalities.stream()
+				.allMatch(inequality -> visibleVariables.contains(inequality.leftVariable())
+						&& visibleVariables.contains(inequality.rightVariable()));
+	}
+
+	private boolean isNamedVariable(Var var) {
+		return !var.hasValue() && !var.isAnonymous() && var.getName() != null;
+	}
+
+	private List<LmdbLftjPlan.OutputBinding> collectOutputBindings(Projection projection, Extension extension,
+			List<String> visibleVariables) {
+		if (projection == null) {
+			return extension == null ? List.of() : null;
+		}
+		Map<String, String> extensionBindings = collectExtensionBindings(extension, visibleVariables);
+		if (extensionBindings == null) {
+			return null;
+		}
+		Set<String> visible = Set.copyOf(visibleVariables);
+		List<LmdbLftjPlan.OutputBinding> outputBindings = new ArrayList<>();
+		for (ProjectionElem projectionElem : projection.getProjectionElemList().getElements()) {
+			String sourceVariable = resolveProjectedSource(projectionElem, extensionBindings, visible);
+			if (sourceVariable == null) {
+				return null;
+			}
+			outputBindings.add(new LmdbLftjPlan.OutputBinding(
+					projectionElem.getProjectionAlias().orElse(projectionElem.getName()),
+					sourceVariable));
+		}
+		return outputBindings;
+	}
+
+	private Map<String, String> collectExtensionBindings(Extension extension, List<String> visibleVariables) {
+		if (extension == null) {
+			return Map.of();
+		}
+		Set<String> visible = Set.copyOf(visibleVariables);
+		Map<String, String> extensionBindings = new HashMap<>();
+		for (ExtensionElem element : extension.getElements()) {
+			if (!(element.getExpr() instanceof Var)) {
+				return null;
+			}
+			Var source = (Var) element.getExpr();
+			if (!isNamedVariable(source) || !visible.contains(source.getName())) {
+				return null;
+			}
+			extensionBindings.put(element.getName(), source.getName());
+		}
+		return extensionBindings;
+	}
+
+	private String resolveProjectedSource(ProjectionElem projectionElem, Map<String, String> extensionBindings,
+			Set<String> visibleVariables) {
+		String sourceExpression = resolveSourceExpression(projectionElem.getSourceExpression(), visibleVariables);
+		if (sourceExpression != null) {
+			return sourceExpression;
+		}
+		String sourceName = projectionElem.getName();
+		if (extensionBindings.containsKey(sourceName)) {
+			return extensionBindings.get(sourceName);
+		}
+		if (visibleVariables.contains(sourceName)) {
+			return sourceName;
+		}
+		return null;
+	}
+
+	private String resolveSourceExpression(ExtensionElem sourceExpression, Set<String> visibleVariables) {
+		if (sourceExpression == null || !(sourceExpression.getExpr() instanceof Var)) {
+			return null;
+		}
+		Var source = (Var) sourceExpression.getExpr();
+		if (!isNamedVariable(source) || !visibleVariables.contains(source.getName())) {
+			return null;
+		}
+		return source.getName();
 	}
 
 	private void collectOperands(TupleExpr expr, List<TupleExpr> operands) {
@@ -127,5 +367,56 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 			rebuilt = new Join(rebuilt, operands.get(i));
 		}
 		return rebuilt;
+	}
+
+	private static final class FusionTarget {
+		private final TupleExpr root;
+		private final List<StatementPattern> patterns;
+		private final List<LmdbLftjPlan.OutputBinding> outputBindings;
+		private final List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints;
+
+		private FusionTarget(TupleExpr root, List<StatementPattern> patterns,
+				List<LmdbLftjPlan.OutputBinding> outputBindings,
+				List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints) {
+			this.root = root;
+			this.patterns = List.copyOf(patterns);
+			this.outputBindings = List.copyOf(outputBindings);
+			this.inequalityConstraints = List.copyOf(inequalityConstraints);
+		}
+
+		private TupleExpr root() {
+			return root;
+		}
+
+		private List<StatementPattern> patterns() {
+			return patterns;
+		}
+
+		private List<LmdbLftjPlan.OutputBinding> outputBindings() {
+			return outputBindings;
+		}
+
+		private List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints() {
+			return inequalityConstraints;
+		}
+	}
+
+	private static final class ExtractedPattern {
+		private final StatementPattern pattern;
+		private final List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints;
+
+		private ExtractedPattern(StatementPattern pattern,
+				List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints) {
+			this.pattern = pattern;
+			this.inequalityConstraints = List.copyOf(inequalityConstraints);
+		}
+
+		private StatementPattern pattern() {
+			return pattern;
+		}
+
+		private List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints() {
+			return inequalityConstraints;
+		}
 	}
 }

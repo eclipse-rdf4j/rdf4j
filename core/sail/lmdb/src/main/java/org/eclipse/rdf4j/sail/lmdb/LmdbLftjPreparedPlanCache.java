@@ -44,6 +44,12 @@ final class LmdbLftjPreparedPlanCache {
 	}
 
 	static String normalizedKey(List<StatementPattern> patterns, Set<String> configuredIndexes) {
+		return normalizedKey(patterns, configuredIndexes, List.of(), List.of());
+	}
+
+	static String normalizedKey(List<StatementPattern> patterns, Set<String> configuredIndexes,
+			List<LmdbLftjPlan.OutputBinding> outputBindings,
+			List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints) {
 		StringBuilder builder = new StringBuilder(configuredIndexes.size() * 6 + patterns.size() * 32);
 		builder.append("indexes=");
 		configuredIndexes.stream().sorted().forEach(indexName -> builder.append(indexName).append(','));
@@ -52,6 +58,17 @@ final class LmdbLftjPreparedPlanCache {
 				.map(LmdbLftjPreparedPlanCache::patternKey)
 				.sorted()
 				.forEach(builder::append);
+		builder.append(";outputs=");
+		for (LmdbLftjPlan.OutputBinding outputBinding : outputBindings) {
+			builder.append(outputBinding.outputName()).append('<').append(outputBinding.sourceVariable()).append(';');
+		}
+		builder.append(";ineq=");
+		for (LmdbLftjPlan.InequalityConstraint inequalityConstraint : inequalityConstraints) {
+			builder.append(inequalityConstraint.leftVariable())
+					.append('!')
+					.append(inequalityConstraint.rightVariable())
+					.append(';');
+		}
 		return builder.toString();
 	}
 

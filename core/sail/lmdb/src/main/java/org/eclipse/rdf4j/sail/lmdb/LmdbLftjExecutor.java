@@ -157,6 +157,10 @@ final class LmdbLftjExecutor {
 		private BindingSet computeNextElement() {
 			while (depth >= 0) {
 				if (depth == searchSlots.length) {
+					if (!passesInequalityConstraints(plan, state)) {
+						backtrackAfterLeaf();
+						continue;
+					}
 					long multiplicity = witnessMultiplicity(plan, metrics, frontierProvider);
 					backtrackAfterLeaf();
 					if (multiplicity > 0) {
@@ -256,6 +260,15 @@ final class LmdbLftjExecutor {
 				cursor.release(depthRuntime.bindingSlot);
 			}
 		}
+	}
+
+	private static boolean passesInequalityConstraints(LmdbLftjPlan plan, LmdbLftjBindingState state) {
+		for (LmdbLftjPlan.InequalityConstraint inequality : plan.inequalityConstraints()) {
+			if (state.value(inequality.leftVariable()) == state.value(inequality.rightVariable())) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private int[] collectSearchSlots(LmdbLftjPlan plan, LmdbLftjBindingState state) {

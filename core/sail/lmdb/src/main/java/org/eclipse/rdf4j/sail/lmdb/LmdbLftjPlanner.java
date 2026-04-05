@@ -19,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -33,6 +34,12 @@ final class LmdbLftjPlanner {
 	}
 
 	PlanningResult plan(TupleExpr fallbackExpr, Collection<StatementPattern> patterns, Set<String> configuredIndexes) {
+		return plan(fallbackExpr, patterns, configuredIndexes, List.of(), List.of());
+	}
+
+	PlanningResult plan(TupleExpr fallbackExpr, Collection<StatementPattern> patterns, Set<String> configuredIndexes,
+			List<LmdbLftjPlan.OutputBinding> outputBindings,
+			List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints) {
 		if (patterns.size() < 3) {
 			return PlanningResult.rejected("too-few-patterns");
 		}
@@ -57,6 +64,12 @@ final class LmdbLftjPlanner {
 		}
 
 		List<String> visibleVariables = collectVisibleVariables(patternList);
+		if (!supportsOutputs(outputBindings, visibleVariables)) {
+			return PlanningResult.rejected("unsupported-output-binding");
+		}
+		if (!supportsInequalities(inequalityConstraints, visibleVariables)) {
+			return PlanningResult.rejected("unsupported-inequality");
+		}
 		PlanningCandidate candidate = chooseCandidate(patternList, configuredIndexes, visibleVariables);
 		if (candidate == null) {
 			return PlanningResult.rejected("incompatible-index-order");
@@ -67,8 +80,67 @@ final class LmdbLftjPlanner {
 			patternPlans.add(new LmdbLftjPatternPlan(patternList.get(i), candidate.indexNames.get(i)));
 		}
 
+		if (outputBindings.isEmpty() && inequalityConstraints.isEmpty()) {
+			return PlanningResult.planned(new LmdbLftjPlan(fallbackExpr, fallbackExpr.getBindingNames(),
+					fallbackExpr.getAssuredBindingNames(), candidate.variableOrder, patternPlans));
+		}
+
 		return PlanningResult.planned(new LmdbLftjPlan(fallbackExpr, fallbackExpr.getBindingNames(),
-				fallbackExpr.getAssuredBindingNames(), candidate.variableOrder, patternPlans));
+				fallbackExpr.getAssuredBindingNames(), candidate.variableOrder, patternPlans,
+				effectiveOutputs(outputBindings, candidate.variableOrder),
+				canonicalInequalities(inequalityConstraints)));
+	}
+
+	private boolean supportsOutputs(List<LmdbLftjPlan.OutputBinding> outputBindings, List<String> visibleVariables) {
+		if (outputBindings.isEmpty()) {
+			return true;
+		}
+		Set<String> visible = Set.copyOf(visibleVariables);
+		return outputBindings.stream().allMatch(outputBinding -> visible.contains(outputBinding.sourceVariable()));
+	}
+
+	private boolean supportsInequalities(List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints,
+			List<String> visibleVariables) {
+		if (inequalityConstraints.isEmpty()) {
+			return true;
+		}
+		Set<String> visible = Set.copyOf(visibleVariables);
+		return inequalityConstraints.stream()
+				.allMatch(
+						inequality -> visible.contains(inequality.leftVariable())
+								&& visible.contains(inequality.rightVariable()));
+	}
+
+	private List<LmdbLftjPlan.OutputBinding> effectiveOutputs(List<LmdbLftjPlan.OutputBinding> outputBindings,
+			List<String> variableOrder) {
+		if (!outputBindings.isEmpty()) {
+			return List.copyOf(outputBindings);
+		}
+		return variableOrder.stream()
+				.map(variable -> new LmdbLftjPlan.OutputBinding(variable, variable))
+				.collect(Collectors.toList());
+	}
+
+	private List<LmdbLftjPlan.InequalityConstraint> canonicalInequalities(
+			List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints) {
+		return inequalityConstraints.stream()
+				.map(this::normalizeInequality)
+				.distinct()
+				.sorted((left, right) -> {
+					int leftCompare = left.leftVariable().compareTo(right.leftVariable());
+					if (leftCompare != 0) {
+						return leftCompare;
+					}
+					return left.rightVariable().compareTo(right.rightVariable());
+				})
+				.collect(Collectors.toList());
+	}
+
+	private LmdbLftjPlan.InequalityConstraint normalizeInequality(LmdbLftjPlan.InequalityConstraint inequality) {
+		if (inequality.leftVariable().compareTo(inequality.rightVariable()) <= 0) {
+			return inequality;
+		}
+		return new LmdbLftjPlan.InequalityConstraint(inequality.rightVariable(), inequality.leftVariable());
 	}
 
 	private boolean hasRepeatedVariable(StatementPattern pattern) {

@@ -26,19 +26,29 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -115,6 +125,19 @@ class LmdbLftjCodegenTest {
 	}
 
 	@Test
+	void fullStackCompilerSourceShouldInlineInequalityGuardsForAliasedPlans() {
+		LmdbLftjPlan plan = syntheticAliasedPlan();
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+		String source = LmdbLftjFullCodegenCompiler.INSTANCE.sourceFor(plan, shape, false);
+
+		assertThat(source)
+				.contains("passesInequalityConstraints")
+				.contains("state().value(0) != state().value(1)")
+				.doesNotContain("FilterIterator")
+				.doesNotContain("ProjectionIterator");
+	}
+
+	@Test
 	void fullStackCompilerShouldShareDerivedRelationGroupsAcrossEquivalentPatterns() {
 		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
 		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
@@ -169,6 +192,63 @@ class LmdbLftjCodegenTest {
 				matchingBindings);
 
 		assertThat(compiled).containsExactlyElementsOf(interpreted);
+	}
+
+	@Test
+	void compiledIterationShouldNotEagerlyResolveMaterializedValues() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
+		CachingQueryAccess queryAccess = new CachingQueryAccess(new CountingCompiler());
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, plan);
+
+		List<String> rows = drain(evaluationStep, EmptyBindingSet.getInstance());
+
+		assertThat(rows).isNotEmpty();
+		assertThat(queryAccess.resolveValueCalls).isZero();
+	}
+
+	@Test
+	void compiledIterationShouldMaterializeAliasedBindingsLazily() {
+		LmdbLftjPlan plan = syntheticAliasedPlan();
+		CachingQueryAccess queryAccess = new CachingQueryAccess(new CountingCompiler());
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, plan);
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration).hasNext();
+			BindingSet row = iteration.next();
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("x", "y", "z");
+			assertThat(row.getValue("x")).isEqualTo(LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+			assertThat(row.getValue("y")).isEqualTo(LmdbLftjSyntheticScenario.VF.createIRI("urn:person:2"));
+			assertThat(row.getValue("z")).isEqualTo(LmdbLftjSyntheticScenario.VF.createIRI("urn:person:3"));
+			assertThat(row.hasBinding("a")).isFalse();
+			assertThat(row.hasBinding("b")).isFalse();
+			assertThat(row.hasBinding("c")).isFalse();
+		}
+
+		assertThat(queryAccess.resolveValueCalls).isZero();
+	}
+
+	@Test
+	void evaluateInternalShouldSkipInitValueForLftjRuntimeSafeQueries() throws Exception {
+		try (FullCodegenFixture fixture = new FullCodegenFixture()) {
+			TrackingBenchmarkStoreConnection connection = new TrackingBenchmarkStoreConnection(fixture.store);
+			LmdbQueryAccess queryAccess = fixture.connection.benchmarkQueryAccess(false);
+			long id = queryAccess.resolveId(FullCodegenFixture.person(1));
+			Value lazyValue = queryAccess.lazyValue(id);
+			QueryBindingSet row = new QueryBindingSet();
+			row.setBinding("x", lazyValue);
+			connection.nextIteration = new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+
+			try (CloseableIteration<? extends BindingSet> iteration = connection.evaluateInternal(new SingletonSet(),
+					null, EmptyBindingSet.getInstance(), false)) {
+				assertThat(iteration).hasNext();
+				assertThat(iteration.next().getValue("x")).isSameAs(lazyValue);
+			}
+
+			assertThat(connection.initValueCalls).isZero();
+			assertThat(isInitializedLmdbValue(lazyValue)).isFalse();
+			assertThat(lazyValue.stringValue()).isEqualTo("urn:person:1");
+			assertThat(isInitializedLmdbValue(lazyValue)).isTrue();
+		}
 	}
 
 	@Test
@@ -244,6 +324,29 @@ class LmdbLftjCodegenTest {
 	@Test
 	void fullCodegenFoafBenchmarkCycle5ShouldCompileGeneratedFactory() throws Exception {
 		assertFoafBenchmarkQueryCompilesGeneratedFactory(5);
+	}
+
+	@Test
+	void fullCodegenShouldFuseSupportedFilterAndProjectionIntoLftjPlan() throws Exception {
+		try (FullCodegenFixture fixture = new FullCodegenFixture()) {
+			String query = foafCycleAliasQuery(3);
+
+			try (SailRepositoryConnection connection = fixture.repository.getConnection()) {
+				String unoptimizedPlan = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Unoptimized)
+						.toString();
+				String optimizedPlan = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+				assertThat(optimizedPlan)
+						.withFailMessage("unoptimized=%s%noptimized=%s%ncachedPlans=%s", unoptimizedPlan, optimizedPlan,
+								preparedPlanDescriptions(fixture.store.preparedPlanCache()))
+						.contains("LmdbLftjTupleExpr")
+						.doesNotContain("Filter")
+						.doesNotContain("Projection")
+						.doesNotContain("Extension");
+			}
+		}
 	}
 
 	@Test
@@ -485,6 +588,21 @@ class LmdbLftjCodegenTest {
 		return descriptions;
 	}
 
+	@SuppressWarnings("unchecked")
+	private List<String> preparedPlanDescriptions(LmdbLftjPreparedPlanCache cache) throws Exception {
+		Field entriesField = LmdbLftjPreparedPlanCache.class.getDeclaredField("entries");
+		entriesField.setAccessible(true);
+		Map<String, LmdbLftjPlanner.PlanningResult> entries = (LinkedHashMap<String, LmdbLftjPlanner.PlanningResult>) entriesField
+				.get(cache);
+		List<String> descriptions = new ArrayList<>();
+		for (Map.Entry<String, LmdbLftjPlanner.PlanningResult> entry : entries.entrySet()) {
+			LmdbLftjPlanner.PlanningResult result = entry.getValue();
+			descriptions.add(entry.getKey() + "=" + (result.planned() ? result.plan().fallbackExpr().getSignature()
+					: result.rejectionReason()));
+		}
+		return descriptions;
+	}
+
 	private String foafCycleQuery(int size) {
 		StringBuilder builder = new StringBuilder();
 		builder.append("PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n");
@@ -512,10 +630,66 @@ class LmdbLftjCodegenTest {
 		return builder.toString();
 	}
 
+	private LmdbLftjPlan syntheticAliasedPlan() {
+		LmdbLftjPlan basePlan = LmdbLftjSyntheticScenario.createPlan();
+		return new LmdbLftjPlan(basePlan.fallbackExpr().clone(), Set.of("x", "y", "z"), Set.of("x", "y", "z"),
+				basePlan.variableOrder(), basePlan.patternPlans(),
+				List.of(
+						new LmdbLftjPlan.OutputBinding("x", "a"),
+						new LmdbLftjPlan.OutputBinding("y", "b"),
+						new LmdbLftjPlan.OutputBinding("z", "c")),
+				List.of(
+						new LmdbLftjPlan.InequalityConstraint("a", "b"),
+						new LmdbLftjPlan.InequalityConstraint("a", "c"),
+						new LmdbLftjPlan.InequalityConstraint("b", "c")));
+	}
+
+	private String foafCycleAliasQuery(int size) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n");
+		builder.append("SELECT ");
+		for (int i = 0; i < size; i++) {
+			if (i > 0) {
+				builder.append(' ');
+			}
+			char variable = (char) ('a' + i);
+			char alias = (char) ('x' + i);
+			builder.append("(?").append(variable).append(" AS ?").append(alias).append(')');
+		}
+		builder.append(" WHERE {\n");
+		for (int i = 0; i < size; i++) {
+			builder.append("  ?")
+					.append((char) ('a' + i))
+					.append(" foaf:knows ?")
+					.append((char) ('a' + ((i + 1) % size)))
+					.append(" .\n");
+		}
+		builder.append("  FILTER (");
+		boolean first = true;
+		for (int i = 0; i < size; i++) {
+			for (int j = i + 1; j < size; j++) {
+				if (!first) {
+					builder.append(" && ");
+				}
+				builder.append("?").append((char) ('a' + i)).append(" != ?").append((char) ('a' + j));
+				first = false;
+			}
+		}
+		builder.append(")\n");
+		builder.append("}\n");
+		return builder.toString();
+	}
+
 	private Object readField(Object target, String name) throws Exception {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.get(target);
+	}
+
+	private boolean isInitializedLmdbValue(Value value) throws Exception {
+		Field field = value.getClass().getDeclaredField("initialized");
+		field.setAccessible(true);
+		return field.getBoolean(value);
 	}
 
 	private static final class InterpretedQueryAccess extends LmdbLftjSyntheticScenario.TestQueryAccess {
@@ -614,7 +788,7 @@ class LmdbLftjCodegenTest {
 
 		private FullCodegenFixture() throws IOException {
 			dataDir = Files.createTempDirectory("rdf4j-lmdb-full-codegen-test").toFile();
-			LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc");
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
 			config.setLftjEnabled(true);
 			config.setLftjCodegenEnabled(true);
 			config.setForceSync(false);
@@ -682,6 +856,28 @@ class LmdbLftjCodegenTest {
 				repository.shutDown();
 				FileUtils.deleteDirectory(dataDir);
 			}
+		}
+	}
+
+	private static final class TrackingBenchmarkStoreConnection extends LmdbBenchmarkStore.BenchmarkStoreConnection {
+		private CloseableIteration<? extends BindingSet> nextIteration;
+		private int initValueCalls;
+
+		private TrackingBenchmarkStoreConnection(LmdbStore sail) {
+			super(sail, null);
+		}
+
+		@Override
+		protected CloseableIteration<? extends BindingSet> evaluateWithTripleSource(TupleExpr tupleExpr,
+				Dataset dataset,
+				BindingSet bindings, boolean includeInferred,
+				Function<SailDataset, TripleSource> tripleSourceFactory) throws SailException {
+			return nextIteration;
+		}
+
+		@Override
+		protected void initValue(Value value) {
+			initValueCalls++;
 		}
 	}
 }

@@ -138,10 +138,15 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		// ensure that all elements of the binding set are initialized (lazy values are resolved)
-		return new IterationWrapper<BindingSet>(
-				evaluateWithTripleSource(tupleExpr, dataset, bindings, includeInferred,
-						rdfDataset -> createTripleSource(rdfDataset, dataset, includeInferred))) {
+		boolean lftjRuntimeSafe = isLftjRuntimeSafe(dataset);
+		CloseableIteration<? extends BindingSet> iteration = evaluateWithTripleSource(tupleExpr, dataset, bindings,
+				includeInferred,
+				rdfDataset -> createTripleSource(rdfDataset, includeInferred, lftjRuntimeSafe));
+		if (lftjRuntimeSafe) {
+			return iteration;
+		}
+		// Non-LFTJ query paths keep the historical eager-init behavior.
+		return new IterationWrapper<BindingSet>(iteration) {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
 				BindingSet bs = super.next();
@@ -151,9 +156,9 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		};
 	}
 
-	private TripleSource createTripleSource(SailDataset rdfDataset, Dataset dataset, boolean includeInferred) {
+	private TripleSource createTripleSource(SailDataset rdfDataset, boolean includeInferred, boolean lftjRuntimeSafe) {
 		TripleSource delegate = new SailDatasetTripleSource(lmdbStore.getValueFactory(), rdfDataset);
-		if (!isLftjRuntimeSafe(dataset)) {
+		if (!lftjRuntimeSafe) {
 			return delegate;
 		}
 		return new LmdbLftjTripleSource(delegate, createQueryAccess(includeInferred));
@@ -220,6 +225,15 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			public Value resolveValue(long id) {
 				try {
 					return valueStore.getValue(id);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public Value lazyValue(long id) {
+				try {
+					return valueStore.getLazyValue(id);
 				} catch (IOException e) {
 					throw new SailException(e);
 				}

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -28,13 +29,25 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class LmdbLftjOptimizerTest {
@@ -80,6 +93,80 @@ class LmdbLftjOptimizerTest {
 				"commuted join order should still hit the normalized prepared-plan cache");
 	}
 
+	@Test
+	void optimizeShouldFuseProjectionExtensionAndInequalityFilter() {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		QueryRoot tupleExpr = new QueryRoot(aliasedCycle());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = lftjNode(tupleExpr);
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("x", "a"),
+				new LmdbLftjPlan.OutputBinding("y", "b"),
+				new LmdbLftjPlan.OutputBinding("z", "c")), lftj.plan().outputBindings());
+		assertEquals(List.of(
+				new LmdbLftjPlan.InequalityConstraint("a", "b"),
+				new LmdbLftjPlan.InequalityConstraint("a", "c"),
+				new LmdbLftjPlan.InequalityConstraint("b", "c")), lftj.plan().inequalityConstraints());
+	}
+
+	@Test
+	void optimizeShouldFuseParsedAliasProjectionQuery() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, aliasProjectionQuery(), null);
+		TupleExpr tupleExpr = parsed.getTupleExpr().clone();
+		if (!(tupleExpr instanceof QueryRoot)) {
+			tupleExpr = new QueryRoot(tupleExpr);
+		}
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = lftjNode(tupleExpr);
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("x", "a"),
+				new LmdbLftjPlan.OutputBinding("y", "b"),
+				new LmdbLftjPlan.OutputBinding("z", "c")), lftj.plan().outputBindings());
+		assertEquals(List.of(
+				new LmdbLftjPlan.InequalityConstraint("a", "b"),
+				new LmdbLftjPlan.InequalityConstraint("a", "c"),
+				new LmdbLftjPlan.InequalityConstraint("b", "c")), lftj.plan().inequalityConstraints());
+	}
+
+	@Test
+	void optimizerPipelineShouldFuseParsedAliasProjectionQuery() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		TripleSource tripleSource = new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess);
+		EvaluationStatistics evaluationStatistics = new EvaluationStatistics();
+		LmdbLftjEvaluationStrategy strategy = new LmdbLftjEvaluationStrategy(tripleSource, null, null, 0,
+				evaluationStatistics, false, DefaultCollectionFactory::new);
+		strategy.setOptimizerPipeline(new LmdbLftjOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, aliasProjectionQuery(), null);
+		TupleExpr tupleExpr = parsed.getTupleExpr().clone();
+		if (!(tupleExpr instanceof QueryRoot)) {
+			tupleExpr = new QueryRoot(tupleExpr);
+		}
+
+		strategy.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = lftjNode(tupleExpr);
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("x", "a"),
+				new LmdbLftjPlan.OutputBinding("y", "b"),
+				new LmdbLftjPlan.OutputBinding("z", "c")), lftj.plan().outputBindings());
+		assertEquals(List.of(
+				new LmdbLftjPlan.InequalityConstraint("a", "b"),
+				new LmdbLftjPlan.InequalityConstraint("a", "c"),
+				new LmdbLftjPlan.InequalityConstraint("b", "c")), lftj.plan().inequalityConstraints());
+	}
+
 	private TupleExpr cycle(String a, String b, String c) {
 		StatementPattern pattern1 = statementPattern(a, b);
 		StatementPattern pattern2 = statementPattern(b, c);
@@ -103,6 +190,34 @@ class LmdbLftjOptimizerTest {
 		StatementPattern pattern2 = new StatementPattern(new Var(b), new Var("p2", VF.createIRI("urn:p2")), new Var(c));
 		StatementPattern pattern3 = new StatementPattern(new Var(c), new Var("p3", VF.createIRI("urn:p3")), new Var(a));
 		return new Join(new Join(pattern2, pattern3), pattern1);
+	}
+
+	private TupleExpr aliasedCycle() {
+		Join join = new Join(new Join(statementPattern("a", "b"), statementPattern("b", "c")),
+				statementPattern("c", "a"));
+		Filter filter = new Filter(join, new And(
+				new Compare(new Var("a"), new Var("b"), Compare.CompareOp.NE),
+				new And(
+						new Compare(new Var("a"), new Var("c"), Compare.CompareOp.NE),
+						new Compare(new Var("b"), new Var("c"), Compare.CompareOp.NE))));
+		Extension extension = new Extension(filter);
+		extension.addElement(new ExtensionElem(new Var("a"), "x"));
+		extension.addElement(new ExtensionElem(new Var("b"), "y"));
+		extension.addElement(new ExtensionElem(new Var("c"), "z"));
+		return new Projection(extension, new ProjectionElemList(
+				new ProjectionElem("x"),
+				new ProjectionElem("y"),
+				new ProjectionElem("z")));
+	}
+
+	private String aliasProjectionQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (?a AS ?x) (?b AS ?y) (?c AS ?z) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
+				+ "}\n";
 	}
 
 	private LmdbLftjTupleExpr lftjNode(TupleExpr tupleExpr) {

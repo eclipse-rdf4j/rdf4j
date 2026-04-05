@@ -212,6 +212,11 @@ final class LmdbLftjSyntheticScenario {
 		}
 
 		@Override
+		public Value lazyValue(long id) {
+			return valuesById.get((int) id);
+		}
+
+		@Override
 		public boolean includeInferred() {
 			return false;
 		}

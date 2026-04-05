@@ -19,7 +19,7 @@ import java.util.Map;
 
 public final class LmdbLftjExecutionShape {
 
-	private static final int FULL_STACK_TEMPLATE_VERSION = 3;
+	private static final int FULL_STACK_TEMPLATE_VERSION = 4;
 
 	private final int variableCount;
 	private final int[][] cursorOrdinalsBySlot;
