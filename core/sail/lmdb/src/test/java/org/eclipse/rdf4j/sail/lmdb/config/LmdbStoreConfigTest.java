@@ -36,6 +36,8 @@ class LmdbStoreConfigTest {
 
 	private static final IRI LFTJ_ENABLED = Values.iri(LmdbStoreSchema.NAMESPACE + "lftjEnabled");
 
+	private static final IRI LFTJ_CODEGEN_ENABLED = Values.iri(LmdbStoreSchema.NAMESPACE + "lftjCodegenEnabled");
+
 	private static final IRI NO_READAHEAD = Values.iri(LmdbStoreSchema.NAMESPACE + "noReadahead");
 
 	@Test
@@ -51,6 +53,11 @@ class LmdbStoreConfigTest {
 	@Test
 	void lftjEnabledDefaultsToEnabled() {
 		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "isLftjEnabled")).isTrue();
+	}
+
+	@Test
+	void lftjCodegenEnabledDefaultsToEnabled() {
+		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "isLftjCodegenEnabled")).isTrue();
 	}
 
 	@ParameterizedTest
@@ -86,6 +93,18 @@ class LmdbStoreConfigTest {
 				"isLftjEnabled",
 				lftjEnabled,
 				!lftjEnabled
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportLftjCodegenEnabled(final boolean lftjCodegenEnabled) {
+		testParseAndExportReflective(
+				LFTJ_CODEGEN_ENABLED,
+				Values.literal(lftjCodegenEnabled),
+				"isLftjCodegenEnabled",
+				lftjCodegenEnabled,
+				!lftjCodegenEnabled
 		);
 	}
 

@@ -71,6 +71,9 @@ public class FoafCliqueQueryBenchmark {
 	@Param({ "true", "false" })
 	public boolean lftjEnabled;
 
+	@Param({ "true", "false" })
+	public boolean lftjCodegenEnabled;
+
 	private File dataDir;
 	private SailRepository repository;
 
@@ -84,7 +87,8 @@ public class FoafCliqueQueryBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		dataDir = Files.createTempDirectory("rdf4j-lmdb-foaf-cliques").toFile();
-		repository = new SailRepository(new LmdbStore(dataDir, createLftjBenchmarkConfig(lftjEnabled)));
+		repository = new SailRepository(new LmdbStore(dataDir, createLftjBenchmarkConfig(lftjEnabled,
+				lftjCodegenEnabled)));
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -124,9 +128,10 @@ public class FoafCliqueQueryBenchmark {
 		}
 	}
 
-	private static LmdbStoreConfig createLftjBenchmarkConfig(boolean lftjEnabled) {
+	private static LmdbStoreConfig createLftjBenchmarkConfig(boolean lftjEnabled, boolean lftjCodegenEnabled) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
 		config.setLftjEnabled(lftjEnabled);
+		config.setLftjCodegenEnabled(lftjCodegenEnabled);
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L);
 		config.setTripleDBSize(config.getValueDBSize());

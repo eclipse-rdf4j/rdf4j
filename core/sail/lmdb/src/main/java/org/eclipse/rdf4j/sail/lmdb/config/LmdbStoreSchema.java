@@ -88,6 +88,11 @@ public class LmdbStoreSchema {
 	public final static IRI LFTJ_ENABLED;
 
 	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#lftjCodegenEnabled</tt>
+	 */
+	public final static IRI LFTJ_CODEGEN_ENABLED;
+
+	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#valueEvictionInterval</tt>
 	 */
 	public final static IRI VALUE_EVICTION_INTERVAL;
@@ -106,6 +111,7 @@ public class LmdbStoreSchema {
 		AUTO_GROW = factory.createIRI(NAMESPACE, "autoGrow");
 		PAGE_CARDINALITY_ESTIMATOR = factory.createIRI(NAMESPACE, "pageCardinalityEstimator");
 		LFTJ_ENABLED = factory.createIRI(NAMESPACE, "lftjEnabled");
+		LFTJ_CODEGEN_ENABLED = factory.createIRI(NAMESPACE, "lftjCodegenEnabled");
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
 	}
 }

@@ -131,6 +131,18 @@ final class LmdbDerivedBinaryRelation {
 			this.predicateId = predicateId;
 		}
 
+		String indexName() {
+			return indexName;
+		}
+
+		boolean includeInferred() {
+			return includeInferred;
+		}
+
+		long predicateId() {
+			return predicateId;
+		}
+
 		@Override
 		public boolean equals(Object other) {
 			if (!(other instanceof RelationKey)) {

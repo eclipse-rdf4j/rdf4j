@@ -49,12 +49,15 @@ public class LmdbLftjExecutorBenchmark {
 		@Param({ "true", "false" })
 		public boolean derivedRelationEnabled;
 
+		@Param({ "true", "false" })
+		public boolean lftjCodegenEnabled;
+
 		private QueryEvaluationStep evaluationStep;
 
 		@Setup(Level.Trial)
 		public void setup() {
 			evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(
-					new BenchmarkQueryAccess(false, derivedRelationEnabled),
+					new BenchmarkQueryAccess(false, derivedRelationEnabled, lftjCodegenEnabled),
 					LmdbLftjSyntheticScenario.createPlan());
 		}
 	}
@@ -65,12 +68,15 @@ public class LmdbLftjExecutorBenchmark {
 		@Param({ "true", "false" })
 		public boolean derivedRelationEnabled;
 
+		@Param({ "true", "false" })
+		public boolean lftjCodegenEnabled;
+
 		private QueryEvaluationStep evaluationStep;
 
 		@Setup(Level.Trial)
 		public void setup() {
 			evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(
-					new BenchmarkQueryAccess(true, derivedRelationEnabled),
+					new BenchmarkQueryAccess(true, derivedRelationEnabled, lftjCodegenEnabled),
 					LmdbLftjSyntheticScenario.createPlanWithHiddenContexts());
 		}
 	}
@@ -114,16 +120,40 @@ public class LmdbLftjExecutorBenchmark {
 		private static final Set<String> DERIVED_RELATION_INDEXES = Set.of("psoc", "posc");
 		private static final Set<String> GENERIC_INDEXES = Set.of("psoc");
 
+		private final LmdbLftjCodegenCache codegenCache = new LmdbLftjCodegenCache();
 		private final Set<String> configuredIndexes;
+		private final boolean lftjCodegenEnabled;
 
-		private BenchmarkQueryAccess(boolean duplicateContexts, boolean derivedRelationEnabled) {
+		private BenchmarkQueryAccess(boolean duplicateContexts, boolean derivedRelationEnabled,
+				boolean lftjCodegenEnabled) {
 			super(duplicateContexts);
 			this.configuredIndexes = derivedRelationEnabled ? DERIVED_RELATION_INDEXES : GENERIC_INDEXES;
+			this.lftjCodegenEnabled = lftjCodegenEnabled;
 		}
 
 		@Override
 		public Set<String> configuredIndexes() {
 			return configuredIndexes;
+		}
+
+		@Override
+		public boolean lftjCodegenEnabled() {
+			return lftjCodegenEnabled;
+		}
+
+		@Override
+		public LmdbLftjCodegenCache.CacheEntry cachedCompiledPlan(String executionKey) {
+			return codegenCache.get(executionKey);
+		}
+
+		@Override
+		public void cacheCompiledPlanSuccess(String executionKey, LmdbCompiledLftjFactory factory) {
+			codegenCache.putSuccess(executionKey, factory);
+		}
+
+		@Override
+		public void cacheCompiledPlanFailure(String executionKey, String message) {
+			codegenCache.putFailure(executionKey, message);
 		}
 	}
 }

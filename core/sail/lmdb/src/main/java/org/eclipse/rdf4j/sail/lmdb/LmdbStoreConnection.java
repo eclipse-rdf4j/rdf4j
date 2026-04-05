@@ -263,6 +263,26 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			public void cachePlanningResult(String cacheKey, LmdbLftjPlanner.PlanningResult result) {
 				lmdbStore.preparedPlanCache().put(cacheKey, result);
 			}
+
+			@Override
+			public boolean lftjCodegenEnabled() {
+				return lmdbStore.getLmdbStoreConfig().isLftjCodegenEnabled();
+			}
+
+			@Override
+			public LmdbLftjCodegenCache.CacheEntry cachedCompiledPlan(String executionKey) {
+				return lmdbStore.codegenCache().get(executionKey);
+			}
+
+			@Override
+			public void cacheCompiledPlanSuccess(String executionKey, LmdbCompiledLftjFactory factory) {
+				lmdbStore.codegenCache().putSuccess(executionKey, factory);
+			}
+
+			@Override
+			public void cacheCompiledPlanFailure(String executionKey, String message) {
+				lmdbStore.codegenCache().putFailure(executionKey, message);
+			}
 		};
 	}
 

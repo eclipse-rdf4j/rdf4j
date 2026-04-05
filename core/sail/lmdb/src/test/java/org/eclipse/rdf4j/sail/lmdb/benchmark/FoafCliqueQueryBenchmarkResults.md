@@ -1,7 +1,13 @@
-Benchmark                        (cliquePercentage)  (lftjEnabled)  (maxCliqueSize)  (minCliqueSize)  (peopleCount)  (randomKnowsEdges)  (seed)  Mode  Cnt     Score     Error  Units
-FoafCliqueQueryBenchmark.cycle3                  30           true                8                3           5000               15000   12345  avgt    3    30.297 ±   7.495  ms/op
-FoafCliqueQueryBenchmark.cycle3                  30          false                8                3           5000               15000   12345  avgt    3    88.044 ±  24.824  ms/op
-FoafCliqueQueryBenchmark.cycle4                  30           true                8                3           5000               15000   12345  avgt    3   173.018 ± 254.982  ms/op
-FoafCliqueQueryBenchmark.cycle4                  30          false                8                3           5000               15000   12345  avgt    3   569.874 ± 159.548  ms/op
-FoafCliqueQueryBenchmark.cycle5                  30           true                8                3           5000               15000   12345  avgt    3  1093.809 ± 240.403  ms/op
-FoafCliqueQueryBenchmark.cycle5                  30          false                8                3           5000               15000   12345  avgt    3  3815.727 ± 256.018  ms/op
+Benchmark                        (cliquePercentage)  (lftjCodegenEnabled)  (lftjEnabled)  (maxCliqueSize)  (minCliqueSize)  (peopleCount)  (randomKnowsEdges)  (seed)  Mode  Cnt     Score     Error  Units
+FoafCliqueQueryBenchmark.cycle3                  30                  true           true                8                3           5000               15000   12345  avgt    3    22.886 ±   3.922  ms/op
+FoafCliqueQueryBenchmark.cycle3                  30                  true          false                8                3           5000               15000   12345  avgt    3    90.273 ±  22.294  ms/op
+FoafCliqueQueryBenchmark.cycle3                  30                 false           true                8                3           5000               15000   12345  avgt    3    25.738 ±   5.604  ms/op
+FoafCliqueQueryBenchmark.cycle3                  30                 false          false                8                3           5000               15000   12345  avgt    3    89.718 ±   6.997  ms/op
+FoafCliqueQueryBenchmark.cycle4                  30                  true           true                8                3           5000               15000   12345  avgt    3   116.551 ±  35.375  ms/op
+FoafCliqueQueryBenchmark.cycle4                  30                  true          false                8                3           5000               15000   12345  avgt    3   590.218 ±  82.850  ms/op
+FoafCliqueQueryBenchmark.cycle4                  30                 false           true                8                3           5000               15000   12345  avgt    3   134.350 ±  28.883  ms/op
+FoafCliqueQueryBenchmark.cycle4                  30                 false          false                8                3           5000               15000   12345  avgt    3   569.446 ±  38.531  ms/op
+FoafCliqueQueryBenchmark.cycle5                  30                  true           true                8                3           5000               15000   12345  avgt    3   712.650 ± 127.855  ms/op
+FoafCliqueQueryBenchmark.cycle5                  30                  true          false                8                3           5000               15000   12345  avgt    3  3783.058 ± 345.017  ms/op
+FoafCliqueQueryBenchmark.cycle5                  30                 false           true                8                3           5000               15000   12345  avgt    3   852.463 ± 217.004  ms/op
+FoafCliqueQueryBenchmark.cycle5                  30                 false          false                8                3           5000               15000   12345  avgt    3  3814.985 ± 530.638  ms/op

@@ -15,7 +15,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 
-interface LmdbQueryAccess {
+public interface LmdbQueryAccess {
 
 	TripleStore tripleStore();
 
@@ -42,5 +42,25 @@ interface LmdbQueryAccess {
 
 	default void cachePlanningResult(String cacheKey, LmdbLftjPlanner.PlanningResult result) {
 		// optional prepared-plan cache
+	}
+
+	default boolean lftjCodegenEnabled() {
+		return true;
+	}
+
+	default LmdbLftjCodegenCache.CacheEntry cachedCompiledPlan(String executionKey) {
+		return null;
+	}
+
+	default void cacheCompiledPlanSuccess(String executionKey, LmdbCompiledLftjFactory factory) {
+		// optional compiled-plan cache
+	}
+
+	default void cacheCompiledPlanFailure(String executionKey, String message) {
+		// optional negative cache
+	}
+
+	default LmdbLftjCodegenCompiler codegenCompiler() {
+		return LmdbLftjCodegenCompiler.INSTANCE;
 	}
 }

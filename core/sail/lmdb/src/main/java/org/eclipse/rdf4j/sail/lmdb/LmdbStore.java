@@ -102,6 +102,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 */
 	private final ReentrantLock txnLockManager = new ReentrantLock();
 	private final LmdbLftjPreparedPlanCache preparedPlanCache = new LmdbLftjPreparedPlanCache();
+	private final LmdbLftjCodegenCache codegenCache = new LmdbLftjCodegenCache();
 
 	/**
 	 * Holds locks for all isolated transactions.
@@ -342,6 +343,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 		}
 		preparedPlanCache.clear();
+		codegenCache.clear();
 		logger.debug("LmdbStore shut down");
 	}
 
@@ -371,6 +373,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	LmdbLftjPreparedPlanCache preparedPlanCache() {
 		return preparedPlanCache;
+	}
+
+	LmdbLftjCodegenCache codegenCache() {
+		return codegenCache;
 	}
 
 	/**

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
+import java.nio.file.Path;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -27,41 +28,48 @@ import org.junit.jupiter.api.io.TempDir;
 class FoafCliqueLftjCorrectnessTest {
 
 	@Test
-	void cycle3ShouldMatchRegularJoinCount(@TempDir File disabledDir, @TempDir File enabledDir) {
-		assertCycleCountMatches(disabledDir, enabledDir, 3);
+	void cycle3ShouldMatchRegularJoinCount(@TempDir Path tempDir) {
+		assertCycleCountMatches(tempDir, 3);
 	}
 
 	@Test
-	void cycle4ShouldMatchRegularJoinCount(@TempDir File disabledDir, @TempDir File enabledDir) {
-		assertCycleCountMatches(disabledDir, enabledDir, 4);
+	void cycle4ShouldMatchRegularJoinCount(@TempDir Path tempDir) {
+		assertCycleCountMatches(tempDir, 4);
 	}
 
 	@Test
-	void cycle5ShouldMatchRegularJoinCount(@TempDir File disabledDir, @TempDir File enabledDir) {
-		assertCycleCountMatches(disabledDir, enabledDir, 5);
+	void cycle5ShouldMatchRegularJoinCount(@TempDir Path tempDir) {
+		assertCycleCountMatches(tempDir, 5);
 	}
 
-	private void assertCycleCountMatches(File disabledDir, File enabledDir, int cycleSize) {
-		Repository disabledRepository = createRepository(disabledDir, false);
-		Repository enabledRepository = createRepository(enabledDir, true);
+	private void assertCycleCountMatches(Path tempDir, int cycleSize) {
+		Repository fallbackRepository = createRepository(tempDir.resolve("fallback").toFile(), false, false);
+		Repository interpretedRepository = createRepository(tempDir.resolve("interpreted").toFile(), true, false);
+		Repository compiledRepository = createRepository(tempDir.resolve("compiled").toFile(), true, true);
 
 		try {
-			populate(disabledRepository);
-			populate(enabledRepository);
+			populate(fallbackRepository);
+			populate(interpretedRepository);
+			populate(compiledRepository);
 
-			long expected = executeCount(disabledRepository, cycleQuery(cycleSize));
-			long actual = executeCount(enabledRepository, cycleQuery(cycleSize));
+			long expected = executeCount(fallbackRepository, cycleQuery(cycleSize));
+			long interpreted = executeCount(interpretedRepository, cycleQuery(cycleSize));
+			long compiled = executeCount(compiledRepository, cycleQuery(cycleSize));
 
-			assertEquals(expected, actual, "LFTJ must preserve the cycle" + cycleSize + " result count");
+			assertEquals(expected, interpreted,
+					"Interpreted LFTJ must preserve the cycle" + cycleSize + " result count");
+			assertEquals(expected, compiled, "Compiled LFTJ must preserve the cycle" + cycleSize + " result count");
 		} finally {
-			disabledRepository.shutDown();
-			enabledRepository.shutDown();
+			fallbackRepository.shutDown();
+			interpretedRepository.shutDown();
+			compiledRepository.shutDown();
 		}
 	}
 
-	private Repository createRepository(File dataDir, boolean lftjEnabled) {
+	private Repository createRepository(File dataDir, boolean lftjEnabled, boolean lftjCodegenEnabled) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
 		config.setLftjEnabled(lftjEnabled);
+		config.setLftjCodegenEnabled(lftjCodegenEnabled);
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L);
 		config.setTripleDBSize(config.getValueDBSize());

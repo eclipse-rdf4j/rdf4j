@@ -19,13 +19,14 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
-final class LmdbLftjPlan {
+public final class LmdbLftjPlan {
 
 	private final TupleExpr fallbackExpr;
 	private final Set<String> bindingNames;
 	private final Set<String> assuredBindingNames;
 	private final List<String> variableOrder;
 	private final List<LmdbLftjPatternPlan> patternPlans;
+	private final String executionKey;
 
 	LmdbLftjPlan(TupleExpr fallbackExpr, Set<String> bindingNames, Set<String> assuredBindingNames,
 			List<String> variableOrder, List<LmdbLftjPatternPlan> patternPlans) {
@@ -34,6 +35,7 @@ final class LmdbLftjPlan {
 		this.assuredBindingNames = Set.copyOf(new LinkedHashSet<>(assuredBindingNames));
 		this.variableOrder = List.copyOf(variableOrder);
 		this.patternPlans = List.copyOf(patternPlans);
+		this.executionKey = executionKey(this.variableOrder, this.patternPlans);
 	}
 
 	TupleExpr fallbackExpr() {
@@ -54,6 +56,10 @@ final class LmdbLftjPlan {
 
 	List<LmdbLftjPatternPlan> patternPlans() {
 		return patternPlans;
+	}
+
+	public String executionKey() {
+		return executionKey;
 	}
 
 	List<String> indexNames() {
@@ -85,5 +91,49 @@ final class LmdbLftjPlan {
 	@Override
 	public int hashCode() {
 		return Objects.hash(fallbackExpr, bindingNames, assuredBindingNames, variableOrder, patternPlans);
+	}
+
+	private static String executionKey(List<String> variableOrder, List<LmdbLftjPatternPlan> patternPlans) {
+		StringBuilder builder = new StringBuilder(variableOrder.size() * 16 + patternPlans.size() * 48);
+		builder.append("varOrder=");
+		for (String variable : variableOrder) {
+			builder.append(variable).append(',');
+		}
+		builder.append(";patterns=");
+		for (LmdbLftjPatternPlan patternPlan : patternPlans) {
+			builder.append(patternPlan.indexName()).append(':').append(patternKey(patternPlan.pattern())).append(';');
+		}
+		return builder.toString();
+	}
+
+	private static String patternKey(org.eclipse.rdf4j.query.algebra.StatementPattern pattern) {
+		StringBuilder builder = new StringBuilder(48);
+		builder.append('[').append(pattern.getScope().name()).append(';');
+		appendTerm(builder, pattern.getSubjectVar());
+		appendTerm(builder, pattern.getPredicateVar());
+		appendTerm(builder, pattern.getObjectVar());
+		appendTerm(builder, pattern.getContextVar());
+		builder.append(']');
+		return builder.toString();
+	}
+
+	private static void appendTerm(StringBuilder builder, org.eclipse.rdf4j.query.algebra.Var var) {
+		if (var == null) {
+			builder.append("null;");
+			return;
+		}
+		if (var.hasValue()) {
+			builder.append("const=")
+					.append(var.getValue().getClass().getSimpleName())
+					.append(':')
+					.append(var.getValue())
+					.append(';');
+			return;
+		}
+		if (var.isAnonymous() || var.getName() == null) {
+			builder.append("hidden;");
+			return;
+		}
+		builder.append("var=").append(var.getName()).append(';');
 	}
 }

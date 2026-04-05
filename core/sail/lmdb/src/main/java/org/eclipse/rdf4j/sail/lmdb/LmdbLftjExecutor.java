@@ -33,10 +33,12 @@ final class LmdbLftjExecutor {
 
 	QueryEvaluationStep prepare(LmdbLftjTupleExpr node, QueryEvaluationContext context) {
 		LazyFallbackStep fallback = new LazyFallbackStep(node.plan().fallbackExpr().clone(), context);
-		return bindings -> evaluate(node.plan(), context, fallback, bindings);
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(node.plan());
+		return bindings -> evaluate(node.plan(), shape, context, fallback, bindings);
 	}
 
-	private CloseableIteration<BindingSet> evaluate(LmdbLftjPlan plan, QueryEvaluationContext context,
+	private CloseableIteration<BindingSet> evaluate(LmdbLftjPlan plan, LmdbLftjExecutionShape shape,
+			QueryEvaluationContext context,
 			LazyFallbackStep fallback, BindingSet bindings) {
 		LmdbQueryAccess queryAccess = strategy.queryAccess();
 		if (queryAccess == null) {
@@ -48,12 +50,37 @@ final class LmdbLftjExecutor {
 			return fallback.evaluate(bindings);
 		}
 
+		LmdbCompiledLftjFactory compiledFactory = compiledFactory(queryAccess, plan, shape);
 		try {
 			state.attachTxn(queryAccess.acquireReadTxn());
+			if (compiledFactory != null) {
+				return compiledFactory.create(plan, shape, state, context, queryAccess, new LmdbLftjMetrics());
+			}
 			return new LmdbLftjIteration(plan, state, context, queryAccess, new LmdbLftjMetrics());
 		} catch (RuntimeException e) {
 			state.close();
 			throw new QueryEvaluationException("LMDB LFTJ execution failed", e);
+		}
+	}
+
+	private LmdbCompiledLftjFactory compiledFactory(LmdbQueryAccess queryAccess, LmdbLftjPlan plan,
+			LmdbLftjExecutionShape shape) {
+		if (!queryAccess.lftjCodegenEnabled()) {
+			return null;
+		}
+
+		LmdbLftjCodegenCache.CacheEntry cached = queryAccess.cachedCompiledPlan(plan.executionKey());
+		if (cached != null) {
+			return cached.compiled() ? cached.factory() : null;
+		}
+
+		try {
+			LmdbCompiledLftjFactory factory = queryAccess.codegenCompiler().compile(plan, shape);
+			queryAccess.cacheCompiledPlanSuccess(plan.executionKey(), factory);
+			return factory;
+		} catch (RuntimeException e) {
+			queryAccess.cacheCompiledPlanFailure(plan.executionKey(), e.getMessage());
+			return null;
 		}
 	}
 

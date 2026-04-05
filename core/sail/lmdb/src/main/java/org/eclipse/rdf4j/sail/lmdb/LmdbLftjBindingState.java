@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
-final class LmdbLftjBindingState {
+public final class LmdbLftjBindingState {
 
 	private final LmdbLftjPlan plan;
 	private final BindingSet inputBindings;
@@ -95,6 +95,10 @@ final class LmdbLftjBindingState {
 		return assignedPresent[slot] || fixedPresent[slot];
 	}
 
+	boolean isFixed(int slot) {
+		return fixedPresent[slot];
+	}
+
 	long value(String variableName) {
 		return value(slot(variableName));
 	}
@@ -110,7 +114,7 @@ final class LmdbLftjBindingState {
 		assign(slot(variableName), value);
 	}
 
-	void assign(int slot, long value) {
+	public void assign(int slot, long value) {
 		assignedValues[slot] = value;
 		assignedPresent[slot] = true;
 	}
@@ -119,7 +123,7 @@ final class LmdbLftjBindingState {
 		clear(slot(variableName));
 	}
 
-	void clear(int slot) {
+	public void clear(int slot) {
 		assignedPresent[slot] = false;
 	}
 

@@ -21,9 +21,21 @@ final class LmdbPrefixFrontierProvider {
 	private final LmdbQueryAccess queryAccess;
 	private final LmdbLftjBindingState state;
 	private final LmdbLftjMetrics metrics;
-	private final Map<FrontierKey, LmdbCachedFrontier> frontierCache = new HashMap<>();
-	private final Map<CountKey, Long> countCache = new HashMap<>();
+	private final Map<FrontierCacheKey, LmdbCachedFrontier> frontierCache = new HashMap<>();
+	private final Map<CountCacheKey, Long> countCache = new HashMap<>();
 	private final Map<LmdbDerivedBinaryRelation.RelationKey, LmdbDerivedBinaryRelation> relationCache = new HashMap<>();
+	private final FrontierLookupKey frontierLookup = new FrontierLookupKey();
+	private final CountLookupKey countLookup = new CountLookupKey();
+	private final RelationLookupKey relationLookup = new RelationLookupKey();
+	private final long[] frontierLowerBound = new long[4];
+	private final long[] frontierUpperBound = new long[4];
+	private final long[] countLowerBound = new long[4];
+	private final long[] countUpperBound = new long[4];
+	private final long[] relationLowerBound = new long[4];
+	private final long[] relationUpperBound = new long[4];
+	private final LmdbDerivedBinaryRelation.LongArrayBuilder frontierValues = new LmdbDerivedBinaryRelation.LongArrayBuilder();
+	private final FrontierCollector frontierCollector = new FrontierCollector();
+	private final CountCollector countCollector = new CountCollector();
 
 	LmdbPrefixFrontierProvider(LmdbQueryAccess queryAccess, LmdbLftjBindingState state, LmdbLftjMetrics metrics) {
 		this.queryAccess = queryAccess;
@@ -32,7 +44,7 @@ final class LmdbPrefixFrontierProvider {
 	}
 
 	LmdbCachedFrontier frontier(LmdbLftjPatternPlan patternPlan, int bindingSlot) {
-		FrontierKey key = FrontierKey.create(patternPlan, bindingSlot, state);
+		FrontierLookupKey key = frontierLookup.init(patternPlan, bindingSlot, state);
 		LmdbCachedFrontier frontier = frontierCache.get(key);
 		if (frontier != null) {
 			metrics.recordFrontierHit();
@@ -41,12 +53,12 @@ final class LmdbPrefixFrontierProvider {
 
 		metrics.recordFrontierLoad();
 		frontier = loadFrontier(patternPlan, bindingSlot);
-		frontierCache.put(key, frontier);
+		frontierCache.put(key.freeze(), frontier);
 		return frontier;
 	}
 
 	long countMatches(LmdbLftjPatternPlan patternPlan) {
-		CountKey key = CountKey.create(patternPlan, state);
+		CountLookupKey key = countLookup.init(patternPlan, state);
 		Long count = countCache.get(key);
 		if (count != null) {
 			metrics.recordCountHit();
@@ -55,7 +67,7 @@ final class LmdbPrefixFrontierProvider {
 
 		metrics.recordCountLoad();
 		long loaded = loadCount(patternPlan);
-		countCache.put(key, loaded);
+		countCache.put(key.freeze(), loaded);
 		return loaded;
 	}
 
@@ -67,20 +79,11 @@ final class LmdbPrefixFrontierProvider {
 		}
 
 		int keyFieldIndex = patternPlan.keyFieldIndexForBindingSlot(bindingSlot);
-		long[] lowerBound = new long[4];
-		long[] upperBound = new long[4];
-		patternPlan.fillRangeBounds(state, bindingSlot, 0L, lowerBound, upperBound);
-
-		LmdbDerivedBinaryRelation.LongArrayBuilder values = new LmdbDerivedBinaryRelation.LongArrayBuilder();
-		long[] last = { Long.MIN_VALUE };
-		forEachUniqueRow(patternPlan, lowerBound, upperBound, keyFieldIndex + 1, row -> {
-			long value = row[keyFieldIndex];
-			if (value != last[0]) {
-				values.add(value);
-				last[0] = value;
-			}
-		});
-		return new LmdbCachedFrontier(values.toArray(), null);
+		Arrays.fill(frontierLowerBound, 0L);
+		patternPlan.fillRangeBounds(state, bindingSlot, 0L, frontierLowerBound, frontierUpperBound);
+		forEachUniqueRow(patternPlan, frontierLowerBound, frontierUpperBound, keyFieldIndex + 1,
+				frontierCollector.reset(keyFieldIndex));
+		return new LmdbCachedFrontier(frontierValues.toArray(), null);
 	}
 
 	private long loadCount(LmdbLftjPatternPlan patternPlan) {
@@ -90,13 +93,11 @@ final class LmdbPrefixFrontierProvider {
 			return derived;
 		}
 
-		long[] lowerBound = new long[4];
-		long[] upperBound = new long[4];
-		patternPlan.fillMatchRange(state, lowerBound, upperBound);
-
-		long[] count = { 0L };
-		forEachUniqueRow(patternPlan, lowerBound, upperBound, patternPlan.fixedPrefixLength(state), row -> count[0]++);
-		return count[0];
+		Arrays.fill(countLowerBound, 0L);
+		patternPlan.fillMatchRange(state, countLowerBound, countUpperBound);
+		forEachUniqueRow(patternPlan, countLowerBound, countUpperBound, patternPlan.fixedPrefixLength(state),
+				countCollector.reset());
+		return countCollector.count();
 	}
 
 	private LmdbCachedFrontier derivedFrontier(LmdbLftjPatternPlan patternPlan, int bindingSlot) {
@@ -138,11 +139,9 @@ final class LmdbPrefixFrontierProvider {
 
 	private LmdbDerivedBinaryRelation relation(LmdbLftjPatternPlan patternPlan) {
 		long predicateId = state.fixedId(patternPlan.predicateTerm());
-		LmdbDerivedBinaryRelation.RelationKey key = new LmdbDerivedBinaryRelation.RelationKey(
-				patternPlan.indexName(),
-				queryAccess.includeInferred(),
+		RelationLookupKey lookup = relationLookup.init(patternPlan.indexName(), queryAccess.includeInferred(),
 				predicateId);
-		LmdbDerivedBinaryRelation relation = relationCache.get(key);
+		LmdbDerivedBinaryRelation relation = relationCache.get(lookup);
 		if (relation != null) {
 			metrics.recordRelationHit();
 			return relation;
@@ -153,17 +152,16 @@ final class LmdbPrefixFrontierProvider {
 		int targetComponent = patternPlan.keyTerm(2).component();
 		LmdbDerivedBinaryRelation.Builder builder = new LmdbDerivedBinaryRelation.Builder(sourceComponent,
 				targetComponent);
-		long[] lowerBound = new long[4];
-		long[] upperBound = new long[4];
-		Arrays.fill(upperBound, Long.MAX_VALUE);
-		lowerBound[TripleStore.PRED_IDX] = predicateId;
-		upperBound[TripleStore.PRED_IDX] = predicateId;
+		Arrays.fill(relationLowerBound, 0L);
+		Arrays.fill(relationUpperBound, Long.MAX_VALUE);
+		relationLowerBound[TripleStore.PRED_IDX] = predicateId;
+		relationUpperBound[TripleStore.PRED_IDX] = predicateId;
 		int sourceKeyField = patternPlan.keyFieldIndexForComponent(sourceComponent);
 		int targetKeyField = patternPlan.keyFieldIndexForComponent(targetComponent);
-		forEachUniqueRow(patternPlan, lowerBound, upperBound, 1,
+		forEachUniqueRow(patternPlan, relationLowerBound, relationUpperBound, 1,
 				row -> builder.add(row[sourceKeyField], row[targetKeyField]));
 		relation = builder.build();
-		relationCache.put(key, relation);
+		relationCache.put(lookup.freeze(), relation);
 		return relation;
 	}
 
@@ -209,6 +207,45 @@ final class LmdbPrefixFrontierProvider {
 
 	private interface RowConsumer {
 		void accept(long[] row);
+	}
+
+	private final class FrontierCollector implements RowConsumer {
+		private int keyFieldIndex;
+		private long last;
+
+		private FrontierCollector reset(int keyFieldIndex) {
+			this.keyFieldIndex = keyFieldIndex;
+			this.last = Long.MIN_VALUE;
+			frontierValues.clear();
+			return this;
+		}
+
+		@Override
+		public void accept(long[] row) {
+			long value = row[keyFieldIndex];
+			if (value != last) {
+				frontierValues.add(value);
+				last = value;
+			}
+		}
+	}
+
+	private static final class CountCollector implements RowConsumer {
+		private long count;
+
+		private CountCollector reset() {
+			count = 0L;
+			return this;
+		}
+
+		@Override
+		public void accept(long[] row) {
+			count++;
+		}
+
+		private long count() {
+			return count;
+		}
 	}
 
 	private static final class CursorReader implements AutoCloseable {
@@ -264,72 +301,211 @@ final class LmdbPrefixFrontierProvider {
 		}
 	}
 
-	private static final class FrontierKey {
+	private static final class FrontierCacheKey {
 		private final LmdbLftjPatternPlan patternPlan;
 		private final int bindingSlot;
-		private final long[] prefix;
+		private final int prefixLength;
+		private final long prefix0;
+		private final long prefix1;
+		private final long prefix2;
 
-		private FrontierKey(LmdbLftjPatternPlan patternPlan, int bindingSlot, long[] prefix) {
+		private FrontierCacheKey(LmdbLftjPatternPlan patternPlan, int bindingSlot, int prefixLength, long prefix0,
+				long prefix1, long prefix2) {
 			this.patternPlan = patternPlan;
 			this.bindingSlot = bindingSlot;
-			this.prefix = prefix;
-		}
-
-		static FrontierKey create(LmdbLftjPatternPlan patternPlan, int bindingSlot, LmdbLftjBindingState state) {
-			int keyFieldIndex = patternPlan.keyFieldIndexForBindingSlot(bindingSlot);
-			long[] prefix = new long[keyFieldIndex];
-			for (int i = 0; i < keyFieldIndex; i++) {
-				prefix[i] = state.fixedId(patternPlan.keyTerm(i));
-			}
-			return new FrontierKey(patternPlan, bindingSlot, prefix);
+			this.prefixLength = prefixLength;
+			this.prefix0 = prefix0;
+			this.prefix1 = prefix1;
+			this.prefix2 = prefix2;
 		}
 
 		@Override
 		public boolean equals(Object other) {
-			if (!(other instanceof FrontierKey)) {
+			if (!(other instanceof FrontierCacheKey)) {
 				return false;
 			}
-			FrontierKey o = (FrontierKey) other;
+			FrontierCacheKey o = (FrontierCacheKey) other;
 			return Objects.equals(patternPlan, o.patternPlan)
 					&& bindingSlot == o.bindingSlot
-					&& Arrays.equals(prefix, o.prefix);
+					&& prefixLength == o.prefixLength
+					&& prefix0 == o.prefix0
+					&& prefix1 == o.prefix1
+					&& prefix2 == o.prefix2;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(patternPlan, bindingSlot, Arrays.hashCode(prefix));
+			return frontierHash(patternPlan, bindingSlot, prefixLength, prefix0, prefix1, prefix2);
 		}
 	}
 
-	private static final class CountKey {
-		private final LmdbLftjPatternPlan patternPlan;
-		private final long[] fixedValues;
+	private static final class FrontierLookupKey {
+		private LmdbLftjPatternPlan patternPlan;
+		private int bindingSlot;
+		private int prefixLength;
+		private long prefix0;
+		private long prefix1;
+		private long prefix2;
 
-		private CountKey(LmdbLftjPatternPlan patternPlan, long[] fixedValues) {
+		private FrontierLookupKey init(LmdbLftjPatternPlan patternPlan, int bindingSlot, LmdbLftjBindingState state) {
 			this.patternPlan = patternPlan;
-			this.fixedValues = fixedValues;
+			this.bindingSlot = bindingSlot;
+			this.prefixLength = patternPlan.keyFieldIndexForBindingSlot(bindingSlot);
+			this.prefix0 = prefixLength > 0 ? state.fixedId(patternPlan.keyTerm(0)) : 0L;
+			this.prefix1 = prefixLength > 1 ? state.fixedId(patternPlan.keyTerm(1)) : 0L;
+			this.prefix2 = prefixLength > 2 ? state.fixedId(patternPlan.keyTerm(2)) : 0L;
+			return this;
 		}
 
-		static CountKey create(LmdbLftjPatternPlan patternPlan, LmdbLftjBindingState state) {
-			long[] fixedValues = new long[4];
-			for (int i = 0; i < 4; i++) {
-				fixedValues[i] = state.fixedId(patternPlan.termForComponent(i));
-			}
-			return new CountKey(patternPlan, fixedValues);
+		private FrontierCacheKey freeze() {
+			return new FrontierCacheKey(patternPlan, bindingSlot, prefixLength, prefix0, prefix1, prefix2);
 		}
 
 		@Override
 		public boolean equals(Object other) {
-			if (!(other instanceof CountKey)) {
+			if (!(other instanceof FrontierCacheKey)) {
 				return false;
 			}
-			CountKey o = (CountKey) other;
-			return Objects.equals(patternPlan, o.patternPlan) && Arrays.equals(fixedValues, o.fixedValues);
+			FrontierCacheKey o = (FrontierCacheKey) other;
+			return Objects.equals(patternPlan, o.patternPlan)
+					&& bindingSlot == o.bindingSlot
+					&& prefixLength == o.prefixLength
+					&& prefix0 == o.prefix0
+					&& prefix1 == o.prefix1
+					&& prefix2 == o.prefix2;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(patternPlan, Arrays.hashCode(fixedValues));
+			return frontierHash(patternPlan, bindingSlot, prefixLength, prefix0, prefix1, prefix2);
+		}
+	}
+
+	private static int frontierHash(LmdbLftjPatternPlan patternPlan, int bindingSlot, int prefixLength, long prefix0,
+			long prefix1, long prefix2) {
+		int result = Objects.hashCode(patternPlan);
+		result = 31 * result + bindingSlot;
+		result = 31 * result + prefixLength;
+		result = 31 * result + Long.hashCode(prefix0);
+		result = 31 * result + Long.hashCode(prefix1);
+		result = 31 * result + Long.hashCode(prefix2);
+		return result;
+	}
+
+	private static final class CountCacheKey {
+		private final LmdbLftjPatternPlan patternPlan;
+		private final long subjectValue;
+		private final long predicateValue;
+		private final long objectValue;
+		private final long contextValue;
+
+		private CountCacheKey(LmdbLftjPatternPlan patternPlan, long subjectValue, long predicateValue, long objectValue,
+				long contextValue) {
+			this.patternPlan = patternPlan;
+			this.subjectValue = subjectValue;
+			this.predicateValue = predicateValue;
+			this.objectValue = objectValue;
+			this.contextValue = contextValue;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (!(other instanceof CountCacheKey)) {
+				return false;
+			}
+			CountCacheKey o = (CountCacheKey) other;
+			return Objects.equals(patternPlan, o.patternPlan)
+					&& subjectValue == o.subjectValue
+					&& predicateValue == o.predicateValue
+					&& objectValue == o.objectValue
+					&& contextValue == o.contextValue;
+		}
+
+		@Override
+		public int hashCode() {
+			int result = Objects.hashCode(patternPlan);
+			result = 31 * result + Long.hashCode(subjectValue);
+			result = 31 * result + Long.hashCode(predicateValue);
+			result = 31 * result + Long.hashCode(objectValue);
+			result = 31 * result + Long.hashCode(contextValue);
+			return result;
+		}
+	}
+
+	private static final class CountLookupKey {
+		private LmdbLftjPatternPlan patternPlan;
+		private long subjectValue;
+		private long predicateValue;
+		private long objectValue;
+		private long contextValue;
+
+		private CountLookupKey init(LmdbLftjPatternPlan patternPlan, LmdbLftjBindingState state) {
+			this.patternPlan = patternPlan;
+			this.subjectValue = state.fixedId(patternPlan.termForComponent(TripleStore.SUBJ_IDX));
+			this.predicateValue = state.fixedId(patternPlan.termForComponent(TripleStore.PRED_IDX));
+			this.objectValue = state.fixedId(patternPlan.termForComponent(TripleStore.OBJ_IDX));
+			this.contextValue = state.fixedId(patternPlan.termForComponent(TripleStore.CONTEXT_IDX));
+			return this;
+		}
+
+		private CountCacheKey freeze() {
+			return new CountCacheKey(patternPlan, subjectValue, predicateValue, objectValue, contextValue);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (!(other instanceof CountCacheKey)) {
+				return false;
+			}
+			CountCacheKey o = (CountCacheKey) other;
+			return Objects.equals(patternPlan, o.patternPlan)
+					&& subjectValue == o.subjectValue
+					&& predicateValue == o.predicateValue
+					&& objectValue == o.objectValue
+					&& contextValue == o.contextValue;
+		}
+
+		@Override
+		public int hashCode() {
+			int result = Objects.hashCode(patternPlan);
+			result = 31 * result + Long.hashCode(subjectValue);
+			result = 31 * result + Long.hashCode(predicateValue);
+			result = 31 * result + Long.hashCode(objectValue);
+			result = 31 * result + Long.hashCode(contextValue);
+			return result;
+		}
+	}
+
+	private static final class RelationLookupKey {
+		private String indexName;
+		private boolean includeInferred;
+		private long predicateId;
+
+		private RelationLookupKey init(String indexName, boolean includeInferred, long predicateId) {
+			this.indexName = indexName;
+			this.includeInferred = includeInferred;
+			this.predicateId = predicateId;
+			return this;
+		}
+
+		private LmdbDerivedBinaryRelation.RelationKey freeze() {
+			return new LmdbDerivedBinaryRelation.RelationKey(indexName, includeInferred, predicateId);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (!(other instanceof LmdbDerivedBinaryRelation.RelationKey)) {
+				return false;
+			}
+			LmdbDerivedBinaryRelation.RelationKey o = (LmdbDerivedBinaryRelation.RelationKey) other;
+			return includeInferred == o.includeInferred()
+					&& predicateId == o.predicateId()
+					&& Objects.equals(indexName, o.indexName());
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(indexName, includeInferred, predicateId);
 		}
 	}
 }
