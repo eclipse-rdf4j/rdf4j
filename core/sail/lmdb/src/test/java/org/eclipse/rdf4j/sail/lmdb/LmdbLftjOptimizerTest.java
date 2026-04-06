@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.HashMap;
 import java.util.List;
@@ -39,12 +40,14 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -167,6 +170,111 @@ class LmdbLftjOptimizerTest {
 				new LmdbLftjPlan.InequalityConstraint("b", "c")), lftj.plan().inequalityConstraints());
 	}
 
+	@Test
+	void optimizeShouldFuseReorderedDuplicateProjectionQuery() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(reorderedDuplicateAliasProjectionQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = lftjNode(tupleExpr);
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("z", "c"),
+				new LmdbLftjPlan.OutputBinding("x", "a"),
+				new LmdbLftjPlan.OutputBinding("x2", "a")), lftj.plan().outputBindings());
+		assertEquals(List.of(
+				new LmdbLftjPlan.InequalityConstraint("a", "b"),
+				new LmdbLftjPlan.InequalityConstraint("a", "c"),
+				new LmdbLftjPlan.InequalityConstraint("b", "c")), lftj.plan().inequalityConstraints());
+	}
+
+	@Test
+	void optimizeShouldCanonicalizeDuplicateAndReversedInequalities() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(duplicateReversedInequalityQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = lftjNode(tupleExpr);
+		assertEquals(List.of(
+				new LmdbLftjPlan.InequalityConstraint("a", "b"),
+				new LmdbLftjPlan.InequalityConstraint("a", "c"),
+				new LmdbLftjPlan.InequalityConstraint("b", "c")), lftj.plan().inequalityConstraints());
+	}
+
+	@Test
+	void optimizeShouldLeaveUnsupportedOrFilterOutsideLftjNode() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(unsupportedOrFilterQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertEquals(List.of(), lftj.plan().inequalityConstraints());
+		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertInstanceOf(Projection.class, findNode(tupleExpr, Projection.class));
+	}
+
+	@Test
+	void optimizeShouldLeaveRepeatedVariablePatternOutsideLftjNode() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(repeatedVariableQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		assertNull(findNode(tupleExpr, LmdbLftjTupleExpr.class));
+	}
+
+	@Test
+	void optimizeShouldLeaveComputedExtensionOutsideLftjNode() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(computedExtensionQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertEquals(List.of(), lftj.plan().inequalityConstraints());
+		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertInstanceOf(Extension.class, findNode(tupleExpr, Extension.class));
+		assertInstanceOf(Projection.class, findNode(tupleExpr, Projection.class));
+	}
+
+	@Test
+	void optimizeShouldLeaveChainedAliasExtensionOutsideFusedOutputs() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(chainedAliasProjectionQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("a", "a"),
+				new LmdbLftjPlan.OutputBinding("b", "b"),
+				new LmdbLftjPlan.OutputBinding("c", "c")), lftj.plan().outputBindings());
+		assertEquals(List.of(), lftj.plan().inequalityConstraints());
+		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertInstanceOf(Extension.class, findNode(tupleExpr, Extension.class));
+		assertInstanceOf(Projection.class, findNode(tupleExpr, Projection.class));
+	}
+
 	private TupleExpr cycle(String a, String b, String c) {
 		StatementPattern pattern1 = statementPattern(a, b);
 		StatementPattern pattern2 = statementPattern(b, c);
@@ -220,8 +328,92 @@ class LmdbLftjOptimizerTest {
 				+ "}\n";
 	}
 
+	private String reorderedDuplicateAliasProjectionQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (?c AS ?z) (?a AS ?x) (?a AS ?x2) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
+				+ "}\n";
+	}
+
+	private String duplicateReversedInequalityQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (?a AS ?x) (?b AS ?y) (?c AS ?z) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?b != ?a && ?a != ?b && ?c != ?a && ?b != ?c)\n"
+				+ "}\n";
+	}
+
+	private String unsupportedOrFilterQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (?a AS ?x) (?b AS ?y) (?c AS ?z) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b || ?a != ?c)\n"
+				+ "}\n";
+	}
+
+	private String computedExtensionQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (STR(?a) AS ?x) ?b ?c WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
+				+ "}\n";
+	}
+
+	private String chainedAliasProjectionQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT ?y ?b ?c WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
+				+ "  BIND(?a AS ?x)\n"
+				+ "  BIND(?x AS ?y)\n"
+				+ "}\n";
+	}
+
+	private String repeatedVariableQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT * WHERE {\n"
+				+ "  ?a foaf:knows ?a .\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?a .\n"
+				+ "}\n";
+	}
+
+	private TupleExpr parsedQueryRoot(String query) throws Exception {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr tupleExpr = parsed.getTupleExpr().clone();
+		if (!(tupleExpr instanceof QueryRoot)) {
+			tupleExpr = new QueryRoot(tupleExpr);
+		}
+		return tupleExpr;
+	}
+
 	private LmdbLftjTupleExpr lftjNode(TupleExpr tupleExpr) {
 		return assertInstanceOf(LmdbLftjTupleExpr.class, assertInstanceOf(QueryRoot.class, tupleExpr).getArg());
+	}
+
+	private <T extends QueryModelNode> T findNode(TupleExpr tupleExpr, Class<T> type) {
+		QueryModelNode[] result = new QueryModelNode[1];
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (result[0] == null && type.isInstance(node)) {
+					result[0] = node;
+				}
+				super.meetNode(node);
+			}
+		});
+		return type.cast(result[0]);
 	}
 
 	private static final class EmptyTripleSource implements TripleSource {

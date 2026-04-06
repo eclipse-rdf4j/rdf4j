@@ -64,6 +64,22 @@ class LmdbLftjCodegenTest {
 	}
 
 	@Test
+	void executionKeyShouldDifferentiateHiddenContextMultiplicityPlans() {
+		assertThat(invokeStringGetter(LmdbLftjSyntheticScenario.createPlan(), "executionKey"))
+				.isNotEqualTo(invokeStringGetter(LmdbLftjSyntheticScenario.createPlanWithHiddenContexts(),
+						"executionKey"));
+	}
+
+	@Test
+	void executionKeyShouldDifferentiateProjectedAliasLayouts() {
+		LmdbLftjPlan aliasedPlan = syntheticAliasedPlan();
+		LmdbLftjPlan duplicateAliasedPlan = syntheticDuplicateAliasedPlan();
+
+		assertThat(invokeStringGetter(aliasedPlan, "executionKey"))
+				.isNotEqualTo(invokeStringGetter(duplicateAliasedPlan, "executionKey"));
+	}
+
+	@Test
 	void syntheticQueryAccessShouldEnableCodegenByDefault() {
 		assertThat(invokeBooleanGetter(new LmdbLftjSyntheticScenario.TestQueryAccess(), "lftjCodegenEnabled"))
 				.isTrue();
@@ -178,6 +194,41 @@ class LmdbLftjCodegenTest {
 	}
 
 	@Test
+	void compiledAndInterpretedShouldMatchForPartiallyBoundHiddenContextInput() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlanWithHiddenContexts();
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.setBinding("a", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+		bindings.setBinding("b", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:2"));
+
+		List<String> interpreted = drain(
+				LmdbLftjSyntheticScenario.createEvaluationStep(new InterpretedQueryAccess(true), plan), bindings);
+		List<String> compiled = drain(
+				LmdbLftjSyntheticScenario.createEvaluationStep(
+						new CachingQueryAccess(true, new CountingCompiler()), plan),
+				bindings);
+
+		assertThat(compiled).hasSize(54).containsExactlyElementsOf(interpreted);
+	}
+
+	@Test
+	void compiledAndInterpretedShouldMatchForFullyBoundHiddenContextInput() {
+		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlanWithHiddenContexts();
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.setBinding("a", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+		bindings.setBinding("b", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:2"));
+		bindings.setBinding("c", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:3"));
+
+		List<String> interpreted = drain(
+				LmdbLftjSyntheticScenario.createEvaluationStep(new InterpretedQueryAccess(true), plan), bindings);
+		List<String> compiled = drain(
+				LmdbLftjSyntheticScenario.createEvaluationStep(
+						new CachingQueryAccess(true, new CountingCompiler()), plan),
+				bindings);
+
+		assertThat(compiled).hasSize(27).containsExactlyElementsOf(interpreted);
+	}
+
+	@Test
 	void compiledAndInterpretedShouldMatchForFullyBoundInput() {
 		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
 		QueryBindingSet matchingBindings = new QueryBindingSet();
@@ -228,6 +279,27 @@ class LmdbLftjCodegenTest {
 	}
 
 	@Test
+	void compiledIterationShouldMaterializeDuplicateAndReorderedAliasesLazily() {
+		LmdbLftjPlan plan = syntheticDuplicateAliasedPlan();
+		CachingQueryAccess queryAccess = new CachingQueryAccess(new CountingCompiler());
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, plan);
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration).hasNext();
+			BindingSet row = iteration.next();
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("z", "x", "x2");
+			assertThat(row.getValue("z")).isEqualTo(LmdbLftjSyntheticScenario.VF.createIRI("urn:person:3"));
+			assertThat(row.getValue("x")).isEqualTo(LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+			assertThat(row.getValue("x2")).isEqualTo(LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+			assertThat(row.hasBinding("a")).isFalse();
+			assertThat(row.hasBinding("b")).isFalse();
+			assertThat(row.hasBinding("c")).isFalse();
+		}
+
+		assertThat(queryAccess.resolveValueCalls).isZero();
+	}
+
+	@Test
 	void evaluateInternalShouldSkipInitValueForLftjRuntimeSafeQueries() throws Exception {
 		try (FullCodegenFixture fixture = new FullCodegenFixture()) {
 			TrackingBenchmarkStoreConnection connection = new TrackingBenchmarkStoreConnection(fixture.store);
@@ -248,6 +320,27 @@ class LmdbLftjCodegenTest {
 			assertThat(isInitializedLmdbValue(lazyValue)).isFalse();
 			assertThat(lazyValue.stringValue()).isEqualTo("urn:person:1");
 			assertThat(isInitializedLmdbValue(lazyValue)).isTrue();
+		}
+	}
+
+	@Test
+	void lazyValuesFromSameStoreShouldCompareByIdWithoutInitialization() throws Exception {
+		try (FullCodegenFixture fixture = new FullCodegenFixture()) {
+			LmdbQueryAccess queryAccess = fixture.connection.benchmarkQueryAccess(false);
+			long firstId = queryAccess.resolveId(FullCodegenFixture.person(1));
+			long secondId = queryAccess.resolveId(FullCodegenFixture.person(2));
+			Value firstLeft = queryAccess.lazyValue(firstId);
+			Value firstRight = queryAccess.lazyValue(firstId);
+			Value second = queryAccess.lazyValue(secondId);
+
+			assertThat(isInitializedLmdbValue(firstLeft)).isFalse();
+			assertThat(isInitializedLmdbValue(firstRight)).isFalse();
+			assertThat(isInitializedLmdbValue(second)).isFalse();
+			assertThat(firstLeft).isEqualTo(firstRight);
+			assertThat(firstLeft).isNotEqualTo(second);
+			assertThat(isInitializedLmdbValue(firstLeft)).isFalse();
+			assertThat(isInitializedLmdbValue(firstRight)).isFalse();
+			assertThat(isInitializedLmdbValue(second)).isFalse();
 		}
 	}
 
@@ -456,6 +549,44 @@ class LmdbLftjCodegenTest {
 	}
 
 	@Test
+	void codegenCacheShouldReuseCompiledFactoryAcrossEquivalentPlanCopies() {
+		LmdbLftjPlan first = syntheticAliasedPlan();
+		LmdbLftjPlan second = first.copy();
+		CountingCompiler compiler = new CountingCompiler();
+		CachingQueryAccess queryAccess = new CachingQueryAccess(compiler);
+
+		List<String> firstRows = drainGeneric(LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, first),
+				EmptyBindingSet.getInstance());
+		List<String> secondRows = drainGeneric(LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, second),
+				EmptyBindingSet.getInstance());
+
+		assertThat(secondRows).containsExactlyElementsOf(firstRows);
+		assertThat(compiler.compileCalls).isEqualTo(1);
+		assertThat(queryAccess.cachedEntry(first.executionKey())).isNotNull();
+		assertThat(queryAccess.cachedEntry(second.executionKey())).isNotNull();
+	}
+
+	@Test
+	void codegenCacheShouldCompileSeparatelyForDistinctAliasLayouts() {
+		LmdbLftjPlan aliased = syntheticAliasedPlan();
+		LmdbLftjPlan duplicateAliased = syntheticDuplicateAliasedPlan();
+		CountingCompiler compiler = new CountingCompiler();
+		CachingQueryAccess queryAccess = new CachingQueryAccess(compiler);
+
+		List<String> aliasedRows = drainGeneric(LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, aliased),
+				EmptyBindingSet.getInstance());
+		List<String> duplicateRows = drainGeneric(
+				LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, duplicateAliased),
+				EmptyBindingSet.getInstance());
+
+		assertThat(aliasedRows).isNotEmpty();
+		assertThat(duplicateRows).isNotEmpty();
+		assertThat(compiler.compileCalls).isEqualTo(2);
+		assertThat(queryAccess.cachedEntry(aliased.executionKey())).isNotNull();
+		assertThat(queryAccess.cachedEntry(duplicateAliased.executionKey())).isNotNull();
+	}
+
+	@Test
 	void codegenCacheShouldReuseNegativeResultAfterCompileFailure() {
 		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
 		FailingCompiler compiler = new FailingCompiler();
@@ -514,9 +645,33 @@ class LmdbLftjCodegenTest {
 		return rows;
 	}
 
+	private List<String> drainGeneric(QueryEvaluationStep evaluationStep, BindingSet bindings) {
+		List<String> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			while (iteration.hasNext()) {
+				rows.add(renderBindingSet(iteration.next()));
+			}
+		}
+		return rows;
+	}
+
 	private String render(BindingSet row) {
 		return row.getValue("a").stringValue() + "|" + row.getValue("b").stringValue() + "|"
 				+ row.getValue("c").stringValue();
+	}
+
+	private String renderBindingSet(BindingSet row) {
+		List<String> bindingNames = new ArrayList<>(row.getBindingNames());
+		bindingNames.sort(String::compareTo);
+		StringBuilder builder = new StringBuilder();
+		for (int i = 0; i < bindingNames.size(); i++) {
+			if (i > 0) {
+				builder.append('|');
+			}
+			String bindingName = bindingNames.get(i);
+			builder.append(bindingName).append('=').append(row.getValue(bindingName).stringValue());
+		}
+		return builder.toString();
 	}
 
 	private void assertPatchedSeekBuffer(long prefixValue, long firstTarget, long secondTarget) {
@@ -638,6 +793,20 @@ class LmdbLftjCodegenTest {
 						new LmdbLftjPlan.OutputBinding("x", "a"),
 						new LmdbLftjPlan.OutputBinding("y", "b"),
 						new LmdbLftjPlan.OutputBinding("z", "c")),
+				List.of(
+						new LmdbLftjPlan.InequalityConstraint("a", "b"),
+						new LmdbLftjPlan.InequalityConstraint("a", "c"),
+						new LmdbLftjPlan.InequalityConstraint("b", "c")));
+	}
+
+	private LmdbLftjPlan syntheticDuplicateAliasedPlan() {
+		LmdbLftjPlan basePlan = LmdbLftjSyntheticScenario.createPlan();
+		return new LmdbLftjPlan(basePlan.fallbackExpr().clone(), Set.of("x", "x2", "z"), Set.of("x", "x2", "z"),
+				basePlan.variableOrder(), basePlan.patternPlans(),
+				List.of(
+						new LmdbLftjPlan.OutputBinding("z", "c"),
+						new LmdbLftjPlan.OutputBinding("x", "a"),
+						new LmdbLftjPlan.OutputBinding("x2", "a")),
 				List.of(
 						new LmdbLftjPlan.InequalityConstraint("a", "b"),
 						new LmdbLftjPlan.InequalityConstraint("a", "c"),

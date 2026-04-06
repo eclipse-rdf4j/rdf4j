@@ -64,6 +64,38 @@ class LmdbLftjExecutorTest {
 	}
 
 	@Test
+	void evaluateShouldReturnEmptyWithoutOpeningTxnForUnknownBoundInput() {
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.setBinding("a", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:99"));
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertTrue(!iteration.hasNext(), "unknown bound ids should short-circuit to an empty result");
+		}
+
+		assertEquals(0, queryAccess.openScanCalls, "unknown bound ids should not open any LMDB scans");
+		assertEquals(0, queryAccess.releaseReadTxnCalls, "unknown bound ids should not acquire a read transaction");
+	}
+
+	@Test
+	void evaluateShouldRetainUnrelatedIncomingBindingsInResults() {
+		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.setBinding("a", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:1"));
+		bindings.setBinding("b", LmdbLftjSyntheticScenario.VF.createIRI("urn:person:2"));
+		bindings.setBinding("seed", LmdbLftjSyntheticScenario.VF.createIRI("urn:seed:fixed"));
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertTrue(iteration.hasNext(), "matching bindings should still produce a result");
+			BindingSet row = iteration.next();
+			assertEquals("urn:seed:fixed", row.getValue("seed").stringValue(),
+					"materialized results should keep unrelated incoming bindings");
+		}
+	}
+
+	@Test
 	void evaluateShouldCloseLiveScansOnEarlyClose() {
 		LmdbLftjSyntheticScenario.TestQueryAccess queryAccess = new LmdbLftjSyntheticScenario.TestQueryAccess();
 		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
