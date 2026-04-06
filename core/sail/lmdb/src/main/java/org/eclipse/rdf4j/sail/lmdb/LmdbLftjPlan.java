@@ -17,8 +17,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
+@Experimental
 public final class LmdbLftjPlan {
 
 	private final TupleExpr fallbackExpr;

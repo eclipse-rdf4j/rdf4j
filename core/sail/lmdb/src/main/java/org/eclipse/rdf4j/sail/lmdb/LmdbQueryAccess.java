@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 
+@Experimental
 public interface LmdbQueryAccess {
 
 	TripleStore tripleStore();

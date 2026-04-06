@@ -17,12 +17,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
+@Experimental
 public final class LmdbLftjBindingState {
 
 	private final LmdbLftjPlan plan;

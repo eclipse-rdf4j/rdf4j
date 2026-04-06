@@ -31,9 +31,12 @@ public final class FoafCliqueQueryCatalog {
 		CYCLE3("cycle3", cycleQuery(3)),
 		CYCLE4("cycle4", cycleQuery(4)),
 		CYCLE5("cycle5", cycleQuery(5)),
+		CYCLE3_COUNT_CITY_INTEREST("cycle3CountCityInterest", cycle3CountCityInterestQuery()),
 		CYCLE3_DISTINCT_CITY_ORDERED("cycle3DistinctCityOrdered", cycle3DistinctCityOrderedQuery()),
 		CYCLE4_VALUES_FILTERED_ORDERED("cycle4ValuesFilteredOrdered", cycle4ValuesFilteredOrderedQuery()),
 		CYCLE3_GROUPED_INTEREST("cycle3GroupedInterest", cycle3GroupedInterestQuery()),
+		CYCLE5_VALUES_COUNT_MAILBOX_HOMEPAGE("cycle5ValuesCountMailboxHomepage",
+				cycle5ValuesCountMailboxHomepageQuery()),
 		CYCLE5_VALUES_DISTINCT_MAILBOX_ORDERED("cycle5ValuesDistinctMailboxOrdered",
 				cycle5ValuesDistinctMailboxOrderedQuery());
 
@@ -99,6 +102,16 @@ public final class FoafCliqueQueryCatalog {
 				+ "ORDER BY ?cityLabel ?aLabel\n";
 	}
 
+	private static String cycle3CountCityInterestQuery() {
+		return PREFIXES
+				+ "SELECT (COUNT(*) AS ?resultCount) WHERE {\n"
+				+ "  VALUES ?interest { exinterest:rdf exinterest:sparql exinterest:queryPlanning }\n"
+				+ cyclePattern(3)
+				+ "  ?a foaf:interest ?interest ;\n"
+				+ "     foaf:based_near ?city .\n"
+				+ "}\n";
+	}
+
 	private static String cycle4ValuesFilteredOrderedQuery() {
 		return PREFIXES
 				+ "SELECT DISTINCT ?a ?age ?homepage WHERE {\n"
@@ -139,6 +152,17 @@ public final class FoafCliqueQueryCatalog {
 				+ "  FILTER (lang(?aLabel) = \"en\" && CONTAINS(LCASE(STR(?mbox)), \"@example.org\"))\n"
 				+ "}\n"
 				+ "ORDER BY ?aLabel\n";
+	}
+
+	private static String cycle5ValuesCountMailboxHomepageQuery() {
+		return PREFIXES
+				+ "SELECT (COUNT(*) AS ?resultCount) WHERE {\n"
+				+ "  VALUES ?city { excity:oslo excity:stockholm excity:copenhagen excity:helsinki }\n"
+				+ cyclePattern(5)
+				+ "  ?a foaf:based_near ?city ;\n"
+				+ "     foaf:mbox ?mbox ;\n"
+				+ "     foaf:homepage ?homepage .\n"
+				+ "}\n";
 	}
 
 	private static String cyclePattern(int size) {

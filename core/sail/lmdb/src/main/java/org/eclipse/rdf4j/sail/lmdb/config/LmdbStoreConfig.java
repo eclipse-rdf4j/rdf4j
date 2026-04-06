@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -217,19 +218,23 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	@Experimental
 	public boolean isLftjEnabled() {
 		return lftjEnabled;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setLftjEnabled(boolean lftjEnabled) {
 		this.lftjEnabled = lftjEnabled;
 		return this;
 	}
 
+	@Experimental
 	public boolean isLftjCodegenEnabled() {
 		return lftjCodegenEnabled;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setLftjCodegenEnabled(boolean lftjCodegenEnabled) {
 		this.lftjCodegenEnabled = lftjCodegenEnabled;
 		return this;

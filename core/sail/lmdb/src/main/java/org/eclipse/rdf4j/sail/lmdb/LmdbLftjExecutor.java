@@ -80,7 +80,7 @@ final class LmdbLftjExecutor {
 		}
 
 		try {
-			LmdbCompiledLftjFactory factory = compiler.compile(plan, shape, queryAccess.includeInferred());
+			LmdbCompiledLftjFactory factory = compiler.compile(plan, shape, queryAccess.includeInferred(), queryAccess);
 			queryAccess.cacheCompiledPlanSuccess(cacheKey, factory);
 			return factory;
 		} catch (RuntimeException e) {

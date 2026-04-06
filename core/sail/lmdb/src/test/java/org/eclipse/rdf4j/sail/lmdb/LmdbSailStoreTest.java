@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryCatalog;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -338,6 +339,26 @@ public class LmdbSailStoreTest {
 			assertTrue(actualPlan, actualPlan.contains("LmdbLftjTupleExpr"));
 			assertTrue(actualPlan, actualPlan.contains("varOrder=a,b,c"));
 			assertTrue(actualPlan, actualPlan.contains("indexes=psoc,psoc,posc"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainOptimizedShowsMixedCycleInequalitiesAndValuesAwareOrder(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
+		Repository repository = createRepository(dataDir, config, conn -> {
+		});
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			String actualPlan = connection.prepareTupleQuery(
+					FoafCliqueQueryCatalog.QueryScenario.CYCLE5_VALUES_DISTINCT_MAILBOX_ORDERED.query())
+					.explain(Explanation.Level.Optimized)
+					.toString();
+			assertTrue(actualPlan, actualPlan.contains("LmdbLftjTupleExpr"));
+			assertTrue(actualPlan, actualPlan.contains("varOrder=city,a,"));
+			assertTrue(actualPlan, actualPlan.contains(
+					"inequalities=[a!=b,a!=c,a!=d,a!=e,b!=c,b!=d,b!=e,c!=d,c!=e,d!=e]"));
 		} finally {
 			repository.shutDown();
 		}

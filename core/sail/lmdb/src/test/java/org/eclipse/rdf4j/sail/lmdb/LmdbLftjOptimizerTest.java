@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -281,7 +283,7 @@ class LmdbLftjOptimizerTest {
 	}
 
 	@Test
-	void optimizeShouldKeepDistinctAndOrderOutsideFusedCycleCore() throws Exception {
+	void optimizeShouldFuseSupportedInequalitiesFromMixedOuterFilterForCycle3DistinctCityOrdered() throws Exception {
 		TestQueryAccess queryAccess = new TestQueryAccess();
 		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
 				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
@@ -295,8 +297,13 @@ class LmdbLftjOptimizerTest {
 		assertInstanceOf(BindingSetAssignment.class, findNode(tupleExpr, BindingSetAssignment.class));
 		assertInstanceOf(Distinct.class, findNode(tupleExpr, Distinct.class));
 		assertInstanceOf(Order.class, findNode(tupleExpr, Order.class));
-		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
-		assertEquals(List.of(), lftj.plan().inequalityConstraints());
+		Filter residualFilter = assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertFilterDoesNotContainInequalities(residualFilter);
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("a", "a"),
+				new LmdbLftjPlan.OutputBinding("aLabel", "aLabel"),
+				new LmdbLftjPlan.OutputBinding("cityLabel", "cityLabel")), lftj.plan().outputBindings());
+		assertEquals(completeInequalities(3), lftj.plan().inequalityConstraints());
 	}
 
 	@Test
@@ -315,7 +322,37 @@ class LmdbLftjOptimizerTest {
 		assertInstanceOf(Group.class, findNode(tupleExpr, Group.class));
 		assertInstanceOf(Order.class, findNode(tupleExpr, Order.class));
 		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
-		assertEquals(List.of(), lftj.plan().inequalityConstraints());
+		assertEquals(completeInequalities(3), lftj.plan().inequalityConstraints());
+	}
+
+	@Test
+	void optimizeShouldPreferValuesAndLeafVarsForCycle5ValuesDistinctMailboxOrdered() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(
+				FoafCliqueQueryCatalog.QueryScenario.CYCLE5_VALUES_DISTINCT_MAILBOX_ORDERED.query());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertInstanceOf(BindingSetAssignment.class, findNode(tupleExpr, BindingSetAssignment.class));
+		assertInstanceOf(Distinct.class, findNode(tupleExpr, Distinct.class));
+		assertInstanceOf(Order.class, findNode(tupleExpr, Order.class));
+		Filter residualFilter = assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertFilterDoesNotContainInequalities(residualFilter);
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("a", "a"),
+				new LmdbLftjPlan.OutputBinding("aLabel", "aLabel"),
+				new LmdbLftjPlan.OutputBinding("homepage", "homepage"),
+				new LmdbLftjPlan.OutputBinding("mbox", "mbox")), lftj.plan().outputBindings());
+		assertEquals(completeInequalities(5), lftj.plan().inequalityConstraints());
+
+		List<String> variableOrder = lftj.plan().variableOrder();
+		assertEquals(List.of("city", "a"), variableOrder.subList(0, 2));
+		assertLeafVarsPrecedeCycleTail(variableOrder, List.of("mbox", "aLabel", "homepage"),
+				List.of("b", "c", "d", "e"));
 	}
 
 	private TupleExpr cycle(String a, String b, String c) {
@@ -457,6 +494,49 @@ class LmdbLftjOptimizerTest {
 			}
 		});
 		return type.cast(result[0]);
+	}
+
+	private List<LmdbLftjPlan.InequalityConstraint> completeInequalities(int size) {
+		List<LmdbLftjPlan.InequalityConstraint> inequalities = new java.util.ArrayList<>();
+		for (int i = 0; i < size; i++) {
+			for (int j = i + 1; j < size; j++) {
+				inequalities.add(new LmdbLftjPlan.InequalityConstraint(variableName(i), variableName(j)));
+			}
+		}
+		return inequalities;
+	}
+
+	private String variableName(int index) {
+		return String.valueOf((char) ('a' + index));
+	}
+
+	private void assertLeafVarsPrecedeCycleTail(List<String> variableOrder, List<String> leafVars,
+			List<String> cycleTail) {
+		Map<String, Integer> positions = new LinkedHashMap<>();
+		for (int i = 0; i < variableOrder.size(); i++) {
+			positions.put(variableOrder.get(i), i);
+		}
+		for (String leafVar : leafVars) {
+			for (String cycleVar : cycleTail) {
+				assertTrue(positions.get(leafVar) < positions.get(cycleVar),
+						() -> "expected " + leafVar + " before " + cycleVar + " in " + variableOrder);
+			}
+		}
+	}
+
+	private void assertFilterDoesNotContainInequalities(Filter filter) {
+		List<Compare> inequalities = new java.util.ArrayList<>();
+		filter.getCondition().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Compare node) {
+				if (node.getOperator() == Compare.CompareOp.NE) {
+					inequalities.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		assertEquals(List.of(), inequalities,
+				"supported != conjuncts should be removed from the residual outer filter");
 	}
 
 	private static final class EmptyTripleSource implements TripleSource {

@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkStore;
@@ -50,6 +51,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class FoafCliqueQueryBenchmark {
 
 	public static final String LFTJ_DISABLED = "disabled";
+	private static final String RESULT_COUNT_BINDING = "resultCount";
 
 	@Param({ "5000" })
 	public int peopleCount;
@@ -134,6 +136,11 @@ public class FoafCliqueQueryBenchmark {
 	}
 
 	@Benchmark
+	public long cycle3CountCityInterest() {
+		return executeAggregateCount(QueryScenario.CYCLE3_COUNT_CITY_INTEREST.query());
+	}
+
+	@Benchmark
 	public long cycle3DistinctCityOrdered() {
 		return executeCount(QueryScenario.CYCLE3_DISTINCT_CITY_ORDERED.query());
 	}
@@ -149,6 +156,11 @@ public class FoafCliqueQueryBenchmark {
 	}
 
 	@Benchmark
+	public long cycle5ValuesCountMailboxHomepage() {
+		return executeAggregateCount(QueryScenario.CYCLE5_VALUES_COUNT_MAILBOX_HOMEPAGE.query());
+	}
+
+	@Benchmark
 	public long cycle5ValuesDistinctMailboxOrdered() {
 		return executeCount(QueryScenario.CYCLE5_VALUES_DISTINCT_MAILBOX_ORDERED.query());
 	}
@@ -161,12 +173,16 @@ public class FoafCliqueQueryBenchmark {
 			return cycle4();
 		case CYCLE5:
 			return cycle5();
+		case CYCLE3_COUNT_CITY_INTEREST:
+			return cycle3CountCityInterest();
 		case CYCLE3_DISTINCT_CITY_ORDERED:
 			return cycle3DistinctCityOrdered();
 		case CYCLE4_VALUES_FILTERED_ORDERED:
 			return cycle4ValuesFilteredOrdered();
 		case CYCLE3_GROUPED_INTEREST:
 			return cycle3GroupedInterest();
+		case CYCLE5_VALUES_COUNT_MAILBOX_HOMEPAGE:
+			return cycle5ValuesCountMailboxHomepage();
 		case CYCLE5_VALUES_DISTINCT_MAILBOX_ORDERED:
 			return cycle5ValuesDistinctMailboxOrdered();
 		default:
@@ -177,6 +193,18 @@ public class FoafCliqueQueryBenchmark {
 	private long executeCount(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.prepareTupleQuery(query).evaluate().stream().count();
+		}
+	}
+
+	private long executeAggregateCount(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.evaluate()
+					.stream()
+					.findFirst()
+					.map(bindingSet -> (Literal) bindingSet.getValue(RESULT_COUNT_BINDING))
+					.map(Literal::longValue)
+					.orElseThrow(() -> new IllegalStateException("Missing aggregate count result"));
 		}
 	}
 

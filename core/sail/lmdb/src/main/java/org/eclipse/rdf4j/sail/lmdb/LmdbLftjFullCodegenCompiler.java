@@ -28,14 +28,20 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 
 	@Override
 	protected String sourceFor(String simpleClassName, LmdbLftjPlan plan, LmdbLftjExecutionShape shape,
-			boolean includeInferred) {
-		return new SourceBuilder(simpleClassName, plan, shape, includeInferred).build();
+			boolean includeInferred, LmdbQueryAccess queryAccess) {
+		return new SourceBuilder(simpleClassName, plan, shape, includeInferred, queryAccess).build();
 	}
 
 	@Override
 	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred) {
+		return compile(plan, shape, includeInferred, null);
+	}
+
+	@Override
+	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred,
+			LmdbQueryAccess queryAccess) {
 		String simpleClassName = "GeneratedLmdbFullStackLftjFactory" + System.nanoTime();
-		String source = sourceFor(simpleClassName, plan, shape, includeInferred);
+		String source = sourceFor(simpleClassName, plan, shape, includeInferred, queryAccess);
 		return compileSource(cacheKey(plan, shape, includeInferred), simpleClassName, source);
 	}
 
@@ -47,15 +53,17 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 		private final LmdbLftjPlan plan;
 		private final LmdbLftjExecutionShape shape;
 		private final boolean includeInferred;
+		private final long[][] constantIds;
 		private final int[] relationGroupByPattern;
 		private final RelationGroup[] relationGroups;
 
 		private SourceBuilder(String simpleClassName, LmdbLftjPlan plan, LmdbLftjExecutionShape shape,
-				boolean includeInferred) {
+				boolean includeInferred, LmdbQueryAccess queryAccess) {
 			this.simpleClassName = simpleClassName;
 			this.plan = plan;
 			this.shape = shape;
 			this.includeInferred = includeInferred;
+			this.constantIds = resolveConstantIds(queryAccess);
 			this.relationGroupByPattern = new int[shape.patternCount()];
 			for (int i = 0; i < relationGroupByPattern.length; i++) {
 				relationGroupByPattern[i] = -1;
@@ -597,11 +605,9 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("        return relationGroup").append(relationGroup.groupId).append(";\n");
 			source.append("      }\n");
 			source.append("      metrics().recordRelationLoad();\n");
-			source.append("      long predicateId = state().fixedIdForComponent(")
-					.append(patternOrdinal)
-					.append(", ")
-					.append(TripleStore.PRED_IDX)
-					.append(");\n");
+			source.append("      long predicateId = ")
+					.append(fixedIdExpression(patternOrdinal, TripleStore.PRED_IDX))
+					.append(";\n");
 			source.append("      relationGroup")
 					.append(relationGroup.groupId)
 					.append(" = loadDerivedRelation(")
@@ -1466,24 +1472,21 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 		private String componentValueExpression(int patternOrdinal, LmdbLftjExecutionShape.PatternShape patternShape,
 				int component) {
 			if (patternShape.isConstantComponent(component)) {
-				switch (component) {
-				case TripleStore.SUBJ_IDX:
-					return "state().fixedIdForComponent(" + patternOrdinal + ", " + TripleStore.SUBJ_IDX + ")";
-				case TripleStore.PRED_IDX:
-					return "state().fixedIdForComponent(" + patternOrdinal + ", " + TripleStore.PRED_IDX + ")";
-				case TripleStore.OBJ_IDX:
-					return "state().fixedIdForComponent(" + patternOrdinal + ", " + TripleStore.OBJ_IDX + ")";
-				case TripleStore.CONTEXT_IDX:
-					return "state().fixedIdForComponent(" + patternOrdinal + ", " + TripleStore.CONTEXT_IDX + ")";
-				default:
-					throw new IllegalArgumentException("Unknown LMDB component: " + component);
-				}
+				return fixedIdExpression(patternOrdinal, component);
 			}
 			int slot = patternShape.slotForComponent(component);
 			if (slot >= 0) {
 				return "state().value(" + slot + ")";
 			}
 			return "0L";
+		}
+
+		private String fixedIdExpression(int patternOrdinal, int component) {
+			long resolvedId = constantIds[patternOrdinal][component];
+			if (resolvedId > 0L) {
+				return resolvedId + "L";
+			}
+			return "state().fixedIdForComponent(" + patternOrdinal + ", " + component + ")";
 		}
 
 		private String upperBoundExpression(int patternOrdinal, LmdbLftjExecutionShape.PatternShape patternShape,
@@ -1524,6 +1527,28 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 				relationGroupByPattern[patternOrdinal] = group.groupId;
 			}
 			return ordered.toArray(new RelationGroup[0]);
+		}
+
+		private long[][] resolveConstantIds(LmdbQueryAccess queryAccess) {
+			long[][] resolved = new long[shape.patternCount()][4];
+			if (queryAccess == null) {
+				return resolved;
+			}
+			for (int patternOrdinal = 0; patternOrdinal < shape.patternCount(); patternOrdinal++) {
+				LmdbLftjPatternPlan patternPlan = plan.patternPlans().get(patternOrdinal);
+				resolveConstantId(resolved[patternOrdinal], patternPlan.subjectTerm(), queryAccess);
+				resolveConstantId(resolved[patternOrdinal], patternPlan.predicateTerm(), queryAccess);
+				resolveConstantId(resolved[patternOrdinal], patternPlan.objectTerm(), queryAccess);
+				resolveConstantId(resolved[patternOrdinal], patternPlan.termForComponent(TripleStore.CONTEXT_IDX),
+						queryAccess);
+			}
+			return resolved;
+		}
+
+		private void resolveConstantId(long[] resolved, LmdbLftjPatternPlan.TermRef term, LmdbQueryAccess queryAccess) {
+			if (term.isConstant()) {
+				resolved[term.component()] = queryAccess.resolveId(term.constantValue());
+			}
 		}
 
 		private static final class RelationGroup {

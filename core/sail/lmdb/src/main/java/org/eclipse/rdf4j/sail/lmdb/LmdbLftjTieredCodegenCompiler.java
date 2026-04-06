@@ -26,4 +26,10 @@ final class LmdbLftjTieredCodegenCompiler extends LmdbLftjCodegenCompiler {
 	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred) {
 		return full.compile(plan, shape, includeInferred);
 	}
+
+	@Override
+	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred,
+			LmdbQueryAccess queryAccess) {
+		return full.compile(plan, shape, includeInferred, queryAccess);
+	}
 }

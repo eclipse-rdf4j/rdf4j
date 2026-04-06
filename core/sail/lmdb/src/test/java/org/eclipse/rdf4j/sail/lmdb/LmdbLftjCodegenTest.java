@@ -34,18 +34,30 @@ import java.util.regex.Pattern;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -246,6 +258,36 @@ class LmdbLftjCodegenTest {
 					.contains("state().value(2) == state().value(3)")
 					.contains("state().value(2) == state().value(4)")
 					.contains("state().value(3) == state().value(4)");
+		}
+	}
+
+	@Test
+	void fullCompiledRealStoreShouldInlineResolvedIdsForQueryConstants() throws Exception {
+		try (FullCodegenFixture fixture = new FullCodegenFixture(5, LmdbLftjFullCodegenCompiler.INSTANCE)) {
+			String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+					+ "SELECT * WHERE {\n"
+					+ "  <urn:person:1> foaf:knows ?b .\n"
+					+ "  ?b foaf:knows ?c .\n"
+					+ "  ?c foaf:knows ?d .\n"
+					+ "  ?d foaf:knows ?b .\n"
+					+ "  ?c foaf:knows <urn:person:2> .\n"
+					+ "  FILTER (?b != ?c && ?b != ?d && ?c != ?d)\n"
+					+ "}\n";
+			LmdbQueryAccess queryAccess = fixture.connection.benchmarkQueryAccess(false);
+			LmdbLftjPlan plan = optimizedPlan(query, queryAccess);
+			long person1Id = queryAccess.resolveId(FullCodegenFixture.person(1));
+			long person2Id = queryAccess.resolveId(FullCodegenFixture.person(2));
+			long knowsId = queryAccess.resolveId(FOAF.KNOWS);
+			String source = sourceForPlan(plan, queryAccess, LmdbLftjFullCodegenCompiler.INSTANCE);
+
+			assertThat(person1Id).isPositive();
+			assertThat(person2Id).isPositive();
+			assertThat(knowsId).isPositive();
+			assertThat(source)
+					.contains(person1Id + "L")
+					.contains(person2Id + "L")
+					.contains(knowsId + "L")
+					.doesNotContain("state().fixedIdForComponent(");
 		}
 	}
 
@@ -990,6 +1032,37 @@ class LmdbLftjCodegenTest {
 		}
 	}
 
+	private LmdbLftjPlan optimizedPlan(String query, LmdbQueryAccess queryAccess) throws Exception {
+		TupleExpr tupleExpr = parsedQueryRoot(query);
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertThat(lftj).isNotNull();
+		return lftj.plan().copy();
+	}
+
+	private TupleExpr parsedQueryRoot(String query) throws Exception {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr tupleExpr = parsed.getTupleExpr().clone();
+		if (!(tupleExpr instanceof QueryRoot)) {
+			tupleExpr = new QueryRoot(tupleExpr);
+		}
+		return tupleExpr;
+	}
+
+	private String sourceForPlan(LmdbLftjPlan plan, LmdbQueryAccess queryAccess, LmdbLftjCodegenCompiler compiler)
+			throws Exception {
+		LmdbLftjExecutionShape shape = new LmdbLftjExecutionShape(plan);
+		Method sourceFor = findMethod(compiler.getClass(), "sourceFor", LmdbLftjPlan.class,
+				LmdbLftjExecutionShape.class,
+				boolean.class, LmdbQueryAccess.class);
+		if (sourceFor != null) {
+			return (String) sourceFor.invoke(compiler, plan, shape, false, queryAccess);
+		}
+		return compiler.sourceFor(plan, shape, false);
+	}
+
 	@SuppressWarnings("unchecked")
 	private String sourceForPreparedPlan(LmdbBenchmarkStore store, LmdbLftjCodegenCompiler compiler) throws Exception {
 		LmdbLftjPlan plan = preparedPlan(store);
@@ -1013,6 +1086,34 @@ class LmdbLftjCodegenTest {
 				.orElseThrow();
 	}
 
+	private Method findMethod(Class<?> type, String name, Class<?>... parameterTypes) {
+		Class<?> current = type;
+		while (current != null) {
+			try {
+				Method method = current.getDeclaredMethod(name, parameterTypes);
+				method.setAccessible(true);
+				return method;
+			} catch (NoSuchMethodException e) {
+				current = current.getSuperclass();
+			}
+		}
+		return null;
+	}
+
+	private <T extends QueryModelNode> T findNode(TupleExpr tupleExpr, Class<T> type) {
+		QueryModelNode[] result = new QueryModelNode[1];
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (result[0] == null && type.isInstance(node)) {
+					result[0] = node;
+				}
+				super.meetNode(node);
+			}
+		});
+		return type.cast(result[0]);
+	}
+
 	private Object readField(Object target, String name) throws Exception {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
@@ -1023,6 +1124,20 @@ class LmdbLftjCodegenTest {
 		Field field = value.getClass().getDeclaredField("initialized");
 		field.setAccessible(true);
 		return field.getBoolean(value);
+	}
+
+	private static final class EmptyTripleSource implements TripleSource {
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public org.eclipse.rdf4j.model.ValueFactory getValueFactory() {
+			return SimpleValueFactory.getInstance();
+		}
 	}
 
 	private static final class InterpretedQueryAccess extends LmdbLftjSyntheticScenario.TestQueryAccess {

@@ -31,12 +31,17 @@ class LmdbLftjCodegenCompiler {
 
 	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape) {
 		String simpleClassName = "GeneratedLmdbLftjFactory" + CLASS_COUNTER.incrementAndGet();
-		String source = sourceFor(simpleClassName, plan, shape, false);
+		String source = sourceFor(simpleClassName, plan, shape, false, null);
 		return compileSource(plan.executionKey(), simpleClassName, source);
 	}
 
 	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred) {
 		return compile(plan, shape);
+	}
+
+	LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred,
+			LmdbQueryAccess queryAccess) {
+		return compile(plan, shape, includeInferred);
 	}
 
 	protected final LmdbCompiledLftjFactory compileSource(String executionKey, String simpleClassName, String source) {
@@ -54,21 +59,37 @@ class LmdbLftjCodegenCompiler {
 	}
 
 	String sourceFor(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred) {
-		return sourceFor("GeneratedLmdbLftjSource", plan, shape, includeInferred);
+		return sourceFor(plan, shape, includeInferred, null);
+	}
+
+	String sourceFor(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred,
+			LmdbQueryAccess queryAccess) {
+		return sourceFor("GeneratedLmdbLftjSource", plan, shape, includeInferred, queryAccess);
 	}
 
 	Path dumpSourceFor(Path outputFile, LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred)
+			throws IOException {
+		return dumpSourceFor(outputFile, plan, shape, includeInferred, null);
+	}
+
+	Path dumpSourceFor(Path outputFile, LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred,
+			LmdbQueryAccess queryAccess)
 			throws IOException {
 		Path parent = outputFile.getParent();
 		if (parent != null) {
 			Files.createDirectories(parent);
 		}
-		Files.writeString(outputFile, sourceFor(plan, shape, includeInferred));
+		Files.writeString(outputFile, sourceFor(plan, shape, includeInferred, queryAccess));
 		return outputFile;
 	}
 
 	protected String sourceFor(String simpleClassName, LmdbLftjPlan plan, LmdbLftjExecutionShape shape,
 			boolean includeInferred) {
+		return sourceFor(simpleClassName, plan, shape, includeInferred, null);
+	}
+
+	protected String sourceFor(String simpleClassName, LmdbLftjPlan plan, LmdbLftjExecutionShape shape,
+			boolean includeInferred, LmdbQueryAccess queryAccess) {
 		return new SourceBuilder(simpleClassName, plan, shape).build();
 	}
 

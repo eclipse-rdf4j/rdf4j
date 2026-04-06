@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -60,7 +61,15 @@ final class LmdbLftjTupleExpr extends AbstractQueryModelNode implements TupleExp
 	public String getSignature() {
 		return super.getSignature() + "[varOrder=" + String.join(",", plan.variableOrder())
 				+ "; patterns=" + plan.patternCount()
-				+ "; indexes=" + String.join(",", plan.indexNames()) + "]";
+				+ "; indexes=" + String.join(",", plan.indexNames())
+				+ "; inequalities=" + formatInequalities() + "]";
+	}
+
+	private String formatInequalities() {
+		return plan.inequalityConstraints()
+				.stream()
+				.map(inequality -> inequality.leftVariable() + "!=" + inequality.rightVariable())
+				.collect(Collectors.joining(",", "[", "]"));
 	}
 
 	@Override

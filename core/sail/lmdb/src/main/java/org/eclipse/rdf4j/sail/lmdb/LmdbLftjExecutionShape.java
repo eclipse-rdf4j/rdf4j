@@ -17,6 +17,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 public final class LmdbLftjExecutionShape {
 
 	private static final int FULL_STACK_TEMPLATE_VERSION = 4;

@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,14 @@ final class LmdbLftjPlanner {
 	PlanningResult plan(TupleExpr fallbackExpr, Collection<StatementPattern> patterns, Set<String> configuredIndexes,
 			List<LmdbLftjPlan.OutputBinding> outputBindings,
 			List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints) {
+		return plan(fallbackExpr, patterns, configuredIndexes, outputBindings, inequalityConstraints,
+				LmdbLftjPlanningHints.empty());
+	}
+
+	PlanningResult plan(TupleExpr fallbackExpr, Collection<StatementPattern> patterns, Set<String> configuredIndexes,
+			List<LmdbLftjPlan.OutputBinding> outputBindings,
+			List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints,
+			LmdbLftjPlanningHints planningHints) {
 		if (patterns.size() < 3) {
 			return PlanningResult.rejected("too-few-patterns");
 		}
@@ -70,7 +79,7 @@ final class LmdbLftjPlanner {
 		if (!supportsInequalities(inequalityConstraints, visibleVariables)) {
 			return PlanningResult.rejected("unsupported-inequality");
 		}
-		PlanningCandidate candidate = chooseCandidate(patternList, configuredIndexes, visibleVariables);
+		PlanningCandidate candidate = chooseCandidate(patternList, configuredIndexes, visibleVariables, planningHints);
 		if (candidate == null) {
 			return PlanningResult.rejected("incompatible-index-order");
 		}
@@ -228,7 +237,7 @@ final class LmdbLftjPlanner {
 	}
 
 	private PlanningCandidate chooseCandidate(List<StatementPattern> patterns, Set<String> configuredIndexes,
-			List<String> visibleVariables) {
+			List<String> visibleVariables, LmdbLftjPlanningHints planningHints) {
 		List<String> indexes = configuredIndexes.stream().sorted().toList();
 		if (visibleVariables.size() <= 8) {
 			List<String> current = new ArrayList<>(visibleVariables.size());
@@ -236,7 +245,7 @@ final class LmdbLftjPlanner {
 			return permute(patterns, indexes, current, remaining, null);
 		}
 
-		List<String> greedyOrder = greedyVariableOrder(patterns, visibleVariables);
+		List<String> greedyOrder = greedyVariableOrder(patterns, visibleVariables, planningHints);
 		return evaluateCandidate(patterns, indexes, greedyOrder);
 	}
 
@@ -257,19 +266,139 @@ final class LmdbLftjPlanner {
 		return best;
 	}
 
-	private List<String> greedyVariableOrder(List<StatementPattern> patterns, List<String> visibleVariables) {
+	private List<String> greedyVariableOrder(List<StatementPattern> patterns, List<String> visibleVariables,
+			LmdbLftjPlanningHints planningHints) {
 		Map<String, Long> occurrences = visibleVariables.stream()
 				.collect(java.util.stream.Collectors.toMap(name -> name, name -> patterns.stream()
 						.filter(pattern -> pattern.getVarList()
 								.stream()
-								.anyMatch(var -> var != null && !var.hasValue() && !var.isAnonymous()
-										&& name.equals(var.getName())))
+								.anyMatch(var -> isVisibleVariable(var) && name.equals(var.getName())))
 						.count()));
+		Map<String, Set<String>> adjacency = collectAdjacency(patterns, visibleVariables);
+		Map<String, Integer> degrees = new LinkedHashMap<>();
+		for (String variable : visibleVariables) {
+			degrees.put(variable, adjacency.getOrDefault(variable, Set.of()).size());
+		}
+		Set<String> fixedInputVariables = new LinkedHashSet<>(planningHints.inputBoundVariables());
+		fixedInputVariables.retainAll(Set.copyOf(visibleVariables));
+		Set<String> residualFilterVariables = new LinkedHashSet<>(planningHints.residualFilterVariables());
+		residualFilterVariables.retainAll(Set.copyOf(visibleVariables));
+		Set<String> leafVariables = collectConstantPredicateLeafVariables(patterns, degrees);
+		Set<String> residualLeafVariables = new LinkedHashSet<>(leafVariables);
+		residualLeafVariables.retainAll(residualFilterVariables);
+		Set<String> otherLeafVariables = new LinkedHashSet<>(leafVariables);
+		otherLeafVariables.removeAll(residualLeafVariables);
+		int maxDegree = degrees.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+		Set<String> anchorVariables = new LinkedHashSet<>();
+		for (String variable : visibleVariables) {
+			if (fixedInputVariables.contains(variable)) {
+				continue;
+			}
+			if (degrees.getOrDefault(variable, 0) == maxDegree
+					|| isAdjacentToAny(variable, fixedInputVariables, adjacency)) {
+				anchorVariables.add(variable);
+			}
+		}
+		Map<String, Integer> fixedInputRank = toRankMap(planningHints.inputBoundVariables());
 		List<String> ordered = new ArrayList<>(visibleVariables);
-		ordered.sort(Comparator.<String, Long>comparing(occurrences::get)
-				.reversed()
+		ordered.sort(Comparator.<String>comparingInt(variable -> variableBucket(variable, fixedInputVariables,
+				anchorVariables, residualLeafVariables, otherLeafVariables))
+				.thenComparingInt(variable -> fixedInputRank.getOrDefault(variable, Integer.MAX_VALUE))
+				.thenComparing(Comparator.<String, Integer>comparing(degrees::get).reversed())
+				.thenComparing(Comparator.<String, Long>comparing(occurrences::get).reversed())
 				.thenComparing(Comparator.naturalOrder()));
 		return ordered;
+	}
+
+	private int variableBucket(String variable, Set<String> fixedInputVariables, Set<String> anchorVariables,
+			Set<String> residualLeafVariables, Set<String> otherLeafVariables) {
+		if (fixedInputVariables.contains(variable)) {
+			return 0;
+		}
+		if (anchorVariables.contains(variable)) {
+			return 1;
+		}
+		if (residualLeafVariables.contains(variable)) {
+			return 2;
+		}
+		if (otherLeafVariables.contains(variable)) {
+			return 3;
+		}
+		return 4;
+	}
+
+	private Map<String, Set<String>> collectAdjacency(List<StatementPattern> patterns, List<String> visibleVariables) {
+		Map<String, Set<String>> adjacency = new LinkedHashMap<>();
+		for (String visibleVariable : visibleVariables) {
+			adjacency.put(visibleVariable, new LinkedHashSet<>());
+		}
+		for (StatementPattern pattern : patterns) {
+			List<String> patternVariables = collectPatternVariables(pattern);
+			for (int i = 0; i < patternVariables.size(); i++) {
+				for (int j = i + 1; j < patternVariables.size(); j++) {
+					adjacency.get(patternVariables.get(i)).add(patternVariables.get(j));
+					adjacency.get(patternVariables.get(j)).add(patternVariables.get(i));
+				}
+			}
+		}
+		return adjacency;
+	}
+
+	private Set<String> collectConstantPredicateLeafVariables(List<StatementPattern> patterns,
+			Map<String, Integer> degrees) {
+		Set<String> leafVariables = new LinkedHashSet<>();
+		for (StatementPattern pattern : patterns) {
+			if (!pattern.getPredicateVar().hasValue()) {
+				continue;
+			}
+			List<String> patternVariables = collectPatternVariables(pattern);
+			if (patternVariables.size() != 2) {
+				continue;
+			}
+			String left = patternVariables.get(0);
+			String right = patternVariables.get(1);
+			int leftDegree = degrees.getOrDefault(left, 0);
+			int rightDegree = degrees.getOrDefault(right, 0);
+			if (leftDegree == 1 && rightDegree > leftDegree) {
+				leafVariables.add(left);
+			}
+			if (rightDegree == 1 && leftDegree > rightDegree) {
+				leafVariables.add(right);
+			}
+		}
+		return leafVariables;
+	}
+
+	private List<String> collectPatternVariables(StatementPattern pattern) {
+		LinkedHashSet<String> variables = new LinkedHashSet<>();
+		for (Var var : pattern.getVarList()) {
+			if (isVisibleVariable(var)) {
+				variables.add(var.getName());
+			}
+		}
+		return List.copyOf(variables);
+	}
+
+	private boolean isVisibleVariable(Var var) {
+		return var != null && !var.hasValue() && !var.isAnonymous() && var.getName() != null;
+	}
+
+	private boolean isAdjacentToAny(String variable, Set<String> neighbors, Map<String, Set<String>> adjacency) {
+		Set<String> variableNeighbors = adjacency.getOrDefault(variable, Set.of());
+		for (String neighbor : neighbors) {
+			if (variableNeighbors.contains(neighbor)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private Map<String, Integer> toRankMap(List<String> variables) {
+		Map<String, Integer> ranks = new LinkedHashMap<>();
+		for (int i = 0; i < variables.size(); i++) {
+			ranks.putIfAbsent(variables.get(i), i);
+		}
+		return ranks;
 	}
 
 	private PlanningCandidate evaluateCandidate(List<StatementPattern> patterns, List<String> indexes,
