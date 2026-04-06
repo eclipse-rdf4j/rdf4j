@@ -150,6 +150,30 @@ class LmdbLftjOptimizerTest {
 	}
 
 	@Test
+	void optimizeShouldExposeSourceBindingsWhenResidualFilterKeepsProjectionOutside() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(aliasProjectionWithResidualFilterQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = assertInstanceOf(LmdbLftjTupleExpr.class,
+				findNode(tupleExpr, LmdbLftjTupleExpr.class));
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("a", "a"),
+				new LmdbLftjPlan.OutputBinding("b", "b"),
+				new LmdbLftjPlan.OutputBinding("c", "c")), lftj.plan().outputBindings());
+		assertEquals(List.of(
+				new LmdbLftjPlan.InequalityConstraint("a", "b"),
+				new LmdbLftjPlan.InequalityConstraint("a", "c"),
+				new LmdbLftjPlan.InequalityConstraint("b", "c")), lftj.plan().inequalityConstraints());
+		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertInstanceOf(Projection.class, findNode(tupleExpr, Projection.class));
+	}
+
+	@Test
 	void optimizerPipelineShouldFuseParsedAliasProjectionQuery() throws Exception {
 		TestQueryAccess queryAccess = new TestQueryAccess();
 		TripleSource tripleSource = new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess);
@@ -405,6 +429,16 @@ class LmdbLftjOptimizerTest {
 				+ "  ?b foaf:knows ?c .\n"
 				+ "  ?c foaf:knows ?a .\n"
 				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
+				+ "}\n";
+	}
+
+	private String aliasProjectionWithResidualFilterQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (?a AS ?x) (?b AS ?y) (?c AS ?z) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c && STRSTARTS(STR(?a), \"urn:person:1\"))\n"
 				+ "}\n";
 	}
 

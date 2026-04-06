@@ -64,6 +64,11 @@ class LmdbLftjFusionCorrectnessTest {
 	}
 
 	@Test
+	void aliasedProjectionWithResidualFilterRowsShouldMatchRegularEvaluation(@TempDir java.nio.file.Path tempDir) {
+		assertRowsMatch(tempDir, aliasedProjectionWithResidualFilterQuery());
+	}
+
+	@Test
 	void aliasedCycleRowsShouldMatchRegularEvaluationWithBoundSourceVariables(@TempDir java.nio.file.Path tempDir) {
 		assertEquals(List.of(
 				"x=urn:person:1|y=urn:person:2|z=urn:person:3",
@@ -255,6 +260,16 @@ class LmdbLftjFusionCorrectnessTest {
 				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
 				+ "  BIND(?a AS ?x)\n"
 				+ "  BIND(?x AS ?y)\n"
+				+ "}\n";
+	}
+
+	private String aliasedProjectionWithResidualFilterQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (?a AS ?x) (?b AS ?y) (?c AS ?z) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c && STRSTARTS(STR(?a), \"urn:person:1\"))\n"
 				+ "}\n";
 	}
 }

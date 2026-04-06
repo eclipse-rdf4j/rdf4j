@@ -541,6 +541,31 @@ class LmdbLftjCodegenTest {
 	}
 
 	@Test
+	void fullCodegenShouldMatchFallbackForAliasedProjectionWithResidualFilter() throws Exception {
+		String query = foafCycleAliasQueryWithResidualFilter();
+
+		try (FullCodegenFixture fallbackFixture = new FullCodegenFixture(4, false, false, null);
+				FullCodegenFixture fullFixture = new FullCodegenFixture(4, true, true,
+						LmdbLftjFullCodegenCompiler.INSTANCE)) {
+			List<String> fallbackRows = executeQueryRows(fallbackFixture.repository, query);
+			try (SailRepositoryConnection connection = fullFixture.repository.getConnection()) {
+				assertThat(connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString())
+						.contains("LmdbLftjTupleExpr")
+						.contains("Filter")
+						.contains("Projection");
+			}
+			List<String> fullRows = executeQueryRows(fullFixture.repository, query);
+
+			assertThat(fallbackRows).hasSize(6);
+			assertThat(fullRows)
+					.withFailMessage("fallback=%s full=%s", fallbackRows, fullRows)
+					.containsExactlyElementsOf(fallbackRows);
+		}
+	}
+
+	@Test
 	void fullCodegenFoafBenchmarkSequentialQueriesShouldKeepUsingGeneratedFactories() throws Exception {
 		FoafCliqueQueryBenchmark benchmark = configuredFoafBenchmark();
 		benchmark.setup();
@@ -976,6 +1001,16 @@ class LmdbLftjCodegenTest {
 		return builder.toString();
 	}
 
+	private String foafCycleAliasQueryWithResidualFilter() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT (?a AS ?x) (?b AS ?y) (?c AS ?z) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c && STRSTARTS(STR(?a), \"urn:person:1\"))\n"
+				+ "}\n";
+	}
+
 	private List<String> executeQueryRows(SailRepository repository, String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			List<String> rows = new ArrayList<>();
@@ -1235,14 +1270,19 @@ class LmdbLftjCodegenTest {
 		private final File dataDir;
 
 		private FullCodegenFixture() throws IOException {
-			this(4, LmdbLftjFullCodegenCompiler.INSTANCE);
+			this(4, true, true, LmdbLftjFullCodegenCompiler.INSTANCE);
 		}
 
 		private FullCodegenFixture(int personCount, LmdbLftjCodegenCompiler compiler) throws IOException {
+			this(personCount, true, true, compiler);
+		}
+
+		private FullCodegenFixture(int personCount, boolean lftjEnabled, boolean lftjCodegenEnabled,
+				LmdbLftjCodegenCompiler compiler) throws IOException {
 			dataDir = Files.createTempDirectory("rdf4j-lmdb-full-codegen-test").toFile();
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
-			config.setLftjEnabled(true);
-			config.setLftjCodegenEnabled(true);
+			config.setLftjEnabled(lftjEnabled);
+			config.setLftjCodegenEnabled(lftjCodegenEnabled);
 			config.setForceSync(false);
 			config.setValueDBSize(64L * 1024 * 1024);
 			config.setTripleDBSize(config.getValueDBSize());

@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -215,8 +217,11 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 			return null;
 		}
 
+		boolean preserveOuterOperators = filterPartition.filterRewrites()
+				.stream()
+				.anyMatch(filterRewrite -> filterRewrite.residualCondition() != null);
 		List<LmdbLftjPlan.OutputBinding> outputBindings = collectOutputBindings(projection, extension, visibleVariables,
-				filterPartition.requiredVariables());
+				filterPartition.requiredVariables(), preserveOuterOperators);
 		if (outputBindings == null) {
 			return null;
 		}
@@ -312,7 +317,10 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 	}
 
 	private List<LmdbLftjPlan.OutputBinding> collectOutputBindings(Projection projection, Extension extension,
-			List<String> visibleVariables, List<String> requiredVariables) {
+			List<String> visibleVariables, List<String> requiredVariables, boolean preserveOuterOperators) {
+		if (preserveOuterOperators) {
+			return collectVisibleInputBindings(projection, extension, visibleVariables, requiredVariables);
+		}
 		if (projection == null) {
 			return extension == null ? List.of() : null;
 		}
@@ -322,20 +330,53 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 		}
 		Set<String> visible = Set.copyOf(visibleVariables);
 		List<LmdbLftjPlan.OutputBinding> outputBindings = new ArrayList<>();
-		Set<String> coveredSources = new LinkedHashSet<>();
+		Map<String, String> outputSourcesByName = new LinkedHashMap<>();
 		for (ProjectionElem projectionElem : projection.getProjectionElemList().getElements()) {
 			String sourceVariable = resolveProjectedSource(projectionElem, extensionBindings, visible);
 			if (sourceVariable == null) {
 				return null;
 			}
-			outputBindings.add(new LmdbLftjPlan.OutputBinding(
-					projectionElem.getProjectionAlias().orElse(projectionElem.getName()),
-					sourceVariable));
-			coveredSources.add(sourceVariable);
+			String outputName = projectionElem.getProjectionAlias().orElse(projectionElem.getName());
+			String previousSource = outputSourcesByName.putIfAbsent(outputName, sourceVariable);
+			if (previousSource != null && !previousSource.equals(sourceVariable)) {
+				return null;
+			}
+			outputBindings.add(new LmdbLftjPlan.OutputBinding(outputName, sourceVariable));
 		}
 		for (String requiredVariable : requiredVariables) {
-			if (visible.contains(requiredVariable) && coveredSources.add(requiredVariable)) {
+			if (!visible.contains(requiredVariable)) {
+				continue;
+			}
+			String previousSource = outputSourcesByName.get(requiredVariable);
+			if (previousSource == null) {
 				outputBindings.add(new LmdbLftjPlan.OutputBinding(requiredVariable, requiredVariable));
+				outputSourcesByName.put(requiredVariable, requiredVariable);
+			} else if (!previousSource.equals(requiredVariable)) {
+				return null;
+			}
+		}
+		return outputBindings;
+	}
+
+	private List<LmdbLftjPlan.OutputBinding> collectVisibleInputBindings(Projection projection, Extension extension,
+			List<String> visibleVariables, List<String> requiredVariables) {
+		LinkedHashSet<String> neededInputs = new LinkedHashSet<>(requiredVariables);
+		if (projection != null) {
+			for (ProjectionElem projectionElem : projection.getProjectionElemList().getElements()) {
+				neededInputs.add(projectionElem.getName());
+			}
+		} else if (extension != null) {
+			neededInputs.addAll(extension.getBindingNames());
+		} else {
+			neededInputs.addAll(visibleVariables);
+		}
+		if (extension != null) {
+			neededInputs = resolveExtensionInputs(neededInputs, extension, Set.copyOf(visibleVariables));
+		}
+		List<LmdbLftjPlan.OutputBinding> outputBindings = new ArrayList<>();
+		for (String visibleVariable : visibleVariables) {
+			if (neededInputs.contains(visibleVariable)) {
+				outputBindings.add(new LmdbLftjPlan.OutputBinding(visibleVariable, visibleVariable));
 			}
 		}
 		return outputBindings;
@@ -431,6 +472,59 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 			public void meet(Var node) {
 				if (isNamedVariable(node) && visibleVariables.contains(node.getName())) {
 					requiredVariables.add(node.getName());
+				}
+			}
+		});
+	}
+
+	private LinkedHashSet<String> resolveExtensionInputs(Set<String> requiredNames, Extension extension,
+			Set<String> visibleVariables) {
+		Map<String, ValueExpr> expressionsByName = new LinkedHashMap<>();
+		for (ExtensionElem element : extension.getElements()) {
+			expressionsByName.put(element.getName(), element.getExpr());
+		}
+		LinkedHashSet<String> resolvedInputs = new LinkedHashSet<>();
+		for (String requiredName : requiredNames) {
+			collectExtensionInputs(requiredName, visibleVariables, expressionsByName, resolvedInputs, new HashSet<>());
+		}
+		return resolvedInputs;
+	}
+
+	private void collectExtensionInputs(String variableName, Set<String> visibleVariables,
+			Map<String, ValueExpr> expressionsByName, Set<String> resolvedInputs, Set<String> visiting) {
+		if (visibleVariables.contains(variableName)) {
+			resolvedInputs.add(variableName);
+			return;
+		}
+		ValueExpr expression = expressionsByName.get(variableName);
+		if (expression == null || !visiting.add(variableName)) {
+			return;
+		}
+		collectExtensionInputs(expression, visibleVariables, expressionsByName, resolvedInputs, visiting);
+		visiting.remove(variableName);
+	}
+
+	private void collectExtensionInputs(ValueExpr expression, Set<String> visibleVariables,
+			Map<String, ValueExpr> expressionsByName, Set<String> resolvedInputs, Set<String> visiting) {
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				if (!isNamedVariable(node)) {
+					return;
+				}
+				String variableName = node.getName();
+				if (visibleVariables.contains(variableName)) {
+					resolvedInputs.add(variableName);
+					return;
+				}
+				ValueExpr nestedExpression = expressionsByName.get(variableName);
+				if (nestedExpression != null && visiting.add(variableName)) {
+					try {
+						collectExtensionInputs(nestedExpression, visibleVariables, expressionsByName, resolvedInputs,
+								visiting);
+					} finally {
+						visiting.remove(variableName);
+					}
 				}
 			}
 		});
