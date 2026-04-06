@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkStore;
@@ -71,7 +72,8 @@ public class FoafCliqueQueryBenchmark {
 	@Param({ "12345" })
 	public long seed;
 
-	@Param({ "interpreted", "executor_codegen", "full_codegen", LFTJ_DISABLED })
+//	@Param({ "interpreted", "executor_codegen", "full_codegen", LFTJ_DISABLED })
+	@Param({ "full_codegen" })
 	public String benchmarkMode;
 
 	private File dataDir;
@@ -80,7 +82,7 @@ public class FoafCliqueQueryBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		new Runner(new OptionsBuilder()
 				.include("FoafCliqueQueryBenchmark")
-				.forks(1)
+				.forks(0)
 				.build()).run();
 	}
 
@@ -192,19 +194,23 @@ public class FoafCliqueQueryBenchmark {
 
 	private long executeCount(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).evaluate().stream().count();
+			try (TupleQueryResult evaluate = connection.prepareTupleQuery(query).evaluate()) {
+				return evaluate.stream().count();
+			}
 		}
 	}
 
 	private long executeAggregateCount(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.findFirst()
-					.map(bindingSet -> (Literal) bindingSet.getValue(RESULT_COUNT_BINDING))
-					.map(Literal::longValue)
-					.orElseThrow(() -> new IllegalStateException("Missing aggregate count result"));
+			try (TupleQueryResult evaluate = connection.prepareTupleQuery(query)
+					.evaluate()) {
+				return evaluate
+						.stream()
+						.findFirst()
+						.map(bindingSet -> (Literal) bindingSet.getValue(RESULT_COUNT_BINDING))
+						.map(Literal::longValue)
+						.orElseThrow(() -> new IllegalStateException("Missing aggregate count result"));
+			}
 		}
 	}
 
