@@ -47,17 +47,52 @@ final class LmdbCachedFrontier {
 	}
 
 	int seek(long target) {
-		int index = Arrays.binarySearch(values, target);
-		return index >= 0 ? index : -index - 1;
+		return lowerBound(values, target, -1);
+	}
+
+	int seek(long target, int hintIndex) {
+		return lowerBound(values, target, hintIndex);
 	}
 
 	long countFor(long value) {
+		int index = lowerBound(values, value, -1);
+		if (index >= values.length || values[index] != value) {
+			return 0L;
+		}
 		if (counts == null) {
-			int index = Arrays.binarySearch(values, value);
-			return index >= 0 ? 1L : 0L;
+			return 1L;
+		}
+		return counts[index];
+	}
+
+	static int lowerBound(long[] values, long target, int hintIndex) {
+		if (hintIndex < 0 || hintIndex >= values.length) {
+			int index = Arrays.binarySearch(values, target);
+			return index >= 0 ? index : -index - 1;
 		}
 
-		int index = Arrays.binarySearch(values, value);
-		return index >= 0 ? counts[index] : 0L;
+		long hintValue = values[hintIndex];
+		if (hintValue == target) {
+			return hintIndex;
+		}
+
+		if (hintValue < target) {
+			int nextIndex = hintIndex + 1;
+			if (nextIndex >= values.length) {
+				return values.length;
+			}
+			if (values[nextIndex] >= target) {
+				return nextIndex;
+			}
+			int index = Arrays.binarySearch(values, nextIndex + 1, values.length, target);
+			return index >= 0 ? index : -index - 1;
+		}
+
+		int previousIndex = hintIndex - 1;
+		if (previousIndex >= 0 && values[previousIndex] < target) {
+			return hintIndex;
+		}
+		int index = Arrays.binarySearch(values, 0, hintIndex, target);
+		return index >= 0 ? index : -index - 1;
 	}
 }

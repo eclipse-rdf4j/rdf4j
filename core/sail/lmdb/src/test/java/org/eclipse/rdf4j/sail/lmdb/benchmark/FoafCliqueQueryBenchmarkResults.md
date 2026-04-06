@@ -103,3 +103,16 @@ FoafCliqueQueryBenchmark.cycle5ValuesDistinctMailboxOrdered  executor_codegen   
 FoafCliqueQueryBenchmark.cycle5ValuesDistinctMailboxOrdered      full_codegen                  30                8                3           5000               15000   12345  avgt    5   455.503 ±  20.033  ms/op
 FoafCliqueQueryBenchmark.cycle5ValuesDistinctMailboxOrdered          disabled                  30                8                3           5000               15000   12345  avgt    5  2165.313 ±  74.562  ms/op
 ```
+
+``` 
+Benchmark                                                    (benchmarkMode)  (cliquePercentage)  (maxCliqueSize)  (minCliqueSize)  (peopleCount)  (randomKnowsEdges)  (seed)  Mode  Cnt     Score    Error  Units
+FoafCliqueQueryBenchmark.cycle3                                 full_codegen                  30                8                3           5000               15000   12345  avgt    5    12.145 ±  0.697  ms/op
+FoafCliqueQueryBenchmark.cycle3CountCityInterest                full_codegen                  30                8                3           5000               15000   12345  avgt    5    36.130 ±  2.730  ms/op
+FoafCliqueQueryBenchmark.cycle3DistinctCityOrdered              full_codegen                  30                8                3           5000               15000   12345  avgt    5    90.575 ±  8.376  ms/op
+FoafCliqueQueryBenchmark.cycle3GroupedInterest                  full_codegen                  30                8                3           5000               15000   12345  avgt    5    33.409 ±  2.409  ms/op
+FoafCliqueQueryBenchmark.cycle4                                 full_codegen                  30                8                3           5000               15000   12345  avgt    5    54.210 ±  3.619  ms/op
+FoafCliqueQueryBenchmark.cycle4ValuesFilteredOrdered            full_codegen                  30                8                3           5000               15000   12345  avgt    5   145.352 ± 11.220  ms/op
+FoafCliqueQueryBenchmark.cycle5                                 full_codegen                  30                8                3           5000               15000   12345  avgt    5   255.649 ± 11.363  ms/op
+FoafCliqueQueryBenchmark.cycle5ValuesCountMailboxHomepage       full_codegen                  30                8                3           5000               15000   12345  avgt    5  1088.888 ± 24.557  ms/op
+FoafCliqueQueryBenchmark.cycle5ValuesDistinctMailboxOrdered     full_codegen                  30                8                3           5000               15000   12345  avgt    5   437.191 ± 53.469  ms/op
+```

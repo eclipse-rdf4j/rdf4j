@@ -635,6 +635,11 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("      return seekSlot").append(suffix).append("(0L);\n");
 			source.append("    }\n\n");
 			source.append("    private boolean seekSlot").append(suffix).append("(long target) {\n");
+			source.append("      long[] previousFrontierValues")
+					.append(suffix)
+					.append(" = frontierValues")
+					.append(suffix)
+					.append(";\n");
 			if (component == patternShape.derivedSourceComponent()) {
 				source.append("      frontierValues")
 						.append(suffix)
@@ -653,7 +658,15 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 					.append(suffix)
 					.append(" = seekFrontier(frontierValues")
 					.append(suffix)
-					.append(", target);\n");
+					.append(", target, frontierAvailable")
+					.append(suffix)
+					.append(" && frontierValues")
+					.append(suffix)
+					.append(" == previousFrontierValues")
+					.append(suffix)
+					.append(" ? frontierIndex")
+					.append(suffix)
+					.append(" : -1);\n");
 			source.append("      if (frontierIndex")
 					.append(suffix)
 					.append(" >= frontierValues")
@@ -1163,8 +1176,32 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 		private void appendHelpers(StringBuilder source) {
 			source.append("    private static final long[] EMPTY_FRONTIER_VALUES = new long[0];\n\n");
 			if (relationGroups.length > 0) {
-				source.append("    private static int seekFrontier(long[] values, long target) {\n");
-				source.append("      int index = java.util.Arrays.binarySearch(values, target);\n");
+				source.append("    private static int seekFrontier(long[] values, long target, int hintIndex) {\n");
+				source.append("      if (hintIndex < 0 || hintIndex >= values.length) {\n");
+				source.append("        int index = java.util.Arrays.binarySearch(values, target);\n");
+				source.append("        return index >= 0 ? index : -index - 1;\n");
+				source.append("      }\n");
+				source.append("      long hintValue = values[hintIndex];\n");
+				source.append("      if (hintValue == target) {\n");
+				source.append("        return hintIndex;\n");
+				source.append("      }\n");
+				source.append("      if (hintValue < target) {\n");
+				source.append("        int nextIndex = hintIndex + 1;\n");
+				source.append("        if (nextIndex >= values.length) {\n");
+				source.append("          return values.length;\n");
+				source.append("        }\n");
+				source.append("        if (values[nextIndex] >= target) {\n");
+				source.append("          return nextIndex;\n");
+				source.append("        }\n");
+				source.append(
+						"        int index = java.util.Arrays.binarySearch(values, nextIndex + 1, values.length, target);\n");
+				source.append("        return index >= 0 ? index : -index - 1;\n");
+				source.append("      }\n");
+				source.append("      int previousIndex = hintIndex - 1;\n");
+				source.append("      if (previousIndex >= 0 && values[previousIndex] < target) {\n");
+				source.append("        return hintIndex;\n");
+				source.append("      }\n");
+				source.append("      int index = java.util.Arrays.binarySearch(values, 0, hintIndex, target);\n");
 				source.append("      return index >= 0 ? index : -index - 1;\n");
 				source.append("    }\n\n");
 				source.append("    private static int mixFrontierCacheKey(long value) {\n");

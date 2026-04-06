@@ -48,7 +48,7 @@ final class LmdbCachedTrieCursor implements LmdbLftjCursor {
 		}
 
 		Frame frame = currentFrame();
-		int position = frame.frontier.seek(target);
+		int position = frame.frontier.seek(target, frame.position);
 		if (position >= frame.frontier.size()) {
 			frame.position = -1;
 			return false;
