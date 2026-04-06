@@ -14,74 +14,129 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+import org.eclipse.rdf4j.sail.lmdb.LmdbLftjBenchmarkMode;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryCatalog.QueryScenario;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class FoafCliqueLftjCorrectnessTest {
 
-	@Test
-	void baselineCycleQueriesShouldMatchRegularJoinCount(@TempDir Path tempDir) {
-		assertQueriesMatch(tempDir, FoafCliqueQueryCatalog.baselineScenarios());
-	}
+	private static final int PEOPLE_COUNT = 300;
+	private static final int CLIQUE_PERCENTAGE = 30;
+	private static final int MIN_CLIQUE_SIZE = 3;
+	private static final int MAX_CLIQUE_SIZE = 6;
+	private static final int RANDOM_KNOWS_EDGES = 900;
+	private static final long SEED = 12345L;
 
-	@Test
-	void mixedCycleQueriesShouldMatchRegularJoinCount(@TempDir Path tempDir) {
-		assertQueriesMatch(tempDir, FoafCliqueQueryCatalog.mixedScenarios());
-	}
+	private final Map<String, Repository> repositories = new LinkedHashMap<>();
+	private final Map<QueryScenario, Map<String, String>> queryHashes = new EnumMap<>(QueryScenario.class);
 
-	private void assertQueriesMatch(Path tempDir, List<QueryScenario> scenarios) {
-		Repository fallbackRepository = createRepository(tempDir.resolve("fallback").toFile(), false, false);
-		Repository interpretedRepository = createRepository(tempDir.resolve("interpreted").toFile(), true, false);
-		Repository compiledRepository = createRepository(tempDir.resolve("compiled").toFile(), true, true);
+	private Path tempDir;
 
-		try {
-			populate(fallbackRepository);
-			populate(interpretedRepository);
-			populate(compiledRepository);
-
-			for (QueryScenario scenario : scenarios) {
-				long expected = executeCount(fallbackRepository, scenario.query());
-				long interpreted = executeCount(interpretedRepository, scenario.query());
-				long compiled = executeCount(compiledRepository, scenario.query());
-
-				assertEquals(expected, interpreted,
-						"Interpreted LFTJ must preserve the " + scenario.benchmarkMethodName() + " result count");
-				assertEquals(expected, compiled,
-						"Compiled LFTJ must preserve the " + scenario.benchmarkMethodName() + " result count");
+	@BeforeAll
+	void setUp() throws IOException {
+		tempDir = Files.createTempDirectory("rdf4j-lmdb-foaf-clique-correctness");
+		for (String benchmarkMode : FoafCliqueQueryBenchmark.benchmarkModes()) {
+			Repository repository = createRepository(tempDir.resolve(benchmarkMode).toFile(), benchmarkMode);
+			populate(repository);
+			repositories.put(benchmarkMode, repository);
+		}
+		for (QueryScenario scenario : FoafCliqueQueryCatalog.allScenarios()) {
+			Map<String, String> hashesByMode = new LinkedHashMap<>();
+			for (String benchmarkMode : FoafCliqueQueryBenchmark.benchmarkModes()) {
+				hashesByMode.put(benchmarkMode, executeResultSetHash(repositoryFor(benchmarkMode), scenario.query()));
 			}
-		} finally {
-			fallbackRepository.shutDown();
-			interpretedRepository.shutDown();
-			compiledRepository.shutDown();
+			queryHashes.put(scenario, hashesByMode);
 		}
 	}
 
-	private Repository createRepository(File dataDir, boolean lftjEnabled, boolean lftjCodegenEnabled) {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
-		config.setLftjEnabled(lftjEnabled);
-		config.setLftjCodegenEnabled(lftjCodegenEnabled);
-		config.setForceSync(false);
-		config.setValueDBSize(1_073_741_824L);
-		config.setTripleDBSize(config.getValueDBSize());
+	@AfterAll
+	void tearDown() throws IOException {
+		for (Repository repository : repositories.values()) {
+			repository.shutDown();
+		}
+		if (tempDir != null) {
+			FileUtils.deleteDirectory(tempDir.toFile());
+		}
+	}
 
-		Repository repository = new SailRepository(new LmdbStore(dataDir, config));
+	@Test
+	void baselineCycleQueriesShouldMatchRegularJoinCount() {
+		assertQueriesMatch(FoafCliqueQueryCatalog.baselineScenarios());
+	}
+
+	@Test
+	void mixedCycleQueriesShouldMatchRegularJoinCount() {
+		assertQueriesMatch(FoafCliqueQueryCatalog.mixedScenarios());
+	}
+
+	@ParameterizedTest(name = "{0} / {1}")
+	@MethodSource("queryAndModeArguments")
+	void eachQueryAndModeShouldProduceTheSameResultHash(QueryScenario scenario, String benchmarkMode) {
+		assertEquals(hashFor(scenario, FoafCliqueQueryBenchmark.LFTJ_DISABLED), hashFor(scenario, benchmarkMode),
+				benchmarkMode + " must preserve the full result set for " + scenario.benchmarkMethodName());
+	}
+
+	static Stream<Arguments> queryAndModeArguments() {
+		return FoafCliqueQueryCatalog.allScenarios()
+				.stream()
+				.flatMap(scenario -> FoafCliqueQueryBenchmark.benchmarkModes()
+						.stream()
+						.map(benchmarkMode -> Arguments.of(scenario, benchmarkMode)));
+	}
+
+	private void assertQueriesMatch(List<QueryScenario> scenarios) {
+		Repository fallbackRepository = repositoryFor(FoafCliqueQueryBenchmark.LFTJ_DISABLED);
+		for (QueryScenario scenario : scenarios) {
+			long expected = executeCount(fallbackRepository, scenario.query());
+			for (String benchmarkMode : List.of(
+					LmdbLftjBenchmarkMode.INTERPRETED,
+					LmdbLftjBenchmarkMode.EXECUTOR_CODEGEN,
+					LmdbLftjBenchmarkMode.FULL_CODEGEN)) {
+				assertEquals(expected, executeCount(repositoryFor(benchmarkMode), scenario.query()),
+						benchmarkMode + " must preserve the " + scenario.benchmarkMethodName() + " result count");
+			}
+		}
+	}
+
+	private Repository createRepository(File dataDir, String benchmarkMode) {
+		SailRepository repository = FoafCliqueQueryBenchmark.createRepository(dataDir, benchmarkMode);
 		repository.init();
 		return repository;
 	}
 
 	private void populate(Repository repository) {
 		try (SailRepositoryConnection connection = (SailRepositoryConnection) repository.getConnection()) {
-			new FoafCliqueDataGenerator(300, 30, 3, 6, 900, 12345L).populate(connection);
+			new FoafCliqueDataGenerator(PEOPLE_COUNT, CLIQUE_PERCENTAGE, MIN_CLIQUE_SIZE, MAX_CLIQUE_SIZE,
+					RANDOM_KNOWS_EDGES, SEED).populate(connection);
 		}
 	}
 
@@ -89,5 +144,66 @@ class FoafCliqueLftjCorrectnessTest {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			return connection.prepareTupleQuery(query).evaluate().stream().count();
 		}
+	}
+
+	private String executeResultSetHash(Repository repository, String query) {
+		List<String> rows = new ArrayList<>();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.prepareTupleQuery(query)
+					.evaluate()
+					.forEach(bindingSet -> rows.add(bindingSetToString(bindingSet)));
+		}
+		rows.sort(String::compareTo);
+		return hash(rows);
+	}
+
+	private String bindingSetToString(BindingSet bindingSet) {
+		return bindingSet.getBindingNames()
+				.stream()
+				.sorted()
+				.map(name -> name + "=" + valueToString(bindingSet.getValue(name)))
+				.collect(Collectors.joining("|"));
+	}
+
+	private String valueToString(Value value) {
+		return NTriplesUtil.toNTriplesString(value);
+	}
+
+	private String hash(List<String> rows) {
+		MessageDigest digest = newSha256Digest();
+		for (String row : rows) {
+			digest.update(row.getBytes(StandardCharsets.UTF_8));
+			digest.update((byte) '\n');
+		}
+		return toHex(digest.digest());
+	}
+
+	private MessageDigest newSha256Digest() {
+		try {
+			return MessageDigest.getInstance("SHA-256");
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("Missing SHA-256 digest", e);
+		}
+	}
+
+	private String toHex(byte[] bytes) {
+		StringBuilder builder = new StringBuilder(bytes.length * 2);
+		for (byte b : bytes) {
+			builder.append(Character.forDigit((b >>> 4) & 0x0F, 16));
+			builder.append(Character.forDigit(b & 0x0F, 16));
+		}
+		return builder.toString();
+	}
+
+	private Repository repositoryFor(String benchmarkMode) {
+		Repository repository = repositories.get(benchmarkMode);
+		if (repository == null) {
+			throw new IllegalArgumentException("Unknown benchmark mode: " + benchmarkMode);
+		}
+		return repository;
+	}
+
+	private String hashFor(QueryScenario scenario, String benchmarkMode) {
+		return queryHashes.get(scenario).get(benchmarkMode);
 	}
 }

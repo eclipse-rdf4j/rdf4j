@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
@@ -81,12 +82,24 @@ public class FoafCliqueQueryBenchmark {
 				.build()).run();
 	}
 
+	static List<String> benchmarkModes() {
+		return List.of(
+				LmdbLftjBenchmarkMode.INTERPRETED,
+				LmdbLftjBenchmarkMode.EXECUTOR_CODEGEN,
+				LmdbLftjBenchmarkMode.FULL_CODEGEN,
+				LFTJ_DISABLED);
+	}
+
+	static SailRepository createRepository(File dataDir, String benchmarkMode) {
+		validateBenchmarkMode(benchmarkMode);
+		return new SailRepository(new LmdbBenchmarkStore(dataDir, createLftjBenchmarkConfig(benchmarkMode),
+				LFTJ_DISABLED.equals(benchmarkMode) ? null : LmdbLftjBenchmarkMode.compiler(benchmarkMode)));
+	}
+
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		validateBenchmarkMode(benchmarkMode);
 		dataDir = Files.createTempDirectory("rdf4j-lmdb-foaf-cliques").toFile();
-		repository = new SailRepository(new LmdbBenchmarkStore(dataDir, createLftjBenchmarkConfig(benchmarkMode),
-				LFTJ_DISABLED.equals(benchmarkMode) ? null : LmdbLftjBenchmarkMode.compiler(benchmarkMode)));
+		repository = createRepository(dataDir, benchmarkMode);
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -167,7 +180,7 @@ public class FoafCliqueQueryBenchmark {
 		}
 	}
 
-	private static LmdbStoreConfig createLftjBenchmarkConfig(String benchmarkMode) {
+	static LmdbStoreConfig createLftjBenchmarkConfig(String benchmarkMode) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
 		boolean lftjEnabled = !LFTJ_DISABLED.equals(benchmarkMode);
 		config.setLftjEnabled(lftjEnabled);
@@ -178,7 +191,7 @@ public class FoafCliqueQueryBenchmark {
 		return config;
 	}
 
-	private static void validateBenchmarkMode(String benchmarkMode) {
+	static void validateBenchmarkMode(String benchmarkMode) {
 		if (LFTJ_DISABLED.equals(benchmarkMode)) {
 			return;
 		}
