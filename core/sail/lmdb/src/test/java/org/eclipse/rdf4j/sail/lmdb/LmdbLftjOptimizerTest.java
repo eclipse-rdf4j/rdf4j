@@ -32,11 +32,15 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -51,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryCatalog;
 import org.junit.jupiter.api.Test;
 
 class LmdbLftjOptimizerTest {
@@ -273,6 +278,44 @@ class LmdbLftjOptimizerTest {
 		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
 		assertInstanceOf(Extension.class, findNode(tupleExpr, Extension.class));
 		assertInstanceOf(Projection.class, findNode(tupleExpr, Projection.class));
+	}
+
+	@Test
+	void optimizeShouldKeepDistinctAndOrderOutsideFusedCycleCore() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(
+				FoafCliqueQueryCatalog.QueryScenario.CYCLE3_DISTINCT_CITY_ORDERED.query());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertInstanceOf(BindingSetAssignment.class, findNode(tupleExpr, BindingSetAssignment.class));
+		assertInstanceOf(Distinct.class, findNode(tupleExpr, Distinct.class));
+		assertInstanceOf(Order.class, findNode(tupleExpr, Order.class));
+		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertEquals(List.of(), lftj.plan().inequalityConstraints());
+	}
+
+	@Test
+	void optimizeShouldKeepGroupingOutsideFusedCycleCore() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(
+				FoafCliqueQueryCatalog.QueryScenario.CYCLE3_GROUPED_INTEREST.query());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertInstanceOf(BindingSetAssignment.class, findNode(tupleExpr, BindingSetAssignment.class));
+		assertInstanceOf(Group.class, findNode(tupleExpr, Group.class));
+		assertInstanceOf(Order.class, findNode(tupleExpr, Order.class));
+		assertInstanceOf(Filter.class, findNode(tupleExpr, Filter.class));
+		assertEquals(List.of(), lftj.plan().inequalityConstraints());
 	}
 
 	private TupleExpr cycle(String a, String b, String c) {

@@ -148,21 +148,27 @@ final class LmdbPrefixFrontierProvider {
 		}
 
 		metrics.recordRelationLoad();
+		relation = loadDerivedRelation(queryAccess, state.txn(), patternPlan, predicateId);
+		relationCache.put(lookup.freeze(), relation);
+		return relation;
+	}
+
+	static LmdbDerivedBinaryRelation loadDerivedRelation(LmdbQueryAccess queryAccess, TxnManager.Txn txn,
+			LmdbLftjPatternPlan patternPlan, long predicateId) {
 		int sourceComponent = patternPlan.keyTerm(1).component();
 		int targetComponent = patternPlan.keyTerm(2).component();
 		LmdbDerivedBinaryRelation.Builder builder = new LmdbDerivedBinaryRelation.Builder(sourceComponent,
 				targetComponent);
-		Arrays.fill(relationLowerBound, 0L);
-		Arrays.fill(relationUpperBound, Long.MAX_VALUE);
-		relationLowerBound[TripleStore.PRED_IDX] = predicateId;
-		relationUpperBound[TripleStore.PRED_IDX] = predicateId;
+		long[] lowerBound = new long[4];
+		long[] upperBound = new long[4];
+		Arrays.fill(upperBound, Long.MAX_VALUE);
+		lowerBound[TripleStore.PRED_IDX] = predicateId;
+		upperBound[TripleStore.PRED_IDX] = predicateId;
 		int sourceKeyField = patternPlan.keyFieldIndexForComponent(sourceComponent);
 		int targetKeyField = patternPlan.keyFieldIndexForComponent(targetComponent);
-		forEachUniqueRow(patternPlan, relationLowerBound, relationUpperBound, 1,
+		forEachUniqueRow(queryAccess, txn, patternPlan, lowerBound, upperBound, 1,
 				row -> builder.add(row[sourceKeyField], row[targetKeyField]));
-		relation = builder.build();
-		relationCache.put(lookup.freeze(), relation);
-		return relation;
+		return builder.build();
 	}
 
 	private boolean canUseDerivedRelation(LmdbLftjPatternPlan patternPlan) {
@@ -172,11 +178,17 @@ final class LmdbPrefixFrontierProvider {
 	private void forEachUniqueRow(LmdbLftjPatternPlan patternPlan, long[] lowerBound, long[] upperBound,
 			int prefixLength,
 			RowConsumer consumer) {
+		forEachUniqueRow(queryAccess, state.txn(), patternPlan, lowerBound, upperBound, prefixLength, consumer);
+	}
+
+	private static void forEachUniqueRow(LmdbQueryAccess queryAccess, TxnManager.Txn txn,
+			LmdbLftjPatternPlan patternPlan, long[] lowerBound, long[] upperBound, int prefixLength,
+			RowConsumer consumer) {
 		try (CursorReader explicit = new CursorReader(
-				queryAccess.openTrieCursor(state.txn(), patternPlan.indexName(), true),
+				queryAccess.openTrieCursor(txn, patternPlan.indexName(), true),
 				lowerBound, upperBound, prefixLength);
 				CursorReader inferred = queryAccess.includeInferred()
-						? new CursorReader(queryAccess.openTrieCursor(state.txn(), patternPlan.indexName(), false),
+						? new CursorReader(queryAccess.openTrieCursor(txn, patternPlan.indexName(), false),
 								lowerBound, upperBound, prefixLength)
 						: CursorReader.empty()) {
 			while (explicit.available() || inferred.available()) {
@@ -195,7 +207,7 @@ final class LmdbPrefixFrontierProvider {
 		}
 	}
 
-	private int compareRows(long[] left, long[] right) {
+	private static int compareRows(long[] left, long[] right) {
 		for (int i = 0; i < 4; i++) {
 			int comparison = Long.compare(left[i], right[i]);
 			if (comparison != 0) {

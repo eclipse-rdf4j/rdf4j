@@ -15,20 +15,69 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 
 final class FoafCliqueDataGenerator {
 
 	private static final String PERSON_NAMESPACE = "http://example.org/foaf/person/";
+	private static final String TYPE_NAMESPACE = FoafCliqueQueryCatalog.META_NAMESPACE + "type/";
 	private static final int BATCH_SIZE = 10_000;
+	private static final String[] FIRST_NAMES = {
+			"Anna", "Ben", "Clara", "Daniel", "Elin", "Farah", "Gustav", "Hana",
+			"Ida", "Jonas", "Karin", "Lukas", "Mira", "Noah", "Oskar", "Petra"
+	};
+	private static final String[] LAST_NAMES = {
+			"Berg", "Lind", "Dahl", "Nyman", "Holm", "Aasen", "Svensson", "Olsen",
+			"Hansen", "Lehto", "Madsen", "Jensen", "Nygaard", "Ranta", "Karlsson", "Eklund"
+	};
+	private static final String[] ALT_LABEL_LANGS = { "sv", "no", "da", "de" };
+	private static final String[][] CITY_DATA = {
+			{ "oslo", "Oslo", "nb" },
+			{ "stockholm", "Stockholm", "sv" },
+			{ "copenhagen", "Copenhagen", "da" },
+			{ "helsinki", "Helsinki", "fi" },
+			{ "bergen", "Bergen", "nn" },
+			{ "gothenburg", "Gothenburg", "sv" },
+			{ "aarhus", "Aarhus", "da" },
+			{ "trondheim", "Trondheim", "nb" }
+	};
+	private static final String[][] ORGANIZATION_DATA = {
+			{ "northGraphLab", "North Graph Lab" },
+			{ "northDataCollective", "North Data Collective" },
+			{ "northSemanticsStudio", "North Semantics Studio" },
+			{ "harborKnowledgeWorks", "Harbor Knowledge Works" },
+			{ "fjordQuerySystems", "Fjord Query Systems" },
+			{ "balticReasoningGuild", "Baltic Reasoning Guild" },
+			{ "arcticOntologyOffice", "Arctic Ontology Office" },
+			{ "signalWeaveLabs", "Signal Weave Labs" }
+	};
+	private static final String[][] INTEREST_DATA = {
+			{ "rdf", "RDF" },
+			{ "sparql", "SPARQL" },
+			{ "knowledgeGraphs", "Knowledge Graphs" },
+			{ "queryPlanning", "Query Planning" },
+			{ "java", "Java" },
+			{ "reasoning", "Reasoning" },
+			{ "federation", "Federation" },
+			{ "analytics", "Analytics" }
+	};
+	private static final String[][] ROLE_DATA = {
+			{ "engineer", "Engineer" },
+			{ "researcher", "Researcher" },
+			{ "architect", "Architect" },
+			{ "analyst", "Analyst" }
+	};
 
 	private final int peopleCount;
 	private final int cliquePercentage;
@@ -38,6 +87,10 @@ final class FoafCliqueDataGenerator {
 	private final Random random;
 
 	private final List<IRI> people = new ArrayList<>();
+	private final List<IRI> organizations = new ArrayList<>();
+	private final List<IRI> cities = new ArrayList<>();
+	private final List<IRI> interests = new ArrayList<>();
+	private final List<IRI> roleTypes = new ArrayList<>();
 	private final Set<Long> knowsEdges = new HashSet<>();
 
 	private int pendingStatements;
@@ -73,6 +126,7 @@ final class FoafCliqueDataGenerator {
 		pendingStatements = 0;
 		connection.begin(IsolationLevels.NONE);
 		try {
+			createReferenceData(connection, valueFactory);
 			createPeople(connection, valueFactory);
 			createCliques(connection);
 			createRandomKnowsEdges(connection);
@@ -85,12 +139,87 @@ final class FoafCliqueDataGenerator {
 		}
 	}
 
+	private void createReferenceData(SailRepositoryConnection connection, ValueFactory valueFactory) {
+		cities.clear();
+		organizations.clear();
+		interests.clear();
+		roleTypes.clear();
+
+		IRI cityType = valueFactory.createIRI(TYPE_NAMESPACE + "City");
+		IRI interestType = valueFactory.createIRI(TYPE_NAMESPACE + "Interest");
+		IRI roleType = valueFactory.createIRI(TYPE_NAMESPACE + "Role");
+
+		for (String[] cityData : CITY_DATA) {
+			IRI city = valueFactory.createIRI(FoafCliqueQueryCatalog.CITY_NAMESPACE + cityData[0]);
+			cities.add(city);
+			addStatement(connection, city, RDF.TYPE, cityType);
+			addStatement(connection, city, RDFS.LABEL, valueFactory.createLiteral(cityData[1], "en"));
+			addStatement(connection, city, RDFS.LABEL, valueFactory.createLiteral(cityData[1], cityData[2]));
+		}
+
+		for (String[] roleData : ROLE_DATA) {
+			IRI role = valueFactory.createIRI(FoafCliqueQueryCatalog.ROLE_NAMESPACE + roleData[0]);
+			roleTypes.add(role);
+			addStatement(connection, role, RDF.TYPE, roleType);
+			addStatement(connection, role, RDFS.LABEL, valueFactory.createLiteral(roleData[1], "en"));
+		}
+
+		for (int i = 0; i < ORGANIZATION_DATA.length; i++) {
+			String[] organizationData = ORGANIZATION_DATA[i];
+			IRI organization = valueFactory
+					.createIRI(FoafCliqueQueryCatalog.ORGANIZATION_NAMESPACE + organizationData[0]);
+			organizations.add(organization);
+			addStatement(connection, organization, RDF.TYPE, FOAF.ORGANIZATION);
+			addStatement(connection, organization, FOAF.NAME, valueFactory.createLiteral(organizationData[1]));
+			addStatement(connection, organization, RDFS.LABEL, valueFactory.createLiteral(organizationData[1], "en"));
+			addStatement(connection, organization, FOAF.HOMEPAGE,
+					valueFactory.createIRI("https://" + organizationData[0] + ".example.org"));
+			addStatement(connection, organization, FOAF.BASED_NEAR, cities.get(i % cities.size()));
+		}
+
+		for (String[] interestData : INTEREST_DATA) {
+			IRI interest = valueFactory.createIRI(FoafCliqueQueryCatalog.INTEREST_NAMESPACE + interestData[0]);
+			interests.add(interest);
+			addStatement(connection, interest, RDF.TYPE, interestType);
+			addStatement(connection, interest, RDFS.LABEL, valueFactory.createLiteral(interestData[1], "en"));
+		}
+	}
+
 	private void createPeople(SailRepositoryConnection connection, ValueFactory valueFactory) {
 		people.clear();
 		for (int i = 0; i < peopleCount; i++) {
 			IRI person = valueFactory.createIRI(PERSON_NAMESPACE + i);
+			IRI city = cities.get(i % cities.size());
+			IRI roleType = roleTypes.get(i % roleTypes.size());
+			IRI primaryInterest = interests.get(i % interests.size());
+			IRI secondaryInterest = interests.get((i + 3) % interests.size());
+			IRI primaryOrganization = organizations.get(i % organizations.size());
+			IRI secondaryOrganization = organizations.get((i + 5) % organizations.size());
+			String fullName = composeFullName(i);
+			String slug = slugify(fullName) + "-" + i;
+
 			people.add(person);
 			addStatement(connection, person, RDF.TYPE, FOAF.PERSON);
+			addStatement(connection, person, RDF.TYPE, roleType);
+			addStatement(connection, person, RDFS.LABEL, valueFactory.createLiteral(fullName, "en"));
+			addStatement(connection, person, RDFS.LABEL,
+					valueFactory.createLiteral(fullName, ALT_LABEL_LANGS[i % ALT_LABEL_LANGS.length]));
+			addStatement(connection, person, FOAF.NAME, valueFactory.createLiteral(fullName));
+			addStatement(connection, person, FOAF.NICK,
+					valueFactory.createLiteral(FIRST_NAMES[i % FIRST_NAMES.length].toLowerCase(Locale.ROOT) + (i + 1)));
+			addStatement(connection, person, FOAF.MBOX, valueFactory.createIRI("mailto:" + slug + "@example.org"));
+			addStatement(connection, person, FOAF.HOMEPAGE,
+					valueFactory.createIRI("https://people.example.org/" + slug));
+			addStatement(connection, person, FOAF.AGE, valueFactory.createLiteral(24 + (i % 35)));
+			addStatement(connection, person, FOAF.BASED_NEAR, city);
+			addStatement(connection, person, FOAF.INTEREST, primaryInterest);
+			if (!primaryInterest.equals(secondaryInterest)) {
+				addStatement(connection, person, FOAF.INTEREST, secondaryInterest);
+			}
+			addStatement(connection, primaryOrganization, FOAF.MEMBER, person);
+			if (i % 11 == 0 && !primaryOrganization.equals(secondaryOrganization)) {
+				addStatement(connection, secondaryOrganization, FOAF.MEMBER, person);
+			}
 		}
 	}
 
@@ -158,7 +287,7 @@ final class FoafCliqueDataGenerator {
 		return true;
 	}
 
-	private void addStatement(SailRepositoryConnection connection, IRI subject, IRI predicate, IRI object) {
+	private void addStatement(SailRepositoryConnection connection, IRI subject, IRI predicate, Value object) {
 		connection.add(subject, predicate, object);
 		pendingStatements++;
 		if (pendingStatements >= BATCH_SIZE) {
@@ -172,5 +301,27 @@ final class FoafCliqueDataGenerator {
 			connection.commit();
 		}
 		pendingStatements = 0;
+	}
+
+	private String composeFullName(int index) {
+		String firstName = FIRST_NAMES[index % FIRST_NAMES.length];
+		String lastName = LAST_NAMES[(index / FIRST_NAMES.length) % LAST_NAMES.length];
+		return firstName + " " + lastName;
+	}
+
+	private String slugify(String value) {
+		StringBuilder builder = new StringBuilder(value.length());
+		for (int i = 0; i < value.length(); i++) {
+			char current = Character.toLowerCase(value.charAt(i));
+			if ((current >= 'a' && current <= 'z') || (current >= '0' && current <= '9')) {
+				builder.append(current);
+			} else if (builder.length() > 0 && builder.charAt(builder.length() - 1) != '-') {
+				builder.append('-');
+			}
+		}
+		if (builder.length() > 0 && builder.charAt(builder.length() - 1) == '-') {
+			builder.setLength(builder.length() - 1);
+		}
+		return builder.toString();
 	}
 }

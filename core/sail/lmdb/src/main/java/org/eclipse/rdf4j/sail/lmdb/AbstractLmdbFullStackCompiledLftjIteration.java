@@ -68,6 +68,15 @@ public abstract class AbstractLmdbFullStackCompiledLftjIteration extends LookAhe
 		return plan;
 	}
 
+	protected final LmdbLftjPatternPlan patternPlan(int patternOrdinal) {
+		return plan.patternPlans().get(patternOrdinal);
+	}
+
+	protected final LmdbDerivedBinaryRelation loadDerivedRelation(int patternOrdinal, long predicateId) {
+		return LmdbPrefixFrontierProvider.loadDerivedRelation(queryAccess, state.txn(), patternPlan(patternOrdinal),
+				predicateId);
+	}
+
 	protected final LmdbLftjExecutionShape shape() {
 		return shape;
 	}

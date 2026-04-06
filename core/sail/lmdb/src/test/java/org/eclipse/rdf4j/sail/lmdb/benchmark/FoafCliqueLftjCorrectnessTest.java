@@ -15,12 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryCatalog.QueryScenario;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -28,21 +30,16 @@ import org.junit.jupiter.api.io.TempDir;
 class FoafCliqueLftjCorrectnessTest {
 
 	@Test
-	void cycle3ShouldMatchRegularJoinCount(@TempDir Path tempDir) {
-		assertCycleCountMatches(tempDir, 3);
+	void baselineCycleQueriesShouldMatchRegularJoinCount(@TempDir Path tempDir) {
+		assertQueriesMatch(tempDir, FoafCliqueQueryCatalog.baselineScenarios());
 	}
 
 	@Test
-	void cycle4ShouldMatchRegularJoinCount(@TempDir Path tempDir) {
-		assertCycleCountMatches(tempDir, 4);
+	void mixedCycleQueriesShouldMatchRegularJoinCount(@TempDir Path tempDir) {
+		assertQueriesMatch(tempDir, FoafCliqueQueryCatalog.mixedScenarios());
 	}
 
-	@Test
-	void cycle5ShouldMatchRegularJoinCount(@TempDir Path tempDir) {
-		assertCycleCountMatches(tempDir, 5);
-	}
-
-	private void assertCycleCountMatches(Path tempDir, int cycleSize) {
+	private void assertQueriesMatch(Path tempDir, List<QueryScenario> scenarios) {
 		Repository fallbackRepository = createRepository(tempDir.resolve("fallback").toFile(), false, false);
 		Repository interpretedRepository = createRepository(tempDir.resolve("interpreted").toFile(), true, false);
 		Repository compiledRepository = createRepository(tempDir.resolve("compiled").toFile(), true, true);
@@ -52,13 +49,16 @@ class FoafCliqueLftjCorrectnessTest {
 			populate(interpretedRepository);
 			populate(compiledRepository);
 
-			long expected = executeCount(fallbackRepository, cycleQuery(cycleSize));
-			long interpreted = executeCount(interpretedRepository, cycleQuery(cycleSize));
-			long compiled = executeCount(compiledRepository, cycleQuery(cycleSize));
+			for (QueryScenario scenario : scenarios) {
+				long expected = executeCount(fallbackRepository, scenario.query());
+				long interpreted = executeCount(interpretedRepository, scenario.query());
+				long compiled = executeCount(compiledRepository, scenario.query());
 
-			assertEquals(expected, interpreted,
-					"Interpreted LFTJ must preserve the cycle" + cycleSize + " result count");
-			assertEquals(expected, compiled, "Compiled LFTJ must preserve the cycle" + cycleSize + " result count");
+				assertEquals(expected, interpreted,
+						"Interpreted LFTJ must preserve the " + scenario.benchmarkMethodName() + " result count");
+				assertEquals(expected, compiled,
+						"Compiled LFTJ must preserve the " + scenario.benchmarkMethodName() + " result count");
+			}
 		} finally {
 			fallbackRepository.shutDown();
 			interpretedRepository.shutDown();
@@ -89,36 +89,5 @@ class FoafCliqueLftjCorrectnessTest {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			return connection.prepareTupleQuery(query).evaluate().stream().count();
 		}
-	}
-
-	private static String cycleQuery(int size) {
-		StringBuilder builder = new StringBuilder();
-		builder.append("PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n");
-		builder.append("SELECT * WHERE {\n");
-		for (int i = 0; i < size; i++) {
-			builder.append("  ?")
-					.append(variableName(i))
-					.append(" foaf:knows ?")
-					.append(variableName((i + 1) % size))
-					.append(" .\n");
-		}
-		builder.append("  FILTER (");
-		boolean first = true;
-		for (int i = 0; i < size; i++) {
-			for (int j = i + 1; j < size; j++) {
-				if (!first) {
-					builder.append(" && ");
-				}
-				builder.append("?").append(variableName(i)).append(" != ?").append(variableName(j));
-				first = false;
-			}
-		}
-		builder.append(")\n");
-		builder.append("}\n");
-		return builder.toString();
-	}
-
-	private static char variableName(int index) {
-		return (char) ('a' + index);
 	}
 }

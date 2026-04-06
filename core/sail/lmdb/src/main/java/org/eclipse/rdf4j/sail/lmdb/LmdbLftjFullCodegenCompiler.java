@@ -597,29 +597,16 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			source.append("        return relationGroup").append(relationGroup.groupId).append(";\n");
 			source.append("      }\n");
 			source.append("      metrics().recordRelationLoad();\n");
-			source.append("      LmdbDerivedBinaryRelation.Builder builder = new LmdbDerivedBinaryRelation.Builder(")
-					.append(sourceComponent)
+			source.append("      long predicateId = state().fixedIdForComponent(")
+					.append(patternOrdinal)
 					.append(", ")
-					.append(targetComponent)
+					.append(TripleStore.PRED_IDX)
 					.append(");\n");
-			appendWitnessSeek(source, patternOrdinal, patternShape, "0L");
-			source.append("      while (available").append(slotSuffix(patternOrdinal, -1)).append("Explicit");
-			if (includeInferred) {
-				source.append(" || available").append(slotSuffix(patternOrdinal, -1)).append("Inferred");
-			}
-			source.append(") {\n");
-			if (includeInferred) {
-				appendMergedWitnessRowSelection(source, patternOrdinal, patternShape, true);
-			} else {
-				source.append("        builder.add(")
-						.append(componentAccessor(patternOrdinal, -1, "Explicit", sourceComponent))
-						.append(", ")
-						.append(componentAccessor(patternOrdinal, -1, "Explicit", targetComponent))
-						.append(");\n");
-				source.append("        advanceWitness").append(patternOrdinal).append("Explicit();\n");
-			}
-			source.append("      }\n");
-			source.append("      relationGroup").append(relationGroup.groupId).append(" = builder.build();\n");
+			source.append("      relationGroup")
+					.append(relationGroup.groupId)
+					.append(" = loadDerivedRelation(")
+					.append(patternOrdinal)
+					.append(", predicateId);\n");
 			source.append("      relationGroup")
 					.append(relationGroup.groupId)
 					.append("Scratch.prepare(relationGroup")
@@ -1237,19 +1224,16 @@ final class LmdbLftjFullCodegenCompiler extends LmdbLftjCodegenCompiler {
 			if (plan.inequalityConstraints().isEmpty()) {
 				source.append("      return true;\n");
 			} else {
-				source.append("      return ");
-				for (int i = 0; i < plan.inequalityConstraints().size(); i++) {
-					LmdbLftjPlan.InequalityConstraint inequality = plan.inequalityConstraints().get(i);
-					if (i > 0) {
-						source.append("\n          && ");
-					}
-					source.append("state().value(")
+				for (LmdbLftjPlan.InequalityConstraint inequality : plan.inequalityConstraints()) {
+					source.append("      if (state().value(")
 							.append(variableSlot(inequality.leftVariable()))
-							.append(") != state().value(")
+							.append(") == state().value(")
 							.append(variableSlot(inequality.rightVariable()))
-							.append(')');
+							.append(")) {\n");
+					source.append("        return false;\n");
+					source.append("      }\n");
 				}
-				source.append(";\n");
+				source.append("      return true;\n");
 			}
 			source.append("    }\n\n");
 		}

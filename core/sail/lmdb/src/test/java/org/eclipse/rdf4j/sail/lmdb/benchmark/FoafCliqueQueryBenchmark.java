@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbLftjBenchmarkMode;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryCatalog.QueryScenario;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -40,16 +41,14 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 30, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class FoafCliqueQueryBenchmark {
 
-	private static final String QUERY_CYCLE_3 = cycleQuery(3);
-	private static final String QUERY_CYCLE_4 = cycleQuery(4);
-	private static final String QUERY_CYCLE_5 = cycleQuery(5);
+	public static final String LFTJ_DISABLED = "disabled";
 
 	@Param({ "5000" })
 	public int peopleCount;
@@ -69,8 +68,7 @@ public class FoafCliqueQueryBenchmark {
 	@Param({ "12345" })
 	public long seed;
 
-//	@Param({ "interpreted", "executor_codegen", "full_codegen" })
-	@Param({ "full_codegen" })
+	@Param({ "interpreted", "executor_codegen", "full_codegen", LFTJ_DISABLED })
 	public String benchmarkMode;
 
 	private File dataDir;
@@ -85,10 +83,10 @@ public class FoafCliqueQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		LmdbLftjBenchmarkMode.validate(benchmarkMode);
+		validateBenchmarkMode(benchmarkMode);
 		dataDir = Files.createTempDirectory("rdf4j-lmdb-foaf-cliques").toFile();
 		repository = new SailRepository(new LmdbBenchmarkStore(dataDir, createLftjBenchmarkConfig(benchmarkMode),
-				LmdbLftjBenchmarkMode.compiler(benchmarkMode)));
+				LFTJ_DISABLED.equals(benchmarkMode) ? null : LmdbLftjBenchmarkMode.compiler(benchmarkMode)));
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -109,17 +107,58 @@ public class FoafCliqueQueryBenchmark {
 
 	@Benchmark
 	public long cycle3() {
-		return executeCount(QUERY_CYCLE_3);
+		return executeCount(QueryScenario.CYCLE3.query());
 	}
 
 	@Benchmark
 	public long cycle4() {
-		return executeCount(QUERY_CYCLE_4);
+		return executeCount(QueryScenario.CYCLE4.query());
 	}
 
 	@Benchmark
 	public long cycle5() {
-		return executeCount(QUERY_CYCLE_5);
+		return executeCount(QueryScenario.CYCLE5.query());
+	}
+
+	@Benchmark
+	public long cycle3DistinctCityOrdered() {
+		return executeCount(QueryScenario.CYCLE3_DISTINCT_CITY_ORDERED.query());
+	}
+
+	@Benchmark
+	public long cycle4ValuesFilteredOrdered() {
+		return executeCount(QueryScenario.CYCLE4_VALUES_FILTERED_ORDERED.query());
+	}
+
+	@Benchmark
+	public long cycle3GroupedInterest() {
+		return executeCount(QueryScenario.CYCLE3_GROUPED_INTEREST.query());
+	}
+
+	@Benchmark
+	public long cycle5ValuesDistinctMailboxOrdered() {
+		return executeCount(QueryScenario.CYCLE5_VALUES_DISTINCT_MAILBOX_ORDERED.query());
+	}
+
+	public long executeScenario(QueryScenario scenario) {
+		switch (scenario) {
+		case CYCLE3:
+			return cycle3();
+		case CYCLE4:
+			return cycle4();
+		case CYCLE5:
+			return cycle5();
+		case CYCLE3_DISTINCT_CITY_ORDERED:
+			return cycle3DistinctCityOrdered();
+		case CYCLE4_VALUES_FILTERED_ORDERED:
+			return cycle4ValuesFilteredOrdered();
+		case CYCLE3_GROUPED_INTEREST:
+			return cycle3GroupedInterest();
+		case CYCLE5_VALUES_DISTINCT_MAILBOX_ORDERED:
+			return cycle5ValuesDistinctMailboxOrdered();
+		default:
+			throw new IllegalArgumentException("Unsupported benchmark scenario: " + scenario);
+		}
 	}
 
 	private long executeCount(String query) {
@@ -130,42 +169,19 @@ public class FoafCliqueQueryBenchmark {
 
 	private static LmdbStoreConfig createLftjBenchmarkConfig(String benchmarkMode) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,sopc,psoc,posc,ospc,opsc");
-		config.setLftjEnabled(true);
-		config.setLftjCodegenEnabled(LmdbLftjBenchmarkMode.lftjCodegenEnabled(benchmarkMode));
+		boolean lftjEnabled = !LFTJ_DISABLED.equals(benchmarkMode);
+		config.setLftjEnabled(lftjEnabled);
+		config.setLftjCodegenEnabled(lftjEnabled && LmdbLftjBenchmarkMode.lftjCodegenEnabled(benchmarkMode));
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L);
 		config.setTripleDBSize(config.getValueDBSize());
 		return config;
 	}
 
-	private static String cycleQuery(int size) {
-		StringBuilder builder = new StringBuilder();
-		builder.append("PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n");
-		builder.append("SELECT * WHERE {\n");
-		for (int i = 0; i < size; i++) {
-			builder.append("  ?")
-					.append(variableName(i))
-					.append(" foaf:knows ?")
-					.append(variableName((i + 1) % size))
-					.append(" .\n");
+	private static void validateBenchmarkMode(String benchmarkMode) {
+		if (LFTJ_DISABLED.equals(benchmarkMode)) {
+			return;
 		}
-		builder.append("  FILTER (");
-		boolean first = true;
-		for (int i = 0; i < size; i++) {
-			for (int j = i + 1; j < size; j++) {
-				if (!first) {
-					builder.append(" && ");
-				}
-				builder.append("?").append(variableName(i)).append(" != ?").append(variableName(j));
-				first = false;
-			}
-		}
-		builder.append(")\n");
-		builder.append("}\n");
-		return builder.toString();
-	}
-
-	private static char variableName(int index) {
-		return (char) ('a' + index);
+		LmdbLftjBenchmarkMode.validate(benchmarkMode);
 	}
 }
