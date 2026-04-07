@@ -166,4 +166,73 @@ class LmdbLftjExecutorTest {
 		assertEquals(0, queryAccess.recordScanCalls,
 				"hidden context multiplicity should come from cached frontier counts, not RecordIterator rescans");
 	}
+
+	@Test
+	void evaluateShouldFallbackToInterpretedPathWhenCodegenCompilationFails() {
+		FailingCompiler compiler = new FailingCompiler();
+		FailingCachingQueryAccess queryAccess = new FailingCachingQueryAccess(compiler);
+		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess);
+
+		long firstPassCount = countRows(evaluationStep);
+		long secondPassCount = countRows(evaluationStep);
+
+		assertTrue(firstPassCount > 0, "the interpreted executor should still enumerate results after codegen fails");
+		assertEquals(firstPassCount, secondPassCount,
+				"cached codegen failures should keep using the interpreted executor on later evaluations");
+		assertEquals(1, compiler.compileCalls,
+				"codegen should fail once and then stay on the interpreted path for the same execution key");
+	}
+
+	private long countRows(QueryEvaluationStep evaluationStep) {
+		long count = 0;
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				iteration.next();
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static final class FailingCachingQueryAccess extends LmdbLftjSyntheticScenario.TestQueryAccess {
+
+		private final FailingCompiler compiler;
+		private LmdbLftjCodegenCache.CacheEntry cachedEntry;
+
+		private FailingCachingQueryAccess(FailingCompiler compiler) {
+			this.compiler = compiler;
+		}
+
+		@Override
+		public LmdbLftjCodegenCache.CacheEntry cachedCompiledPlan(String executionKey) {
+			return cachedEntry;
+		}
+
+		@Override
+		public void cacheCompiledPlanSuccess(String executionKey, LmdbCompiledLftjFactory factory) {
+			cachedEntry = LmdbLftjCodegenCache.CacheEntry.success(factory);
+		}
+
+		@Override
+		public void cacheCompiledPlanFailure(String executionKey, String message) {
+			cachedEntry = LmdbLftjCodegenCache.CacheEntry.failure(message);
+		}
+
+		@Override
+		public LmdbLftjCodegenCompiler codegenCompiler() {
+			return compiler;
+		}
+	}
+
+	private static final class FailingCompiler extends LmdbLftjCodegenCompiler {
+
+		private int compileCalls;
+
+		@Override
+		LmdbCompiledLftjFactory compile(LmdbLftjPlan plan, LmdbLftjExecutionShape shape, boolean includeInferred,
+				LmdbQueryAccess queryAccess) {
+			compileCalls++;
+			throw new IllegalArgumentException("synthetic compile failure");
+		}
+	}
 }

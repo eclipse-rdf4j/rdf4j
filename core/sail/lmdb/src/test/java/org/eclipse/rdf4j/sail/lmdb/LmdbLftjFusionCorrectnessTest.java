@@ -69,6 +69,11 @@ class LmdbLftjFusionCorrectnessTest {
 	}
 
 	@Test
+	void orderedAliasedCycleRowsShouldMatchRegularEvaluation(@TempDir java.nio.file.Path tempDir) {
+		assertRowsMatch(tempDir, orderedAliasedCycleQuery());
+	}
+
+	@Test
 	void aliasedCycleRowsShouldMatchRegularEvaluationWithBoundSourceVariables(@TempDir java.nio.file.Path tempDir) {
 		assertEquals(List.of(
 				"x=urn:person:1|y=urn:person:2|z=urn:person:3",
@@ -271,5 +276,16 @@ class LmdbLftjFusionCorrectnessTest {
 				+ "  ?c foaf:knows ?a .\n"
 				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c && STRSTARTS(STR(?a), \"urn:person:1\"))\n"
 				+ "}\n";
+	}
+
+	private String orderedAliasedCycleQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT DISTINCT (?a AS ?x) (?b AS ?y) (?c AS ?z) WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
+				+ "}\n"
+				+ "ORDER BY ?x ?y ?z\n";
 	}
 }

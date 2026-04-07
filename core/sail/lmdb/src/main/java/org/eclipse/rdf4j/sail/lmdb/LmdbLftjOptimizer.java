@@ -217,7 +217,7 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 			return null;
 		}
 
-		boolean preserveOuterOperators = filterPartition.filterRewrites()
+		boolean preserveOuterOperators = !rootReplaceable || filterPartition.filterRewrites()
 				.stream()
 				.anyMatch(filterRewrite -> filterRewrite.residualCondition() != null);
 		List<LmdbLftjPlan.OutputBinding> outputBindings = collectOutputBindings(projection, extension, visibleVariables,

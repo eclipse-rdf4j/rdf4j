@@ -73,10 +73,7 @@ final class LmdbLftjExecutor {
 		String cacheKey = compiler.cacheKey(plan, shape, queryAccess.includeInferred());
 		LmdbLftjCodegenCache.CacheEntry cached = queryAccess.cachedCompiledPlan(cacheKey);
 		if (cached != null) {
-			if (cached.compiled()) {
-				return cached.factory();
-			}
-			throw codegenFailure(cacheKey, cached.failureMessage(), null);
+			return cached.compiled() ? cached.factory() : null;
 		}
 
 		try {
@@ -85,16 +82,8 @@ final class LmdbLftjExecutor {
 			return factory;
 		} catch (RuntimeException e) {
 			queryAccess.cacheCompiledPlanFailure(cacheKey, e.getMessage());
-			throw codegenFailure(cacheKey, e.getMessage(), e);
+			return null;
 		}
-	}
-
-	private IllegalStateException codegenFailure(String cacheKey, String message, RuntimeException cause) {
-		String detail = message == null || message.isBlank() ? "<no detail>" : message;
-		if (cause == null) {
-			return new IllegalStateException("LMDB LFTJ codegen failed for " + cacheKey + ": " + detail);
-		}
-		return new IllegalStateException("LMDB LFTJ codegen failed for " + cacheKey + ": " + detail, cause);
 	}
 
 	private final class LmdbLftjIteration extends LookAheadIteration<BindingSet> {
