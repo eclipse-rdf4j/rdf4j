@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -104,7 +105,7 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 		LmdbLftjPlanningHints planningHints = planningTarget != null ? planningTarget.planningHints()
 				: collectPlanningHints(operands, List.of());
 		String cacheKey = LmdbLftjPreparedPlanCache.normalizedKey(patterns, configuredIndexes, outputBindings,
-				inequalityConstraints);
+				inequalityConstraints, planningHints);
 		LmdbLftjPlanner.PlanningResult plan = queryAccess.cachedPlanningResult(cacheKey);
 		if (plan == null) {
 			plan = planner.plan(fallbackExpr, patterns, configuredIndexes, outputBindings, inequalityConstraints,
@@ -167,6 +168,7 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 		List<Filter> filters = new ArrayList<>();
 		Extension extension = null;
 		Projection projection = null;
+		LinkedHashSet<String> outerRequiredVariables = new LinkedHashSet<>();
 
 		while (traversal.getParentNode() instanceof UnaryTupleOperator
 				&& ((UnaryTupleOperator) traversal.getParentNode()).getArg() == traversal) {
@@ -195,7 +197,13 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 				}
 				continue;
 			}
-			if (parent instanceof Distinct || parent instanceof Order) {
+			if (parent instanceof Distinct) {
+				rootReplaceable = false;
+				traversal = parent;
+				continue;
+			}
+			if (parent instanceof Order) {
+				collectOrderRequiredVariables((Order) parent, Set.copyOf(visibleVariables), outerRequiredVariables);
 				rootReplaceable = false;
 				traversal = parent;
 				continue;
@@ -221,7 +229,7 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 				.stream()
 				.anyMatch(filterRewrite -> filterRewrite.residualCondition() != null);
 		List<LmdbLftjPlan.OutputBinding> outputBindings = collectOutputBindings(projection, extension, visibleVariables,
-				filterPartition.requiredVariables(), preserveOuterOperators);
+				filterPartition.requiredVariables(), List.copyOf(outerRequiredVariables), preserveOuterOperators);
 		if (outputBindings == null) {
 			return null;
 		}
@@ -317,9 +325,11 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 	}
 
 	private List<LmdbLftjPlan.OutputBinding> collectOutputBindings(Projection projection, Extension extension,
-			List<String> visibleVariables, List<String> requiredVariables, boolean preserveOuterOperators) {
+			List<String> visibleVariables, List<String> requiredVariables, List<String> outerRequiredVariables,
+			boolean preserveOuterOperators) {
 		if (preserveOuterOperators) {
-			return collectVisibleInputBindings(projection, extension, visibleVariables, requiredVariables);
+			return collectVisibleInputBindings(projection, extension, visibleVariables, requiredVariables,
+					outerRequiredVariables);
 		}
 		if (projection == null) {
 			return extension == null ? List.of() : null;
@@ -359,8 +369,8 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 	}
 
 	private List<LmdbLftjPlan.OutputBinding> collectVisibleInputBindings(Projection projection, Extension extension,
-			List<String> visibleVariables, List<String> requiredVariables) {
-		LinkedHashSet<String> neededInputs = new LinkedHashSet<>(requiredVariables);
+			List<String> visibleVariables, List<String> requiredVariables, List<String> outerRequiredVariables) {
+		LinkedHashSet<String> neededInputs = new LinkedHashSet<>();
 		if (projection != null) {
 			for (ProjectionElem projectionElem : projection.getProjectionElemList().getElements()) {
 				neededInputs.add(projectionElem.getName());
@@ -370,16 +380,26 @@ final class LmdbLftjOptimizer implements QueryOptimizer {
 		} else {
 			neededInputs.addAll(visibleVariables);
 		}
+		neededInputs.addAll(requiredVariables);
+		neededInputs.addAll(outerRequiredVariables);
 		if (extension != null) {
 			neededInputs = resolveExtensionInputs(neededInputs, extension, Set.copyOf(visibleVariables));
 		}
 		List<LmdbLftjPlan.OutputBinding> outputBindings = new ArrayList<>();
-		for (String visibleVariable : visibleVariables) {
-			if (neededInputs.contains(visibleVariable)) {
-				outputBindings.add(new LmdbLftjPlan.OutputBinding(visibleVariable, visibleVariable));
+		Set<String> visible = Set.copyOf(visibleVariables);
+		for (String neededInput : neededInputs) {
+			if (visible.contains(neededInput)) {
+				outputBindings.add(new LmdbLftjPlan.OutputBinding(neededInput, neededInput));
 			}
 		}
 		return outputBindings;
+	}
+
+	private void collectOrderRequiredVariables(Order order, Set<String> visibleVariables,
+			Set<String> requiredVariables) {
+		for (OrderElem orderElem : order.getElements()) {
+			collectReferencedVariables(orderElem.getExpr(), visibleVariables, requiredVariables);
+		}
 	}
 
 	private FilterPartition partitionFilters(List<Filter> filters, Set<String> visibleVariables) {

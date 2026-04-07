@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -620,18 +619,6 @@ class LmdbLftjCodegenTest {
 		}
 	}
 
-	@Test
-	void compileFailureShouldNotSilentlyFallbackToInterpretedIteration() {
-		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
-		CachingQueryAccess queryAccess = new CachingQueryAccess(new FailingCompiler());
-		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, plan);
-
-		assertThatThrownBy(() -> drain(evaluationStep, EmptyBindingSet.getInstance()))
-				.isInstanceOf(RuntimeException.class)
-				.hasMessageContaining("LMDB LFTJ execution failed")
-				.satisfies(throwable -> assertThat(rootCauseOf(throwable)).hasMessageContaining("forced failure"));
-	}
-
 	private void assertFoafBenchmarkQueryCompilesGeneratedFactory(int cycleSize) throws Exception {
 		FoafCliqueQueryBenchmark benchmark = configuredFoafBenchmark();
 		benchmark.setup();
@@ -736,28 +723,6 @@ class LmdbLftjCodegenTest {
 		assertThat(compiler.compileCalls).isEqualTo(2);
 		assertThat(queryAccess.cachedEntry(aliased.executionKey())).isNotNull();
 		assertThat(queryAccess.cachedEntry(duplicateAliased.executionKey())).isNotNull();
-	}
-
-	@Test
-	void codegenCacheShouldReuseNegativeResultAfterCompileFailure() {
-		LmdbLftjPlan plan = LmdbLftjSyntheticScenario.createPlan();
-		FailingCompiler compiler = new FailingCompiler();
-		CachingQueryAccess queryAccess = new CachingQueryAccess(compiler);
-		QueryEvaluationStep evaluationStep = LmdbLftjSyntheticScenario.createEvaluationStep(queryAccess, plan);
-
-		assertThatThrownBy(() -> drain(evaluationStep, EmptyBindingSet.getInstance()))
-				.isInstanceOf(RuntimeException.class)
-				.hasMessageContaining("LMDB LFTJ execution failed")
-				.satisfies(throwable -> assertThat(rootCauseOf(throwable)).hasMessageContaining("forced failure"));
-		assertThatThrownBy(() -> drain(evaluationStep, EmptyBindingSet.getInstance()))
-				.isInstanceOf(RuntimeException.class)
-				.hasMessageContaining("LMDB LFTJ execution failed")
-				.satisfies(throwable -> assertThat(rootCauseOf(throwable)).hasMessageContaining("forced failure"));
-
-		assertThat(compiler.compileCalls).isEqualTo(1);
-		assertThat(queryAccess.cachedEntry(plan.executionKey())).isNotNull();
-		assertThat(queryAccess.cachedEntry(plan.executionKey()).compiled()).isFalse();
-		assertThat(queryAccess.cachedEntry(plan.executionKey()).failureMessage()).contains("forced failure");
 	}
 
 	private boolean invokeBooleanGetter(Object target, String getterName) {

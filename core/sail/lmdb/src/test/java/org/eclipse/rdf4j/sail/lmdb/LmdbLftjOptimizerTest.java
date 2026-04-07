@@ -174,6 +174,25 @@ class LmdbLftjOptimizerTest {
 	}
 
 	@Test
+	void optimizeShouldExposeOrderBindingsWhenOrderStaysOutsideFusedPlan() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr tupleExpr = parsedQueryRoot(orderByNonProjectedVarQuery());
+
+		optimizer.optimize(tupleExpr, (Dataset) null, EmptyBindingSet.getInstance());
+
+		LmdbLftjTupleExpr lftj = findNode(tupleExpr, LmdbLftjTupleExpr.class);
+		assertInstanceOf(Order.class, findNode(tupleExpr, Order.class));
+		assertInstanceOf(Projection.class, findNode(tupleExpr, Projection.class));
+		assertEquals(List.of(
+				new LmdbLftjPlan.OutputBinding("a", "a"),
+				new LmdbLftjPlan.OutputBinding("age", "age")), lftj.plan().outputBindings());
+		assertEquals(completeInequalities(3), lftj.plan().inequalityConstraints());
+	}
+
+	@Test
 	void optimizerPipelineShouldFuseParsedAliasProjectionQuery() throws Exception {
 		TestQueryAccess queryAccess = new TestQueryAccess();
 		TripleSource tripleSource = new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess);
@@ -379,6 +398,25 @@ class LmdbLftjOptimizerTest {
 				List.of("b", "c", "d", "e"));
 	}
 
+	@Test
+	void optimizeShouldNotReusePreparedPlanAcrossDistinctPlanningHints() throws Exception {
+		TestQueryAccess queryAccess = new TestQueryAccess();
+		LmdbLftjOptimizer optimizer = new LmdbLftjOptimizer(
+				new LmdbLftjTripleSource(new EmptyTripleSource(), queryAccess));
+
+		TupleExpr unbound = parsedQueryRoot(cycleQuery(9));
+		TupleExpr valuesBound = parsedQueryRoot(cycleQueryWithValuesBinding(9, "e", "urn:person:5"));
+
+		optimizer.optimize(unbound, (Dataset) null, EmptyBindingSet.getInstance());
+		optimizer.optimize(valuesBound, (Dataset) null, EmptyBindingSet.getInstance());
+
+		assertEquals(2, queryAccess.cachedPlanPuts,
+				"planning hints must partition prepared-plan cache entries");
+		assertEquals(0, queryAccess.cachedPlanHits,
+				"VALUES-bound planning hints must not reuse the unbound prepared plan");
+		assertEquals("e", findNode(valuesBound, LmdbLftjTupleExpr.class).plan().variableOrder().get(0));
+	}
+
 	private TupleExpr cycle(String a, String b, String c) {
 		StatementPattern pattern1 = statementPattern(a, b);
 		StatementPattern pattern2 = statementPattern(b, c);
@@ -442,6 +480,18 @@ class LmdbLftjOptimizerTest {
 				+ "}\n";
 	}
 
+	private String orderByNonProjectedVarQuery() {
+		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "SELECT ?a WHERE {\n"
+				+ "  ?a foaf:knows ?b .\n"
+				+ "  ?b foaf:knows ?c .\n"
+				+ "  ?c foaf:knows ?a .\n"
+				+ "  ?a foaf:age ?age .\n"
+				+ "  FILTER (?a != ?b && ?a != ?c && ?b != ?c)\n"
+				+ "}\n"
+				+ "ORDER BY ?age ?a\n";
+	}
+
 	private String reorderedDuplicateAliasProjectionQuery() {
 		return "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
 				+ "SELECT (?c AS ?z) (?a AS ?x) (?a AS ?x2) WHERE {\n"
@@ -501,6 +551,52 @@ class LmdbLftjOptimizerTest {
 				+ "  ?a foaf:knows ?b .\n"
 				+ "  ?b foaf:knows ?a .\n"
 				+ "}\n";
+	}
+
+	private String cycleQuery(int size) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n");
+		builder.append("SELECT * WHERE {\n");
+		appendCyclePattern(builder, size);
+		appendPairwiseInequalities(builder, size);
+		builder.append("}\n");
+		return builder.toString();
+	}
+
+	private String cycleQueryWithValuesBinding(int size, String variableName, String iri) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n");
+		builder.append("SELECT * WHERE {\n");
+		builder.append("  VALUES ?").append(variableName).append(" { <").append(iri).append("> }\n");
+		appendCyclePattern(builder, size);
+		appendPairwiseInequalities(builder, size);
+		builder.append("}\n");
+		return builder.toString();
+	}
+
+	private void appendCyclePattern(StringBuilder builder, int size) {
+		for (int i = 0; i < size; i++) {
+			builder.append("  ?")
+					.append(variableName(i))
+					.append(" foaf:knows ?")
+					.append(variableName((i + 1) % size))
+					.append(" .\n");
+		}
+	}
+
+	private void appendPairwiseInequalities(StringBuilder builder, int size) {
+		builder.append("  FILTER (");
+		boolean first = true;
+		for (int i = 0; i < size; i++) {
+			for (int j = i + 1; j < size; j++) {
+				if (!first) {
+					builder.append(" && ");
+				}
+				builder.append("?").append(variableName(i)).append(" != ?").append(variableName(j));
+				first = false;
+			}
+		}
+		builder.append(")\n");
 	}
 
 	private TupleExpr parsedQueryRoot(String query) throws Exception {

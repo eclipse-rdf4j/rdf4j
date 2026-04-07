@@ -44,12 +44,13 @@ final class LmdbLftjPreparedPlanCache {
 	}
 
 	static String normalizedKey(List<StatementPattern> patterns, Set<String> configuredIndexes) {
-		return normalizedKey(patterns, configuredIndexes, List.of(), List.of());
+		return normalizedKey(patterns, configuredIndexes, List.of(), List.of(), LmdbLftjPlanningHints.empty());
 	}
 
 	static String normalizedKey(List<StatementPattern> patterns, Set<String> configuredIndexes,
 			List<LmdbLftjPlan.OutputBinding> outputBindings,
-			List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints) {
+			List<LmdbLftjPlan.InequalityConstraint> inequalityConstraints,
+			LmdbLftjPlanningHints planningHints) {
 		StringBuilder builder = new StringBuilder(configuredIndexes.size() * 6 + patterns.size() * 32);
 		builder.append("indexes=");
 		configuredIndexes.stream().sorted().forEach(indexName -> builder.append(indexName).append(','));
@@ -68,6 +69,14 @@ final class LmdbLftjPreparedPlanCache {
 					.append('!')
 					.append(inequalityConstraint.rightVariable())
 					.append(';');
+		}
+		builder.append(";inputs=");
+		for (String inputBoundVariable : planningHints.inputBoundVariables()) {
+			builder.append(inputBoundVariable).append(';');
+		}
+		builder.append(";residuals=");
+		for (String residualFilterVariable : planningHints.residualFilterVariables()) {
+			builder.append(residualFilterVariable).append(';');
 		}
 		return builder.toString();
 	}
