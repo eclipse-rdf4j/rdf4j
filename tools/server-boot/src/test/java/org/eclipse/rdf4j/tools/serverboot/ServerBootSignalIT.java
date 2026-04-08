@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -95,12 +96,63 @@ class ServerBootSignalIT {
 		assertGracefulShutdown("TERM");
 	}
 
+	@Test
+	void exitsOnSigtermBeforeContextAttachment() throws Exception {
+		assertShutdownBeforeContextAttachment("TERM");
+	}
+
 	private void assertGracefulShutdownWithSigintFallback() throws Exception {
 		assertGracefulShutdown("INT", true);
 	}
 
 	private void assertGracefulShutdown(String signalName) throws Exception {
 		assertGracefulShutdown(signalName, false);
+	}
+
+	private void assertShutdownBeforeContextAttachment(String signalName) throws Exception {
+		Path projectRoot = Path.of("").toAbsolutePath();
+		String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		int serverPort = findFreePort();
+		int managementPort = findFreePort();
+
+		Path targetDir = projectRoot.resolve("target");
+		Path jarPath = Files.list(targetDir)
+				.sorted(Comparator.comparing(Path::toString))
+				.filter(p -> p.toString().endsWith(".jar"))
+				.filter(p -> !p.toString().endsWith("-sources.jar"))
+				.filter(p -> !p.toString().endsWith("-javadoc.jar"))
+				.findFirst()
+				.orElseThrow(() -> new IllegalStateException("Could not find executable JAR in " + targetDir));
+
+		ProcessBuilder processBuilder = new ProcessBuilder(javaBin, "-jar", jarPath.toString(),
+				"--server.port=" + serverPort,
+				"--management.server.port=" + managementPort);
+		processBuilder.directory(projectRoot.toFile());
+		processBuilder.redirectErrorStream(true);
+
+		Process process = processBuilder.start();
+		cleanupActions.add(() -> process.destroyForcibly());
+
+		CountDownLatch started = new CountDownLatch(1);
+		StringBuilder outputBuffer = new StringBuilder();
+		startStreamGobbler(process, started, outputBuffer);
+
+		boolean registeredHandler = waitForOutputContains(outputBuffer,
+				"Registered SIGTERM handler for graceful shutdown.", 30, SECONDS);
+		assertThat(registeredHandler)
+				.as(() -> "Did not observe SIGTERM handler registration before sending signal. Output:\\n"
+						+ outputBuffer)
+				.isTrue();
+
+		sendSignal(process.pid(), signalName);
+		boolean exited = process.waitFor(30, SECONDS);
+		assertThat(exited)
+				.as(() -> "Process did not exit after SIG" + signalName
+						+ " sent before context attachment. Output:\\n" + outputBuffer)
+				.isTrue();
+		assertThat(process.exitValue())
+				.as(() -> "Process exit value after startup-phase SIG" + signalName + ". Output:\\n" + outputBuffer)
+				.isEqualTo(0);
 	}
 
 	private void assertGracefulShutdown(String signalName, boolean allowSigtermFallback) throws Exception {
@@ -193,6 +245,22 @@ class ServerBootSignalIT {
 		if (!signalProcess.waitFor(5, SECONDS)) {
 			signalProcess.destroyForcibly();
 			signalProcess.waitFor(5, SECONDS);
+		}
+	}
+
+	private boolean waitForOutputContains(StringBuilder outputBuffer, String marker, long timeout, TimeUnit unit)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		while (System.nanoTime() < deadline) {
+			synchronized (outputBuffer) {
+				if (outputBuffer.indexOf(marker) >= 0) {
+					return true;
+				}
+			}
+			Thread.sleep(100);
+		}
+		synchronized (outputBuffer) {
+			return outputBuffer.indexOf(marker) >= 0;
 		}
 	}
 
