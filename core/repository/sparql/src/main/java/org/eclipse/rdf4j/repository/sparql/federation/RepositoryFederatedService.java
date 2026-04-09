@@ -86,7 +86,7 @@ public class RepositoryFederatedService implements FederatedService {
 			// See: https://github.com/eclipse-rdf4j/rdf4j/discussions/5120
 			// Test case: https://github.com/tkuhn/rdf4j-timeout-test
 			try {
-				querySubmissionTask = threadExecutor.submit(this::run);
+				querySubmissionTask = threadExecutor.submit(wrap(this::run));
 			} catch (Exception e) {
 				throw new QueryEvaluationException("Failed to start a thread for batched federated query submission",
 						e);
@@ -660,5 +660,16 @@ public class RepositoryFederatedService implements FederatedService {
 			logger.warn("Failed to close connection:" + t.getMessage());
 			logger.debug("Details: ", t);
 		}
+	}
+
+	/**
+	 * Callback to wrap the runnable prior to passing it to the background Executor. Can be used by specializations to
+	 * apply context.
+	 *
+	 * @param runnable the runnable
+	 * @return the runnable
+	 */
+	protected Runnable wrap(Runnable runnable) {
+		return runnable;
 	}
 }
