@@ -61,6 +61,12 @@ class LmdbContextIdIterator implements Closeable {
 
 	private final Thread ownerThread = Thread.currentThread();
 
+	// Lock batching: hold lock for multiple records to reduce contention
+	private static final int LOCK_BATCH_SIZE = 512;
+	private int batchCounter = 0;
+	private long heldReadStamp = 0L;
+	private boolean lockHeld = false;
+
 	LmdbContextIdIterator(int dbi, Txn txnRef) throws IOException {
 		this.pool = Pool.get();
 		this.keyData = pool.getVal();
@@ -90,12 +96,17 @@ class LmdbContextIdIterator implements Closeable {
 	}
 
 	public long[] next() {
-		long readStamp;
-		try {
-			readStamp = txnLockManager.readLock();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
+		// Acquire lock only when starting a new batch
+		if (!lockHeld) {
+			try {
+				heldReadStamp = txnLockManager.readLock();
+				lockHeld = true;
+				batchCounter = 0;
+			} catch (InterruptedException e) {
+				throw new SailException(e);
+			}
 		}
+
 		try {
 			int lastResult;
 			if (txnRefVersion != txnRef.version()) {
@@ -142,14 +153,30 @@ class LmdbContextIdIterator implements Closeable {
 				record[0] = Varint.readUnsigned(keyData.mv_data());
 				// fetch next value
 				fetchNext = true;
+
+				// Increment batch counter and release lock if batch is complete
+				batchCounter++;
+				if (batchCounter >= LOCK_BATCH_SIZE) {
+					releaseLockIfHeld();
+				}
+
 				return record;
 			}
 			closeInternal(false);
 			return null;
 		} catch (IOException e) {
 			throw new SailException(e);
-		} finally {
-			txnLockManager.unlockRead(readStamp);
+		} catch (Exception e) {
+			releaseLockIfHeld();
+			throw e;
+		}
+	}
+
+	private void releaseLockIfHeld() {
+		if (lockHeld) {
+			txnLockManager.unlockRead(heldReadStamp);
+			lockHeld = false;
+			batchCounter = 0;
 		}
 	}
 
@@ -167,6 +194,7 @@ class LmdbContextIdIterator implements Closeable {
 			}
 			try {
 				if (!closed) {
+					releaseLockIfHeld();
 					mdb_cursor_close(cursor);
 					pool.free(keyData);
 					pool.free(valueData);

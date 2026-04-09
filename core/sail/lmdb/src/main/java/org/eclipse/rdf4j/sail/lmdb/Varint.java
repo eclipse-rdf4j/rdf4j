@@ -467,6 +467,32 @@ public final class Varint {
 	}
 
 	/**
+	 * Encodes four values using variable-length encoding into the given buffer. Optimized for the common case where all
+	 * values are small (≤ 240).
+	 *
+	 * @param bb buffer for writing bytes
+	 * @param a  first value
+	 * @param b  second value
+	 * @param c  third value
+	 * @param d  fourth value
+	 */
+	public static void writeListUnsigned(ByteBuffer bb, long a, long b, long c, long d) {
+		// Fast path: if all values fit in single byte (≤ 240)
+		if (a <= 240 && b <= 240 && c <= 240 && d <= 240) {
+			bb.put((byte) a);
+			bb.put((byte) b);
+			bb.put((byte) c);
+			bb.put((byte) d);
+			return;
+		}
+		// Fall back to individual writes
+		writeUnsigned(bb, a);
+		writeUnsigned(bb, b);
+		writeUnsigned(bb, c);
+		writeUnsigned(bb, d);
+	}
+
+	/**
 	 * Decodes multiple values using variable-length encoding from the given buffer.
 	 *
 	 * @param bb     buffer for writing bytes
@@ -479,6 +505,23 @@ public final class Varint {
 	}
 
 	public static void readQuadUnsigned(ByteBuffer bb, long[] values) {
+		// Fast path: check if all 4 bytes are <= 240 (single-byte encoding)
+		int pos = bb.position();
+		if (bb.remaining() >= 4) {
+			int b0 = bb.get(pos) & 0xFF;
+			int b1 = bb.get(pos + 1) & 0xFF;
+			int b2 = bb.get(pos + 2) & 0xFF;
+			int b3 = bb.get(pos + 3) & 0xFF;
+			if (b0 <= 240 && b1 <= 240 && b2 <= 240 && b3 <= 240) {
+				values[0] = b0;
+				values[1] = b1;
+				values[2] = b2;
+				values[3] = b3;
+				bb.position(pos + 4);
+				return;
+			}
+		}
+		// Fall back to individual reads
 		values[0] = readUnsigned(bb);
 		values[1] = readUnsigned(bb);
 		values[2] = readUnsigned(bb);

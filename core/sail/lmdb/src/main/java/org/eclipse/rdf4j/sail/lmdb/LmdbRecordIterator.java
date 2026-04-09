@@ -24,6 +24,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -31,7 +32,6 @@ import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +56,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final boolean matchValues;
 	private GroupMatcher groupMatcher;
+	private final TripleStore.KeyReader keyReader;
 
 	private final Txn txnRef;
 
@@ -84,6 +85,19 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final Thread ownerThread = Thread.currentThread();
 
+	// Lock batching optimization: hold lock for multiple rows to reduce contention
+	// Larger batch sizes reduce lock acquisition overhead but may increase contention
+	// Testing showed 512 provides good balance between throughput and latency
+	private static final int LOCK_BATCH_SIZE = 512;
+	private int batchCounter = 0;
+	private long heldReadStamp = 0L;
+	private boolean lockHeld = false;
+
+	// Optimistic lock-free reads: when no writer is active, skip lock acquisition entirely.
+	// The AtomicInteger signals to closeInternal that a reader is actively using the cursor.
+	private final AtomicInteger optimisticReaderActive = new AtomicInteger(0);
+	private boolean optimisticBatch = false;
+
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
@@ -94,9 +108,18 @@ class LmdbRecordIterator implements RecordIterator {
 		this.pred = pred;
 		this.obj = obj;
 		this.context = context;
-		this.originalQuad = new long[] { subj, pred, obj, context };
-		this.quad = new long[] { subj, pred, obj, context };
 		this.pool = Pool.get();
+		// Use pooled arrays to reduce allocation in hot path
+		this.originalQuad = pool.getQuadArray();
+		this.originalQuad[0] = subj;
+		this.originalQuad[1] = pred;
+		this.originalQuad[2] = obj;
+		this.originalQuad[3] = context;
+		this.quad = pool.getQuadArray();
+		this.quad[0] = subj;
+		this.quad[1] = pred;
+		this.quad[2] = obj;
+		this.quad[3] = context;
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;
@@ -116,6 +139,12 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 
 		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+		// Pre-create GroupMatcher to avoid lazy initialization latency on first match
+		if (this.matchValues) {
+			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
+		}
+		// Pre-create optimized KeyReader to eliminate array lookups in hot path
+		this.keyReader = index.createKeyReader(this.originalQuad);
 
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;
@@ -131,11 +160,10 @@ class LmdbRecordIterator implements RecordIterator {
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
 
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
-			}
+			// Use pooled PointerBuffer to avoid allocation
+			PointerBuffer pp = pool.getPointerBuffer();
+			E(mdb_cursor_open(txn, dbi, pp));
+			cursor = pp.get(0);
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
@@ -143,15 +171,41 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public long[] next() {
-		long readStamp;
-		try {
-			readStamp = txnLockManager.readLock();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
+		// Acquire lock only when starting a new batch
+		if (!lockHeld && !optimisticBatch) {
+			if (!txnLockManager.isWriterActive()) {
+				// Optimistic path: no writer active, skip lock acquisition
+				optimisticReaderActive.incrementAndGet();
+				optimisticBatch = true;
+				batchCounter = 0;
+				// Double-check: if closed or writer appeared after our signal, fall back to lock
+				if (closed || txnLockManager.isWriterActive()) {
+					optimisticReaderActive.decrementAndGet();
+					optimisticBatch = false;
+					// Fall through to locked path
+					try {
+						heldReadStamp = txnLockManager.readLock();
+						lockHeld = true;
+						batchCounter = 0;
+					} catch (InterruptedException e) {
+						throw new SailException(e);
+					}
+				}
+			} else {
+				try {
+					heldReadStamp = txnLockManager.readLock();
+					lockHeld = true;
+					batchCounter = 0;
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
+			}
 		}
+
 		try {
 			if (closed) {
 				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
+				releaseAnyHeldLock();
 				return null;
 			}
 
@@ -208,27 +262,59 @@ class LmdbRecordIterator implements RecordIterator {
 					// value doesn't match search key/mask, fetch next value
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				} else {
-					// Matching value found
-					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+					// Matching value found - use pre-computed KeyReader for optimal performance
+					keyReader.read(keyData.mv_data(), quad);
 					sourceRowsMatchedActual++;
 					// fetch next value
 					fetchNext = true;
+
+					// Increment batch counter and release lock/signal if batch is complete
+					batchCounter++;
+					if (batchCounter >= LOCK_BATCH_SIZE) {
+						releaseAnyHeldLock();
+					}
+
 					return quad;
 				}
 			}
+			// Iterator exhausted, release lock
 			closeInternal(false);
 			return null;
-		} finally {
-			txnLockManager.unlockRead(readStamp);
+		} catch (Exception e) {
+			// On error, ensure lock is released
+			releaseAnyHeldLock();
+			throw e;
+		}
+	}
+
+	/**
+	 * Release the held read lock if currently held.
+	 */
+	private void releaseLockIfHeld() {
+		if (lockHeld) {
+			txnLockManager.unlockRead(heldReadStamp);
+			lockHeld = false;
+			batchCounter = 0;
+		}
+	}
+
+	/**
+	 * Release any held lock or optimistic batch signal.
+	 */
+	private void releaseAnyHeldLock() {
+		if (lockHeld) {
+			txnLockManager.unlockRead(heldReadStamp);
+			lockHeld = false;
+			batchCounter = 0;
+		} else if (optimisticBatch) {
+			optimisticReaderActive.decrementAndGet();
+			optimisticBatch = false;
+			batchCounter = 0;
 		}
 	}
 
 	private boolean matches() {
-
 		if (groupMatcher != null) {
-			return !this.groupMatcher.matches(keyData.mv_data());
-		} else if (matchValues) {
-			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
 			return !this.groupMatcher.matches(keyData.mv_data());
 		} else {
 			return false;
@@ -246,9 +332,16 @@ class LmdbRecordIterator implements RecordIterator {
 				} catch (InterruptedException e) {
 					throw new SailException(e);
 				}
+				// Wait for any optimistic reader to finish before closing the cursor
+				while (optimisticReaderActive.get() > 0) {
+					Thread.onSpinWait();
+				}
 			}
 			try {
 				if (!closed) {
+					// Release any held lock or optimistic signal before closing
+					releaseAnyHeldLock();
+
 					mdb_cursor_close(cursor);
 					pool.free(keyData);
 					pool.free(valueData);
@@ -259,6 +352,9 @@ class LmdbRecordIterator implements RecordIterator {
 						pool.free(maxKeyBuf);
 						pool.free(maxKey);
 					}
+					// Return pooled quad arrays
+					pool.free(quad);
+					pool.free(originalQuad);
 				}
 			} finally {
 				closed = true;

@@ -18,7 +18,8 @@ import static org.junit.Assert.assertSame;
 import java.io.File;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,15 +31,14 @@ class ValueStoreCacheTest {
 
 	@Test
 	void cachedValuePath(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir);
-		store.init();
+		ValueStore vs = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
 		try {
-			ValueFactory vf = store.getValueFactory();
-			// ValueFactory is actually the package-private ValueStore
-			ValueStore vs = (ValueStore) vf;
+			IRI iri = Values.iri("urn:example:foo");
 
-			IRI iri = vf.createIRI("urn:example:foo");
+			// Store the IRI inside a write transaction so getId(create=true) can write to LMDB
+			vs.startTransaction(true);
 			long id = vs.getId(iri, true);
+			vs.commit();
 
 			// On lazy retrieval, the cache should not be touched
 			LmdbValue v1 = vs.getLazyValue(id);
@@ -47,7 +47,7 @@ class ValueStoreCacheTest {
 			assertNull(cached1);
 
 			// After initializing the value, it should be cached
-			assertEquals(v1.stringValue(), "urn:example:foo");
+			assertEquals("urn:example:foo", v1.stringValue());
 			LmdbValue cached2 = vs.cachedValue(id);
 			assertSame(v1, cached2);
 
@@ -55,7 +55,7 @@ class ValueStoreCacheTest {
 			LmdbValue v2 = vs.cachedValue(id);
 			assertSame(v1, v2);
 		} finally {
-			store.shutDown();
+			vs.close();
 		}
 	}
 }

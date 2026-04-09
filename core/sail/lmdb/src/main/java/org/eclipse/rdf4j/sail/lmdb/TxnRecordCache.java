@@ -180,6 +180,7 @@ final class TxnRecordCache {
 		private long txn;
 		private final long cursor;
 		private final long[] quad = new long[4];
+		private final Record reusableRecord = new Record();
 
 		protected RecordCacheIterator(int dbi) throws IOException {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -191,16 +192,16 @@ final class TxnRecordCache {
 				E(mdb_cursor_open(txn, dbi, pp));
 				cursor = pp.get(0);
 			}
+			// Initialize the reusable record with the quad array
+			reusableRecord.quad = quad;
 		}
 
 		public Record next() {
 			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
 				Varint.readListUnsigned(keyData.mv_data(), quad);
 				byte op = valueData.mv_data().get(0);
-				Record r = new Record();
-				r.quad = quad;
-				r.add = op == 1;
-				return r;
+				reusableRecord.add = op == 1;
+				return reusableRecord;
 			}
 			close();
 			return null;
