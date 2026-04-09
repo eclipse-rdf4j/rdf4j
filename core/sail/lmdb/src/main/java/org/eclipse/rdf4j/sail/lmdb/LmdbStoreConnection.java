@@ -202,6 +202,6 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		return super.getSizeFromSnapshot(false, contexts);
+		return super.getSizeFromSnapshot(contexts);
 	}
 }

@@ -392,6 +392,8 @@ class SailDatasetImpl implements SailDataset {
 		}
 
 		// Fallback path: iterate over all matching statements
-		return getStatements(subj, pred, obj, contexts).stream().count();
+		try (var iter = getStatements(subj, pred, obj, contexts)) {
+			return iter.stream().count();
+		}
 	}
 }

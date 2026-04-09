@@ -1035,19 +1035,19 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	/**
-	 * Returns the number of statements in the snapshot, optionally including inferred statements, for the given
-	 * contexts. This method reads the size directly from the dataset within the current isolation level.
+	 * Returns the number of statements in the snapshot for the given contexts. This method reads the size directly from
+	 * the dataset within the current isolation level.
 	 *
-	 * @param includeInferred whether to include inferred statements in the count
-	 * @param contexts        the RDF contexts (named graphs) to restrict the count to; if none are provided, counts all
-	 *                        contexts
+	 * @param contexts the RDF contexts (named graphs) to restrict the count to; if none are provided, counts all
+	 *                 contexts
 	 * @return the number of statements in the dataset
 	 * @throws SailException if an error occurs while accessing the Sail store
 	 */
 	@Experimental
-	protected long getSizeFromSnapshot(final boolean includeInferred, final Resource... contexts) throws SailException {
-		try (SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred))) {
-			return branch.dataset(getIsolationLevel()).size(null, null, null, contexts);
+	protected long getSizeFromSnapshot(final Resource... contexts) throws SailException {
+		try (SailSource branch = branch(IncludeInferred.explicitOnly);
+				SailDataset dataset = branch.dataset(getIsolationLevel())) {
+			return dataset.size(null, null, null, contexts);
 		}
 	}
 
