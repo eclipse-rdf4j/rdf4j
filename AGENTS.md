@@ -101,19 +101,19 @@ Always keep untracked artifacts!
    → **Yes:** **Routine D (ExecPlans)**. Use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
    → **No:** continue.
 
-3**Does a failing test already exist in this repo that pinpoints the issue?**
+3. **Does a failing test already exist in this repo that pinpoints the issue?**
 → **Yes:** **Routine B (Bugfix using existing failing test).**
 → **No:** continue.
 
-4**Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
+4. **Is the edit strictly behavior‑neutral, local in scope, and clearly hit by existing tests?**
 → **Yes:** **Routine B (Refactor/micro‑perf/documentation/build).**
 → **No or unsure:** continue.
 
-4. **Is new externally observable behavior required?**
+5. **Is new externally observable behavior required?**
    → **Yes:** **Routine A (Full TDD)**. Add the smallest failing test first.
    → **No:** continue.
 
-5. **Is this purely an investigation/design spike with no production code changes?**
+6. **Is this purely an investigation/design spike with no production code changes?**
    → **Yes:** **Routine C (Spike/Investigate).**
    → **No or unsure:** **Routine A.**
 
