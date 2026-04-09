@@ -18,7 +18,7 @@ import org.lwjgl.util.lmdb.MDBVal;
 /**
  * A simple pool for {@link MDBVal}, {@link ByteBuffer} and {@link Statistics} instances.
  */
-class Pool {
+public class Pool {
 	// thread-local pool instance
 	private static final ThreadLocal<Pool> threadlocal = ThreadLocal.withInitial(Pool::new);
 
@@ -29,14 +29,14 @@ class Pool {
 	private int keyPoolIndex = -1;
 	private int statisticsPoolIndex = -1;
 
-	final MDBVal getVal() {
+	public final MDBVal getVal() {
 		if (valPoolIndex >= 0) {
 			return valPool[valPoolIndex--];
 		}
 		return MDBVal.malloc();
 	}
 
-	final ByteBuffer getKeyBuffer() {
+	public final ByteBuffer getKeyBuffer() {
 		if (keyPoolIndex >= 0) {
 			ByteBuffer bb = keyPool[keyPoolIndex--];
 			bb.clear();
@@ -45,14 +45,14 @@ class Pool {
 		return MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
 	}
 
-	final Statistics getStatistics() {
+	public final Statistics getStatistics() {
 		if (statisticsPoolIndex >= 0) {
 			return statisticsPool[statisticsPoolIndex--];
 		}
 		return new Statistics();
 	}
 
-	final void free(MDBVal val) {
+	public final void free(MDBVal val) {
 		if (valPoolIndex < valPool.length - 1) {
 			valPool[++valPoolIndex] = val;
 		} else {
@@ -60,7 +60,7 @@ class Pool {
 		}
 	}
 
-	final void free(ByteBuffer bb) {
+	public final void free(ByteBuffer bb) {
 		if (keyPoolIndex < keyPool.length - 1) {
 			keyPool[++keyPoolIndex] = bb;
 		} else {
@@ -68,13 +68,13 @@ class Pool {
 		}
 	}
 
-	final void free(Statistics statistics) {
+	public final void free(Statistics statistics) {
 		if (statisticsPoolIndex < statisticsPool.length - 1) {
 			statisticsPool[++statisticsPoolIndex] = statistics;
 		}
 	}
 
-	final void close() {
+	public final void close() {
 		while (valPoolIndex >= 0) {
 			valPool[valPoolIndex--].close();
 		}

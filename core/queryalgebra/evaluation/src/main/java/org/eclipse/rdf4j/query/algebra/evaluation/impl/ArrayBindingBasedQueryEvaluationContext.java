@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -344,6 +345,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meetOther(QueryModelNode node) throws QueryEvaluationException {
+				if (node instanceof TupleExpr) {
+					for (String bindingName : ((TupleExpr) node).getBindingNames()) {
+						varNames.computeIfAbsent(bindingName, k -> k);
+					}
+				}
 				super.meetOther(node);
 			}
 

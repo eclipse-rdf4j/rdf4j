@@ -104,7 +104,7 @@ import org.slf4j.LoggerFactory;
  * an actual RDF value.
  */
 @SuppressWarnings("deprecation")
-class TripleStore implements Closeable {
+public class TripleStore implements Closeable {
 
 	static ConcurrentHashMap<TripleIndex.KeyStats, TripleIndex.KeyStats> stats = new ConcurrentHashMap<>();
 	static long hit = 0;
@@ -320,6 +320,10 @@ class TripleStore implements Closeable {
 		return txnManager;
 	}
 
+	Set<String> getConfiguredIndexSpecs() throws SailException {
+		return new HashSet<>(getIndexSpecs());
+	}
+
 	/**
 	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
 	 * of 4 characters: 's', 'p', 'o' and 'c'.
@@ -523,6 +527,21 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
+	RecordIterator getTriples(Txn txn, String indexName, long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		TripleIndex index = getIndex(indexName);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
+	}
+
+	LmdbTrieKeyCursor openTrieCursor(Txn txn, String indexName, boolean explicit) {
+		return new LmdbTrieDbCursor(getIndex(indexName), explicit, txn);
+	}
+
+	public TripleIndex tripleIndex(String indexName) {
+		return getIndex(indexName);
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		return txnManager.doWith((stack, txn) -> {
@@ -535,6 +554,15 @@ class TripleStore implements Closeable {
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
+	}
+
+	private TripleIndex getIndex(String indexName) {
+		for (TripleIndex index : indexes) {
+			if (index.toString().equals(indexName)) {
+				return index;
+			}
+		}
+		throw new IllegalArgumentException("Unknown LMDB index: " + indexName);
 	}
 
 	/**
@@ -1203,7 +1231,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	class TripleIndex {
+	public class TripleIndex {
 
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;

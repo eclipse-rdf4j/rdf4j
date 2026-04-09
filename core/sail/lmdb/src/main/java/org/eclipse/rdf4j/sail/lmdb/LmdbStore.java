@@ -101,6 +101,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * Lock manager used to prevent concurrent {@link #getTransactionLock(IsolationLevel)} calls.
 	 */
 	private final ReentrantLock txnLockManager = new ReentrantLock();
+	private final LmdbLftjPreparedPlanCache preparedPlanCache = new LmdbLftjPreparedPlanCache();
+	private final LmdbLftjCodegenCache codegenCache = new LmdbLftjCodegenCache();
 
 	/**
 	 * Holds locks for all isolated transactions.
@@ -168,8 +170,18 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * @return Returns the {@link EvaluationStrategy}.
 	 */
 	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
+		if (config.isLftjEnabled() && evalStratFactory != null
+				&& !(evalStratFactory instanceof LmdbLftjEvaluationStrategyFactory)) {
+			throw new IllegalStateException(
+					"LMDB LFTJ requires " + LmdbLftjEvaluationStrategyFactory.class.getName()
+							+ " when lftjEnabled=true");
+		}
 		if (evalStratFactory == null) {
-			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+			if (config.isLftjEnabled()) {
+				evalStratFactory = new LmdbLftjEvaluationStrategyFactory(this);
+			} else {
+				evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+			}
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());
@@ -330,6 +342,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				}
 			}
 		}
+		preparedPlanCache.clear();
+		codegenCache.clear();
 		logger.debug("LmdbStore shut down");
 	}
 
@@ -355,6 +369,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	@Override
 	public ValueFactory getValueFactory() {
 		return store.getValueFactory();
+	}
+
+	LmdbLftjPreparedPlanCache preparedPlanCache() {
+		return preparedPlanCache;
+	}
+
+	LmdbLftjCodegenCache codegenCache() {
+		return codegenCache;
 	}
 
 	/**
@@ -405,6 +427,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	LmdbSailStore getBackingStore() {
 		return backingStore;
+	}
+
+	LmdbStoreConfig getLmdbStoreConfig() {
+		return config;
 	}
 
 	private boolean upgradeStore(File dataDir, String version) throws SailException {

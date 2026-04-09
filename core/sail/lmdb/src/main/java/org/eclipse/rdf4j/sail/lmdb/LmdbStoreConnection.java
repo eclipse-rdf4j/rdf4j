@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.io.IOException;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -21,8 +24,11 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -132,9 +138,15 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		// ensure that all elements of the binding set are initialized (lazy values are resolved)
-		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
+		boolean lftjRuntimeSafe = isLftjRuntimeSafe(dataset);
+		CloseableIteration<? extends BindingSet> iteration = evaluateWithTripleSource(tupleExpr, dataset, bindings,
+				includeInferred,
+				rdfDataset -> createTripleSource(rdfDataset, includeInferred, lftjRuntimeSafe));
+		if (lftjRuntimeSafe) {
+			return iteration;
+		}
+		// Non-LFTJ query paths keep the historical eager-init behavior.
+		return new IterationWrapper<BindingSet>(iteration) {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
 				BindingSet bs = super.next();
@@ -142,6 +154,159 @@ public class LmdbStoreConnection extends SailSourceConnection {
 				return bs;
 			}
 		};
+	}
+
+	private TripleSource createTripleSource(SailDataset rdfDataset, boolean includeInferred, boolean lftjRuntimeSafe) {
+		TripleSource delegate = new SailDatasetTripleSource(lmdbStore.getValueFactory(), rdfDataset);
+		if (!lftjRuntimeSafe) {
+			return delegate;
+		}
+		return new LmdbLftjTripleSource(delegate, createQueryAccess(includeInferred));
+	}
+
+	private boolean isLftjRuntimeSafe(Dataset dataset) {
+		return lmdbStore.getLmdbStoreConfig().isLftjEnabled()
+				&& hasStrongLftjIndexCoverage()
+				&& !hasPendingLocalChangesForLftj()
+				&& isDefaultDataset(dataset);
+	}
+
+	private boolean hasStrongLftjIndexCoverage() {
+		return LmdbLftjPlanner.hasRequiredIndexCoverage(lmdbStore.getBackingStore()
+				.getTripleStore()
+				.getConfiguredIndexSpecs());
+	}
+
+	private boolean hasPendingLocalChangesForLftj() {
+		return sailChangedEvent.statementsAdded() || sailChangedEvent.statementsRemoved();
+	}
+
+	private boolean isDefaultDataset(Dataset dataset) {
+		return dataset == null || (dataset.getDefaultGraphs().isEmpty()
+				&& dataset.getNamedGraphs().isEmpty()
+				&& dataset.getDefaultRemoveGraphs().isEmpty()
+				&& dataset.getDefaultInsertGraph() == null);
+	}
+
+	protected LmdbQueryAccess createQueryAccess(boolean includeInferred) {
+		LmdbSailStore backingStore = lmdbStore.getBackingStore();
+		TripleStore tripleStore = backingStore.getTripleStore();
+		ValueStore valueStore = backingStore.getValueStore();
+		return new LmdbQueryAccess() {
+			@Override
+			public TripleStore tripleStore() {
+				return tripleStore;
+			}
+
+			@Override
+			public TxnManager.Txn acquireReadTxn() {
+				try {
+					return tripleStore.getTxnManager().createReadTxn();
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public void releaseReadTxn(TxnManager.Txn txn) {
+				txn.close();
+			}
+
+			@Override
+			public long resolveId(Value value) {
+				try {
+					return valueStore.getId(value);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public Value resolveValue(long id) {
+				try {
+					return valueStore.getValue(id);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public Value lazyValue(long id) {
+				try {
+					return valueStore.getLazyValue(id);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public boolean includeInferred() {
+				return includeInferred;
+			}
+
+			@Override
+			public Set<String> configuredIndexes() {
+				try {
+					return tripleStore.getConfiguredIndexSpecs();
+				} catch (SailException e) {
+					throw e;
+				}
+			}
+
+			@Override
+			public RecordIterator openScan(TxnManager.Txn txn, String indexName, long subj, long pred, long obj,
+					long context, boolean explicit) {
+				try {
+					return tripleStore.getTriples(txn, indexName, subj, pred, obj, context, explicit);
+				} catch (IOException e) {
+					throw new SailException(e);
+				}
+			}
+
+			@Override
+			public LmdbTrieKeyCursor openTrieCursor(TxnManager.Txn txn, String indexName, boolean explicit) {
+				return tripleStore.openTrieCursor(txn, indexName, explicit);
+			}
+
+			@Override
+			public LmdbLftjPlanner.PlanningResult cachedPlanningResult(String cacheKey) {
+				return lmdbStore.preparedPlanCache().get(cacheKey);
+			}
+
+			@Override
+			public void cachePlanningResult(String cacheKey, LmdbLftjPlanner.PlanningResult result) {
+				lmdbStore.preparedPlanCache().put(cacheKey, result);
+			}
+
+			@Override
+			public boolean lftjCodegenEnabled() {
+				return lmdbStore.getLmdbStoreConfig().isLftjCodegenEnabled();
+			}
+
+			@Override
+			public LmdbLftjCodegenCache.CacheEntry cachedCompiledPlan(String executionKey) {
+				return lmdbStore.codegenCache().get(executionKey);
+			}
+
+			@Override
+			public void cacheCompiledPlanSuccess(String executionKey, LmdbCompiledLftjFactory factory) {
+				lmdbStore.codegenCache().putSuccess(executionKey, factory);
+			}
+
+			@Override
+			public void cacheCompiledPlanFailure(String executionKey, String message) {
+				lmdbStore.codegenCache().putFailure(executionKey, message);
+			}
+
+			@Override
+			public LmdbLftjCodegenCompiler codegenCompiler() {
+				return LmdbStoreConnection.this.codegenCompiler();
+			}
+		};
+	}
+
+	protected LmdbLftjCodegenCompiler codegenCompiler() {
+		return LmdbLftjFullCodegenCompiler.INSTANCE;
 	}
 
 	@Override

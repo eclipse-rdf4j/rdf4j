@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Utility class for working with LMDB.
  */
-final class LmdbUtil {
+public final class LmdbUtil {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbUtil.class);
 
@@ -62,7 +62,7 @@ final class LmdbUtil {
 	private LmdbUtil() {
 	}
 
-	static int E(int rc) throws IOException {
+	public static int E(int rc) throws IOException {
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND && rc != MDB_KEYEXIST) {
 			IOException ioException = new IOException(mdb_strerror(rc));
 			logger.info("Possible LMDB error: {}", mdb_strerror(rc), ioException);

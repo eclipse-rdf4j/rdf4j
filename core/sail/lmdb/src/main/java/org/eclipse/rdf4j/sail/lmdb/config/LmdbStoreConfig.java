@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -77,6 +78,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean autoGrow = true;
 
 	private boolean pageCardinalityEstimator = true;
+
+	private boolean lftjEnabled = true;
+
+	private boolean lftjCodegenEnabled = true;
 
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
 
@@ -213,6 +218,28 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	@Experimental
+	public boolean isLftjEnabled() {
+		return lftjEnabled;
+	}
+
+	@Experimental
+	public LmdbStoreConfig setLftjEnabled(boolean lftjEnabled) {
+		this.lftjEnabled = lftjEnabled;
+		return this;
+	}
+
+	@Experimental
+	public boolean isLftjCodegenEnabled() {
+		return lftjCodegenEnabled;
+	}
+
+	@Experimental
+	public LmdbStoreConfig setLftjCodegenEnabled(boolean lftjCodegenEnabled) {
+		this.lftjCodegenEnabled = lftjCodegenEnabled;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -251,6 +278,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (!pageCardinalityEstimator) {
 			m.add(implNode, LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR, vf.createLiteral(false));
+		}
+		if (!lftjEnabled) {
+			m.add(implNode, LmdbStoreSchema.LFTJ_ENABLED, vf.createLiteral(false));
+		}
+		if (!lftjCodegenEnabled) {
+			m.add(implNode, LmdbStoreSchema.LFTJ_CODEGEN_ENABLED, vf.createLiteral(false));
 		}
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
@@ -365,6 +398,27 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(
 									"Boolean value required for " + LmdbStoreSchema.PAGE_CARDINALITY_ESTIMATOR
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.LFTJ_ENABLED, null)).ifPresent(lit -> {
+				try {
+					setLftjEnabled(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.LFTJ_ENABLED + " property, found "
+									+ lit);
+				}
+			});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.LFTJ_CODEGEN_ENABLED, null))
+					.ifPresent(lit -> {
+						try {
+							setLftjCodegenEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.LFTJ_CODEGEN_ENABLED
 											+ " property, found " + lit);
 						}
 					});

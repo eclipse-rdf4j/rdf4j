@@ -1,0 +1,4 @@
+interface:
+  display_name: "High-Performance Java"
+  short_description: "Hot-path Java plus algorithm/perf-library guidance"
+  default_prompt: "Use $high-performance-java to choose the right algorithm, data structure, library, and HotSpot-friendly code shape for a high-performance Java task."
