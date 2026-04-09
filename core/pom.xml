@@ -12,6 +12,7 @@
 		<module>common</module>
 		<module>model-api</module>
 		<module>model-vocabulary</module>
+		<module>model-vocabulary-eu</module>
 		<module>model</module>
 		<module>sparqlbuilder</module>
 		<module>rio</module>
