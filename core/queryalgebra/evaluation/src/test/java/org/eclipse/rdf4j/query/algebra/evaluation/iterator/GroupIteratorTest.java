@@ -16,14 +16,18 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
@@ -31,6 +35,10 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.QueryPressureState;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -40,6 +48,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -85,6 +94,10 @@ public class GroupIteratorTest {
 	private static final BindingSetAssignment EMPTY_ASSIGNMENT = new BindingSetAssignment();
 	private static final BindingSetAssignment NONEMPTY_ASSIGNMENT = new BindingSetAssignment();
 	private static final AggregateFunctionFactory AGGREGATE_FUNCTION_FACTORY = new FakeAggregateFunctionFactory();
+	private static final String BREAKER_ENABLED = "rdf4j.query.breaker.enabled";
+	private static final String BREAKER_WARN_FREE_MB = "rdf4j.query.breaker.warn.free.mb";
+	private static final String BREAKER_HIGH_FREE_MB = "rdf4j.query.breaker.high.free.mb";
+	private static final String BREAKER_CRITICAL_FREE_MB = "rdf4j.query.breaker.critical.free.mb";
 
 	@BeforeAll
 	public static void init() {
@@ -428,6 +441,124 @@ public class GroupIteratorTest {
 			iteratorThread.join(Duration.ofSeconds(5).toMillis());
 			assertThat(iteratorThread.isAlive()).isFalse();
 		}
+	}
+
+	@Test
+	public void testCircuitBreakerInterruptsGroupIterator() throws Exception {
+		Group group = new Group(NONEMPTY_ASSIGNMENT);
+		group.addGroupBindingName("a");
+
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		withCriticalBreakerProperties(() -> {
+			QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.WORKBENCH, "test",
+					"select * where { ?s ?p ?o } group by ?a");
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(handle);
+					GroupIterator groupIterator = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(),
+							CONTEXT)) {
+				assertThatExceptionOfType(QueryInterruptedException.class).isThrownBy(groupIterator::next);
+			} finally {
+				breaker.complete(handle);
+			}
+		});
+	}
+
+	private void withCriticalBreakerProperties(ThrowingRunnable action) throws Exception {
+		String previousEnabled = System.getProperty(BREAKER_ENABLED);
+		String previousWarnFreeMb = System.getProperty(BREAKER_WARN_FREE_MB);
+		String previousHighFreeMb = System.getProperty(BREAKER_HIGH_FREE_MB);
+		String previousCriticalFreeMb = System.getProperty(BREAKER_CRITICAL_FREE_MB);
+		try {
+			resetGlobalBreaker();
+			System.setProperty(BREAKER_ENABLED, "true");
+			System.setProperty(BREAKER_WARN_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_HIGH_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_CRITICAL_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			action.run();
+		} finally {
+			restoreProperty(BREAKER_ENABLED, previousEnabled);
+			restoreProperty(BREAKER_WARN_FREE_MB, previousWarnFreeMb);
+			restoreProperty(BREAKER_HIGH_FREE_MB, previousHighFreeMb);
+			restoreProperty(BREAKER_CRITICAL_FREE_MB, previousCriticalFreeMb);
+			resetGlobalBreaker();
+		}
+	}
+
+	@Test
+	public void testHeavyOperatorKillSwitchInterruptsGroupIteratorWithoutBreakerCheckpoint() throws Exception {
+		String previousEnabled = System.getProperty(BREAKER_ENABLED);
+		Field heavyOperatorExecutionEnabled = QueryExecutionContext.class
+				.getDeclaredField("heavyOperatorExecutionEnabled");
+		heavyOperatorExecutionEnabled.setAccessible(true);
+		boolean previousHeavyOperatorExecutionEnabled = heavyOperatorExecutionEnabled.getBoolean(null);
+
+		Group group = new Group(NONEMPTY_ASSIGNMENT);
+		group.addGroupBindingName("a");
+
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.WORKBENCH, "test",
+				"select * where { ?s ?p ?o } group by ?a");
+		try {
+			resetGlobalBreaker();
+			System.setProperty(BREAKER_ENABLED, "false");
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(handle);
+					GroupIterator groupIterator = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(),
+							CONTEXT)) {
+				heavyOperatorExecutionEnabled.setBoolean(null, false);
+				assertThatExceptionOfType(QueryInterruptedException.class).isThrownBy(groupIterator::next);
+			}
+			assertThat(handle.isCancelRequested()).isTrue();
+		} finally {
+			heavyOperatorExecutionEnabled.setBoolean(null, previousHeavyOperatorExecutionEnabled);
+			restoreProperty(BREAKER_ENABLED, previousEnabled);
+			breaker.complete(handle);
+			resetGlobalBreaker();
+		}
+	}
+
+	private void resetGlobalBreaker() throws Exception {
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		Field activeHandlesField = QueryCircuitBreaker.class.getDeclaredField("activeHandles");
+		activeHandlesField.setAccessible(true);
+		((Map<?, ?>) activeHandlesField.get(breaker)).clear();
+		resetCounter(breaker, "handleSequence");
+		resetCounter(breaker, "rejectCount");
+		resetCounter(breaker, "cancelCount");
+
+		Field currentStateField = QueryCircuitBreaker.class.getDeclaredField("currentState");
+		currentStateField.setAccessible(true);
+		currentStateField.set(breaker, QueryPressureState.NORMAL);
+
+		Field lastCancelAtField = QueryCircuitBreaker.class.getDeclaredField("lastCancelAt");
+		lastCancelAtField.setAccessible(true);
+		lastCancelAtField.setLong(breaker, Long.MIN_VALUE);
+
+		Class<?> transitionClass = Class.forName("org.eclipse.rdf4j.http.client.QueryCircuitBreaker$Transition");
+		Method initialMethod = transitionClass.getDeclaredMethod("initial");
+		initialMethod.setAccessible(true);
+		Object initialTransition = initialMethod.invoke(null);
+
+		Field lastTransitionField = QueryCircuitBreaker.class.getDeclaredField("lastTransition");
+		lastTransitionField.setAccessible(true);
+		lastTransitionField.set(breaker, initialTransition);
+	}
+
+	private void resetCounter(QueryCircuitBreaker breaker, String fieldName) throws Exception {
+		Field field = QueryCircuitBreaker.class.getDeclaredField(fieldName);
+		field.setAccessible(true);
+		((AtomicLong) field.get(breaker)).set(0);
+	}
+
+	private void restoreProperty(String propertyName, String value) {
+		if (value == null) {
+			System.clearProperty(propertyName);
+		} else {
+			System.setProperty(propertyName, value);
+		}
+	}
+
+	@FunctionalInterface
+	private interface ThrowingRunnable {
+		void run() throws Exception;
 	}
 
 	private static final class FakeAggregateFunctionFactory implements AggregateFunctionFactory {

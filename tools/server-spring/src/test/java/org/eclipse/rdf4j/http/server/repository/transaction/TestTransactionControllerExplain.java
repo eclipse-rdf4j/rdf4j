@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
+import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.QueryResultView;
 import org.eclipse.rdf4j.model.Value;
@@ -47,6 +48,11 @@ import org.springframework.web.servlet.ModelAndView;
 class TestTransactionControllerExplain {
 
 	private static final String SELECT_ALL_QUERY = "select * where { ?s ?p ?o }";
+	private static final String BREAKER_ENABLED = "rdf4j.query.breaker.enabled";
+	private static final String BREAKER_WARN_FREE_MB = "rdf4j.query.breaker.warn.free.mb";
+	private static final String BREAKER_HIGH_FREE_MB = "rdf4j.query.breaker.high.free.mb";
+	private static final String BREAKER_CRITICAL_FREE_MB = "rdf4j.query.breaker.critical.free.mb";
+	private static final String BREAKER_RETRY_AFTER_SECONDS = "rdf4j.query.breaker.retry.after.seconds";
 
 	private final String repositoryID = "test-repo";
 
@@ -213,6 +219,39 @@ class TestTransactionControllerExplain {
 		}
 	}
 
+	@Test
+	void shouldRejectTransactionQueriesWhenCircuitBreakerIsHighPressure() throws Exception {
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+
+		try {
+			MockHttpServletRequest queryRequest = new MockHttpServletRequest();
+			queryRequest.setRequestURI("/repositories/" + repositoryID + "/transactions/" + txn.getID());
+			queryRequest.setPathInfo(repositoryID + "/transactions/" + txn.getID());
+			queryRequest.setMethod(HttpMethod.PUT.name());
+			queryRequest.setCharacterEncoding(StandardCharsets.UTF_8.name());
+			queryRequest.setContentType("application/sparql-query; charset=utf-8");
+			queryRequest.setContent(SELECT_ALL_QUERY.getBytes(StandardCharsets.UTF_8));
+			queryRequest.setParameter(Protocol.ACTION_PARAM_NAME, Protocol.Action.QUERY.toString());
+			queryRequest.addHeader("Accept", "application/sparql-results+json");
+
+			TransactionController transactionController = new TransactionController();
+
+			withBreakerProperties(
+					() -> assertThatThrownBy(() -> transactionController.handleRequestInternal(queryRequest,
+							response))
+							.isInstanceOfSatisfying(ServerHTTPException.class, error -> {
+								assertThat(error.getStatusCode()).isEqualTo(503);
+								assertThat(error.getMessage()).contains("circuit breaker");
+							}));
+
+			assertThat(response.getHeader("Retry-After")).isEqualTo("17");
+		} finally {
+			closeQuietly(txn);
+			deregisterQuietly(txn);
+		}
+	}
+
 	private void configureExplainRequest(UUID transactionId) {
 		MockHttpServletRequest explainRequest = newExplainRequest(transactionId, null);
 		request.setRequestURI(explainRequest.getRequestURI());
@@ -266,6 +305,41 @@ class TestTransactionControllerExplain {
 		} catch (RepositoryException ignored) {
 			// cleanup only
 		}
+	}
+
+	private void withBreakerProperties(ThrowingRunnable action) throws Exception {
+		String previousEnabled = System.getProperty(BREAKER_ENABLED);
+		String previousWarnFreeMb = System.getProperty(BREAKER_WARN_FREE_MB);
+		String previousHighFreeMb = System.getProperty(BREAKER_HIGH_FREE_MB);
+		String previousCriticalFreeMb = System.getProperty(BREAKER_CRITICAL_FREE_MB);
+		String previousRetryAfter = System.getProperty(BREAKER_RETRY_AFTER_SECONDS);
+		try {
+			System.setProperty(BREAKER_ENABLED, "true");
+			System.setProperty(BREAKER_WARN_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_HIGH_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_CRITICAL_FREE_MB, "0");
+			System.setProperty(BREAKER_RETRY_AFTER_SECONDS, "17");
+			action.run();
+		} finally {
+			restoreProperty(BREAKER_ENABLED, previousEnabled);
+			restoreProperty(BREAKER_WARN_FREE_MB, previousWarnFreeMb);
+			restoreProperty(BREAKER_HIGH_FREE_MB, previousHighFreeMb);
+			restoreProperty(BREAKER_CRITICAL_FREE_MB, previousCriticalFreeMb);
+			restoreProperty(BREAKER_RETRY_AFTER_SECONDS, previousRetryAfter);
+		}
+	}
+
+	private void restoreProperty(String propertyName, String value) {
+		if (value == null) {
+			System.clearProperty(propertyName);
+		} else {
+			System.setProperty(propertyName, value);
+		}
+	}
+
+	@FunctionalInterface
+	private interface ThrowingRunnable {
+		void run() throws Exception;
 	}
 
 	private static final class UnsupportedExplainQuery implements Query {
