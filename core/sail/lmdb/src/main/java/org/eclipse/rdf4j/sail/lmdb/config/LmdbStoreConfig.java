@@ -255,9 +255,6 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
 		}
-		if (noReadahead) {
-			m.add(implNode, LmdbStoreSchema.NO_READ_AHEAD, vf.createLiteral(true));
-		}
 		return implNode;
 	}
 
@@ -383,15 +380,6 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						}
 					});
 
-			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.NO_READ_AHEAD, null)).ifPresent(lit -> {
-				try {
-					setNoReadahead(lit.booleanValue());
-				} catch (IllegalArgumentException e) {
-					throw new SailConfigException(
-							"Boolean value required for " + LmdbStoreSchema.NO_READ_AHEAD + " property, found "
-									+ lit);
-				}
-			});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

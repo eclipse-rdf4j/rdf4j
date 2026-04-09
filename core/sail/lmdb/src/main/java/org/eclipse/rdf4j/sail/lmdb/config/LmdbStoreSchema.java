@@ -87,11 +87,6 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI VALUE_EVICTION_INTERVAL;
 
-	/**
-	 * <tt>http://rdf4j.org/config/sail/lmdb#noReadAhead</tt>
-	 */
-	public final static IRI NO_READ_AHEAD;
-
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
@@ -106,6 +101,5 @@ public class LmdbStoreSchema {
 		AUTO_GROW = factory.createIRI(NAMESPACE, "autoGrow");
 		PAGE_CARDINALITY_ESTIMATOR = factory.createIRI(NAMESPACE, "pageCardinalityEstimator");
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
-		NO_READ_AHEAD = factory.createIRI(NAMESPACE, "noReadAhead");
 	}
 }
