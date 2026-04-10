@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.evaluation.iterator.StopRemainingExecutionsOnCloseIteration;
@@ -61,8 +61,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An implementation of RepositoryConnection that uses {@link FederationEvalStrategy} to evaluate provided queries.
- * Prior to evaluation various optimizations are performed, see
+ * An implementation of RepositoryConnection that uses {@link FederationEvaluationStrategy} to evaluate provided
+ * queries. Prior to evaluation various optimizations are performed, see
  * {@link org.eclipse.rdf4j.federated.optimizer.FedXOptimizer} for further details.
  * <p>
  * <p>
@@ -73,7 +73,7 @@ import org.slf4j.LoggerFactory;
  * Implementation notes: - not all methods are implemented as of now
  *
  * @author Andreas Schwarte
- * @see FederationEvalStrategy
+ * @see FederationEvaluationStrategy
  * @see WriteStrategy
  */
 public class FedXConnection extends AbstractSailConnection {
@@ -105,7 +105,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 		final TupleExpr originalQuery = query;
 
-		FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
+		FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
 
 		long start = 0;
 		String queryString = getOriginalQueryString(bindings);
@@ -236,7 +236,7 @@ public class FedXConnection extends AbstractSailConnection {
 	@Override
 	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 
-		FederationEvalStrategy strategy = federationContext.createStrategy(new SimpleDataset());
+		FederationEvaluationStrategy strategy = federationContext.createStrategy(new SimpleDataset());
 		WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(new QueryInfo("getContextIDsInternal", null,
 				QueryType.UNKNOWN, 0, federationContext.getConfig().getIncludeInferredDefault(), federationContext,
 				strategy, new SimpleDataset()));
@@ -307,7 +307,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 		try {
 			Dataset dataset = new SimpleDataset();
-			FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
+			FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
 			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
 					dataset);
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
@@ -342,7 +342,7 @@ public class FedXConnection extends AbstractSailConnection {
 			Resource[] contexts) {
 		try {
 			Dataset dataset = new SimpleDataset();
-			FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
+			FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
 			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
 					dataset);
 			federationContext.getMonitoringService().monitorQuery(queryInfo);

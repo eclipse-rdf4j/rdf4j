@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 /**
  * Stateful {@link EvaluationStatistics} providing information for evaluating a given query in
- * {@link FederationEvalStrategy#optimize(org.eclipse.rdf4j.query.algebra.TupleExpr, EvaluationStatistics, org.eclipse.rdf4j.query.BindingSet)}
+ * {@link FederationEvaluationStrategy#optimize(org.eclipse.rdf4j.query.algebra.TupleExpr, EvaluationStatistics, org.eclipse.rdf4j.query.BindingSet)}
  * <p>
  * The statistics are instantiated per query.
  * </p>
