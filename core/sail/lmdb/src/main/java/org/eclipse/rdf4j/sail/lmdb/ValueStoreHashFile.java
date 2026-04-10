@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -28,8 +27,6 @@ import java.util.List;
 import java.util.Properties;
 import java.util.zip.CRC32C;
 
-import sun.misc.Unsafe;
-
 final class ValueStoreHashFile implements AutoCloseable {
 
 	static final String FILE_NAME = "hashes.dat";
@@ -39,13 +36,14 @@ final class ValueStoreHashFile implements AutoCloseable {
 	private static final String VERSION_KEY = "version";
 	private static final String SIZE_KEY = "size";
 	private static final String CRC32C_KEY = "crc32c";
-	private static final Unsafe UNSAFE = initUnsafe();
+	private static final byte[] ZERO_CHUNK = new byte[8192];
 
 	private final File file;
 	private final File integrityFile;
 	private final List<MappedByteBuffer> segments = new ArrayList<>();
 	private FileChannel channel;
 	private long mappedSize;
+	private boolean discardExistingContents;
 
 	ValueStoreHashFile(File dir) throws IOException {
 		file = new File(dir, FILE_NAME);
@@ -98,7 +96,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 
 	synchronized void delete() throws IOException {
 		close(false);
-		deleteIfPresent(file.getParentFile());
+		deleteCacheFilesQuietly(file.toPath(), integrityFile.toPath());
 	}
 
 	@Override
@@ -109,6 +107,16 @@ final class ValueStoreHashFile implements AutoCloseable {
 	private void open() throws IOException {
 		channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
 				StandardOpenOption.WRITE);
+		if (discardExistingContents) {
+			try {
+				channel.truncate(0);
+				discardExistingContents = false;
+			} catch (IOException ignored) {
+				// The channel may still have platform-specific file locks via prior mappings.
+				// Fall back to ignoring old bytes and zero-filling new mappings on demand.
+			}
+			return;
+		}
 		mapSegments(channel.size());
 	}
 
@@ -126,7 +134,11 @@ final class ValueStoreHashFile implements AutoCloseable {
 		while (mappedSize < targetSize) {
 			long remaining = targetSize - mappedSize;
 			long size = Math.min(SEGMENT_SIZE, remaining);
-			segments.add(channel.map(MapMode.READ_WRITE, mappedSize, size));
+			MappedByteBuffer segment = channel.map(MapMode.READ_WRITE, mappedSize, size);
+			if (discardExistingContents) {
+				zero(segment);
+			}
+			segments.add(segment);
 			mappedSize += size;
 		}
 	}
@@ -162,9 +174,12 @@ final class ValueStoreHashFile implements AutoCloseable {
 			Files.deleteIfExists(integrityPath);
 			return;
 		}
-		if (!Files.exists(integrityPath) || !hasValidIntegrity(filePath, integrityPath)) {
-			deleteCacheFiles(filePath, integrityPath);
+		if (!Files.exists(integrityPath)) {
+			discardExistingContents = true;
 			return;
+		}
+		if (!hasValidIntegrity(filePath, integrityPath)) {
+			discardExistingContents = true;
 		}
 		Files.deleteIfExists(integrityPath);
 	}
@@ -196,11 +211,6 @@ final class ValueStoreHashFile implements AutoCloseable {
 			} catch (RuntimeException e) {
 				failure = new IOException("Could not force hash cache file " + file, e);
 			}
-			try {
-				unmapSegments();
-			} catch (IOException e) {
-				failure = append(failure, e);
-			}
 		}
 		if (channel != null) {
 			try {
@@ -217,11 +227,15 @@ final class ValueStoreHashFile implements AutoCloseable {
 		Path filePath = file.toPath();
 		Path integrityPath = integrityFile.toPath();
 		if (writeIntegrity && failure == null) {
-			try {
-				writeIntegrityFile(filePath, integrityPath);
-			} catch (IOException e) {
+			if (discardExistingContents) {
 				deleteCacheFilesQuietly(filePath, integrityPath);
-				failure = append(failure, e);
+			} else {
+				try {
+					writeIntegrityFile(filePath, integrityPath);
+				} catch (IOException e) {
+					deleteCacheFilesQuietly(filePath, integrityPath);
+					failure = append(failure, e);
+				}
 			}
 		} else if (!writeIntegrity) {
 			Files.deleteIfExists(integrityPath);
@@ -229,20 +243,6 @@ final class ValueStoreHashFile implements AutoCloseable {
 			deleteCacheFilesQuietly(filePath, integrityPath);
 		}
 
-		if (failure != null) {
-			throw failure;
-		}
-	}
-
-	private void unmapSegments() throws IOException {
-		IOException failure = null;
-		for (MappedByteBuffer segment : segments) {
-			try {
-				UNSAFE.invokeCleaner(segment);
-			} catch (RuntimeException e) {
-				failure = append(failure, new IOException("Could not unmap hash cache file " + file, e));
-			}
-		}
 		if (failure != null) {
 			throw failure;
 		}
@@ -312,13 +312,12 @@ final class ValueStoreHashFile implements AutoCloseable {
 		return failure;
 	}
 
-	private static Unsafe initUnsafe() {
-		try {
-			Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
-			theUnsafe.setAccessible(true);
-			return (Unsafe) theUnsafe.get(null);
-		} catch (ReflectiveOperationException e) {
-			throw new ExceptionInInitializerError(e);
+	private static void zero(MappedByteBuffer segment) {
+		segment.position(0);
+		while (segment.hasRemaining()) {
+			int length = Math.min(segment.remaining(), ZERO_CHUNK.length);
+			segment.put(ZERO_CHUNK, 0, length);
 		}
+		segment.position(0);
 	}
 }

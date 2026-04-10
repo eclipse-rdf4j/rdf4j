@@ -13,8 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -34,11 +32,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import sun.misc.Unsafe;
-
 class ValueStoreHashCacheTest {
-
-	private static final Unsafe UNSAFE = initUnsafe();
 
 	private ValueStore valueStore;
 
@@ -126,14 +120,20 @@ class ValueStoreHashCacheTest {
 		hashFile.put(1L, 1234);
 
 		MappedByteBuffer segment = firstSegment(hashFile);
-		Object cleaner = cleaner(segment);
-		Field nodeField = cleaner.getClass().getDeclaredField("node");
-		assertNotNull("mapped segment should still be registered before delete", readObject(cleaner, nodeField));
+		assertTrue(hashFile(dataDir).exists());
 
 		hashFile.delete();
 
-		assertNull("delete should explicitly clean mapped segments before removing the file",
-				readObject(cleaner, nodeField));
+		assertEquals(1234, segment.getInt(Integer.BYTES));
+		assertTrue("delete should clear tracked mapped segments", segments(hashFile).isEmpty());
+		assertFalse("delete should invalidate integrity metadata immediately", integrityFile(dataDir).exists());
+
+		ValueStoreHashFile reopened = new ValueStoreHashFile(valuesDir);
+		try {
+			assertEquals("reopened cache should ignore stale mapped contents after delete", 0, reopened.get(1L));
+		} finally {
+			reopened.close();
+		}
 	}
 
 	private void assertCorruptedCacheFallsBackToRecomputedHash(File dataDir, Consumer<File> corruptor,
@@ -189,29 +189,14 @@ class ValueStoreHashCacheTest {
 
 	@SuppressWarnings("unchecked")
 	private MappedByteBuffer firstSegment(ValueStoreHashFile hashFile) throws Exception {
+		return segments(hashFile).get(0);
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<MappedByteBuffer> segments(ValueStoreHashFile hashFile) throws Exception {
 		Field segmentsField = ValueStoreHashFile.class.getDeclaredField("segments");
 		segmentsField.setAccessible(true);
-		List<MappedByteBuffer> segments = (List<MappedByteBuffer>) segmentsField.get(hashFile);
-		return segments.get(0);
-	}
-
-	private Object cleaner(MappedByteBuffer segment) throws Exception {
-		Field cleanerField = segment.getClass().getDeclaredField("cleaner");
-		return readObject(segment, cleanerField);
-	}
-
-	private Object readObject(Object target, Field field) {
-		return UNSAFE.getObject(target, UNSAFE.objectFieldOffset(field));
-	}
-
-	private static Unsafe initUnsafe() {
-		try {
-			Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
-			theUnsafe.setAccessible(true);
-			return (Unsafe) theUnsafe.get(null);
-		} catch (ReflectiveOperationException e) {
-			throw new ExceptionInInitializerError(e);
-		}
+		return (List<MappedByteBuffer>) segmentsField.get(hashFile);
 	}
 
 	@AfterEach
