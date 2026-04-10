@@ -223,6 +223,7 @@ class ValueStore extends AbstractValueFactory {
 	private Object[] previousNamespaceEntry;
 
 	private final long valueEvictionInterval;
+	private final boolean valueHashCacheEnabled;
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
@@ -231,6 +232,7 @@ class ValueStore extends AbstractValueFactory {
 		this.autoGrow = config.getAutoGrow();
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
+		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		open();
 
 		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
@@ -281,6 +283,18 @@ class ValueStore extends AbstractValueFactory {
 		commit();
 	}
 
+	private void openHashFileQuietly() {
+		hashFile = null;
+		if (!valueHashCacheEnabled) {
+			return;
+		}
+		try {
+			hashFile = new ValueStoreHashFile(dir);
+		} catch (IOException e) {
+			logger.warn("Could not initialize LMDB hash cache", e);
+		}
+	}
+
 	private void logValues() throws IOException {
 		readTransaction(env, (stack, txn) -> {
 			long cursor = 0;
@@ -316,7 +330,7 @@ class ValueStore extends AbstractValueFactory {
 	private void open() throws IOException {
 		// create directory if it not exists
 		dir.mkdirs();
-		hashFile = new ValueStoreHashFile(dir);
+		openHashFileQuietly();
 
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -408,8 +422,10 @@ class ValueStore extends AbstractValueFactory {
 					MDBVal keyData = MDBVal.calloc(stack);
 					MDBVal valueData = MDBVal.calloc(stack);
 					if (mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST) == MDB_SUCCESS) {
+						long freedId = data2id(keyData.mv_data());
+						clearStoredHash(freedId);
 						// remove lower 2 type bits
-						long value = data2id(keyData.mv_data()) >> 2;
+						long value = freedId >> 2;
 						// delete entry
 						E(mdb_cursor_del(cursor, 0));
 						return value;
@@ -1353,7 +1369,7 @@ class ValueStore extends AbstractValueFactory {
 
 		new File(dir, "data.mdb").delete();
 		new File(dir, "lock.mdb").delete();
-		new File(dir, ValueStoreHashFile.FILE_NAME).delete();
+		ValueStoreHashFile.deleteIfPresent(dir);
 
 		clearCaches();
 		open();
@@ -1391,14 +1407,20 @@ class ValueStore extends AbstractValueFactory {
 	public void close() throws IOException {
 
 		if (env != 0) {
-			clearPendingHashUpdates();
+			if (writeTxn == 0) {
+				flushPendingHashUpdates();
+			}
 			closeReadTransactions();
 			endTransaction(false);
 			mdb_env_close(env);
 			env = 0;
 		}
 		if (hashFile != null) {
-			hashFile.close();
+			try {
+				hashFile.close();
+			} catch (IOException e) {
+				logger.warn("Could not close LMDB hash cache", e);
+			}
 			hashFile = null;
 		}
 	}
@@ -1444,21 +1466,22 @@ class ValueStore extends AbstractValueFactory {
 	private void resetHashFileQuietly(String operation, IOException cause) {
 		logger.warn("Resetting LMDB hash cache after {} failure", operation, cause);
 		clearPendingHashUpdates();
-		if (hashFile == null) {
+		if (!valueHashCacheEnabled) {
+			hashFile = null;
 			return;
 		}
+		ValueStoreHashFile currentHashFile = hashFile;
+		hashFile = null;
 		try {
-			hashFile.delete();
-			hashFile = new ValueStoreHashFile(dir);
-		} catch (IOException resetFailure) {
-			logger.warn("Could not recreate LMDB hash cache", resetFailure);
-			try {
-				hashFile.close();
-			} catch (IOException closeFailure) {
-				logger.warn("Could not close LMDB hash cache after reset failure", closeFailure);
+			if (currentHashFile != null) {
+				currentHashFile.delete();
+			} else {
+				ValueStoreHashFile.deleteIfPresent(dir);
 			}
-			hashFile = null;
+		} catch (IOException deleteFailure) {
+			logger.warn("Could not delete LMDB hash cache", deleteFailure);
 		}
+		openHashFileQuietly();
 	}
 
 	private static final class ReadTxn {

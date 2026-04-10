@@ -13,25 +13,40 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
+import java.util.zip.CRC32C;
 
 final class ValueStoreHashFile implements AutoCloseable {
 
 	static final String FILE_NAME = "hashes.dat";
+	static final String INTEGRITY_FILE_NAME = FILE_NAME + ".integrity";
 	private static final long SEGMENT_SIZE = 256L * 1024 * 1024;
+	private static final String INTEGRITY_VERSION = "1";
+	private static final String VERSION_KEY = "version";
+	private static final String SIZE_KEY = "size";
+	private static final String CRC32C_KEY = "crc32c";
 
 	private final File file;
+	private final File integrityFile;
 	private final List<MappedByteBuffer> segments = new ArrayList<>();
 	private FileChannel channel;
 	private long mappedSize;
 
 	ValueStoreHashFile(File dir) throws IOException {
 		file = new File(dir, FILE_NAME);
+		integrityFile = new File(dir, INTEGRITY_FILE_NAME);
+		prepareForOpen();
 		open();
 	}
 
@@ -78,21 +93,13 @@ final class ValueStoreHashFile implements AutoCloseable {
 	}
 
 	synchronized void delete() throws IOException {
-		close();
-		if (file.exists() && !file.delete()) {
-			throw new IOException("Could not delete hash cache file " + file);
-		}
+		close(false);
+		deleteIfPresent(file.getParentFile());
 	}
 
 	@Override
 	public synchronized void close() throws IOException {
-		if (channel != null) {
-			force();
-			channel.close();
-			channel = null;
-		}
-		segments.clear();
-		mappedSize = 0L;
+		close(true);
 	}
 
 	private void open() throws IOException {
@@ -138,5 +145,145 @@ final class ValueStoreHashFile implements AutoCloseable {
 			return requiredSize;
 		}
 		return requiredSize + (SEGMENT_SIZE - remainder);
+	}
+
+	static void deleteIfPresent(File dir) throws IOException {
+		deleteCacheFiles(new File(dir, FILE_NAME).toPath(), new File(dir, INTEGRITY_FILE_NAME).toPath());
+	}
+
+	private void prepareForOpen() throws IOException {
+		Path filePath = file.toPath();
+		Path integrityPath = integrityFile.toPath();
+		if (!Files.exists(filePath)) {
+			Files.deleteIfExists(integrityPath);
+			return;
+		}
+		if (!Files.exists(integrityPath) || !hasValidIntegrity(filePath, integrityPath)) {
+			deleteCacheFiles(filePath, integrityPath);
+			return;
+		}
+		Files.deleteIfExists(integrityPath);
+	}
+
+	private boolean hasValidIntegrity(Path filePath, Path integrityPath) throws IOException {
+		Properties properties = new Properties();
+		try (InputStream inputStream = Files.newInputStream(integrityPath)) {
+			properties.load(inputStream);
+		}
+
+		if (!INTEGRITY_VERSION.equals(properties.getProperty(VERSION_KEY))) {
+			return false;
+		}
+
+		try {
+			long expectedSize = Long.parseLong(properties.getProperty(SIZE_KEY));
+			long expectedCrc32c = Long.parseLong(properties.getProperty(CRC32C_KEY));
+			return expectedSize == Files.size(filePath) && expectedCrc32c == computeCrc32c(filePath);
+		} catch (NumberFormatException e) {
+			return false;
+		}
+	}
+
+	private void close(boolean writeIntegrity) throws IOException {
+		IOException failure = null;
+		if (channel != null) {
+			try {
+				force();
+			} catch (RuntimeException e) {
+				failure = new IOException("Could not force hash cache file " + file, e);
+			}
+			try {
+				channel.close();
+			} catch (IOException e) {
+				failure = append(failure, e);
+			} finally {
+				channel = null;
+			}
+		}
+		segments.clear();
+		mappedSize = 0L;
+
+		Path filePath = file.toPath();
+		Path integrityPath = integrityFile.toPath();
+		if (writeIntegrity && failure == null) {
+			try {
+				writeIntegrityFile(filePath, integrityPath);
+			} catch (IOException e) {
+				deleteCacheFilesQuietly(filePath, integrityPath);
+				failure = append(failure, e);
+			}
+		} else if (!writeIntegrity) {
+			Files.deleteIfExists(integrityPath);
+		} else if (failure != null) {
+			deleteCacheFilesQuietly(filePath, integrityPath);
+		}
+
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private void writeIntegrityFile(Path filePath, Path integrityPath) throws IOException {
+		if (!Files.exists(filePath)) {
+			Files.deleteIfExists(integrityPath);
+			return;
+		}
+
+		String content = VERSION_KEY + "=" + INTEGRITY_VERSION + "\n"
+				+ SIZE_KEY + "=" + Files.size(filePath) + "\n"
+				+ CRC32C_KEY + "=" + computeCrc32c(filePath) + "\n";
+		ByteBuffer encoded = StandardCharsets.UTF_8.encode(content);
+		try (FileChannel integrityChannel = FileChannel.open(integrityPath, StandardOpenOption.CREATE,
+				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+			while (encoded.hasRemaining()) {
+				integrityChannel.write(encoded);
+			}
+			integrityChannel.force(true);
+		}
+	}
+
+	private long computeCrc32c(Path path) throws IOException {
+		CRC32C crc32c = new CRC32C();
+		byte[] buffer = new byte[8192];
+		try (InputStream inputStream = Files.newInputStream(path)) {
+			int read;
+			while ((read = inputStream.read(buffer)) != -1) {
+				crc32c.update(buffer, 0, read);
+			}
+		}
+		return crc32c.getValue();
+	}
+
+	private static void deleteCacheFiles(Path filePath, Path integrityPath) throws IOException {
+		IOException failure = null;
+		try {
+			Files.deleteIfExists(integrityPath);
+		} catch (IOException e) {
+			failure = append(failure, e);
+		}
+		try {
+			Files.deleteIfExists(filePath);
+		} catch (IOException e) {
+			failure = append(failure, e);
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private static void deleteCacheFilesQuietly(Path filePath, Path integrityPath) {
+		try {
+			deleteCacheFiles(filePath, integrityPath);
+		} catch (IOException ignored) {
+			// best effort only
+		}
+	}
+
+	private static IOException append(IOException failure, IOException next) {
+		if (failure == null) {
+			return next;
+		}
+		failure.addSuppressed(next);
+		return failure;
 	}
 }

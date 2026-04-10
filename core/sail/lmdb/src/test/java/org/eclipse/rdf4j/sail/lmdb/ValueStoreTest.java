@@ -63,7 +63,15 @@ public class ValueStoreTest {
 	}
 
 	private ValueStore createValueStore() throws IOException {
-		return new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		return createValueStore(new LmdbStoreConfig());
+	}
+
+	private ValueStore createValueStore(LmdbStoreConfig config) throws IOException {
+		return new ValueStore(new File(dataDir, "values"), config);
+	}
+
+	private LmdbStoreConfig hashCacheEnabledConfig() {
+		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
 	}
 
 	@Test
@@ -287,7 +295,7 @@ public class ValueStoreTest {
 	public void testLazyIriHashCodeDoesNotInitializeAfterRestart() throws Exception {
 		IRI iri = Values.iri("urn:hash:iri");
 		int expectedHash = iri.hashCode();
-		long id = storeValueAndReopen(iri);
+		long id = storeValueAndReopen(iri, hashCacheEnabledConfig());
 
 		LmdbIRI lazyValue = (LmdbIRI) valueStore.getLazyValue(id);
 		assertFalse(isInitialized(lazyValue));
@@ -299,7 +307,7 @@ public class ValueStoreTest {
 	public void testLazyLiteralHashCodeDoesNotInitializeAfterRestart() throws Exception {
 		Literal literal = Values.literal("literal-hash");
 		int expectedHash = literal.hashCode();
-		long id = storeValueAndReopen(literal);
+		long id = storeValueAndReopen(literal, hashCacheEnabledConfig());
 
 		LmdbLiteral lazyValue = (LmdbLiteral) valueStore.getLazyValue(id);
 		assertFalse(isInitialized(lazyValue));
@@ -309,9 +317,12 @@ public class ValueStoreTest {
 
 	@Test
 	public void testLazyBNodeHashCodeDoesNotInitializeAfterRestart() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
 		LmdbBNode bNode = valueStore.createBNode("hash-bnode");
 		int expectedHash = bNode.hashCode();
-		long id = storeValueAndReopen(bNode);
+		long id = storeValueAndReopen(bNode, hashCacheEnabledConfig());
 
 		LmdbBNode lazyValue = (LmdbBNode) valueStore.getLazyValue(id);
 		assertFalse(isInitialized(lazyValue));
@@ -321,6 +332,9 @@ public class ValueStoreTest {
 
 	@Test
 	public void testRecycledIdsClearCachedHash() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
 		LmdbBNode first = valueStore.createBNode("hash-first");
 		int firstHash = first.hashCode();
 		long firstId;
@@ -333,7 +347,7 @@ public class ValueStoreTest {
 		valueStore.gcIds(Collections.singleton(firstId), new HashSet<>());
 		valueStore.commit();
 
-		reopenValueStore();
+		reopenValueStore(hashCacheEnabledConfig());
 
 		LmdbBNode second = valueStore.createBNode("hash-second");
 		int secondHash = second.hashCode();
@@ -345,7 +359,7 @@ public class ValueStoreTest {
 		assertEquals("ID should have been recycled", firstId, secondId);
 		assertNotEquals("test values must not share the same hash", firstHash, secondHash);
 
-		reopenValueStore();
+		reopenValueStore(hashCacheEnabledConfig());
 
 		LmdbBNode lazyValue = (LmdbBNode) valueStore.getLazyValue(secondId);
 		assertFalse(isInitialized(lazyValue));
@@ -355,17 +369,28 @@ public class ValueStoreTest {
 	}
 
 	private long storeValueAndReopen(Value value) throws Exception {
+		return storeValueAndReopen(value, new LmdbStoreConfig());
+	}
+
+	private long storeValueAndReopen(Value value, LmdbStoreConfig config) throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(config);
+
 		long id;
 		valueStore.startTransaction(true);
 		id = valueStore.storeValue(value);
 		valueStore.commit();
-		reopenValueStore();
+		reopenValueStore(config);
 		return id;
 	}
 
 	private void reopenValueStore() throws Exception {
+		reopenValueStore(new LmdbStoreConfig());
+	}
+
+	private void reopenValueStore(LmdbStoreConfig config) throws Exception {
 		valueStore.close();
-		valueStore = createValueStore();
+		valueStore = createValueStore(config);
 	}
 
 	private boolean isInitialized(Object value) throws Exception {
