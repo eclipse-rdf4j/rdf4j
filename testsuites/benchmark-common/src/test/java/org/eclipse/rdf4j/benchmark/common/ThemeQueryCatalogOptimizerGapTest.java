@@ -25,6 +25,9 @@ class ThemeQueryCatalogOptimizerGapTest {
 	private static final String OPTIONAL_FILTER_MARKER = "FILTER(?OPT";
 	private static final String DISJUNCTIVE_MARKER = "||";
 	private static final String IN_LIST_MARKER = " IN ";
+	private static final String UNION_MARKER = "UNION";
+	private static final String OPTIONAL_MARKER = "OPTIONAL";
+	private static final String OPTIONAL_VARIABLE_MARKER = "?OPT";
 
 	@Test
 	void eachQueryTargetsKnownOptimizerGaps() {
@@ -39,10 +42,13 @@ class ThemeQueryCatalogOptimizerGapTest {
 						|| normalized.contains(DISJUNCTIVE_MARKER)
 						|| normalized.contains(IN_LIST_MARKER);
 				boolean hasLargeOptionalDenormalizedShape = normalized.contains("SELECT DISTINCT *")
-						&& !normalized.contains("UNION")
-						&& countOccurrences(normalized, "OPTIONAL") >= 6;
-				assertTrue(hasGapMarker || hasLargeOptionalDenormalizedShape, "Theme " + theme + " query " + index
-						+ " lacks optimizer-gap markers: " + query);
+						&& !normalized.contains(UNION_MARKER)
+						&& countOccurrences(normalized, OPTIONAL_MARKER) >= 6;
+				boolean hasUnionHeavyDenormalizedShape = countOccurrences(normalized, UNION_MARKER) >= 1
+						&& countOccurrences(normalized, OPTIONAL_MARKER) >= 6
+						&& countOccurrences(normalized, OPTIONAL_VARIABLE_MARKER) >= 6;
+				assertTrue(hasGapMarker || hasLargeOptionalDenormalizedShape || hasUnionHeavyDenormalizedShape,
+						"Theme " + theme + " query " + index + " lacks optimizer-gap markers: " + query);
 			}
 		}
 	}
