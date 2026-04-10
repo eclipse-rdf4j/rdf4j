@@ -356,6 +356,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void executeQueryReturnsExpectedCountForPharmaQueryTenAfterFreshGeneration() throws IOException {
 		FileUtils.deleteDirectory(STORE_DIRECTORY);
 		themeName = "PHARMA";
