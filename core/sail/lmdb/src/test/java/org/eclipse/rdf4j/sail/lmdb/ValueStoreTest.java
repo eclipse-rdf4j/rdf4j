@@ -368,6 +368,41 @@ public class ValueStoreTest {
 		assertFalse("hashCode should not initialize recycled lazy bnodes after restart", isInitialized(lazyValue));
 	}
 
+	@Test
+	public void testStaleBNodeHashCodeIgnoresReusedIdAfterClear() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
+		LmdbBNode first = valueStore.createBNode("hash-first");
+		int firstHash = first.hashCode();
+		long firstId;
+		valueStore.startTransaction(true);
+		firstId = valueStore.storeValue(first);
+		valueStore.commit();
+
+		ValueStoreRevision firstRevision = valueStore.getRevision();
+
+		valueStore.startTransaction(true);
+		valueStore.gcIds(Collections.singleton(firstId), new HashSet<>());
+		valueStore.commit();
+
+		valueStore.unusedRevisionIds.add(firstRevision.getRevisionId());
+		valueStore.forceEvictionOfValues();
+		valueStore.startTransaction(true);
+		valueStore.commit();
+
+		LmdbBNode second = valueStore.createBNode("hash-second");
+		int secondHash = second.hashCode();
+		long secondId;
+		valueStore.startTransaction(true);
+		secondId = valueStore.storeValue(second);
+		valueStore.commit();
+
+		assertEquals("GC should make the old ID reusable", firstId, secondId);
+		assertNotEquals("test values must not share the same hash", firstHash, secondHash);
+		assertEquals("stale values must keep their original hash after a revision change", firstHash, first.hashCode());
+	}
+
 	private long storeValueAndReopen(Value value) throws Exception {
 		return storeValueAndReopen(value, new LmdbStoreConfig());
 	}

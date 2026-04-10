@@ -109,7 +109,7 @@ public interface ValueStoreRevision {
 
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();
-		if (valueStore == null) {
+		if (valueStore == null || valueStore.getRevision().getRevisionId() != getRevisionId()) {
 			return 0;
 		}
 		return valueStore.getStoredHash(id);
@@ -117,7 +117,7 @@ public interface ValueStoreRevision {
 
 	default void storeHash(long id, int hash) {
 		ValueStore valueStore = getValueStore();
-		if (valueStore != null) {
+		if (valueStore != null && valueStore.getRevision().getRevisionId() == getRevisionId()) {
 			valueStore.storeHash(id, hash);
 		}
 	}

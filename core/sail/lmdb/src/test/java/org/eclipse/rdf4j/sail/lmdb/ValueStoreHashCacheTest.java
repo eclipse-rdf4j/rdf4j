@@ -13,13 +13,17 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.lang.reflect.Field;
+import java.nio.MappedByteBuffer;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -30,7 +34,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import sun.misc.Unsafe;
+
 class ValueStoreHashCacheTest {
+
+	private static final Unsafe UNSAFE = initUnsafe();
 
 	private ValueStore valueStore;
 
@@ -109,6 +117,25 @@ class ValueStoreHashCacheTest {
 		}, false);
 	}
 
+	@Test
+	void deleteShouldCleanMappedSegments(@TempDir File dataDir) throws Exception {
+		File valuesDir = new File(dataDir, "values");
+		assertTrue(valuesDir.mkdirs());
+
+		ValueStoreHashFile hashFile = new ValueStoreHashFile(valuesDir);
+		hashFile.put(1L, 1234);
+
+		MappedByteBuffer segment = firstSegment(hashFile);
+		Object cleaner = cleaner(segment);
+		Field nodeField = cleaner.getClass().getDeclaredField("node");
+		assertNotNull("mapped segment should still be registered before delete", readObject(cleaner, nodeField));
+
+		hashFile.delete();
+
+		assertNull("delete should explicitly clean mapped segments before removing the file",
+				readObject(cleaner, nodeField));
+	}
+
 	private void assertCorruptedCacheFallsBackToRecomputedHash(File dataDir, Consumer<File> corruptor,
 			boolean corruptHashFile) throws Exception {
 		LmdbStoreConfig config = hashCacheEnabledConfig();
@@ -158,6 +185,33 @@ class ValueStoreHashCacheTest {
 		Field initializedField = value.getClass().getDeclaredField("initialized");
 		initializedField.setAccessible(true);
 		return initializedField.getBoolean(value);
+	}
+
+	@SuppressWarnings("unchecked")
+	private MappedByteBuffer firstSegment(ValueStoreHashFile hashFile) throws Exception {
+		Field segmentsField = ValueStoreHashFile.class.getDeclaredField("segments");
+		segmentsField.setAccessible(true);
+		List<MappedByteBuffer> segments = (List<MappedByteBuffer>) segmentsField.get(hashFile);
+		return segments.get(0);
+	}
+
+	private Object cleaner(MappedByteBuffer segment) throws Exception {
+		Field cleanerField = segment.getClass().getDeclaredField("cleaner");
+		return readObject(segment, cleanerField);
+	}
+
+	private Object readObject(Object target, Field field) {
+		return UNSAFE.getObject(target, UNSAFE.objectFieldOffset(field));
+	}
+
+	private static Unsafe initUnsafe() {
+		try {
+			Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+			theUnsafe.setAccessible(true);
+			return (Unsafe) theUnsafe.get(null);
+		} catch (ReflectiveOperationException e) {
+			throw new ExceptionInInitializerError(e);
+		}
 	}
 
 	@AfterEach

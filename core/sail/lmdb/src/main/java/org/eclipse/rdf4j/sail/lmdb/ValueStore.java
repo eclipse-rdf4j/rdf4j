@@ -20,6 +20,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;

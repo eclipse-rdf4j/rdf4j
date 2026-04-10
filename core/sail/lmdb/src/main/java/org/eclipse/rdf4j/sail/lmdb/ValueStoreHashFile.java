@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -27,6 +28,8 @@ import java.util.List;
 import java.util.Properties;
 import java.util.zip.CRC32C;
 
+import sun.misc.Unsafe;
+
 final class ValueStoreHashFile implements AutoCloseable {
 
 	static final String FILE_NAME = "hashes.dat";
@@ -36,6 +39,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 	private static final String VERSION_KEY = "version";
 	private static final String SIZE_KEY = "size";
 	private static final String CRC32C_KEY = "crc32c";
+	private static final Unsafe UNSAFE = initUnsafe();
 
 	private final File file;
 	private final File integrityFile;
@@ -186,12 +190,19 @@ final class ValueStoreHashFile implements AutoCloseable {
 
 	private void close(boolean writeIntegrity) throws IOException {
 		IOException failure = null;
-		if (channel != null) {
+		if (!segments.isEmpty()) {
 			try {
 				force();
 			} catch (RuntimeException e) {
 				failure = new IOException("Could not force hash cache file " + file, e);
 			}
+			try {
+				unmapSegments();
+			} catch (IOException e) {
+				failure = append(failure, e);
+			}
+		}
+		if (channel != null) {
 			try {
 				channel.close();
 			} catch (IOException e) {
@@ -218,6 +229,20 @@ final class ValueStoreHashFile implements AutoCloseable {
 			deleteCacheFilesQuietly(filePath, integrityPath);
 		}
 
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private void unmapSegments() throws IOException {
+		IOException failure = null;
+		for (MappedByteBuffer segment : segments) {
+			try {
+				UNSAFE.invokeCleaner(segment);
+			} catch (RuntimeException e) {
+				failure = append(failure, new IOException("Could not unmap hash cache file " + file, e));
+			}
+		}
 		if (failure != null) {
 			throw failure;
 		}
@@ -285,5 +310,15 @@ final class ValueStoreHashFile implements AutoCloseable {
 		}
 		failure.addSuppressed(next);
 		return failure;
+	}
+
+	private static Unsafe initUnsafe() {
+		try {
+			Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+			theUnsafe.setAccessible(true);
+			return (Unsafe) theUnsafe.get(null);
+		} catch (ReflectiveOperationException e) {
+			throw new ExceptionInInitializerError(e);
+		}
 	}
 }
