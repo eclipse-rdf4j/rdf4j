@@ -888,10 +888,6 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	static LongAdder statementsAdded = new LongAdder();
-	static long lastLogTime = System.currentTimeMillis();
-	int localCount = 0;
-
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		boolean stAdded;
@@ -952,18 +948,6 @@ class TripleStore implements Closeable {
 				}
 
 				incrementContext(stack, context);
-			}
-		}
-
-		if (stAdded) {
-			statementsAdded.increment();
-			if (localCount++ % 100000 == 0) {
-				long now = System.currentTimeMillis();
-				if (now - lastLogTime > 1000) {
-					logger.info("LMDB import speed: {} statements/s",
-							(int) Math.floor(statementsAdded.sumThenReset() / ((now - lastLogTime) / 1000.0)));
-					lastLogTime = now;
-				}
 			}
 		}
 
