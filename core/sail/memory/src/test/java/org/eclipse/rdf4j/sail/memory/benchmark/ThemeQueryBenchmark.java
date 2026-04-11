@@ -62,7 +62,7 @@ public class ThemeQueryBenchmark {
 
 	private static final String STORE_NAME = "memory";
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
+	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" })
 	public int z_queryIndex;
 
 	@Param({

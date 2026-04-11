@@ -12,6 +12,9 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,7 +64,8 @@ class SummaryServletCoverageTest {
 			Thread.interrupted();
 		}
 
-		verify(builder).result("memory", "Memory repo", null, null, null, null);
+		verify(builder).result(eq("memory"), eq("Memory repo"), isNull(), isNull(), nullable(String.class),
+				nullable(String.class));
 		verify(builder).end();
 	}
 

@@ -80,6 +80,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
 
+	private boolean valueHashCacheEnabled = false;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -213,6 +215,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean getValueHashCacheEnabled() {
+		return valueHashCacheEnabled;
+	}
+
+	public LmdbStoreConfig setValueHashCacheEnabled(boolean valueHashCacheEnabled) {
+		this.valueHashCacheEnabled = valueHashCacheEnabled;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -254,6 +265,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
+		}
+		if (valueHashCacheEnabled) {
+			m.add(implNode, LmdbStoreSchema.VALUE_HASH_CACHE_ENABLED, vf.createLiteral(true));
 		}
 		return implNode;
 	}
@@ -376,6 +390,17 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						} catch (NumberFormatException e) {
 							throw new SailConfigException(
 									"Long value required for " + LmdbStoreSchema.VALUE_EVICTION_INTERVAL
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_HASH_CACHE_ENABLED, null))
+					.ifPresent(lit -> {
+						try {
+							setValueHashCacheEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.VALUE_HASH_CACHE_ENABLED
 											+ " property, found " + lit);
 						}
 					});
