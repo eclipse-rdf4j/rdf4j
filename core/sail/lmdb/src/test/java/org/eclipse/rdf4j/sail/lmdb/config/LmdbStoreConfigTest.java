@@ -46,6 +46,11 @@ class LmdbStoreConfigTest {
 		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "getNoReadahead")).isFalse();
 	}
 
+	@Test
+	void valueHashCacheDefaultsToDisabled() {
+		assertThat(new LmdbStoreConfig().getValueHashCacheEnabled()).isFalse();
+	}
+
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
 	void testThatLmdbStoreConfigParseAndExportNoReadahead(final boolean noReadahead) {
@@ -79,6 +84,18 @@ class LmdbStoreConfigTest {
 				LmdbStoreConfig::getValueEvictionInterval,
 				valueEvictionInterval,
 				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportValueHashCacheEnabled(final boolean valueHashCacheEnabled) {
+		testParseAndExport(
+				LmdbStoreSchema.VALUE_HASH_CACHE_ENABLED,
+				Values.literal(valueHashCacheEnabled),
+				LmdbStoreConfig::getValueHashCacheEnabled,
+				valueHashCacheEnabled,
+				valueHashCacheEnabled
 		);
 	}
 

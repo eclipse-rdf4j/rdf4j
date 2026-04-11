@@ -27,7 +27,7 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	/**
 	 * The elements that have already been returned.
 	 */
-	private final Set<E> excludeSet;
+	private Set<E> excludeSet;
 
 	/*--------------*
 	 * Constructors *
@@ -76,26 +76,13 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	 */
 	@Override
 	protected boolean accept(E object) {
-		if (inExcludeSet(object)) {
-			// object has already been returned
-			return false;
-		} else {
-			add(object);
-			return true;
-		}
+		return add(object);
 	}
 
 	@Override
 	protected void handleClose() {
-
-	}
-
-	/**
-	 * @param object
-	 * @return true if the object is in the excludeSet
-	 */
-	private boolean inExcludeSet(E object) {
-		return excludeSet.contains(object);
+		// help GC by removing link to set
+		excludeSet = null;
 	}
 
 	/**

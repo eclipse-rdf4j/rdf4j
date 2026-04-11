@@ -19,6 +19,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.AbstractQueue;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -336,7 +337,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		private final List<Iterator<E>> iterators;
 
-		private final TreeMap<E, List<Integer>> head;
+		private final TreeMap<E, ArrayDeque<Integer>> head;
 
 		private final boolean distinct;
 
@@ -375,8 +376,8 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 			if (head.isEmpty()) {
 				return null;
 			} else {
-				Entry<E, List<Integer>> e = head.firstEntry();
-				advance(e.getValue().remove(0));
+				Entry<E, ArrayDeque<Integer>> e = head.firstEntry();
+				advance(e.getValue().removeFirst());
 				if (e.getValue().isEmpty()) {
 					head.remove(e.getKey());
 				}
@@ -387,11 +388,12 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		private void advance(int i) {
 			while (iterators.get(i).hasNext()) {
 				E key = iterators.get(i).next();
-				if (!head.containsKey(key)) {
-					head.put(key, new LinkedList<>(List.of(i)));
+				ArrayDeque<Integer> integers = head.get(key);
+				if (integers == null) {
+					head.put(key, new ArrayDeque<>(List.of(i)));
 					break;
 				} else if (!distinct) {
-					head.get(key).add(i);
+					integers.add(i);
 					break;
 				}
 			}
