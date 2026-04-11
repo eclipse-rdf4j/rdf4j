@@ -19,6 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -151,6 +156,63 @@ class SailSourceBranchTest {
 			if (unrelatedWriter != null) {
 				unrelatedWriter.close();
 			}
+			branch.close();
+		}
+	}
+
+	@Test
+	void closeDeferredChangesetDoesNotHoldSemaphoreWhileClosingModel() throws Exception {
+		BlockingCloseModelFactory modelFactory = new BlockingCloseModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink lastReferencingWriter = null;
+		SailSink mergingWriter = null;
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"));
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			lastReferencingWriter = branch.sink(IsolationLevels.NONE);
+			mergingWriter = branch.sink(IsolationLevels.NONE);
+			mergingWriter.approve(approved);
+			mergingWriter.flush();
+			mergingWriter.close();
+			mergingWriter = null;
+
+			BlockingCloseModel model = modelFactory.onlyModel();
+
+			branch.flush();
+			assertFalse(model.isClosed());
+
+			SailSink writerToClose = lastReferencingWriter;
+			Future<?> closeFuture = executor.submit(() -> {
+				writerToClose.close();
+				return null;
+			});
+
+			assertTrue(model.awaitCloseStarted(), "expected deferred model close to start");
+
+			Future<Boolean> branchOpFuture = executor.submit(() -> {
+				try {
+					return branch.isChanged();
+				} finally {
+					model.releaseClose();
+				}
+			});
+
+			closeFuture.get(5, TimeUnit.SECONDS);
+			branchOpFuture.get(5, TimeUnit.SECONDS);
+
+			lastReferencingWriter = null;
+			assertFalse(model.closeTimedOut(), "branch lock should not be held while model.close() runs");
+			assertTrue(model.isClosed());
+		} finally {
+			if (mergingWriter != null) {
+				mergingWriter.close();
+			}
+			if (lastReferencingWriter != null) {
+				lastReferencingWriter.close();
+			}
+			executor.shutdownNow();
 			branch.close();
 		}
 	}
@@ -499,6 +561,53 @@ class SailSourceBranchTest {
 		}
 
 		private CloseAwareModel onlyModel() {
+			assertEquals(1, created.size());
+			return created.get(0);
+		}
+	}
+
+	private static final class BlockingCloseModel extends LinkedHashModel implements AutoCloseable {
+		private final CountDownLatch closeStarted = new CountDownLatch(1);
+		private final CountDownLatch releaseClose = new CountDownLatch(1);
+		private volatile boolean closeTimedOut;
+		private volatile boolean closed;
+
+		@Override
+		public void close() throws Exception {
+			closeStarted.countDown();
+			if (!releaseClose.await(250, TimeUnit.MILLISECONDS)) {
+				closeTimedOut = true;
+			}
+			closed = true;
+		}
+
+		private boolean awaitCloseStarted() throws InterruptedException {
+			return closeStarted.await(5, TimeUnit.SECONDS);
+		}
+
+		private void releaseClose() {
+			releaseClose.countDown();
+		}
+
+		private boolean closeTimedOut() {
+			return closeTimedOut;
+		}
+
+		private boolean isClosed() {
+			return closed;
+		}
+	}
+
+	private static final class BlockingCloseModelFactory {
+		private final List<BlockingCloseModel> created = new ArrayList<>();
+
+		private BlockingCloseModel create() {
+			BlockingCloseModel model = new BlockingCloseModel();
+			created.add(model);
+			return model;
+		}
+
+		private BlockingCloseModel onlyModel() {
 			assertEquals(1, created.size());
 			return created.get(0);
 		}

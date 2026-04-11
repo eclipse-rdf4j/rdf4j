@@ -389,10 +389,11 @@ class TripleStore implements Closeable {
 			TripleIndex sourceIndex = indexes.get(0);
 			for (boolean explicit : new boolean[] { true, false }) {
 				transaction(env, (stack, txn) -> {
-					MDBVal keyValue = MDBVal.callocStack(stack);
+
+					MDBVal keyValue = MDBVal.calloc(stack);
 					ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 					keyValue.mv_data(keyBuf);
-					MDBVal dataValue = MDBVal.callocStack(stack);
+					MDBVal dataValue = MDBVal.calloc(stack);
 					for (String fieldSeq : addedIndexSpecs) {
 						logger.debug("Initializing new index '{}'...", fieldSeq);
 
@@ -520,7 +521,7 @@ class TripleStore implements Closeable {
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		return txnManager.doWith((stack, txn) -> {
-			MDBStat stat = MDBStat.mallocStack(stack);
+			MDBStat stat = MDBStat.malloc(stack);
 			mdb_stat(txn, mainIndex.getDB(explicit), stat);
 			return stat.ms_entries() > 0;
 		});
@@ -566,7 +567,7 @@ class TripleStore implements Closeable {
 			MDBVal keyData = MDBVal.malloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
 
-			MDBVal valueData = MDBVal.mallocStack(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
 
 			PointerBuffer pp = stack.mallocPointer(1);
 
@@ -688,7 +689,7 @@ class TripleStore implements Closeable {
 				double cardinality = 0;
 				for (boolean explicit : new boolean[] { true, false }) {
 					int dbi = index.getDB(explicit);
-					MDBStat stat = MDBStat.mallocStack(stack);
+					MDBStat stat = MDBStat.malloc(stack);
 					mdb_stat(txn, dbi, stat);
 					cardinality += (double) stat.ms_entries();
 				}
@@ -708,9 +709,9 @@ class TripleStore implements Closeable {
 
 				PointerBuffer pp = stack.mallocPointer(1);
 
-				MDBVal keyData = MDBVal.mallocStack(stack);
+				MDBVal keyData = MDBVal.malloc(stack);
 				ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-				MDBVal valueData = MDBVal.mallocStack(stack);
+				MDBVal valueData = MDBVal.malloc(stack);
 
 				double cardinality = 0;
 				for (boolean explicit : new boolean[] { true, false }) {
@@ -1038,7 +1039,7 @@ class TripleStore implements Closeable {
 
 	public void removeTriples(RecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
 		try (it; MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal keyValue = MDBVal.callocStack(stack);
+			MDBVal keyValue = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 
 			long[] quad;
@@ -1079,9 +1080,9 @@ class TripleStore implements Closeable {
 			RecordCacheIterator it = recordCache.getRecords(explicit);
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
-				MDBVal keyVal = MDBVal.mallocStack(stack);
+				MDBVal keyVal = MDBVal.malloc(stack);
 				// use calloc to get an empty data value
-				MDBVal dataVal = MDBVal.callocStack(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
 				ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 
 				Record r;

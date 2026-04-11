@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -63,6 +64,11 @@ class SailSourceBranch implements SailSource {
 	 * Detached changesets whose close failure has already been reported to the caller.
 	 */
 	private final Set<Changeset> reportedCloseFailures = Collections.newSetFromMap(new IdentityHashMap<>());
+
+	/**
+	 * Detached changesets currently being closed outside {@link #semaphore}.
+	 */
+	private final Set<Changeset> closing = Collections.newSetFromMap(new IdentityHashMap<>());
 
 	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
@@ -169,7 +175,6 @@ class SailSourceBranch implements SailSource {
 					}
 					deferredClose.addAll(changes);
 					changes.clear();
-					closeDeferredChangesetsIfPossible(true);
 				} catch (SailException e) {
 					if (closeException == null) {
 						closeException = e;
@@ -180,6 +185,15 @@ class SailSourceBranch implements SailSource {
 			}
 		} finally {
 			semaphore.unlock();
+		}
+		try {
+			closeDeferredChangesetsOutsideLock(true);
+		} catch (SailException e) {
+			if (closeException == null) {
+				closeException = e;
+			} else {
+				closeException.addSuppressed(e);
+			}
 		}
 		if (closeException != null) {
 			throw closeException;
@@ -314,14 +328,30 @@ class SailSourceBranch implements SailSource {
 			@Override
 			public void close() throws SailException {
 				super.close();
+				SailException closeException = null;
 				try {
 					semaphore.lock();
 					observers.remove(this);
 					compressChanges();
-					closeDeferredChangesetsAfterStateChange();
-					autoFlush();
 				} finally {
 					semaphore.unlock();
+				}
+				try {
+					closeDeferredChangesetsAfterStateChange();
+				} catch (SailException e) {
+					closeException = e;
+				}
+				try {
+					autoFlush();
+				} catch (SailException e) {
+					if (closeException == null) {
+						closeException = e;
+					} else {
+						closeException.addSuppressed(e);
+					}
+				}
+				if (closeException != null) {
+					throw closeException;
 				}
 			}
 		};
@@ -359,6 +389,7 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
+		Throwable failure = null;
 		try {
 			semaphore.lock();
 			if (!changes.isEmpty()) {
@@ -376,11 +407,29 @@ class SailSourceBranch implements SailSource {
 				}
 			}
 		} catch (Throwable e) {
+			failure = e;
 			discardPreparedSinkAfterFailedFlush(e);
 			discardQueuedChangesAfterFailedFlush(e);
-			throw e;
 		} finally {
 			semaphore.unlock();
+		}
+		try {
+			closeDeferredChangesetsOutsideLock(true);
+		} catch (SailException e) {
+			if (failure == null) {
+				failure = e;
+			} else {
+				failure.addSuppressed(e);
+			}
+		}
+		if (failure instanceof SailException) {
+			throw (SailException) failure;
+		}
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		if (failure instanceof Error) {
+			throw (Error) failure;
 		}
 	}
 
@@ -403,11 +452,11 @@ class SailSourceBranch implements SailSource {
 	}
 
 	void merge(Changeset change) throws SailException {
+		SailException failure = null;
 		try {
 			semaphore.lock();
 			pending.remove(change);
 			if (isChanged(change)) {
-				SailException failure = null;
 				changes.add(change.shallowClone());
 				change.detachStatementModels();
 				try {
@@ -424,21 +473,21 @@ class SailSourceBranch implements SailSource {
 				for (Changeset c : pending) {
 					c.prepend(merged);
 				}
-				try {
-					closeDeferredChangesetsIfPossible(true);
-				} catch (SailException e) {
-					if (failure == null) {
-						failure = e;
-					} else {
-						failure.addSuppressed(e);
-					}
-				}
-				if (failure != null) {
-					throw failure;
-				}
 			}
 		} finally {
 			semaphore.unlock();
+		}
+		try {
+			closeDeferredChangesetsOutsideLock(true);
+		} catch (SailException e) {
+			if (failure == null) {
+				failure = e;
+			} else {
+				failure.addSuppressed(e);
+			}
+		}
+		if (failure != null) {
+			throw failure;
 		}
 	}
 
@@ -489,12 +538,9 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	void closeChangeset(Changeset changeset) {
-		try {
-			closeDeferredChangesetsAfterStateChange();
-		} finally {
-			semaphore.unlock();
-		}
+	void closeChangeset(Changeset changeset) throws SailException {
+		semaphore.unlock();
+		closeDeferredChangesetsAfterStateChange();
 	}
 
 	void autoFlush() throws SailException {
@@ -614,12 +660,7 @@ class SailSourceBranch implements SailSource {
 		if (changeset == null) {
 			return;
 		}
-		if (changeset.isRefback() || isReferencedByPendingChangeset(changeset)) {
-			deferredClose.add(changeset);
-			return;
-		}
-		assertDetachedChangesetCanClose(changeset);
-		closeTrackedChangeset(changeset, true);
+		deferredClose.add(changeset);
 	}
 
 	private void discardQueuedChangesAfterFailedFlush(Throwable cause) {
@@ -653,51 +694,69 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private void closeDeferredChangesetsAfterStateChange() throws SailException {
-		try {
-			semaphore.lock();
-			closeDeferredChangesetsIfPossible(false);
-		} finally {
-			semaphore.unlock();
-		}
+		closeDeferredChangesetsOutsideLock(false);
 	}
 
-	private void closeDeferredChangesetsIfPossible(boolean reportFailure) throws SailException {
-		if (deferredClose.isEmpty()) {
-			return;
-		}
-
+	private void closeDeferredChangesetsOutsideLock(boolean reportFailure) throws SailException {
 		SailException closeException = null;
-		for (Changeset changeset : new ArrayList<>(deferredClose)) {
-			if (changeset.isRefback() || isReferencedByPendingChangeset(changeset)) {
-				continue;
-			}
-			assertDetachedChangesetCanClose(changeset);
+
+		while (true) {
+			List<Changeset> toClose = new ArrayList<>();
+			semaphore.lock();
 			try {
-				closeTrackedChangeset(changeset, reportFailure);
-			} catch (SailException e) {
-				if (closeException == null) {
-					closeException = e;
-				} else {
-					closeException.addSuppressed(e);
+				if (deferredClose.isEmpty()) {
+					break;
+				}
+				for (Changeset changeset : new ArrayList<>(deferredClose)) {
+					if (closing.contains(changeset) || changeset.isRefback()
+							|| isReferencedByPendingChangeset(changeset)) {
+						continue;
+					}
+					assertDetachedChangesetCanClose(changeset);
+					closing.add(changeset);
+					toClose.add(changeset);
+				}
+			} finally {
+				semaphore.unlock();
+			}
+
+			if (toClose.isEmpty()) {
+				break;
+			}
+
+			for (Changeset changeset : toClose) {
+				try {
+					changeset.close();
+					semaphore.lock();
+					try {
+						deferredClose.remove(changeset);
+						reportedCloseFailures.remove(changeset);
+						closing.remove(changeset);
+					} finally {
+						semaphore.unlock();
+					}
+				} catch (SailException e) {
+					semaphore.lock();
+					try {
+						closing.remove(changeset);
+						if (reportFailure && reportedCloseFailures.add(changeset)) {
+							if (closeException == null) {
+								closeException = e;
+							} else {
+								closeException.addSuppressed(e);
+							}
+						} else {
+							logger.debug("Could not close detached changeset yet", e);
+						}
+					} finally {
+						semaphore.unlock();
+					}
 				}
 			}
 		}
+
 		if (closeException != null) {
 			throw closeException;
-		}
-	}
-
-	private void closeTrackedChangeset(Changeset changeset, boolean reportFailure) throws SailException {
-		deferredClose.add(changeset);
-		try {
-			changeset.close();
-			deferredClose.remove(changeset);
-			reportedCloseFailures.remove(changeset);
-		} catch (SailException e) {
-			if (reportFailure && reportedCloseFailures.add(changeset)) {
-				throw e;
-			}
-			logger.debug("Could not close detached changeset yet", e);
 		}
 	}
 
