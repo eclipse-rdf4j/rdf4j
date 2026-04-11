@@ -13,8 +13,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -23,6 +30,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -34,6 +42,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -252,6 +261,38 @@ public class LmdbSailStoreTest {
 			assertFalse(actual, actual.contains("varianceActual="));
 			assertFalse(actual, actual.contains("stddevActual="));
 			assertFalse(actual, actual.contains("confidenceScoreActual="));
+		}
+	}
+
+	@Test
+	void approveAllPropagatesPredicateStoreFailureAsSailException() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+		valueStoreField.setAccessible(true);
+		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
+		ValueStore valueStoreSpy = spy(originalValueStore);
+		IRI failingPredicate = F.createIRI("urn:failing-predicate");
+		SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
+
+		doAnswer(invocation -> {
+			Value value = invocation.getArgument(0);
+			if (failingPredicate.equals(value)) {
+				throw new IOException("expected predicate failure");
+			}
+			return invocation.callRealMethod();
+		}).when(valueStoreSpy).storeValue(any(Value.class));
+
+		valueStoreField.set(backingStore, valueStoreSpy);
+		try {
+			SailException exception = assertThrows(SailException.class,
+					() -> sink.approveAll(Set.of(F.createStatement(F.createIRI("urn:subject"), failingPredicate,
+							F.createLiteral("object"))), Set.of()));
+
+			assertTrue(exception.getCause() instanceof IOException);
+		} finally {
+			valueStoreField.set(backingStore, originalValueStore);
+			sink.close();
 		}
 	}
 

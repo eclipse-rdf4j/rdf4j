@@ -922,7 +922,9 @@ class TripleStore implements Closeable {
 			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 				throw new IOException(mdb_strerror(rc));
 			}
+
 			stAdded = rc == MDB_SUCCESS;
+
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
 				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
@@ -945,9 +947,7 @@ class TripleStore implements Closeable {
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
 
-				if (stAdded) {
-					incrementContext(stack, context);
-				}
+				incrementContext(stack, context);
 			}
 		}
 

@@ -196,7 +196,8 @@ if ${enable_jfr}; then
         jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."
 fi
 
-mvn_cmd=(mvn "-pl" "${module}" "-am" "-P" "benchmarks,quick" "-DskipTests" clean package)
+mvn_cmd_parallel=(mvn "-T" "2C" "-pl" "${module}" "-am" "-P" "benchmarks,quick" "-DskipTests" clean package)
+mvn_cmd_single_threaded=(mvn "-pl" "${module}" "-am" "-P" "benchmarks,quick" "-DskipTests" clean package)
 
 benchmark_pattern="${benchmark_class}.${benchmark_method}"
 jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")
@@ -268,7 +269,9 @@ if ${dry_run}; then
                 echo "${jfr_notice}"
         fi
         jar_path="$(find_benchmark_jar "${module_dir}" false)"
-        print_command "${mvn_cmd[@]}"
+        print_command "${mvn_cmd_parallel[@]}"
+        echo "# On failure, reruns single-threaded:"
+        print_command "${mvn_cmd_single_threaded[@]}"
         java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
         print_command "${java_cmd[@]}"
         exit 0
@@ -276,7 +279,10 @@ fi
 
 (
         cd "${REPO_ROOT}"
-        "${mvn_cmd[@]}"
+        if ! "${mvn_cmd_parallel[@]}"; then
+                echo "Parallel install failed. Retrying single-threaded install..." >&2
+                "${mvn_cmd_single_threaded[@]}"
+        fi
 )
 
 if ${enable_jfr_cpu_times}; then
