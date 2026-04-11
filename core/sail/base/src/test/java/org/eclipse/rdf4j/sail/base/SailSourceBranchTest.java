@@ -19,9 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -150,6 +152,59 @@ class SailSourceBranchTest {
 			}
 			if (unrelatedWriter != null) {
 				unrelatedWriter.close();
+			}
+			branch.close();
+		}
+	}
+
+	@Test
+	void flushKeepsDetachedContextModelAvailableUntilPendingWriterAndReaderClose() throws SailException {
+		TrackingModelFactory modelFactory = new TrackingModelFactory();
+		SailSourceBranch branch = new SailSourceBranch(createBackingSource(), modelFactory::create);
+		SailSink writer = branch.sink(IsolationLevels.NONE);
+		SailSink pendingWriter = null;
+		SailDataset reader = null;
+		Statement approved = vf.createStatement(vf.createIRI("urn:approved:s"), vf.createIRI("urn:approved:p"),
+				vf.createLiteral("approved:o"), vf.createIRI("urn:approved:ctx"));
+
+		try {
+			writer.approve(approved);
+			writer.flush();
+			writer.close();
+			writer = null;
+
+			CloseAwareModel model = modelFactory.onlyModel();
+			reader = branch.dataset(IsolationLevels.NONE);
+			pendingWriter = branch.sink(IsolationLevels.NONE);
+
+			branch.flush();
+			assertFalse(model.isClosed());
+
+			try (CloseableIteration<? extends Statement> statements = reader.getStatements(approved.getSubject(),
+					approved.getPredicate(), approved.getObject(), approved.getContext())) {
+				assertTrue(statements.hasNext());
+				assertEquals(approved, statements.next());
+			}
+			try (CloseableIteration<? extends Resource> contextIDs = reader.getContextIDs()) {
+				assertEquals(Set.of(approved.getContext()), Iterations.asSet(contextIDs));
+			}
+
+			pendingWriter.close();
+			pendingWriter = null;
+			assertFalse(model.isClosed());
+
+			reader.close();
+			reader = null;
+			assertTrue(model.isClosed());
+		} finally {
+			if (writer != null) {
+				writer.close();
+			}
+			if (pendingWriter != null) {
+				pendingWriter.close();
+			}
+			if (reader != null) {
+				reader.close();
 			}
 			branch.close();
 		}
