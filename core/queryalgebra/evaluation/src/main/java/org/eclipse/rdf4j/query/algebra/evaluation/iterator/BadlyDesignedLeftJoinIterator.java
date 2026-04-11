@@ -10,8 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.NoSuchElementException;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -23,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 /**
  * @author Arjohn Kampman
  */
-public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
+public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet> {
 
 	/*-----------*
 	 * Variables *
@@ -32,6 +35,12 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	private final BindingSet inputBindings;
 
 	private final Set<String> problemVars;
+
+	private final CloseableIteration<BindingSet> leftIter;
+
+	private final QueryEvaluationStep rightEvaluationStep;
+
+	private CloseableIteration<BindingSet> rightIter;
 
 	/*--------------*
 	 * Constructors *
@@ -43,10 +52,12 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 			BindingSet inputBindings,
 			Set<String> problemVars,
 			QueryEvaluationStep rightEvaluationStep) throws QueryEvaluationException {
-		super(strategy, join, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
+		leftIter = strategy.evaluate(join.getLeftArg(), getFilteredBindings(inputBindings, problemVars));
+		this.rightEvaluationStep = rightEvaluationStep;
+		rightIter = null;
+		join.setAlgorithm(this);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
-
 	}
 
 	/*---------*
@@ -58,18 +69,20 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 			Set<String> problemVars,
 			QueryEvaluationStep rightEvaluationStep)
 			throws QueryEvaluationException {
-		super(left, getFilteredBindings(inputBindings, problemVars), rightEvaluationStep);
+		leftIter = left.evaluate(getFilteredBindings(inputBindings, problemVars));
+		this.rightEvaluationStep = rightEvaluationStep;
+		rightIter = null;
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
 	}
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		BindingSet result = super.getNextElement();
+		BindingSet result = getNextLeftJoinElement();
 
 		// Ignore all results that are not compatible with the input bindings
 		while (result != null && !inputBindings.isCompatible(result)) {
-			result = super.getNextElement();
+			result = getNextLeftJoinElement();
 		}
 
 		if (result != null) {
@@ -92,6 +105,63 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 		}
 
 		return result;
+	}
+
+	private BindingSet getNextLeftJoinElement() throws QueryEvaluationException {
+
+		try {
+			CloseableIteration<BindingSet> nextRightIter = rightIter;
+			while (nextRightIter == null || nextRightIter.hasNext() || leftIter.hasNext()) {
+				BindingSet leftBindings = null;
+
+				if (nextRightIter == null) {
+					if (leftIter.hasNext()) {
+						// Use left arg's bindings in case join fails
+						leftBindings = leftIter.next();
+						nextRightIter = rightIter = rightEvaluationStep.evaluate(leftBindings);
+					} else {
+						return null;
+					}
+				} else if (!nextRightIter.hasNext()) {
+					// Use left arg's bindings in case join fails
+					leftBindings = leftIter.next();
+
+					nextRightIter.close();
+					nextRightIter = rightIter = rightEvaluationStep.evaluate(leftBindings);
+				}
+
+				if (nextRightIter == QueryEvaluationStep.EMPTY_ITERATION) {
+					rightIter = null;
+					return leftBindings;
+				}
+
+				if (nextRightIter.hasNext()) {
+					return nextRightIter.next();
+				}
+
+				if (leftBindings != null) {
+					rightIter = null;
+					// Join failed, return left arg's bindings
+					return leftBindings;
+				}
+			}
+		} catch (NoSuchElementException ignore) {
+			// probably, one of the iterations has been closed concurrently in
+			// handleClose()
+		}
+
+		return null;
+	}
+
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		try {
+			leftIter.close();
+		} finally {
+			if (rightIter != null) {
+				rightIter.close();
+			}
+		}
 	}
 
 	/*--------------------*
