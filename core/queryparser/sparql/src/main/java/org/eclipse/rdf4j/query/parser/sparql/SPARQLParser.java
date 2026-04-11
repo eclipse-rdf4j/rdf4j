@@ -29,10 +29,16 @@ import org.eclipse.rdf4j.query.IncompatibleOperationException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.InsertData;
+import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
@@ -63,6 +69,9 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 @SuppressWarnings("deprecation")
 public class SPARQLParser implements QueryParser {
+	private static final String STABLE_INDEX_KEYWORD = "STABLE_INDEX";
+	private static final String STABLE_INDEX_REPLACEMENT = "<" + LmdbIndexOrder.FUNCTION_URI + ">";
+
 	private final Map<String, String> customPrefixes;
 
 	/**
@@ -192,7 +201,8 @@ public class SPARQLParser implements QueryParser {
 	@Override
 	public ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException {
 		try {
-			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(queryStr);
+			String parserInput = rewriteStableIndexFunctions(queryStr);
+			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(parserInput);
 			StringEscapesProcessor.process(qc);
 			BaseDeclProcessor.process(qc, baseURI);
 			Map<String, String> prefixes = PrefixDeclProcessor.process(qc, customPrefixes);
@@ -204,6 +214,7 @@ public class SPARQLParser implements QueryParser {
 				// handle query operation
 
 				TupleExpr tupleExpr = buildQueryModel(qc);
+				validateStableIndexFunctions(tupleExpr);
 
 				// Ensure we always return a rooted query.
 				if (!(tupleExpr instanceof QueryRoot)) {
@@ -237,6 +248,167 @@ public class SPARQLParser implements QueryParser {
 			}
 		} catch (ParseException | TokenMgrError e) {
 			throw new MalformedQueryException(e.getMessage(), e);
+		}
+	}
+
+	private static String rewriteStableIndexFunctions(String queryStr) {
+		StringBuilder rewritten = new StringBuilder(queryStr.length());
+		int index = 0;
+		while (index < queryStr.length()) {
+			char current = queryStr.charAt(index);
+			if (current == '#') {
+				index = copyUntilLineBreak(queryStr, rewritten, index);
+				continue;
+			}
+			if (startsIriReference(queryStr, index)) {
+				index = copyIriReference(queryStr, rewritten, index);
+				continue;
+			}
+			if (current == '\'' || current == '"') {
+				index = copyQuotedLiteral(queryStr, rewritten, index, current);
+				continue;
+			}
+			if (matchesStableIndexFunction(queryStr, index)) {
+				rewritten.append(STABLE_INDEX_REPLACEMENT);
+				index += STABLE_INDEX_KEYWORD.length();
+				continue;
+			}
+			rewritten.append(current);
+			index++;
+		}
+		return rewritten.toString();
+	}
+
+	private static int copyUntilLineBreak(String queryStr, StringBuilder rewritten, int start) {
+		int index = start;
+		while (index < queryStr.length()) {
+			char current = queryStr.charAt(index);
+			rewritten.append(current);
+			index++;
+			if (current == '\n' || current == '\r') {
+				break;
+			}
+		}
+		return index;
+	}
+
+	private static boolean startsIriReference(String queryStr, int start) {
+		if (queryStr.charAt(start) != '<' || start + 1 >= queryStr.length()) {
+			return false;
+		}
+		char next = queryStr.charAt(start + 1);
+		if (Character.isWhitespace(next) || next == '=' || next == '>') {
+			return false;
+		}
+		for (int index = start + 1; index < queryStr.length(); index++) {
+			char current = queryStr.charAt(index);
+			if (current == '>') {
+				return true;
+			}
+			if (Character.isWhitespace(current) || current == '"' || current == '{' || current == '|' || current == '^'
+					|| current == '`') {
+				return false;
+			}
+		}
+		return false;
+	}
+
+	private static int copyIriReference(String queryStr, StringBuilder rewritten, int start) {
+		int index = start;
+		while (index < queryStr.length()) {
+			char current = queryStr.charAt(index);
+			rewritten.append(current);
+			index++;
+			if (current == '>') {
+				break;
+			}
+		}
+		return index;
+	}
+
+	private static int copyQuotedLiteral(String queryStr, StringBuilder rewritten, int start, char quote) {
+		boolean longLiteral = start + 2 < queryStr.length()
+				&& queryStr.charAt(start + 1) == quote
+				&& queryStr.charAt(start + 2) == quote;
+		int quoteRunLength = longLiteral ? 3 : 1;
+		for (int i = 0; i < quoteRunLength; i++) {
+			rewritten.append(quote);
+		}
+		int index = start + quoteRunLength;
+		while (index < queryStr.length()) {
+			char current = queryStr.charAt(index);
+			rewritten.append(current);
+			index++;
+			if (current == '\\' && index < queryStr.length()) {
+				rewritten.append(queryStr.charAt(index));
+				index++;
+				continue;
+			}
+			if (current != quote) {
+				continue;
+			}
+			if (longLiteral) {
+				if (index + 1 < queryStr.length()
+						&& queryStr.charAt(index) == quote
+						&& queryStr.charAt(index + 1) == quote) {
+					rewritten.append(quote).append(quote);
+					return index + 2;
+				}
+			} else {
+				return index;
+			}
+		}
+		return index;
+	}
+
+	private static boolean matchesStableIndexFunction(String queryStr, int start) {
+		if (!queryStr.regionMatches(true, start, STABLE_INDEX_KEYWORD, 0, STABLE_INDEX_KEYWORD.length())) {
+			return false;
+		}
+		if (start > 0 && continuesQualifiedName(queryStr.charAt(start - 1))) {
+			return false;
+		}
+		int end = start + STABLE_INDEX_KEYWORD.length();
+		if (end < queryStr.length() && isIdentifierChar(queryStr.charAt(end))) {
+			return false;
+		}
+		while (end < queryStr.length() && Character.isWhitespace(queryStr.charAt(end))) {
+			end++;
+		}
+		return end < queryStr.length() && queryStr.charAt(end) == '(';
+	}
+
+	private static boolean isIdentifierChar(char c) {
+		return Character.isLetterOrDigit(c) || c == '_';
+	}
+
+	private static boolean continuesQualifiedName(char c) {
+		return isIdentifierChar(c) || c == ':';
+	}
+
+	private static void validateStableIndexFunctions(TupleExpr tupleExpr) throws MalformedQueryException {
+		try {
+			tupleExpr.visit(new AbstractQueryModelVisitor<MalformedQueryException>() {
+				@Override
+				public void meet(FunctionCall node) throws MalformedQueryException {
+					if (!LmdbIndexOrder.isFunctionCall(node)) {
+						super.meet(node);
+						return;
+					}
+
+					QueryModelNode parent = node.getParentNode();
+					if (!(parent instanceof OrderElem) || ((OrderElem) parent).getExpr() != node) {
+						throw new MalformedQueryException(
+								"STABLE_INDEX(...) is only allowed as a standalone ORDER BY expression");
+					}
+
+					if (node.getArgs().size() != 1 || !(node.getArgs().get(0) instanceof Var)) {
+						throw new MalformedQueryException("STABLE_INDEX(...) requires a single variable argument");
+					}
+				}
+			});
+		} catch (RuntimeException e) {
+			throw e;
 		}
 	}
 

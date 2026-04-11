@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -224,6 +225,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final NamespaceStore namespaceStore;
+	private final Comparator<Value> comparator = this::compareValuesByStoreOrder;
 
 	/**
 	 * A lock to control concurrent access by {@link LmdbSailSink} to the TripleStore, ValueStore, and NamespaceStore.
@@ -270,6 +272,25 @@ class LmdbSailStore implements SailStore {
 	@Override
 	public ValueFactory getValueFactory() {
 		return valueStore;
+	}
+
+	private int compareValuesByStoreOrder(Value left, Value right) {
+		if (left == right) {
+			return 0;
+		}
+
+		try {
+			long leftId = left == null ? 0L : valueStore.getId(left);
+			long rightId = right == null ? 0L : valueStore.getId(right);
+
+			if (leftId == LmdbValue.UNKNOWN_ID || rightId == LmdbValue.UNKNOWN_ID) {
+				throw new IllegalStateException("Unable to compare values that are not stored in LMDB");
+			}
+
+			return Long.compare(leftId, rightId);
+		} catch (IOException e) {
+			throw new UncheckedIOException("Unable to compare LMDB values by store order", e);
+		}
 	}
 
 	void rollback() throws SailException {
@@ -472,6 +493,59 @@ class LmdbSailStore implements SailStore {
 		} else {
 			return new UnionIteration<>(perContextIterList);
 		}
+	}
+
+	CloseableIteration<? extends Statement> createOrderedStatementIterator(
+			Txn txn, StatementOrder statementOrder, Resource subj, IRI pred, Value obj, boolean explicit,
+			Resource... contexts) throws IOException {
+		if (!explicit && !mayHaveInferred) {
+			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+		}
+
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			}
+		}
+
+		long predID = LmdbValue.UNKNOWN_ID;
+		if (pred != null) {
+			predID = valueStore.getId(pred);
+			if (predID == LmdbValue.UNKNOWN_ID) {
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			}
+		}
+
+		long objID = LmdbValue.UNKNOWN_ID;
+		if (obj != null) {
+			objID = valueStore.getId(obj);
+			if (objID == LmdbValue.UNKNOWN_ID) {
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			}
+		}
+
+		long contextID = orderedContextId(contexts);
+		if (contexts.length == 1 && contexts[0] != null) {
+			contextID = valueStore.getId(contexts[0]);
+			if (contextID == LmdbValue.UNKNOWN_ID) {
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			}
+		}
+
+		return new LmdbStatementIterator(
+				tripleStore.getTriples(txn, statementOrder, subjID, predID, objID, contextID, explicit), valueStore);
+	}
+
+	private long orderedContextId(Resource... contexts) {
+		if (contexts.length == 0) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		if (contexts.length == 1) {
+			return contexts[0] == null ? 0L : 1L;
+		}
+		return LmdbValue.UNKNOWN_ID;
 	}
 
 	private final class LmdbSailSource extends BackingSailSource {
@@ -1155,17 +1229,33 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj,
 				IRI pred, Value obj, Resource... contexts) throws SailException {
-			throw new UnsupportedOperationException("Not implemented yet");
+			try {
+				return createOrderedStatementIterator(txn, statementOrder, subj, pred, obj, explicit, contexts);
+			} catch (IOException e) {
+				try {
+					logger.warn("Failed to get ordered statements, retrying", e);
+					Thread.yield();
+					return createOrderedStatementIterator(txn, statementOrder, subj, pred, obj, explicit, contexts);
+				} catch (IOException e2) {
+					throw new SailException("Unable to get ordered statements", e);
+				}
+			}
 		}
 
 		@Override
 		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-			return Set.of();
+			long contextID = orderedContextId(contexts);
+			long subjPattern = subj == null ? LmdbValue.UNKNOWN_ID : 1L;
+			long predPattern = pred == null ? LmdbValue.UNKNOWN_ID : 1L;
+			long objPattern = obj == null ? LmdbValue.UNKNOWN_ID : 1L;
+			long contextPattern = contexts.length == 1 ? contextID : LmdbValue.UNKNOWN_ID;
+
+			return tripleStore.getSupportedOrders(subjPattern, predPattern, objPattern, contextPattern);
 		}
 
 		@Override
 		public Comparator<Value> getComparator() {
-			return null;
+			return comparator;
 		}
 	}
 }

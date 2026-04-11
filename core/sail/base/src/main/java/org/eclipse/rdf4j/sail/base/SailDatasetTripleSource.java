@@ -76,6 +76,10 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement> statements = null;
 		try {
+			if (hasPendingTransactionChanges()) {
+				throw new QueryEvaluationException(
+						"Statement ordering is unavailable after the current transaction has pending changes");
+			}
 			statements = dataset.getStatements(order, subj, pred, obj, contexts);
 			if (statements instanceof EmptyIteration) {
 				return statements;
@@ -94,12 +98,22 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (hasPendingTransactionChanges()) {
+			return Set.of();
+		}
 		return dataset.getSupportedOrders(subj, pred, obj, contexts);
 	}
 
 	@Override
 	public Comparator<Value> getComparator() {
+		if (hasPendingTransactionChanges()) {
+			return null;
+		}
 		return dataset.getComparator();
+	}
+
+	public boolean hasPendingTransactionChanges() {
+		return hasPendingTransactionChanges(dataset);
 	}
 
 	@Override
@@ -138,5 +152,20 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 			}
 			throw t;
 		}
+	}
+
+	private boolean hasPendingTransactionChanges(SailDataset sailDataset) {
+		if (sailDataset instanceof SailDatasetImpl) {
+			return true;
+		}
+		if (sailDataset instanceof DelegatingSailDataset) {
+			return hasPendingTransactionChanges(((DelegatingSailDataset) sailDataset).getDelegate());
+		}
+		if (sailDataset instanceof UnionSailDataset) {
+			UnionSailDataset unionSailDataset = (UnionSailDataset) sailDataset;
+			return hasPendingTransactionChanges(unionSailDataset.getFirstDataset())
+					|| hasPendingTransactionChanges(unionSailDataset.getSecondDataset());
+		}
+		return false;
 	}
 }

@@ -66,6 +66,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -82,6 +83,7 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -665,6 +667,26 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
+	public RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
+			long context, boolean explicit) throws IOException {
+		TripleIndex index = getBestCompatibleOrderedIndex(statementOrder, subj, pred, obj, context);
+		if (index == null) {
+			throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
+		}
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
+	}
+
+	Set<StatementOrder> getSupportedOrders(long subj, long pred, long obj, long context) {
+		EnumSet<StatementOrder> supportedOrders = EnumSet.noneOf(StatementOrder.class);
+		for (StatementOrder statementOrder : StatementOrder.values()) {
+			if (getBestCompatibleOrderedIndex(statementOrder, subj, pred, obj, context) != null) {
+				supportedOrders.add(statementOrder);
+			}
+		}
+		return supportedOrders;
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		return txnManager.doWith((stack, txn) -> {
@@ -1017,6 +1039,25 @@ class TripleStore implements Closeable {
 		TripleIndex bestIndex = null;
 
 		for (TripleIndex index : indexes) {
+			int score = index.getPatternScore(subj, pred, obj, context);
+			if (score > bestScore) {
+				bestScore = score;
+				bestIndex = index;
+			}
+		}
+
+		return bestIndex;
+	}
+
+	TripleIndex getBestCompatibleOrderedIndex(StatementOrder statementOrder, long subj, long pred, long obj,
+			long context) {
+		int bestScore = -1;
+		TripleIndex bestIndex = null;
+
+		for (TripleIndex index : indexes) {
+			if (!index.supportsOrder(statementOrder, subj, pred, obj, context)) {
+				continue;
+			}
 			int score = index.getPatternScore(subj, pred, obj, context);
 			if (score > bestScore) {
 				bestScore = score;
@@ -1802,6 +1843,49 @@ class TripleStore implements Closeable {
 			}
 
 			return score;
+		}
+
+		public boolean supportsOrder(StatementOrder statementOrder, long subj, long pred, long obj, long context) {
+			int orderedComponent = getOrderedComponent(statementOrder);
+
+			for (int component : indexMap) {
+				if (component == orderedComponent) {
+					return true;
+				}
+				if (!isFixed(component, subj, pred, obj, context)) {
+					return false;
+				}
+			}
+
+			return false;
+		}
+
+		private int getOrderedComponent(StatementOrder statementOrder) {
+			switch (statementOrder) {
+			case S:
+				return SUBJ_IDX;
+			case P:
+				return PRED_IDX;
+			case O:
+				return OBJ_IDX;
+			case C:
+				return CONTEXT_IDX;
+			}
+			throw new IllegalStateException("Unknown StatementOrder: " + statementOrder);
+		}
+
+		private boolean isFixed(int component, long subj, long pred, long obj, long context) {
+			switch (component) {
+			case SUBJ_IDX:
+				return subj >= 0;
+			case PRED_IDX:
+				return pred >= 0;
+			case OBJ_IDX:
+				return obj >= 0;
+			case CONTEXT_IDX:
+				return context >= 0;
+			}
+			throw new IllegalStateException("Unknown component: " + component);
 		}
 
 		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {

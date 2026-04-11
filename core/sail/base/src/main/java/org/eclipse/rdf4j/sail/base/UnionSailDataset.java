@@ -177,9 +177,13 @@ class UnionSailDataset implements SailDataset {
 		CloseableIteration<? extends Statement> iteration1 = null;
 		CloseableIteration<? extends Statement> iteration2 = null;
 		try {
+			Comparator<Value> comparator = getComparator();
+			if (comparator == null) {
+				throw new SailException("Statement ordering not supported by " + this.getClass().getSimpleName());
+			}
 			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
-			Comparator<Statement> cmp = statementOrder.getComparator(dataset1.getComparator());
+			Comparator<Statement> cmp = statementOrder.getComparator(comparator);
 			return DualUnionIteration.getWildcardInstance(cmp, iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
@@ -198,6 +202,9 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (getComparator() == null) {
+			return Set.of();
+		}
 
 		Set<StatementOrder> supportedOrders1 = dataset1.getSupportedOrders(subj, pred, obj, contexts);
 		if (supportedOrders1.isEmpty()) {
@@ -223,8 +230,18 @@ class UnionSailDataset implements SailDataset {
 		Comparator<Value> comparator1 = dataset1.getComparator();
 		Comparator<Value> comparator2 = dataset2.getComparator();
 
-		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
+		if (comparator1 == null || comparator2 == null) {
+			return null;
+		}
 
 		return comparator1;
+	}
+
+	SailDataset getFirstDataset() {
+		return dataset1;
+	}
+
+	SailDataset getSecondDataset() {
+		return dataset2;
 	}
 }

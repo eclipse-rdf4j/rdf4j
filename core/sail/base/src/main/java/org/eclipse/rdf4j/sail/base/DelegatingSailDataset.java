@@ -93,4 +93,8 @@ abstract class DelegatingSailDataset implements SailDataset {
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
 	}
+
+	SailDataset getDelegate() {
+		return delegate;
+	}
 }
