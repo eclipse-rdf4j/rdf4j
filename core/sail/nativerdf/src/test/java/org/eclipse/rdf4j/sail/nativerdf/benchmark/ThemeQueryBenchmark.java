@@ -56,7 +56,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" })
+	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" })
 	public int z_queryIndex;
 
 	@Param({

@@ -25,6 +25,9 @@ class ThemeQueryCatalogOptimizerGapTest {
 	private static final String OPTIONAL_FILTER_MARKER = "FILTER(?OPT";
 	private static final String DISJUNCTIVE_MARKER = "||";
 	private static final String IN_LIST_MARKER = " IN ";
+	private static final String UNION_MARKER = "UNION";
+	private static final String OPTIONAL_MARKER = "OPTIONAL";
+	private static final String OPTIONAL_VARIABLE_MARKER = "?OPT";
 
 	@Test
 	void eachQueryTargetsKnownOptimizerGaps() {
@@ -38,9 +41,29 @@ class ThemeQueryCatalogOptimizerGapTest {
 				boolean hasGapMarker = normalized.contains(OPTIONAL_FILTER_MARKER)
 						|| normalized.contains(DISJUNCTIVE_MARKER)
 						|| normalized.contains(IN_LIST_MARKER);
-				assertTrue(hasGapMarker, "Theme " + theme + " query " + index
-						+ " lacks optimizer-gap markers: " + query);
+				boolean hasLargeOptionalDenormalizedShape = normalized.contains("SELECT DISTINCT *")
+						&& !normalized.contains(UNION_MARKER)
+						&& countOccurrences(normalized, OPTIONAL_MARKER) >= 6;
+				boolean hasUnionHeavyDenormalizedShape = countOccurrences(normalized, UNION_MARKER) >= 1
+						&& countOccurrences(normalized, OPTIONAL_MARKER) >= 6
+						&& countOccurrences(normalized, OPTIONAL_VARIABLE_MARKER) >= 6;
+				assertTrue(hasGapMarker || hasLargeOptionalDenormalizedShape || hasUnionHeavyDenormalizedShape,
+						"Theme " + theme + " query " + index + " lacks optimizer-gap markers: " + query);
 			}
 		}
+	}
+
+	private static int countOccurrences(String input, String token) {
+		int occurrences = 0;
+		int fromIndex = 0;
+		while (fromIndex >= 0) {
+			int found = input.indexOf(token, fromIndex);
+			if (found < 0) {
+				break;
+			}
+			occurrences++;
+			fromIndex = found + token.length();
+		}
+		return occurrences;
 	}
 }
