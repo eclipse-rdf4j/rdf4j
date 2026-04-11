@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,6 +79,49 @@ class UnionSailDatasetTest {
 		assertTrue(tripleSource.hasPendingTransactionChanges());
 		assertTrue(tripleSource.getSupportedOrders(null, null, null).isEmpty());
 		assertNull(tripleSource.getComparator());
+	}
+
+	@Test
+	void sailDatasetTripleSourceKeepsStableOrderForNamespaceOnlyChanges() {
+		Comparator<Value> comparator = Comparator.comparing(Value::stringValue);
+		TestDataset baseDataset = new TestDataset(Set.of(StatementOrder.S), comparator);
+		Changeset changeset = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+		changeset.setNamespace("ex", "urn:example:");
+
+		SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(SimpleValueFactory.getInstance(),
+				new StableOrderSailDataset(baseDataset, changeset));
+
+		assertFalse(tripleSource.hasPendingTransactionChanges());
+		assertEquals(Set.of(StatementOrder.S), tripleSource.getSupportedOrders(null, null, null));
+		assertEquals(comparator, tripleSource.getComparator());
+	}
+
+	private static final class StableOrderSailDataset extends SailDatasetImpl {
+		private final TestDataset baseDataset;
+
+		private StableOrderSailDataset(TestDataset baseDataset, Changeset changeset) {
+			super(baseDataset, changeset);
+			this.baseDataset = baseDataset;
+		}
+
+		@Override
+		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			return baseDataset.getSupportedOrders(subj, pred, obj, contexts);
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			return baseDataset.getComparator();
+		}
 	}
 
 	private static final class TestDataset implements SailDataset {

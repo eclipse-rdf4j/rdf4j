@@ -365,7 +365,7 @@ public class SPARQLParser implements QueryParser {
 		if (!queryStr.regionMatches(true, start, STABLE_INDEX_KEYWORD, 0, STABLE_INDEX_KEYWORD.length())) {
 			return false;
 		}
-		if (start > 0 && continuesQualifiedName(queryStr.charAt(start - 1))) {
+		if (isPartOfPrefixedName(queryStr, start)) {
 			return false;
 		}
 		int end = start + STABLE_INDEX_KEYWORD.length();
@@ -382,8 +382,97 @@ public class SPARQLParser implements QueryParser {
 		return Character.isLetterOrDigit(c) || c == '_';
 	}
 
-	private static boolean continuesQualifiedName(char c) {
-		return isIdentifierChar(c) || c == ':';
+	private static boolean isPartOfPrefixedName(String queryStr, int start) {
+		int index = start - 1;
+		while (index >= 0) {
+			if (queryStr.charAt(index) == ':') {
+				return hasPrefixBeforeSeparator(queryStr, index);
+			}
+			int consumed = consumePnLocalCharBackward(queryStr, index);
+			if (consumed == 0) {
+				return false;
+			}
+			index -= consumed;
+		}
+		return false;
+	}
+
+	private static boolean hasPrefixBeforeSeparator(String queryStr, int separatorIndex) {
+		int index = separatorIndex - 1;
+		while (index >= 0 && isPnPrefixChar(queryStr.charAt(index))) {
+			index--;
+		}
+		if (index + 1 == separatorIndex) {
+			return separatorIndex == 0 || !isPnChars(queryStr.charAt(separatorIndex - 1));
+		}
+		return isPnCharsBase(queryStr.charAt(index + 1));
+	}
+
+	private static int consumePnLocalCharBackward(String queryStr, int index) {
+		char current = queryStr.charAt(index);
+		if (isPnLocalEsc(current) && index > 0 && queryStr.charAt(index - 1) == '\\') {
+			return 2;
+		}
+		if (isHexChar(current) && index > 1 && isHexChar(queryStr.charAt(index - 1))
+				&& queryStr.charAt(index - 2) == '%') {
+			return 3;
+		}
+		if (current == '.' || isPnChars(current)) {
+			return 1;
+		}
+		return 0;
+	}
+
+	private static boolean isPnPrefixChar(char c) {
+		return c == '.' || isPnChars(c);
+	}
+
+	private static boolean isPnCharsBase(char c) {
+		return Character.isLetter(c);
+	}
+
+	private static boolean isPnCharsU(char c) {
+		return isPnCharsBase(c) || c == '_';
+	}
+
+	private static boolean isPnChars(char c) {
+		return isPnCharsU(c) || c == '-' || Character.isDigit(c) || c == '\u00B7'
+				|| (c >= '\u0300' && c <= '\u036F')
+				|| (c >= '\u203F' && c <= '\u2040');
+	}
+
+	private static boolean isPnLocalEsc(char c) {
+		switch (c) {
+		case '_':
+		case '~':
+		case '.':
+		case '-':
+		case '!':
+		case '$':
+		case '&':
+		case '\'':
+		case '(':
+		case ')':
+		case '*':
+		case '+':
+		case ',':
+		case ';':
+		case '=':
+		case '/':
+		case '?':
+		case '#':
+		case '@':
+		case '%':
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	private static boolean isHexChar(char c) {
+		return ('0' <= c && c <= '9')
+				|| ('a' <= c && c <= 'f')
+				|| ('A' <= c && c <= 'F');
 	}
 
 	private static void validateStableIndexFunctions(TupleExpr tupleExpr) throws MalformedQueryException {

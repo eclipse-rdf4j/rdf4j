@@ -156,7 +156,7 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 
 	private boolean hasPendingTransactionChanges(SailDataset sailDataset) {
 		if (sailDataset instanceof SailDatasetImpl) {
-			return true;
+			return ((SailDatasetImpl) sailDataset).hasStatementChanges();
 		}
 		if (sailDataset instanceof DelegatingSailDataset) {
 			return hasPendingTransactionChanges(((DelegatingSailDataset) sailDataset).getDelegate());

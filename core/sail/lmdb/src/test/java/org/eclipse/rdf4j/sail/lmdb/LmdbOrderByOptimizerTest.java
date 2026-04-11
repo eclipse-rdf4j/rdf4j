@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -156,7 +157,7 @@ public class LmdbOrderByOptimizerTest {
 		LmdbOrderByOptimizer dirtyOptimizer = new LmdbOrderByOptimizer(new DirtySupportedOrdersTripleSource());
 		TupleExpr tupleExpr = parse("select ?a ?type where { ?a a ?type. } order by STABLE_INDEX(?a)");
 
-		IllegalStateException error = assertThrows(IllegalStateException.class,
+		QueryEvaluationException error = assertThrows(QueryEvaluationException.class,
 				() -> dirtyOptimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance()));
 		assertTrue(error.getMessage().contains("transaction"));
 	}

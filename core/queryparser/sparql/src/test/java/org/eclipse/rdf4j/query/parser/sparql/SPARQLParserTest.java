@@ -347,6 +347,13 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void testPrefixedFunctionWithHyphenContainingLmdbIndexNameIsNotRewritten() {
+		String query = "PREFIX ex: <urn:>\nSELECT * WHERE { ?a a ?type. BIND(ex:foo-STABLE_INDEX(?a) AS ?x) }";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
 	public void testStringContainingLmdbIndexDoesNotAffectOrderRewrite() {
 		String query = "SELECT * WHERE { ?a a \"STABLE_INDEX(?a)\". } ORDER BY STABLE_INDEX(?a)";
 

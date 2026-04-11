@@ -16,6 +16,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -57,7 +58,7 @@ class LmdbOrderByOptimizer implements QueryOptimizer {
 				continue;
 			}
 			if (pendingTransactionChanges) {
-				throw new IllegalStateException(DIRTY_TRANSACTION_ERROR);
+				throw new QueryEvaluationException(DIRTY_TRANSACTION_ERROR);
 			}
 
 			stableOrderPlanner.plan(order.getArg(), requestedVar.getName())

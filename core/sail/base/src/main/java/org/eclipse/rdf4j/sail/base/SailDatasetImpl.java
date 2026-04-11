@@ -81,6 +81,12 @@ class SailDatasetImpl implements SailDataset {
 		derivedFrom.close();
 	}
 
+	boolean hasStatementChanges() {
+		Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
+		return changes.isStatementCleared() || changes.hasApproved() || changes.hasDeprecated()
+				|| (deprecatedContexts != null && !deprecatedContexts.isEmpty());
+	}
+
 	@Override
 	public String getNamespace(String prefix) throws SailException {
 		Map<String, String> addedNamespaces = changes.getAddedNamespaces();

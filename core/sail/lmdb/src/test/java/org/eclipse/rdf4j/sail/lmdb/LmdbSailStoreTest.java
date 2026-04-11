@@ -399,8 +399,8 @@ public class LmdbSailStoreTest {
 			conn.begin(IsolationLevels.SNAPSHOT_READ);
 			conn.add(F.createIRI("urn:dirty"), RDFS.LABEL, F.createLiteral("dirty"));
 
-			IllegalStateException error = org.junit.jupiter.api.Assertions.assertThrows(
-					IllegalStateException.class,
+			QueryEvaluationException error = org.junit.jupiter.api.Assertions.assertThrows(
+					QueryEvaluationException.class,
 					() -> {
 						try (TupleQueryResult result = conn
 								.prepareTupleQuery("select ?s ?o where { ?s <" + RDFS.LABEL
