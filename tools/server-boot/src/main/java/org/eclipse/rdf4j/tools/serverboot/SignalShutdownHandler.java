@@ -80,15 +80,24 @@ final class SignalShutdownHandler implements AutoCloseable {
 					context.close();
 				}
 				logger.info("Application context closed after SIG{}, exit status {}", signalName, exitCode);
-				System.exit(exitCode);
+				exitJvm(exitCode, signalName);
 			} catch (Throwable e) {
 				logger.warn("Error while shutting down after SIG{}", signalName, e);
 			}
 		} else {
 			logger.warn("SIG{} received before application context became available; shutting down immediately.",
 					signalName);
+			exitJvm(0, signalName);
 		}
 
+	}
+
+	private static void exitJvm(int exitCode, String signalName) {
+		try {
+			System.exit(exitCode);
+		} catch (SecurityException e) {
+			logger.error("System.exit({}) blocked by security manager after SIG{}", exitCode, signalName, e);
+		}
 	}
 
 	private static void startDelayedSystemExitThread(String signalName) {
