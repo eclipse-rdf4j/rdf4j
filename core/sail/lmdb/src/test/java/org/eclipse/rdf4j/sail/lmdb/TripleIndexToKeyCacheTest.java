@@ -28,9 +28,11 @@ import org.junit.jupiter.api.io.TempDir;
 class TripleIndexToKeyCacheTest {
 
 	private TripleStore tripleStore;
+	private File dataDir;
 
 	@BeforeEach
 	void setup(@TempDir File dataDir) throws Exception {
+		this.dataDir = dataDir;
 		// Create a small store; index set is irrelevant for constructing standalone TripleIndex instances
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 	}
@@ -40,6 +42,7 @@ class TripleIndexToKeyCacheTest {
 		if (tripleStore != null) {
 			tripleStore.close();
 		}
+		LmdbTestUtil.deleteDir(dataDir);
 	}
 
 	@Test

@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.common.plan.FeatureFlagCollector;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
@@ -34,6 +33,7 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -143,10 +143,14 @@ public class ThemeQueryBenchmark {
 
 	private void rebuildStoreFromScratch() throws IOException {
 		if (repository != null) {
-			repository.shutDown();
+			try {
+				repository.shutDown();
+			} finally {
+				repository = null;
+			}
 		}
 
-		FileUtils.deleteDirectory(STORE_DIRECTORY);
+		LmdbTestUtil.deleteDir(STORE_DIRECTORY);
 		if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
 			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
@@ -278,9 +282,13 @@ public class ThemeQueryBenchmark {
 	@TearDown(Level.Trial)
 	public void tearDown() {
 		if (repository != null) {
-			repository.shutDown();
-			repository = null;
+			try {
+				repository.shutDown();
+			} finally {
+				repository = null;
+			}
 		}
+		LmdbTestUtil.deleteDir(STORE_DIRECTORY);
 		store = null;
 		storeConfig = null;
 	}
@@ -349,7 +357,7 @@ public class ThemeQueryBenchmark {
 	@Test
 	@Disabled
 	public void executeQueryReturnsExpectedCountForPharmaQueryTenAfterFreshGeneration() throws IOException {
-		FileUtils.deleteDirectory(STORE_DIRECTORY);
+		LmdbTestUtil.deleteDir(STORE_DIRECTORY);
 		themeName = "PHARMA";
 		z_queryIndex = 10;
 		setup();

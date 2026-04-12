@@ -53,6 +53,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbSailStoreTest {
 
 	protected Repository repo;
+	private File dataDir;
 
 	protected final ValueFactory F = SimpleValueFactory.getInstance();
 
@@ -69,6 +70,7 @@ public class LmdbSailStoreTest {
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) {
+		this.dataDir = dataDir;
 		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
 		repo.init();
 
@@ -252,6 +254,10 @@ public class LmdbSailStoreTest {
 
 	@AfterEach
 	public void after() {
-		repo.shutDown();
+		try {
+			repo.shutDown();
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 }

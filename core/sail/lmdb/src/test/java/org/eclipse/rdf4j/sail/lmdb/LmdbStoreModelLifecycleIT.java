@@ -77,7 +77,11 @@ class LmdbStoreModelLifecycleIT {
 			store.shutDown();
 		}
 
-		assertPersistedState(dataDir, round);
+		try {
+			assertPersistedState(dataDir, round);
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 
 	private void preloadStatements(LmdbStore store, int round) throws Exception {

@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.common.io.FileUtil;
 import org.junit.jupiter.api.Test;
 
 class QueryPlanSnapshotCliTest {
@@ -383,54 +384,72 @@ class QueryPlanSnapshotCliTest {
 	@Test
 	void lmdbRunRecordsLoadedSizeAndSkipsReloadWhenSizeMatches() throws Exception {
 		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-reuse-");
-		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
-				"--no-interactive",
-				"--store", "lmdb",
-				"--lmdb-data-dir", lmdbDataDirectory.toString(),
-				"--theme", "MEDICAL_RECORDS",
-				"--query-index", "0",
-				"--persist", "false"
-		});
+		try {
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--theme", "MEDICAL_RECORDS",
+					"--query-index", "0",
+					"--persist", "false"
+			});
 
-		ByteArrayOutputStream firstRunOutput = new ByteArrayOutputStream();
-		QueryPlanSnapshotCli firstRunCli = newCli("", firstRunOutput);
-		firstRunCli.run(options);
+			ByteArrayOutputStream firstRunOutput = new ByteArrayOutputStream();
+			QueryPlanSnapshotCli firstRunCli = newCli("", firstRunOutput);
+			firstRunCli.run(options);
 
-		ByteArrayOutputStream secondRunOutput = new ByteArrayOutputStream();
-		QueryPlanSnapshotCli secondRunCli = newCli("", secondRunOutput);
-		secondRunCli.run(options);
+			ByteArrayOutputStream secondRunOutput = new ByteArrayOutputStream();
+			QueryPlanSnapshotCli secondRunCli = newCli("", secondRunOutput);
+			secondRunCli.run(options);
 
-		String secondRunPrinted = secondRunOutput.toString(StandardCharsets.UTF_8);
-		assertTrue(secondRunPrinted.contains("LMDB data already fully loaded"),
-				"Expected second run to skip reloading LMDB data when byte size matches: " + secondRunPrinted);
+			String secondRunPrinted = secondRunOutput.toString(StandardCharsets.UTF_8);
+			assertTrue(secondRunPrinted.contains("LMDB data already fully loaded"),
+					"Expected second run to skip reloading LMDB data when byte size matches: " + secondRunPrinted);
+		} finally {
+			deleteDir(lmdbDataDirectory);
+		}
 	}
 
 	@Test
 	void lmdbRunPersistsPageCardinalityEstimatorFeatureFlag() throws Exception {
 		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-flags-");
 		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-flags-output-");
-		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
-				"--no-interactive",
-				"--store", "lmdb",
-				"--lmdb-data-dir", lmdbDataDirectory.toString(),
-				"--theme", "MEDICAL_RECORDS",
-				"--query-index", "0",
-				"--output-dir", outputDirectory.toString()
-		});
+		try {
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--theme", "MEDICAL_RECORDS",
+					"--query-index", "0",
+					"--output-dir", outputDirectory.toString()
+			});
 
-		QueryPlanSnapshotCli cli = newCli("", new ByteArrayOutputStream());
-		cli.run(options);
+			QueryPlanSnapshotCli cli = newCli("", new ByteArrayOutputStream());
+			cli.run(options);
 
-		Path snapshotPath;
-		try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
-			snapshotPath = snapshots
-					.filter(path -> path.getFileName().toString().endsWith(".json"))
-					.findFirst()
-					.orElseThrow();
+			Path snapshotPath;
+			try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
+				snapshotPath = snapshots
+						.filter(path -> path.getFileName().toString().endsWith(".json"))
+						.findFirst()
+						.orElseThrow();
+			}
+
+			QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotPath);
+			assertEquals("true", snapshot.getFeatureFlags().get("lmdbConfig.pageCardinalityEstimator"));
+		} finally {
+			deleteDir(lmdbDataDirectory);
+			deleteDir(outputDirectory);
+		}
+	}
+
+	private static void deleteDir(Path directory) throws Exception {
+		if (directory == null || !Files.exists(directory)) {
+			return;
 		}
 
-		QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotPath);
-		assertEquals("true", snapshot.getFeatureFlags().get("lmdbConfig.pageCardinalityEstimator"));
+		FileUtil.deleteDir(directory.toFile());
+		assertFalse(Files.exists(directory), "Expected directory to be deleted: " + directory);
 	}
 
 	@Test

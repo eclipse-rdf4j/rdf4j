@@ -84,6 +84,7 @@ public class LmdbStoreIsolationModelReuseTest {
 			repository.shutDown();
 		}
 
+		LmdbTestUtil.deleteDir(dataDir);
 		assertThat(livePooledDynamicModels()).isEqualTo(1);
 	}
 

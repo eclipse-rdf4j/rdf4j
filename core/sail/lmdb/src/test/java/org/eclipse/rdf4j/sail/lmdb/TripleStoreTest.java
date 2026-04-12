@@ -30,9 +30,11 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public class TripleStoreTest {
 	protected TripleStore tripleStore;
+	private File dataDir;
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
+		this.dataDir = dataDir;
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 	}
 
@@ -90,6 +92,10 @@ public class TripleStoreTest {
 
 	@AfterEach
 	public void after() throws Exception {
-		tripleStore.close();
+		try {
+			tripleStore.close();
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 }

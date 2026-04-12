@@ -18,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -27,6 +26,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -97,7 +97,7 @@ public class OverflowBenchmarkSynthetic {
 					sailRepository.shutDown();
 				}
 			} finally {
-				FileUtils.deleteDirectory(temporaryFolder);
+				LmdbTestUtil.deleteDir(temporaryFolder);
 			}
 		}
 
@@ -129,7 +129,7 @@ public class OverflowBenchmarkSynthetic {
 					sailRepository.shutDown();
 				}
 			} finally {
-				FileUtils.deleteDirectory(temporaryFolder);
+				LmdbTestUtil.deleteDir(temporaryFolder);
 			}
 		}
 

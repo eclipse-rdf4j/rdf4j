@@ -225,7 +225,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 		public void tearDown() {
 			if (dataRep != null) {
 				clear(dataRep);
-				dataRep.shutDown();
+				shutDownAndDeleteDataDir(dataRep);
 				dataRep = null;
 			}
 			if (expectedResultRepo != null) {

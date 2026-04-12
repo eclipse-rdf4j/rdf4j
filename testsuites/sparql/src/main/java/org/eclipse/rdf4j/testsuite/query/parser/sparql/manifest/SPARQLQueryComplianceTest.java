@@ -331,7 +331,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 					uploadDataset(dataset);
 				} catch (Exception exc) {
 					try {
-						dataRepository.shutDown();
+						shutDownAndDeleteDataDir(dataRepository);
 						dataRepository = null;
 					} catch (Exception e2) {
 						logger.error(e2.toString(), e2);
@@ -345,7 +345,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		public void tearDown() throws Exception {
 			if (dataRepository != null) {
 				clear(dataRepository);
-				dataRepository.shutDown();
+				shutDownAndDeleteDataDir(dataRepository);
 				dataRepository = null;
 			}
 		}
