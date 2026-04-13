@@ -50,7 +50,9 @@ class TripleIndexToKeyCacheTest {
 		long obj = Long.MAX_VALUE;
 		long context = Long.MAX_VALUE;
 
+		tripleStore.startTransaction();
 		TripleStore.TripleIndex index = tripleStore.new TripleIndex("spoc");
+		tripleStore.endTransaction(true);
 
 		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
 		ByteBuffer actual = ByteBuffer.allocate(len);
@@ -76,7 +78,9 @@ class TripleIndexToKeyCacheTest {
 		long obj = Long.MAX_VALUE;
 		long context = Long.MAX_VALUE;
 
+		tripleStore.startTransaction();
 		TripleStore.TripleIndex index = tripleStore.new TripleIndex("posc");
+		tripleStore.endTransaction(true);
 
 		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
 		ByteBuffer actual = ByteBuffer.allocate(len);

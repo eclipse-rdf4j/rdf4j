@@ -39,9 +39,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Integration tests for checking Lmdb Store index consistency.
  */
-public class LmdbStoreConsistencyIT {
+public class LmdbStoreReindexTest {
 
-	private static final Logger logger = LoggerFactory.getLogger(LmdbStoreConsistencyIT.class);
+	private static final Logger logger = LoggerFactory.getLogger(LmdbStoreReindexTest.class);
 
 	/*-----------*
 	 * Variables *
@@ -52,7 +52,7 @@ public class LmdbStoreConsistencyIT {
 	 *---------*/
 
 	@Test
-	public void testSES1867IndexCorruption(@TempDir File dataDir) throws Exception {
+	public void testReindex(@TempDir File dataDir) throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		IRI oldContext = vf.createIRI("http://example.org/oldContext");
 		IRI newContext = vf.createIRI("http://example.org/newContext");
@@ -101,7 +101,6 @@ public class LmdbStoreConsistencyIT {
 		repo.shutDown();
 
 		// Step 4: check the repository size with SPOC only
-		new File(dataDir, "triples/triples.prop").delete(); // delete triples.prop to
 		// update index usage
 		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 
@@ -113,7 +112,6 @@ public class LmdbStoreConsistencyIT {
 		repo.shutDown();
 
 		// Step 5: check the repository size with PSOC only
-		new File(dataDir, "triples/triples.prop").delete(); // delete triples.prop to
 		// update index usage
 		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("psoc")));
 

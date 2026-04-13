@@ -180,7 +180,8 @@ class LmdbSailStore implements SailStore {
 	/**
 	 * Creates a new {@link LmdbSailStore}.
 	 */
-	public LmdbSailStore(File dataDir, LmdbStoreConfig config) throws IOException, SailException {
+	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config)
+			throws IOException, SailException {
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		Function<Long, byte[]> encode = element -> {
 			ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
@@ -193,9 +194,9 @@ class LmdbSailStore implements SailStore {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
-			var valueStore = new ValueStore(new File(dataDir, "values"), config);
+			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
-			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
+			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
 		} finally {
@@ -774,7 +775,8 @@ class LmdbSailStore implements SailStore {
 				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 					removeCount[0]++;
 					for (long id : quad) {
-						if (id != 0L) {
+						if (id != 0L && !ValueIds.isInlined(id)) {
+							// only add references, exclude inlined values
 							unusedIds.add(id);
 						}
 					}
