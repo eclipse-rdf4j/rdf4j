@@ -126,7 +126,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public Set<Namespace> getNamespaces() {
 		if (model == null) {
 			if (namespaces == null) {
-				return new HashSet<>();
+				namespaces = new HashSet<>();
 			}
 			return namespaces;
 		} else {
