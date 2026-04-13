@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
@@ -328,8 +329,10 @@ class QueryPlanSnapshotCliTest {
 		cli.run(options);
 
 		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
+		String expectedSummary = "Completed run-all mode: " + ThemeQueryCatalog.QUERY_COUNT
+				+ " queries across 1 theme.";
 		assertTrue(printed.contains("ETA start:"), printed);
-		assertTrue(printed.contains("Completed run-all mode: 11 queries across 1 theme."), printed);
+		assertTrue(printed.contains(expectedSummary), printed);
 		assertFalse(printed.contains("Theme=SOCIAL_MEDIA"), printed);
 	}
 

@@ -142,8 +142,8 @@ public class OrderComparator implements Comparator<BindingSet> {
 			}
 
 			// binding set sizes are equal. compare on binding names.
-			if (o2bindingNamesOrdered != null && !sortedEquals(o1bindingNamesOrdered, o2bindingNamesOrdered)
-					|| !o1.getBindingNames().equals(o2.getBindingNames())) {
+			if (!o1.getBindingNames().equals(o2.getBindingNames()) || ((o2bindingNamesOrdered != null)
+					&& !sortedEquals(o1bindingNamesOrdered, o2bindingNamesOrdered))) {
 
 				if (o2bindingNamesOrdered == null) {
 					o2bindingNamesOrdered = getSortedBindingNames(o2.getBindingNames());
@@ -178,6 +178,10 @@ public class OrderComparator implements Comparator<BindingSet> {
 	}
 
 	private boolean sortedEquals(List<String> o1bindingNamesOrdered, List<String> o2bindingNamesOrdered) {
+		if (o1bindingNamesOrdered == o2bindingNamesOrdered) {
+			return true;
+		}
+
 		if (o1bindingNamesOrdered.size() != o2bindingNamesOrdered.size()) {
 			return false;
 		}

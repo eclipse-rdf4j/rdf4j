@@ -107,6 +107,8 @@ config.setTripleIndexes("spoc,ospc,psoc");
 config.setForceSync(true);
 // disable autogrow, enabled by default
 config.setAutoGrow(false);
+// persist value hash codes across restarts, disabled by default
+config.setValueHashCacheEnabled(true);
 // set maximum size of value db to 1 GiB
 
 config.setValueDBSize(1_073_741_824L);
@@ -115,6 +117,11 @@ config.setTripleDBSize(1_073_741_824L);
 
 Repository repo = new SailRepository(new LmdbStore(dataDir), config);
 ```
+
+The optional value hash cache stores precomputed `Value.hashCode()` results in `hashes.dat`. It is disabled by default.
+When enabled, LMDB writes a `hashes.dat.integrity` sidecar on clean shutdown and only trusts the cache again on the
+next startup if that integrity metadata validates. Invalid or stale hash cache files are discarded automatically and
+the store falls back to recomputing hashes lazily.
 
 ## Required storage space, RAM size and disk performance
 You can expect a footprint of around 120 - 130 bytes per quad when using the LMDB store
