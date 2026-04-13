@@ -956,12 +956,12 @@ class TripleStore implements Closeable {
 			}
 		}
 
-		if (stAdded) {
+		if (stAdded && logger.isDebugEnabled()) {
 			statementsAdded.increment();
 			if (localCount++ % 100000 == 0) {
 				long now = System.currentTimeMillis();
 				if (now - lastLogTime > 1000) {
-					logger.info("LMDB import speed: {} statements/s",
+					logger.debug("LMDB import speed: {} statements/s",
 							(int) Math.floor(statementsAdded.sumThenReset() / ((now - lastLogTime) / 1000.0)));
 					lastLogTime = now;
 				}
