@@ -11,10 +11,15 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -95,6 +100,61 @@ public class TripleStoreTest {
 				assertEquals("OSPC explicit row should exist", 1,
 						count(secondaryIndexStore.getTriples(txn, -1, -1, 33, -1, true)));
 			}
+		}
+	}
+
+	@Test
+	public void testLeadingFieldSortPreservesPriorOrderWithinGroups() throws Exception {
+		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
+				int.class, char.class, long[].class, long[].class, long[].class, long[].class);
+		method.setAccessible(true);
+
+		int[] statementIndices = { 0, 1, 2, 3 };
+		long[] subj = { 1, 2, 3, 4 };
+		long[] pred = { 5, 5, 5, 5 };
+		long[] obj = { 10, 20, 30, 40 };
+		long[] context = { 100, 200, 300, 400 };
+
+		method.invoke(tripleStore, statementIndices, statementIndices.length, 'p', subj, pred, obj, context);
+
+		assertEquals("Stable leading-field sort should preserve prior order for equal leading values",
+				Arrays.toString(new int[] { 0, 1, 2, 3 }), Arrays.toString(statementIndices));
+	}
+
+	@Test
+	public void testShouldResetToMainIndexOrderWhenTrailingFieldsDiffer() throws Exception {
+		Method method = TripleStore.class.getDeclaredMethod("shouldResetToMainIndexOrder", char[].class, char[].class,
+				char[].class);
+		method.setAccessible(true);
+
+		assertFalse("SPOC -> PSOC should reuse the current order",
+				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "spoc".toCharArray(), "psoc".toCharArray()));
+		assertFalse("SPOC -> OSPC should reuse the current order",
+				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "spoc".toCharArray(), "ospc".toCharArray()));
+		assertFalse("PSOC -> OPSC should reuse the current order",
+				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "opsc".toCharArray()));
+		assertTrue("PSOC -> OSPC should reset to SPOC first",
+				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "ospc".toCharArray()));
+	}
+
+	@Test
+	public void testIndexesAreReorderedForAlignedBatchTraversal() throws Exception {
+		File orderedIndexDir = new File(dataDir, "ordered-index-store");
+		orderedIndexDir.mkdirs();
+
+		try (TripleStore orderedIndexStore = new TripleStore(orderedIndexDir,
+				new LmdbStoreConfig("spoc,psoc,sopc,opsc,posc,ospc"), null)) {
+			Field indexesField = TripleStore.class.getDeclaredField("indexes");
+			indexesField.setAccessible(true);
+
+			@SuppressWarnings("unchecked")
+			List<TripleStore.TripleIndex> configuredIndexes = (List<TripleStore.TripleIndex>) indexesField
+					.get(orderedIndexStore);
+
+			assertEquals(Arrays.asList("spoc", "ospc", "posc", "opsc", "sopc", "psoc"),
+					configuredIndexes.stream()
+							.map(index -> new String(index.getFieldSeq()))
+							.collect(Collectors.toList()));
 		}
 	}
 

@@ -67,10 +67,12 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -328,7 +330,7 @@ class TripleStore implements Closeable {
 	 * @return A Set containing the parsed index specifications.
 	 */
 	private Set<String> parseIndexSpecList(String indexSpecStr) throws SailException {
-		Set<String> indexes = new HashSet<>();
+		Set<String> indexes = new LinkedHashSet<>();
 
 		if (indexSpecStr != null) {
 			StringTokenizer tok = new StringTokenizer(indexSpecStr, ", \t");
@@ -349,7 +351,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void initIndexes(Set<String> indexSpecs, long tripleDbSize) throws IOException {
-		for (String fieldSeq : indexSpecs) {
+		for (String fieldSeq : orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(fieldSeq));
 		}
@@ -378,6 +380,92 @@ class TripleStore implements Closeable {
 			}
 			return null;
 		});
+	}
+
+	private Set<String> orderIndexSpecs(Set<String> indexSpecs) {
+		if (indexSpecs.size() < 3) {
+			return new LinkedHashSet<>(indexSpecs);
+		}
+
+		List<String> orderedSpecs = new ArrayList<>(indexSpecs);
+		String mainFieldSeq = orderedSpecs.get(0);
+		List<String> secondarySpecs = new ArrayList<>(orderedSpecs.subList(1, orderedSpecs.size()));
+		OrderScore bestSecondaryOrder = findBestSecondaryIndexOrder(mainFieldSeq, mainFieldSeq, secondarySpecs);
+
+		LinkedHashSet<String> reorderedSpecs = new LinkedHashSet<>();
+		reorderedSpecs.add(mainFieldSeq);
+		reorderedSpecs.addAll(bestSecondaryOrder.indexOrder);
+		return reorderedSpecs;
+	}
+
+	private OrderScore findBestSecondaryIndexOrder(String mainFieldSeq, String currentFieldSeq,
+			List<String> remainingIndexSpecs) {
+		if (remainingIndexSpecs.isEmpty()) {
+			return new OrderScore(List.of(), 0, 0);
+		}
+
+		OrderScore bestOrder = null;
+		List<String> sortedCandidates = new ArrayList<>(remainingIndexSpecs);
+		Collections.sort(sortedCandidates);
+		for (String candidateFieldSeq : sortedCandidates) {
+			List<String> nextRemaining = new ArrayList<>(remainingIndexSpecs);
+			nextRemaining.remove(candidateFieldSeq);
+
+			OrderScore tailOrder = findBestSecondaryIndexOrder(mainFieldSeq, candidateFieldSeq, nextRemaining);
+			boolean reusesCurrentOrder = canReuseCurrentOrder(currentFieldSeq.toCharArray(),
+					candidateFieldSeq.toCharArray());
+			boolean reusesMainOrder = !reusesCurrentOrder
+					&& canReuseCurrentOrder(mainFieldSeq.toCharArray(), candidateFieldSeq.toCharArray());
+
+			List<String> candidateOrder = new ArrayList<>(tailOrder.indexOrder.size() + 1);
+			candidateOrder.add(candidateFieldSeq);
+			candidateOrder.addAll(tailOrder.indexOrder);
+
+			OrderScore candidateScore = new OrderScore(candidateOrder,
+					tailOrder.reusedTransitions + (reusesCurrentOrder ? 1 : 0),
+					tailOrder.mainOrderResets + (reusesMainOrder ? 1 : 0));
+
+			if (isBetterIndexOrder(candidateScore, bestOrder)) {
+				bestOrder = candidateScore;
+			}
+		}
+
+		return bestOrder;
+	}
+
+	private boolean isBetterIndexOrder(OrderScore candidateScore, OrderScore bestScore) {
+		if (bestScore == null) {
+			return true;
+		}
+		if (candidateScore.reusedTransitions != bestScore.reusedTransitions) {
+			return candidateScore.reusedTransitions > bestScore.reusedTransitions;
+		}
+		if (candidateScore.mainOrderResets != bestScore.mainOrderResets) {
+			return candidateScore.mainOrderResets > bestScore.mainOrderResets;
+		}
+		return compareIndexOrder(candidateScore.indexOrder, bestScore.indexOrder) < 0;
+	}
+
+	private int compareIndexOrder(List<String> left, List<String> right) {
+		for (int i = 0; i < Math.min(left.size(), right.size()); i++) {
+			int compare = left.get(i).compareTo(right.get(i));
+			if (compare != 0) {
+				return compare;
+			}
+		}
+		return Integer.compare(left.size(), right.size());
+	}
+
+	private static final class OrderScore {
+		private final List<String> indexOrder;
+		private final int reusedTransitions;
+		private final int mainOrderResets;
+
+		private OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
+			this.indexOrder = indexOrder;
+			this.reusedTransitions = reusedTransitions;
+			this.mainOrderResets = mainOrderResets;
+		}
 	}
 
 	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs) throws IOException, SailException {
@@ -1046,6 +1134,32 @@ class TripleStore implements Closeable {
 			}
 			statementIndices[j + 1] = statementIndex;
 		}
+	}
+
+	private boolean shouldResetToMainIndexOrder(char[] mainFieldSeq, char[] currentFieldSeq, char[] targetFieldSeq) {
+		return !canReuseCurrentOrder(currentFieldSeq, targetFieldSeq)
+				&& canReuseCurrentOrder(mainFieldSeq, targetFieldSeq);
+	}
+
+	private boolean canReuseCurrentOrder(char[] currentFieldSeq, char[] targetFieldSeq) {
+		if (currentFieldSeq.length != targetFieldSeq.length) {
+			return false;
+		}
+		int currentIndex = 0;
+		for (int i = 1; i < targetFieldSeq.length; i++) {
+			while (currentIndex < currentFieldSeq.length && currentFieldSeq[currentIndex] != targetFieldSeq[i]) {
+				if (currentFieldSeq[currentIndex] == targetFieldSeq[0]) {
+					currentIndex++;
+					continue;
+				}
+				return false;
+			}
+			if (currentIndex == currentFieldSeq.length) {
+				return false;
+			}
+			currentIndex++;
+		}
+		return true;
 	}
 
 	private long getLeadingFieldValue(char leadingField, long[] subj, long[] pred, long[] obj, long[] context,
