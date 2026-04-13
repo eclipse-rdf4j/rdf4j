@@ -15,12 +15,18 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.atMost;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -295,6 +301,38 @@ public class LmdbSailStoreTest {
 		} finally {
 			valueStoreField.set(backingStore, originalValueStore);
 			sink.close();
+		}
+	}
+
+	@Test
+	void approveAllBatchesTripleStoreWritesIntoBulkCalls() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 1025; i++) {
+			statements.add(F.createStatement(
+					F.createIRI("urn:subject:" + i),
+					F.createIRI("urn:predicate:" + (i % 17)),
+					F.createIRI("urn:object:" + (i % 29)),
+					F.createIRI("urn:context:" + (i % 7))));
+		}
+
+		tripleStoreField.set(backingStore, tripleStoreSpy);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			clearInvocations(tripleStoreSpy);
+			sink.approveAll(statements, Set.of());
+			sink.flush();
+
+			verify(tripleStoreSpy, atMost(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+		} finally {
+			tripleStoreField.set(backingStore, originalTripleStore);
 		}
 	}
 

@@ -947,7 +947,7 @@ class TripleStore implements Closeable {
 					keyVal.mv_data(keyBuf);
 
 					if (foundImplicit) {
-						E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
+						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
@@ -956,19 +956,130 @@ class TripleStore implements Closeable {
 			}
 		}
 
-		if (stAdded && logger.isDebugEnabled()) {
-			statementsAdded.increment();
-			if (localCount++ % 100000 == 0) {
-				long now = System.currentTimeMillis();
-				if (now - lastLogTime > 1000) {
-					logger.debug("LMDB import speed: {} statements/s",
-							(int) Math.floor(statementsAdded.sumThenReset() / ((now - lastLogTime) / 1000.0)));
-					lastLogTime = now;
+		logAddedStatements(stAdded ? 1 : 0);
+
+		return stAdded;
+	}
+
+	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit)
+			throws IOException {
+		if (count == 0) {
+			return;
+		}
+		if (count == 1 || recordCache != null || requiresResize()) {
+			storeTriplesIndividually(subj, pred, obj, context, count, explicit);
+			return;
+		}
+
+		TripleIndex mainIndex = indexes.get(0);
+		int addedCount = 0;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+			int[] addedIndices = new int[count];
+			boolean[] promotedFromImplicit = new boolean[count];
+
+			for (int i = 0; i < count; i++) {
+				keyBuf.clear();
+				mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
+
+				int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
+				if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
+					throw new IOException(mdb_strerror(rc));
+				}
+
+				if (rc == MDB_SUCCESS) {
+					addedIndices[addedCount++] = i;
+					if (explicit) {
+						promotedFromImplicit[i] = mdb_del(writeTxn, mainIndex.getDB(false), keyVal,
+								dataVal) == MDB_SUCCESS;
+					}
+					incrementContext(stack, context[i]);
+				}
+			}
+
+			for (int i = 1; i < indexes.size(); i++) {
+				TripleIndex index = indexes.get(i);
+				int[] sortedIndices = Arrays.copyOf(addedIndices, addedCount);
+				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index.getFieldSeq()[0], subj, pred, obj,
+						context);
+				for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
+					int statementIndex = sortedIndices[sortedIndex];
+					keyBuf.clear();
+					index.toKey(keyBuf, subj[statementIndex], pred[statementIndex], obj[statementIndex],
+							context[statementIndex]);
+					keyBuf.flip();
+					keyVal.mv_data(keyBuf);
+
+					if (promotedFromImplicit[statementIndex]) {
+						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
+					}
+					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
 			}
 		}
 
-		return stAdded;
+		logAddedStatements(addedCount);
+	}
+
+	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int count,
+			boolean explicit)
+			throws IOException {
+		for (int i = 0; i < count; i++) {
+			storeTriple(subj[i], pred[i], obj[i], context[i], explicit);
+		}
+	}
+
+	private void sortStatementIndicesByLeadingField(int[] statementIndices, int length, char leadingField, long[] subj,
+			long[] pred, long[] obj, long[] context) {
+		for (int i = 1; i < length; i++) {
+			int statementIndex = statementIndices[i];
+			long statementValue = getLeadingFieldValue(leadingField, subj, pred, obj, context, statementIndex);
+			int j = i - 1;
+			while (j >= 0 && getLeadingFieldValue(leadingField, subj, pred, obj, context,
+					statementIndices[j]) > statementValue) {
+				statementIndices[j + 1] = statementIndices[j];
+				j--;
+			}
+			statementIndices[j + 1] = statementIndex;
+		}
+	}
+
+	private long getLeadingFieldValue(char leadingField, long[] subj, long[] pred, long[] obj, long[] context,
+			int statementIndex) {
+		switch (leadingField) {
+		case 's':
+			return subj[statementIndex];
+		case 'p':
+			return pred[statementIndex];
+		case 'o':
+			return obj[statementIndex];
+		case 'c':
+			return context[statementIndex];
+		default:
+			throw new IllegalArgumentException("Unknown index field: " + leadingField);
+		}
+	}
+
+	private void logAddedStatements(int count) {
+		if (count <= 0 || !logger.isDebugEnabled()) {
+			return;
+		}
+
+		statementsAdded.add(count);
+		int previousLocalCount = localCount;
+		localCount += count;
+		if (previousLocalCount / 100000 != localCount / 100000) {
+			long now = System.currentTimeMillis();
+			if (now - lastLogTime > 1000) {
+				logger.debug("LMDB import speed: {} statements/s",
+						(int) Math.floor(statementsAdded.sumThenReset() / ((now - lastLogTime) / 1000.0)));
+				lastLogTime = now;
+			}
+		}
 	}
 
 	private void incrementContext(MemoryStack stack, long context) throws IOException {

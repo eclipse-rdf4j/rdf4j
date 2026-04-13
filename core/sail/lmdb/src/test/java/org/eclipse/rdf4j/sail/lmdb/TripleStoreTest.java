@@ -72,6 +72,33 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void testExplicitPromotionRemovesSecondaryInferredRows() throws Exception {
+		File secondaryIndexDir = new File(dataDir, "secondary-index-store");
+		secondaryIndexDir.mkdirs();
+		try (TripleStore secondaryIndexStore = new TripleStore(secondaryIndexDir, new LmdbStoreConfig("spoc,ospc,psoc"),
+				null)) {
+			secondaryIndexStore.startTransaction();
+			secondaryIndexStore.storeTriple(11, 22, 33, 44, false);
+			secondaryIndexStore.commit();
+
+			secondaryIndexStore.startTransaction();
+			secondaryIndexStore.storeTriple(11, 22, 33, 44, true);
+			secondaryIndexStore.commit();
+
+			try (Txn txn = secondaryIndexStore.getTxnManager().createReadTxn()) {
+				assertEquals("PSOC inferred row should be removed", 0,
+						count(secondaryIndexStore.getTriples(txn, -1, 22, -1, -1, false)));
+				assertEquals("OSPC inferred row should be removed", 0,
+						count(secondaryIndexStore.getTriples(txn, -1, -1, 33, -1, false)));
+				assertEquals("PSOC explicit row should exist", 1,
+						count(secondaryIndexStore.getTriples(txn, -1, 22, -1, -1, true)));
+				assertEquals("OSPC explicit row should exist", 1,
+						count(secondaryIndexStore.getTriples(txn, -1, -1, 33, -1, true)));
+			}
+		}
+	}
+
+	@Test
 	public void testGc() throws Exception {
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, true);

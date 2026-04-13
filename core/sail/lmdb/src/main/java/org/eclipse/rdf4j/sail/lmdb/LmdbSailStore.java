@@ -66,6 +66,7 @@ class LmdbSailStore implements SailStore {
 	private final ValueStore valueStore;
 
 	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
+	private static final int BULK_OPERATION_SIZE = 1024;
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
 	private volatile Throwable tripleStoreException;
 	private final AtomicBoolean running = new AtomicBoolean(false);
@@ -154,6 +155,51 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(c);
 			}
 			tripleStore.storeTriple(s, p, o, c, explicit);
+		}
+	}
+
+	class BulkAddQuadsOperation implements Operation {
+		final long[] subjects = new long[BULK_OPERATION_SIZE];
+		final long[] predicates = new long[BULK_OPERATION_SIZE];
+		final long[] objects = new long[BULK_OPERATION_SIZE];
+		final long[] contexts = new long[BULK_OPERATION_SIZE];
+		final boolean explicit;
+		int size;
+
+		BulkAddQuadsOperation(boolean explicit) {
+			this.explicit = explicit;
+		}
+
+		void add(long subject, long predicate, long object, long context) {
+			subjects[size] = subject;
+			predicates[size] = predicate;
+			objects[size] = object;
+			contexts[size] = context;
+			size++;
+		}
+
+		boolean isFull() {
+			return size == BULK_OPERATION_SIZE;
+		}
+
+		boolean isEmpty() {
+			return size == 0;
+		}
+
+		@Override
+		public void execute() throws IOException {
+			if (!explicit) {
+				mayHaveInferred = true;
+			}
+			if (!unusedIds.isEmpty()) {
+				for (int i = 0; i < size; i++) {
+					unusedIds.remove(subjects[i]);
+					unusedIds.remove(predicates[i]);
+					unusedIds.remove(objects[i]);
+					unusedIds.remove(contexts[i]);
+				}
+			}
+			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit);
 		}
 	}
 
@@ -592,6 +638,7 @@ class LmdbSailStore implements SailStore {
 				HashMap<Resource, Long> contextCache = new HashMap<>();
 				Resource previousSubject = null;
 				long previousSubjectId = LmdbValue.UNKNOWN_ID;
+				BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit);
 
 				for (Statement statement : approved) {
 					last = statement;
@@ -600,58 +647,55 @@ class LmdbSailStore implements SailStore {
 					Value obj = statement.getObject();
 					Resource context = statement.getContext();
 
-					AddQuadOperation q = new AddQuadOperation();
-
 					if (previousSubject != null) {
 						if (subj == previousSubject) {
-							q.s = previousSubjectId;
+							bulk.add(previousSubjectId, 0, 0, 0);
 						} else {
 							if (previousSubject.equals(subj)) {
-								q.s = previousSubjectId;
+								bulk.add(previousSubjectId, 0, 0, 0);
 							} else {
-								q.s = valueStore.storeValue(subj);
+								long subjectId = valueStore.storeValue(subj);
 								previousSubject = subj;
-								previousSubjectId = q.s;
+								previousSubjectId = subjectId;
+								bulk.add(subjectId, 0, 0, 0);
 							}
 						}
 					} else {
-						q.s = valueStore.storeValue(subj);
+						long subjectId = valueStore.storeValue(subj);
 						previousSubject = subj;
-						previousSubjectId = q.s;
+						previousSubjectId = subjectId;
+						bulk.add(subjectId, 0, 0, 0);
 					}
+
+					int batchIndex = bulk.size - 1;
 
 					Long predicateId = predicateCache.get(pred);
 					if (predicateId == null) {
 						predicateId = valueStore.storeValue(pred);
 						predicateCache.put(pred, predicateId);
 					}
-					q.p = predicateId;
+					bulk.predicates[batchIndex] = predicateId;
 
-					q.o = valueStore.storeValue(obj);
+					bulk.objects[batchIndex] = valueStore.storeValue(obj);
 					if (context == null) {
-						q.c = 0;
+						bulk.contexts[batchIndex] = 0;
 					} else {
 						Long contextId = contextCache.get(context);
 						if (contextId == null) {
 							contextId = valueStore.storeValue(context);
 							contextCache.put(context, contextId);
 						}
-						q.c = contextId;
-					}
-					q.explicit = explicit;
-
-					if (multiThreadingActive) {
-						while (!opQueue.add(q)) {
-							if (tripleStoreException != null) {
-								throw wrapTripleStoreException();
-							}
-							Thread.onSpinWait();
-						}
-
-					} else {
-						q.execute();
+						bulk.contexts[batchIndex] = contextId;
 					}
 
+					if (bulk.isFull()) {
+						submitOperation(bulk);
+						bulk = new BulkAddQuadsOperation(explicit);
+					}
+				}
+
+				if (!bulk.isEmpty()) {
+					submitOperation(bulk);
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
@@ -783,17 +827,7 @@ class LmdbSailStore implements SailStore {
 				q.c = context == null ? 0 : valueStore.storeValue(context);
 				q.explicit = explicit;
 
-				if (multiThreadingActive) {
-					while (!opQueue.add(q)) {
-						if (tripleStoreException != null) {
-							throw wrapTripleStoreException();
-						} else {
-							Thread.onSpinWait();
-						}
-					}
-				} else {
-					q.execute();
-				}
+				submitOperation(q);
 			} catch (IOException e) {
 				rollback();
 				throw new SailException(e);
@@ -803,6 +837,27 @@ class LmdbSailStore implements SailStore {
 				throw e;
 			} finally {
 				sinkStoreAccessLock.unlock();
+			}
+		}
+
+		private void submitOperation(Operation operation) throws IOException {
+			if (multiThreadingActive) {
+				while (!opQueue.add(operation)) {
+					if (tripleStoreException != null) {
+						throw wrapTripleStoreException();
+					}
+					Thread.onSpinWait();
+				}
+			} else {
+				try {
+					operation.execute();
+				} catch (IOException e) {
+					throw e;
+				} catch (RuntimeException e) {
+					throw e;
+				} catch (Exception e) {
+					throw new SailException(e);
+				}
 			}
 		}
 

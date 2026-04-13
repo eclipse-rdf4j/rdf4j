@@ -152,4 +152,50 @@ public class LmdbStoreConsistencyIT {
 			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
+
+	@Test
+	public void testLargeTransactionStaysConsistentAcrossSpocOspcAndPsoc(@TempDir File dataDir) throws Exception {
+		try {
+			Model inserted = new LinkedHashModel();
+			ValueFactory vf = SimpleValueFactory.getInstance();
+
+			for (int i = 0; i < 1537; i++) {
+				Resource context = i % 5 == 0 ? null : vf.createIRI("urn:context:" + (i % 13));
+				inserted.add(vf.createStatement(
+						vf.createIRI("urn:subject:" + i),
+						vf.createIRI("urn:predicate:" + (i % 31)),
+						vf.createIRI("urn:object:" + (i % 43)),
+						context));
+			}
+
+			Repository repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc")));
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.begin();
+				conn.add(inserted);
+				conn.commit();
+			} finally {
+				repo.shutDown();
+			}
+
+			Model spocStatements = readAllStatements(dataDir, "spoc");
+			Model ospcStatements = readAllStatements(dataDir, "ospc");
+			Model psocStatements = readAllStatements(dataDir, "psoc");
+
+			assertEquals(inserted, spocStatements);
+			assertEquals(spocStatements, ospcStatements);
+			assertEquals(spocStatements, psocStatements);
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	private Model readAllStatements(File dataDir, String indexSpec) {
+		new File(dataDir, "triples/triples.prop").delete();
+		Repository repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig(indexSpec)));
+		try (RepositoryConnection conn = repo.getConnection()) {
+			return Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+		} finally {
+			repo.shutDown();
+		}
+	}
 }
