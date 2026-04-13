@@ -235,13 +235,21 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		checkMemoryOverflow();
-		return getDelegate().add(subj, pred, obj, contexts);
+		boolean add = getDelegate().add(subj, pred, obj, contexts);
+		if (add && memory instanceof DynamicModel) {
+			((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
+		}
+		return add;
 	}
 
 	@Override
 	public boolean add(Statement st) {
 		checkMemoryOverflow();
-		return getDelegate().add(st);
+		boolean add = getDelegate().add(st);
+		if (add && memory instanceof DynamicModel) {
+			((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
+		}
+		return add;
 	}
 
 	@Override
@@ -263,6 +271,10 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			if (!buffer.isEmpty()) {
 				ret |= getDelegate().addAll(buffer);
 				buffer.clear();
+			}
+
+			if (ret && memory instanceof DynamicModel) {
+				((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
 			}
 
 			return ret;
@@ -365,9 +377,6 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	private Model getDelegate() {
 		var memory = this.memory;
 		if (memory != null) {
-			if (memory instanceof DynamicModel) {
-				((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
-			}
 			return memory;
 		} else {
 			var disk = this.disk;

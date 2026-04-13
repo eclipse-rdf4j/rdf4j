@@ -664,10 +664,15 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private Set<Resource> initializeAddedContextsIfNeeded() {
 		if (addedContexts == null) {
-			addedContexts = statements.values()
-					.stream()
-					.map(Statement::getContext)
-					.collect(Collectors.toCollection(LinkedHashSet::new));
+			if (statements.isEmpty()) {
+
+				addedContexts = new LinkedHashSet<>(1);
+			} else {
+				addedContexts = statements.values()
+						.stream()
+						.map(Statement::getContext)
+						.collect(Collectors.toCollection(LinkedHashSet::new));
+			}
 		}
 		return addedContexts;
 	}
