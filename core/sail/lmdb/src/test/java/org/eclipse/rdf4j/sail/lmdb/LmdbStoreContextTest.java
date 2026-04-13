@@ -40,4 +40,9 @@ public class LmdbStoreContextTest extends RDFNotifyingStoreTest {
 		sail.init();
 		return sail;
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

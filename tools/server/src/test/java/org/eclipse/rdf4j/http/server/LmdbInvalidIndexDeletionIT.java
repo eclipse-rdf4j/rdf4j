@@ -12,6 +12,8 @@ package org.eclipse.rdf4j.http.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.File;
+
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -23,6 +25,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
@@ -60,6 +63,10 @@ public class LmdbInvalidIndexDeletionIT {
 	@Test
 	void deletionSucceedsAfterInvalidLmdbInit() throws Exception {
 		String id = "badlmdb-server";
+		File repoDir = new File(
+				new File(new File(System.getProperty("user.dir"), "target/datadir"),
+						LocalRepositoryManager.REPOSITORIES_DIR),
+				id);
 
 		// Build a minimal LMDB Sail config without depending on LMDB classes
 		// by exporting with the LMDB sail type and the tripleIndexes property.
@@ -105,6 +112,7 @@ public class LmdbInvalidIndexDeletionIT {
 			// Now attempt to delete the repository; expected to succeed
 			boolean removed = manager.removeRepository(id);
 			assertThat(removed).isTrue();
+			assertThat(repoDir).doesNotExist();
 		} finally {
 			// best-effort cleanup if assertion failed
 			try {

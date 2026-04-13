@@ -183,8 +183,22 @@ public abstract class RDFStoreTest {
 				}
 			}
 		} finally {
-			sail.shutDown();
-			sail = null;
+			try {
+				sail.shutDown();
+			} finally {
+				cleanupSailDataDir(sail);
+				sail = null;
+			}
+		}
+	}
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupSailDataDir(Sail sail) {
+		if (deleteDataDirAfterShutdown()) {
+			SailDirCleanup.deleteDir(sail.getDataDir());
 		}
 	}
 

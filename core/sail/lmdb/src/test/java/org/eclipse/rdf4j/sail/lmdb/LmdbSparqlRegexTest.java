@@ -26,4 +26,9 @@ public class LmdbSparqlRegexTest extends SparqlRegexTest {
 	protected Repository newRepository() {
 		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

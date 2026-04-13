@@ -30,4 +30,9 @@ public class LmdbSPARQLComplianceTest extends RepositorySPARQLComplianceTestSuit
 			}
 		});
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

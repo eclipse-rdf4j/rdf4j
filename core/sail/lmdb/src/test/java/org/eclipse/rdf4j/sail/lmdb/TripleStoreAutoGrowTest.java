@@ -29,9 +29,11 @@ import ch.qos.logback.classic.Logger;
 public class TripleStoreAutoGrowTest {
 
 	protected TripleStore tripleStore;
+	private File dataDir;
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
+		this.dataDir = dataDir;
 		var config = new LmdbStoreConfig("spoc,posc");
 		config.setTripleDBSize(4096 * 10);
 		tripleStore = new TripleStore(dataDir, config, null);
@@ -88,6 +90,10 @@ public class TripleStoreAutoGrowTest {
 
 	@AfterEach
 	public void after() throws Exception {
-		tripleStore.close();
+		try {
+			tripleStore.close();
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 }

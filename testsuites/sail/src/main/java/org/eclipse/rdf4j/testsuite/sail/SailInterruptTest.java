@@ -59,7 +59,21 @@ public abstract class SailInterruptTest {
 
 	@AfterEach
 	public void tearDown() {
-		store.shutDown();
+		try {
+			store.shutDown();
+		} finally {
+			cleanupSailDataDir(store);
+		}
+	}
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupSailDataDir(Sail sail) {
+		if (deleteDataDirAfterShutdown()) {
+			SailDirCleanup.deleteDir(sail.getDataDir());
+		}
 	}
 
 	@Test

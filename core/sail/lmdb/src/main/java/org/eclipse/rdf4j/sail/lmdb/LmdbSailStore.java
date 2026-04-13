@@ -16,6 +16,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -587,6 +588,11 @@ class LmdbSailStore implements SailStore {
 			try {
 				startTransaction(true);
 
+				HashMap<IRI, Long> predicateCache = new HashMap<>();
+				HashMap<Resource, Long> contextCache = new HashMap<>();
+				Resource previousSubject = null;
+				long previousSubjectId = LmdbValue.UNKNOWN_ID;
+
 				for (Statement statement : approved) {
 					last = statement;
 					Resource subj = statement.getSubject();
@@ -595,10 +601,43 @@ class LmdbSailStore implements SailStore {
 					Resource context = statement.getContext();
 
 					AddQuadOperation q = new AddQuadOperation();
-					q.s = valueStore.storeValue(subj);
-					q.p = valueStore.storeValue(pred);
+
+					if (previousSubject != null) {
+						if (subj == previousSubject) {
+							q.s = previousSubjectId;
+						} else {
+							if (previousSubject.equals(subj)) {
+								q.s = previousSubjectId;
+							} else {
+								q.s = valueStore.storeValue(subj);
+								previousSubject = subj;
+								previousSubjectId = q.s;
+							}
+						}
+					} else {
+						q.s = valueStore.storeValue(subj);
+						previousSubject = subj;
+						previousSubjectId = q.s;
+					}
+
+					Long predicateId = predicateCache.get(pred);
+					if (predicateId == null) {
+						predicateId = valueStore.storeValue(pred);
+						predicateCache.put(pred, predicateId);
+					}
+					q.p = predicateId;
+
 					q.o = valueStore.storeValue(obj);
-					q.c = context == null ? 0 : valueStore.storeValue(context);
+					if (context == null) {
+						q.c = 0;
+					} else {
+						Long contextId = contextCache.get(context);
+						if (contextId == null) {
+							contextId = valueStore.storeValue(context);
+							contextCache.put(context, contextId);
+						}
+						q.c = contextId;
+					}
 					q.explicit = explicit;
 
 					if (multiThreadingActive) {

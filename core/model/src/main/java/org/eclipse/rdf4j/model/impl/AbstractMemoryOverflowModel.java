@@ -43,7 +43,8 @@ import com.sun.management.GarbageCollectionNotificationInfo;
 import com.sun.management.GcInfo;
 
 @InternalUseOnly
-public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> extends AbstractModel {
+public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> extends AbstractModel
+		implements AutoCloseable {
 
 	private static final long serialVersionUID = 4119844228099208169L;
 
@@ -86,7 +87,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	static final Logger logger = LoggerFactory.getLogger(AbstractMemoryOverflowModel.class);
 
-	private volatile LinkedHashModel memory;
+	private volatile Model memory;
 
 	protected transient volatile T disk;
 
@@ -188,11 +189,12 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	private volatile boolean closed;
 
 	public AbstractMemoryOverflowModel() {
-		memory = new LinkedHashModel();
+		memory = new DynamicModel(new LinkedHashModelFactory(), true);
 	}
 
 	public AbstractMemoryOverflowModel(Set<Namespace> namespaces) {
-		memory = new LinkedHashModel(namespaces, 0);
+		memory = new DynamicModel(new LinkedHashModelFactory(), true);
+		namespaces.forEach(memory::setNamespace);
 	}
 
 	@Override
@@ -223,6 +225,11 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@Override
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getDelegate().contains(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public boolean isEmpty() {
+		return getDelegate().isEmpty();
 	}
 
 	@Override
@@ -312,15 +319,55 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		if (disk == null) {
-			memory.removeTermIteration(iter, subj, pred, obj, contexts);
+			if (memory instanceof AbstractModel) {
+				((AbstractModel) memory).removeTermIteration(iter, subj, pred, obj, contexts);
+			} else if (memory instanceof DynamicModel) {
+				((DynamicModel) memory).removeTermIteration(iter, subj, pred, obj, contexts);
+			} else {
+				iter.remove();
+				while (iter.hasNext()) {
+					Statement statement = iter.next();
+					if (matchesPattern(statement, subj, pred, obj, contexts)) {
+						iter.remove();
+					}
+				}
+			}
 		} else {
 			disk.removeTermIteration(iter, subj, pred, obj, contexts);
 		}
 	}
 
+	private static boolean matchesPattern(Statement statement, Resource subj, IRI pred, Value obj,
+			Resource... contexts) {
+		if (subj != null && !subj.equals(statement.getSubject())) {
+			return false;
+		}
+		if (pred != null && !pred.equals(statement.getPredicate())) {
+			return false;
+		}
+		if (obj != null && !obj.equals(statement.getObject())) {
+			return false;
+		}
+		if (contexts == null || contexts.length == 0) {
+			return true;
+		}
+		for (Resource context : contexts) {
+			boolean contextMatch = context == null
+					? statement.getContext() == null
+					: context.equals(statement.getContext());
+			if (contextMatch) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private Model getDelegate() {
 		var memory = this.memory;
 		if (memory != null) {
+			if (memory instanceof DynamicModel) {
+				((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
+			}
 			return memory;
 		} else {
 			var disk = this.disk;
@@ -418,7 +465,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					return;
 				}
 
-				LinkedHashModel memory = this.memory;
+				Model memory = this.memory;
 				this.memory = null;
 				overflowToDiskInner(memory);
 
@@ -433,6 +480,45 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		}
 
 	}
+
+	@Override
+	public void close() {
+		boolean wasClosed = false;
+		boolean interrupted = false;
+		try {
+			interrupted = Thread.interrupted();
+			lock.lockInterruptibly();
+			try {
+				if (closed) {
+					wasClosed = true;
+					return;
+				}
+				closed = true;
+				memory = null;
+				disk = null;
+			} finally {
+				lock.unlock();
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException(e);
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+
+			// even if we were interrupted we want to make sure we don't leave the model in an inconsistent state and
+			// that we free up any resources as soon as possible, so we null out the references to the memory and disk
+			// models and close the disk model if it was not already closed by another thread
+			memory = null;
+			disk = null;
+			if (!wasClosed) {
+				innerClose();
+			}
+		}
+	}
+
+	abstract protected void innerClose();
 
 	protected abstract void overflowToDiskInner(Model memory);
 }

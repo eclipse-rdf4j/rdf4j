@@ -395,10 +395,11 @@ class TripleStore implements Closeable {
 			TripleIndex sourceIndex = indexes.get(0);
 			for (boolean explicit : new boolean[] { true, false }) {
 				transaction(env, (stack, txn) -> {
-					MDBVal keyValue = MDBVal.callocStack(stack);
+
+					MDBVal keyValue = MDBVal.calloc(stack);
 					ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 					keyValue.mv_data(keyBuf);
-					MDBVal dataValue = MDBVal.callocStack(stack);
+					MDBVal dataValue = MDBVal.calloc(stack);
 					for (String fieldSeq : addedIndexSpecs) {
 						logger.debug("Initializing new index '{}'...", fieldSeq);
 
@@ -526,7 +527,7 @@ class TripleStore implements Closeable {
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		return txnManager.doWith((stack, txn) -> {
-			MDBStat stat = MDBStat.mallocStack(stack);
+			MDBStat stat = MDBStat.malloc(stack);
 			mdb_stat(txn, mainIndex.getDB(explicit), stat);
 			return stat.ms_entries() > 0;
 		});
@@ -572,7 +573,7 @@ class TripleStore implements Closeable {
 			MDBVal keyData = MDBVal.malloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
 
-			MDBVal valueData = MDBVal.mallocStack(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
 
 			PointerBuffer pp = stack.mallocPointer(1);
 
@@ -694,7 +695,7 @@ class TripleStore implements Closeable {
 				double cardinality = 0;
 				for (boolean explicit : new boolean[] { true, false }) {
 					int dbi = index.getDB(explicit);
-					MDBStat stat = MDBStat.mallocStack(stack);
+					MDBStat stat = MDBStat.malloc(stack);
 					mdb_stat(txn, dbi, stat);
 					cardinality += (double) stat.ms_entries();
 				}
@@ -714,9 +715,9 @@ class TripleStore implements Closeable {
 
 				PointerBuffer pp = stack.mallocPointer(1);
 
-				MDBVal keyData = MDBVal.mallocStack(stack);
+				MDBVal keyData = MDBVal.malloc(stack);
 				ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-				MDBVal valueData = MDBVal.mallocStack(stack);
+				MDBVal valueData = MDBVal.malloc(stack);
 
 				double cardinality = 0;
 				for (boolean explicit : new boolean[] { true, false }) {
@@ -888,6 +889,10 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	static LongAdder statementsAdded = new LongAdder();
+	static long lastLogTime = System.currentTimeMillis();
+	int localCount = 0;
+
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		boolean stAdded;
@@ -922,7 +927,9 @@ class TripleStore implements Closeable {
 			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 				throw new IOException(mdb_strerror(rc));
 			}
+
 			stAdded = rc == MDB_SUCCESS;
+
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
 				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
@@ -945,8 +952,18 @@ class TripleStore implements Closeable {
 					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
 
-				if (stAdded) {
-					incrementContext(stack, context);
+				incrementContext(stack, context);
+			}
+		}
+
+		if (stAdded) {
+			statementsAdded.increment();
+			if (localCount++ % 100000 == 0) {
+				long now = System.currentTimeMillis();
+				if (now - lastLogTime > 1000) {
+					logger.info("LMDB import speed: {} statements/s",
+							(int) Math.floor(statementsAdded.sumThenReset() / ((now - lastLogTime) / 1000.0)));
+					lastLogTime = now;
 				}
 			}
 		}
@@ -1028,7 +1045,7 @@ class TripleStore implements Closeable {
 
 	public void removeTriples(RecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
 		try (it; MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal keyValue = MDBVal.callocStack(stack);
+			MDBVal keyValue = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 
 			long[] quad;
@@ -1069,9 +1086,9 @@ class TripleStore implements Closeable {
 			RecordCacheIterator it = recordCache.getRecords(explicit);
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
-				MDBVal keyVal = MDBVal.mallocStack(stack);
+				MDBVal keyVal = MDBVal.malloc(stack);
 				// use calloc to get an empty data value
-				MDBVal dataVal = MDBVal.callocStack(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
 				ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 
 				Record r;

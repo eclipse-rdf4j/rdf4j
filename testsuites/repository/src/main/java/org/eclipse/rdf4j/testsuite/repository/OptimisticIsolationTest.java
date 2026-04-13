@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
 import org.eclipse.rdf4j.testsuite.repository.optimistic.DeadLockTest;
 import org.eclipse.rdf4j.testsuite.repository.optimistic.DeleteInsertTest;
@@ -57,12 +58,20 @@ public abstract class OptimisticIsolationTest {
 
 	private static File dataDir;
 
+	private static boolean deleteDataDirAfterShutdown;
+
 	public static void setRepositoryFactory(RepositoryFactory factory) throws IOException {
+		setRepositoryFactory(factory, false);
+	}
+
+	public static void setRepositoryFactory(RepositoryFactory factory, boolean deleteDataDirAfterShutdown)
+			throws IOException {
 		if (dataDir != null && dataDir.isDirectory()) {
 			FileUtil.deleteDir(dataDir);
 			dataDir = null;
 		}
 		OptimisticIsolationTest.factory = factory;
+		OptimisticIsolationTest.deleteDataDirAfterShutdown = deleteDataDirAfterShutdown;
 	}
 
 	public static Repository getEmptyInitializedRepository(Class<?> caller) throws RDF4JException, IOException {
@@ -77,6 +86,18 @@ public abstract class OptimisticIsolationTest {
 			con.clear();
 			con.clearNamespaces();
 		}
-		return repository;
+		if (!deleteDataDirAfterShutdown) {
+			return repository;
+		}
+		return new RepositoryWrapper(repository) {
+			@Override
+			public void shutDown() {
+				try {
+					super.shutDown();
+				} finally {
+					RepositoryDirCleanup.deleteDir(getDelegate().getDataDir());
+				}
+			}
+		};
 	}
 }
