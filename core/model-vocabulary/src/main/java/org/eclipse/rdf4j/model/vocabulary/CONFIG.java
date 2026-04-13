@@ -277,6 +277,12 @@ public class CONFIG {
 		 */
 		public final static IRI namespaceIDCacheSize = createIRI(NAMESPACE, "native.namespaceIDCacheSize");
 
+		/**
+		 * <var>tag:rdf4j.org,2025:config/native.memoryMappedTxnStatusFile</var>
+		 */
+		public final static IRI memoryMappedTxnStatusFile = createIRI(NAMESPACE,
+				"native.memoryMappedTxnStatusFile");
+
 		// ValueStore WAL configuration properties
 		/** <var>tag:rdf4j.org,2023:config/native.walMaxSegmentBytes</var> */
 		public final static IRI walMaxSegmentBytes = createIRI(NAMESPACE, "native.walMaxSegmentBytes");
