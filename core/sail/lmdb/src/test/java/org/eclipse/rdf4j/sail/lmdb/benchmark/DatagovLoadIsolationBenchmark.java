@@ -59,9 +59,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
+	private static final String BULK_OPERATION_SIZE_PROPERTY = "rdf4j.lmdb.bulkOperationSize";
 
-	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
+	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
+
+	@Param({ "64", "128", "256" })
+	public int bulkOperationSize;
 
 	private Model data;
 
@@ -89,15 +93,19 @@ public class DatagovLoadIsolationBenchmark {
 
 	@Benchmark
 	public boolean loadDatagovFileSingleTransaction() throws IOException {
-		return loadOnce();
+		return withConfiguredBulkOperationSize(this::loadOnce);
 	}
 
-	@Benchmark
+//	@Benchmark
 	public boolean loadDatagovFileInBatches() throws IOException {
+		return withConfiguredBulkOperationSize(this::loadDatagovFileInBatchesInternal);
+	}
+
+	private boolean loadDatagovFileInBatchesInternal() throws IOException {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createConfig()));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createAllIndexesConfig()));
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				Iterator<Statement> iterator = data.iterator();
 				while (iterator.hasNext()) {
@@ -126,7 +134,7 @@ public class DatagovLoadIsolationBenchmark {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createConfig()));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createAllIndexesConfig()));
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.begin(isolationLevel);
 				connection.add(data);
@@ -142,5 +150,24 @@ public class DatagovLoadIsolationBenchmark {
 				LmdbTestUtil.deleteDir(temporaryFolder);
 			}
 		}
+	}
+
+	private boolean withConfiguredBulkOperationSize(LoadAction action) throws IOException {
+		String previousValue = System.getProperty(BULK_OPERATION_SIZE_PROPERTY);
+		System.setProperty(BULK_OPERATION_SIZE_PROPERTY, Integer.toString(bulkOperationSize));
+		try {
+			return action.run();
+		} finally {
+			if (previousValue == null) {
+				System.clearProperty(BULK_OPERATION_SIZE_PROPERTY);
+			} else {
+				System.setProperty(BULK_OPERATION_SIZE_PROPERTY, previousValue);
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface LoadAction {
+		boolean run() throws IOException;
 	}
 }

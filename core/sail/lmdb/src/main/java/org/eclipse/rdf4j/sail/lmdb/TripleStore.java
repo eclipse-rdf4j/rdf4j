@@ -82,6 +82,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -1049,12 +1050,13 @@ class TripleStore implements Closeable {
 		return stAdded;
 	}
 
+	@Experimental
 	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit)
 			throws IOException {
 		if (count == 0) {
 			return;
 		}
-		if (count == 1 || recordCache != null || requiresResize()) {
+		if (count == 1 || count < subj.length || recordCache != null || requiresResize()) {
 			storeTriplesIndividually(subj, pred, obj, context, count, explicit);
 			return;
 		}
@@ -1065,8 +1067,9 @@ class TripleStore implements Closeable {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
-			int[] addedIndices = new int[count];
+			int[] sortedIndices = new int[count];
 			boolean[] promotedFromImplicit = new boolean[count];
+			Map<Long, Integer> contextIncrements = new HashMap<>();
 
 			for (int i = 0; i < count; i++) {
 				keyBuf.clear();
@@ -1080,20 +1083,22 @@ class TripleStore implements Closeable {
 				}
 
 				if (rc == MDB_SUCCESS) {
-					addedIndices[addedCount++] = i;
+					sortedIndices[addedCount++] = i;
 					if (explicit) {
 						promotedFromImplicit[i] = mdb_del(writeTxn, mainIndex.getDB(false), keyVal,
 								dataVal) == MDB_SUCCESS;
 					}
-					incrementContext(stack, context[i]);
+					contextIncrements.merge(context[i], 1, Integer::sum);
 				}
+			}
+
+			for (Map.Entry<Long, Integer> contextIncrement : contextIncrements.entrySet()) {
+				incrementContext(stack, contextIncrement.getKey(), contextIncrement.getValue());
 			}
 
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
-				int[] sortedIndices = Arrays.copyOf(addedIndices, addedCount);
-				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index.getFieldSeq()[0], subj, pred, obj,
-						context);
+				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
 				for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
 					int statementIndex = sortedIndices[sortedIndex];
 					keyBuf.clear();
@@ -1121,24 +1126,47 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private void sortStatementIndicesByLeadingField(int[] statementIndices, int length, char leadingField, long[] subj,
+	void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subj,
 			long[] pred, long[] obj, long[] context) {
-		for (int i = 1; i < length; i++) {
+		if (length < 2) {
+			return;
+		}
+		branchlessInsertionSortStatementIndicesByLeadingField(statementIndices, 0, length,
+				index.leadingFieldValueAccessor, subj, pred, obj, context);
+	}
+
+	private void branchlessInsertionSortStatementIndicesByLeadingField(int[] statementIndices, int from, int to,
+			StatementFieldValueAccessor leadingFieldValueAccessor, long[] subj, long[] pred, long[] obj,
+			long[] context) {
+		for (int i = from + 1; i < to; i++) {
 			int statementIndex = statementIndices[i];
-			long statementValue = getLeadingFieldValue(leadingField, subj, pred, obj, context, statementIndex);
-			int j = i - 1;
-			while (j >= 0 && getLeadingFieldValue(leadingField, subj, pred, obj, context,
-					statementIndices[j]) > statementValue) {
-				statementIndices[j + 1] = statementIndices[j];
-				j--;
+			long statementValue = leadingFieldValueAccessor.get(subj, pred, obj, context, statementIndex);
+			int insertAt = upperBoundStatementIndicesByLeadingField(statementIndices, from, i, statementValue,
+					leadingFieldValueAccessor, subj, pred, obj, context);
+			for (int j = i; j > insertAt; j--) {
+				statementIndices[j] = statementIndices[j - 1];
 			}
-			statementIndices[j + 1] = statementIndex;
+			statementIndices[insertAt] = statementIndex;
 		}
 	}
 
+	private int upperBoundStatementIndicesByLeadingField(int[] statementIndices, int low, int high,
+			long statementValue, StatementFieldValueAccessor leadingFieldValueAccessor, long[] subj, long[] pred,
+			long[] obj, long[] context) {
+		while (low < high) {
+			int mid = low + ((high - low) >>> 1);
+			long midValue = leadingFieldValueAccessor.get(subj, pred, obj, context, statementIndices[mid]);
+			if (midValue <= statementValue) {
+				low = mid + 1;
+			} else {
+				high = mid;
+			}
+		}
+		return low;
+	}
+
 	private boolean shouldResetToMainIndexOrder(char[] mainFieldSeq, char[] currentFieldSeq, char[] targetFieldSeq) {
-		return !canReuseCurrentOrder(currentFieldSeq, targetFieldSeq)
-				&& canReuseCurrentOrder(mainFieldSeq, targetFieldSeq);
+		return false;
 	}
 
 	private boolean canReuseCurrentOrder(char[] currentFieldSeq, char[] targetFieldSeq) {
@@ -1162,20 +1190,9 @@ class TripleStore implements Closeable {
 		return true;
 	}
 
-	private long getLeadingFieldValue(char leadingField, long[] subj, long[] pred, long[] obj, long[] context,
-			int statementIndex) {
-		switch (leadingField) {
-		case 's':
-			return subj[statementIndex];
-		case 'p':
-			return pred[statementIndex];
-		case 'o':
-			return obj[statementIndex];
-		case 'c':
-			return context[statementIndex];
-		default:
-			throw new IllegalArgumentException("Unknown index field: " + leadingField);
-		}
+	@FunctionalInterface
+	private interface StatementFieldValueAccessor {
+		long get(long[] subj, long[] pred, long[] obj, long[] context, int statementIndex);
 	}
 
 	private void logAddedStatements(int count) {
@@ -1197,6 +1214,10 @@ class TripleStore implements Closeable {
 	}
 
 	private void incrementContext(MemoryStack stack, long context) throws IOException {
+		incrementContext(stack, context, 1);
+	}
+
+	private void incrementContext(MemoryStack stack, long context, long amount) throws IOException {
 		try {
 			stack.push();
 
@@ -1206,10 +1227,10 @@ class TripleStore implements Closeable {
 			bb.flip();
 			idVal.mv_data(bb);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			long newCount = 1;
+			long newCount = amount;
 			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
 				// update count
-				newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
+				newCount = Varint.readUnsigned(dataVal.mv_data()) + amount;
 			}
 			// write count
 			ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
@@ -1450,6 +1471,7 @@ class TripleStore implements Closeable {
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;
 		private final IndexKeyWriters.MatcherFactory matcherFactory;
+		private final StatementFieldValueAccessor leadingFieldValueAccessor;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
 
@@ -1457,6 +1479,7 @@ class TripleStore implements Closeable {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
+			this.leadingFieldValueAccessor = getLeadingFieldValueAccessor(this.fieldSeq[0]);
 			this.indexMap = getIndexes(this.fieldSeq);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
@@ -1469,6 +1492,21 @@ class TripleStore implements Closeable {
 
 		public int getDB(boolean explicit) {
 			return explicit ? dbiExplicit : dbiInferred;
+		}
+
+		private StatementFieldValueAccessor getLeadingFieldValueAccessor(char leadingField) {
+			switch (leadingField) {
+			case 's':
+				return (subj, pred, obj, context, statementIndex) -> subj[statementIndex];
+			case 'p':
+				return (subj, pred, obj, context, statementIndex) -> pred[statementIndex];
+			case 'o':
+				return (subj, pred, obj, context, statementIndex) -> obj[statementIndex];
+			case 'c':
+				return (subj, pred, obj, context, statementIndex) -> context[statementIndex];
+			default:
+				throw new IllegalArgumentException("Unknown index field: " + leadingField);
+			}
 		}
 
 		protected int[] getIndexes(char[] fieldSeq) {
