@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -159,6 +160,30 @@ class AbstractSailConnectionDataImportMetricsTest {
 		List<String> messages = appender.messages(Level.INFO);
 		assertThat(messages).hasSize(1);
 		assertThat(messages.get(0)).contains("statementsAdded=1");
+	}
+
+	@Test
+	void logsDataImportMetricsForBufferedUpdateStatements() {
+		TestSail sail = new TestSail();
+		try {
+			sail.init();
+			try (SailConnection connection = sail.getConnection()) {
+				UpdateContext updateContext = new UpdateContext(new InsertData("INSERT DATA {}"), null, null, false);
+				connection.setTransactionSettings(loadDataImportMetricsEnabled());
+				connection.begin();
+				connection.startUpdate(updateContext);
+				connection.addStatement(updateContext, RDF.TYPE, RDF.TYPE, RDF.PROPERTY, VF.createIRI("urn:ctx:one"),
+						VF.createIRI("urn:ctx:two"));
+				connection.endUpdate(updateContext);
+				connection.commit();
+			}
+		} finally {
+			sail.shutDown();
+		}
+
+		List<String> messages = appender.messages(Level.INFO);
+		assertThat(messages).hasSize(1);
+		assertThat(messages.get(0)).contains("statementsAdded=2");
 	}
 
 	private static TransactionSetting loadDataImportMetricsEnabled() {

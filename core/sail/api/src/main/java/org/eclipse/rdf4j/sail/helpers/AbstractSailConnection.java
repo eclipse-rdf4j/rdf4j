@@ -723,6 +723,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
+		if (op != null) {
+			incrementDataImportMetricsStatementsAdded(contexts);
+		}
 		statementsAdded = true;
 	}
 
