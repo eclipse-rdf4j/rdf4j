@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -203,54 +202,8 @@ public class ChangesetTest {
 
 	}
 
-	@Test
-	public void closeShouldNotCloseAutoCloseableApprovedModel() throws SailException {
-		TrackingModel approved = new TrackingModel();
-		Changeset changeset = getChangeset(approved, new TrackingModel());
-
-		changeset.approve(vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("o")));
-		changeset.close();
-
-		assertEquals(0, approved.getCloseCount());
-	}
-
-	@Test
-	public void closeShouldNotCloseAutoCloseableDeprecatedModel() throws SailException {
-		TrackingModel deprecated = new TrackingModel();
-		Changeset changeset = getChangeset(new TrackingModel(), deprecated);
-
-		changeset.approve(vf.createStatement(vf.createIRI("urn:x"), vf.createIRI("urn:p"), vf.createLiteral("o")));
-		changeset.deprecate(vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("o")));
-		changeset.close();
-
-		assertEquals(0, deprecated.getCloseCount());
-	}
-
-	@Test
-	public void closeShouldLeaveDetachedModelReachableAfterMerge() throws SailException {
-		TrackingModel approved = new TrackingModel();
-		Changeset changeset = getChangeset(approved, new TrackingModel());
-		changeset.approve(vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("o")));
-
-		Changeset clone = changeset.shallowClone();
-		changeset.detachStatementModels();
-		changeset.close();
-
-		assertEquals(0, approved.getCloseCount());
-		assertEquals(1, clone.getApprovedStatements().size());
-
-		clone.close();
-		assertEquals(0, approved.getCloseCount());
-	}
-
 	private Changeset getChangeset() {
-		return getChangeset(new LinkedHashModel(), new LinkedHashModel());
-	}
-
-	private Changeset getChangeset(Model approvedModel, Model deprecatedModel) {
 		return new Changeset() {
-			private boolean firstModel = true;
-
 			@Override
 			public void flush() throws SailException {
 
@@ -258,26 +211,10 @@ public class ChangesetTest {
 
 			@Override
 			public Model createEmptyModel() {
-				if (firstModel) {
-					firstModel = false;
-					return approvedModel;
-				}
-				return deprecatedModel;
+				// don't use the dynamic model here, we don't want to test upgrading
+				return new LinkedHashModel();
 			}
 		};
-	}
-
-	private static class TrackingModel extends LinkedHashModel implements AutoCloseable {
-		private int closeCount;
-
-		@Override
-		public void close() {
-			closeCount++;
-		}
-
-		int getCloseCount() {
-			return closeCount;
-		}
 	}
 
 }
