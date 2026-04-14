@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.io.File;
@@ -439,7 +440,7 @@ public class TripleStoreTest {
 				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "spoc".toCharArray(), "ospc".toCharArray()));
 		assertFalse("PSOC -> OPSC should reuse the current order",
 				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "opsc".toCharArray()));
-		assertFalse("PSOC -> OSPC should keep the current order",
+		assertTrue("PSOC -> OSPC should reset to SPOC first",
 				(boolean) method.invoke(tripleStore, "spoc".toCharArray(), "psoc".toCharArray(), "ospc".toCharArray()));
 	}
 

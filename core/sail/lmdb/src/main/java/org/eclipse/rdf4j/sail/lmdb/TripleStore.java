@@ -382,6 +382,7 @@ class TripleStore implements Closeable {
 		LinkedHashSet<String> reorderedSpecs = new LinkedHashSet<>();
 		reorderedSpecs.add(mainFieldSeq);
 		reorderedSpecs.addAll(bestSecondaryOrder.indexOrder);
+
 		return reorderedSpecs;
 	}
 
@@ -401,8 +402,8 @@ class TripleStore implements Closeable {
 			OrderScore tailOrder = findBestSecondaryIndexOrder(mainFieldSeq, candidateFieldSeq, nextRemaining);
 			boolean reusesCurrentOrder = canReuseCurrentOrder(currentFieldSeq.toCharArray(),
 					candidateFieldSeq.toCharArray());
-			boolean reusesMainOrder = !reusesCurrentOrder
-					&& canReuseCurrentOrder(mainFieldSeq.toCharArray(), candidateFieldSeq.toCharArray());
+			boolean reusesMainOrder = shouldResetToMainIndexOrder(mainFieldSeq.toCharArray(),
+					currentFieldSeq.toCharArray(), candidateFieldSeq.toCharArray());
 
 			List<String> candidateOrder = new ArrayList<>(tailOrder.indexOrder.size() + 1);
 			candidateOrder.add(candidateFieldSeq);
@@ -452,6 +453,15 @@ class TripleStore implements Closeable {
 			this.indexOrder = indexOrder;
 			this.reusedTransitions = reusedTransitions;
 			this.mainOrderResets = mainOrderResets;
+		}
+
+		@Override
+		public String toString() {
+			return "OrderScore{" +
+					"indexOrder=" + Arrays.toString(indexOrder.toArray()) +
+					", reusedTransitions=" + reusedTransitions +
+					", mainOrderResets=" + mainOrderResets +
+					'}';
 		}
 	}
 
@@ -595,7 +605,6 @@ class TripleStore implements Closeable {
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
-		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
@@ -1089,9 +1098,15 @@ class TripleStore implements Closeable {
 				incrementContext(stack, contextId, contextIncrements.get(contextId));
 			}
 
+			int[] mainOrderIndices = Arrays.copyOf(sortedIndices, addedCount);
+			char[] currentFieldSeq = mainIndex.getFieldSeq();
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
+				if (shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSeq, index.getFieldSeq())) {
+					System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
+				}
 				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
+				currentFieldSeq = index.getFieldSeq();
 				long secondaryWriteCursor = REUSE_SECONDARY_WRITE_CURSOR && addedCount > 0
 						? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 						: 0;
@@ -1163,6 +1178,11 @@ class TripleStore implements Closeable {
 			leadingFieldScratchValues = new long[length];
 		}
 		return leadingFieldScratchValues;
+	}
+
+	private boolean shouldResetToMainIndexOrder(char[] mainFieldSeq, char[] currentFieldSeq, char[] targetFieldSeq) {
+		return !canReuseCurrentOrder(currentFieldSeq, targetFieldSeq)
+				&& canReuseCurrentOrder(mainFieldSeq, targetFieldSeq);
 	}
 
 	private boolean canReuseCurrentOrder(char[] currentFieldSeq, char[] targetFieldSeq) {
