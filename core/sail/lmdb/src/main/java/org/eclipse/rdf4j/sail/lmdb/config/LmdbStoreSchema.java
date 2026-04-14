@@ -63,6 +63,11 @@ public class LmdbStoreSchema {
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
 	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#bulkOperationSize</tt>
+	 */
+	public final static IRI BULK_OPERATION_SIZE;
+
+	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#namespaceCacheSize</tt>
 	 */
 	public final static IRI NAMESPACE_CACHE_SIZE;
@@ -101,6 +106,7 @@ public class LmdbStoreSchema {
 		VALUE_DB_SIZE = factory.createIRI(NAMESPACE, "valueDBSize");
 		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
 		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueIDCacheSize");
+		BULK_OPERATION_SIZE = factory.createIRI(NAMESPACE, "bulkOperationSize");
 		NAMESPACE_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceCacheSize");
 		NAMESPACE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceIDCacheSize");
 		AUTO_GROW = factory.createIRI(NAMESPACE, "autoGrow");

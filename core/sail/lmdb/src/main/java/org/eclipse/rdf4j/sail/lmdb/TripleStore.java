@@ -69,7 +69,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -146,7 +145,6 @@ class TripleStore implements Closeable {
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
 	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
-	private static final String ALIGNED_SORT_ALGORITHM_PROPERTY = "rdf4j.lmdb.alignedSortAlgorithm";
 	/**
 	 * The version number for the current triple store.
 	 * <ul>
@@ -181,7 +179,7 @@ class TripleStore implements Closeable {
 	private long writeTxn;
 	private final TxnManager txnManager;
 	private final AlignedWriteStrategy alignedWriteStrategy;
-	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm;
+	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
 	private int[] leadingFieldScratchIndices = new int[0];
@@ -189,31 +187,8 @@ class TripleStore implements Closeable {
 	private long[] leadingFieldScratchValues = new long[0];
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
-	private final int[] leadingFieldTimRunBase = new int[64];
-	private final int[] leadingFieldTimRunLength = new int[64];
 
 	private TxnRecordCache recordCache = null;
-
-	static final Comparator<ByteBuffer> COMPARATOR = new Comparator<ByteBuffer>() {
-		@Override
-		public int compare(ByteBuffer b1, ByteBuffer b2) {
-			int b1Len = b1.remaining();
-			int b2Len = b2.remaining();
-			int diff = compareRegion(b1, b1.position(), b2, b2.position(), Math.min(b1Len, b2Len));
-			if (diff != 0) {
-				return diff;
-			}
-			return b1Len > b2Len ? 1 : -1;
-		}
-
-		public int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
-			int result = 0;
-			for (int i = 0; result == 0 && i < length; i++) {
-				result = (array1.get(startIdx1 + i) & 0xff) - (array2.get(startIdx2 + i) & 0xff);
-			}
-			return result;
-		}
-	};
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this.dir = dir;
@@ -223,7 +198,6 @@ class TripleStore implements Closeable {
 		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
 		this.valueStore = valueStore;
 		this.alignedWriteStrategy = AlignedWriteStrategy.fromSystemProperty();
-		this.leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.fromSystemProperty();
 
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -1176,8 +1150,7 @@ class TripleStore implements Closeable {
 		}
 		LeadingFieldSorters.sort(leadingFieldSortAlgorithm, statementIndices, leadingValues, length,
 				ensureLeadingFieldScratchIndices(length), ensureLeadingFieldScratchValues(length),
-				leadingFieldRadixCounts,
-				leadingFieldRadixOffsets, leadingFieldTimRunBase, leadingFieldTimRunLength);
+				leadingFieldRadixCounts, leadingFieldRadixOffsets);
 	}
 
 	private int[] ensureLeadingFieldScratchIndices(int length) {
@@ -1328,25 +1301,7 @@ class TripleStore implements Closeable {
 	}
 
 	enum LeadingFieldSortAlgorithm {
-		WIKISORT,
-		TIM_SORT,
-		LSD_RADIX,
-		UNGUARDED_INSERTION,
-		PDQSORT;
-
-		private static LeadingFieldSortAlgorithm fromSystemProperty() {
-			String configuredAlgorithm = System.getProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
-			if (configuredAlgorithm == null || configuredAlgorithm.isBlank()) {
-				return UNGUARDED_INSERTION;
-			}
-			try {
-				return LeadingFieldSortAlgorithm.valueOf(configuredAlgorithm.trim().toUpperCase());
-			} catch (IllegalArgumentException e) {
-				logger.warn("Unknown aligned sort algorithm '{}', falling back to {}", configuredAlgorithm,
-						UNGUARDED_INSERTION);
-				return UNGUARDED_INSERTION;
-			}
-		}
+		LSD_RADIX
 	}
 
 	@FunctionalInterface

@@ -65,10 +65,9 @@ class LmdbSailStore implements SailStore {
 	private final TripleStore tripleStore;
 
 	private final ValueStore valueStore;
+	private final int bulkOperationSize;
 
 	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
-	private static final int DEFAULT_BULK_OPERATION_SIZE = 256;
-	private static final String BULK_OPERATION_SIZE_PROPERTY = "rdf4j.lmdb.bulkOperationSize";
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
 	private volatile Throwable tripleStoreException;
 	private final AtomicBoolean running = new AtomicBoolean(false);
@@ -171,7 +170,7 @@ class LmdbSailStore implements SailStore {
 
 		BulkAddQuadsOperation(boolean explicit) {
 			this.explicit = explicit;
-			this.capacity = bulkOperationSize();
+			this.capacity = bulkOperationSize;
 			this.subjects = new long[capacity];
 			this.predicates = new long[capacity];
 			this.objects = new long[capacity];
@@ -217,20 +216,6 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private static int bulkOperationSize() {
-		String configuredSize = System.getProperty(BULK_OPERATION_SIZE_PROPERTY);
-		if (configuredSize == null || configuredSize.isBlank()) {
-			return DEFAULT_BULK_OPERATION_SIZE;
-		}
-
-		try {
-			int parsedSize = Integer.parseInt(configuredSize);
-			return parsedSize > 0 ? parsedSize : DEFAULT_BULK_OPERATION_SIZE;
-		} catch (NumberFormatException e) {
-			return DEFAULT_BULK_OPERATION_SIZE;
-		}
-	}
-
 	/**
 	 * Super-class for operations that capture their finished state.
 	 */
@@ -257,6 +242,7 @@ class LmdbSailStore implements SailStore {
 	 */
 	public LmdbSailStore(File dataDir, LmdbStoreConfig config) throws IOException, SailException {
 		this.setFactory = new PersistentSetFactory<>(dataDir);
+		this.bulkOperationSize = config.getBulkOperationSize();
 		Function<Long, byte[]> encode = element -> {
 			ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
 			bb.putLong(element);
@@ -743,10 +729,8 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		boolean bulkEnabled = bulkOperationSize() > 0;
-
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
-			if (bulkEnabled) {
+			if (bulkOperationSize > 0) {
 				approveAllBulk(approved, approvedContexts);
 				return;
 			}

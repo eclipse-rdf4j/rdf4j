@@ -86,7 +86,7 @@ class LmdbStoreModelLifecycleIT {
 
 	private void preloadStatements(LmdbStore store, int round) throws Exception {
 		try (SailConnection connection = store.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			for (int i = 0; i < PRELOADED_STATEMENTS; i++) {
 				connection.addStatement(subject("preloaded", round, i), RDFS.LABEL, VF.createLiteral("preloaded-" + i));
 			}

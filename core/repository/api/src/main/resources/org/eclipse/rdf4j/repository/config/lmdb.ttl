@@ -19,6 +19,8 @@
          # @workbench.field len=16
          lmdb:tripleIndexes "{%Triple indexes|spoc,posc,ospc%}" ;
          # @workbench.field len=16
+         lmdb:bulkOperationSize {%Bulk operation size|256%} ;
+         # @workbench.field len=16
          lmdb:tripleDBSize {%Triple DB size|1073741824%} ; # 1 GB
          # @workbench.field len=16
          lmdb:valueDBSize {%Value DB size|1073741824%} ; # 1 GB

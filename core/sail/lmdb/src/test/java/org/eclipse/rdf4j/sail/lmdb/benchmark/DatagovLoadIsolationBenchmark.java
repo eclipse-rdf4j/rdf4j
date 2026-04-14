@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -59,9 +60,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
-	private static final String BULK_OPERATION_SIZE_PROPERTY = "rdf4j.lmdb.bulkOperationSize";
 	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
-	private static final String ALIGNED_SORT_ALGORITHM_PROPERTY = "rdf4j.lmdb.alignedSortAlgorithm";
 
 	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
@@ -71,10 +70,6 @@ public class DatagovLoadIsolationBenchmark {
 
 	@Param({ "CURSOR_REUSE_ONLY" })
 	public String alignedWriteStrategy;
-
-	@Param({ "WIKISORT", "TIM_SORT", "LSD_RADIX", "UNGUARDED_INSERTION", "PDQSORT" })
-//	@Param({ "PDQSORT" })
-	public String alignedSortAlgorithm;
 
 	private Model data;
 
@@ -114,7 +109,7 @@ public class DatagovLoadIsolationBenchmark {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createAllIndexesConfig()));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, createBenchmarkConfig()));
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				Iterator<Statement> iterator = data.iterator();
 				while (iterator.hasNext()) {
@@ -143,7 +138,7 @@ public class DatagovLoadIsolationBenchmark {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createAllIndexesConfig()));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, createBenchmarkConfig()));
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.begin(isolationLevel);
 				connection.add(data);
@@ -162,31 +157,21 @@ public class DatagovLoadIsolationBenchmark {
 	}
 
 	private boolean withConfiguredBenchmarkSettings(LoadAction action) throws IOException {
-		String previousValue = System.getProperty(BULK_OPERATION_SIZE_PROPERTY);
 		String previousStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
-		String previousAlgorithm = System.getProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
-		System.setProperty(BULK_OPERATION_SIZE_PROPERTY, Integer.toString(bulkOperationSize));
 		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, alignedWriteStrategy);
-		System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, alignedSortAlgorithm);
 		try {
 			return action.run();
 		} finally {
-			if (previousValue == null) {
-				System.clearProperty(BULK_OPERATION_SIZE_PROPERTY);
-			} else {
-				System.setProperty(BULK_OPERATION_SIZE_PROPERTY, previousValue);
-			}
 			if (previousStrategy == null) {
 				System.clearProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
 			} else {
 				System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, previousStrategy);
 			}
-			if (previousAlgorithm == null) {
-				System.clearProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
-			} else {
-				System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, previousAlgorithm);
-			}
 		}
+	}
+
+	private LmdbStoreConfig createBenchmarkConfig() {
+		return ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize);
 	}
 
 	@FunctionalInterface

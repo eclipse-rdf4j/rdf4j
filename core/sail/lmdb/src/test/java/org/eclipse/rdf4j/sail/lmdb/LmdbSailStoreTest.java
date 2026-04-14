@@ -16,16 +16,20 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -334,6 +338,93 @@ public class LmdbSailStoreTest {
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
 		}
+	}
+
+	@Test
+	void approveAllCanDisableBulkOperationsViaConfig() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 0);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-disabled"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				clearInvocations(tripleStoreSpy);
+				sink.approveAll(sampleStatements(5), Set.of());
+				sink.flush();
+
+				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
+						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+				verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void approveAllUsesConfiguredBulkOperationSize() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-size-two"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				clearInvocations(tripleStoreSpy);
+				sink.approveAll(sampleStatements(5), Set.of());
+				sink.flush();
+
+				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
+						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {
+		try {
+			Method setter = config.getClass().getMethod("setBulkOperationSize", int.class);
+			setter.invoke(config, bulkOperationSize);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB bulk operation size config setter", e);
+		}
+	}
+
+	private Set<Statement> sampleStatements(int count) {
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < count; i++) {
+			statements.add(F.createStatement(
+					F.createIRI("urn:bulk:subject:" + i),
+					F.createIRI("urn:bulk:predicate:" + (i % 3)),
+					F.createIRI("urn:bulk:object:" + (i % 5)),
+					F.createIRI("urn:bulk:context:" + (i % 2))));
+		}
+		return statements;
 	}
 
 	@AfterEach

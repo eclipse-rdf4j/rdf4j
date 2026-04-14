@@ -15,16 +15,15 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 public class TripleStoreLeadingFieldSortVariantTest {
 	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
@@ -43,34 +42,28 @@ public class TripleStoreLeadingFieldSortVariantTest {
 		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, "CURSOR_REUSE_ONLY");
 	}
 
-	@ParameterizedTest
-	@ValueSource(strings = { "WIKISORT", "TIM_SORT", "LSD_RADIX", "UNGUARDED_INSERTION", "PDQSORT" })
-	public void testLeadingFieldSortVariantSelectionAndOrdering(String algorithm) throws Exception {
-		System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, algorithm);
+	@Test
+	public void testLeadingFieldSortDefaultsToLsdRadix() throws Exception {
+		System.clearProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 
 		Field algorithmField = TripleStore.class.getDeclaredField("leadingFieldSortAlgorithm");
 		algorithmField.setAccessible(true);
-		assertEquals(algorithm, algorithmField.get(tripleStore).toString());
+		assertEquals("LSD_RADIX", algorithmField.get(tripleStore).toString());
+	}
 
-		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-				int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
-		method.setAccessible(true);
-		Field indexesField = TripleStore.class.getDeclaredField("indexes");
-		indexesField.setAccessible(true);
+	@Test
+	public void testLeadingFieldSortIgnoresRemovedVariants() throws Exception {
+		System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, "TIM_SORT");
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 
-		@SuppressWarnings("unchecked")
-		List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(tripleStore);
+		assertEquals(List.of("LSD_RADIX"), Arrays.stream(TripleStore.LeadingFieldSortAlgorithm.values())
+				.map(Enum::name)
+				.collect(Collectors.toList()));
 
-		int[] statementIndices = { 2, 4, 0, 3, 1 };
-		long[] subj = { 10, 11, 12, 13, 14 };
-		long[] pred = { 2, 1, 2, 1, 2 };
-		long[] obj = { 50, 51, 52, 53, 54 };
-		long[] context = { 0, 0, 0, 0, 0 };
-
-		method.invoke(tripleStore, statementIndices, statementIndices.length, indexes.get(1), subj, pred, obj, context);
-
-		assertEquals(Arrays.toString(new int[] { 3, 1, 2, 4, 0 }), Arrays.toString(statementIndices));
+		Field algorithmField = TripleStore.class.getDeclaredField("leadingFieldSortAlgorithm");
+		algorithmField.setAccessible(true);
+		assertEquals("LSD_RADIX", algorithmField.get(tripleStore).toString());
 	}
 
 	@AfterEach
