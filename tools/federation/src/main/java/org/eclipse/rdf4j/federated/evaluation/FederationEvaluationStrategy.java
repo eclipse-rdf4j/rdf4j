@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.federated.FedX;
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
-import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
+import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
 import org.eclipse.rdf4j.federated.algebra.EmptyResult;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
@@ -55,12 +55,17 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BindLeftJoinIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FedXPathIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FederatedDescribeIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBindLeftJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
+import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelGetStatementsTask;
 import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedAlgebraUnionTask;
@@ -131,17 +136,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Base class for the Evaluation strategies.
+ * Implementation of a federation evaluation strategy which provides some special optimizations for SPARQL (remote)
+ * endpoints. The most important optimization is to used prepared SPARQL Queries that are already created using Strings.
+ * <p>
+ * Joins are executed using {@link ControlledWorkerBindJoin}.
+ * </p>
+ * <p>
+ * This implementation uses the SPARQL 1.1 VALUES operator for the bound-join evaluation
+ * </p>
+ * s
  *
  * @author Andreas Schwarte
  *
- * @see SailFederationEvalStrategy
- * @see SparqlFederationEvalStrategy
- *
  */
-public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
+public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
-	private static final Logger log = LoggerFactory.getLogger(FederationEvalStrategy.class);
+	private static final Logger log = LoggerFactory.getLogger(FederationEvaluationStrategy.class);
 
 	protected Executor executor;
 	protected SourceSelectionCache cache;
@@ -156,7 +166,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			StandardQueryOptimizerPipeline.BINDING_SET_ASSIGNMENT_INLINER,
 			StandardQueryOptimizerPipeline.DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
 
-	public FederationEvalStrategy(FederationContext federationContext) {
+	public FederationEvaluationStrategy(FederationContext federationContext) {
 		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {
 
 			@Override
@@ -650,8 +660,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Returns the accessible federation members in the context of the query. By default this is all federation members.
 	 * <p>
-	 * Specialized implementations of the {@link FederationEvalStrategy} may override and define custom behavior (e.g.,
-	 * to support resilience).
+	 * Specialized implementations of the {@link FederationEvaluationStrategy} may override and define custom behavior
+	 * (e.g., to support resilience).
 	 * </p>
 	 *
 	 *
@@ -727,7 +737,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	protected QueryEvaluationStep prepare(FedXArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return (bindings) -> new FedXPathIteration(FederationEvalStrategy.this, alp.getScope(), alp.getSubjectVar(),
+		return (bindings) -> new FedXPathIteration(FederationEvaluationStrategy.this, alp.getScope(),
+				alp.getSubjectVar(),
 				alp.getPathExpression(), alp.getObjectVar(), alp.getContextVar(), alp.getMinLength(), bindings,
 				alp.getQueryInfo());
 	}
@@ -821,7 +832,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 							joinCondition,
 							problemVars);
 					return new BadlyDesignedLeftJoinIterator(
-							FederationEvalStrategy.this,
+							FederationEvaluationStrategy.this,
 							leftJoin,
 							bindings,
 							problemVarsClone,
@@ -894,7 +905,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * For endpoint federation use controlled worker bound join, for local federation use controlled worker join. The
 	 * other operators are there for completeness.
 	 *
-	 * Use {@link FederationEvalStrategy#executor} to execute the join (it is a runnable).
+	 * Use {@link FederationEvaluationStrategy#executor} to execute the join (it is a runnable).
 	 *
 	 * @param joinScheduler
 	 * @param leftIter
@@ -904,10 +915,35 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @return the result
 	 * @throws QueryEvaluationException
 	 */
-	protected abstract CloseableIteration<BindingSet> executeJoin(
+	public CloseableIteration<BindingSet> executeJoin(
 			ControlledWorkerScheduler<BindingSet> joinScheduler,
-			CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
-			Set<String> joinVariables, BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException;
+			CloseableIteration<BindingSet> leftIter,
+			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
+			throws QueryEvaluationException {
+
+		// determine if we can execute the expr as bind join
+		boolean executeAsBindJoin = false;
+		if (rightArg instanceof BoundJoinTupleExpr) {
+			if (rightArg instanceof FedXService) {
+				executeAsBindJoin = queryInfo.getFederationContext().getConfig().getEnableServiceAsBoundJoin();
+			} else {
+				executeAsBindJoin = true;
+			}
+		}
+
+		JoinExecutorBase<BindingSet> join;
+		if (executeAsBindJoin) {
+			join = new ControlledWorkerBindJoin(joinScheduler, this, leftIter, rightArg,
+					bindings, queryInfo);
+		} else {
+			join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
+					queryInfo);
+		}
+
+		join.setJoinVars(joinVars);
+		executor.execute(join);
+		return join;
+	}
 
 	/**
 	 * Execute the left join in a separate thread using some join executor.
@@ -919,14 +955,63 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @return the result
 	 * @throws QueryEvaluationException
 	 */
-	protected abstract CloseableIteration<BindingSet> executeLeftJoin(
-			ControlledWorkerScheduler<BindingSet> joinScheduler,
-			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin,
-			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException;
+	protected CloseableIteration<BindingSet> executeLeftJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo)
+			throws QueryEvaluationException {
 
-	public abstract CloseableIteration<BindingSet> evaluateExclusiveGroup(
-			ExclusiveGroup group, BindingSet bindings)
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+		var rightArg = leftJoin.getRightArg();
+		var fedxConfig = queryInfo.getFederationContext().getConfig();
+
+		// determine if we can execute the expr as bind join
+		boolean executeAsBindJoin = false;
+		if (fedxConfig.isEnableOptionalAsBindJoin() && rightArg instanceof BoundJoinTupleExpr) {
+			if (rightArg instanceof FedXService) {
+				executeAsBindJoin = false;
+			} else {
+				executeAsBindJoin = true;
+			}
+		}
+
+		JoinExecutorBase<BindingSet> join;
+		if (executeAsBindJoin) {
+			join = new ControlledWorkerBindLeftJoin(joinScheduler, this, leftIter, rightArg,
+					bindings, queryInfo);
+		} else {
+			join = new ControlledWorkerLeftJoin(joinScheduler, this,
+					leftIter, leftJoin, bindings, queryInfo);
+		}
+
+		executor.execute(join);
+		return join;
+	}
+
+	public CloseableIteration<BindingSet> evaluateExclusiveGroup(
+			ExclusiveGroup group, BindingSet bindings) throws RepositoryException,
+			MalformedQueryException, QueryEvaluationException {
+
+		TripleSource tripleSource = group.getOwnedEndpoint().getTripleSource();
+		AtomicBoolean isEvaluated = new AtomicBoolean(false);
+
+		try {
+			String preparedQuery = QueryStringUtil.selectQueryString(group, bindings, group.getFilterExpr(),
+					isEvaluated, group.getQueryInfo().getDataset());
+			return tripleSource.getStatements(preparedQuery, bindings,
+					(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
+		} catch (IllegalQueryException e) {
+			/* no projection vars, e.g. local vars only, can occur in joins */
+			if (tripleSource.hasStatements(group, bindings)) {
+				CloseableIteration<BindingSet> res = new SingleBindingSetIteration(bindings);
+				if (group.getBoundFilters() != null) {
+					// make sure to insert any values from FILTER expressions that are directly
+					// bound in this expression
+					res = new InsertBindingsIteration(res, group.getBoundFilters());
+				}
+				return res;
+			}
+			return new EmptyIteration<>();
+		}
+
+	}
 
 	/**
 	 * Evaluate an {@link ExclusiveTupleExpr}. The default implementation converts the given expression to a SELECT
@@ -993,23 +1078,51 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	 * @return the result iteration
 	 * @throws QueryEvaluationException
 	 */
-	public abstract CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern(
-			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
+	public CloseableIteration<BindingSet> evaluateBoundJoinStatementPattern(
+			StatementTupleExpr stmt, List<BindingSet> bindings)
+			throws QueryEvaluationException {
 
-	/**
-	 * Perform a grouped check at the relevant endpoints, i.e. for a group of bindings keep only those for which at
-	 * least one endpoint provides a result to the bound statement.
-	 *
-	 * @param stmt
-	 * @param bindings
-	 * @return the result iteration
-	 * @throws QueryEvaluationException
-	 * @deprecated with VALUES implementation, control flow goes via
-	 *             {@link #evaluateBoundJoinStatementPattern(StatementTupleExpr, List)}
-	 */
-	@Deprecated(forRemoval = true)
-	public abstract CloseableIteration<BindingSet> evaluateGroupedCheck(
-			CheckStatementPattern stmt, final List<BindingSet> bindings) throws QueryEvaluationException;
+		// we can omit the bound join handling
+		if (bindings.size() == 1) {
+			return evaluate(stmt, bindings.get(0));
+		}
+
+		FilterValueExpr filterExpr = null;
+		if (stmt instanceof FilterTuple) {
+			filterExpr = ((FilterTuple) stmt).getFilterExpr();
+		}
+
+		AtomicBoolean isEvaluated = new AtomicBoolean(false);
+		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
+
+		CloseableIteration<BindingSet> result = null;
+		try {
+			result = evaluateAtStatementSources(preparedQuery, stmt.getStatementSources(), stmt.getQueryInfo());
+
+			// apply filter and/or convert to original bindings
+			if (filterExpr != null && !isEvaluated.get()) {
+				result = new BoundJoinVALUESConversionIteration(result, bindings); // apply conversion
+				result = new FilteringIteration(filterExpr, result, this); // apply filter
+				if (!result.hasNext()) {
+					result.close();
+					return new EmptyIteration<>();
+				}
+			} else {
+				result = new BoundJoinVALUESConversionIteration(result, bindings);
+			}
+
+			return result;
+		} catch (Throwable t) {
+			if (result != null) {
+				result.close();
+			}
+			if (t instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			throw ExceptionUtil.toQueryEvaluationException(t);
+		}
+	}
 
 	/**
 	 * Evaluate the left bind join for the given {@link StatementTupleExpr} and bindings at the relevant endpoints.
