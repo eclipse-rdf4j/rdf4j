@@ -36,6 +36,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
@@ -142,6 +143,7 @@ class TripleStore implements Closeable {
 	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
+	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
 	/**
 	 * The version number for the current triple store.
 	 * <ul>
@@ -175,6 +177,9 @@ class TripleStore implements Closeable {
 	private long mapSize;
 	private long writeTxn;
 	private final TxnManager txnManager;
+	private final AlignedWriteStrategy alignedWriteStrategy;
+	private long[] explicitAlignedWriteCursors = new long[0];
+	private long[] inferredAlignedWriteCursors = new long[0];
 
 	private TxnRecordCache recordCache = null;
 
@@ -206,6 +211,7 @@ class TripleStore implements Closeable {
 		this.autoGrow = config.getAutoGrow();
 		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
 		this.valueStore = valueStore;
+		this.alignedWriteStrategy = AlignedWriteStrategy.fromSystemProperty();
 
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -284,6 +290,8 @@ class TripleStore implements Closeable {
 			properties.setProperty(INDEXES_KEY, indexSpecStr);
 			storeProperties(propFile);
 		}
+
+		resetAlignedWriteCursorState();
 	}
 
 	private void checkVersion() throws SailException {
@@ -552,6 +560,7 @@ class TripleStore implements Closeable {
 		for (String fieldSeq : newIndexSpecs) {
 			indexes.add(currentIndexes.remove(fieldSeq));
 		}
+		resetAlignedWriteCursorState();
 	}
 
 	@Override
@@ -1064,6 +1073,9 @@ class TripleStore implements Closeable {
 		TripleIndex mainIndex = indexes.get(0);
 		int addedCount = 0;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer cursorHandle = alignedWriteStrategy.reuseSecondaryWriteCursor()
+					? stack.mallocPointer(1)
+					: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
@@ -1099,6 +1111,9 @@ class TripleStore implements Closeable {
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
 				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
+				long secondaryWriteCursor = alignedWriteStrategy.reuseSecondaryWriteCursor() && addedCount > 0
+						? getAlignedWriteCursor(i, index, explicit, cursorHandle)
+						: 0;
 				for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
 					int statementIndex = sortedIndices[sortedIndex];
 					keyBuf.clear();
@@ -1110,7 +1125,11 @@ class TripleStore implements Closeable {
 					if (promotedFromImplicit[statementIndex]) {
 						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
-					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+					if (alignedWriteStrategy.reuseSecondaryWriteCursor()) {
+						E(mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0));
+					} else {
+						E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+					}
 				}
 			}
 		}
@@ -1131,8 +1150,13 @@ class TripleStore implements Closeable {
 		if (length < 2) {
 			return;
 		}
+		if (alignedWriteStrategy.sortByFullKey()) {
+			insertionSortStatementIndicesByIndexOrder(statementIndices, 0, length, index, subj, pred, obj, context);
+			return;
+		}
 		branchlessInsertionSortStatementIndicesByLeadingField(statementIndices, 0, length,
-				index.leadingFieldValueAccessor, subj, pred, obj, context);
+			index.leadingFieldValueAccessor,
+			subj, pred, obj, context);
 	}
 
 	private void branchlessInsertionSortStatementIndicesByLeadingField(int[] statementIndices, int from, int to,
@@ -1165,6 +1189,35 @@ class TripleStore implements Closeable {
 		return low;
 	}
 
+	private void insertionSortStatementIndicesByIndexOrder(int[] statementIndices, int from, int to, TripleIndex index,
+			long[] subj, long[] pred, long[] obj, long[] context) {
+		for (int i = from + 1; i < to; i++) {
+			int statementIndex = statementIndices[i];
+			int insertAt = upperBoundStatementIndicesByIndexOrder(statementIndices, from, i, statementIndex, index,
+					subj,
+					pred, obj, context);
+			for (int j = i; j > insertAt; j--) {
+				statementIndices[j] = statementIndices[j - 1];
+			}
+			statementIndices[insertAt] = statementIndex;
+		}
+	}
+
+	private int upperBoundStatementIndicesByIndexOrder(int[] statementIndices, int low, int high, int statementIndex,
+			TripleIndex index, long[] subj, long[] pred, long[] obj, long[] context) {
+		while (low < high) {
+			int mid = low + ((high - low) >>> 1);
+			int compare = index.compareStatementIndices(subj, pred, obj, context, statementIndices[mid],
+					statementIndex);
+			if (compare <= 0) {
+				low = mid + 1;
+			} else {
+				high = mid;
+			}
+		}
+		return low;
+	}
+
 	private boolean shouldResetToMainIndexOrder(char[] mainFieldSeq, char[] currentFieldSeq, char[] targetFieldSeq) {
 		return false;
 	}
@@ -1188,6 +1241,78 @@ class TripleStore implements Closeable {
 			currentIndex++;
 		}
 		return true;
+	}
+
+	private void resetAlignedWriteCursorState() {
+		explicitAlignedWriteCursors = new long[indexes.size()];
+		inferredAlignedWriteCursors = new long[indexes.size()];
+	}
+
+	private long getAlignedWriteCursor(int indexPosition, TripleIndex index, boolean explicit,
+			PointerBuffer cursorHandle)
+			throws IOException {
+		long[] alignedWriteCursors = explicit ? explicitAlignedWriteCursors : inferredAlignedWriteCursors;
+		long cursor = alignedWriteCursors[indexPosition];
+		if (cursor != 0) {
+			return cursor;
+		}
+
+		E(mdb_cursor_open(writeTxn, index.getDB(explicit), cursorHandle));
+		cursor = cursorHandle.get(0);
+		alignedWriteCursors[indexPosition] = cursor;
+		return cursor;
+	}
+
+	private void closeAlignedWriteCursors() {
+		closeAlignedWriteCursors(explicitAlignedWriteCursors);
+		closeAlignedWriteCursors(inferredAlignedWriteCursors);
+	}
+
+	private void closeAlignedWriteCursors(long[] alignedWriteCursors) {
+		for (int i = 0; i < alignedWriteCursors.length; i++) {
+			long cursor = alignedWriteCursors[i];
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+				alignedWriteCursors[i] = 0;
+			}
+		}
+	}
+
+	private enum AlignedWriteStrategy {
+		BASELINE(false, false),
+		FULL_KEY_SORT(true, false),
+		FULL_KEY_SORT_WITH_CURSOR_REUSE(true, true),
+		CURSOR_REUSE_ONLY(false, true);
+
+		private final boolean sortByFullKey;
+		private final boolean reuseSecondaryWriteCursor;
+
+		AlignedWriteStrategy(boolean sortByFullKey, boolean reuseSecondaryWriteCursor) {
+			this.sortByFullKey = sortByFullKey;
+			this.reuseSecondaryWriteCursor = reuseSecondaryWriteCursor;
+		}
+
+		private static AlignedWriteStrategy fromSystemProperty() {
+			String configuredStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
+			if (configuredStrategy == null || configuredStrategy.isBlank()) {
+				return CURSOR_REUSE_ONLY;
+			}
+			try {
+				return AlignedWriteStrategy.valueOf(configuredStrategy.trim().toUpperCase());
+			} catch (IllegalArgumentException e) {
+				logger.warn("Unknown aligned write strategy '{}', falling back to {}", configuredStrategy,
+						CURSOR_REUSE_ONLY);
+				return CURSOR_REUSE_ONLY;
+			}
+		}
+
+		private boolean sortByFullKey() {
+			return sortByFullKey;
+		}
+
+		private boolean reuseSecondaryWriteCursor() {
+			return reuseSecondaryWriteCursor;
+		}
 	}
 
 	@FunctionalInterface
@@ -1373,6 +1498,7 @@ class TripleStore implements Closeable {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 
+			closeAlignedWriteCursors();
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
 		}
@@ -1384,6 +1510,7 @@ class TripleStore implements Closeable {
 	void endTransaction(boolean commit) throws IOException {
 		if (writeTxn != 0) {
 			try {
+				closeAlignedWriteCursors();
 				if (commit) {
 					try {
 						E(mdb_txn_commit(writeTxn));
@@ -1471,6 +1598,7 @@ class TripleStore implements Closeable {
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;
 		private final IndexKeyWriters.MatcherFactory matcherFactory;
+		private final StatementFieldValueAccessor[] fieldValueAccessors;
 		private final StatementFieldValueAccessor leadingFieldValueAccessor;
 		private final int dbiExplicit, dbiInferred;
 		private final int[] indexMap;
@@ -1479,7 +1607,8 @@ class TripleStore implements Closeable {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
-			this.leadingFieldValueAccessor = getLeadingFieldValueAccessor(this.fieldSeq[0]);
+			this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
+			this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 			this.indexMap = getIndexes(this.fieldSeq);
 			// open database and use native sort order without comparator
 			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
@@ -1494,8 +1623,16 @@ class TripleStore implements Closeable {
 			return explicit ? dbiExplicit : dbiInferred;
 		}
 
-		private StatementFieldValueAccessor getLeadingFieldValueAccessor(char leadingField) {
-			switch (leadingField) {
+		private StatementFieldValueAccessor[] createFieldValueAccessors(char[] fieldSeq) {
+			StatementFieldValueAccessor[] accessors = new StatementFieldValueAccessor[fieldSeq.length];
+			for (int i = 0; i < fieldSeq.length; i++) {
+				accessors[i] = getFieldValueAccessor(fieldSeq[i]);
+			}
+			return accessors;
+		}
+
+		private StatementFieldValueAccessor getFieldValueAccessor(char field) {
+			switch (field) {
 			case 's':
 				return (subj, pred, obj, context, statementIndex) -> subj[statementIndex];
 			case 'p':
@@ -1505,8 +1642,31 @@ class TripleStore implements Closeable {
 			case 'c':
 				return (subj, pred, obj, context, statementIndex) -> context[statementIndex];
 			default:
-				throw new IllegalArgumentException("Unknown index field: " + leadingField);
+				throw new IllegalArgumentException("Unknown index field: " + field);
 			}
+		}
+
+		private int compareStatementIndices(long[] subj, long[] pred, long[] obj, long[] context,
+				int leftStatementIndex,
+				int rightStatementIndex) {
+			StatementFieldValueAccessor[] accessors = fieldValueAccessors;
+			int compare = Long.compare(accessors[0].get(subj, pred, obj, context, leftStatementIndex),
+					accessors[0].get(subj, pred, obj, context, rightStatementIndex));
+			if (compare != 0) {
+				return compare;
+			}
+			compare = Long.compare(accessors[1].get(subj, pred, obj, context, leftStatementIndex),
+					accessors[1].get(subj, pred, obj, context, rightStatementIndex));
+			if (compare != 0) {
+				return compare;
+			}
+			compare = Long.compare(accessors[2].get(subj, pred, obj, context, leftStatementIndex),
+					accessors[2].get(subj, pred, obj, context, rightStatementIndex));
+			if (compare != 0) {
+				return compare;
+			}
+			return Long.compare(accessors[3].get(subj, pred, obj, context, leftStatementIndex),
+					accessors[3].get(subj, pred, obj, context, rightStatementIndex));
 		}
 
 		protected int[] getIndexes(char[] fieldSeq) {

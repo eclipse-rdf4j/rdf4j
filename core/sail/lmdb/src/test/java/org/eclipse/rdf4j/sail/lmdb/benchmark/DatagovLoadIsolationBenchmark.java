@@ -51,7 +51,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 50, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
@@ -60,12 +60,17 @@ public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 	private static final String BULK_OPERATION_SIZE_PROPERTY = "rdf4j.lmdb.bulkOperationSize";
+	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
 
 	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
 
-	@Param({ "64", "128", "256" })
+	@Param({ "256" })
 	public int bulkOperationSize;
+
+//	@Param({ "BASELINE",  "CURSOR_REUSE_ONLY" })
+	@Param({   "CURSOR_REUSE_ONLY" })
+	public String alignedWriteStrategy;
 
 	private Model data;
 
@@ -93,12 +98,12 @@ public class DatagovLoadIsolationBenchmark {
 
 	@Benchmark
 	public boolean loadDatagovFileSingleTransaction() throws IOException {
-		return withConfiguredBulkOperationSize(this::loadOnce);
+		return withConfiguredBenchmarkSettings(this::loadOnce);
 	}
 
 //	@Benchmark
 	public boolean loadDatagovFileInBatches() throws IOException {
-		return withConfiguredBulkOperationSize(this::loadDatagovFileInBatchesInternal);
+		return withConfiguredBenchmarkSettings(this::loadDatagovFileInBatchesInternal);
 	}
 
 	private boolean loadDatagovFileInBatchesInternal() throws IOException {
@@ -152,9 +157,11 @@ public class DatagovLoadIsolationBenchmark {
 		}
 	}
 
-	private boolean withConfiguredBulkOperationSize(LoadAction action) throws IOException {
+	private boolean withConfiguredBenchmarkSettings(LoadAction action) throws IOException {
 		String previousValue = System.getProperty(BULK_OPERATION_SIZE_PROPERTY);
+		String previousStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
 		System.setProperty(BULK_OPERATION_SIZE_PROPERTY, Integer.toString(bulkOperationSize));
+		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, alignedWriteStrategy);
 		try {
 			return action.run();
 		} finally {
@@ -162,6 +169,11 @@ public class DatagovLoadIsolationBenchmark {
 				System.clearProperty(BULK_OPERATION_SIZE_PROPERTY);
 			} else {
 				System.setProperty(BULK_OPERATION_SIZE_PROPERTY, previousValue);
+			}
+			if (previousStrategy == null) {
+				System.clearProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
+			} else {
+				System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, previousStrategy);
 			}
 		}
 	}
