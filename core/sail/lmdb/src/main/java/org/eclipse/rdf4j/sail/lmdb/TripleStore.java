@@ -22,6 +22,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
@@ -1060,6 +1061,7 @@ class TripleStore implements Closeable {
 
 		TripleIndex mainIndex = indexes.get(0);
 		int addedCount = 0;
+		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer cursorHandle = REUSE_SECONDARY_WRITE_CURSOR
 					? stack.mallocPointer(1)
@@ -1072,12 +1074,20 @@ class TripleStore implements Closeable {
 			LongIntHashMap contextIncrements = new LongIntHashMap();
 
 			for (int i = 0; i < count; i++) {
+				if (shouldFallBackFromAlignedWrite()) {
+					remainingStart = i;
+					break;
+				}
 				keyBuf.clear();
 				mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
 				keyBuf.flip();
 				keyVal.mv_data(keyBuf);
 
 				int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
+				if (rc == MDB_MAP_FULL && autoGrow) {
+					remainingStart = i;
+					break;
+				}
 				if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 					throw new IOException(mdb_strerror(rc));
 				}
@@ -1121,13 +1131,36 @@ class TripleStore implements Closeable {
 					if (promotedFromImplicit[statementIndex]) {
 						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
+					if (shouldFallBackFromAlignedWrite()) {
+						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context, remainingStart,
+								count, explicit);
+						return;
+					}
 					if (REUSE_SECONDARY_WRITE_CURSOR) {
-						E(mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0));
+						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
+						if (rc == MDB_MAP_FULL && autoGrow) {
+							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+									remainingStart,
+									count, explicit);
+							return;
+						}
+						E(rc);
 					} else {
-						E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+						int rc = mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
+						if (rc == MDB_MAP_FULL && autoGrow) {
+							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+									remainingStart,
+									count, explicit);
+							return;
+						}
+						E(rc);
 					}
 				}
 			}
+		}
+
+		if (remainingStart < count) {
+			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit);
 		}
 
 		logAddedStatements(addedCount);
@@ -1136,8 +1169,35 @@ class TripleStore implements Closeable {
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int count,
 			boolean explicit)
 			throws IOException {
-		for (int i = 0; i < count; i++) {
+		storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit);
+	}
+
+	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,
+			int count, boolean explicit)
+			throws IOException {
+		for (int i = startIndex; i < count; i++) {
 			storeTriple(subj[i], pred[i], obj[i], context[i], explicit);
+		}
+	}
+
+	private boolean shouldFallBackFromAlignedWrite() {
+		return recordCache != null || requiresResize();
+	}
+
+	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
+			long[] obj, long[] context, int remainingStart, int count, boolean explicit)
+			throws IOException {
+		if (recordCache == null) {
+			recordCache = new TxnRecordCache(dir);
+			logger.debug("resize of map size {} required while bulk adding - initialize record cache", mapSize);
+		}
+		for (int i = 0; i < addedCount; i++) {
+			int statementIndex = addedStatementIndices[i];
+			storeTriple(subj[statementIndex], pred[statementIndex], obj[statementIndex], context[statementIndex],
+					explicit);
+		}
+		if (remainingStart < count) {
+			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit);
 		}
 	}
 
