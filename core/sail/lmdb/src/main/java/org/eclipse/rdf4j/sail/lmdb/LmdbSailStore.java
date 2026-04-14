@@ -67,7 +67,7 @@ class LmdbSailStore implements SailStore {
 	private final ValueStore valueStore;
 
 	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
-	private static final int DEFAULT_BULK_OPERATION_SIZE = 64;
+	private static final int DEFAULT_BULK_OPERATION_SIZE = 256;
 	private static final String BULK_OPERATION_SIZE_PROPERTY = "rdf4j.lmdb.bulkOperationSize";
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
 	private volatile Throwable tripleStoreException;
@@ -654,8 +654,7 @@ class LmdbSailStore implements SailStore {
 			addStatement(subj, pred, obj, explicit, ctx);
 		}
 
-		@Override
-		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+		private void approveAllBulk(Set<Statement> approved, Set<Resource> approvedContexts) {
 			Statement last = null;
 
 			sinkStoreAccessLock.lock();
@@ -724,6 +723,104 @@ class LmdbSailStore implements SailStore {
 
 				if (!bulk.isEmpty()) {
 					submitOperation(bulk);
+				}
+			} catch (IOException | RuntimeException e) {
+				rollback();
+				if (multiThreadingActive) {
+					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
+				} else {
+					logger.error(
+							"Encountered an unexpected problem while trying to add a statement. Last statement that was attempted to be added: [ {} ]",
+							last, e);
+				}
+
+				if (e instanceof RuntimeException) {
+					throw (RuntimeException) e;
+				}
+				throw new SailException(e);
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+
+		boolean bulkEnabled = bulkOperationSize() > 0;
+
+		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+			if (bulkEnabled) {
+				approveAllBulk(approved, approvedContexts);
+				return;
+			}
+
+			Statement last = null;
+
+			sinkStoreAccessLock.lock();
+			try {
+				startTransaction(true);
+
+				HashMap<IRI, Long> predicateCache = new HashMap<>();
+				HashMap<Resource, Long> contextCache = new HashMap<>();
+				Resource previousSubject = null;
+				long previousSubjectId = LmdbValue.UNKNOWN_ID;
+
+				for (Statement statement : approved) {
+					last = statement;
+					Resource subj = statement.getSubject();
+					IRI pred = statement.getPredicate();
+					Value obj = statement.getObject();
+					Resource context = statement.getContext();
+
+					AddQuadOperation q = new AddQuadOperation();
+
+					if (previousSubject != null) {
+						if (subj == previousSubject) {
+							q.s = previousSubjectId;
+						} else {
+							if (previousSubject.equals(subj)) {
+								q.s = previousSubjectId;
+							} else {
+								q.s = valueStore.storeValue(subj);
+								previousSubject = subj;
+								previousSubjectId = q.s;
+							}
+						}
+					} else {
+						q.s = valueStore.storeValue(subj);
+						previousSubject = subj;
+						previousSubjectId = q.s;
+					}
+
+					Long predicateId = predicateCache.get(pred);
+					if (predicateId == null) {
+						predicateId = valueStore.storeValue(pred);
+						predicateCache.put(pred, predicateId);
+					}
+					q.p = predicateId;
+
+					q.o = valueStore.storeValue(obj);
+					if (context == null) {
+						q.c = 0;
+					} else {
+						Long contextId = contextCache.get(context);
+						if (contextId == null) {
+							contextId = valueStore.storeValue(context);
+							contextCache.put(context, contextId);
+						}
+						q.c = contextId;
+					}
+					q.explicit = explicit;
+
+					if (multiThreadingActive) {
+						while (!opQueue.add(q)) {
+							if (tripleStoreException != null) {
+								throw wrapTripleStoreException();
+							}
+							Thread.onSpinWait();
+						}
+
+					} else {
+						q.execute();
+					}
+
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
