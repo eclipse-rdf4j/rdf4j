@@ -61,10 +61,10 @@ public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-	@Param({ "READ_COMMITTED" })
+	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
 	public IsolationLevels isolationLevel;
 
-	@Param({ "256", "512", "1024" })
+	@Param({ "256" })
 	public int bulkOperationSize;
 
 	private Model data;
@@ -93,10 +93,15 @@ public class DatagovLoadIsolationBenchmark {
 
 	@Benchmark
 	public boolean loadDatagovFileSingleTransaction() throws IOException {
-		return loadOnce();
+		return loadOnce(createBenchmarkConfig());
 	}
 
-//	@Benchmark
+	@Benchmark
+	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
+		return loadOnce(createBenchmarkConfigAllIndexes());
+	}
+
+	@Benchmark
 	public boolean loadDatagovFileInBatches() throws IOException {
 		return loadDatagovFileInBatchesInternal();
 	}
@@ -130,11 +135,11 @@ public class DatagovLoadIsolationBenchmark {
 
 	}
 
-	boolean loadOnce() throws IOException {
+	boolean loadOnce(LmdbStoreConfig config) throws IOException {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, createBenchmarkConfig()));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, config));
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.begin(isolationLevel);
 				connection.add(data);
@@ -153,6 +158,10 @@ public class DatagovLoadIsolationBenchmark {
 	}
 
 	private LmdbStoreConfig createBenchmarkConfig() {
+		return ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize);
+	}
+
+	private LmdbStoreConfig createBenchmarkConfigAllIndexes() {
 		return ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize);
 	}
 }
