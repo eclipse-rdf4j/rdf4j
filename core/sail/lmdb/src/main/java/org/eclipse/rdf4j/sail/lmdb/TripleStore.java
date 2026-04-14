@@ -201,8 +201,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 12 for triple indexes (2 per index)
-		E(mdb_env_set_maxdbs(env, 13));
+		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred)
+		E(mdb_env_set_maxdbs(env, 49));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -378,7 +378,7 @@ class TripleStore implements Closeable {
 		List<String> orderedSpecs = new ArrayList<>(indexSpecs);
 		String mainFieldSeq = orderedSpecs.get(0);
 		List<String> secondarySpecs = new ArrayList<>(orderedSpecs.subList(1, orderedSpecs.size()));
-		OrderScore bestSecondaryOrder = findBestSecondaryIndexOrder(mainFieldSeq, mainFieldSeq, secondarySpecs);
+		OrderScore bestSecondaryOrder = findBestSecondaryIndexOrder(mainFieldSeq, secondarySpecs);
 
 		LinkedHashSet<String> reorderedSpecs = new LinkedHashSet<>();
 		reorderedSpecs.add(mainFieldSeq);
@@ -387,65 +387,128 @@ class TripleStore implements Closeable {
 		return reorderedSpecs;
 	}
 
-	private OrderScore findBestSecondaryIndexOrder(String mainFieldSeq, String currentFieldSeq,
-			List<String> remainingIndexSpecs) {
-		if (remainingIndexSpecs.isEmpty()) {
-			return new OrderScore(List.of(), 0, 0);
+	private OrderScore findBestSecondaryIndexOrder(String mainFieldSeq, List<String> secondaryIndexSpecs) {
+		List<String> sortedSecondarySpecs = new ArrayList<>(secondaryIndexSpecs);
+		Collections.sort(sortedSecondarySpecs);
+
+		char[][] fieldSeqs = new char[sortedSecondarySpecs.size() + 1][];
+		fieldSeqs[0] = mainFieldSeq.toCharArray();
+		for (int i = 0; i < sortedSecondarySpecs.size(); i++) {
+			fieldSeqs[i + 1] = sortedSecondarySpecs.get(i).toCharArray();
 		}
 
-		OrderScore bestOrder = null;
-		List<String> sortedCandidates = new ArrayList<>(remainingIndexSpecs);
-		Collections.sort(sortedCandidates);
-		for (String candidateFieldSeq : sortedCandidates) {
-			List<String> nextRemaining = new ArrayList<>(remainingIndexSpecs);
-			nextRemaining.remove(candidateFieldSeq);
-
-			OrderScore tailOrder = findBestSecondaryIndexOrder(mainFieldSeq, candidateFieldSeq, nextRemaining);
-			boolean reusesCurrentOrder = canReuseCurrentOrder(currentFieldSeq.toCharArray(),
-					candidateFieldSeq.toCharArray());
-			boolean reusesMainOrder = shouldResetToMainIndexOrder(mainFieldSeq.toCharArray(),
-					currentFieldSeq.toCharArray(), candidateFieldSeq.toCharArray());
-
-			List<String> candidateOrder = new ArrayList<>(tailOrder.indexOrder.size() + 1);
-			candidateOrder.add(candidateFieldSeq);
-			candidateOrder.addAll(tailOrder.indexOrder);
-
-			OrderScore candidateScore = new OrderScore(candidateOrder,
-					tailOrder.reusedTransitions + (reusesCurrentOrder ? 1 : 0),
-					tailOrder.mainOrderResets + (reusesMainOrder ? 1 : 0));
-
-			if (isBetterIndexOrder(candidateScore, bestOrder)) {
-				bestOrder = candidateScore;
+		boolean[][] reusesCurrentOrder = new boolean[fieldSeqs.length][sortedSecondarySpecs.size()];
+		boolean[][] reusesMainOrder = new boolean[fieldSeqs.length][sortedSecondarySpecs.size()];
+		for (int currentIndex = 0; currentIndex < fieldSeqs.length; currentIndex++) {
+			for (int candidateIndex = 0; candidateIndex < sortedSecondarySpecs.size(); candidateIndex++) {
+				char[] candidateFieldSeq = fieldSeqs[candidateIndex + 1];
+				reusesCurrentOrder[currentIndex][candidateIndex] = canReuseCurrentOrder(fieldSeqs[currentIndex],
+						candidateFieldSeq);
+				reusesMainOrder[currentIndex][candidateIndex] = shouldResetToMainIndexOrder(fieldSeqs[0],
+						fieldSeqs[currentIndex], candidateFieldSeq);
 			}
 		}
 
-		return bestOrder;
-	}
-
-	private boolean isBetterIndexOrder(OrderScore candidateScore, OrderScore bestScore) {
-		if (bestScore == null) {
-			return true;
-		}
-		if (candidateScore.reusedTransitions != bestScore.reusedTransitions) {
-			return candidateScore.reusedTransitions > bestScore.reusedTransitions;
-		}
-		if (candidateScore.mainOrderResets != bestScore.mainOrderResets) {
-			return candidateScore.mainOrderResets > bestScore.mainOrderResets;
-		}
-		return compareIndexOrder(candidateScore.indexOrder, bestScore.indexOrder) < 0;
-	}
-
-	private int compareIndexOrder(List<String> left, List<String> right) {
-		for (int i = 0; i < Math.min(left.size(), right.size()); i++) {
-			int compare = left.get(i).compareTo(right.get(i));
-			if (compare != 0) {
-				return compare;
+		long remainingMask = (1L << sortedSecondarySpecs.size()) - 1;
+		for (int nonReusableTransitions = 0; nonReusableTransitions <= sortedSecondarySpecs
+				.size(); nonReusableTransitions++) {
+			Map<Long, Integer> memoizedScores = new HashMap<>();
+			int maxMainOrderResets = findMaxMainOrderResets(0, remainingMask, nonReusableTransitions,
+					reusesCurrentOrder, reusesMainOrder, memoizedScores);
+			if (maxMainOrderResets >= 0) {
+				List<String> bestOrder = reconstructBestSecondaryIndexOrder(0, remainingMask, nonReusableTransitions,
+						maxMainOrderResets, sortedSecondarySpecs, reusesCurrentOrder, reusesMainOrder, memoizedScores);
+				return new OrderScore(bestOrder, sortedSecondarySpecs.size() - nonReusableTransitions,
+						maxMainOrderResets);
 			}
 		}
-		return Integer.compare(left.size(), right.size());
+
+		return OrderScore.EMPTY;
+	}
+
+	private int findMaxMainOrderResets(int currentIndex, long remainingMask, int nonReusableTransitionsRemaining,
+			boolean[][] reusesCurrentOrder, boolean[][] reusesMainOrder, Map<Long, Integer> memoizedScores) {
+		if (remainingMask == 0) {
+			return 0;
+		}
+
+		long memoKey = (remainingMask << 10) | ((long) currentIndex << 5) | nonReusableTransitionsRemaining;
+		Integer memoizedScore = memoizedScores.get(memoKey);
+		if (memoizedScore != null) {
+			return memoizedScore;
+		}
+
+		int bestScore = -1;
+		for (int candidateIndex = 0; candidateIndex < reusesCurrentOrder[currentIndex].length; candidateIndex++) {
+			long candidateMask = 1L << candidateIndex;
+			if ((remainingMask & candidateMask) == 0) {
+				continue;
+			}
+
+			int transitionCost = reusesCurrentOrder[currentIndex][candidateIndex] ? 0 : 1;
+			if (transitionCost > nonReusableTransitionsRemaining) {
+				continue;
+			}
+
+			int tailScore = findMaxMainOrderResets(candidateIndex + 1, remainingMask ^ candidateMask,
+					nonReusableTransitionsRemaining - transitionCost, reusesCurrentOrder, reusesMainOrder,
+					memoizedScores);
+			if (tailScore < 0) {
+				continue;
+			}
+
+			bestScore = Math.max(bestScore,
+					tailScore + (reusesMainOrder[currentIndex][candidateIndex] ? 1 : 0));
+		}
+
+		memoizedScores.put(memoKey, bestScore);
+		return bestScore;
+	}
+
+	private List<String> reconstructBestSecondaryIndexOrder(int currentIndex, long remainingMask,
+			int nonReusableTransitionsRemaining, int mainOrderResetsRemaining, List<String> secondaryIndexSpecs,
+			boolean[][] reusesCurrentOrder, boolean[][] reusesMainOrder, Map<Long, Integer> memoizedScores) {
+		if (remainingMask == 0) {
+			return List.of();
+		}
+
+		for (int candidateIndex = 0; candidateIndex < secondaryIndexSpecs.size(); candidateIndex++) {
+			long candidateMask = 1L << candidateIndex;
+			if ((remainingMask & candidateMask) == 0) {
+				continue;
+			}
+
+			int transitionCost = reusesCurrentOrder[currentIndex][candidateIndex] ? 0 : 1;
+			if (transitionCost > nonReusableTransitionsRemaining) {
+				continue;
+			}
+
+			int tailScore = findMaxMainOrderResets(candidateIndex + 1, remainingMask ^ candidateMask,
+					nonReusableTransitionsRemaining - transitionCost, reusesCurrentOrder, reusesMainOrder,
+					memoizedScores);
+			if (tailScore < 0) {
+				continue;
+			}
+
+			int candidateScore = tailScore + (reusesMainOrder[currentIndex][candidateIndex] ? 1 : 0);
+			if (candidateScore != mainOrderResetsRemaining) {
+				continue;
+			}
+
+			List<String> candidateOrder = new ArrayList<>();
+			candidateOrder.add(secondaryIndexSpecs.get(candidateIndex));
+			candidateOrder.addAll(reconstructBestSecondaryIndexOrder(candidateIndex + 1, remainingMask ^ candidateMask,
+					nonReusableTransitionsRemaining - transitionCost, tailScore, secondaryIndexSpecs,
+					reusesCurrentOrder, reusesMainOrder, memoizedScores));
+			return candidateOrder;
+		}
+
+		throw new IllegalStateException("Unable to reconstruct secondary index order");
 	}
 
 	private static final class OrderScore {
+		private static final OrderScore EMPTY = new OrderScore(List.of(), 0, 0);
+
 		private final List<String> indexOrder;
 		private final int reusedTransitions;
 		private final int mainOrderResets;
