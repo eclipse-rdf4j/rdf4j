@@ -646,6 +646,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			assert explicitSinks.containsKey(op);
 			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
 		}
+		if (op != null) {
+			recordDataImportMetricsStatementsAdded(contexts);
+		}
+		setStatementsAdded();
 		addStatementInternal(subj, pred, obj, contexts);
 	}
 

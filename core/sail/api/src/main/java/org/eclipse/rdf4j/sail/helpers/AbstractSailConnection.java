@@ -671,8 +671,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 			flushPendingUpdates();
 		}
 		addStatement(null, subj, pred, obj, contexts);
-		incrementDataImportMetricsStatementsAdded(contexts);
-		statementsAdded = true;
+		recordDataImportMetricsStatementsAdded(contexts);
+		setStatementsAdded();
 	}
 
 	@Override
@@ -724,9 +724,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		}
 		if (op != null) {
-			incrementDataImportMetricsStatementsAdded(contexts);
+			recordDataImportMetricsStatementsAdded(contexts);
 		}
-		statementsAdded = true;
+		setStatementsAdded();
 	}
 
 	private void logDataImportMetricsOnCommit() {
@@ -742,7 +742,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				dataImportMetricsStatementsAdded, durationMs, (int) statementsPerSecond);
 	}
 
-	private void incrementDataImportMetricsStatementsAdded(Resource... contexts) {
+	protected final void recordDataImportMetricsStatementsAdded(Resource... contexts) {
 		if (!dataImportMetricsEnabled) {
 			return;
 		}

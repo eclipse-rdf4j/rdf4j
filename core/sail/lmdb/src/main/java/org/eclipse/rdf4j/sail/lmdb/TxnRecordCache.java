@@ -55,6 +55,9 @@ import org.lwjgl.util.lmdb.MDBVal;
  * deleted upon calling {@link #close()}.
  */
 final class TxnRecordCache {
+	private static final byte OP_REMOVE = 0;
+	private static final byte OP_ADD = 1;
+	private static final byte OP_REMOVE_NO_CONTEXT = 2;
 
 	private final Path dbDir;
 	private final long env;
@@ -106,14 +109,18 @@ final class TxnRecordCache {
 	}
 
 	protected boolean storeRecord(long[] quad, boolean explicit) throws IOException {
-		return update(quad, explicit, true);
+		return update(quad, explicit, OP_ADD);
 	}
 
 	protected void removeRecord(long[] quad, boolean explicit) throws IOException {
-		update(quad, explicit, false);
+		update(quad, explicit, OP_REMOVE);
 	}
 
-	protected boolean update(long[] quad, boolean explicit, boolean add) throws IOException {
+	protected void removeRecordPreservingContext(long[] quad, boolean explicit) throws IOException {
+		update(quad, explicit, OP_REMOVE_NO_CONTEXT);
+	}
+
+	protected boolean update(long[] quad, boolean explicit, byte operation) throws IOException {
 		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
 			// resize map if required
 			E(mdb_txn_commit(writeTxn));
@@ -141,13 +148,13 @@ final class TxnRecordCache {
 					(dataVal.mv_data().get(0) & 0b1) != 0;
 
 			boolean found = foundExplicit || foundImplicit;
-			if (add) {
+			if (operation == OP_ADD) {
 				if (!found || explicit && foundImplicit) {
 					if (explicit && foundImplicit) {
 						E(mdb_del(writeTxn, dbiInferred, keyVal, dataVal));
 					}
 					// mark as add
-					dataVal.mv_data(stack.bytes((byte) 1));
+					dataVal.mv_data(stack.bytes(OP_ADD));
 					E(mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0));
 				}
 				return !found;
@@ -157,7 +164,7 @@ final class TxnRecordCache {
 					E(mdb_del(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal));
 				} else {
 					// mark as remove
-					dataVal.mv_data(stack.bytes((byte) 0));
+					dataVal.mv_data(stack.bytes(operation));
 					E(mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0));
 				}
 				return true;
@@ -172,6 +179,7 @@ final class TxnRecordCache {
 	static class Record {
 		long quad[];
 		boolean add;
+		boolean affectsContext = true;
 	}
 
 	protected class RecordCacheIterator {
@@ -199,7 +207,8 @@ final class TxnRecordCache {
 				byte op = valueData.mv_data().get(0);
 				Record r = new Record();
 				r.quad = quad;
-				r.add = op == 1;
+				r.add = op == OP_ADD;
+				r.affectsContext = op != OP_REMOVE_NO_CONTEXT;
 				return r;
 			}
 			close();

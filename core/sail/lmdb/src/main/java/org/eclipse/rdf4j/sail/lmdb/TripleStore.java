@@ -1004,7 +1004,7 @@ class TripleStore implements Closeable {
 				long[] quad = new long[] { subj, pred, obj, context };
 				if (explicit) {
 					// remove implicit statement
-					recordCache.removeRecord(quad, false);
+					recordCache.removeRecordPreservingContext(quad, false);
 				}
 				// put record in cache and return immediately
 				return recordCache.storeRecord(quad, explicit);
@@ -1102,13 +1102,25 @@ class TripleStore implements Closeable {
 				}
 			}
 
-			LongIterator contextIterator = contextIncrements.keysView().longIterator();
-			while (contextIterator.hasNext()) {
-				long contextId = contextIterator.next();
-				incrementContext(stack, contextId, contextIncrements.get(contextId));
+			int[] mainOrderIndices = Arrays.copyOf(sortedIndices, addedCount);
+			LongIntHashMap appliedContextIncrements = new LongIntHashMap();
+			try {
+				LongIterator contextIterator = contextIncrements.keysView().longIterator();
+				while (contextIterator.hasNext()) {
+					long contextId = contextIterator.next();
+					int increment = contextIncrements.get(contextId);
+					incrementAlignedContext(stack, contextId, increment);
+					appliedContextIncrements.addToValue(contextId, increment);
+				}
+			} catch (IOException e) {
+				if (!shouldFallBackFromAlignedContextWrite(e)) {
+					throw e;
+				}
+				fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context, remainingStart,
+						count, explicit, appliedContextIncrements);
+				return;
 			}
 
-			int[] mainOrderIndices = Arrays.copyOf(sortedIndices, addedCount);
 			char[] currentFieldSeq = mainIndex.getFieldSeq();
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
@@ -1133,15 +1145,14 @@ class TripleStore implements Closeable {
 					}
 					if (shouldFallBackFromAlignedWrite()) {
 						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context, remainingStart,
-								count, explicit);
+								count, explicit, contextIncrements);
 						return;
 					}
 					if (REUSE_SECONDARY_WRITE_CURSOR) {
 						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									remainingStart,
-									count, explicit);
+									remainingStart, count, explicit, contextIncrements);
 							return;
 						}
 						E(rc);
@@ -1149,8 +1160,7 @@ class TripleStore implements Closeable {
 						int rc = mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									remainingStart,
-									count, explicit);
+									remainingStart, count, explicit, contextIncrements);
 							return;
 						}
 						E(rc);
@@ -1185,8 +1195,10 @@ class TripleStore implements Closeable {
 	}
 
 	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
-			long[] obj, long[] context, int remainingStart, int count, boolean explicit)
+			long[] obj, long[] context, int remainingStart, int count, boolean explicit,
+			LongIntHashMap contextIncrementsToUndo)
 			throws IOException {
+		undoContextIncrements(contextIncrementsToUndo);
 		if (recordCache == null) {
 			recordCache = new TxnRecordCache(dir);
 			logger.debug("resize of map size {} required while bulk adding - initialize record cache", mapSize);
@@ -1328,6 +1340,27 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	void incrementAlignedContext(MemoryStack stack, long context, int amount) throws IOException {
+		incrementContext(stack, context, amount);
+	}
+
+	private boolean shouldFallBackFromAlignedContextWrite(IOException e) {
+		return autoGrow && e.getMessage() != null && e.getMessage().contains("MDB_MAP_FULL");
+	}
+
+	private void undoContextIncrements(LongIntHashMap contextIncrements) throws IOException {
+		if (contextIncrements == null) {
+			return;
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			LongIterator contextIterator = contextIncrements.keysView().longIterator();
+			while (contextIterator.hasNext()) {
+				long contextId = contextIterator.next();
+				decrementContext(stack, contextId, contextIncrements.get(contextId));
+			}
+		}
+	}
+
 	private void incrementContext(MemoryStack stack, long context) throws IOException {
 		incrementContext(stack, context, 1);
 	}
@@ -1358,6 +1391,10 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean decrementContext(MemoryStack stack, long context) throws IOException {
+		return decrementContext(stack, context, 1);
+	}
+
+	private boolean decrementContext(MemoryStack stack, long context, long amount) throws IOException {
 		try {
 			stack.push();
 
@@ -1369,7 +1406,7 @@ class TripleStore implements Closeable {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
 				// update count
-				long newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
+				long newCount = Varint.readUnsigned(dataVal.mv_data()) - amount;
 				if (newCount <= 0) {
 					E(mdb_del(writeTxn, contextsDbi, idVal, null));
 					return true;
@@ -1477,6 +1514,11 @@ class TripleStore implements Closeable {
 						} else {
 							E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));
 						}
+					}
+					if (r.add) {
+						incrementContext(stack, r.quad[CONTEXT_IDX]);
+					} else if (r.affectsContext) {
+						decrementContext(stack, r.quad[CONTEXT_IDX]);
 					}
 				}
 			}
