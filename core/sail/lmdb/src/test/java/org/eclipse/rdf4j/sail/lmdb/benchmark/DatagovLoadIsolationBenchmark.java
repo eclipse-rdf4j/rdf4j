@@ -51,26 +51,30 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 50, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 15, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 6, time = 2, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 	private static final String BULK_OPERATION_SIZE_PROPERTY = "rdf4j.lmdb.bulkOperationSize";
 	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
+	private static final String ALIGNED_SORT_ALGORITHM_PROPERTY = "rdf4j.lmdb.alignedSortAlgorithm";
 
 	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
 
-	@Param({ "256" })
+	@Param({ "256", "512", "1024" })
 	public int bulkOperationSize;
 
-//	@Param({ "BASELINE",  "CURSOR_REUSE_ONLY" })
-	@Param({   "CURSOR_REUSE_ONLY" })
+	@Param({ "CURSOR_REUSE_ONLY" })
 	public String alignedWriteStrategy;
+
+	@Param({ "WIKISORT", "TIM_SORT", "LSD_RADIX", "UNGUARDED_INSERTION", "PDQSORT" })
+//	@Param({ "PDQSORT" })
+	public String alignedSortAlgorithm;
 
 	private Model data;
 
@@ -160,8 +164,10 @@ public class DatagovLoadIsolationBenchmark {
 	private boolean withConfiguredBenchmarkSettings(LoadAction action) throws IOException {
 		String previousValue = System.getProperty(BULK_OPERATION_SIZE_PROPERTY);
 		String previousStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
+		String previousAlgorithm = System.getProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
 		System.setProperty(BULK_OPERATION_SIZE_PROPERTY, Integer.toString(bulkOperationSize));
 		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, alignedWriteStrategy);
+		System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, alignedSortAlgorithm);
 		try {
 			return action.run();
 		} finally {
@@ -174,6 +180,11 @@ public class DatagovLoadIsolationBenchmark {
 				System.clearProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
 			} else {
 				System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, previousStrategy);
+			}
+			if (previousAlgorithm == null) {
+				System.clearProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
+			} else {
+				System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, previousAlgorithm);
 			}
 		}
 	}

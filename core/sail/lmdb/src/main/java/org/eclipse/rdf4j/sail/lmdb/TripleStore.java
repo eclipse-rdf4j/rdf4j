@@ -83,6 +83,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
+import org.eclipse.collections.api.iterator.LongIterator;
+import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -144,6 +146,7 @@ class TripleStore implements Closeable {
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
 	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
+	private static final String ALIGNED_SORT_ALGORITHM_PROPERTY = "rdf4j.lmdb.alignedSortAlgorithm";
 	/**
 	 * The version number for the current triple store.
 	 * <ul>
@@ -178,8 +181,16 @@ class TripleStore implements Closeable {
 	private long writeTxn;
 	private final TxnManager txnManager;
 	private final AlignedWriteStrategy alignedWriteStrategy;
+	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
+	private int[] leadingFieldScratchIndices = new int[0];
+	private long[] leadingFieldValues = new long[0];
+	private long[] leadingFieldScratchValues = new long[0];
+	private final int[] leadingFieldRadixCounts = new int[256];
+	private final int[] leadingFieldRadixOffsets = new int[256];
+	private final int[] leadingFieldTimRunBase = new int[64];
+	private final int[] leadingFieldTimRunLength = new int[64];
 
 	private TxnRecordCache recordCache = null;
 
@@ -212,6 +223,7 @@ class TripleStore implements Closeable {
 		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
 		this.valueStore = valueStore;
 		this.alignedWriteStrategy = AlignedWriteStrategy.fromSystemProperty();
+		this.leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.fromSystemProperty();
 
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -1081,7 +1093,7 @@ class TripleStore implements Closeable {
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 			int[] sortedIndices = new int[count];
 			boolean[] promotedFromImplicit = new boolean[count];
-			Map<Long, Integer> contextIncrements = new HashMap<>();
+			LongIntHashMap contextIncrements = new LongIntHashMap();
 
 			for (int i = 0; i < count; i++) {
 				keyBuf.clear();
@@ -1100,12 +1112,14 @@ class TripleStore implements Closeable {
 						promotedFromImplicit[i] = mdb_del(writeTxn, mainIndex.getDB(false), keyVal,
 								dataVal) == MDB_SUCCESS;
 					}
-					contextIncrements.merge(context[i], 1, Integer::sum);
+					contextIncrements.addToValue(context[i], 1);
 				}
 			}
 
-			for (Map.Entry<Long, Integer> contextIncrement : contextIncrements.entrySet()) {
-				incrementContext(stack, contextIncrement.getKey(), contextIncrement.getValue());
+			LongIterator contextIterator = contextIncrements.keysView().longIterator();
+			while (contextIterator.hasNext()) {
+				long contextId = contextIterator.next();
+				incrementContext(stack, contextId, contextIncrements.get(contextId));
 			}
 
 			for (int i = 1; i < indexes.size(); i++) {
@@ -1154,39 +1168,37 @@ class TripleStore implements Closeable {
 			insertionSortStatementIndicesByIndexOrder(statementIndices, 0, length, index, subj, pred, obj, context);
 			return;
 		}
-		branchlessInsertionSortStatementIndicesByLeadingField(statementIndices, 0, length,
-			index.leadingFieldValueAccessor,
-			subj, pred, obj, context);
-	}
-
-	private void branchlessInsertionSortStatementIndicesByLeadingField(int[] statementIndices, int from, int to,
-			StatementFieldValueAccessor leadingFieldValueAccessor, long[] subj, long[] pred, long[] obj,
-			long[] context) {
-		for (int i = from + 1; i < to; i++) {
+		long[] leadingValues = ensureLeadingFieldValues(length);
+		StatementFieldValueAccessor leadingFieldValueAccessor = index.leadingFieldValueAccessor;
+		for (int i = 0; i < length; i++) {
 			int statementIndex = statementIndices[i];
-			long statementValue = leadingFieldValueAccessor.get(subj, pred, obj, context, statementIndex);
-			int insertAt = upperBoundStatementIndicesByLeadingField(statementIndices, from, i, statementValue,
-					leadingFieldValueAccessor, subj, pred, obj, context);
-			for (int j = i; j > insertAt; j--) {
-				statementIndices[j] = statementIndices[j - 1];
-			}
-			statementIndices[insertAt] = statementIndex;
+			leadingValues[i] = leadingFieldValueAccessor.get(subj, pred, obj, context, statementIndex);
 		}
+		LeadingFieldSorters.sort(leadingFieldSortAlgorithm, statementIndices, leadingValues, length,
+				ensureLeadingFieldScratchIndices(length), ensureLeadingFieldScratchValues(length),
+				leadingFieldRadixCounts,
+				leadingFieldRadixOffsets, leadingFieldTimRunBase, leadingFieldTimRunLength);
 	}
 
-	private int upperBoundStatementIndicesByLeadingField(int[] statementIndices, int low, int high,
-			long statementValue, StatementFieldValueAccessor leadingFieldValueAccessor, long[] subj, long[] pred,
-			long[] obj, long[] context) {
-		while (low < high) {
-			int mid = low + ((high - low) >>> 1);
-			long midValue = leadingFieldValueAccessor.get(subj, pred, obj, context, statementIndices[mid]);
-			if (midValue <= statementValue) {
-				low = mid + 1;
-			} else {
-				high = mid;
-			}
+	private int[] ensureLeadingFieldScratchIndices(int length) {
+		if (leadingFieldScratchIndices.length < length) {
+			leadingFieldScratchIndices = new int[length];
 		}
-		return low;
+		return leadingFieldScratchIndices;
+	}
+
+	private long[] ensureLeadingFieldValues(int length) {
+		if (leadingFieldValues.length < length) {
+			leadingFieldValues = new long[length];
+		}
+		return leadingFieldValues;
+	}
+
+	private long[] ensureLeadingFieldScratchValues(int length) {
+		if (leadingFieldScratchValues.length < length) {
+			leadingFieldScratchValues = new long[length];
+		}
+		return leadingFieldScratchValues;
 	}
 
 	private void insertionSortStatementIndicesByIndexOrder(int[] statementIndices, int from, int to, TripleIndex index,
@@ -1312,6 +1324,28 @@ class TripleStore implements Closeable {
 
 		private boolean reuseSecondaryWriteCursor() {
 			return reuseSecondaryWriteCursor;
+		}
+	}
+
+	enum LeadingFieldSortAlgorithm {
+		WIKISORT,
+		TIM_SORT,
+		LSD_RADIX,
+		UNGUARDED_INSERTION,
+		PDQSORT;
+
+		private static LeadingFieldSortAlgorithm fromSystemProperty() {
+			String configuredAlgorithm = System.getProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
+			if (configuredAlgorithm == null || configuredAlgorithm.isBlank()) {
+				return UNGUARDED_INSERTION;
+			}
+			try {
+				return LeadingFieldSortAlgorithm.valueOf(configuredAlgorithm.trim().toUpperCase());
+			} catch (IllegalArgumentException e) {
+				logger.warn("Unknown aligned sort algorithm '{}', falling back to {}", configuredAlgorithm,
+						UNGUARDED_INSERTION);
+				return UNGUARDED_INSERTION;
+			}
 		}
 	}
 

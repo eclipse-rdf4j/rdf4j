@@ -42,9 +42,14 @@ import org.openjdk.jmh.infra.Blackhole;
 @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 public class LeadingFieldSortBenchmark {
+	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
+	private static final String ALIGNED_SORT_ALGORITHM_PROPERTY = "rdf4j.lmdb.alignedSortAlgorithm";
 
 	@Param({ "64", "128", "256" })
 	public int size;
+
+	@Param({ "WIKISORT", "TIM_SORT", "LSD_RADIX", "UNGUARDED_INSERTION", "PDQSORT" })
+	public String alignedSortAlgorithm;
 
 	@Param({ "alreadyOrdered", "spocToPsoc", "psocToOpsc", "psocToOspcReset", "duplicateHeavy", "allEqual",
 			"randomized" })
@@ -59,9 +64,15 @@ public class LeadingFieldSortBenchmark {
 	private long[] context;
 	private int[] baseOrder;
 	private int[] statementIndices;
+	private String previousAlignedWriteStrategy;
+	private String previousAlignedSortAlgorithm;
 
 	@Setup(Level.Trial)
 	public void setupTrial() throws Exception {
+		previousAlignedWriteStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
+		previousAlignedSortAlgorithm = System.getProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
+		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, "CURSOR_REUSE_ONLY");
+		System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, alignedSortAlgorithm);
 		dataDir = java.nio.file.Files.createTempDirectory("leading-field-sort-benchmark").toFile();
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,psoc,opsc,ospc"), null);
 		subj = new long[size];
@@ -87,7 +98,20 @@ public class LeadingFieldSortBenchmark {
 				tripleStore.close();
 			}
 		} finally {
-			LmdbTestUtil.deleteDir(dataDir);
+			try {
+				LmdbTestUtil.deleteDir(dataDir);
+			} finally {
+				if (previousAlignedWriteStrategy == null) {
+					System.clearProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
+				} else {
+					System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, previousAlignedWriteStrategy);
+				}
+				if (previousAlignedSortAlgorithm == null) {
+					System.clearProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
+				} else {
+					System.setProperty(ALIGNED_SORT_ALGORITHM_PROPERTY, previousAlignedSortAlgorithm);
+				}
+			}
 		}
 	}
 
