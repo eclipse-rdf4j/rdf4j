@@ -37,16 +37,12 @@ import org.junit.jupiter.api.io.TempDir;
  * Low-level tests for {@link TripleStore}.
  */
 public class TripleStoreTest {
-	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
 	protected TripleStore tripleStore;
 	private File dataDir;
-	private String previousAlignedWriteStrategy;
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
 		this.dataDir = dataDir;
-		previousAlignedWriteStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
-		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, "FULL_KEY_SORT");
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 	}
 
@@ -129,12 +125,53 @@ public class TripleStoreTest {
 
 		method.invoke(tripleStore, statementIndices, statementIndices.length, indexes.get(1), subj, pred, obj, context);
 
-		assertEquals("Stable full-key sort should preserve prior order for identical keys",
+		assertEquals("Leading-field sort should preserve prior order for identical leading values",
 				Arrays.toString(new int[] { 0, 1, 2, 3 }), Arrays.toString(statementIndices));
 	}
 
 	@Test
-	public void testLeadingFieldSortUsesFullTargetIndexOrder() throws Exception {
+	public void testLeadingFieldSortIgnoresFullKeySortProperty() throws Exception {
+		String previousAlignedWriteStrategy = System.getProperty("rdf4j.lmdb.alignedWriteStrategy");
+		System.setProperty("rdf4j.lmdb.alignedWriteStrategy", "FULL_KEY_SORT");
+
+		File ignoredPropertyDir = new File(dataDir, "ignored-full-key-sort-property");
+		ignoredPropertyDir.mkdirs();
+
+		try (TripleStore ignoredPropertyStore = new TripleStore(ignoredPropertyDir, new LmdbStoreConfig("spoc,posc"),
+				null)) {
+			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
+					int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
+			method.setAccessible(true);
+			Field indexesField = TripleStore.class.getDeclaredField("indexes");
+			indexesField.setAccessible(true);
+
+			@SuppressWarnings("unchecked")
+			List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField
+					.get(ignoredPropertyStore);
+
+			int[] statementIndices = { 0, 1, 2, 3 };
+			long[] subj = { 101, 102, 103, 104 };
+			long[] pred = { 7, 7, 7, 7 };
+			long[] obj = { 20, 10, 40, 30 };
+			long[] context = { 0, 0, 0, 0 };
+
+			method.invoke(ignoredPropertyStore, statementIndices, statementIndices.length, indexes.get(1), subj, pred,
+					obj,
+					context);
+
+			assertEquals("Leading-field sort should ignore legacy full-key strategy configuration",
+					Arrays.toString(new int[] { 0, 1, 2, 3 }), Arrays.toString(statementIndices));
+		} finally {
+			if (previousAlignedWriteStrategy == null) {
+				System.clearProperty("rdf4j.lmdb.alignedWriteStrategy");
+			} else {
+				System.setProperty("rdf4j.lmdb.alignedWriteStrategy", previousAlignedWriteStrategy);
+			}
+		}
+	}
+
+	@Test
+	public void testLeadingFieldSortKeepsPriorOrderWhenLeadingValuesMatch() throws Exception {
 		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
 				int.class, TripleStore.TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
@@ -152,8 +189,8 @@ public class TripleStoreTest {
 
 		method.invoke(tripleStore, statementIndices, statementIndices.length, indexes.get(1), subj, pred, obj, context);
 
-		assertEquals("POSC sort should use the full index order when leading values are equal",
-				Arrays.toString(new int[] { 1, 0, 3, 2 }), Arrays.toString(statementIndices));
+		assertEquals("Leading-field sort should keep the prior order when leading values are equal",
+				Arrays.toString(new int[] { 0, 1, 2, 3 }), Arrays.toString(statementIndices));
 	}
 
 	@Test
@@ -237,10 +274,10 @@ public class TripleStoreTest {
 			obj[i] = size - i;
 		}
 
-		int[] expected = stableIndexSort(range(size), indexes.get(1), subj, pred, obj, context);
+		int[] expected = range(size);
 		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> method.invoke(tripleStore, statementIndices,
 				statementIndices.length, indexes.get(1), subj, pred, obj, context));
-		assertEquals("Equal leading values should still match the full target index order", Arrays.toString(expected),
+		assertEquals("Equal leading values should preserve the prior order", Arrays.toString(expected),
 				Arrays.toString(statementIndices));
 	}
 
@@ -343,22 +380,23 @@ public class TripleStoreTest {
 
 	private void assertLeadingFieldSortMatchesReference(Method method, TripleStore store, TripleStore.TripleIndex index,
 			int[] statementIndices, long[] subj, long[] pred, long[] obj, long[] context) throws Exception {
-		int[] expected = stableIndexSort(statementIndices, index, subj, pred, obj, context);
+		int[] expected = stableLeadingFieldSort(statementIndices, index, subj, pred, obj, context);
 
 		method.invoke(store, statementIndices, statementIndices.length, index, subj, pred, obj, context);
 
-		assertEquals("Index sort should match the stable reference order", Arrays.toString(expected),
+		assertEquals("Leading-field sort should match the stable reference order", Arrays.toString(expected),
 				Arrays.toString(statementIndices));
 	}
 
-	private int[] stableIndexSort(int[] statementIndices, TripleStore.TripleIndex index, long[] subj, long[] pred,
+	private int[] stableLeadingFieldSort(int[] statementIndices, TripleStore.TripleIndex index, long[] subj,
+			long[] pred,
 			long[] obj, long[] context) {
 		Integer[] boxed = new Integer[statementIndices.length];
 		for (int i = 0; i < statementIndices.length; i++) {
 			boxed[i] = statementIndices[i];
 		}
 
-		Arrays.sort(boxed, (left, right) -> compareByIndexOrder(index, left, right, subj, pred, obj, context));
+		Arrays.sort(boxed, (left, right) -> compareByLeadingField(index, left, right, subj, pred, obj, context));
 
 		int[] stableSorted = new int[statementIndices.length];
 		for (int i = 0; i < boxed.length; i++) {
@@ -367,16 +405,11 @@ public class TripleStoreTest {
 		return stableSorted;
 	}
 
-	private int compareByIndexOrder(TripleStore.TripleIndex index, int leftStatementIndex, int rightStatementIndex,
+	private int compareByLeadingField(TripleStore.TripleIndex index, int leftStatementIndex, int rightStatementIndex,
 			long[] subj, long[] pred, long[] obj, long[] context) {
-		for (char field : index.getFieldSeq()) {
-			int compare = Long.compare(fieldValue(field, leftStatementIndex, subj, pred, obj, context),
-					fieldValue(field, rightStatementIndex, subj, pred, obj, context));
-			if (compare != 0) {
-				return compare;
-			}
-		}
-		return 0;
+		char leadingField = index.getFieldSeq()[0];
+		return Long.compare(fieldValue(leadingField, leftStatementIndex, subj, pred, obj, context),
+				fieldValue(leadingField, rightStatementIndex, subj, pred, obj, context));
 	}
 
 	private long fieldValue(char field, int statementIndex, long[] subj, long[] pred, long[] obj, long[] context) {
@@ -455,11 +488,6 @@ public class TripleStoreTest {
 		try {
 			tripleStore.close();
 		} finally {
-			if (previousAlignedWriteStrategy == null) {
-				System.clearProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
-			} else {
-				System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, previousAlignedWriteStrategy);
-			}
 			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}

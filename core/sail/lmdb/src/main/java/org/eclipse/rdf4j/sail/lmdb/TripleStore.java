@@ -75,10 +75,10 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
@@ -111,11 +111,6 @@ import org.slf4j.LoggerFactory;
 @SuppressWarnings("deprecation")
 class TripleStore implements Closeable {
 
-	static ConcurrentHashMap<TripleIndex.KeyStats, TripleIndex.KeyStats> stats = new ConcurrentHashMap<>();
-	static long hit = 0;
-	static long fullHit = 0;
-	static long miss = 0;
-
 	/*-----------*
 	 * Constants *
 	 *-----------*/
@@ -144,7 +139,7 @@ class TripleStore implements Closeable {
 	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
 	 */
 	private static final String INDEXES_KEY = "triple-indexes";
-	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
+	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
 	/**
 	 * The version number for the current triple store.
 	 * <ul>
@@ -178,7 +173,6 @@ class TripleStore implements Closeable {
 	private long mapSize;
 	private long writeTxn;
 	private final TxnManager txnManager;
-	private final AlignedWriteStrategy alignedWriteStrategy;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
@@ -197,8 +191,6 @@ class TripleStore implements Closeable {
 		this.autoGrow = config.getAutoGrow();
 		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
 		this.valueStore = valueStore;
-		this.alignedWriteStrategy = AlignedWriteStrategy.fromSystemProperty();
-
 		// create directory if it not exists
 		this.dir.mkdirs();
 
@@ -814,7 +806,7 @@ class TripleStore implements Closeable {
 
 					int dbi = index.getDB(explicit);
 
-					int pos = 0;
+					int pos;
 					long cursor = 0;
 
 					try {
@@ -843,7 +835,7 @@ class TripleStore implements Closeable {
 						if (rc == MDB_SUCCESS) {
 							Varint.readListUnsigned(keyData.mv_data(), s.maxValues);
 							// this is required to correctly estimate the range size at a later point
-							s.startValues[s.MAX_BUCKETS] = s.maxValues;
+							s.startValues[Statistics.MAX_BUCKETS] = s.maxValues;
 						} else {
 							break;
 						}
@@ -851,9 +843,10 @@ class TripleStore implements Closeable {
 						long allSamplesCount = 0;
 						int bucket = 0;
 						boolean endOfRange = false;
-						for (; bucket < s.MAX_BUCKETS && !endOfRange; bucket++) {
+						for (; bucket < Statistics.MAX_BUCKETS && !endOfRange; bucket++) {
 							if (bucket != 0) {
-								bucketStart((double) bucket / s.MAX_BUCKETS, s.minValues, s.maxValues, s.values);
+								bucketStart((double) bucket / Statistics.MAX_BUCKETS, s.minValues, s.maxValues,
+										s.values);
 								keyBuf.clear();
 								Varint.writeListUnsigned(keyBuf, s.values);
 								keyBuf.flip();
@@ -863,7 +856,7 @@ class TripleStore implements Closeable {
 
 							int currentSamplesCount = 0;
 							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-							while (rc == MDB_SUCCESS && currentSamplesCount < s.MAX_SAMPLES_PER_BUCKET) {
+							while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
 								if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
 									endOfRange = true;
 									break;
@@ -998,7 +991,7 @@ class TripleStore implements Closeable {
 			}
 
 			if (recordCache != null) {
-				long quad[] = new long[] { subj, pred, obj, context };
+				long[] quad = new long[] { subj, pred, obj, context };
 				if (explicit) {
 					// remove implicit statement
 					recordCache.removeRecord(quad, false);
@@ -1059,7 +1052,7 @@ class TripleStore implements Closeable {
 		TripleIndex mainIndex = indexes.get(0);
 		int addedCount = 0;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer cursorHandle = alignedWriteStrategy.reuseSecondaryWriteCursor()
+			PointerBuffer cursorHandle = REUSE_SECONDARY_WRITE_CURSOR
 					? stack.mallocPointer(1)
 					: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
@@ -1099,7 +1092,7 @@ class TripleStore implements Closeable {
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
 				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
-				long secondaryWriteCursor = alignedWriteStrategy.reuseSecondaryWriteCursor() && addedCount > 0
+				long secondaryWriteCursor = REUSE_SECONDARY_WRITE_CURSOR && addedCount > 0
 						? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 						: 0;
 				for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
@@ -1113,7 +1106,7 @@ class TripleStore implements Closeable {
 					if (promotedFromImplicit[statementIndex]) {
 						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
-					if (alignedWriteStrategy.reuseSecondaryWriteCursor()) {
+					if (REUSE_SECONDARY_WRITE_CURSOR) {
 						E(mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0));
 					} else {
 						E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
@@ -1138,19 +1131,17 @@ class TripleStore implements Closeable {
 		if (length < 2) {
 			return;
 		}
-		if (alignedWriteStrategy.sortByFullKey()) {
-			insertionSortStatementIndicesByIndexOrder(statementIndices, 0, length, index, subj, pred, obj, context);
-			return;
-		}
 		long[] leadingValues = ensureLeadingFieldValues(length);
 		StatementFieldValueAccessor leadingFieldValueAccessor = index.leadingFieldValueAccessor;
 		for (int i = 0; i < length; i++) {
 			int statementIndex = statementIndices[i];
 			leadingValues[i] = leadingFieldValueAccessor.get(subj, pred, obj, context, statementIndex);
 		}
-		LeadingFieldSorters.sort(leadingFieldSortAlgorithm, statementIndices, leadingValues, length,
-				ensureLeadingFieldScratchIndices(length), ensureLeadingFieldScratchValues(length),
-				leadingFieldRadixCounts, leadingFieldRadixOffsets);
+		int[] scratchIndices = ensureLeadingFieldScratchIndices(length);
+		long[] scratchValues = ensureLeadingFieldScratchValues(length);
+		LeadingFieldSorters.lsdRadixSort(statementIndices, leadingValues, length, scratchIndices, scratchValues,
+				leadingFieldRadixCounts,
+				leadingFieldRadixOffsets);
 	}
 
 	private int[] ensureLeadingFieldScratchIndices(int length) {
@@ -1172,39 +1163,6 @@ class TripleStore implements Closeable {
 			leadingFieldScratchValues = new long[length];
 		}
 		return leadingFieldScratchValues;
-	}
-
-	private void insertionSortStatementIndicesByIndexOrder(int[] statementIndices, int from, int to, TripleIndex index,
-			long[] subj, long[] pred, long[] obj, long[] context) {
-		for (int i = from + 1; i < to; i++) {
-			int statementIndex = statementIndices[i];
-			int insertAt = upperBoundStatementIndicesByIndexOrder(statementIndices, from, i, statementIndex, index,
-					subj,
-					pred, obj, context);
-			for (int j = i; j > insertAt; j--) {
-				statementIndices[j] = statementIndices[j - 1];
-			}
-			statementIndices[insertAt] = statementIndex;
-		}
-	}
-
-	private int upperBoundStatementIndicesByIndexOrder(int[] statementIndices, int low, int high, int statementIndex,
-			TripleIndex index, long[] subj, long[] pred, long[] obj, long[] context) {
-		while (low < high) {
-			int mid = low + ((high - low) >>> 1);
-			int compare = index.compareStatementIndices(subj, pred, obj, context, statementIndices[mid],
-					statementIndex);
-			if (compare <= 0) {
-				low = mid + 1;
-			} else {
-				high = mid;
-			}
-		}
-		return low;
-	}
-
-	private boolean shouldResetToMainIndexOrder(char[] mainFieldSeq, char[] currentFieldSeq, char[] targetFieldSeq) {
-		return false;
 	}
 
 	private boolean canReuseCurrentOrder(char[] currentFieldSeq, char[] targetFieldSeq) {
@@ -1263,43 +1221,6 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private enum AlignedWriteStrategy {
-		BASELINE(false, false),
-		FULL_KEY_SORT(true, false),
-		FULL_KEY_SORT_WITH_CURSOR_REUSE(true, true),
-		CURSOR_REUSE_ONLY(false, true);
-
-		private final boolean sortByFullKey;
-		private final boolean reuseSecondaryWriteCursor;
-
-		AlignedWriteStrategy(boolean sortByFullKey, boolean reuseSecondaryWriteCursor) {
-			this.sortByFullKey = sortByFullKey;
-			this.reuseSecondaryWriteCursor = reuseSecondaryWriteCursor;
-		}
-
-		private static AlignedWriteStrategy fromSystemProperty() {
-			String configuredStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
-			if (configuredStrategy == null || configuredStrategy.isBlank()) {
-				return CURSOR_REUSE_ONLY;
-			}
-			try {
-				return AlignedWriteStrategy.valueOf(configuredStrategy.trim().toUpperCase());
-			} catch (IllegalArgumentException e) {
-				logger.warn("Unknown aligned write strategy '{}', falling back to {}", configuredStrategy,
-						CURSOR_REUSE_ONLY);
-				return CURSOR_REUSE_ONLY;
-			}
-		}
-
-		private boolean sortByFullKey() {
-			return sortByFullKey;
-		}
-
-		private boolean reuseSecondaryWriteCursor() {
-			return reuseSecondaryWriteCursor;
-		}
-	}
-
 	enum LeadingFieldSortAlgorithm {
 		LSD_RADIX
 	}
@@ -1344,7 +1265,7 @@ class TripleStore implements Closeable {
 			long newCount = amount;
 			if (mdb_get(writeTxn, contextsDbi, idVal, dataVal) == MDB_SUCCESS) {
 				// update count
-				newCount = Varint.readUnsigned(dataVal.mv_data()) + amount;
+				newCount = Varint.readUnsigned(Objects.requireNonNull(dataVal.mv_data())) + amount;
 			}
 			// write count
 			ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
@@ -1635,29 +1556,6 @@ class TripleStore implements Closeable {
 			}
 		}
 
-		private int compareStatementIndices(long[] subj, long[] pred, long[] obj, long[] context,
-				int leftStatementIndex,
-				int rightStatementIndex) {
-			StatementFieldValueAccessor[] accessors = fieldValueAccessors;
-			int compare = Long.compare(accessors[0].get(subj, pred, obj, context, leftStatementIndex),
-					accessors[0].get(subj, pred, obj, context, rightStatementIndex));
-			if (compare != 0) {
-				return compare;
-			}
-			compare = Long.compare(accessors[1].get(subj, pred, obj, context, leftStatementIndex),
-					accessors[1].get(subj, pred, obj, context, rightStatementIndex));
-			if (compare != 0) {
-				return compare;
-			}
-			compare = Long.compare(accessors[2].get(subj, pred, obj, context, leftStatementIndex),
-					accessors[2].get(subj, pred, obj, context, rightStatementIndex));
-			if (compare != 0) {
-				return compare;
-			}
-			return Long.compare(accessors[3].get(subj, pred, obj, context, leftStatementIndex),
-					accessors[3].get(subj, pred, obj, context, rightStatementIndex));
-		}
-
 		protected int[] getIndexes(char[] fieldSeq) {
 			int[] indexes = new int[fieldSeq.length];
 			for (int i = 0; i < fieldSeq.length; i++) {
@@ -1776,56 +1674,6 @@ class TripleStore implements Closeable {
 
 			}
 			return length;
-		}
-
-		class KeyStats {
-			long subj;
-			long pred;
-			long obj;
-			long context;
-			public LongAdder count = new LongAdder();
-
-			public KeyStats(long subj, long pred, long obj, long context) {
-				this.subj = subj;
-				this.pred = pred;
-				this.obj = obj;
-				this.context = context;
-			}
-
-			@Override
-			public final boolean equals(Object o) {
-				if (!(o instanceof KeyStats)) {
-					return false;
-				}
-
-				KeyStats keyStats = (KeyStats) o;
-				return subj == keyStats.subj && pred == keyStats.pred && obj == keyStats.obj
-						&& context == keyStats.context;
-			}
-
-			@Override
-			public int hashCode() {
-				int result = Long.hashCode(subj);
-				result = 31 * result + Long.hashCode(pred);
-				result = 31 * result + Long.hashCode(obj);
-				result = 31 * result + Long.hashCode(context);
-				return result;
-			}
-
-			public void print() {
-				if (count.sum() % 1000000 == 0) {
-
-					try {
-						System.out.println("Key " + new String(getFieldSeq()) + " "
-								+ Arrays.asList(valueStore.getValue(subj), valueStore.getValue(pred),
-										valueStore.getValue(obj), valueStore.getValue(context))
-								+ " count: " + count.sum());
-					} catch (IOException e) {
-						throw new RuntimeException(e);
-					}
-				}
-
-			}
 		}
 
 		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {

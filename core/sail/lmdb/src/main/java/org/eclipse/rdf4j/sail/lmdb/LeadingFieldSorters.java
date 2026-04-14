@@ -16,18 +16,11 @@ import java.util.Arrays;
 final class LeadingFieldSorters {
 
 	private static final int LSD_RADIX_THRESHOLD = 96;
-	private static final int UNGUARDED_INSERTION_SORT_THRESHOLD = 24;
 
 	private LeadingFieldSorters() {
 	}
 
-	static void sort(TripleStore.LeadingFieldSortAlgorithm algorithm, int[] statementIndices, long[] leadingValues,
-			int length, int[] scratchIndices, long[] scratchValues, int[] radixCounts, int[] radixOffsets) {
-		lsdRadixSort(statementIndices, leadingValues, length, scratchIndices, scratchValues, radixCounts,
-				radixOffsets);
-	}
-
-	private static void lsdRadixSort(int[] statementIndices, long[] leadingValues, int length, int[] scratchIndices,
+	public static void lsdRadixSort(int[] statementIndices, long[] leadingValues, int length, int[] scratchIndices,
 			long[] scratchValues, int[] counts, int[] offsets) {
 		if (length < 2 || isSorted(leadingValues, 0, length)) {
 			return;

@@ -42,8 +42,6 @@ import org.openjdk.jmh.infra.Blackhole;
 @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 public class LeadingFieldSortBenchmark {
-	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
-
 	@Param({ "64", "128", "256" })
 	public int size;
 
@@ -60,12 +58,9 @@ public class LeadingFieldSortBenchmark {
 	private long[] context;
 	private int[] baseOrder;
 	private int[] statementIndices;
-	private String previousAlignedWriteStrategy;
 
 	@Setup(Level.Trial)
 	public void setupTrial() throws Exception {
-		previousAlignedWriteStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
-		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, "CURSOR_REUSE_ONLY");
 		dataDir = java.nio.file.Files.createTempDirectory("leading-field-sort-benchmark").toFile();
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,psoc,opsc,ospc"), null);
 		subj = new long[size];
@@ -91,15 +86,7 @@ public class LeadingFieldSortBenchmark {
 				tripleStore.close();
 			}
 		} finally {
-			try {
-				LmdbTestUtil.deleteDir(dataDir);
-			} finally {
-				if (previousAlignedWriteStrategy == null) {
-					System.clearProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
-				} else {
-					System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, previousAlignedWriteStrategy);
-				}
-			}
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 

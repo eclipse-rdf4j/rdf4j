@@ -26,20 +26,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 public class TripleStoreLeadingFieldSortVariantTest {
-	private static final String ALIGNED_WRITE_STRATEGY_PROPERTY = "rdf4j.lmdb.alignedWriteStrategy";
 	private static final String ALIGNED_SORT_ALGORITHM_PROPERTY = "rdf4j.lmdb.alignedSortAlgorithm";
 
 	private TripleStore tripleStore;
 	private File dataDir;
-	private String previousAlignedWriteStrategy;
 	private String previousAlignedSortAlgorithm;
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) {
 		this.dataDir = dataDir;
-		previousAlignedWriteStrategy = System.getProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
 		previousAlignedSortAlgorithm = System.getProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
-		System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, "CURSOR_REUSE_ONLY");
 	}
 
 	@Test
@@ -73,11 +69,6 @@ public class TripleStoreLeadingFieldSortVariantTest {
 				tripleStore.close();
 			}
 		} finally {
-			if (previousAlignedWriteStrategy == null) {
-				System.clearProperty(ALIGNED_WRITE_STRATEGY_PROPERTY);
-			} else {
-				System.setProperty(ALIGNED_WRITE_STRATEGY_PROPERTY, previousAlignedWriteStrategy);
-			}
 			if (previousAlignedSortAlgorithm == null) {
 				System.clearProperty(ALIGNED_SORT_ALGORITHM_PROPERTY);
 			} else {
