@@ -117,10 +117,19 @@ public abstract class RepositoryTest {
 
 	@AfterEach
 	public void tearDown() {
+		if (testRepository == null) {
+			return;
+		}
+
 		try (RepositoryConnection connection = testRepository.getConnection()) {
 			connection.clear();
+		} finally {
+			try {
+				testRepository.shutDown();
+			} finally {
+				cleanupRepositoryDataDir(testRepository);
+			}
 		}
-		testRepository.shutDown();
 	}
 
 	/**
@@ -129,6 +138,16 @@ public abstract class RepositoryTest {
 	 * @return an uninitialized repository.
 	 */
 	protected abstract Repository createRepository();
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupRepositoryDataDir(Repository repository) {
+		if (deleteDataDirAfterShutdown()) {
+			RepositoryDirCleanup.deleteDir(repository.getDataDir());
+		}
+	}
 
 	@Test
 	public void testShutdownFollowedByInit() {

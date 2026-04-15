@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,6 +88,28 @@ public abstract class EvaluationStrategyTest {
 		BaseSailConfig standardStoreConfig = getBaseSailConfig();
 		standardStoreConfig.setDefaultQueryEvaluationMode(QueryEvaluationMode.STANDARD);
 		standardRepo = createRepo(standardStoreConfig, "test-standard");
+	}
+
+	@AfterEach
+	public void tearDown() throws IOException {
+		try {
+			if (strictRepo != null) {
+				strictRepo.shutDown();
+				strictRepo = null;
+			}
+			if (standardRepo != null) {
+				standardRepo.shutDown();
+				standardRepo = null;
+			}
+			if (manager != null) {
+				manager.shutDown();
+				manager = null;
+			}
+		} finally {
+			if (deleteDataDirAfterShutdown()) {
+				SailDirCleanup.deleteDir(tempDir);
+			}
+		}
 	}
 
 	private Repository createRepo(BaseSailConfig config, String id) {
@@ -153,4 +177,8 @@ public abstract class EvaluationStrategyTest {
 	 * @return a {@link BaseSailConfig}.
 	 */
 	protected abstract BaseSailConfig getBaseSailConfig();
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
 }

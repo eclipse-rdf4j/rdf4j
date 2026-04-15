@@ -55,6 +55,10 @@ import org.lwjgl.util.lmdb.MDBVal;
  * deleted upon calling {@link #close()}.
  */
 final class TxnRecordCache {
+	private static final byte OP_REMOVE = 0;
+	private static final byte OP_ADD = 1;
+	private static final byte OPERATION_MASK = 0b1;
+	private static final byte CONTEXT_DELTA_FLAG = 0b10;
 
 	private final Path dbDir;
 	private final long env;
@@ -105,15 +109,32 @@ final class TxnRecordCache {
 		}
 	}
 
-	protected boolean storeRecord(long[] quad, boolean explicit) throws IOException {
-		return update(quad, explicit, true);
+	protected boolean storeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
+		return update(quad, explicit, OP_ADD, contextDelta);
 	}
 
-	protected void removeRecord(long[] quad, boolean explicit) throws IOException {
-		update(quad, explicit, false);
+	protected void removeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
+		update(quad, explicit, OP_REMOVE, contextDelta);
 	}
 
-	protected boolean update(long[] quad, boolean explicit, boolean add) throws IOException {
+	protected RecordState getRecordState(long[] quad, boolean explicit) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+			Varint.writeListUnsigned(keyBuf, quad);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			if (mdb_get(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal) != MDB_SUCCESS) {
+				return RecordState.ABSENT;
+			}
+
+			return isAdd(dataVal.mv_data().get(0)) ? RecordState.ADD : RecordState.REMOVE;
+		}
+	}
+
+	protected boolean update(long[] quad, boolean explicit, byte operation, boolean contextDelta) throws IOException {
 		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
 			// resize map if required
 			E(mdb_txn_commit(writeTxn));
@@ -135,19 +156,19 @@ final class TxnRecordCache {
 			keyVal.mv_data(keyBuf);
 
 			boolean foundExplicit = mdb_get(writeTxn, dbiExplicit, keyVal, dataVal) == MDB_SUCCESS &&
-					(dataVal.mv_data().get(0) & 0b1) != 0;
+					isAdd(dataVal.mv_data().get(0));
 			boolean foundImplicit = !foundExplicit && mdb_get(writeTxn, dbiInferred, keyVal, dataVal) == MDB_SUCCESS
 					&&
-					(dataVal.mv_data().get(0) & 0b1) != 0;
+					isAdd(dataVal.mv_data().get(0));
 
 			boolean found = foundExplicit || foundImplicit;
-			if (add) {
+			if (operation == OP_ADD) {
 				if (!found || explicit && foundImplicit) {
 					if (explicit && foundImplicit) {
 						E(mdb_del(writeTxn, dbiInferred, keyVal, dataVal));
 					}
 					// mark as add
-					dataVal.mv_data(stack.bytes((byte) 1));
+					dataVal.mv_data(stack.bytes(encode(operation, contextDelta)));
 					E(mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0));
 				}
 				return !found;
@@ -157,7 +178,7 @@ final class TxnRecordCache {
 					E(mdb_del(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal));
 				} else {
 					// mark as remove
-					dataVal.mv_data(stack.bytes((byte) 0));
+					dataVal.mv_data(stack.bytes(encode(operation, contextDelta)));
 					E(mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0));
 				}
 				return true;
@@ -172,6 +193,13 @@ final class TxnRecordCache {
 	static class Record {
 		long quad[];
 		boolean add;
+		boolean contextDelta;
+	}
+
+	enum RecordState {
+		ABSENT,
+		ADD,
+		REMOVE
 	}
 
 	protected class RecordCacheIterator {
@@ -199,7 +227,8 @@ final class TxnRecordCache {
 				byte op = valueData.mv_data().get(0);
 				Record r = new Record();
 				r.quad = quad;
-				r.add = op == 1;
+				r.add = isAdd(op);
+				r.contextDelta = (op & CONTEXT_DELTA_FLAG) != 0;
 				return r;
 			}
 			close();
@@ -215,5 +244,13 @@ final class TxnRecordCache {
 				txn = 0;
 			}
 		}
+	}
+
+	private static boolean isAdd(byte operation) {
+		return (operation & OPERATION_MASK) == OP_ADD;
+	}
+
+	private static byte encode(byte operation, boolean contextDelta) {
+		return (byte) (operation | (contextDelta ? CONTEXT_DELTA_FLAG : 0));
 	}
 }

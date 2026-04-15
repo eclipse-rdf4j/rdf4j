@@ -86,6 +86,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	final static class MemoryOverflowIntoNativeStore extends MemoryOverflowModel {
 		private static final long serialVersionUID = 1L;
+		private transient Cleaner.Cleanable overflowStoreCleanup;
 
 		/**
 		 * The class is static to avoid taking a pointer which might make it hard to get a phantom reference.
@@ -120,8 +121,18 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			NativeSailStore nativeSailStore = new NativeSailStore(dataDir, "spoc");
 			// Once the model is no longer reachable (i.e. phantom reference we can close the
 			// backingstore.
-			REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW.register(this, new OverFlowStoreCleaner(nativeSailStore, dataDir));
+			overflowStoreCleanup = REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW.register(this,
+					new OverFlowStoreCleaner(nativeSailStore, dataDir));
 			return nativeSailStore;
+		}
+
+		@Override
+		protected synchronized void innerClose() {
+			Cleaner.Cleanable cleanup = overflowStoreCleanup;
+			overflowStoreCleanup = null;
+			if (cleanup != null) {
+				cleanup.clean();
+			}
 		}
 	}
 

@@ -13,34 +13,63 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.ref.Cleaner;
 import java.nio.file.Files;
 
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Model implementation that stores in a {@link LinkedHashModel} until more than 10KB statements are added and the
- * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
- * implementation seamlessly changes to a disk based {@link SailSourceModel}.
+ * Model implementation that stores in a {@link org.eclipse.rdf4j.model.impl.DynamicModel} until more than 10KB
+ * statements are added and the estimated memory usage is more than the amount of free memory available. Once the
+ * threshold is cross this implementation seamlessly changes to a disk based {@link SailSourceModel}.
  */
 abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourceModel> {
 
-	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
+	private static final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
+	private static final ConcurrentCleaner CLEANER = new ConcurrentCleaner();
 
 	private transient File dataDir;
 
 	private transient LmdbSailStore store;
 
-	public MemoryOverflowModel(boolean verifyAdditions) {
+	private transient Cleaner.Cleanable overflowStoreCleanup;
+
+	public MemoryOverflowModel() {
 		super();
 	}
 
 	protected abstract LmdbSailStore createSailStore(File dataDir) throws IOException, SailException;
+
+	private static final class OverflowStoreCleaner implements Runnable {
+		private final LmdbSailStore store;
+		private final File dataDir;
+
+		private OverflowStoreCleaner(LmdbSailStore store, File dataDir) {
+			this.store = store;
+			this.dataDir = dataDir;
+		}
+
+		@Override
+		public void run() {
+			try {
+				store.close();
+			} catch (SailException e) {
+				logger.error(e.toString(), e);
+			} finally {
+				try {
+					FileUtil.deleteDir(dataDir);
+				} catch (IOException e) {
+					logger.error("Could not remove overflow directory {}", dataDir, e);
+				}
+			}
+		}
+	}
 
 	@Override
 	protected void overflowToDiskInner(Model memory) {
@@ -49,30 +78,25 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 			dataDir = Files.createTempDirectory("model").toFile();
 			logger.debug("memory overflow using temp directory {}", dataDir);
 			store = createSailStore(dataDir);
-			disk = new SailSourceModel(store, memory) {
-
-				@Override
-				protected void finalize() throws Throwable {
-					logger.debug("finalizing {}", dataDir);
-					if (disk == this) {
-						try {
-							store.close();
-						} catch (SailException e) {
-							logger.error(e.toString(), e);
-						} finally {
-							FileUtil.deleteDir(dataDir);
-							dataDir = null;
-							store = null;
-							disk = null;
-						}
-					}
-					super.finalize();
-				}
-			};
+			overflowStoreCleanup = CLEANER.register(this, new OverflowStoreCleaner(store, dataDir));
+			disk = new SailSourceModel(store, memory);
 		} catch (IOException | SailException e) {
 			String path = dataDir != null ? dataDir.getAbsolutePath() : "(unknown)";
 			logger.error("Error while writing to overflow directory " + path, e);
 		}
 	}
 
+	@Override
+	protected synchronized void innerClose() {
+		try {
+			Cleaner.Cleanable cleanup = overflowStoreCleanup;
+			overflowStoreCleanup = null;
+			if (cleanup != null) {
+				cleanup.clean();
+			}
+		} finally {
+			store = null;
+			dataDir = null;
+		}
+	}
 }

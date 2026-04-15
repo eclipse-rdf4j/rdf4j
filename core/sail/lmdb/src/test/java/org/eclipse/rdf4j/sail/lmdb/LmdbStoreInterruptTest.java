@@ -39,4 +39,9 @@ public class LmdbStoreInterruptTest extends SailInterruptTest {
 	protected NotifyingSail createSail() throws SailException {
 		return new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

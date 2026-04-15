@@ -52,6 +52,11 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final int NAMESPACE_CACHE_SIZE = 64;
 
 	/**
+	 * The default size of aligned bulk write batches.
+	 */
+	public static final int BULK_OPERATION_SIZE = 256;
+
+	/**
 	 * The default namespace id cache size.
 	 */
 	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
@@ -69,6 +74,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private int valueCacheSize = -1;
 
 	private int valueIDCacheSize = -1;
+
+	private int bulkOperationSize = -1;
 
 	private int namespaceCacheSize = -1;
 
@@ -170,6 +177,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getBulkOperationSize() {
+		return bulkOperationSize >= 0 ? bulkOperationSize : BULK_OPERATION_SIZE;
+	}
+
+	public LmdbStoreConfig setBulkOperationSize(int bulkOperationSize) {
+		this.bulkOperationSize = bulkOperationSize;
+		return this;
+	}
+
 	public int getNamespaceCacheSize() {
 		return namespaceCacheSize >= 0 ? namespaceCacheSize : NAMESPACE_CACHE_SIZE;
 	}
@@ -250,6 +266,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (valueIDCacheSize >= 0) {
 			m.add(implNode, LmdbStoreSchema.VALUE_ID_CACHE_SIZE, vf.createLiteral(valueIDCacheSize));
+		}
+		if (bulkOperationSize >= 0) {
+			m.add(implNode, LmdbStoreSchema.BULK_OPERATION_SIZE, vf.createLiteral(bulkOperationSize));
 		}
 		if (namespaceCacheSize >= 0) {
 			m.add(implNode, LmdbStoreSchema.NAMESPACE_CACHE_SIZE, vf.createLiteral(namespaceCacheSize));
@@ -337,6 +356,17 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						} catch (NumberFormatException e) {
 							throw new SailConfigException(
 									"Integer value required for " + LmdbStoreSchema.VALUE_ID_CACHE_SIZE
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.BULK_OPERATION_SIZE, null))
+					.ifPresent(lit -> {
+						try {
+							setBulkOperationSize(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Integer value required for " + LmdbStoreSchema.BULK_OPERATION_SIZE
 											+ " property, found " + lit);
 						}
 					});

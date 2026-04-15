@@ -259,7 +259,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				FileUtils.writeStringToFile(versionFile, VERSION, StandardCharsets.UTF_8);
 			}
 			backingStore = new LmdbSailStore(dataDir, config);
-			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel(false) {
+			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override
 				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
