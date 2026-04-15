@@ -1183,8 +1183,8 @@ class TripleStore implements Closeable {
 				if (!shouldFallBackFromAlignedContextWrite(e)) {
 					throw e;
 				}
-				fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context, remainingStart,
-						count, explicit, appliedContextIncrements);
+				fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+						promotedFromImplicit, remainingStart, count, explicit, appliedContextIncrements);
 				return;
 			}
 
@@ -1211,15 +1211,15 @@ class TripleStore implements Closeable {
 						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
 					if (shouldFallBackFromAlignedWrite()) {
-						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context, remainingStart,
-								count, explicit, contextIncrements);
+						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+								promotedFromImplicit, remainingStart, count, explicit, contextIncrements);
 						return;
 					}
 					if (REUSE_SECONDARY_WRITE_CURSOR) {
 						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									remainingStart, count, explicit, contextIncrements);
+									promotedFromImplicit, remainingStart, count, explicit, contextIncrements);
 							return;
 						}
 						E(rc);
@@ -1227,7 +1227,7 @@ class TripleStore implements Closeable {
 						int rc = mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									remainingStart, count, explicit, contextIncrements);
+									promotedFromImplicit, remainingStart, count, explicit, contextIncrements);
 							return;
 						}
 						E(rc);
@@ -1262,7 +1262,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
-			long[] obj, long[] context, int remainingStart, int count, boolean explicit,
+			long[] obj, long[] context, boolean[] promotedFromImplicit, int remainingStart, int count, boolean explicit,
 			LongIntHashMap contextIncrementsToUndo)
 			throws IOException {
 		undoContextIncrements(contextIncrementsToUndo);
@@ -1272,8 +1272,17 @@ class TripleStore implements Closeable {
 		}
 		for (int i = 0; i < addedCount; i++) {
 			int statementIndex = addedStatementIndices[i];
-			storeTriple(subj[statementIndex], pred[statementIndex], obj[statementIndex], context[statementIndex],
-					explicit);
+			long statementSubj = subj[statementIndex];
+			long statementPred = pred[statementIndex];
+			long statementObj = obj[statementIndex];
+			long statementContext = context[statementIndex];
+			if (explicit && promotedFromImplicit[statementIndex]) {
+				long[] quad = new long[] { statementSubj, statementPred, statementObj, statementContext };
+				recordCache.removeRecord(quad, false);
+				recordCache.storeRecord(quad, true);
+			} else {
+				storeTriple(statementSubj, statementPred, statementObj, statementContext, explicit);
+			}
 		}
 		if (remainingStart < count) {
 			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit);
