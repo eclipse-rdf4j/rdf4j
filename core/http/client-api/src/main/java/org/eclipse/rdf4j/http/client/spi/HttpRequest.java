@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.http.client.spi;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -23,8 +24,9 @@ import java.util.Optional;
  * request patterns, consider using the convenience factory methods in {@link HttpRequests}.
  *
  * <p>
- * Headers can be added after construction via {@link #addHeader(String, String)}, which allows
- * {@link AuthenticationHandler} implementations to modify requests in-place.
+ * Headers can be manipulated after construction via {@link #addHeader(String, String)},
+ * {@link #setHeader(String, String)}, {@link #setHeaders(Map)}, {@link #unsetHeader(String)}, and
+ * {@link #unsetHeaders()}, which allows {@link AuthenticationHandler} implementations to modify requests in-place.
  *
  * <p>
  * Example usage:
@@ -89,6 +91,45 @@ public class HttpRequest {
 	 */
 	public void addHeader(String name, String value) {
 		headers.add(HttpHeader.of(name, value));
+	}
+
+	/**
+	 * Replaces all existing values for the given header name with a single new value. The comparison is
+	 * case-insensitive.
+	 *
+	 * @param name  the header name; must not be {@code null}
+	 * @param value the new header value; must not be {@code null}
+	 */
+	public void setHeader(String name, String value) {
+		headers.removeIf(h -> h.getName().equalsIgnoreCase(name));
+		headers.add(HttpHeader.of(name, value));
+	}
+
+	/**
+	 * Replaces all existing headers with the entries from the given map. Each map entry sets a single value for its
+	 * header name, replacing any previously set values for that name. Header names that are not present in the map are
+	 * left untouched.
+	 *
+	 * @param headerMap a map of header names to values; must not be {@code null}
+	 */
+	public void setHeaders(Map<String, String> headerMap) {
+		headerMap.forEach(this::setHeader);
+	}
+
+	/**
+	 * Removes all headers with the given name. The comparison is case-insensitive.
+	 *
+	 * @param name the header name to remove; must not be {@code null}
+	 */
+	public void unsetHeader(String name) {
+		headers.removeIf(h -> h.getName().equalsIgnoreCase(name));
+	}
+
+	/**
+	 * Removes all headers from this request.
+	 */
+	public void unsetHeaders() {
+		headers.clear();
 	}
 
 	/**
@@ -167,6 +208,19 @@ public class HttpRequest {
 		 */
 		public Builder headers(List<HttpHeader> hdrs) {
 			headers.addAll(hdrs);
+			return this;
+		}
+
+		/**
+		 * Appends one or more headers to the request. Multiple calls are additive.
+		 *
+		 * @param hdrs the {@link HttpHeader}s to add; must not be {@code null}
+		 * @return this builder
+		 */
+		public Builder headers(HttpHeader... hdrs) {
+			for (HttpHeader h : hdrs) {
+				headers.add(h);
+			}
 			return this;
 		}
 
