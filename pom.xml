@@ -862,7 +862,7 @@
 					<version>3.5.4</version>
 					<configuration>
 						<forkCount>1</forkCount>
-						<reuseForks>false</reuseForks>
+						<reuseForks>true</reuseForks>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} -Xmx4G</argLine>
 						<includes>
