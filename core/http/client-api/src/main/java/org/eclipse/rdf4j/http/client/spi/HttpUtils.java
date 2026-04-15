@@ -90,7 +90,7 @@ public final class HttpUtils {
 				}
 				try {
 					return Charset.forName(name);
-				} catch (UnsupportedCharsetException e) {
+				} catch (IllegalArgumentException e) {
 					return defaultCharset;
 				}
 			}

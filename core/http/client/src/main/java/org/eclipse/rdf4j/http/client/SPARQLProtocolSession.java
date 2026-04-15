@@ -1173,8 +1173,14 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		for (HttpHeader header : headers) {
 			for (String part : header.getValue().split(";")) {
 				String trimmed = part.trim();
-				if (trimmed.startsWith("charset=")) {
+				if (trimmed.regionMatches(true, 0, "charset=", 0, "charset=".length())) {
 					String charsetName = trimmed.substring("charset=".length()).trim();
+					// Strip optional surrounding quotes (e.g. charset="UTF-8")
+					if (charsetName.length() >= 2
+							&& charsetName.charAt(0) == '"'
+							&& charsetName.charAt(charsetName.length() - 1) == '"') {
+						charsetName = charsetName.substring(1, charsetName.length() - 1);
+					}
 					try {
 						Charset charset = Charset.forName(charsetName);
 						logger.debug("response charset is {}", charset);

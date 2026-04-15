@@ -104,11 +104,14 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 				.evictExpiredConnections()
 				.setConnectionManager(connectionManager)
 				.setDefaultRequestConfig(requestConfig)
-				.evictExpiredConnections()
-				.evictIdleConnections(TimeValue.ofMilliseconds(config.getIdleConnectionTimeoutMs()))
 				.useSystemProperties()
-				.setRetryStrategy(new RDF4JRetryStrategy(config.getMaxConnectionsPerRoute()))
-				.setRedirectStrategy(DefaultRedirectStrategy.INSTANCE);
+				.setRetryStrategy(new RDF4JRetryStrategy(config.getMaxConnectionsPerRoute()));
+
+		if (config.getIdleConnectionTimeoutMs() > 0) {
+			builder.evictIdleConnections(TimeValue.ofMilliseconds(config.getIdleConnectionTimeoutMs()));
+		}
+
+		builder.setRedirectStrategy(DefaultRedirectStrategy.INSTANCE);
 
 		if (!config.getDefaultHeaders().isEmpty()) {
 			List<BasicHeader> defaultHeaders = config.getDefaultHeaders()
