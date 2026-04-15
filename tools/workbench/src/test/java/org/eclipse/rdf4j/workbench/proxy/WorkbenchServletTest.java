@@ -61,20 +61,20 @@ class WorkbenchServletTest {
 		assertThatThrownBy(
 				() -> missingDefault.init(TestServletConfig.withParams("workbench", WorkbenchServlet.SERVER_PARAM,
 						"https://example.org/rdf4j-server")))
-				.isInstanceOf(MissingInitParameterException.class);
+								.isInstanceOf(MissingInitParameterException.class);
 
 		TestWorkbenchServlet missingServer = new TestWorkbenchServlet();
 		assertThatThrownBy(
 				() -> missingServer.init(TestServletConfig.withParams("workbench", "default-path", "/repositories")))
-				.isInstanceOf(MissingInitParameterException.class);
+						.isInstanceOf(MissingInitParameterException.class);
 
 		TestWorkbenchServlet failing = new TestWorkbenchServlet();
 		failing.managerFailure = new RepositoryException("boom");
 		assertThatThrownBy(() -> failing.init(TestServletConfig.withParams("workbench",
 				"default-path", "/repositories",
 				WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server")))
-				.isInstanceOf(ServletException.class)
-				.hasCauseInstanceOf(RepositoryException.class);
+						.isInstanceOf(ServletException.class)
+						.hasCauseInstanceOf(RepositoryException.class);
 
 		WorkbenchServlet real = new WorkbenchServlet();
 		assertThat(real.createRepositoryManager(tempDir.toURI().toString())).isInstanceOf(LocalRepositoryManager.class);
@@ -88,7 +88,7 @@ class WorkbenchServletTest {
 		assertThatThrownBy(() -> blankServer.init(TestServletConfig.withParams("workbench",
 				"default-path", "/repositories",
 				WorkbenchServlet.SERVER_PARAM, "   ")))
-				.isInstanceOf(MissingInitParameterException.class);
+						.isInstanceOf(MissingInitParameterException.class);
 
 		RepositoryManager manager = mock(RepositoryManager.class);
 		FactoryWorkbenchServlet servlet = new FactoryWorkbenchServlet(manager);
@@ -201,8 +201,8 @@ class WorkbenchServletTest {
 		when(manager.getRepository("broken")).thenThrow(new RepositoryException("broken"));
 		assertThatThrownBy(
 				() -> failingServlet.service(request("/workbench/broken", "/broken"), new CapturedResponse()))
-				.isInstanceOf(ServletException.class)
-				.hasCauseInstanceOf(RepositoryException.class);
+						.isInstanceOf(ServletException.class)
+						.hasCauseInstanceOf(RepositoryException.class);
 	}
 
 	@Test
@@ -250,8 +250,8 @@ class WorkbenchServletTest {
 		when(manager.getRepository("missing")).thenReturn(null);
 		assertThatThrownBy(
 				() -> missingServlet.service(request("/workbench/missing", "/missing"), new CapturedResponse()))
-				.isInstanceOf(BadRequestException.class)
-				.hasMessageContaining("No such repository: missing");
+						.isInstanceOf(BadRequestException.class)
+						.hasMessageContaining("No such repository: missing");
 
 		ThrowingUnauthorizedWorkbenchServlet unauthorizedServlet = new ThrowingUnauthorizedWorkbenchServlet();
 		unauthorizedServlet.managerToReturn = manager;
@@ -267,8 +267,8 @@ class WorkbenchServletTest {
 
 		assertThatThrownBy(
 				() -> unauthorizedServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse()))
-				.isInstanceOf(IOException.class)
-				.hasCauseInstanceOf(org.eclipse.rdf4j.query.QueryResultHandlerException.class);
+						.isInstanceOf(IOException.class)
+						.hasCauseInstanceOf(org.eclipse.rdf4j.query.QueryResultHandlerException.class);
 	}
 
 	private static TestWorkbenchServlet initServlet(RepositoryManager manager) throws Exception {

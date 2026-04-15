@@ -36,7 +36,7 @@ class OrderQueryEvaluationStepTelemetryTest {
 	void retainsLegacyConstructorForBinaryCompatibility() throws Exception {
 		assertThat(OrderQueryEvaluationStep.class
 				.getConstructor(Comparator.class, long.class, boolean.class, QueryEvaluationStep.class, long.class))
-				.isNotNull();
+						.isNotNull();
 	}
 
 	@Test
