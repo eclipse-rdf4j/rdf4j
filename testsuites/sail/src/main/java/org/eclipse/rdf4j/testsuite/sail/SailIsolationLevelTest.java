@@ -91,10 +91,24 @@ public abstract class SailIsolationLevelTest {
 
 	@AfterEach
 	public void tearDown() {
-		store.shutDown();
+		try {
+			store.shutDown();
+		} finally {
+			cleanupSailDataDir(store);
+		}
 	}
 
 	protected abstract Sail createSail() throws SailException;
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupSailDataDir(Sail sail) {
+		if (deleteDataDirAfterShutdown()) {
+			SailDirCleanup.deleteDir(sail.getDataDir());
+		}
+	}
 
 	protected boolean isSupported(IsolationLevels level) throws SailException {
 		SailConnection con = store.getConnection();

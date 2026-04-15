@@ -44,8 +44,12 @@ public class TestLmdbStoreUpgrade {
 			store.shutDown();
 		}
 		new File(dataDir, "lmdbrdf.ver").delete();
-		assertValue(dataDir);
-		assertTrue(new File(dataDir, "lmdbrdf.ver").exists());
+		try {
+			assertValue(dataDir);
+			assertTrue(new File(dataDir, "lmdbrdf.ver").exists());
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 
 	public void assertValue(File dataDir) throws SailException {

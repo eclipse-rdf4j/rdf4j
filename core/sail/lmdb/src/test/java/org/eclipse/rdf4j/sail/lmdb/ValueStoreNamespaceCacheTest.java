@@ -51,6 +51,7 @@ class ValueStoreNamespaceCacheTest {
 			assertEquals(1, cache.getInvocations());
 		} finally {
 			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 

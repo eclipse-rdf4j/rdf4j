@@ -45,6 +45,7 @@ import org.junit.rules.TemporaryFolder;
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
+	private static File dataDir;
 
 	public static TemporaryFolder tempDir = new TemporaryFolder();
 	static List<Statement> statementList;
@@ -119,10 +120,10 @@ public class QueryBenchmarkTest {
 	@BeforeAll
 	public static void beforeClass() throws IOException {
 		tempDir.create();
-		File file = tempDir.newFolder();
+		dataDir = tempDir.newFolder();
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-		repository = new SailRepository(new LmdbStore(file, config));
+		repository = new SailRepository(new LmdbStore(dataDir, config));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -144,9 +145,14 @@ public class QueryBenchmarkTest {
 
 	@AfterAll
 	public static void afterClass() {
-		repository.shutDown();
+		try {
+			repository.shutDown();
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 		tempDir.delete();
 		tempDir = null;
+		dataDir = null;
 		repository = null;
 		statementList = null;
 	}

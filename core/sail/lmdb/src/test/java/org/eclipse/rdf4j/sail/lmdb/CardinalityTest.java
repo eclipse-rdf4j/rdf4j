@@ -32,11 +32,13 @@ public class CardinalityTest {
 	@TempDir
 	File tempFolder;
 
+	private File dataDir;
+
 	protected TripleStore tripleStore;
 
 	@BeforeEach
 	public void before() throws Exception {
-		File dataDir = new File(tempFolder, "triplestore");
+		dataDir = new File(tempFolder, "triplestore");
 		dataDir.mkdir();
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 	}
@@ -83,6 +85,10 @@ public class CardinalityTest {
 
 	@AfterEach
 	public void after() throws Exception {
-		tripleStore.close();
+		try {
+			tripleStore.close();
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 }

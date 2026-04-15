@@ -53,7 +53,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.lang.ref.Cleaner;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -64,7 +63,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -211,14 +209,10 @@ class ValueStore extends AbstractValueFactory {
 	final Set<Long> unusedRevisionIds = new HashSet<>();
 
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
-	private final Set<ReadTxn> readTransactions = Collections
-			.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
-	private final ThreadLocal<ReadTxn> threadLocalReadTxn = ThreadLocal.withInitial(() -> {
-		ReadTxn readTxn = new ReadTxn(readTransactions);
-		readTxn.registerIfNeeded();
-		readTxn.cleaner(cleaner);
-		return readTxn;
-	});
+	// Keep live native read transactions visible until abort completes during close/cleanup.
+	private final Set<ReadTxn.State> activeReadTransactions = ConcurrentHashMap.newKeySet();
+	private final ThreadLocal<ReadTxn> threadLocalReadTxn = ThreadLocal
+			.withInitial(() -> new ReadTxn(activeReadTransactions, cleaner));
 
 	@SuppressWarnings("unused")
 	private Object[] previousNamespaceEntry;
@@ -1390,9 +1384,9 @@ class ValueStore extends AbstractValueFactory {
 	private void closeReadTransactions() {
 		txnLock.writeLock().lock();
 		try {
-			ReadTxn[] snapshot = readTransactions.toArray(new ReadTxn[0]);
-			for (ReadTxn readTxn : snapshot) {
-				readTxn.close();
+			ReadTxn.State[] snapshot = activeReadTransactions.toArray(new ReadTxn.State[0]);
+			for (ReadTxn.State readTxn : snapshot) {
+				readTxn.closeTxn();
 			}
 			threadLocalReadTxn.remove();
 		} finally {
@@ -1487,47 +1481,60 @@ class ValueStore extends AbstractValueFactory {
 
 	private static final class ReadTxn {
 
-		private final State state = new State(-1);
-		private boolean registered;
-
-		private final Set<ReadTxn> readTransactions;
-		private Cleaner.Cleanable cleaner;
+		private final State state;
 
 		static class State implements Runnable {
-			public long txn;
+			private final Set<State> activeReadTransactions;
+			public long txn = -1;
 			public long depth;
 			private boolean initialized;
 
-			public State(long txn) {
-				this.txn = txn;
+			public State(Set<State> activeReadTransactions) {
+				this.activeReadTransactions = activeReadTransactions;
 			}
 
 			@Override
 			public void run() {
-				if (initialized) {
-					var txn = this.txn;
-					this.txn = -1;
+				closeTxn();
+			}
+
+			synchronized void initialize(long txn) {
+				this.txn = txn;
+				depth = 0;
+				initialized = true;
+				activeReadTransactions.add(this);
+			}
+
+			synchronized void closeTxn() {
+				if (!initialized) {
+					activeReadTransactions.remove(this);
+					return;
+				}
+
+				long txn = this.txn;
+				long depth = this.depth;
+				this.txn = -1;
+				this.depth = 0;
+				this.initialized = false;
+				try {
 					if (txn != -1) {
 						try {
 							if (depth > 0) {
 								mdb_txn_reset(txn);
-								depth = 0;
 							}
 						} finally {
 							mdb_txn_abort(txn);
 						}
 					}
-					initialized = false;
+				} finally {
+					activeReadTransactions.remove(this);
 				}
 			}
 		}
 
-		public ReadTxn(Set<ReadTxn> readTransactions) {
-			this.readTransactions = readTransactions;
-		}
-
-		public void cleaner(ConcurrentCleaner cleaner) {
-			this.cleaner = cleaner.register(this, state);
+		public ReadTxn(Set<State> activeReadTransactions, ConcurrentCleaner cleaner) {
+			this.state = new State(activeReadTransactions);
+			cleaner.register(this, state);
 		}
 
 		synchronized <T> T execute(Transaction<T> transaction, long env) throws IOException {
@@ -1563,11 +1570,8 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		private void ensureTxn(long env) throws IOException {
-			registerIfNeeded();
-
 			if (!state.initialized) {
 				startTxn(env);
-				state.initialized = true;
 				return;
 			}
 
@@ -1575,9 +1579,8 @@ class ValueStore extends AbstractValueFactory {
 				try {
 					E(mdb_txn_renew(state.txn));
 				} catch (IOException e) {
-					closeInternal();
+					close();
 					startTxn(env);
-					state.initialized = true;
 				}
 			}
 
@@ -1587,7 +1590,7 @@ class ValueStore extends AbstractValueFactory {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
 				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-				state.txn = pp.get(0);
+				state.initialize(pp.get(0));
 			}
 		}
 
@@ -1601,29 +1604,8 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 
-		private void registerIfNeeded() {
-			if (!registered) {
-				readTransactions.add(this);
-				registered = true;
-			}
-		}
-
-		private void unregister() {
-			readTransactions.remove(this);
-			registered = false;
-		}
-
-		private void closeInternal() {
-			if (state.initialized) {
-				cleaner.clean();
-			}
-			if (registered) {
-				unregister();
-			}
-		}
-
 		void close() {
-			closeInternal();
+			state.closeTxn();
 		}
 	}
 

@@ -32,6 +32,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	private static final long serialVersionUID = 4254119331281455614L;
 	public static final Resource[] NULL_CONTEXT = { null };
+	public static final Resource[] NO_CONTEXT = {};
 
 	@Override
 	public Model unmodifiable() {
@@ -45,7 +46,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	@Override
 	public boolean isEmpty() {
-		return !contains(null, null, null);
+		return !contains(null, null, null, NO_CONTEXT);
 	}
 
 	@Override

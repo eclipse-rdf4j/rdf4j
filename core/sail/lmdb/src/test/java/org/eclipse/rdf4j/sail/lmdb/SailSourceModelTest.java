@@ -14,6 +14,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.Timeout;
 @Timeout(value = 3000, unit = MILLISECONDS)
 public class SailSourceModelTest extends ModelTest {
 	List<LmdbSailStore> stores = new ArrayList<>();
+	List<File> storeDirs = new ArrayList<>();
 
 	@Test
 	public void testRemove() {
@@ -57,9 +59,10 @@ public class SailSourceModelTest extends ModelTest {
 	@Override
 	protected SailSourceModel getNewModel() {
 		try {
-			LmdbSailStore store = new LmdbSailStore(Files.createTempDirectory("SailSourceModelTest-").toFile(),
-					new LmdbStoreConfig("spoc"));
+			File dataDir = Files.createTempDirectory("SailSourceModelTest-").toFile();
+			LmdbSailStore store = new LmdbSailStore(dataDir, new LmdbStoreConfig("spoc"));
 			stores.add(store);
+			storeDirs.add(dataDir);
 			return new SailSourceModel(store);
 		} catch (Exception e) {
 			throw new RuntimeException(e);
@@ -69,9 +72,11 @@ public class SailSourceModelTest extends ModelTest {
 	@AfterEach
 	public void tearDown() throws Exception {
 		super.tearDown();
-		for (LmdbSailStore store : stores) {
-			store.close();
+		for (int i = 0; i < stores.size(); i++) {
+			stores.get(i).close();
+			LmdbTestUtil.deleteDir(storeDirs.get(i));
 		}
 		stores.clear();
+		storeDirs.clear();
 	}
 }

@@ -13,8 +13,25 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.atMost;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -23,6 +40,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -34,6 +52,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +65,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbSailStoreTest {
 
 	protected Repository repo;
+	private File dataDir;
 
 	protected final ValueFactory F = SimpleValueFactory.getInstance();
 
@@ -62,6 +82,7 @@ public class LmdbSailStoreTest {
 
 	@BeforeEach
 	public void before(@TempDir File dataDir) {
+		this.dataDir = dataDir;
 		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
 		repo.init();
 
@@ -255,8 +276,163 @@ public class LmdbSailStoreTest {
 		}
 	}
 
+	@Test
+	void approveAllPropagatesPredicateStoreFailureAsSailException() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+		valueStoreField.setAccessible(true);
+		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
+		ValueStore valueStoreSpy = spy(originalValueStore);
+		IRI failingPredicate = F.createIRI("urn:failing-predicate");
+		SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
+
+		doAnswer(invocation -> {
+			Value value = invocation.getArgument(0);
+			if (failingPredicate.equals(value)) {
+				throw new IOException("expected predicate failure");
+			}
+			return invocation.callRealMethod();
+		}).when(valueStoreSpy).storeValue(any(Value.class));
+
+		valueStoreField.set(backingStore, valueStoreSpy);
+		try {
+			SailException exception = assertThrows(SailException.class,
+					() -> sink.approveAll(Set.of(F.createStatement(F.createIRI("urn:subject"), failingPredicate,
+							F.createLiteral("object"))), Set.of()));
+
+			assertTrue(exception.getCause() instanceof IOException);
+		} finally {
+			valueStoreField.set(backingStore, originalValueStore);
+			sink.close();
+		}
+	}
+
+	@Test
+	void approveAllBatchesTripleStoreWritesIntoBulkCalls() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 1025; i++) {
+			statements.add(F.createStatement(
+					F.createIRI("urn:subject:" + i),
+					F.createIRI("urn:predicate:" + (i % 17)),
+					F.createIRI("urn:object:" + (i % 29)),
+					F.createIRI("urn:context:" + (i % 7))));
+		}
+
+		tripleStoreField.set(backingStore, tripleStoreSpy);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			clearInvocations(tripleStoreSpy);
+			sink.approveAll(statements, Set.of());
+			sink.flush();
+
+			verify(tripleStoreSpy, atMost(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+		} finally {
+			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+	}
+
+	@Test
+	void approveAllCanDisableBulkOperationsViaConfig() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 0);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-disabled"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				clearInvocations(tripleStoreSpy);
+				sink.approveAll(sampleStatements(5), Set.of());
+				sink.flush();
+
+				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
+						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+				verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void approveAllUsesConfiguredBulkOperationSize() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-size-two"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				clearInvocations(tripleStoreSpy);
+				sink.approveAll(sampleStatements(5), Set.of());
+				sink.flush();
+
+				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
+						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {
+		try {
+			Method setter = config.getClass().getMethod("setBulkOperationSize", int.class);
+			setter.invoke(config, bulkOperationSize);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB bulk operation size config setter", e);
+		}
+	}
+
+	private Set<Statement> sampleStatements(int count) {
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < count; i++) {
+			statements.add(F.createStatement(
+					F.createIRI("urn:bulk:subject:" + i),
+					F.createIRI("urn:bulk:predicate:" + (i % 3)),
+					F.createIRI("urn:bulk:object:" + (i % 5)),
+					F.createIRI("urn:bulk:context:" + (i % 2))));
+		}
+		return statements;
+	}
+
 	@AfterEach
 	public void after() {
-		repo.shutDown();
+		try {
+			repo.shutDown();
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 }

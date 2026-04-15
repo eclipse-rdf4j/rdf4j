@@ -82,8 +82,8 @@ public class RDFParserHelperTest {
 	public final void testCreateLiteralLabelNull() {
 		assertThatThrownBy(
 				() -> RDFParserHelper.createLiteral(null, null, null, parserConfig, errListener, valueFactory))
-				.isInstanceOf(NullPointerException.class)
-				.hasMessage("Cannot create a literal using a null label");
+						.isInstanceOf(NullPointerException.class)
+						.hasMessage("Cannot create a literal using a null label");
 	}
 
 	/**
@@ -168,7 +168,7 @@ public class RDFParserHelperTest {
 		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		assertThatThrownBy(() -> RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig,
 				errListener, valueFactory))
-				.isInstanceOf(RDFParseException.class);
+						.isInstanceOf(RDFParseException.class);
 	}
 
 	@Test
@@ -187,8 +187,8 @@ public class RDFParserHelperTest {
 		assertThatThrownBy(
 				() -> RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, BasicParserSettings.VERIFY_DATATYPE_VALUES,
 						parserConfig, errListener))
-				.isInstanceOf(RDFParseException.class)
-				.hasMessage(TEST_MESSAGE_FOR_FAILURE);
+								.isInstanceOf(RDFParseException.class)
+								.hasMessage(TEST_MESSAGE_FOR_FAILURE);
 		assertErrorListener(0, 1, 0);
 	}
 
@@ -227,8 +227,8 @@ public class RDFParserHelperTest {
 				() -> RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1,
 						BasicParserSettings.VERIFY_DATATYPE_VALUES,
 						parserConfig, errListener))
-				.isInstanceOf(RDFParseException.class)
-				.hasMessageContaining(TEST_MESSAGE_FOR_FAILURE);
+								.isInstanceOf(RDFParseException.class)
+								.hasMessageContaining(TEST_MESSAGE_FOR_FAILURE);
 
 		assertErrorListener(0, 1, 0);
 	}

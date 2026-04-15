@@ -52,7 +52,11 @@ public class LmdbStoreErrorHandlingTest {
 				expected = re;
 			}
 		} finally {
-			repo.shutDown();
+			try {
+				repo.shutDown();
+			} finally {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
 		}
 		assertNotNull(expected);
 	}

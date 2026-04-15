@@ -41,6 +41,7 @@ public class LmdbStoreDirLockTest {
 			assertNotNull(e);
 		} finally {
 			sail.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 }

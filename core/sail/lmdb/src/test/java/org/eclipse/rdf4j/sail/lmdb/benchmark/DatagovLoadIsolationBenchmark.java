@@ -14,19 +14,22 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -49,10 +52,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
@@ -60,6 +63,9 @@ public class DatagovLoadIsolationBenchmark {
 
 	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
 	public IsolationLevels isolationLevel;
+
+	@Param({ "256" })
+	public int bulkOperationSize;
 
 	private Model data;
 
@@ -87,14 +93,53 @@ public class DatagovLoadIsolationBenchmark {
 
 	@Benchmark
 	public boolean loadDatagovFileSingleTransaction() throws IOException {
-		return loadOnce();
+		return loadOnce(createBenchmarkConfig());
 	}
 
-	boolean loadOnce() throws IOException {
+	@Benchmark
+	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
+		return loadOnce(createBenchmarkConfigAllIndexes());
+	}
+
+	@Benchmark
+	public boolean loadDatagovFileInBatches() throws IOException {
+		return loadDatagovFileInBatchesInternal();
+	}
+
+	private boolean loadDatagovFileInBatchesInternal() throws IOException {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createConfig()));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, createBenchmarkConfig()));
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+				Iterator<Statement> iterator = data.iterator();
+				while (iterator.hasNext()) {
+					connection.begin(isolationLevel);
+					for (int i = 0; i < 100000 && iterator.hasNext(); i++) {
+						connection.add(iterator.next());
+					}
+					connection.commit();
+				}
+
+				return connection.hasStatement(null, null, null, true);
+			}
+		} finally {
+			try {
+				if (sailRepository != null) {
+					sailRepository.shutDown();
+				}
+			} finally {
+				LmdbTestUtil.deleteDir(temporaryFolder);
+			}
+		}
+
+	}
+
+	boolean loadOnce(LmdbStoreConfig config) throws IOException {
+		File temporaryFolder = Files.newTemporaryFolder();
+		SailRepository sailRepository = null;
+		try {
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, config));
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.begin(isolationLevel);
 				connection.add(data);
@@ -107,8 +152,16 @@ public class DatagovLoadIsolationBenchmark {
 					sailRepository.shutDown();
 				}
 			} finally {
-				FileUtils.deleteDirectory(temporaryFolder);
+				LmdbTestUtil.deleteDir(temporaryFolder);
 			}
 		}
+	}
+
+	private LmdbStoreConfig createBenchmarkConfig() {
+		return ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize);
+	}
+
+	private LmdbStoreConfig createBenchmarkConfigAllIndexes() {
+		return ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize);
 	}
 }
