@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.ref.Cleaner;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
@@ -81,6 +82,20 @@ class MemoryOverflowModelCloseOrderTest {
 	}
 
 	@Test
+	void overflowToDiskUsesCleanerInsteadOfFinalizer() {
+		RecordingMemoryOverflowModel model = new RecordingMemoryOverflowModel();
+
+		invokeOverflowToDisk(model);
+
+		Object disk = RecordingMemoryOverflowModel.readField(RecordingMemoryOverflowModel.DISK_FIELD, model,
+				Object.class);
+		assertThat(disk.getClass().getDeclaredMethods())
+				.noneMatch(method -> method.getName().equals("finalize"));
+		assertThat(RecordingMemoryOverflowModel.readField(RecordingMemoryOverflowModel.CLEANABLE_FIELD, model,
+				Cleaner.Cleanable.class)).isNotNull();
+	}
+
+	@Test
 	void concurrentCloseInvokesInnerCloseOnlyOnce() throws Exception {
 		RecordingMemoryOverflowModel model = new RecordingMemoryOverflowModel(true);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -137,6 +152,7 @@ class MemoryOverflowModelCloseOrderTest {
 		private static final long serialVersionUID = 1L;
 		private static final Field CLOSED_FIELD = field("closed");
 		private static final Field DISK_FIELD = field("disk");
+		private static final Field CLEANABLE_FIELD = field(MemoryOverflowModel.class, "overflowStoreCleanup");
 
 		private final boolean blockInnerClose;
 		private final CountDownLatch innerCloseStarted = new CountDownLatch(1);
@@ -150,7 +166,7 @@ class MemoryOverflowModelCloseOrderTest {
 		}
 
 		RecordingMemoryOverflowModel(boolean blockInnerClose) {
-			super(false);
+			super();
 			this.blockInnerClose = blockInnerClose;
 		}
 
@@ -197,8 +213,12 @@ class MemoryOverflowModelCloseOrderTest {
 		}
 
 		private static Field field(String fieldName) {
+			return field(AbstractMemoryOverflowModel.class, fieldName);
+		}
+
+		private static Field field(Class<?> owner, String fieldName) {
 			try {
-				Field field = AbstractMemoryOverflowModel.class.getDeclaredField(fieldName);
+				Field field = owner.getDeclaredField(fieldName);
 				field.setAccessible(true);
 				return field;
 			} catch (NoSuchFieldException e) {
