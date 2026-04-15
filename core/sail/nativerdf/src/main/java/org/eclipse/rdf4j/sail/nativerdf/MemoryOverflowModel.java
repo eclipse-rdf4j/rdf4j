@@ -60,8 +60,9 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 	protected synchronized void innerClose() {
 		try {
 			try {
-				if (store != null) {
-					store.close();
+				var localStore = store;
+				if (localStore != null) {
+					localStore.close();
 				}
 			} catch (SailException e) {
 				logger.error(e.toString(), e);
