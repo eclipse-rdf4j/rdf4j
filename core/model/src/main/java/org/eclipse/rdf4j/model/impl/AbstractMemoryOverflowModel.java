@@ -387,14 +387,14 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			try {
 				lock.lockInterruptibly();
 				try {
+					if (closed) {
+						throw new IllegalStateException("MemoryOverflowModel is closed");
+					}
 					if (this.memory != null) {
 						return this.memory;
 					}
 					if (this.disk != null) {
 						return this.disk;
-					}
-					if (closed) {
-						throw new IllegalStateException("MemoryOverflowModel is closed");
 					}
 					throw new IllegalStateException("MemoryOverflowModel is in an inconsistent state");
 				} finally {
@@ -492,19 +492,21 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	@Override
 	public void close() {
-		boolean wasClosed = false;
+		boolean shouldCallInnerClose = true;
 		boolean interrupted = false;
 		try {
 			interrupted = Thread.interrupted();
 			lock.lockInterruptibly();
 			try {
 				if (closed) {
-					wasClosed = true;
+					shouldCallInnerClose = false;
 					return;
 				}
 				closed = true;
 				memory = null;
 				disk = null;
+				innerClose();
+				shouldCallInnerClose = false;
 			} finally {
 				lock.unlock();
 			}
@@ -521,7 +523,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			// models and close the disk model if it was not already closed by another thread
 			memory = null;
 			disk = null;
-			if (!wasClosed) {
+			if (shouldCallInnerClose) {
 				innerClose();
 			}
 		}
