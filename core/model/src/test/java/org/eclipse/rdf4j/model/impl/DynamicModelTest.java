@@ -275,7 +275,7 @@ public class DynamicModelTest {
 		assertThat(iterator.hasNext()).isFalse();
 		assertThat(model
 				.getStatements(subject, predicate, valueFactory.createLiteral("object"), namedContext))
-				.containsExactly(statement);
+						.containsExactly(statement);
 		assertThat(model.getUpgradedModel()).isNull();
 	}
 

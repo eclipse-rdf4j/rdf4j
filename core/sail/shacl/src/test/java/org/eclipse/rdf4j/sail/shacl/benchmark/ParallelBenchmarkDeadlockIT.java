@@ -40,9 +40,9 @@ public class ParallelBenchmarkDeadlockIT {
 				"-cp",
 				System.getProperty("java.class.path"),
 				Runner.class.getName())
-				.redirectErrorStream(true)
-				.redirectOutput(outputFile.toFile())
-				.start();
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
 
 		boolean finished = process.waitFor(45, TimeUnit.SECONDS);
 		if (!finished) {
