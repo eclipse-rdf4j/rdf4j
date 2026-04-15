@@ -156,6 +156,38 @@ public class TripleStoreAutoGrowTest {
 		}
 	}
 
+	@Test
+	public void testCachedInferredPromotionKeepsContextCountsBalanced() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		try (TripleStore cachedStore = new TripleStore(new File(dataDir, "cached-inferred-promotion"), config, null)) {
+			long subject = 101L;
+			long predicate = 202L;
+			long object = 303L;
+			long context = 404L;
+
+			cachedStore.startTransaction();
+			assertTrue(cachedStore.storeTriple(subject, predicate, object, context, false));
+			cachedStore.commit();
+
+			forceRecordCache(cachedStore);
+			cachedStore.startTransaction();
+			assertTrue(cachedStore.storeTriple(subject, predicate, object, context, true));
+			cachedStore.commit();
+
+			cachedStore.startTransaction();
+			cachedStore.removeTriplesByContext(subject, predicate, object, context, true, quad -> {
+			});
+			cachedStore.commit();
+
+			try (Txn txn = cachedStore.getTxnManager().createReadTxn()) {
+				assertEquals(0, count(cachedStore.getTriples(txn, -1, -1, -1, -1, true)));
+				assertEquals(0, count(cachedStore.getTriples(txn, -1, -1, -1, -1, false)));
+				assertTrue(contextIds(cachedStore.getContexts(txn)).isEmpty(),
+						"Removing the promoted explicit statement should also clear the last context entry");
+			}
+		}
+	}
+
 	private static StatementBatch createBatchExceedingRemainingCapacity(File dataDir, LmdbStoreConfig config,
 			long targetRemainingCapacity)
 			throws Exception {

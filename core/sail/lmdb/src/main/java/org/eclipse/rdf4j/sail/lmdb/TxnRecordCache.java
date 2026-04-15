@@ -57,7 +57,6 @@ import org.lwjgl.util.lmdb.MDBVal;
 final class TxnRecordCache {
 	private static final byte OP_REMOVE = 0;
 	private static final byte OP_ADD = 1;
-	private static final byte OP_REMOVE_NO_CONTEXT = 2;
 
 	private final Path dbDir;
 	private final long env;
@@ -116,8 +115,21 @@ final class TxnRecordCache {
 		update(quad, explicit, OP_REMOVE);
 	}
 
-	protected void removeRecordPreservingContext(long[] quad, boolean explicit) throws IOException {
-		update(quad, explicit, OP_REMOVE_NO_CONTEXT);
+	protected RecordState getRecordState(long[] quad, boolean explicit) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+			Varint.writeListUnsigned(keyBuf, quad);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			if (mdb_get(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal) != MDB_SUCCESS) {
+				return RecordState.ABSENT;
+			}
+
+			return dataVal.mv_data().get(0) == OP_ADD ? RecordState.ADD : RecordState.REMOVE;
+		}
 	}
 
 	protected boolean update(long[] quad, boolean explicit, byte operation) throws IOException {
@@ -179,7 +191,12 @@ final class TxnRecordCache {
 	static class Record {
 		long quad[];
 		boolean add;
-		boolean affectsContext = true;
+	}
+
+	enum RecordState {
+		ABSENT,
+		ADD,
+		REMOVE
 	}
 
 	protected class RecordCacheIterator {
@@ -208,7 +225,6 @@ final class TxnRecordCache {
 				Record r = new Record();
 				r.quad = quad;
 				r.add = op == OP_ADD;
-				r.affectsContext = op != OP_REMOVE_NO_CONTEXT;
 				return r;
 			}
 			close();

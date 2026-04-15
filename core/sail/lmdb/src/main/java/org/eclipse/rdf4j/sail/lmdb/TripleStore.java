@@ -1066,8 +1066,12 @@ class TripleStore implements Closeable {
 			if (recordCache != null) {
 				long[] quad = new long[] { subj, pred, obj, context };
 				if (explicit) {
-					// remove implicit statement
-					recordCache.removeRecordPreservingContext(quad, false);
+					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
+					if (inferredCacheState == TxnRecordCache.RecordState.ADD
+							|| inferredCacheState == TxnRecordCache.RecordState.ABSENT
+									&& mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS) {
+						recordCache.removeRecord(quad, false);
+					}
 				}
 				// put record in cache and return immediately
 				return recordCache.storeRecord(quad, explicit);
@@ -1580,7 +1584,7 @@ class TripleStore implements Closeable {
 					}
 					if (r.add) {
 						incrementContext(stack, r.quad[CONTEXT_IDX]);
-					} else if (r.affectsContext) {
+					} else {
 						decrementContext(stack, r.quad[CONTEXT_IDX]);
 					}
 				}
