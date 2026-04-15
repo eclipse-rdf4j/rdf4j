@@ -59,8 +59,8 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	@Override
 	RDF4JProtocolSession createProtocolSession() {
 		RDF4JHttpClient httpClient = RDF4JHttpClients.factory(factoryName).create();
-		RDF4JProtocolSession session = new SharedHttpClientSessionManager(httpClient, Executors.newCachedThreadPool())
-				.createRDF4JProtocolSession(serverURL);
+		sessionManager = new SharedHttpClientSessionManager(httpClient, Executors.newCachedThreadPool());
+		RDF4JProtocolSession session = sessionManager.createRDF4JProtocolSession(serverURL);
 		session.setRepository(Protocol.getRepositoryLocation(serverURL, repositoryID));
 		HashMap<String, String> additionalHeaders = new HashMap<>();
 		additionalHeaders.put(testHeader, testValue);

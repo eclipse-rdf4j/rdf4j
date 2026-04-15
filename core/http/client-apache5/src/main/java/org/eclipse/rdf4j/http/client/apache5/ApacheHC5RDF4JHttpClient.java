@@ -45,7 +45,7 @@ public class ApacheHC5RDF4JHttpClient implements RDF4JHttpClient {
 	 */
 	private final int maxRetries408;
 
-	ApacheHC5RDF4JHttpClient(CloseableHttpClient httpClient, int maxConnectionsPerRoute) {
+	public ApacheHC5RDF4JHttpClient(CloseableHttpClient httpClient, int maxConnectionsPerRoute) {
 		this.httpClient = httpClient;
 		this.maxRetries408 = maxConnectionsPerRoute + 1;
 	}
@@ -123,7 +123,7 @@ public class ApacheHC5RDF4JHttpClient implements RDF4JHttpClient {
 		try {
 			httpClient.close();
 		} catch (IOException e) {
-			// ignore on close
+			logger.trace("Error while closing http client: " + e.getMessage(), e);
 		}
 	}
 }

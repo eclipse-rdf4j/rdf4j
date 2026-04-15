@@ -59,6 +59,7 @@ import org.mockserver.model.MediaType;
 @ExtendWith(MockServerExtension.class)
 public class SPARQLProtocolSessionTest {
 	SPARQLProtocolSession sparqlSession;
+	SharedHttpClientSessionManager sessionManager;
 
 	String serverURL;
 	String repositoryID = "test";
@@ -70,8 +71,8 @@ public class SPARQLProtocolSessionTest {
 
 	SPARQLProtocolSession createProtocolSession() {
 		RDF4JHttpClient httpClient = RDF4JHttpClients.factory(factoryName).create();
-		SPARQLProtocolSession session = new SharedHttpClientSessionManager(httpClient, Executors.newCachedThreadPool())
-				.createRDF4JProtocolSession(serverURL);
+		sessionManager = new SharedHttpClientSessionManager(httpClient, Executors.newCachedThreadPool());
+		SPARQLProtocolSession session = sessionManager.createRDF4JProtocolSession(serverURL);
 		session.setQueryURL(Protocol.getRepositoryLocation(serverURL, repositoryID));
 		session.setUpdateURL(
 				Protocol.getStatementsLocation(Protocol.getRepositoryLocation(serverURL, repositoryID)));
@@ -89,6 +90,10 @@ public class SPARQLProtocolSessionTest {
 		if (sparqlSession != null) {
 			sparqlSession.close();
 			sparqlSession = null;
+		}
+		if (sessionManager != null) {
+			sessionManager.shutDown();
+			sessionManager = null;
 		}
 	}
 

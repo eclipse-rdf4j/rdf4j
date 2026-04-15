@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.http.client.jdk;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublisher;
@@ -32,7 +34,7 @@ public class JdkRDF4JHttpClient implements RDF4JHttpClient {
 	private final HttpClient httpClient;
 	private final RDF4JHttpClientConfig config;
 
-	JdkRDF4JHttpClient(HttpClient httpClient, RDF4JHttpClientConfig config) {
+	public JdkRDF4JHttpClient(HttpClient httpClient, RDF4JHttpClientConfig config) {
 		this.httpClient = httpClient;
 		this.config = config;
 	}
@@ -60,10 +62,23 @@ public class JdkRDF4JHttpClient implements RDF4JHttpClient {
 			BodyPublisher bodyPublisher;
 			if (request.getBody().isPresent()) {
 				HttpRequestBody body = request.getBody().get();
-				// Read to byte[] for re-readability on redirect
-				byte[] bytes = body.getContent().readAllBytes();
 				builder.header("Content-Type", body.getContentType());
-				bodyPublisher = BodyPublishers.ofByteArray(bytes);
+				if (body.isRepeatable()) {
+					// Buffered body: read into byte[] (safe for redirect retries) and close the stream
+					try (InputStream in = body.getContent()) {
+						bodyPublisher = BodyPublishers.ofByteArray(in.readAllBytes());
+					}
+				} else {
+					// Streaming body: pass directly to avoid buffering large payloads into memory;
+					// the JDK HttpClient closes the stream after the request is sent
+					bodyPublisher = BodyPublishers.ofInputStream(() -> {
+						try {
+							return body.getContent();
+						} catch (IOException e) {
+							throw new UncheckedIOException(e);
+						}
+					});
+				}
 			} else {
 				bodyPublisher = BodyPublishers.noBody();
 			}

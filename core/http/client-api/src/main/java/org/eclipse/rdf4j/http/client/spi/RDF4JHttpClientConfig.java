@@ -36,7 +36,7 @@ import javax.net.ssl.SSLContext;
  * @see RDF4JHttpClient
  * @see RDF4JHttpClientFactory
  */
-public final class RDF4JHttpClientConfig {
+public class RDF4JHttpClientConfig {
 
 	private final int connectTimeoutMs;
 	private final int socketTimeoutMs;
@@ -50,7 +50,7 @@ public final class RDF4JHttpClientConfig {
 	private final boolean disableHostnameVerification;
 	private final List<HttpHeader> defaultHeaders;
 
-	private RDF4JHttpClientConfig(Builder builder) {
+	protected RDF4JHttpClientConfig(Builder builder) {
 		this.connectTimeoutMs = builder.connectTimeoutMs;
 		this.socketTimeoutMs = builder.socketTimeoutMs;
 		this.connectionRequestTimeoutMs = builder.connectionRequestTimeoutMs;
@@ -208,7 +208,7 @@ public final class RDF4JHttpClientConfig {
 	 * <li>{@code disableHostnameVerification} = {@code false}</li>
 	 * </ul>
 	 */
-	public static final class Builder {
+	public static class Builder {
 		private int connectTimeoutMs = 30_000;
 		private int socketTimeoutMs = 0;
 		private int connectionRequestTimeoutMs = 3_600_000;
@@ -221,7 +221,7 @@ public final class RDF4JHttpClientConfig {
 		private boolean disableHostnameVerification = false;
 		private List<HttpHeader> defaultHeaders = List.of();
 
-		private Builder() {
+		protected Builder() {
 		}
 
 		/**

@@ -71,8 +71,13 @@ public final class UriBuilder {
 		if (params.isEmpty()) {
 			return URI.create(baseUrl);
 		}
-		StringBuilder sb = new StringBuilder(baseUrl);
-		boolean first = !baseUrl.contains("?");
+		// Split off any fragment so query parameters are inserted before it
+		int fragmentIdx = baseUrl.indexOf('#');
+		String beforeFragment = fragmentIdx >= 0 ? baseUrl.substring(0, fragmentIdx) : baseUrl;
+		String fragment = fragmentIdx >= 0 ? baseUrl.substring(fragmentIdx) : "";
+
+		StringBuilder sb = new StringBuilder(beforeFragment);
+		boolean first = !beforeFragment.contains("?");
 		for (NameValuePair nvp : params) {
 			if (nvp.getValue() == null) {
 				continue;
@@ -83,6 +88,7 @@ public final class UriBuilder {
 			sb.append('=');
 			sb.append(URLEncoder.encode(nvp.getValue(), StandardCharsets.UTF_8));
 		}
+		sb.append(fragment);
 		return URI.create(sb.toString());
 	}
 

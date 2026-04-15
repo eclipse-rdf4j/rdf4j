@@ -40,7 +40,7 @@ import java.util.Optional;
  * @see RDF4JHttpClient
  * @see HttpRequestBody
  */
-public final class HttpRequest {
+public class HttpRequest {
 
 	private final String method;
 	private final URI uri;

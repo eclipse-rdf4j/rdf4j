@@ -25,12 +25,12 @@ import org.eclipse.rdf4j.http.client.spi.HttpResponse;
  * <p>
  * Closing this response returns the connection to the pool.
  */
-class ApacheHC5HttpClientResponse implements HttpResponse {
+public class ApacheHC5HttpClientResponse implements HttpResponse {
 
 	private final ClassicHttpResponse response;
 	private final List<HttpHeader> headers;
 
-	ApacheHC5HttpClientResponse(ClassicHttpResponse response) {
+	public ApacheHC5HttpClientResponse(ClassicHttpResponse response) {
 		this.response = response;
 		this.headers = Arrays.stream(response.getHeaders())
 				.map(h -> HttpHeader.of(h.getName(), h.getValue()))
