@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
 import static org.assertj.core.api.Assertions.fail;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
@@ -21,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -49,6 +52,40 @@ public abstract class SPARQLComplianceTest {
 	private List<String> ignoredTests = new ArrayList<>();
 
 	public SPARQLComplianceTest() {
+	}
+
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void shutDownAndDeleteDataDir(Repository repository) {
+		if (repository == null) {
+			return;
+		}
+
+		try {
+			repository.shutDown();
+		} finally {
+			if (deleteDataDirAfterShutdown()) {
+				deleteDataDir(repository.getDataDir());
+			}
+		}
+	}
+
+	protected void deleteDataDir(File dataDir) {
+		if (dataDir == null || !dataDir.exists()) {
+			return;
+		}
+
+		try {
+			FileUtil.deleteDir(dataDir);
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to delete SPARQL compliance data dir " + dataDir, e);
+		}
+
+		if (dataDir.exists()) {
+			throw new AssertionError("Expected SPARQL compliance data dir to be deleted: " + dataDir);
+		}
 	}
 
 	/**

@@ -45,6 +45,11 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 		return sail;
 	}
 
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
+
 	// Test for SES-542
 	@Test
 	public void testGetNamespacePersistence() {

@@ -188,15 +188,23 @@ public class CreateServletTest {
 				.filter(field -> field.getId().equals("lmdb_tripleDBSize"))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("Missing Triple DB size field"));
+		CreateTemplateConfig.Field bulkOperationSize = template.getFields()
+				.stream()
+				.filter(field -> field.getId().equals("lmdb_bulkOperationSize"))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing bulk operation size field"));
 
 		assertThat(tripleDbSize.getName()).isEqualTo("Triple DB size");
 		assertThat(tripleDbSize.getSize()).isEqualTo(16);
+		assertThat(bulkOperationSize.getName()).isEqualTo("Bulk operation size");
+		assertThat(bulkOperationSize.getSize()).isEqualTo(16);
 
 		String rendered = template.render(Map.ofEntries(
 				Map.entry("Repository ID", "lmdb-inline"),
 				Map.entry("Repository title", "LMDB inline"),
 				Map.entry("Query Iteration Cache sync threshold", "512"),
 				Map.entry("Triple indexes", "spoc"),
+				Map.entry("Bulk operation size", "0"),
 				Map.entry("Triple DB size", "20971520"),
 				Map.entry("Value DB size", "31457280"),
 				Map.entry("Value cache size", "128"),
@@ -211,6 +219,7 @@ public class CreateServletTest {
 				Map.entry("Query Evaluation Mode", "STRICT")));
 
 		assertThat(rendered)
+				.contains("lmdb:bulkOperationSize 0")
 				.contains("20971520")
 				.doesNotContain("Triple DB size[len=16]");
 	}

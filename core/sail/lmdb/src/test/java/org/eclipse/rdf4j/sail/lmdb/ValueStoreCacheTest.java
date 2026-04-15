@@ -56,6 +56,7 @@ class ValueStoreCacheTest {
 			assertSame(v1, v2);
 		} finally {
 			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 }

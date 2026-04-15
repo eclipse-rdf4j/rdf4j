@@ -50,13 +50,13 @@ class WorkbenchGatewayTest {
 		assertThatThrownBy(
 				() -> missingDefault
 						.init(TestServletConfig.withParams("gateway", WorkbenchGateway.TRANSFORMATIONS, "/xsl")))
-				.isInstanceOf(MissingInitParameterException.class);
+								.isInstanceOf(MissingInitParameterException.class);
 
 		TestWorkbenchGateway missingTransformations = new TestWorkbenchGateway(new TestCookieHandler("9"),
 				mock(ServerValidator.class));
 		assertThatThrownBy(() -> missingTransformations
 				.init(TestServletConfig.withParams("gateway", "default-server", "https://example.org/rdf4j-server")))
-				.isInstanceOf(MissingInitParameterException.class);
+						.isInstanceOf(MissingInitParameterException.class);
 
 		TestWorkbenchGateway mutable = new TestWorkbenchGateway(new TestCookieHandler("9"),
 				mock(ServerValidator.class));
@@ -64,7 +64,7 @@ class WorkbenchGatewayTest {
 				"default-server", "https://example.org/rdf4j-server",
 				"change-server-path", "/change",
 				WorkbenchGateway.TRANSFORMATIONS, "/transform")))
-				.isSameAs(mutable);
+						.isSameAs(mutable);
 		assertThat(mutable.getChangeServerPath()).isEqualTo("/change");
 		assertThat(mutable.getDefaultServerPath()).isEqualTo("https://example.org/rdf4j-server");
 		assertThat(mutable.isServerFixed()).isFalse();
@@ -222,8 +222,8 @@ class WorkbenchGatewayTest {
 
 		assertThatThrownBy(() -> failingGateway.service(request("GET", "/workbench/change", "/change"),
 				failingResponse))
-				.isInstanceOf(java.io.IOException.class)
-				.hasCauseInstanceOf(QueryResultHandlerException.class);
+						.isInstanceOf(java.io.IOException.class)
+						.hasCauseInstanceOf(QueryResultHandlerException.class);
 
 		TestCookieHandler cookies = new TestCookieHandler("10");
 		cookies.cookies.put("workbench-server", "urn:bad");

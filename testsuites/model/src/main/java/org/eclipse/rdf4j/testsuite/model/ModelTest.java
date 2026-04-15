@@ -305,6 +305,21 @@ public abstract class ModelTest {
 	}
 
 	@Test
+	public void testGetStatements_ExactMatchIteratorModification() {
+		Model model = getNewEmptyModel();
+		model.add(uri1, RDFS.LABEL, literal1);
+		model.add(uri1, RDFS.LABEL, literal2);
+
+		Iterator<Statement> selection = model.getStatements(uri1, RDFS.LABEL, literal1).iterator();
+
+		assertThat(selection.hasNext()).isTrue();
+		assertThat(selection.next().getObject()).isEqualTo(literal1);
+		selection.remove();
+		assertThat(model.contains(uri1, RDFS.LABEL, literal1)).isFalse();
+		assertThat(model.contains(uri1, RDFS.LABEL, literal2)).isTrue();
+	}
+
+	@Test
 	public void testGetStatements_ConcurrentModificationOfModel() {
 		Model model = getNewEmptyModel();
 		model.add(uri1, RDFS.LABEL, uri2);
@@ -337,6 +352,33 @@ public abstract class ModelTest {
 		assertThat(selection.hasNext()).isFalse();
 		Iterator<Statement> newSelection = model.getStatements(null, null, null).iterator();
 		assertThat(newSelection.hasNext()).isTrue();
+	}
+
+	@Test
+	public void testGetStatements_ExactMatchIterableRemainsLive() {
+		Model model = getNewEmptyModel();
+		Iterable<Statement> selection = model.getStatements(uri1, RDFS.LABEL, literal1, (Resource) null);
+
+		assertThat(selection).isEmpty();
+
+		model.add(uri1, RDFS.LABEL, literal1);
+
+		assertThat(selection).containsExactly(vf.createStatement(uri1, RDFS.LABEL, literal1));
+	}
+
+	@Test
+	public void testGetStatements_ExactMatchIteratorDoesNotSeeLaterAdditions() {
+		Model model = getNewEmptyModel();
+		Iterator<Statement> selection = model.getStatements(uri1, RDFS.LABEL, literal1, (Resource) null)
+				.iterator();
+
+		model.add(uri1, RDFS.LABEL, literal1);
+
+		assertThat(selection.hasNext()).isFalse();
+		Iterator<Statement> newSelection = model.getStatements(uri1, RDFS.LABEL, literal1, (Resource) null)
+				.iterator();
+		assertThat(newSelection.next()).isEqualTo(vf.createStatement(uri1, RDFS.LABEL, literal1));
+		assertThat(newSelection.hasNext()).isFalse();
 	}
 
 	/**

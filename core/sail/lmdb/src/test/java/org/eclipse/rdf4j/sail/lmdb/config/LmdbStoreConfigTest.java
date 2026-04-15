@@ -34,6 +34,8 @@ class LmdbStoreConfigTest {
 
 	private static final IRI LEGACY_APPEND_MODE = Values.iri(LmdbStoreSchema.NAMESPACE + "appendMode");
 
+	private static final IRI BULK_OPERATION_SIZE = Values.iri(LmdbStoreSchema.NAMESPACE + "bulkOperationSize");
+
 	private static final IRI NO_READAHEAD = Values.iri(LmdbStoreSchema.NAMESPACE + "noReadahead");
 
 	@Test
@@ -44,6 +46,11 @@ class LmdbStoreConfigTest {
 	@Test
 	void noReadaheadDefaultsToDisabled() {
 		assertThat(invokeBooleanGetter(new LmdbStoreConfig(), "getNoReadahead")).isFalse();
+	}
+
+	@Test
+	void bulkOperationSizeDefaultsTo256() {
+		assertThat(invokeIntGetter(new LmdbStoreConfig(), "getBulkOperationSize")).isEqualTo(256);
 	}
 
 	@Test
@@ -119,6 +126,18 @@ class LmdbStoreConfigTest {
 				Values.literal(valueCacheSize >= 0 ? valueCacheSize : VALUE_CACHE_SIZE),
 				LmdbStoreConfig::getValueCacheSize,
 				valueCacheSize >= 0 ? valueCacheSize : VALUE_CACHE_SIZE,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 512 })
+	void testThatLmdbStoreConfigParseAndExportBulkOperationSize(final int bulkOperationSize) {
+		testParseAndExportReflectiveInt(
+				BULK_OPERATION_SIZE,
+				Values.literal(bulkOperationSize),
+				"getBulkOperationSize",
+				bulkOperationSize,
 				true
 		);
 	}
@@ -222,10 +241,42 @@ class LmdbStoreConfigTest {
 				.isEqualTo(expectedContains);
 	}
 
+	private void testParseAndExportReflectiveInt(
+			IRI property,
+			Literal value,
+			String getterName,
+			int expectedValue,
+			boolean expectedContains
+	) {
+		final BNode implNode = bnode();
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, property, value)
+				.build();
+
+		lmdbStoreConfig.parse(configModel, implNode);
+		assertThat(invokeIntGetter(lmdbStoreConfig, getterName)).isEqualTo(expectedValue);
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = lmdbStoreConfig.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, property, value))
+				.isEqualTo(expectedContains);
+	}
+
 	private boolean invokeBooleanGetter(LmdbStoreConfig config, String getterName) {
 		try {
 			Method getter = config.getClass().getMethod(getterName);
 			return (boolean) getter.invoke(config);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private int invokeIntGetter(LmdbStoreConfig config, String getterName) {
+		try {
+			Method getter = config.getClass().getMethod(getterName);
+			return (int) getter.invoke(config);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
 		}

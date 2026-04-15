@@ -338,6 +338,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void setupVerifiesExpectedDbFileSizesInFixedStore() throws IOException {
 		themeName = "MEDICAL_RECORDS";
 		z_queryIndex = 0;

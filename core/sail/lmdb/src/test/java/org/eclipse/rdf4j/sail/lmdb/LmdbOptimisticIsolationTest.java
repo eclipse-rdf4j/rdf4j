@@ -27,7 +27,7 @@ public class LmdbOptimisticIsolationTest extends OptimisticIsolationTest {
 			public RepositoryImplConfig getConfig() {
 				return new SailRepositoryConfig(new LmdbStoreFactory().getConfig());
 			}
-		});
+		}, true);
 	}
 
 	@AfterClass

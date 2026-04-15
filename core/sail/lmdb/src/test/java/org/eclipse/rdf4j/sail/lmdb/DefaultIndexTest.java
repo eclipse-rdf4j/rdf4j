@@ -17,7 +17,6 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.Properties;
 
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,7 +29,7 @@ public class DefaultIndexTest {
 		store.close();
 		// check that the triple store used the default index
 		assertEquals("spoc,posc", findIndex(dir));
-		FileUtil.deleteDir(dir);
+		LmdbTestUtil.deleteDir(dir);
 	}
 
 	@Test
@@ -43,7 +42,7 @@ public class DefaultIndexTest {
 		store = new TripleStore(dir, new LmdbStoreConfig(null), null);
 		store.close();
 		assertEquals(before, findIndex(dir));
-		FileUtil.deleteDir(dir);
+		LmdbTestUtil.deleteDir(dir);
 	}
 
 	private String findIndex(File dir) throws Exception {
