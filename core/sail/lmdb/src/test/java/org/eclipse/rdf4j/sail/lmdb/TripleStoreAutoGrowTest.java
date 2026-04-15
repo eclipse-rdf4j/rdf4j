@@ -188,6 +188,37 @@ public class TripleStoreAutoGrowTest {
 		}
 	}
 
+	@Test
+	public void testCachedDuplicateExplicitAddKeepsContextCountsBalanced() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		try (TripleStore cachedStore = new TripleStore(new File(dataDir, "cached-duplicate-explicit"), config, null)) {
+			long subject = 501L;
+			long predicate = 502L;
+			long object = 503L;
+			long context = 504L;
+
+			cachedStore.startTransaction();
+			assertTrue(cachedStore.storeTriple(subject, predicate, object, context, true));
+			cachedStore.commit();
+
+			forceRecordCache(cachedStore);
+			cachedStore.startTransaction();
+			cachedStore.storeTriple(subject, predicate, object, context, true);
+			cachedStore.commit();
+
+			cachedStore.startTransaction();
+			cachedStore.removeTriplesByContext(subject, predicate, object, context, true, quad -> {
+			});
+			cachedStore.commit();
+
+			try (Txn txn = cachedStore.getTxnManager().createReadTxn()) {
+				assertEquals(0, count(cachedStore.getTriples(txn, -1, -1, -1, -1, true)));
+				assertTrue(contextIds(cachedStore.getContexts(txn)).isEmpty(),
+						"Deleting the last persisted statement should also clear the cached context entry");
+			}
+		}
+	}
+
 	private static StatementBatch createBatchExceedingRemainingCapacity(File dataDir, LmdbStoreConfig config,
 			long targetRemainingCapacity)
 			throws Exception {

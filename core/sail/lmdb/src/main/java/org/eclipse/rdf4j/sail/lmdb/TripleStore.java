@@ -1065,16 +1065,17 @@ class TripleStore implements Closeable {
 
 			if (recordCache != null) {
 				long[] quad = new long[] { subj, pred, obj, context };
+				boolean mainExplicitExists = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == MDB_SUCCESS;
+				boolean mainInferredExists = mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
 				if (explicit) {
 					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
 					if (inferredCacheState == TxnRecordCache.RecordState.ADD
-							|| inferredCacheState == TxnRecordCache.RecordState.ABSENT
-									&& mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS) {
-						recordCache.removeRecord(quad, false);
+							|| inferredCacheState == TxnRecordCache.RecordState.ABSENT && mainInferredExists) {
+						recordCache.removeRecord(quad, false, true);
 					}
 				}
 				// put record in cache and return immediately
-				return recordCache.storeRecord(quad, explicit);
+				return recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
 			}
 
 			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
@@ -1278,10 +1279,11 @@ class TripleStore implements Closeable {
 			long statementContext = context[statementIndex];
 			if (explicit && promotedFromImplicit[statementIndex]) {
 				long[] quad = new long[] { statementSubj, statementPred, statementObj, statementContext };
-				recordCache.removeRecord(quad, false);
-				recordCache.storeRecord(quad, true);
+				recordCache.removeRecord(quad, false, true);
+				recordCache.storeRecord(quad, true, true);
 			} else {
-				storeTriple(statementSubj, statementPred, statementObj, statementContext, explicit);
+				recordCache.storeRecord(new long[] { statementSubj, statementPred, statementObj, statementContext },
+						explicit, true);
 			}
 		}
 		if (remainingStart < count) {
@@ -1533,7 +1535,7 @@ class TripleStore implements Closeable {
 					}
 				}
 				if (recordCache != null) {
-					recordCache.removeRecord(quad, explicit);
+					recordCache.removeRecord(quad, explicit, true);
 					handler.accept(quad);
 					continue;
 				}
@@ -1591,10 +1593,13 @@ class TripleStore implements Closeable {
 							E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));
 						}
 					}
-					if (r.add) {
-						incrementContext(stack, r.quad[CONTEXT_IDX]);
-					} else {
-						decrementContext(stack, r.quad[CONTEXT_IDX]);
+
+					if (r.contextDelta) {
+						if (r.add) {
+							incrementContext(stack, r.quad[CONTEXT_IDX]);
+						} else {
+							decrementContext(stack, r.quad[CONTEXT_IDX]);
+						}
 					}
 				}
 			}
