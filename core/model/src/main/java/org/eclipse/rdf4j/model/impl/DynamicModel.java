@@ -488,16 +488,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			return List.of(foundStatement);
 		} else if (model == null && subject != null && predicate != null && object != null
 				&& contexts != null && contexts.length == 0) {
-			List<Statement> foundStatements = new ArrayList<>();
-			for (Resource context : initializeAddedContextsIfNeeded()) {
-				Statement statement = SimpleValueFactory.getInstance()
-						.createStatement(subject, predicate, object, context);
-				Statement foundStatement = statements.get(statement);
-				if (foundStatement != null) {
-					foundStatements.add(foundStatement);
-				}
-			}
-			return foundStatements;
+			return getStatementsInInsertionOrderAcrossContexts(subject, predicate, object);
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
 				&& contexts.length == 0) {
 			return this;
@@ -508,6 +499,47 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			}
 			return model.getStatements(subject, predicate, object, contexts);
 		}
+	}
+
+	private Iterable<Statement> getStatementsInInsertionOrderAcrossContexts(Resource subject, IRI predicate,
+			Value object) {
+		Statement firstMatch = null;
+		Set<Statement> matchingStatements = null;
+
+		for (Resource context : initializeAddedContextsIfNeeded()) {
+			Statement candidate = SimpleValueFactory.getInstance().createStatement(subject, predicate, object, context);
+			Statement foundStatement = statements.get(candidate);
+			if (foundStatement == null) {
+				continue;
+			}
+			if (firstMatch == null) {
+				firstMatch = foundStatement;
+				continue;
+			}
+			if (matchingStatements == null) {
+				matchingStatements = new HashSet<>();
+				matchingStatements.add(firstMatch);
+			}
+			matchingStatements.add(foundStatement);
+		}
+
+		if (firstMatch == null) {
+			return List.of();
+		}
+		if (matchingStatements == null) {
+			return List.of(firstMatch);
+		}
+
+		List<Statement> orderedStatements = new ArrayList<>(matchingStatements.size());
+		for (Statement statement : statements.values()) {
+			if (matchingStatements.contains(statement)) {
+				orderedStatements.add(statement);
+				if (orderedStatements.size() == matchingStatements.size()) {
+					break;
+				}
+			}
+		}
+		return orderedStatements;
 	}
 
 	public void removeTermIteration(Iterator<Statement> iterator, Resource subj, IRI pred, Value obj,

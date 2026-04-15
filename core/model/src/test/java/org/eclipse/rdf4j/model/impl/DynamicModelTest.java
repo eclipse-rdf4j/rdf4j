@@ -204,6 +204,35 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void getStatementsWithoutContextPreservesMatchingStatementInsertionOrderBeforeAndAfterUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource context1 = valueFactory.createIRI("urn:context:1");
+		Resource context2 = valueFactory.createIRI("urn:context:2");
+		Statement firstMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context1);
+		Statement secondMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context2);
+
+		model.add(valueFactory.createIRI("urn:other-subject"), predicate, valueFactory.createLiteral("other-object"),
+				context2);
+		model.add(firstMatch);
+		model.add(secondMatch);
+
+		assertThat(model.getUpgradedModel()).isNull();
+		assertThat(model.getStatements(subject, predicate, valueFactory.createLiteral("object")))
+				.containsExactly(firstMatch, secondMatch);
+
+		model.filter(null, null, null);
+
+		assertThat(model.getUpgradedModel()).isNotNull();
+		assertThat(model.getStatements(subject, predicate, valueFactory.createLiteral("object")))
+				.containsExactly(firstMatch, secondMatch);
+	}
+
+	@Test
 	void nullableContextArrayOnlyMatchesNullContextBeforeAndAfterUpgrade() {
 		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
