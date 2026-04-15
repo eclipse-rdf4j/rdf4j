@@ -622,6 +622,39 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void subjectIteratorRemoveInvalidatesExactGetStatementsIteratorAfterUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject1 = valueFactory.createIRI("urn:subject:1");
+		Resource subject2 = valueFactory.createIRI("urn:subject:2");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource context = valueFactory.createIRI("urn:context");
+		Statement first = valueFactory.createStatement(subject1, predicate, valueFactory.createLiteral("value:1"),
+				context);
+		Statement second = valueFactory.createStatement(subject1, predicate, valueFactory.createLiteral("value:2"),
+				context);
+
+		model.add(first);
+		model.add(second);
+		model.add(subject2, predicate, valueFactory.createLiteral("value:3"), context);
+
+		Iterator<Statement> exactIterator = model
+				.getStatements(first.getSubject(), first.getPredicate(), first.getObject(), first.getContext())
+				.iterator();
+		Iterator<Resource> subjects = model.subjects().iterator();
+
+		assertThat(model.getUpgradedModel()).isNotNull();
+		assertThat(subjects.next()).isEqualTo(subject1);
+
+		subjects.remove();
+
+		assertThatThrownBy(exactIterator::next).isInstanceOf(ConcurrentModificationException.class);
+		assertThat(model.contains(first)).isFalse();
+		assertThat(model.contains(second)).isFalse();
+		assertThat(model.getUpgradedModel()).isNotNull();
+	}
+
+	@Test
 	void deserializingOlderDynamicModelInitializesAddedContexts() throws Exception {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),

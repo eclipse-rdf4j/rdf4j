@@ -305,25 +305,25 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public Set<Resource> subjects() {
 		upgrade();
-		return model.subjects();
+		return versionedTermView(model.subjects());
 	}
 
 	@Override
 	public Set<IRI> predicates() {
 		upgrade();
-		return model.predicates();
+		return versionedTermView(model.predicates());
 	}
 
 	@Override
 	public Set<Value> objects() {
 		upgrade();
-		return model.objects();
+		return versionedTermView(model.objects());
 	}
 
 	@Override
 	public Set<Resource> contexts() {
 		upgrade();
-		return model.contexts();
+		return versionedTermView(model.contexts());
 	}
 
 	@Override
@@ -697,6 +697,63 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (changed) {
 			markStatementsChanged();
 		}
+	}
+
+	private <V> Set<V> versionedTermView(Set<V> delegate) {
+		return new AbstractSet<>() {
+			@Override
+			public Iterator<V> iterator() {
+				Iterator<V> iterator = delegate.iterator();
+				return new Iterator<>() {
+					@Override
+					public boolean hasNext() {
+						return iterator.hasNext();
+					}
+
+					@Override
+					public V next() {
+						return iterator.next();
+					}
+
+					@Override
+					public void remove() {
+						iterator.remove();
+						markStatementsChanged();
+					}
+				};
+			}
+
+			@Override
+			public boolean add(V value) {
+				boolean changed = delegate.add(value);
+				markStatementsChangedIf(changed);
+				return changed;
+			}
+
+			@Override
+			public boolean remove(Object value) {
+				boolean changed = delegate.remove(value);
+				markStatementsChangedIf(changed);
+				return changed;
+			}
+
+			@Override
+			public void clear() {
+				boolean changed = !delegate.isEmpty();
+				delegate.clear();
+				markStatementsChangedIf(changed);
+			}
+
+			@Override
+			public boolean contains(Object value) {
+				return delegate.contains(value);
+			}
+
+			@Override
+			public int size() {
+				return delegate.size();
+			}
+		};
 	}
 
 	private void upgrade() {
