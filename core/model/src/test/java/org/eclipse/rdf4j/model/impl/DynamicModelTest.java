@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.model.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -25,6 +26,7 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -230,6 +232,243 @@ public class DynamicModelTest {
 		assertThat(model.getUpgradedModel()).isNotNull();
 		assertThat(model.getStatements(subject, predicate, valueFactory.createLiteral("object")))
 				.containsExactly(firstMatch, secondMatch);
+	}
+
+	@Test
+	void exactNamedContextGetStatementsRemainsLiveWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+		Statement statement = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				namedContext);
+
+		Iterable<Statement> statements = model.getStatements(subject, predicate, valueFactory.createLiteral("object"),
+				namedContext);
+
+		assertThat(statements).isEmpty();
+		assertThat(model.getUpgradedModel()).isNull();
+
+		model.add(statement);
+
+		assertThat(statements).containsExactly(statement);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactNamedContextGetStatementsIteratorDoesNotSeeLaterAdditionWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+		Statement statement = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				namedContext);
+
+		Iterator<Statement> iterator = model
+				.getStatements(subject, predicate, valueFactory.createLiteral("object"), namedContext)
+				.iterator();
+
+		model.add(statement);
+
+		assertThat(iterator.hasNext()).isFalse();
+		assertThat(model
+				.getStatements(subject, predicate, valueFactory.createLiteral("object"), namedContext))
+				.containsExactly(statement);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactNamedContextGetStatementsIteratorRemoveWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+		Statement statement = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				namedContext);
+
+		model.add(statement);
+
+		Iterator<Statement> iterator = model
+				.getStatements(subject, predicate, valueFactory.createLiteral("object"), namedContext)
+				.iterator();
+
+		assertThat(iterator.next()).isEqualTo(statement);
+		iterator.remove();
+
+		assertThat(model.contains(statement)).isFalse();
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactNamedContextGetStatementsIteratorFailsFastOnNextAfterExternalMutation() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+		Statement statement = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				namedContext);
+
+		model.add(statement);
+
+		Iterator<Statement> iterator = model
+				.getStatements(subject, predicate, valueFactory.createLiteral("object"), namedContext)
+				.iterator();
+
+		model.add(valueFactory.createIRI("urn:other-subject"), predicate, valueFactory.createLiteral("other-object"),
+				namedContext);
+
+		assertThatThrownBy(iterator::next).isInstanceOf(ConcurrentModificationException.class);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactNamedContextGetStatementsIteratorFailsFastOnRemoveAfterExternalMutation() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource namedContext = valueFactory.createIRI("urn:context:named");
+		Statement statement = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				namedContext);
+
+		model.add(statement);
+
+		Iterator<Statement> iterator = model
+				.getStatements(subject, predicate, valueFactory.createLiteral("object"), namedContext)
+				.iterator();
+
+		assertThat(iterator.next()).isEqualTo(statement);
+		model.add(valueFactory.createIRI("urn:other-subject"), predicate, valueFactory.createLiteral("other-object"),
+				namedContext);
+
+		assertThatThrownBy(iterator::remove).isInstanceOf(ConcurrentModificationException.class);
+		assertThat(model.contains(statement)).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactNullContextGetStatementsRemainsLiveWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Statement statement = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"));
+
+		Iterable<Statement> statements = model.getStatements(subject, predicate, valueFactory.createLiteral("object"),
+				(Resource[]) null);
+
+		assertThat(statements).isEmpty();
+		assertThat(model.getUpgradedModel()).isNull();
+
+		model.add(statement);
+
+		assertThat(statements).containsExactly(statement);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactNullContextGetStatementsIteratorDoesNotSeeLaterAdditionWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Statement statement = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"));
+
+		Iterator<Statement> iterator = model.getStatements(subject, predicate, valueFactory.createLiteral("object"),
+				(Resource[]) null).iterator();
+
+		model.add(statement);
+
+		assertThat(iterator.hasNext()).isFalse();
+		assertThat(model.getStatements(subject, predicate, valueFactory.createLiteral("object"), (Resource[]) null))
+				.containsExactly(statement);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactWildcardContextGetStatementsRemainsLiveWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource context1 = valueFactory.createIRI("urn:context:1");
+		Resource context2 = valueFactory.createIRI("urn:context:2");
+		Statement firstMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context1);
+		Statement secondMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context2);
+
+		model.add(firstMatch);
+
+		Iterable<Statement> statements = model.getStatements(subject, predicate, valueFactory.createLiteral("object"));
+
+		assertThat(statements).containsExactly(firstMatch);
+		assertThat(model.getUpgradedModel()).isNull();
+
+		model.add(secondMatch);
+
+		assertThat(statements).containsExactly(firstMatch, secondMatch);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactWildcardContextGetStatementsIteratorUsesCreationTimeSnapshotWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource context1 = valueFactory.createIRI("urn:context:1");
+		Resource context2 = valueFactory.createIRI("urn:context:2");
+		Statement firstMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context1);
+		Statement secondMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context2);
+
+		model.add(firstMatch);
+
+		Iterator<Statement> iterator = model.getStatements(subject, predicate, valueFactory.createLiteral("object"))
+				.iterator();
+
+		assertThat(iterator.next()).isEqualTo(firstMatch);
+		assertThat(iterator.hasNext()).isFalse();
+
+		model.add(secondMatch);
+
+		assertThat(iterator.hasNext()).isFalse();
+		assertThat(model.getStatements(subject, predicate, valueFactory.createLiteral("object")))
+				.containsExactly(firstMatch, secondMatch);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void exactWildcardContextGetStatementsIteratorRemoveWithoutUpgrade() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource context1 = valueFactory.createIRI("urn:context:1");
+		Resource context2 = valueFactory.createIRI("urn:context:2");
+		Statement firstMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context1);
+		Statement secondMatch = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("object"),
+				context2);
+
+		model.add(firstMatch);
+		model.add(secondMatch);
+
+		Iterator<Statement> iterator = model.getStatements(subject, predicate, valueFactory.createLiteral("object"))
+				.iterator();
+
+		assertThat(iterator.next()).isEqualTo(firstMatch);
+		iterator.remove();
+
+		assertThat(model.contains(firstMatch)).isFalse();
+		assertThat(model.contains(secondMatch)).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
 	}
 
 	@Test

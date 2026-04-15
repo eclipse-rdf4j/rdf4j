@@ -21,6 +21,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -28,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -74,6 +76,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	private Map<Statement, Statement> statements;
 	private Set<Resource> addedContexts = null;
 	private Set<Namespace> namespaces = null;
+	private long statementVersion;
 
 	volatile private Model model = null;
 	private transient boolean largeStatementSetRegistered;
@@ -240,10 +243,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				initializeAddedContextsIfNeeded().add(context);
 				added = added | statements.put(statement, statement) == null;
 			}
+			markStatementsChangedIf(added);
 			return added;
 		} else {
 			boolean changed = model.add(subj, pred, obj, contexts);
-
+			markStatementsChangedIf(changed);
 			return changed;
 		}
 	}
@@ -251,7 +255,9 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean clear(Resource... context) {
 		upgrade();
-		return model.clear(context);
+		boolean changed = model.clear(context);
+		markStatementsChangedIf(changed);
+		return changed;
 	}
 
 	@Override
@@ -268,6 +274,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				if (removed) {
 					invalidateAddedContexts();
 				}
+				markStatementsChangedIf(removed);
 				return removed;
 			}
 
@@ -280,9 +287,12 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			if (removed) {
 				invalidateAddedContexts();
 			}
+			markStatementsChangedIf(removed);
 			return removed;
 		} else {
-			return model.remove(subj, pred, obj, contexts);
+			boolean changed = model.remove(subj, pred, obj, contexts);
+			markStatementsChangedIf(changed);
+			return changed;
 		}
 	}
 
@@ -342,28 +352,28 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	@Override
 	public Iterator<Statement> iterator() {
-		if (model == null) {
-			Iterator<Statement> iterator = statements.values().iterator();
-			return new Iterator<>() {
-				@Override
-				public boolean hasNext() {
-					return iterator.hasNext();
-				}
+		boolean mapBacked = model == null;
+		Iterator<Statement> iterator = mapBacked ? statements.values().iterator() : model.iterator();
+		return new Iterator<>() {
+			@Override
+			public boolean hasNext() {
+				return iterator.hasNext();
+			}
 
-				@Override
-				public Statement next() {
-					return iterator.next();
-				}
+			@Override
+			public Statement next() {
+				return iterator.next();
+			}
 
-				@Override
-				public void remove() {
-					iterator.remove();
+			@Override
+			public void remove() {
+				iterator.remove();
+				if (mapBacked) {
 					invalidateAddedContexts();
 				}
-			};
-		}
-
-		return model.iterator();
+				markStatementsChanged();
+			}
+		};
 	}
 
 	@Override
@@ -387,10 +397,13 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		Objects.requireNonNull(statement);
 		if (model == null) {
 			initializeAddedContextsIfNeeded().add(statement.getContext());
-
-			return statements.put(statement, statement) == null;
+			boolean changed = statements.put(statement, statement) == null;
+			markStatementsChangedIf(changed);
+			return changed;
 		}
-		return model.add(statement);
+		boolean changed = model.add(statement);
+		markStatementsChangedIf(changed);
+		return changed;
 	}
 
 	@Override
@@ -401,9 +414,12 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			if (removed) {
 				invalidateAddedContexts();
 			}
+			markStatementsChangedIf(removed);
 			return removed;
 		}
-		return model.remove(o);
+		boolean changed = model.remove(o);
+		markStatementsChangedIf(changed);
+		return changed;
 	}
 
 	@Override
@@ -425,9 +441,12 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				initializeAddedContextsIfNeeded().add(statement.getContext());
 				changed = changed | statements.put(statement, statement) == null;
 			}
+			markStatementsChangedIf(changed);
 			return changed;
 		}
-		return model.addAll(c);
+		boolean changed = model.addAll(c);
+		markStatementsChangedIf(changed);
+		return changed;
 	}
 
 	@Override
@@ -437,9 +456,12 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			if (changed) {
 				invalidateAddedContexts();
 			}
+			markStatementsChangedIf(changed);
 			return changed;
 		}
-		return model.retainAll(c);
+		boolean changed = model.retainAll(c);
+		markStatementsChangedIf(changed);
+		return changed;
 	}
 
 	@Override
@@ -452,43 +474,40 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			if (changed) {
 				invalidateAddedContexts();
 			}
+			markStatementsChangedIf(changed);
 			return changed;
 		}
-		return model.removeAll(c);
+		boolean changed = model.removeAll(c);
+		markStatementsChangedIf(changed);
+		return changed;
 	}
 
 	@Override
 	public void clear() {
 		if (model == null) {
-			statements.clear();
-			invalidateAddedContexts();
+			if (!statements.isEmpty()) {
+				statements.clear();
+				invalidateAddedContexts();
+				markStatementsChanged();
+			}
 		} else {
-			model.clear();
+			if (!model.isEmpty()) {
+				model.clear();
+				markStatementsChanged();
+			}
 		}
 	}
 
 	@Override
 	public Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (model == null && subject != null && predicate != null && object != null && contexts == null) {
-			Statement statement = SimpleValueFactory.getInstance()
-					.createStatement(subject, predicate, object, (Resource) null);
-			Statement foundStatement = statements.get(statement);
-			if (foundStatement == null) {
-				return List.of();
-			}
-			return List.of(foundStatement);
+			return exactContextStatementView(subject, predicate, object, null);
 		} else if (model == null && subject != null && predicate != null && object != null && contexts != null
 				&& contexts.length == 1) {
-			Statement statement = SimpleValueFactory.getInstance()
-					.createStatement(subject, predicate, object, contexts[0]);
-			Statement foundStatement = statements.get(statement);
-			if (foundStatement == null) {
-				return List.of();
-			}
-			return List.of(foundStatement);
+			return exactContextStatementView(subject, predicate, object, contexts[0]);
 		} else if (model == null && subject != null && predicate != null && object != null
 				&& contexts != null && contexts.length == 0) {
-			return getStatementsInInsertionOrderAcrossContexts(subject, predicate, object);
+			return exactWildcardContextStatementView(subject, predicate, object);
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
 				&& contexts.length == 0) {
 			return this;
@@ -501,7 +520,19 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		}
 	}
 
-	private Iterable<Statement> getStatementsInInsertionOrderAcrossContexts(Resource subject, IRI predicate,
+	private Iterable<Statement> exactContextStatementView(Resource subject, IRI predicate, Value object,
+			Resource context) {
+		Statement lookupStatement = SimpleValueFactory.getInstance()
+				.createStatement(subject, predicate, object, context);
+		return () -> new ExactContextStatementIterator(statements.get(lookupStatement), statementVersion);
+	}
+
+	private Iterable<Statement> exactWildcardContextStatementView(Resource subject, IRI predicate, Value object) {
+		return () -> new SnapshotBackedStatementIterator(
+				getStatementsInInsertionOrderAcrossContexts(subject, predicate, object), statementVersion);
+	}
+
+	private List<Statement> getStatementsInInsertionOrderAcrossContexts(Resource subject, IRI predicate,
 			Value object) {
 		Statement firstMatch = null;
 		Set<Statement> matchingStatements = null;
@@ -542,6 +573,94 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		return orderedStatements;
 	}
 
+	private final class ExactContextStatementIterator implements Iterator<Statement> {
+		private Statement nextStatement;
+		private Statement lastReturned;
+		private long expectedVersion;
+
+		private ExactContextStatementIterator(Statement nextStatement, long expectedVersion) {
+			this.nextStatement = nextStatement;
+			this.expectedVersion = expectedVersion;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return nextStatement != null;
+		}
+
+		@Override
+		public Statement next() {
+			if (nextStatement == null) {
+				throw new NoSuchElementException();
+			}
+			checkForConcurrentModification();
+			lastReturned = nextStatement;
+			nextStatement = null;
+			return lastReturned;
+		}
+
+		@Override
+		public void remove() {
+			if (lastReturned == null) {
+				throw new IllegalStateException();
+			}
+			checkForConcurrentModification();
+			DynamicModel.this.remove(lastReturned);
+			lastReturned = null;
+			expectedVersion = statementVersion;
+		}
+
+		private void checkForConcurrentModification() {
+			if (expectedVersion != statementVersion) {
+				throw new ConcurrentModificationException();
+			}
+		}
+	}
+
+	private final class SnapshotBackedStatementIterator implements Iterator<Statement> {
+		private final List<Statement> statements;
+		private int nextIndex;
+		private Statement lastReturned;
+		private long expectedVersion;
+
+		private SnapshotBackedStatementIterator(List<Statement> statements, long expectedVersion) {
+			this.statements = statements;
+			this.expectedVersion = expectedVersion;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return nextIndex < statements.size();
+		}
+
+		@Override
+		public Statement next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			checkForConcurrentModification();
+			lastReturned = statements.get(nextIndex++);
+			return lastReturned;
+		}
+
+		@Override
+		public void remove() {
+			if (lastReturned == null) {
+				throw new IllegalStateException();
+			}
+			checkForConcurrentModification();
+			DynamicModel.this.remove(lastReturned);
+			lastReturned = null;
+			expectedVersion = statementVersion;
+		}
+
+		private void checkForConcurrentModification() {
+			if (expectedVersion != statementVersion) {
+				throw new ConcurrentModificationException();
+			}
+		}
+	}
+
 	public void removeTermIteration(Iterator<Statement> iterator, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		if (model == null) {
@@ -553,9 +672,12 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			return;
 		}
 
+		int beforeSize = model.size();
+
 		if (model instanceof AbstractModel) {
 			try {
 				((AbstractModel) model).removeTermIteration(iterator, subj, pred, obj, contexts);
+				markStatementsChangedIf(model.size() != beforeSize);
 				return;
 			} catch (ClassCastException ignored) {
 				// The active iterator may still come from pre-upgrade map-based storage.
@@ -564,6 +686,17 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 		iterator.remove();
 		model.remove(subj, pred, obj, contexts);
+		markStatementsChangedIf(model.size() != beforeSize);
+	}
+
+	private void markStatementsChanged() {
+		statementVersion++;
+	}
+
+	private void markStatementsChangedIf(boolean changed) {
+		if (changed) {
+			markStatementsChanged();
+		}
 	}
 
 	private void upgrade() {
