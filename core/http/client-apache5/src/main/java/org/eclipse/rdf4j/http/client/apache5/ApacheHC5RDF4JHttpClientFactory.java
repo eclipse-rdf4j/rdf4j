@@ -15,6 +15,8 @@ import java.net.HttpURLConnection;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import javax.net.ssl.SSLContext;
+
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -26,6 +28,7 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
 import org.apache.hc.core5.http.ConnectionClosedException;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpResponse;
@@ -87,8 +90,19 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 						.setConnectTimeout(Timeout.ofMilliseconds(config.getConnectTimeoutMs()))
 						.build());
 
-		if (config.getSslContext().isPresent()) {
-			cmBuilder.setTlsSocketStrategy(new DefaultClientTlsStrategy(config.getSslContext().get()));
+		if (config.getSslContext().isPresent() || config.isDisableHostnameVerification()) {
+			SSLContext sslContext = config.getSslContext().orElseGet(() -> {
+				try {
+					return SSLContext.getDefault();
+				} catch (java.security.NoSuchAlgorithmException e) {
+					throw new RuntimeException(e);
+				}
+			});
+			if (config.isDisableHostnameVerification()) {
+				cmBuilder.setTlsSocketStrategy(new DefaultClientTlsStrategy(sslContext, NoopHostnameVerifier.INSTANCE));
+			} else {
+				cmBuilder.setTlsSocketStrategy(new DefaultClientTlsStrategy(sslContext));
+			}
 		}
 
 		PoolingHttpClientConnectionManager connectionManager = cmBuilder.build();

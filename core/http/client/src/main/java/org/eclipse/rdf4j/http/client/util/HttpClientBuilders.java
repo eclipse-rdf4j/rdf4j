@@ -30,8 +30,15 @@ import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
 public class HttpClientBuilders {
 
 	/**
-	 * Return an {@link RDF4JHttpClientConfig} configured to trust all SSL certificates, including self-signed
-	 * certificates.
+	 * Return an {@link RDF4JHttpClientConfig} configured to trust all SSL certificates and skip hostname verification.
+	 *
+	 * <p>
+	 * This installs a no-op {@link javax.net.ssl.TrustManager} that accepts any certificate chain, and disables TLS
+	 * endpoint identification so that hostname mismatches are also accepted. Both checks are suppressed, making this
+	 * suitable for self-signed certificates in controlled/test environments.
+	 *
+	 * <p>
+	 * <strong>Warning:</strong> this configuration is inherently insecure and must never be used in production.
 	 *
 	 * @return an {@link RDF4JHttpClientConfig} for <i>SSL trust all</i>
 	 */
@@ -52,7 +59,7 @@ public class HttpClientBuilders {
 					return new X509Certificate[0];
 				}
 			} }, null);
-			return RDF4JHttpClientConfig.newBuilder().sslContext(sslContext).build();
+			return RDF4JHttpClientConfig.newBuilder().sslContext(sslContext).disableHostnameVerification(true).build();
 		} catch (NoSuchAlgorithmException | KeyManagementException e) {
 			throw new RuntimeException(e);
 		}

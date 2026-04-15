@@ -47,6 +47,7 @@ public final class RDF4JHttpClientConfig {
 	private final boolean followRedirects;
 	private final long idleConnectionTimeoutMs;
 	private final SSLContext sslContext;
+	private final boolean disableHostnameVerification;
 	private final List<HttpHeader> defaultHeaders;
 
 	private RDF4JHttpClientConfig(Builder builder) {
@@ -59,6 +60,7 @@ public final class RDF4JHttpClientConfig {
 		this.followRedirects = builder.followRedirects;
 		this.idleConnectionTimeoutMs = builder.idleConnectionTimeoutMs;
 		this.sslContext = builder.sslContext;
+		this.disableHostnameVerification = builder.disableHostnameVerification;
 		this.defaultHeaders = List.copyOf(builder.defaultHeaders);
 	}
 
@@ -148,6 +150,20 @@ public final class RDF4JHttpClientConfig {
 	}
 
 	/**
+	 * Returns whether TLS hostname verification is disabled. When {@code true}, the client will accept certificates
+	 * even if the hostname does not match the certificate's CN/SAN fields.
+	 *
+	 * <p>
+	 * <strong>Warning:</strong> disabling hostname verification removes an important security check. Only use this in
+	 * controlled environments (e.g. testing against self-signed certificates).
+	 *
+	 * @return {@code true} if hostname verification is disabled, {@code false} otherwise
+	 */
+	public boolean isDisableHostnameVerification() {
+		return disableHostnameVerification;
+	}
+
+	/**
 	 * Returns the default HTTP headers to be sent with every request.
 	 *
 	 * @return an unmodifiable list of default headers; never {@code null}, may be empty
@@ -189,6 +205,7 @@ public final class RDF4JHttpClientConfig {
 	 * <li>{@code followRedirects} = {@code true}</li>
 	 * <li>{@code idleConnectionTimeoutMs} = 300,000 ms (5 minutes)</li>
 	 * <li>{@code sslContext} = none (uses JVM default)</li>
+	 * <li>{@code disableHostnameVerification} = {@code false}</li>
 	 * </ul>
 	 */
 	public static final class Builder {
@@ -201,6 +218,7 @@ public final class RDF4JHttpClientConfig {
 		private boolean followRedirects = true;
 		private long idleConnectionTimeoutMs = 300_000L;
 		private SSLContext sslContext;
+		private boolean disableHostnameVerification = false;
 		private List<HttpHeader> defaultHeaders = List.of();
 
 		private Builder() {
@@ -304,6 +322,22 @@ public final class RDF4JHttpClientConfig {
 		 */
 		public Builder sslContext(SSLContext sslContext) {
 			this.sslContext = sslContext;
+			return this;
+		}
+
+		/**
+		 * Disables TLS hostname verification. When set to {@code true}, the client will accept certificates even if the
+		 * hostname does not match the certificate's CN/SAN fields.
+		 *
+		 * <p>
+		 * <strong>Warning:</strong> disabling hostname verification removes an important security check. Only use this
+		 * in controlled environments (e.g. testing against self-signed certificates with hostname mismatches).
+		 *
+		 * @param disableHostnameVerification {@code true} to disable hostname verification
+		 * @return this builder
+		 */
+		public Builder disableHostnameVerification(boolean disableHostnameVerification) {
+			this.disableHostnameVerification = disableHostnameVerification;
 			return this;
 		}
 

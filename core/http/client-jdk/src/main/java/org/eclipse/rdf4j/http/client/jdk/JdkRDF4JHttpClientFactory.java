@@ -16,6 +16,8 @@ import java.net.ProxySelector;
 import java.net.http.HttpClient;
 import java.time.Duration;
 
+import javax.net.ssl.SSLParameters;
+
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientFactory;
@@ -45,6 +47,12 @@ public class JdkRDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 				.proxy(ProxySelector.getDefault());
 
 		config.getSslContext().ifPresent(builder::sslContext);
+
+		if (config.isDisableHostnameVerification()) {
+			SSLParameters sslParameters = new SSLParameters();
+			sslParameters.setEndpointIdentificationAlgorithm(null);
+			builder.sslParameters(sslParameters);
+		}
 
 		builder.authenticator(new Authenticator() {
 			@Override
