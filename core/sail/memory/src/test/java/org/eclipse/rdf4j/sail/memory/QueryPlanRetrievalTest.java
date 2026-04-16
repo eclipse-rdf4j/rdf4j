@@ -19,6 +19,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.function.Predicate;
 
 import org.apache.commons.io.IOUtils;
@@ -43,6 +44,8 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +55,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class QueryPlanRetrievalTest {
 
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+	private Locale defaultLocale;
+
+	@BeforeEach
+	void setLocale() {
+		defaultLocale = Locale.getDefault();
+		Locale.setDefault(Locale.ENGLISH);
+	}
+
+	@AfterEach
+	void restoreLocale() {
+		Locale.setDefault(defaultLocale);
+	}
 
 	public static final String MAIN_QUERY = String.join("\n", "",
 			"{",
