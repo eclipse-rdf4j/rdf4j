@@ -283,11 +283,9 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	public static final int SPARQL_SOCKET_TIMEOUT = Integer.parseInt(
 			System.getProperty(SPARQL_SOCKET_TIMEOUT_PROPERTY, String.valueOf(DEFAULT_SPARQL_SOCKET_TIMEOUT)));
 
-	// Variables for the currently used timeouts
+	// Full config used when lazily creating the internal HTTP client
 
-	private int currentConnectionTimeout = CONNECTION_TIMEOUT;
-	private int currentConnectionRequestTimeout = CONNECTION_REQUEST_TIMEOUT;
-	private int currentSocketTimeout = SOCKET_TIMEOUT;
+	private volatile RDF4JHttpClientConfig currentConfig = buildDefaultConfig();
 
 	private final Logger logger = LoggerFactory.getLogger(SharedHttpClientSessionManager.class);
 
@@ -358,15 +356,20 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	/**
-	 * Set an optional {@link RDF4JHttpClientConfig} to be used when creating the inner HTTP client (if not provided
-	 * externally as dependent client).
+	 * Sets the {@link RDF4JHttpClientConfig} to be used when creating the internal HTTP client (if not provided
+	 * externally via {@link #setHttpClient(RDF4JHttpClient)}). The full configuration is applied, including timeouts,
+	 * connection limits, SSL context, default headers, and redirect policy.
 	 *
-	 * @param config the configuration for the managed HTTP client
+	 * <p>
+	 * This method always updates the stored configuration. However, if an external HTTP client has already been
+	 * assigned via {@link #setHttpClient(RDF4JHttpClient)}, or if the internal client has already been lazily
+	 * initialised, the new configuration will <em>not</em> be applied to the already-created client. In that case
+	 * {@link #getDefaultHttpClientConfig()} will return the updated config even though it is not in use.
+	 *
+	 * @param config the configuration for the managed HTTP client; must not be {@code null}
 	 */
 	public void setHttpClientConfig(RDF4JHttpClientConfig config) {
-		this.currentConnectionTimeout = config.getConnectTimeoutMs();
-		this.currentConnectionRequestTimeout = config.getConnectionRequestTimeoutMs();
-		this.currentSocketTimeout = config.getSocketTimeoutMs();
+		this.currentConfig = Objects.requireNonNull(config, "config must not be null");
 	}
 
 	@Override
@@ -457,20 +460,23 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	private RDF4JHttpClient createHttpClient() {
-		RDF4JHttpClientConfig config = getDefaultHttpClientConfig();
-		return RDF4JHttpClients.newDefaultClient(config);
+		return RDF4JHttpClients.newDefaultClient(currentConfig);
 	}
 
 	/**
-	 * Returns the default {@link RDF4JHttpClientConfig} using the currently set timeout values.
+	 * Returns the {@link RDF4JHttpClientConfig} that will be used when lazily creating the internal HTTP client.
 	 *
-	 * @return a configured {@link RDF4JHttpClientConfig} with the current timeouts.
+	 * @return the current {@link RDF4JHttpClientConfig}; never {@code null}
 	 */
 	public RDF4JHttpClientConfig getDefaultHttpClientConfig() {
+		return currentConfig;
+	}
+
+	private static RDF4JHttpClientConfig buildDefaultConfig() {
 		return RDF4JHttpClientConfig.newBuilder()
-				.connectTimeoutMs(currentConnectionTimeout)
-				.connectionRequestTimeoutMs(currentConnectionRequestTimeout)
-				.socketTimeoutMs(currentSocketTimeout)
+				.connectTimeoutMs(CONNECTION_TIMEOUT)
+				.connectionRequestTimeoutMs(CONNECTION_REQUEST_TIMEOUT)
+				.socketTimeoutMs(SOCKET_TIMEOUT)
 				.maxConnectionsPerRoute(MAX_CONN_PER_ROUTE)
 				.maxConnectionsTotal(MAX_CONN_TOTAL)
 				.followRedirects(true)
@@ -488,9 +494,11 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 * </p>
 	 */
 	public void setDefaultSparqlServiceTimeouts() {
-		this.currentConnectionTimeout = SPARQL_CONNECTION_TIMEOUT;
-		this.currentConnectionRequestTimeout = SPARQL_CONNECTION_REQUEST_TIMEOUT;
-		this.currentSocketTimeout = SPARQL_SOCKET_TIMEOUT;
+		this.currentConfig = currentConfig.toBuilder()
+				.connectTimeoutMs(SPARQL_CONNECTION_TIMEOUT)
+				.connectionRequestTimeoutMs(SPARQL_CONNECTION_REQUEST_TIMEOUT)
+				.socketTimeoutMs(SPARQL_SOCKET_TIMEOUT)
+				.build();
 	}
 
 	/**
@@ -503,9 +511,11 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 * </p>
 	 */
 	public void setDefaultTimeouts() {
-		this.currentConnectionTimeout = CONNECTION_TIMEOUT;
-		this.currentConnectionRequestTimeout = CONNECTION_REQUEST_TIMEOUT;
-		this.currentSocketTimeout = SOCKET_TIMEOUT;
+		this.currentConfig = currentConfig.toBuilder()
+				.connectTimeoutMs(CONNECTION_TIMEOUT)
+				.connectionRequestTimeoutMs(CONNECTION_REQUEST_TIMEOUT)
+				.socketTimeoutMs(SOCKET_TIMEOUT)
+				.build();
 	}
 
 }
