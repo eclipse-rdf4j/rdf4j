@@ -10,15 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint.provider;
 
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
 import org.eclipse.rdf4j.federated.endpoint.EndpointConfiguration;
 import org.eclipse.rdf4j.federated.endpoint.ManagedRepositoryEndpoint;
 import org.eclipse.rdf4j.federated.endpoint.SparqlEndpointConfiguration;
 import org.eclipse.rdf4j.federated.exception.FedXException;
-import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 
@@ -40,12 +37,6 @@ public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformat
 
 		try {
 			SPARQLRepository repo = new SPARQLRepository(repoInfo.getLocation());
-			HttpClientBuilder httpClientBuilder = HttpClients.custom()
-					.useSystemProperties()
-					.setMaxConnTotal(20)
-					.setMaxConnPerRoute(20);
-			((SharedHttpClientSessionManager) repo.getHttpClientSessionManager())
-					.setHttpClientBuilder(httpClientBuilder);
 			try {
 				repo.init();
 			} finally {

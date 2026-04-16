@@ -18,8 +18,11 @@ import static org.mockserver.model.HttpResponse.response;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.concurrent.Executors;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -27,8 +30,10 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.matchers.Times;
@@ -53,7 +58,9 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 	@Override
 	RDF4JProtocolSession createProtocolSession() {
-		RDF4JProtocolSession session = new SharedHttpClientSessionManager().createRDF4JProtocolSession(serverURL);
+		RDF4JHttpClient httpClient = RDF4JHttpClients.factory(factoryName).create();
+		sessionManager = new SharedHttpClientSessionManager(httpClient, Executors.newCachedThreadPool());
+		RDF4JProtocolSession session = sessionManager.createRDF4JProtocolSession(serverURL);
 		session.setRepository(Protocol.getRepositoryLocation(serverURL, repositoryID));
 		HashMap<String, String> additionalHeaders = new HashMap<>();
 		additionalHeaders.put(testHeader, testValue);
@@ -61,8 +68,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		return session;
 	}
 
-	@Test
-	public void testCreateRepositoryExecutesPut(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testCreateRepositoryExecutesPut(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+
 		client.when(
 				request()
 						.withMethod("PUT")
@@ -82,8 +93,14 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testCreateRepositoryFollowsRedirectOnPut(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testCreateRepositoryFollowsRedirectOnPut(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		Assumptions.assumeTrue("apache5".equals(factoryName),
+				"Method-preserving redirect on PUT is only supported by the Apache HC5 client");
+
 		// Simulate reverse-proxy forcing redirect on state-changing PUT
 		String originalPath = "/rdf4j-server/repositories/test";
 		String redirectedPath = "/https/rdf4j-server/repositories/test";
@@ -133,8 +150,15 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testRemoveDataTransactionFollowsRedirectOnDelete(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testRemoveDataTransactionFollowsRedirectOnDelete(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		Assumptions.assumeTrue("apache5".equals(factoryName),
+				"Method-preserving redirect on PUT is only supported by the Apache HC5 client");
+
 		// Start transaction and get transaction URL
 		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
 		HttpRequest transactionCreateRequest = request()
@@ -187,8 +211,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testUpdateRepositoryExecutesPost(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testUpdateRepositoryExecutesPost(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+
 		RepositoryConfig config = new RepositoryConfig("test");
 
 		client.when(
@@ -211,8 +239,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testSize(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSize(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+
 		client.when(
 				request()
 						.withMethod("GET")
@@ -233,8 +265,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testGetRepositoryConfig(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testGetRepositoryConfig(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+
 		client.when(
 				request()
 						.withMethod("GET")
@@ -260,8 +296,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testRepositoryList(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testRepositoryList(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+
 		client.when(
 				request()
 						.withMethod("GET")
@@ -283,8 +323,11 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testSendQueryExplanation(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendQueryExplanation(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
 		client.when(
 				request()
 						.withMethod("POST")
@@ -311,8 +354,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testSendQueryExplanationIncludesExplainRequestId(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendQueryExplanationIncludesExplainRequestId(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
 		client.when(
 				request()
 						.withMethod("POST")
@@ -343,9 +390,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testSendQueryExplanationOmitsExplainRequestIdInsideTransaction(MockServerClient client)
-			throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendQueryExplanationOmitsExplainRequestIdInsideTransaction(String factoryName,
+			MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
 		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
 		client.when(
 				request()
@@ -391,8 +441,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 				VerificationTimes.exactly(0));
 	}
 
-	@Test
-	public void testSendQueryExplanationReappliesExplainLevelVisibility(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendQueryExplanationReappliesExplainLevelVisibility(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
 		client.when(
 				request()
 						.withMethod("POST")
@@ -421,8 +475,11 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		assertThat(explanation.toString()).doesNotContain("confidenceScoreActual=");
 	}
 
-	@Test
-	public void testCancelQueryExplanation(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testCancelQueryExplanation(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
 		client.when(
 				request()
 						.withMethod("POST")
@@ -444,8 +501,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 	}
 
-	@Test
-	public void testCancelQueryExplanationIgnoresTransactionEndpoint(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testCancelQueryExplanationIgnoresTransactionEndpoint(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
 		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
 		client.when(
 				request()
@@ -483,8 +544,12 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 				VerificationTimes.exactly(0));
 	}
 
-	@Test
-	public void testSendQueryExplanationAcceptsSelfTimeActualField(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendQueryExplanationAcceptsSelfTimeActualField(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
 		client.when(
 				request()
 						.withMethod("POST")
@@ -502,10 +567,11 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
 	}
 
-	@Test
-	public void testClose(MockServerClient client) throws Exception {
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testClose(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
 		// re-init protocol session with cache-timeout set
-		sparqlSession.close();
 		System.setProperty(Protocol.CACHE_TIMEOUT_PROPERTY, "1");
 		sparqlSession = createProtocolSession();
 
@@ -539,6 +605,7 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		);
 
 		getRDF4JSession().close();
+		sparqlSession = null;
 		Thread.sleep(1000);
 
 		// we should not have received any further pings after the session was closed.
