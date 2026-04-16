@@ -345,7 +345,7 @@
 								<importOrder>
 									<order>java,javax,org,com</order>
 								</importOrder>
-								<removeUnusedImports />
+<!--								<removeUnusedImports /> RE-ENABLE THIS WHEN WE MOVE TO USING JAVA 25-->
 								<trimTrailingWhitespace />
 								<endWithNewline />
 							</java>
