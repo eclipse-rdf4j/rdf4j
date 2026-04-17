@@ -149,11 +149,13 @@ import org.slf4j.LoggerFactory;
  * Example (configure default context and reduce refresh cadence):
  * </p>
  *
- * <pre>{@code
+ * <pre>
+ * {@code
  * System.setProperty("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.defaultContextString", "urn:ctx");
  * System.setProperty("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.refreshSleepMillis", "500");
  * var est = new SketchBasedJoinEstimator(store, Config.defaults().withNominalEntries(128));
- * }</pre>
+ * }
+ * </pre>
  */
 public class SketchBasedJoinEstimator {
 
@@ -4135,7 +4137,7 @@ public class SketchBasedJoinEstimator {
 		algorithm = JoinOrderPlanner.Algorithm.GREEDY;
 		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(this, JoinOrderWorkAdjuster.NO_OP,
 				tupleExprs, bound)
-				.plan(algorithm);
+						.plan(algorithm);
 		recordRobustCardinalityPath(outcome.path());
 		return outcome.plan()
 				.map(JoinOrderPlanner.JoinOrderPlan::getEstimatedFinalRows)
@@ -4660,14 +4662,14 @@ public class SketchBasedJoinEstimator {
 		if (var == null || !var.hasValue() || var.getValue() == null) {
 			return null;
 		}
-		return var.getValue() instanceof Resource resource ? resource : null;
+		return var.getValue()instanceof Resource resource ? resource : null;
 	}
 
 	private IRI exactBoundIri(Var var) {
 		if (var == null || !var.hasValue() || var.getValue() == null) {
 			return null;
 		}
-		return var.getValue() instanceof IRI iri ? iri : null;
+		return var.getValue()instanceof IRI iri ? iri : null;
 	}
 
 	private Value exactBoundValue(Var var) {
@@ -4684,7 +4686,7 @@ public class SketchBasedJoinEstimator {
 		if (contextVar.getValue() == null) {
 			return new Resource[] { null };
 		}
-		if (!(contextVar.getValue() instanceof Resource resource)) {
+		if (!(contextVar.getValue()instanceof Resource resource)) {
 			return null;
 		}
 		return new Resource[] { resource };
@@ -4762,7 +4764,7 @@ public class SketchBasedJoinEstimator {
 				getValueOrNull(pattern.getPredicateVar()),
 				getValueOrNull(pattern.getObjectVar()),
 				getValueOrNull(pattern.getContextVar()))
-				.estimate();
+						.estimate();
 	}
 
 	private Component resolveJoinComponent(StatementPattern pattern) {
@@ -5140,7 +5142,7 @@ public class SketchBasedJoinEstimator {
 		}
 
 		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-		if (arguments == null || arguments.size() < 2 || !(arguments.get(0) instanceof Var listedVar)
+		if (arguments == null || arguments.size() < 2 || !(arguments.get(0)instanceof Var listedVar)
 				|| listedVar.getName() == null) {
 			return LookupAnalysis.none();
 		}

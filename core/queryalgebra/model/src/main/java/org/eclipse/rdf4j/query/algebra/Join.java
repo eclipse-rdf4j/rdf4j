@@ -59,8 +59,6 @@ public class Join extends BinaryTupleOperator {
 		visitor.meet(this);
 	}
 
-
-
 	@Override
 	public boolean equals(Object other) {
 		return other instanceof Join && super.equals(other);

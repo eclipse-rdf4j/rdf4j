@@ -315,7 +315,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 //						double cardinality1 = statistics.getCardinality(new Join(tupleExpr, expr));
 //					}
 //
-			////					System.out.println("left: "+tupleExpr.toString().trim());
+			//// System.out.println("left: "+tupleExpr.toString().trim());
 ////					System.out.println("right: "+expr.toString().trim());
 ////					System.out.println("estimated join cardinality: "+statistics.getCardinality(new Join(tupleExpr, expr)));
 ////					System.out.println();

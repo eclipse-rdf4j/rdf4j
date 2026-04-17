@@ -480,7 +480,7 @@ class SketchEstimatorThemeJoinAccuracyTest {
 			long total = 0L;
 			while (locatedAtStatements.hasNext()) {
 				Statement statement = locatedAtStatements.next();
-				if (statement.getObject() instanceof Resource branch) {
+				if (statement.getObject()instanceof Resource branch) {
 					total += branchNameRows.getOrDefault(branch, 0);
 				}
 			}

@@ -78,7 +78,7 @@ final class SketchJoinOrderReorderer {
 
 		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(estimator, workAdjuster,
 				plannedExpressions, plannedBound)
-				.plan(algorithm);
+						.plan(algorithm);
 		estimator.recordJoinOrderPlannerPath(outcome.path());
 		return outcome.plan().map(plan -> prependBindingPrefixes(plan, planningInputs.prefixExpressions()));
 	}

@@ -88,8 +88,7 @@ final class SketchJoinOrderPlanner {
 		}
 
 		StatePlan result = switch (algorithm) {
-		case DYNAMIC_PROGRAMMING ->
-			optimizeDynamicProgramming();
+		case DYNAMIC_PROGRAMMING -> optimizeDynamicProgramming();
 //			optimizeGreedy();
 		case GREEDY -> optimizeGreedy();
 		};
