@@ -140,8 +140,8 @@ class SavedQueriesServletTest {
 
 		assertThatThrownBy(() -> repoServlet.service(new MockHttpServletRequest("GET", "/saved"),
 				new CapturingHttpServletResponse()))
-						.isInstanceOf(BadRequestException.class)
-						.hasMessageContaining(expectedReference(repository.getClass().getName()));
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining(expectedReference(repository.getClass().getName()));
 
 		QueryStorage unknownStorage = mock(QueryStorage.class);
 		when(unknownStorage.checkAccess(null)).thenReturn(false);
@@ -151,8 +151,8 @@ class SavedQueriesServletTest {
 
 		assertThatThrownBy(() -> unknownServlet.service(new MockHttpServletRequest("GET", "/saved"),
 				new CapturingHttpServletResponse()))
-						.isInstanceOf(BadRequestException.class)
-						.hasMessageContaining(expectedReference("unknown-repository"));
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining(expectedReference("unknown-repository"));
 	}
 
 	@Test
@@ -166,8 +166,8 @@ class SavedQueriesServletTest {
 
 		assertThatThrownBy(() -> servlet.service(new MockHttpServletRequest("POST", "/saved"),
 				new CapturingHttpServletResponse()))
-						.isInstanceOf(BadRequestException.class)
-						.hasMessageContaining("Expected POST to contain a 'delete=' parameter.");
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining("Expected POST to contain a 'delete=' parameter.");
 
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.addParameter("delete", "urn:test:query");

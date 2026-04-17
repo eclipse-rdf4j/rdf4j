@@ -114,827 +114,827 @@ import co.elastic.clients.util.NamedValue;
  */
 public class ElasticsearchIndex extends AbstractSearchIndex {
 
-    /**
-     * Set the parameter "indexName=" to specify the index to use.
-     */
-    public static final String INDEX_NAME_KEY = "indexName";
+	/**
+	 * Set the parameter "indexName=" to specify the index to use.
+	 */
+	public static final String INDEX_NAME_KEY = "indexName";
 
-    /**
-     * Set the parameter "documentType=" to specify the document type to use. By default, the document type is
-     * "resource".
-     */
-    public static final String DOCUMENT_TYPE_KEY = "documentType";
+	/**
+	 * Set the parameter "documentType=" to specify the document type to use. By default, the document type is
+	 * "resource".
+	 */
+	public static final String DOCUMENT_TYPE_KEY = "documentType";
 
-    /**
-     * Set the parameter "transport=" to specify the address of the cluster to use (e.g. localhost:9300).
-     */
-    public static final String TRANSPORT_KEY = "transport";
+	/**
+	 * Set the parameter "transport=" to specify the address of the cluster to use (e.g. localhost:9300).
+	 */
+	public static final String TRANSPORT_KEY = "transport";
 
-    /**
-     * Set the parameter "waitForStatus=" to configure if {@link #initialize(java.util.Properties) initialization}
-     * should wait for a particular health status. The value can be one of "green" or "yellow". Does not wait by
-     * default.
-     */
-    public static final String WAIT_FOR_STATUS_KEY = "waitForStatus";
+	/**
+	 * Set the parameter "waitForStatus=" to configure if {@link #initialize(java.util.Properties) initialization}
+	 * should wait for a particular health status. The value can be one of "green" or "yellow". Does not wait by
+	 * default.
+	 */
+	public static final String WAIT_FOR_STATUS_KEY = "waitForStatus";
 
-    /**
-     * Set the parameter "waitForNodes=" to configure if {@link #initialize(java.util.Properties) initialization} should
-     * wait until the specified number of nodes are available. Does not wait by default.
-     */
-    public static final String WAIT_FOR_NODES_KEY = "waitForNodes";
+	/**
+	 * Set the parameter "waitForNodes=" to configure if {@link #initialize(java.util.Properties) initialization} should
+	 * wait until the specified number of nodes are available. Does not wait by default.
+	 */
+	public static final String WAIT_FOR_NODES_KEY = "waitForNodes";
 
-    /**
-     * Set the parameter "waitForActiveShards=" to configure if {@link #initialize(java.util.Properties) initialization}
-     * should wait until the specified number of shards to be active. Does not wait by default.
-     */
-    public static final String WAIT_FOR_ACTIVE_SHARDS_KEY = "waitForActiveShards";
+	/**
+	 * Set the parameter "waitForActiveShards=" to configure if {@link #initialize(java.util.Properties) initialization}
+	 * should wait until the specified number of shards to be active. Does not wait by default.
+	 */
+	public static final String WAIT_FOR_ACTIVE_SHARDS_KEY = "waitForActiveShards";
 
-    /**
-     * Set the parameter "waitForRelocatingShards=" to configure if {@link #initialize(java.util.Properties)
-     * initialization} should wait until the specified number of nodes are relocating. Does not wait by default.
-     *
-     * @deprecated use {@link #WAIT_FOR_NO_RELOCATING_SHARDS_KEY} in elastic search >= 5.x
-     */
-    @Deprecated
-    public static final String WAIT_FOR_RELOCATING_SHARDS_KEY = "waitForRelocatingShards";
+	/**
+	 * Set the parameter "waitForRelocatingShards=" to configure if {@link #initialize(java.util.Properties)
+	 * initialization} should wait until the specified number of nodes are relocating. Does not wait by default.
+	 *
+	 * @deprecated use {@link #WAIT_FOR_NO_RELOCATING_SHARDS_KEY} in elastic search >= 5.x
+	 */
+	@Deprecated
+	public static final String WAIT_FOR_RELOCATING_SHARDS_KEY = "waitForRelocatingShards";
 
-    /**
-     * Set the parameter "waitForNoRelocatingShards=true|false" to configure if {@link #initialize(java.util.Properties)
-     * initialization} should wait until the are no relocating shards. Defaults to false, meaning the operation does not
-     * wait on there being no more relocating shards. Set to true to wait until the number of relocating shards in the
-     * cluster is 0.
-     */
-    public static final String WAIT_FOR_NO_RELOCATING_SHARDS_KEY = "waitForNoRelocatingShards";
+	/**
+	 * Set the parameter "waitForNoRelocatingShards=true|false" to configure if {@link #initialize(java.util.Properties)
+	 * initialization} should wait until the are no relocating shards. Defaults to false, meaning the operation does not
+	 * wait on there being no more relocating shards. Set to true to wait until the number of relocating shards in the
+	 * cluster is 0.
+	 */
+	public static final String WAIT_FOR_NO_RELOCATING_SHARDS_KEY = "waitForNoRelocatingShards";
 
-    public static final String DEFAULT_INDEX_NAME = "elastic-search-sail";
+	public static final String DEFAULT_INDEX_NAME = "elastic-search-sail";
 
-    public static final String DEFAULT_DOCUMENT_TYPE = "resource";
+	public static final String DEFAULT_DOCUMENT_TYPE = "resource";
 
-    public static final String DEFAULT_TRANSPORT = "localhost";
+	public static final String DEFAULT_TRANSPORT = "localhost";
 
-    public static final String DEFAULT_ANALYZER = "standard";
+	public static final String DEFAULT_ANALYZER = "standard";
 
-    public static final String ELASTICSEARCH_KEY_PREFIX = "elasticsearch.";
-    public static final String ES_HTTP_USERNAME_KEY = ELASTICSEARCH_KEY_PREFIX + "http.username";
-    public static final String ES_HTTP_PASSWORD_KEY = ELASTICSEARCH_KEY_PREFIX + "http.password";
-    public static final String ES_HTTP_SCHEME_KEY = ELASTICSEARCH_KEY_PREFIX + "http.scheme";
-    public static final String ES_HTTP_PATH_PREFIX_KEY = ELASTICSEARCH_KEY_PREFIX + "http.pathPrefix";
-    public static final String ES_HTTP_CONNECT_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX + "http.connectTimeout";
-    public static final String ES_HTTP_SOCKET_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX + "http.socketTimeout";
-    public static final String ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX
-            + "http.connectionRequestTimeout";
-    public static final String ES_SSL_ENABLED_KEY = ELASTICSEARCH_KEY_PREFIX + "sslEnabled";
-    public static final String ES_HTTP_SSL_ENABLED_KEY = ELASTICSEARCH_KEY_PREFIX + "http.ssl.enabled";
+	public static final String ELASTICSEARCH_KEY_PREFIX = "elasticsearch.";
+	public static final String ES_HTTP_USERNAME_KEY = ELASTICSEARCH_KEY_PREFIX + "http.username";
+	public static final String ES_HTTP_PASSWORD_KEY = ELASTICSEARCH_KEY_PREFIX + "http.password";
+	public static final String ES_HTTP_SCHEME_KEY = ELASTICSEARCH_KEY_PREFIX + "http.scheme";
+	public static final String ES_HTTP_PATH_PREFIX_KEY = ELASTICSEARCH_KEY_PREFIX + "http.pathPrefix";
+	public static final String ES_HTTP_CONNECT_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX + "http.connectTimeout";
+	public static final String ES_HTTP_SOCKET_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX + "http.socketTimeout";
+	public static final String ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY = ELASTICSEARCH_KEY_PREFIX
+			+ "http.connectionRequestTimeout";
+	public static final String ES_SSL_ENABLED_KEY = ELASTICSEARCH_KEY_PREFIX + "sslEnabled";
+	public static final String ES_HTTP_SSL_ENABLED_KEY = ELASTICSEARCH_KEY_PREFIX + "http.ssl.enabled";
 
-    public static final String PROPERTY_FIELD_PREFIX = "p_";
-
-    public static final String ALL_PROPERTY_FIELDS = "p_*";
-
-    public static final String GEOPOINT_FIELD_PREFIX = "_geopoint_";
-
-    public static final String GEOSHAPE_FIELD_PREFIX = "_geoshape_";
-
-    public static final long UNASSIGNED_SEQ_NO = -2L;
-
-    public static final long UNASSIGNED_PRIMARY_TERM = 0L;
-
-    private static final Pattern FUZZY_SIMILARITY_PATTERN = Pattern.compile("~(\\d+\\.\\d+)");
-
-    private final Logger logger = LoggerFactory.getLogger(getClass());
-
-    private static final Type MAP_TYPE = new TypeReference<Map<String, Object>>() {
-    }.getType();
-
-    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
-
-    private volatile Rest5Client lowLevelClient;
-
-    private volatile ElasticsearchTransport transport;
-
-    private volatile ElasticsearchClient client;
-
-    private String clusterName;
-
-    private String indexName;
-
-    private String documentType;
-
-    private String analyzer;
-
-    private String queryAnalyzer = DEFAULT_ANALYZER;
-
-    private Function<? super String, ? extends SpatialContext> geoContextMapper;
-
-    public ElasticsearchIndex() {
-    }
-
-    public String getClusterName() {
-        return clusterName;
-    }
-
-    public String getIndexName() {
-        return indexName;
-    }
-
-    public String[] getTypes() {
-        return new String[]{documentType};
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public void initialize(Properties parameters) throws Exception {
-        super.initialize(parameters);
-        indexName = parameters.getProperty(INDEX_NAME_KEY, DEFAULT_INDEX_NAME);
-        documentType = parameters.getProperty(DOCUMENT_TYPE_KEY, DEFAULT_DOCUMENT_TYPE);
-        analyzer = parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
-        queryAnalyzer = parameters.getProperty(LuceneSail.QUERY_ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
-        // slightly hacky cast to cope with the fact that Properties is
-        // Map<Object,Object>
-        // even though it is effectively Map<String,String>
-        geoContextMapper = createSpatialContextMapper((Map<String, String>) (Map<?, ?>) parameters);
-
-        HttpHost[] httpHosts = createHttpHosts(parameters);
-        Rest5ClientBuilder restClientBuilder = Rest5Client.builder(httpHosts);
-        configurePathPrefix(parameters, restClientBuilder);
-        configureDefaultHeaders(parameters, restClientBuilder);
-        configureRequestTimeouts(parameters, restClientBuilder);
-
-        lowLevelClient = restClientBuilder.build();
-        transport = new Rest5ClientTransport(lowLevelClient, new JacksonJsonpMapper());
-        client = new ElasticsearchClient(transport);
-
-        clusterName = parameters.getProperty(ELASTICSEARCH_KEY_PREFIX + "cluster.name");
-
-        BooleanResponse existsResponse = client.indices().exists(ExistsRequest.of(b -> b.index(indexName)));
-        if (!existsResponse.value()) {
-            createIndex();
-        }
-
-        logger.info("Field mappings:\n{}", getMappings());
-
-        String waitForStatus = parameters.getProperty(WAIT_FOR_STATUS_KEY);
-        String waitForNodes = parameters.getProperty(WAIT_FOR_NODES_KEY);
-        String waitForActiveShards = parameters.getProperty(WAIT_FOR_ACTIVE_SHARDS_KEY);
-        String waitForRelocatingShards = parameters.getProperty(WAIT_FOR_RELOCATING_SHARDS_KEY);
-        if (waitForRelocatingShards != null) {
-            logger.warn("Property " + WAIT_FOR_RELOCATING_SHARDS_KEY + " no longer supported. Use "
-                    + WAIT_FOR_NO_RELOCATING_SHARDS_KEY + " instead");
-        }
-        String waitForNoRelocatingShards = parameters.getProperty(WAIT_FOR_NO_RELOCATING_SHARDS_KEY);
-
-        client.cluster().health(h -> {
-            h.index(indexName);
-            if ("green".equals(waitForStatus)) {
-                h.waitForStatus(HealthStatus.Green);
-            } else if ("yellow".equals(waitForStatus)) {
-                h.waitForStatus(HealthStatus.Yellow);
-            }
-            if (waitForNodes != null) {
-                h.waitForNodes(waitForNodes);
-            }
-            if (waitForActiveShards != null) {
-                h.waitForActiveShards(
-                        WaitForActiveShards.of(w -> w.count(Integer.parseInt(waitForActiveShards))));
-            }
-            if (waitForNoRelocatingShards != null) {
-                h.waitForNoRelocatingShards(Boolean.parseBoolean(waitForNoRelocatingShards));
-            }
-            return h;
-        });
-    }
-
-    private HttpHost[] createHttpHosts(Properties parameters) {
-        String transportHosts = parameters.getProperty(TRANSPORT_KEY, DEFAULT_TRANSPORT);
-        String[] hostSpecs = transportHosts.split(",");
-        String scheme = resolveScheme(parameters);
-        return Arrays.stream(hostSpecs)
-                .map(String::trim)
-                .filter(spec -> !spec.isEmpty())
-                .map(spec -> buildHttpHost(spec, scheme))
-                .toArray(HttpHost[]::new);
-    }
-
-    private HttpHost buildHttpHost(String spec, String defaultScheme) {
-        String cleanedSpec = spec.trim();
-        if (cleanedSpec.contains("://")) {
-            try {
-                return HttpHost.create(cleanedSpec);
-            } catch (URISyntaxException e) {
-                throw new IllegalArgumentException("Invalid host specification: " + cleanedSpec, e);
-            }
-        }
-        String[] hostPort = cleanedSpec.split(":");
-        String host = hostPort[0];
-        int port = hostPort.length > 1 ? Integer.parseInt(hostPort[1]) : 9200;
-        String uri = defaultScheme + "://" + host + ":" + port;
-        try {
-            return HttpHost.create(uri);
-        } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("Invalid host specification: " + uri, e);
-        }
-    }
-
-    private String resolveScheme(Properties parameters) {
-        String explicitScheme = parameters.getProperty(ES_HTTP_SCHEME_KEY);
-        if (explicitScheme != null && !explicitScheme.isBlank()) {
-            return explicitScheme;
-        }
-
-        if (isTrue(parameters.getProperty(ES_HTTP_SSL_ENABLED_KEY))
-                || isTrue(parameters.getProperty(ES_SSL_ENABLED_KEY))) {
-            return "https";
-        }
-        return "http";
-    }
-
-    private boolean isTrue(String value) {
-        return value != null && Boolean.parseBoolean(value);
-    }
-
-    private void configurePathPrefix(Properties parameters, Rest5ClientBuilder restClientBuilder) {
-        Optional.ofNullable(parameters.getProperty(ES_HTTP_PATH_PREFIX_KEY))
-                .filter(prefix -> !prefix.isBlank())
-                .ifPresent(restClientBuilder::setPathPrefix);
-    }
-
-    private void configureDefaultHeaders(Properties parameters, Rest5ClientBuilder restClientBuilder) {
-        List<Header> headers = new ArrayList<>();
-        createAuthorizationHeader(parameters).ifPresent(headers::add);
-        if (!headers.isEmpty()) {
-            restClientBuilder.setDefaultHeaders(headers.toArray(Header[]::new));
-        }
-    }
-
-    private Optional<Header> createAuthorizationHeader(Properties parameters) {
-        String username = parameters.getProperty(ES_HTTP_USERNAME_KEY);
-        String password = parameters.getProperty(ES_HTTP_PASSWORD_KEY);
-        if (username == null || password == null) {
-            return Optional.empty();
-        }
-        String credentials = username + ":" + password;
-        String authValue = "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
-        return Optional.of(new BasicHeader(HttpHeaders.AUTHORIZATION, authValue));
-    }
-
-    private void configureRequestTimeouts(Properties parameters, Rest5ClientBuilder restClientBuilder) {
-        if (parameters.containsKey(ES_HTTP_CONNECT_TIMEOUT_KEY) || parameters.containsKey(ES_HTTP_SOCKET_TIMEOUT_KEY)
-                || parameters.containsKey(ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY)) {
-            restClientBuilder.setRequestConfigCallback((RequestConfig.Builder config) -> {
-                parseTimeout(parameters, ES_HTTP_CONNECT_TIMEOUT_KEY)
-                        .ifPresent(timeout -> config.setConnectTimeout(Timeout.ofMilliseconds(timeout)));
-                parseTimeout(parameters, ES_HTTP_SOCKET_TIMEOUT_KEY)
-                        .ifPresent(timeout -> config.setResponseTimeout(Timeout.ofMilliseconds(timeout)));
-                parseTimeout(parameters, ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY)
-                        .ifPresent(timeout -> config.setConnectionRequestTimeout(Timeout.ofMilliseconds(timeout)));
-            });
-        }
-    }
-
-    private Optional<Integer> parseTimeout(Properties parameters, String key) {
-        String value = parameters.getProperty(key);
-        if (value == null) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(Integer.parseInt(value.trim()));
-        } catch (NumberFormatException e) {
-            logger.warn("Invalid timeout value for {}: {}", key, value);
-            return Optional.empty();
-        }
-    }
-
-    protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(
-            Map<String, String> parameters) {
-        // this should really be based on the schema
-        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
-        return Functions.constant(geoContext);
-    }
-
-    public Map<String, Object> getMappings() throws IOException {
-        GetMappingResponse resp = client.indices().getMapping(g -> g.index(indexName));
-        IndexMappingRecord mappingRecord = resp.get(indexName);
-        if (mappingRecord == null || mappingRecord.mappings() == null) {
-            return Map.of();
-        }
-        TypeMapping mapping = mappingRecord.mappings();
-        Map<String, Object> mappings = new HashMap<>();
-        if (mapping.properties() != null && !mapping.properties().isEmpty()) {
-            mappings.put("properties", mapping.properties());
-        }
-        if (mapping.meta() != null && !mapping.meta().isEmpty()) {
-            mappings.put("_meta", mapping.meta());
-        }
-        return mappings;
-    }
-
-    private void createIndex() throws IOException {
-        Map<String, Object> settings = new HashMap<>();
-        settings.put("index.query.default_field", SearchFields.TEXT_FIELD_NAME);
-        settings.put("analysis",
-                Map.of("analyzer", Map.of("default", Map.of("type", analyzer))));
-
-        String settingsJson = JSON_MAPPER.writeValueAsString(settings);
-
-        CreateIndexResponse createResponse = client.indices()
-                .create(c -> c.index(indexName)
-                        .settings(s -> s.withJson(new StringReader(settingsJson))));
-        if (!createResponse.acknowledged()) {
-            throw new IOException("Failed to create index " + indexName);
-        }
-
-        Map<String, Object> properties = new HashMap<>();
-        properties.put(SearchFields.CONTEXT_FIELD_NAME, Map.of("type", "keyword", "index", true));
-        properties.put(SearchFields.URI_FIELD_NAME, Map.of("type", "keyword", "index", true));
-        properties.put(SearchFields.TEXT_FIELD_NAME, Map.of("type", "text", "index", true));
-        for (String wktField : wktFields) {
-            properties.put(toGeoPointFieldName(wktField), Map.of("type", "geo_point"));
-            if (supportsShapes(wktField)) {
-                properties.put(toGeoShapeFieldName(wktField), Map.of("type", "geo_shape"));
-            }
-        }
-
-        String mappingJson = JSON_MAPPER.writeValueAsString(Map.of("properties", properties));
-
-        client.indices()
-                .putMapping(
-                        PutMappingRequest.of(pm -> pm.index(indexName)
-                                .withJson(new StringReader(mappingJson))));
-        client.indices().refresh(RefreshRequest.of(r -> r.index(indexName)));
-    }
-
-    private boolean supportsShapes(String field) {
-        SpatialContext geoContext = geoContextMapper.apply(field);
-        try {
-            geoContext.readShapeFromWkt("POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))");
-            return true;
-        } catch (ParseException e) {
-            return false;
-        }
-    }
-
-    @Override
-    protected SpatialContext getSpatialContext(String property) {
-        return geoContextMapper.apply(property);
-    }
-
-    @Override
-    public void shutDown() throws IOException {
-        Rest5Client toCloseClient = lowLevelClient;
-        lowLevelClient = null;
-        transport = null;
-        client = null;
-        if (toCloseClient != null) {
-            toCloseClient.close();
-        }
-    }
-
-    // //////////////////////////////// Methods for updating the index
-
-    /**
-     * Returns a Document representing the specified document ID (combination of resource and context), or null when no
-     * such Document exists yet.
-     */
-    @Override
-    protected SearchDocument getDocument(String id) throws IOException {
-        GetResponse<Map<String, Object>> response = client.get(
-                GetRequest.of(g -> g.index(indexName).id(id)),
-                MAP_TYPE);
-        if (response.found()) {
-            long seqNo = response.seqNo() == null ? UNASSIGNED_SEQ_NO : response.seqNo();
-            long primaryTerm = response.primaryTerm() == null ? UNASSIGNED_PRIMARY_TERM : response.primaryTerm();
-            return new ElasticsearchDocument(response.id(), documentType, response.index(), seqNo, primaryTerm,
-                    response.source(), geoContextMapper);
-        }
-        // no such Document
-        return null;
-    }
-
-    @Override
-    protected Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException {
-        Iterable<Hit<Map<String, Object>>> hits = getDocuments(termQuery(SearchFields.URI_FIELD_NAME, resourceId));
-        return Iterables.transform(hits,
-                (Function<Hit<Map<String, Object>>, SearchDocument>) hit -> new ElasticsearchDocument(hit,
-                        geoContextMapper));
-    }
-
-    @Override
-    protected SearchDocument newDocument(String id, String resourceId, String context) {
-        return new ElasticsearchDocument(id, documentType, indexName, resourceId, context, geoContextMapper);
-    }
-
-    @Override
-    protected SearchDocument copyDocument(SearchDocument doc) {
-        ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
-        Map<String, Object> source = esDoc.getSource();
-        Map<String, Object> newDocument = new HashMap<>(source);
-        return new ElasticsearchDocument(esDoc.getId(), esDoc.getType(), esDoc.getIndex(), esDoc.getSeqNo(),
-                esDoc.getPrimaryTerm(), newDocument, geoContextMapper);
-    }
-
-    @Override
-    protected void addDocument(SearchDocument doc) throws IOException {
-        ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
-        IndexResponse response = client.index(
-                IndexRequest.of(i -> i.index(esDoc.getIndex()).id(esDoc.getId()).document(esDoc.getSource())));
-        if (response.result() == null) {
-            throw new IOException("Index request failed for " + esDoc.getId());
-        }
-    }
-
-    @Override
-    protected void updateDocument(SearchDocument doc) throws IOException {
-        ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
-        IndexRequest.Builder<Map<String, Object>> request = new IndexRequest.Builder<>();
-        request.index(esDoc.getIndex()).id(esDoc.getId()).document(esDoc.getSource());
-        if (esDoc.getSeqNo() != UNASSIGNED_SEQ_NO
-                && esDoc.getPrimaryTerm() != UNASSIGNED_PRIMARY_TERM) {
-            request.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
-        }
-        IndexResponse response = client.index(request.build());
-        if (response.result() == null) {
-            throw new IOException("Update request failed for " + esDoc.getId());
-        }
-    }
-
-    @Override
-    protected void deleteDocument(SearchDocument doc) throws IOException {
-        ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
-        client.delete(DeleteRequest.of(d -> {
-            d.index(esDoc.getIndex()).id(esDoc.getId());
-            if (esDoc.getSeqNo() != UNASSIGNED_SEQ_NO
-                    && esDoc.getPrimaryTerm() != UNASSIGNED_PRIMARY_TERM) {
-                d.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
-            }
-            return d;
-        }));
-    }
-
-    @Override
-    protected BulkUpdater newBulkUpdate() {
-        return new ElasticsearchBulkUpdater(client);
-    }
-
-    /**
-     * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
-     * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
-     * context
-     */
-    private Iterable<Hit<Map<String, Object>>> getDocuments(Query query) throws IOException {
-        return executeSearch(query, -1).hits().hits();
-    }
-
-    /**
-     * Returns a Document representing the specified Resource and Context combination, or null when no such Document
-     * exists yet.
-     *
-     * @param subject
-     * @param context
-     * @return search document
-     * @throws IOException
-     */
-    public SearchDocument getDocument(Resource subject, Resource context) throws IOException {
-        // fetch the Document representing this Resource
-        String resourceId = SearchFields.getResourceID(subject);
-        String contextId = SearchFields.getContextID(context);
-        return getDocument(SearchFields.formIdString(resourceId, contextId));
-    }
-
-    /**
-     * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
-     * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
-     * context
-     *
-     * @param subject
-     * @return list of documents
-     * @throws IOException
-     */
-    public Iterable<? extends SearchDocument> getDocuments(Resource subject) throws IOException {
-        String resourceId = SearchFields.getResourceID(subject);
-        return getDocuments(resourceId);
-    }
-
-    /**
-     * Filters the given list of fields, retaining all property fields.
-     *
-     * @param fields
-     * @return set of fields
-     */
-    public static Set<String> getPropertyFields(Set<String> fields) {
-        Set<String> result = new HashSet<>(fields.size());
-        for (String field : fields) {
-            if (SearchFields.isPropertyField(field)) {
-                result.add(field);
-            }
-        }
-        return result;
-    }
-
-    @Override
-    public void begin() throws IOException {
-    }
-
-    @Override
-    public void commit() throws IOException {
-        client.indices().refresh(RefreshRequest.of(r -> r.index(indexName)));
-    }
-
-    @Override
-    public void rollback() throws IOException {
-    }
-
-    // //////////////////////////////// Methods for querying the index
-
-    /**
-     * Parse the passed query.
-     *
-     * @param subject
-     * @param spec    query to process
-     * @return the parsed query
-     * @throws MalformedQueryException
-     * @throws IOException
-     * @throws IllegalArgumentException if the spec contains a multi-param query
-     */
-    @Override
-    protected Iterable<? extends DocumentScore> query(Resource subject, QuerySpec spec)
-            throws MalformedQueryException, IOException {
-        if (spec.getQueryPatterns().size() != 1) {
-            throw new IllegalArgumentException("Multi-param query not implemented!");
-        }
-        QuerySpec.QueryParam param = spec.getQueryPatterns().iterator().next();
-        IRI propertyURI = param.getProperty();
-        boolean highlight = param.isHighlight();
-        String query = param.getQuery();
-        Query qb = prepareQuery(propertyURI, query);
-        Highlight highlightConfig = null;
-        if (highlight) {
-            String field = propertyURI != null
-                    ? toPropertyFieldName(SearchFields.getPropertyField(propertyURI))
-                    : ALL_PROPERTY_FIELDS;
-            boolean requireFieldMatch = propertyURI != null;
-            HighlightField highlightField = HighlightField.of(hf -> hf.preTags(SearchFields.HIGHLIGHTER_PRE_TAG)
-                    .postTags(SearchFields.HIGHLIGHTER_POST_TAG)
-                    .numberOfFragments(0));
-            highlightConfig = Highlight.of(h -> {
-                h.fields(List.of(NamedValue.of(field, highlightField)));
-                h.numberOfFragments(0);
-                if (!requireFieldMatch) {
-                    h.requireFieldMatch(false);
-                }
-                return h;
-            });
-        }
-
-        int numDocs;
-
-        Integer specNumDocs = spec.getNumDocs();
-        if (specNumDocs != null) {
-            if (specNumDocs < 0) {
-                throw new IllegalArgumentException("numDocs must be >= 0");
-            }
-            numDocs = specNumDocs;
-        } else {
-            numDocs = -1;
-        }
-
-        Query combinedQuery = qb;
-        if (subject != null) {
-            Query idQuery = termQuery(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(subject));
-            combinedQuery = QueryBuilders.bool(b -> b.must(idQuery).must(qb));
-        }
-
-        SearchResponse<Map<String, Object>> response = executeSearch(combinedQuery, numDocs, highlightConfig);
-        return Iterables.transform(response.hits().hits(),
-                (Function<Hit<Map<String, Object>>, DocumentScore>) hit -> new ElasticsearchDocumentScore(hit,
-                        geoContextMapper));
-    }
-
-    @Override
-    protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
-                                                            double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
-        double unitDist;
-        if (GEOF.UOM_METRE.equals(units)) {
-            unitDist = distance / 1000.0;
-        } else if (GEOF.UOM_DEGREE.equals(units)) {
-            unitDist = (Math.PI / 180.0) * DistanceUtils.EARTH_MEAN_RADIUS_KM * distance;
-        } else if (GEOF.UOM_RADIAN.equals(units)) {
-            unitDist = DistanceUtils.radians2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_KM);
-        } else if (GEOF.UOM_UNITY.equals(units)) {
-            unitDist = distance * Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM;
-        } else {
-            throw new MalformedQueryException("Unsupported units: " + units);
-        }
-
-        double lat = p.getY();
-        double lon = p.getX();
-        final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
-        String distanceString = unitDist + "km";
-        Query distanceQuery = QueryBuilders.geoDistance(g -> g.field(fieldName)
-                .location(l -> l.latlon(ll -> ll.lat(lat).lon(lon)))
-                .distance(distanceString));
-        GeoLocation origin = GeoLocation.of(location -> location.latlon(ll -> ll.lat(lat).lon(lon)));
-        FunctionScore decayFunction = FunctionScore.of(f -> f.linear(
-                l -> l.geo(geo -> geo.field(fieldName)
-                        .placement(pBuilder -> pBuilder.origin(origin).scale(distanceString)))));
-        Query qb = QueryBuilders.functionScore(fs -> fs.query(distanceQuery)
-                .functions(decayFunction)
-                .scoreMode(FunctionScoreMode.Multiply));
-        if (contextVar != null) {
-            qb = addContextTerm(qb, (Resource) contextVar.getValue());
-        }
-
-        SearchResponse<Map<String, Object>> response = executeSearch(qb, -1);
-        return Iterables.transform(response.hits().hits(),
-                (Function<Hit<Map<String, Object>>, DocumentDistance>) hit -> new ElasticsearchDocumentDistance(hit,
-                        geoContextMapper, fieldName, units, lat, lon));
-    }
-
-    private Query addContextTerm(Query qb, Resource ctx) {
-        Query idQuery = termQuery(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx));
-        if (ctx != null) {
-            return QueryBuilders.bool(b -> b.must(idQuery).must(qb));
-        }
-        return QueryBuilders.bool(b -> b.mustNot(idQuery).must(qb));
-    }
-
-    @Override
-    protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, String wkt,
-                                                                  Var contextVar) throws MalformedQueryException, IOException {
-
-        Shape shape = null;
-        try {
-            shape = super.parseQueryShape(SearchFields.getPropertyField(geoProperty), wkt);
-        } catch (ParseException e) {
-            logger.error("error while parsing wkt geometry", e);
-        }
-        if (shape == null) {
-            return null;
-        }
-        GeoShapeRelation spatialOp = toSpatialOp(relation);
-        if (spatialOp == null) {
-            return null;
-        }
-        final String fieldName = toGeoShapeFieldName(SearchFields.getPropertyField(geoProperty));
-        Map<String, Object> geoJson = ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape);
-        GeoShapeFieldQuery shapeQuery = GeoShapeFieldQuery
-                .of(g -> g.shape(JsonData.of(geoJson)).relation(spatialOp));
-        Query filter = QueryBuilders.geoShape(g -> g.field(fieldName).shape(shapeQuery));
-        Query matchAll = QueryBuilders.matchAll(m -> m);
-        Query qb = contextVar != null ? addContextTerm(matchAll, (Resource) contextVar.getValue()) : matchAll;
-
-        SearchResponse<Map<String, Object>> response = executeSearch(
-                QueryBuilders.bool(b -> b.must(qb).filter(filter)), -1);
-        return Iterables.transform(response.hits().hits(),
-                (Function<Hit<Map<String, Object>>, DocumentResult>) hit -> new ElasticsearchDocumentResult(hit,
-                        geoContextMapper));
-    }
-
-    private GeoShapeRelation toSpatialOp(String relation) {
-        if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {
-            return GeoShapeRelation.Intersects;
-        }
-        if (GEOF.SF_DISJOINT.stringValue().equals(relation)) {
-            return GeoShapeRelation.Disjoint;
-        }
-        if (GEOF.EH_COVERED_BY.stringValue().equals(relation)) {
-            return GeoShapeRelation.Within;
-        }
-        return null;
-    }
-
-    public SearchResponse<Map<String, Object>> search(Query query) throws IOException {
-        return executeSearch(query, -1);
-    }
-
-    private SearchResponse<Map<String, Object>> executeSearch(Query query, int numDocs) throws IOException {
-        return executeSearch(query, numDocs, null);
-    }
-
-    private SearchResponse<Map<String, Object>> executeSearch(Query query, int numDocs, Highlight highlight)
-            throws IOException {
-        int size = resolveSize(query, numDocs);
-        return client.search(
-                s -> {
-                    s.index(indexName)
-                            .query(query)
-                            .size(size)
-                            .seqNoPrimaryTerm(true)
-                            .trackTotalHits(TrackHits.of(th -> th.enabled(true)));
-                    if (highlight != null) {
-                        s.highlight(highlight);
-                    }
-                    return s;
-                },
-                MAP_TYPE);
-    }
-
-    private int resolveSize(Query query, int numDocs) throws IOException {
-        if (numDocs < -1) {
-            throw new IllegalArgumentException("numDocs should be 0 or greater if defined by the user");
-        }
-        if (numDocs >= 0) {
-            return Math.min(maxDocs, numDocs);
-        }
-        if (defaultNumDocs >= 0) {
-            return Math.min(maxDocs, defaultNumDocs);
-        }
-        SearchResponse<Map<String, Object>> countResponse;
-        try {
-            countResponse = client.search(
-                    s -> s.index(indexName)
-                            .size(0)
-                            .query(query)
-                            .trackTotalHits(TrackHits.of(th -> th.enabled(true))),
-                    MAP_TYPE);
-        } catch (ElasticsearchException e) {
-            logger.error("Elasticsearch search failed while resolving size: {}", e.error() != null ? e.error().reason()
-                    : e.getMessage(), e);
-            throw e;
-        }
-        long docCount = countResponse.hits().total() != null ? countResponse.hits().total().value() : 0;
-        return Math.max((int) Math.min(docCount, maxDocs), 1);
-    }
-
-    private Query prepareQuery(IRI propertyURI, String query) {
-        String normalizedQuery = normalizeFuzzyQuerySyntax(query);
-        return QueryBuilders.queryString(qb -> {
-            qb.query(normalizedQuery).analyzer(queryAnalyzer);
-            if (propertyURI == null) {
-                qb.defaultField(SearchFields.TEXT_FIELD_NAME);
-            } else {
-                qb.defaultField(toPropertyFieldName(SearchFields.getPropertyField(propertyURI)));
-            }
-            return qb;
-        });
-    }
-
-    private String normalizeFuzzyQuerySyntax(String query) {
-        Matcher matcher = FUZZY_SIMILARITY_PATTERN.matcher(query);
-        StringBuffer buffer = new StringBuffer();
-        while (matcher.find()) {
-            // Elasticsearch 9.x rejects Lucene-style float fuzziness (e.g. "~0.8"); rewrite to an
-            // integer edit distance that the query_string parser accepts.
-            matcher.appendReplacement(buffer, "~1");
-        }
-        matcher.appendTail(buffer);
-        return buffer.toString();
-    }
-
-    /**
-     * @param contexts
-     * @throws IOException
-     */
-    @Override
-    public synchronized void clearContexts(Resource... contexts) throws IOException {
-        logger.debug("deleting contexts: {}", Arrays.toString(contexts));
-        // these resources have to be read from the underlying rdf store
-        // and their triples have to be added to the luceneindex after deletion of
-        // documents
-
-        // remove all contexts passed
-        for (Resource context : contexts) {
-            // attention: context can be NULL!
-            String contextString = SearchFields.getContextID(context);
-            // now delete all documents from the deleted context
-            client.deleteByQuery(dbq -> dbq.index(indexName)
-                    .query(termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString)));
-        }
-    }
-
-    /**
-     *
-     */
-    @Override
-    public synchronized void clear() throws IOException {
-        client.indices().delete(d -> d.index(indexName));
-        createIndex();
-    }
-
-    static String toPropertyFieldName(String prop) {
-        return PROPERTY_FIELD_PREFIX + encodeFieldName(prop);
-    }
-
-    static String toPropertyName(String field) {
-        return decodeFieldName(field.substring(PROPERTY_FIELD_PREFIX.length()));
-    }
-
-    static String toGeoPointFieldName(String prop) {
-        return GEOPOINT_FIELD_PREFIX + encodeFieldName(prop);
-    }
-
-    static String toGeoShapeFieldName(String prop) {
-        return GEOSHAPE_FIELD_PREFIX + encodeFieldName(prop);
-    }
-
-    static String encodeFieldName(String s) {
-        return s.replace('.', '^');
-    }
-
-    static String decodeFieldName(String s) {
-        return s.replace('^', '.');
-    }
-
-    private Query termQuery(String field, String value) {
-        return QueryBuilders.term(t -> t.field(field).value(value));
-    }
+	public static final String PROPERTY_FIELD_PREFIX = "p_";
+
+	public static final String ALL_PROPERTY_FIELDS = "p_*";
+
+	public static final String GEOPOINT_FIELD_PREFIX = "_geopoint_";
+
+	public static final String GEOSHAPE_FIELD_PREFIX = "_geoshape_";
+
+	public static final long UNASSIGNED_SEQ_NO = -2L;
+
+	public static final long UNASSIGNED_PRIMARY_TERM = 0L;
+
+	private static final Pattern FUZZY_SIMILARITY_PATTERN = Pattern.compile("~(\\d+\\.\\d+)");
+
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+
+	private static final Type MAP_TYPE = new TypeReference<Map<String, Object>>() {
+	}.getType();
+
+	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
+	private volatile Rest5Client lowLevelClient;
+
+	private volatile ElasticsearchTransport transport;
+
+	private volatile ElasticsearchClient client;
+
+	private String clusterName;
+
+	private String indexName;
+
+	private String documentType;
+
+	private String analyzer;
+
+	private String queryAnalyzer = DEFAULT_ANALYZER;
+
+	private Function<? super String, ? extends SpatialContext> geoContextMapper;
+
+	public ElasticsearchIndex() {
+	}
+
+	public String getClusterName() {
+		return clusterName;
+	}
+
+	public String getIndexName() {
+		return indexName;
+	}
+
+	public String[] getTypes() {
+		return new String[] { documentType };
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public void initialize(Properties parameters) throws Exception {
+		super.initialize(parameters);
+		indexName = parameters.getProperty(INDEX_NAME_KEY, DEFAULT_INDEX_NAME);
+		documentType = parameters.getProperty(DOCUMENT_TYPE_KEY, DEFAULT_DOCUMENT_TYPE);
+		analyzer = parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
+		queryAnalyzer = parameters.getProperty(LuceneSail.QUERY_ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
+		// slightly hacky cast to cope with the fact that Properties is
+		// Map<Object,Object>
+		// even though it is effectively Map<String,String>
+		geoContextMapper = createSpatialContextMapper((Map<String, String>) (Map<?, ?>) parameters);
+
+		HttpHost[] httpHosts = createHttpHosts(parameters);
+		Rest5ClientBuilder restClientBuilder = Rest5Client.builder(httpHosts);
+		configurePathPrefix(parameters, restClientBuilder);
+		configureDefaultHeaders(parameters, restClientBuilder);
+		configureRequestTimeouts(parameters, restClientBuilder);
+
+		lowLevelClient = restClientBuilder.build();
+		transport = new Rest5ClientTransport(lowLevelClient, new JacksonJsonpMapper());
+		client = new ElasticsearchClient(transport);
+
+		clusterName = parameters.getProperty(ELASTICSEARCH_KEY_PREFIX + "cluster.name");
+
+		BooleanResponse existsResponse = client.indices().exists(ExistsRequest.of(b -> b.index(indexName)));
+		if (!existsResponse.value()) {
+			createIndex();
+		}
+
+		logger.info("Field mappings:\n{}", getMappings());
+
+		String waitForStatus = parameters.getProperty(WAIT_FOR_STATUS_KEY);
+		String waitForNodes = parameters.getProperty(WAIT_FOR_NODES_KEY);
+		String waitForActiveShards = parameters.getProperty(WAIT_FOR_ACTIVE_SHARDS_KEY);
+		String waitForRelocatingShards = parameters.getProperty(WAIT_FOR_RELOCATING_SHARDS_KEY);
+		if (waitForRelocatingShards != null) {
+			logger.warn("Property " + WAIT_FOR_RELOCATING_SHARDS_KEY + " no longer supported. Use "
+					+ WAIT_FOR_NO_RELOCATING_SHARDS_KEY + " instead");
+		}
+		String waitForNoRelocatingShards = parameters.getProperty(WAIT_FOR_NO_RELOCATING_SHARDS_KEY);
+
+		client.cluster().health(h -> {
+			h.index(indexName);
+			if ("green".equals(waitForStatus)) {
+				h.waitForStatus(HealthStatus.Green);
+			} else if ("yellow".equals(waitForStatus)) {
+				h.waitForStatus(HealthStatus.Yellow);
+			}
+			if (waitForNodes != null) {
+				h.waitForNodes(waitForNodes);
+			}
+			if (waitForActiveShards != null) {
+				h.waitForActiveShards(
+						WaitForActiveShards.of(w -> w.count(Integer.parseInt(waitForActiveShards))));
+			}
+			if (waitForNoRelocatingShards != null) {
+				h.waitForNoRelocatingShards(Boolean.parseBoolean(waitForNoRelocatingShards));
+			}
+			return h;
+		});
+	}
+
+	private HttpHost[] createHttpHosts(Properties parameters) {
+		String transportHosts = parameters.getProperty(TRANSPORT_KEY, DEFAULT_TRANSPORT);
+		String[] hostSpecs = transportHosts.split(",");
+		String scheme = resolveScheme(parameters);
+		return Arrays.stream(hostSpecs)
+				.map(String::trim)
+				.filter(spec -> !spec.isEmpty())
+				.map(spec -> buildHttpHost(spec, scheme))
+				.toArray(HttpHost[]::new);
+	}
+
+	private HttpHost buildHttpHost(String spec, String defaultScheme) {
+		String cleanedSpec = spec.trim();
+		if (cleanedSpec.contains("://")) {
+			try {
+				return HttpHost.create(cleanedSpec);
+			} catch (URISyntaxException e) {
+				throw new IllegalArgumentException("Invalid host specification: " + cleanedSpec, e);
+			}
+		}
+		String[] hostPort = cleanedSpec.split(":");
+		String host = hostPort[0];
+		int port = hostPort.length > 1 ? Integer.parseInt(hostPort[1]) : 9200;
+		String uri = defaultScheme + "://" + host + ":" + port;
+		try {
+			return HttpHost.create(uri);
+		} catch (URISyntaxException e) {
+			throw new IllegalArgumentException("Invalid host specification: " + uri, e);
+		}
+	}
+
+	private String resolveScheme(Properties parameters) {
+		String explicitScheme = parameters.getProperty(ES_HTTP_SCHEME_KEY);
+		if (explicitScheme != null && !explicitScheme.isBlank()) {
+			return explicitScheme;
+		}
+
+		if (isTrue(parameters.getProperty(ES_HTTP_SSL_ENABLED_KEY))
+				|| isTrue(parameters.getProperty(ES_SSL_ENABLED_KEY))) {
+			return "https";
+		}
+		return "http";
+	}
+
+	private boolean isTrue(String value) {
+		return value != null && Boolean.parseBoolean(value);
+	}
+
+	private void configurePathPrefix(Properties parameters, Rest5ClientBuilder restClientBuilder) {
+		Optional.ofNullable(parameters.getProperty(ES_HTTP_PATH_PREFIX_KEY))
+				.filter(prefix -> !prefix.isBlank())
+				.ifPresent(restClientBuilder::setPathPrefix);
+	}
+
+	private void configureDefaultHeaders(Properties parameters, Rest5ClientBuilder restClientBuilder) {
+		List<Header> headers = new ArrayList<>();
+		createAuthorizationHeader(parameters).ifPresent(headers::add);
+		if (!headers.isEmpty()) {
+			restClientBuilder.setDefaultHeaders(headers.toArray(Header[]::new));
+		}
+	}
+
+	private Optional<Header> createAuthorizationHeader(Properties parameters) {
+		String username = parameters.getProperty(ES_HTTP_USERNAME_KEY);
+		String password = parameters.getProperty(ES_HTTP_PASSWORD_KEY);
+		if (username == null || password == null) {
+			return Optional.empty();
+		}
+		String credentials = username + ":" + password;
+		String authValue = "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+		return Optional.of(new BasicHeader(HttpHeaders.AUTHORIZATION, authValue));
+	}
+
+	private void configureRequestTimeouts(Properties parameters, Rest5ClientBuilder restClientBuilder) {
+		if (parameters.containsKey(ES_HTTP_CONNECT_TIMEOUT_KEY) || parameters.containsKey(ES_HTTP_SOCKET_TIMEOUT_KEY)
+				|| parameters.containsKey(ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY)) {
+			restClientBuilder.setRequestConfigCallback((RequestConfig.Builder config) -> {
+				parseTimeout(parameters, ES_HTTP_CONNECT_TIMEOUT_KEY)
+						.ifPresent(timeout -> config.setConnectTimeout(Timeout.ofMilliseconds(timeout)));
+				parseTimeout(parameters, ES_HTTP_SOCKET_TIMEOUT_KEY)
+						.ifPresent(timeout -> config.setResponseTimeout(Timeout.ofMilliseconds(timeout)));
+				parseTimeout(parameters, ES_HTTP_CONNECTION_REQUEST_TIMEOUT_KEY)
+						.ifPresent(timeout -> config.setConnectionRequestTimeout(Timeout.ofMilliseconds(timeout)));
+			});
+		}
+	}
+
+	private Optional<Integer> parseTimeout(Properties parameters, String key) {
+		String value = parameters.getProperty(key);
+		if (value == null) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.of(Integer.parseInt(value.trim()));
+		} catch (NumberFormatException e) {
+			logger.warn("Invalid timeout value for {}: {}", key, value);
+			return Optional.empty();
+		}
+	}
+
+	protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(
+			Map<String, String> parameters) {
+		// this should really be based on the schema
+		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
+		return Functions.constant(geoContext);
+	}
+
+	public Map<String, Object> getMappings() throws IOException {
+		GetMappingResponse resp = client.indices().getMapping(g -> g.index(indexName));
+		IndexMappingRecord mappingRecord = resp.get(indexName);
+		if (mappingRecord == null || mappingRecord.mappings() == null) {
+			return Map.of();
+		}
+		TypeMapping mapping = mappingRecord.mappings();
+		Map<String, Object> mappings = new HashMap<>();
+		if (mapping.properties() != null && !mapping.properties().isEmpty()) {
+			mappings.put("properties", mapping.properties());
+		}
+		if (mapping.meta() != null && !mapping.meta().isEmpty()) {
+			mappings.put("_meta", mapping.meta());
+		}
+		return mappings;
+	}
+
+	private void createIndex() throws IOException {
+		Map<String, Object> settings = new HashMap<>();
+		settings.put("index.query.default_field", SearchFields.TEXT_FIELD_NAME);
+		settings.put("analysis",
+				Map.of("analyzer", Map.of("default", Map.of("type", analyzer))));
+
+		String settingsJson = JSON_MAPPER.writeValueAsString(settings);
+
+		CreateIndexResponse createResponse = client.indices()
+				.create(c -> c.index(indexName)
+						.settings(s -> s.withJson(new StringReader(settingsJson))));
+		if (!createResponse.acknowledged()) {
+			throw new IOException("Failed to create index " + indexName);
+		}
+
+		Map<String, Object> properties = new HashMap<>();
+		properties.put(SearchFields.CONTEXT_FIELD_NAME, Map.of("type", "keyword", "index", true));
+		properties.put(SearchFields.URI_FIELD_NAME, Map.of("type", "keyword", "index", true));
+		properties.put(SearchFields.TEXT_FIELD_NAME, Map.of("type", "text", "index", true));
+		for (String wktField : wktFields) {
+			properties.put(toGeoPointFieldName(wktField), Map.of("type", "geo_point"));
+			if (supportsShapes(wktField)) {
+				properties.put(toGeoShapeFieldName(wktField), Map.of("type", "geo_shape"));
+			}
+		}
+
+		String mappingJson = JSON_MAPPER.writeValueAsString(Map.of("properties", properties));
+
+		client.indices()
+				.putMapping(
+						PutMappingRequest.of(pm -> pm.index(indexName)
+								.withJson(new StringReader(mappingJson))));
+		client.indices().refresh(RefreshRequest.of(r -> r.index(indexName)));
+	}
+
+	private boolean supportsShapes(String field) {
+		SpatialContext geoContext = geoContextMapper.apply(field);
+		try {
+			geoContext.readShapeFromWkt("POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))");
+			return true;
+		} catch (ParseException e) {
+			return false;
+		}
+	}
+
+	@Override
+	protected SpatialContext getSpatialContext(String property) {
+		return geoContextMapper.apply(property);
+	}
+
+	@Override
+	public void shutDown() throws IOException {
+		Rest5Client toCloseClient = lowLevelClient;
+		lowLevelClient = null;
+		transport = null;
+		client = null;
+		if (toCloseClient != null) {
+			toCloseClient.close();
+		}
+	}
+
+	// //////////////////////////////// Methods for updating the index
+
+	/**
+	 * Returns a Document representing the specified document ID (combination of resource and context), or null when no
+	 * such Document exists yet.
+	 */
+	@Override
+	protected SearchDocument getDocument(String id) throws IOException {
+		GetResponse<Map<String, Object>> response = client.get(
+				GetRequest.of(g -> g.index(indexName).id(id)),
+				MAP_TYPE);
+		if (response.found()) {
+			long seqNo = response.seqNo() == null ? UNASSIGNED_SEQ_NO : response.seqNo();
+			long primaryTerm = response.primaryTerm() == null ? UNASSIGNED_PRIMARY_TERM : response.primaryTerm();
+			return new ElasticsearchDocument(response.id(), documentType, response.index(), seqNo, primaryTerm,
+					response.source(), geoContextMapper);
+		}
+		// no such Document
+		return null;
+	}
+
+	@Override
+	protected Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException {
+		Iterable<Hit<Map<String, Object>>> hits = getDocuments(termQuery(SearchFields.URI_FIELD_NAME, resourceId));
+		return Iterables.transform(hits,
+				(Function<Hit<Map<String, Object>>, SearchDocument>) hit -> new ElasticsearchDocument(hit,
+						geoContextMapper));
+	}
+
+	@Override
+	protected SearchDocument newDocument(String id, String resourceId, String context) {
+		return new ElasticsearchDocument(id, documentType, indexName, resourceId, context, geoContextMapper);
+	}
+
+	@Override
+	protected SearchDocument copyDocument(SearchDocument doc) {
+		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
+		Map<String, Object> source = esDoc.getSource();
+		Map<String, Object> newDocument = new HashMap<>(source);
+		return new ElasticsearchDocument(esDoc.getId(), esDoc.getType(), esDoc.getIndex(), esDoc.getSeqNo(),
+				esDoc.getPrimaryTerm(), newDocument, geoContextMapper);
+	}
+
+	@Override
+	protected void addDocument(SearchDocument doc) throws IOException {
+		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
+		IndexResponse response = client.index(
+				IndexRequest.of(i -> i.index(esDoc.getIndex()).id(esDoc.getId()).document(esDoc.getSource())));
+		if (response.result() == null) {
+			throw new IOException("Index request failed for " + esDoc.getId());
+		}
+	}
+
+	@Override
+	protected void updateDocument(SearchDocument doc) throws IOException {
+		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
+		IndexRequest.Builder<Map<String, Object>> request = new IndexRequest.Builder<>();
+		request.index(esDoc.getIndex()).id(esDoc.getId()).document(esDoc.getSource());
+		if (esDoc.getSeqNo() != UNASSIGNED_SEQ_NO
+				&& esDoc.getPrimaryTerm() != UNASSIGNED_PRIMARY_TERM) {
+			request.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
+		}
+		IndexResponse response = client.index(request.build());
+		if (response.result() == null) {
+			throw new IOException("Update request failed for " + esDoc.getId());
+		}
+	}
+
+	@Override
+	protected void deleteDocument(SearchDocument doc) throws IOException {
+		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
+		client.delete(DeleteRequest.of(d -> {
+			d.index(esDoc.getIndex()).id(esDoc.getId());
+			if (esDoc.getSeqNo() != UNASSIGNED_SEQ_NO
+					&& esDoc.getPrimaryTerm() != UNASSIGNED_PRIMARY_TERM) {
+				d.ifSeqNo(esDoc.getSeqNo()).ifPrimaryTerm(esDoc.getPrimaryTerm());
+			}
+			return d;
+		}));
+	}
+
+	@Override
+	protected BulkUpdater newBulkUpdate() {
+		return new ElasticsearchBulkUpdater(client);
+	}
+
+	/**
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
+	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+	 * context
+	 */
+	private Iterable<Hit<Map<String, Object>>> getDocuments(Query query) throws IOException {
+		return executeSearch(query, -1).hits().hits();
+	}
+
+	/**
+	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
+	 * exists yet.
+	 *
+	 * @param subject
+	 * @param context
+	 * @return search document
+	 * @throws IOException
+	 */
+	public SearchDocument getDocument(Resource subject, Resource context) throws IOException {
+		// fetch the Document representing this Resource
+		String resourceId = SearchFields.getResourceID(subject);
+		String contextId = SearchFields.getContextID(context);
+		return getDocument(SearchFields.formIdString(resourceId, contextId));
+	}
+
+	/**
+	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
+	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+	 * context
+	 *
+	 * @param subject
+	 * @return list of documents
+	 * @throws IOException
+	 */
+	public Iterable<? extends SearchDocument> getDocuments(Resource subject) throws IOException {
+		String resourceId = SearchFields.getResourceID(subject);
+		return getDocuments(resourceId);
+	}
+
+	/**
+	 * Filters the given list of fields, retaining all property fields.
+	 *
+	 * @param fields
+	 * @return set of fields
+	 */
+	public static Set<String> getPropertyFields(Set<String> fields) {
+		Set<String> result = new HashSet<>(fields.size());
+		for (String field : fields) {
+			if (SearchFields.isPropertyField(field)) {
+				result.add(field);
+			}
+		}
+		return result;
+	}
+
+	@Override
+	public void begin() throws IOException {
+	}
+
+	@Override
+	public void commit() throws IOException {
+		client.indices().refresh(RefreshRequest.of(r -> r.index(indexName)));
+	}
+
+	@Override
+	public void rollback() throws IOException {
+	}
+
+	// //////////////////////////////// Methods for querying the index
+
+	/**
+	 * Parse the passed query.
+	 *
+	 * @param subject
+	 * @param spec    query to process
+	 * @return the parsed query
+	 * @throws MalformedQueryException
+	 * @throws IOException
+	 * @throws IllegalArgumentException if the spec contains a multi-param query
+	 */
+	@Override
+	protected Iterable<? extends DocumentScore> query(Resource subject, QuerySpec spec)
+			throws MalformedQueryException, IOException {
+		if (spec.getQueryPatterns().size() != 1) {
+			throw new IllegalArgumentException("Multi-param query not implemented!");
+		}
+		QuerySpec.QueryParam param = spec.getQueryPatterns().iterator().next();
+		IRI propertyURI = param.getProperty();
+		boolean highlight = param.isHighlight();
+		String query = param.getQuery();
+		Query qb = prepareQuery(propertyURI, query);
+		Highlight highlightConfig = null;
+		if (highlight) {
+			String field = propertyURI != null
+					? toPropertyFieldName(SearchFields.getPropertyField(propertyURI))
+					: ALL_PROPERTY_FIELDS;
+			boolean requireFieldMatch = propertyURI != null;
+			HighlightField highlightField = HighlightField.of(hf -> hf.preTags(SearchFields.HIGHLIGHTER_PRE_TAG)
+					.postTags(SearchFields.HIGHLIGHTER_POST_TAG)
+					.numberOfFragments(0));
+			highlightConfig = Highlight.of(h -> {
+				h.fields(List.of(NamedValue.of(field, highlightField)));
+				h.numberOfFragments(0);
+				if (!requireFieldMatch) {
+					h.requireFieldMatch(false);
+				}
+				return h;
+			});
+		}
+
+		int numDocs;
+
+		Integer specNumDocs = spec.getNumDocs();
+		if (specNumDocs != null) {
+			if (specNumDocs < 0) {
+				throw new IllegalArgumentException("numDocs must be >= 0");
+			}
+			numDocs = specNumDocs;
+		} else {
+			numDocs = -1;
+		}
+
+		Query combinedQuery = qb;
+		if (subject != null) {
+			Query idQuery = termQuery(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(subject));
+			combinedQuery = QueryBuilders.bool(b -> b.must(idQuery).must(qb));
+		}
+
+		SearchResponse<Map<String, Object>> response = executeSearch(combinedQuery, numDocs, highlightConfig);
+		return Iterables.transform(response.hits().hits(),
+				(Function<Hit<Map<String, Object>>, DocumentScore>) hit -> new ElasticsearchDocumentScore(hit,
+						geoContextMapper));
+	}
+
+	@Override
+	protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
+			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
+		double unitDist;
+		if (GEOF.UOM_METRE.equals(units)) {
+			unitDist = distance / 1000.0;
+		} else if (GEOF.UOM_DEGREE.equals(units)) {
+			unitDist = (Math.PI / 180.0) * DistanceUtils.EARTH_MEAN_RADIUS_KM * distance;
+		} else if (GEOF.UOM_RADIAN.equals(units)) {
+			unitDist = DistanceUtils.radians2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_KM);
+		} else if (GEOF.UOM_UNITY.equals(units)) {
+			unitDist = distance * Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM;
+		} else {
+			throw new MalformedQueryException("Unsupported units: " + units);
+		}
+
+		double lat = p.getY();
+		double lon = p.getX();
+		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
+		String distanceString = unitDist + "km";
+		Query distanceQuery = QueryBuilders.geoDistance(g -> g.field(fieldName)
+				.location(l -> l.latlon(ll -> ll.lat(lat).lon(lon)))
+				.distance(distanceString));
+		GeoLocation origin = GeoLocation.of(location -> location.latlon(ll -> ll.lat(lat).lon(lon)));
+		FunctionScore decayFunction = FunctionScore.of(f -> f.linear(
+				l -> l.geo(geo -> geo.field(fieldName)
+						.placement(pBuilder -> pBuilder.origin(origin).scale(distanceString)))));
+		Query qb = QueryBuilders.functionScore(fs -> fs.query(distanceQuery)
+				.functions(decayFunction)
+				.scoreMode(FunctionScoreMode.Multiply));
+		if (contextVar != null) {
+			qb = addContextTerm(qb, (Resource) contextVar.getValue());
+		}
+
+		SearchResponse<Map<String, Object>> response = executeSearch(qb, -1);
+		return Iterables.transform(response.hits().hits(),
+				(Function<Hit<Map<String, Object>>, DocumentDistance>) hit -> new ElasticsearchDocumentDistance(hit,
+						geoContextMapper, fieldName, units, lat, lon));
+	}
+
+	private Query addContextTerm(Query qb, Resource ctx) {
+		Query idQuery = termQuery(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx));
+		if (ctx != null) {
+			return QueryBuilders.bool(b -> b.must(idQuery).must(qb));
+		}
+		return QueryBuilders.bool(b -> b.mustNot(idQuery).must(qb));
+	}
+
+	@Override
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, String wkt,
+			Var contextVar) throws MalformedQueryException, IOException {
+
+		Shape shape = null;
+		try {
+			shape = super.parseQueryShape(SearchFields.getPropertyField(geoProperty), wkt);
+		} catch (ParseException e) {
+			logger.error("error while parsing wkt geometry", e);
+		}
+		if (shape == null) {
+			return null;
+		}
+		GeoShapeRelation spatialOp = toSpatialOp(relation);
+		if (spatialOp == null) {
+			return null;
+		}
+		final String fieldName = toGeoShapeFieldName(SearchFields.getPropertyField(geoProperty));
+		Map<String, Object> geoJson = ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape);
+		GeoShapeFieldQuery shapeQuery = GeoShapeFieldQuery
+				.of(g -> g.shape(JsonData.of(geoJson)).relation(spatialOp));
+		Query filter = QueryBuilders.geoShape(g -> g.field(fieldName).shape(shapeQuery));
+		Query matchAll = QueryBuilders.matchAll(m -> m);
+		Query qb = contextVar != null ? addContextTerm(matchAll, (Resource) contextVar.getValue()) : matchAll;
+
+		SearchResponse<Map<String, Object>> response = executeSearch(
+				QueryBuilders.bool(b -> b.must(qb).filter(filter)), -1);
+		return Iterables.transform(response.hits().hits(),
+				(Function<Hit<Map<String, Object>>, DocumentResult>) hit -> new ElasticsearchDocumentResult(hit,
+						geoContextMapper));
+	}
+
+	private GeoShapeRelation toSpatialOp(String relation) {
+		if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {
+			return GeoShapeRelation.Intersects;
+		}
+		if (GEOF.SF_DISJOINT.stringValue().equals(relation)) {
+			return GeoShapeRelation.Disjoint;
+		}
+		if (GEOF.EH_COVERED_BY.stringValue().equals(relation)) {
+			return GeoShapeRelation.Within;
+		}
+		return null;
+	}
+
+	public SearchResponse<Map<String, Object>> search(Query query) throws IOException {
+		return executeSearch(query, -1);
+	}
+
+	private SearchResponse<Map<String, Object>> executeSearch(Query query, int numDocs) throws IOException {
+		return executeSearch(query, numDocs, null);
+	}
+
+	private SearchResponse<Map<String, Object>> executeSearch(Query query, int numDocs, Highlight highlight)
+			throws IOException {
+		int size = resolveSize(query, numDocs);
+		return client.search(
+				s -> {
+					s.index(indexName)
+							.query(query)
+							.size(size)
+							.seqNoPrimaryTerm(true)
+							.trackTotalHits(TrackHits.of(th -> th.enabled(true)));
+					if (highlight != null) {
+						s.highlight(highlight);
+					}
+					return s;
+				},
+				MAP_TYPE);
+	}
+
+	private int resolveSize(Query query, int numDocs) throws IOException {
+		if (numDocs < -1) {
+			throw new IllegalArgumentException("numDocs should be 0 or greater if defined by the user");
+		}
+		if (numDocs >= 0) {
+			return Math.min(maxDocs, numDocs);
+		}
+		if (defaultNumDocs >= 0) {
+			return Math.min(maxDocs, defaultNumDocs);
+		}
+		SearchResponse<Map<String, Object>> countResponse;
+		try {
+			countResponse = client.search(
+					s -> s.index(indexName)
+							.size(0)
+							.query(query)
+							.trackTotalHits(TrackHits.of(th -> th.enabled(true))),
+					MAP_TYPE);
+		} catch (ElasticsearchException e) {
+			logger.error("Elasticsearch search failed while resolving size: {}", e.error() != null ? e.error().reason()
+					: e.getMessage(), e);
+			throw e;
+		}
+		long docCount = countResponse.hits().total() != null ? countResponse.hits().total().value() : 0;
+		return Math.max((int) Math.min(docCount, maxDocs), 1);
+	}
+
+	private Query prepareQuery(IRI propertyURI, String query) {
+		String normalizedQuery = normalizeFuzzyQuerySyntax(query);
+		return QueryBuilders.queryString(qb -> {
+			qb.query(normalizedQuery).analyzer(queryAnalyzer);
+			if (propertyURI == null) {
+				qb.defaultField(SearchFields.TEXT_FIELD_NAME);
+			} else {
+				qb.defaultField(toPropertyFieldName(SearchFields.getPropertyField(propertyURI)));
+			}
+			return qb;
+		});
+	}
+
+	private String normalizeFuzzyQuerySyntax(String query) {
+		Matcher matcher = FUZZY_SIMILARITY_PATTERN.matcher(query);
+		StringBuffer buffer = new StringBuffer();
+		while (matcher.find()) {
+			// Elasticsearch 9.x rejects Lucene-style float fuzziness (e.g. "~0.8"); rewrite to an
+			// integer edit distance that the query_string parser accepts.
+			matcher.appendReplacement(buffer, "~1");
+		}
+		matcher.appendTail(buffer);
+		return buffer.toString();
+	}
+
+	/**
+	 * @param contexts
+	 * @throws IOException
+	 */
+	@Override
+	public synchronized void clearContexts(Resource... contexts) throws IOException {
+		logger.debug("deleting contexts: {}", Arrays.toString(contexts));
+		// these resources have to be read from the underlying rdf store
+		// and their triples have to be added to the luceneindex after deletion of
+		// documents
+
+		// remove all contexts passed
+		for (Resource context : contexts) {
+			// attention: context can be NULL!
+			String contextString = SearchFields.getContextID(context);
+			// now delete all documents from the deleted context
+			client.deleteByQuery(dbq -> dbq.index(indexName)
+					.query(termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString)));
+		}
+	}
+
+	/**
+	 *
+	 */
+	@Override
+	public synchronized void clear() throws IOException {
+		client.indices().delete(d -> d.index(indexName));
+		createIndex();
+	}
+
+	static String toPropertyFieldName(String prop) {
+		return PROPERTY_FIELD_PREFIX + encodeFieldName(prop);
+	}
+
+	static String toPropertyName(String field) {
+		return decodeFieldName(field.substring(PROPERTY_FIELD_PREFIX.length()));
+	}
+
+	static String toGeoPointFieldName(String prop) {
+		return GEOPOINT_FIELD_PREFIX + encodeFieldName(prop);
+	}
+
+	static String toGeoShapeFieldName(String prop) {
+		return GEOSHAPE_FIELD_PREFIX + encodeFieldName(prop);
+	}
+
+	static String encodeFieldName(String s) {
+		return s.replace('.', '^');
+	}
+
+	static String decodeFieldName(String s) {
+		return s.replace('^', '.');
+	}
+
+	private Query termQuery(String field, String value) {
+		return QueryBuilders.term(t -> t.field(field).value(value));
+	}
 }

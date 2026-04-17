@@ -299,8 +299,8 @@ class QueryEvaluatorCoverageTest {
 		assertThatThrownBy(() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response,
 				new ByteArrayOutputStream(), "transformations", connection, "describe ?s where { ?s ?p ?o }", request,
 				cookies, null))
-						.isInstanceOf(BadRequestException.class)
-						.hasMessageContaining("Unknown query type:");
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining("Unknown query type:");
 	}
 
 	@Test
