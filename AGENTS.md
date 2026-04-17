@@ -8,7 +8,7 @@ Before taking any action (either tool calls *or* responses to the user), you mus
 
    1.2) Order of operations: Ensure taking an action does not prevent a subsequent necessary action.
 
-        1.2.1) The user may request actions in a random order, but you may need to reorder operations to maximize successful completion of the task.
+     1.2.1) The user may request actions in a random order, but you may need to reorder operations to maximize successful completion of the task.
 
    1.3) Other prerequisites (information and/or actions needed).
 
@@ -48,9 +48,9 @@ Before taking any action (either tool calls *or* responses to the user), you mus
 
    7.2) Avoid premature conclusions: There may be multiple relevant options for a given situation.
 
-        7.2.1) To check for whether an option is relevant, reason about all information sources from #5.  
+     7.2.1) To check for whether an option is relevant, reason about all information sources from #5.  
 
-        7.2.2) You may need to consult the user to even know whether something is applicable. Do not assume it is not applicable without checking.
+     7.2.2) You may need to consult the user to even know whether something is applicable. Do not assume it is not applicable without checking.
 
    7.3) Review applicable sources of information from #5 to confirm which are relevant to the current state.
 
@@ -288,7 +288,7 @@ Plan
 1. **Compile deps fast (skip tests):**
    `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> -am -Pquick clean install`
 2. **Run tests:**
-   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500`
+   `python3 .codex/skills/mvnf/scripts/mvnf.py <module> --retain-logs --stream` or `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify | tail -500` 
 
 It is illegal to `-am` when running tests!
 It is illegal to `-q` when running tests!
@@ -677,7 +677,6 @@ Immediately after creating any new Java source file, add the signature comment (
 * Slow tests (by module):
   `mvn -o -Dmaven.repo.local=.m2_repo -pl <module> verify -PslowTestsOnly,-skipSlowTests | tail -500`
 * Slow tests (specific test):
-
     * `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/shacl -PslowTestsOnly,-skipSlowTests -Dtest=ClassName#method verify | tail -500`
 * Integration tests (entire repo):
   `mvn -o -Dmaven.repo.local=.m2_repo verify -PskipUnitTests | tail -500`

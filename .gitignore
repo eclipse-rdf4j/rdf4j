@@ -56,3 +56,4 @@ e2e/test-results
 .serena/
 .vscode
 /.codex/environments/environment.toml
+improved-optimizers-query-rewrite-sketch-based-lmdb-page-walking/

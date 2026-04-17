@@ -289,6 +289,10 @@ if ${enable_jfr_cpu_times}; then
         require_linux_java25_for_cpu_time_jfr
 fi
 
+if ${enable_jfr_cpu_times}; then
+        require_linux_java25_for_cpu_time_jfr
+fi
+
 jar_path="$(find_benchmark_jar "${module_dir}" true)"
 java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
 
