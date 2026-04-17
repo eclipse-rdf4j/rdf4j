@@ -64,6 +64,8 @@ public class EvaluationStatistics {
 			assert calculator != null;
 		}
 
+		calculator.cardinality = 0;
+
 		if (expr instanceof AbstractQueryModelNode && ((AbstractQueryModelNode) expr).isCardinalitySet()) {
 			return ((AbstractQueryModelNode) expr).getCardinality();
 		}

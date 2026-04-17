@@ -64,21 +64,21 @@ public class QueryCostEstimatesTest {
 				"         ProjectionElem \"o\"\n" +
 				"         ProjectionElem \"x\"\n" +
 				"      Join\n" +
-				"         StatementPattern (costEstimate=6.00, resultSizeEstimate=1.00)\n" +
-				"            Var (name=_const_5c6ba46_uri, value=ex:s2, anonymous)\n" +
-				"            Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
-				"            Var (name=_const_17c09_lit_e2eec718, value=\"bah\", anonymous)\n" +
 				"         Join\n" +
+				"            StatementPattern (costEstimate=6.00, resultSizeEstimate=1.00)\n" +
+				"               Var (name=_const_5c6ba46_uri, value=ex:s2, anonymous)\n" +
+				"               Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
+				"               Var (name=_const_17c09_lit_e2eec718, value=\"bah\", anonymous)\n" +
 				"            StatementPattern (costEstimate=90, resultSizeEstimate=10)\n" +
 				"               Var (name=_const_5c6ba45_uri, value=ex:s1, anonymous)\n" +
 				"               Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
 				"               Var (name=v)\n" +
-				"            LeftJoin (new scope) (costEstimate=90.5K, resultSizeEstimate=1000)\n" +
-				"               StatementPattern (resultSizeEstimate=1000)\n" +
-				"                  Var (name=s)\n" +
-				"                  Var (name=p)\n" +
-				"                  Var (name=o)\n" +
-				"               BindingSetAssignment ([[x=ex:a], [x=ex:b], [x=ex:c], [x=ex:d], [x=ex:e], [x=ex:f], [x=ex:g]])\n"
+				"         LeftJoin (new scope)\n" +
+				"            StatementPattern (resultSizeEstimate=1000)\n" +
+				"               Var (name=s)\n" +
+				"               Var (name=p)\n" +
+				"               Var (name=o)\n" +
+				"            BindingSetAssignment ([[x=ex:a], [x=ex:b], [x=ex:c], [x=ex:d], [x=ex:e], [x=ex:f], [x=ex:g]])\n"
 		);
 
 	}

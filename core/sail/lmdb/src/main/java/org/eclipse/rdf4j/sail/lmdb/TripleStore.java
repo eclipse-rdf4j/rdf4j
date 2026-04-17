@@ -56,6 +56,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.Closeable;
 import java.io.File;
@@ -70,6 +71,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -80,6 +82,8 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
@@ -88,11 +92,13 @@ import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
@@ -156,6 +162,7 @@ class TripleStore implements Closeable {
 	 * The directory that is used to store the index files.
 	 */
 	private final File dir;
+	private final File dataMdbFile;
 	/**
 	 * Object containing meta-data for the triple store.
 	 */
@@ -182,11 +189,14 @@ class TripleStore implements Closeable {
 	private long[] leadingFieldScratchValues = new long[0];
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
+	private final LmdbPageCardinalityEstimator pageEstimator;
+	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this.dir = dir;
+		this.dataMdbFile = new File(dir, "data.mdb");
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
@@ -225,6 +235,7 @@ class TripleStore implements Closeable {
 		});
 
 		txnManager = new TxnManager(env, Mode.RESET);
+		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
 		String indexSpecStr = config.getTripleIndexes();
@@ -308,6 +319,10 @@ class TripleStore implements Closeable {
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	long getDataRevision() {
+		return dataRevision.get();
 	}
 
 	/**
@@ -621,6 +636,14 @@ class TripleStore implements Closeable {
 			endTransaction(false);
 
 			List<Throwable> caughtExceptions = new ArrayList<>();
+			if (pageEstimator != null) {
+				try {
+					pageEstimator.close();
+				} catch (Throwable e) {
+					logger.warn("Failed to close page estimator", e);
+					caughtExceptions.add(e);
+				}
+			}
 			for (TripleIndex index : indexes) {
 				try {
 					index.close();
@@ -837,6 +860,61 @@ class TripleStore implements Closeable {
 
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
+		try {
+			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+		} catch (IOException | RuntimeException e) {
+			logger.warn("Page-walk cardinality estimator failed for index {}, falling back to sampling",
+					new String(index.getFieldSeq()), e);
+			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+		}
+	}
+
+	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)
+			throws IOException {
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		if (estimator == null) {
+			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+		}
+		int relevantParts = index.getPatternScore(subj, pred, obj, context);
+		final String explicitDbName = new String(index.getFieldSeq());
+		final String inferredDbName = explicitDbName + "-inf";
+
+		return txnManager.doWith((stack, txn) -> {
+			long txnId = mdb_txn_id(txn);
+			if (relevantParts == 0) {
+				long explicitEntries = estimator.totalEntries(txnId, explicitDbName);
+				long inferredEntries = estimator.totalEntries(txnId, inferredDbName);
+				return (double) (explicitEntries + inferredEntries);
+			}
+
+			ByteBuffer minKeyBuffer = ByteBuffer.allocate(MAX_KEY_LENGTH);
+			index.getMinKey(minKeyBuffer, subj, pred, obj, context);
+			minKeyBuffer.flip();
+			byte[] minKey = toArray(minKeyBuffer);
+
+			ByteBuffer maxKeyBuffer = ByteBuffer.allocate(MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuffer, subj, pred, obj, context);
+			maxKeyBuffer.flip();
+			byte[] maxKey = toArray(maxKeyBuffer);
+
+			GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
+					maxKey.length, matcher);
+			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,
+					maxKey.length, matcher);
+			return (double) (explicitCount + inferredCount);
+		});
+	}
+
+	private static byte[] toArray(ByteBuffer buffer) {
+		byte[] data = new byte[buffer.remaining()];
+		buffer.get(data);
+		return data;
+	}
+
+	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
+			throws IOException {
+
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
 			// it's worthless to use the index, just retrieve all entries in the db
@@ -1029,6 +1107,69 @@ class TripleStore implements Closeable {
 		}
 
 		return bestIndex;
+	}
+
+	IndexPrefixSelection selectBestIndexPrefix(Set<Component> boundComponents) {
+		long subj = boundMask(boundComponents, Component.S);
+		long pred = boundMask(boundComponents, Component.P);
+		long obj = boundMask(boundComponents, Component.O);
+		long context = boundMask(boundComponents, Component.C);
+		TripleIndex bestIndex = getBestIndex(subj, pred, obj, context);
+		if (bestIndex == null) {
+			return new IndexPrefixSelection("", 0, Set.of());
+		}
+
+		int prefixScore = bestIndex.getPatternScore(subj, pred, obj, context);
+		EnumSet<Component> prefixComponents = EnumSet.noneOf(Component.class);
+		char[] fieldSequence = bestIndex.getFieldSeq();
+		for (int i = 0; i < prefixScore; i++) {
+			prefixComponents.add(toEstimatorComponent(fieldSequence[i]));
+		}
+
+		return new IndexPrefixSelection(new String(fieldSequence), prefixScore, prefixComponents);
+	}
+
+	private long boundMask(Set<Component> boundComponents, Component component) {
+		return boundComponents != null && boundComponents.contains(component) ? 1L : -1L;
+	}
+
+	private Component toEstimatorComponent(char field) {
+		switch (field) {
+		case 's':
+			return Component.S;
+		case 'p':
+			return Component.P;
+		case 'o':
+			return Component.O;
+		case 'c':
+			return Component.C;
+		default:
+			throw new IllegalArgumentException("invalid index field: " + field);
+		}
+	}
+
+	static final class IndexPrefixSelection {
+		private final String indexFieldSequence;
+		private final int prefixScore;
+		private final Set<Component> prefixComponents;
+
+		private IndexPrefixSelection(String indexFieldSequence, int prefixScore, Set<Component> prefixComponents) {
+			this.indexFieldSequence = indexFieldSequence;
+			this.prefixScore = prefixScore;
+			this.prefixComponents = Set.copyOf(prefixComponents);
+		}
+
+		String indexFieldSequence() {
+			return indexFieldSequence;
+		}
+
+		int prefixScore() {
+			return prefixScore;
+		}
+
+		Set<Component> prefixComponents() {
+			return prefixComponents;
+		}
 	}
 
 	private boolean requiresResize() {
@@ -1662,6 +1803,7 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
+						dataRevision.incrementAndGet();
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
