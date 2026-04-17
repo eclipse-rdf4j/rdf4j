@@ -1655,7 +1655,7 @@ public class SketchBasedJoinEstimator {
 	private long residentSketchBytes;
 
 	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
-	private static final int ROBUST_REBUILD_BATCH_SIZE = 4 * 1024;
+	private static final int REBUILD_BATCH_SIZE = 4*1024 * 1024;
 	private final Object incrementalBufferLock = new Object();
 	private IngestEvent[] incrementalBuffer = new IngestEvent[INCREMENTAL_BATCH_SIZE * 2];
 	private int incrementalBufferCount;
@@ -2090,8 +2090,8 @@ public class SketchBasedJoinEstimator {
 			try (
 					SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
 					CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
-				IngestEvent[] rebuildBatch = new IngestEvent[ROBUST_REBUILD_BATCH_SIZE];
-				// long[] robustQuadBatch = new long[ROBUST_REBUILD_BATCH_SIZE << 2];
+				IngestEvent[] rebuildBatch = new IngestEvent[REBUILD_BATCH_SIZE];
+				// long[] robustQuadBatch = new long[REBUILD_BATCH_SIZE << 2];
 				int rebuildBatchSize = 0;
 
 				while (it.hasNext()) {
@@ -2120,6 +2120,11 @@ public class SketchBasedJoinEstimator {
 							// robustSpillBuffer.addStatements(robustQuadBatch, rebuildBatchSize);
 							// Arrays.fill(rebuildBatch, 0, rebuildBatchSize, null);
 							rebuildBatchSize = 0;
+								System.out.println(
+										"RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
+												+ seen/1000/1000 + " million triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000
+												+ " s.");
+
 						}
 //						if (seen > 0 && seen % ROBUST_HEADROOM_CHECK_INTERVAL == 0
 //								&& shouldShedRobustSynopsisBuilder()) {
@@ -2152,12 +2157,7 @@ public class SketchBasedJoinEstimator {
 //						}
 //					}
 
-					if (seen % 100000 == 0) {
-						System.out.println(
-								"RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
-										+ seen + " triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000
-										+ " s.");
-					}
+
 				}
 				if (seen > 0) {
 					if (rebuildBatchSize > 0) {
@@ -2267,27 +2267,27 @@ public class SketchBasedJoinEstimator {
 		try {
 			ingestIncremental(s, p, o, c, false);
 
-//				while (true) {
-//					long epoch = rebuildEpoch.get();
-//					if ((epoch & 1L) != 0L) {
-//						synchronized (bufA) {
-//							ingest(bufA, st, false);
-//						}
-//						synchronized (bufB) {
-//							ingest(bufB, st, false);
-//						}
-//						break;
-//					}
-//
-//					State target = current;
-//					synchronized (target) {
-//						if (rebuildEpoch.get() != epoch) {
-//							continue;
-//						}
-//						ingest(target, st, false);
-//						break;
-//					}
-//				}
+				while (true) {
+					long epoch = rebuildEpoch.get();
+					if ((epoch & 1L) != 0L) {
+						synchronized (bufA) {
+							ingest(bufA, st, false);
+						}
+						synchronized (bufB) {
+							ingest(bufB, st, false);
+						}
+						break;
+					}
+
+					State target = current;
+					synchronized (target) {
+						if (rebuildEpoch.get() != epoch) {
+							continue;
+						}
+						ingest(target, st, false);
+						break;
+					}
+				}
 
 		} catch (MemoryPressureAbort | OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator update; unloading sketches", oom);
@@ -2354,6 +2354,8 @@ public class SketchBasedJoinEstimator {
 			ensureIncrementalBufferCapacity(incrementalBufferCount + 1);
 			incrementalBuffer[incrementalBufferCount++] = event;
 			if (incrementalBufferCount >= INCREMENTAL_BATCH_SIZE) {
+				System.out.println("RdfJoinEstimator: Flushing incremental batch of " + incrementalBufferCount + " events. Seen triples: "
+						+ seenTriples);
 				batch = drainIncrementalBufferLocked();
 				batchSize = batch.length;
 			}

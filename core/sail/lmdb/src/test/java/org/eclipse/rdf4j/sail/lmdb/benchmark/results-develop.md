@@ -10,6 +10,7 @@ ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               6  avgt        
 ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               7  avgt          54.918          ms/op
 ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               8  avgt          56.461          ms/op
 ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               9  avgt         258.075          ms/op
+
 ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS              11  avgt        1505.789          ms/op
 ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS              12  avgt         667.950          ms/op
 ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               0  avgt           0.064          ms/op
