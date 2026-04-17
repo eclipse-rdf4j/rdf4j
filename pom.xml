@@ -426,6 +426,44 @@
 				</pluginManagement>
 			</build>
 		</profile>
+		<profile>
+			<!--
+				Print a dependency-update report grouped by: major version updates,
+				minor/patch updates, up-to-date, unknown (fetch failed), and
+				current version unresolved (module-level BOM).
+				Queries Maven Central, so an internet connection is required.
+				Run only at the root level (non-recursive) to avoid repeating the report
+				for every sub-module:
+
+				    mvn -N -P dependency-updates validate
+			-->
+			<id>dependency-updates</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.codehaus.mojo</groupId>
+						<artifactId>exec-maven-plugin</artifactId>
+						<inherited>false</inherited>
+						<executions>
+							<execution>
+								<id>dependency-updates</id>
+								<phase>validate</phase>
+								<goals>
+									<goal>exec</goal>
+								</goals>
+								<configuration>
+									<executable>python3</executable>
+									<arguments>
+										<argument>${project.basedir}/scripts/dependency-updates.py</argument>
+										<argument>${project.basedir}</argument>
+									</arguments>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 	</profiles>
 	<dependencyManagement>
 		<dependencies>
@@ -1113,6 +1151,11 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-site-plugin</artifactId>
 					<version>4.0.0-M13</version>
+				</plugin>
+				<plugin>
+					<groupId>org.codehaus.mojo</groupId>
+					<artifactId>exec-maven-plugin</artifactId>
+					<version>3.6.2</version>
 				</plugin>
 			</plugins>
 		</pluginManagement>
