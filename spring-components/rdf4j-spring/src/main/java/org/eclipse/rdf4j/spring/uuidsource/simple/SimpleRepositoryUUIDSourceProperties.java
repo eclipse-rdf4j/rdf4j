@@ -11,9 +11,9 @@
 
 package org.eclipse.rdf4j.spring.uuidsource.simple;
 
-import javax.validation.constraints.NotBlank;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * @author Florian Kleedorfer

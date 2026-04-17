@@ -18,11 +18,6 @@ import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
@@ -35,6 +30,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 class ProxyRepositoryServletTest {
 
@@ -53,8 +53,8 @@ class ProxyRepositoryServletTest {
 		assertThatThrownBy(() -> servlet.init(TestServletConfig.withParams("proxy",
 				"default-command", "/summary",
 				"/summary", AbstractBrokenServlet.class.getName())))
-						.isInstanceOf(ServletException.class)
-						.hasCauseInstanceOf(InstantiationException.class);
+				.isInstanceOf(ServletException.class)
+				.hasCauseInstanceOf(InstantiationException.class);
 	}
 
 	@Test
@@ -252,7 +252,8 @@ class ProxyRepositoryServletTest {
 		}
 
 		@Override
-		public void service(javax.servlet.ServletRequest req, javax.servlet.ServletResponse resp) throws IOException {
+		public void service(jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse resp)
+				throws IOException {
 			HttpServletRequest request = (HttpServletRequest) req;
 			HttpServletResponse response = (HttpServletResponse) resp;
 			lastServletPath = request.getServletPath();

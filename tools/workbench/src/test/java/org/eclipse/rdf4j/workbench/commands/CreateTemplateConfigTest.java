@@ -64,8 +64,8 @@ class CreateTemplateConfigTest {
 		assertThatThrownBy(() -> parse("synthetic", String.join("\n",
 				"# @workbench.template label=\"Synthetic\" order=5",
 				"[] config:rep.id \"{%Repository ID[len=16]|synthetic%}\" .")))
-						.isInstanceOf(IllegalArgumentException.class)
-						.hasMessageContaining("# @workbench.field");
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("# @workbench.field");
 	}
 
 	@Test
@@ -184,17 +184,17 @@ class CreateTemplateConfigTest {
 				new Class<?>[] { String.class, String.class },
 				"ftp://example.org/RepositoryConfig.class",
 				"org/eclipse/rdf4j/repository/config"))
-						.isInstanceOf(RuntimeException.class)
-						.hasCauseInstanceOf(IOException.class)
-						.hasMessageContaining("Unsupported RepositoryConfig resource URI");
+				.isInstanceOf(RuntimeException.class)
+				.hasCauseInstanceOf(IOException.class)
+				.hasMessageContaining("Unsupported RepositoryConfig resource URI");
 
 		assertThatThrownBy(() -> invoke("discoverBuiltinTemplateTypes",
 				new Class<?>[] { String.class, String.class },
 				"https://example.org/with space",
 				"org/eclipse/rdf4j/repository/config"))
-						.isInstanceOf(RuntimeException.class)
-						.hasCauseInstanceOf(IOException.class)
-						.hasMessageContaining("Could not resolve RepositoryConfig resources");
+				.isInstanceOf(RuntimeException.class)
+				.hasCauseInstanceOf(IOException.class)
+				.hasMessageContaining("Could not resolve RepositoryConfig resources");
 	}
 
 	@Test

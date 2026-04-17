@@ -14,10 +14,10 @@ package org.eclipse.rdf4j.workbench.support;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import javax.servlet.ServletContext;
-
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.springframework.mock.web.MockServletContext;
+
+import jakarta.servlet.ServletContext;
 
 public class TestServletConfig extends BasicServletConfig {
 

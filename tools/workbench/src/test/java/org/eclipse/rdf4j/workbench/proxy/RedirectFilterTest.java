@@ -15,12 +15,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.servlet.FilterChain;
-
 import org.eclipse.rdf4j.workbench.support.TestFilterConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+
+import jakarta.servlet.FilterChain;
 
 class RedirectFilterTest {
 

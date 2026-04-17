@@ -162,7 +162,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	public void testVerifyDatatypeUnrecognisedDatatypeUri() {
 		assertThatThrownBy(
 				() -> testHandler.verifyDatatype(getValueMatchingRecognisedDatatypeUri(), getUnrecognisedDatatypeUri()))
-						.isInstanceOf(LiteralUtilException.class);
+				.isInstanceOf(LiteralUtilException.class);
 	}
 
 	/**
@@ -214,7 +214,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	public void testNormalizeDatatypeUnrecognisedDatatypeUri() {
 		assertThatThrownBy(() -> testHandler.normalizeDatatype(getValueMatchingRecognisedDatatypeUri(),
 				getUnrecognisedDatatypeUri(), vf))
-						.isInstanceOf(LiteralUtilException.class);
+				.isInstanceOf(LiteralUtilException.class);
 	}
 
 	/**
@@ -226,7 +226,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	public void testNormalizeDatatypeInvalidValue() {
 		assertThatThrownBy(() -> testHandler.normalizeDatatype(getValueNotMatchingRecognisedDatatypeUri(),
 				getRecognisedDatatypeUri(), vf))
-						.isInstanceOf(LiteralUtilException.class);
+				.isInstanceOf(LiteralUtilException.class);
 	}
 
 	/**

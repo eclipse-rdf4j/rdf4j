@@ -29,12 +29,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.UUID;
 
-import javax.servlet.ServletException;
-import javax.servlet.ServletOutputStream;
-import javax.servlet.WriteListener;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpServletResponseWrapper;
-
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -51,6 +45,12 @@ import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponseWrapper;
 
 class SavedQueriesServletTest {
 
@@ -140,8 +140,8 @@ class SavedQueriesServletTest {
 
 		assertThatThrownBy(() -> repoServlet.service(new MockHttpServletRequest("GET", "/saved"),
 				new CapturingHttpServletResponse()))
-						.isInstanceOf(BadRequestException.class)
-						.hasMessageContaining(expectedReference(repository.getClass().getName()));
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining(expectedReference(repository.getClass().getName()));
 
 		QueryStorage unknownStorage = mock(QueryStorage.class);
 		when(unknownStorage.checkAccess(null)).thenReturn(false);
@@ -151,8 +151,8 @@ class SavedQueriesServletTest {
 
 		assertThatThrownBy(() -> unknownServlet.service(new MockHttpServletRequest("GET", "/saved"),
 				new CapturingHttpServletResponse()))
-						.isInstanceOf(BadRequestException.class)
-						.hasMessageContaining(expectedReference("unknown-repository"));
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining(expectedReference("unknown-repository"));
 	}
 
 	@Test
@@ -166,8 +166,8 @@ class SavedQueriesServletTest {
 
 		assertThatThrownBy(() -> servlet.service(new MockHttpServletRequest("POST", "/saved"),
 				new CapturingHttpServletResponse()))
-						.isInstanceOf(BadRequestException.class)
-						.hasMessageContaining("Expected POST to contain a 'delete=' parameter.");
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining("Expected POST to contain a 'delete=' parameter.");
 
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.addParameter("delete", "urn:test:query");

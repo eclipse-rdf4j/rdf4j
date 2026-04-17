@@ -37,7 +37,7 @@ public class VarProviderSecurityTest {
 	}
 
 	@Test
-	@EnabledForJreRange(max = JRE.JAVA_16)
+	@EnabledForJreRange(min = JRE.JAVA_8, max = JRE.JAVA_16)
 	void providerLookupDoesNotFailWhenPropertyReadDenied() throws Exception {
 		SecurityManager original = System.getSecurityManager();
 		try {

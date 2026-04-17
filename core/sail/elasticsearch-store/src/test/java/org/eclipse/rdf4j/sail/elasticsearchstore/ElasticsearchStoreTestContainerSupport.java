@@ -13,18 +13,19 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import java.util.concurrent.TimeUnit;
 
-import org.apache.http.HttpHost;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
-import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
-import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.RestClient;
-import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.core.TimeValue;
+import org.apache.hc.core5.http.HttpHost;
 import org.opentest4j.TestAbortedException;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.HealthStatus;
+import co.elastic.clients.elasticsearch.cluster.HealthResponse;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
+import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 
 /**
  * Test-only helper that lazily starts a single Elasticsearch container and exposes its connection details.
@@ -79,13 +80,12 @@ public final class ElasticsearchStoreTestContainerSupport {
 				throw new IllegalStateException(
 						"Elasticsearch test container stopped during health check. Logs:\n" + safeLogs(container));
 			}
-			try (RestHighLevelClient client = new RestHighLevelClient(
-					RestClient.builder(new HttpHost(host, httpPort, "http")))) {
-				ClusterHealthRequest request = new ClusterHealthRequest()
-						.waitForYellowStatus()
-						.timeout(TimeValue.timeValueSeconds(5));
-				ClusterHealthResponse response = client.cluster().health(request, RequestOptions.DEFAULT);
-				if (!response.isTimedOut()) {
+			try (Rest5Client restClient = Rest5Client.builder(new HttpHost("http", host, httpPort)).build()) {
+				ElasticsearchClient client = new ElasticsearchClient(
+						new Rest5ClientTransport(restClient, new JacksonJsonpMapper()));
+				HealthResponse response = client.cluster()
+						.health(h -> h.waitForStatus(HealthStatus.Yellow).timeout(t -> t.time("5s")));
+				if (!response.timedOut()) {
 					return;
 				}
 				lastFailure = new IllegalStateException("Cluster health timed out waiting for YELLOW status");
@@ -130,7 +130,7 @@ public final class ElasticsearchStoreTestContainerSupport {
 
 	private static GenericContainer<?> createContainer() {
 		String esVersion = System.getProperty("elasticsearch.docker.version",
-				System.getProperty("elasticsearch.version", "7.15.2"));
+				System.getProperty("elasticsearch.version", "9.2.4"));
 
 		DockerImageName imageName = DockerImageName
 				.parse("docker.elastic.co/elasticsearch/elasticsearch:" + esVersion)
@@ -139,6 +139,7 @@ public final class ElasticsearchStoreTestContainerSupport {
 		return new GenericContainer<>(imageName)
 				.withEnv("discovery.type", "single-node")
 				.withEnv("cluster.name", CLUSTER_NAME)
+				.withEnv("xpack.security.enabled", "false")
 				.withEnv("ES_JAVA_OPTS",
 						"-Djdk.disableLastUsageTracking=true -XX:-UseContainerSupport -Xms512m -Xmx512m")
 				.withEnv("JDK_JAVA_OPTIONS",
