@@ -305,7 +305,7 @@ public class ThemeQueryBenchmark {
 
 	private void loadData() throws IOException {
 		try (var connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			var inserter = new RDFInserter(connection);
 //			System.out.println("Loading theme dataset: " + theme);
 //			ThemeDataSetGenerator.generate(theme, inserter);
