@@ -112,6 +112,15 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		try {
 			CloseableIteration<BindingSet> nextRightIter = rightIter;
 			while (nextRightIter == null || nextRightIter.hasNext() || leftIter.hasNext()) {
+				if (isClosed()) {
+					return null;
+				}
+				if (Thread.interrupted()) {
+					Thread.currentThread().interrupt();
+					close();
+					return null;
+				}
+
 				BindingSet leftBindings = null;
 
 				if (nextRightIter == null) {

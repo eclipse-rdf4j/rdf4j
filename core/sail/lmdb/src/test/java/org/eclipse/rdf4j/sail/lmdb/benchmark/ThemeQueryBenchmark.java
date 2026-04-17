@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
-import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -174,6 +173,7 @@ public class ThemeQueryBenchmark {
 		try (var connection = repository.getConnection()) {
 			long count;
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+			tupleQuery.setMaxExecutionTime(5 * 60);
 			try (var evaluate = tupleQuery.evaluate()) {
 				count = evaluate
 						.stream()
@@ -412,8 +412,6 @@ public class ThemeQueryBenchmark {
 		storeConfig = null;
 //		restoreBenchmarkEstimatorProperties();
 	}
-
-
 
 	@Test
 	public void benchmarkQuery() throws IOException {

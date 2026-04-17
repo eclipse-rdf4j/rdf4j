@@ -56,6 +56,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			.iri("urn:null:d57c56f3-41a9-468e-8dce-5706ebdef84c_e88d9e52-27cb-4056-a889-1ea353fa6f0c");
 	private static final VarHandle LAST_EQUALS_MISMATCH_INDEX;
 	private static int lastEqualsMismatchIndex;
+
 	static {
 		try {
 			LAST_EQUALS_MISMATCH_INDEX = MethodHandles.lookup()
@@ -138,14 +139,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public ArrayBindingSet(ArrayBindingSet toCopy, String[] names,
 			SortedBindingNamesCache sharedSortedBindingNamesCache) {
 		this.bindingNames = names;
-
 		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
 		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		this.empty = toCopy.empty;
 		this.cachedSize = toCopy.cachedSize;
-		if (sharedSortedBindingNamesCache != null) {
-			this.activeBindingMask = calculateActiveBindingMask();
-		}
+		this.activeBindingMask = toCopy.activeBindingMask;
 		assert !this.empty || size() == 0;
 	}
 
