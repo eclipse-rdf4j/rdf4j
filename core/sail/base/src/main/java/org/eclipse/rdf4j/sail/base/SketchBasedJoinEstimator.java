@@ -20,8 +20,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -56,12 +54,15 @@ import java.util.function.LongFunction;
 
 import org.apache.datasketches.common.Family;
 import org.apache.datasketches.common.ResizeFactor;
+import org.apache.datasketches.hash.MurmurHash3;
 import org.apache.datasketches.theta.AnotB;
 import org.apache.datasketches.theta.HashIterator;
 import org.apache.datasketches.theta.Intersection;
 import org.apache.datasketches.theta.SetOperation;
 import org.apache.datasketches.theta.Sketch;
 import org.apache.datasketches.theta.UpdateSketch;
+import org.apache.datasketches.theta.UpdateSketchAccess;
+import org.apache.datasketches.thetacommon.ThetaUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -172,6 +173,10 @@ public class SketchBasedJoinEstimator {
 	private static final long MIX64_C1 = 0xbf58476d1ce4e5b9L;
 	private static final long MIX64_C2 = 0x94d049bb133111ebL;
 	private static final long QUAD_SEED = 0x9e3779b97f4a7c15L;
+	private static final long THETA_UPDATE_SEED = ThetaUtil.DEFAULT_UPDATE_SEED;
+	private static final Component[] COMPONENT_VALUES = Component.values();
+	private static final Pair[] PAIR_VALUES = Pair.values();
+	private static final MemoryCategory[] MEMORY_CATEGORY_VALUES = MemoryCategory.values();
 	private static final double MIN_FILTER_MULTIPLIER = 0.05d;
 	private static final double DISCONNECTED_JOIN_WORK_PENALTY = 16.0d;
 	private static final int DEFAULT_ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT = 64;
@@ -383,7 +388,6 @@ public class SketchBasedJoinEstimator {
 	private static final long MEMORY_OWNER_PERSISTENCE_REWRITE_WORKSPACE = -7L;
 	private static final long MEMORY_OWNER_PERSISTENCE_REWRITE_IO_BUFFER = -8L;
 
-	private static final Method HASH_UPDATE_METHOD = resolveHashUpdateMethod();
 	private static final Field HEAP_ALPHA_THETA_LONG_FIELD = resolveHeapAlphaField("thetaLong_");
 	private static final Field HEAP_ALPHA_EMPTY_FIELD = resolveHeapAlphaField("empty_");
 
@@ -571,6 +575,8 @@ public class SketchBasedJoinEstimator {
 		private int[] dirtyNextB;
 		private int dirtyHeadB;
 		private int dirtyTailB;
+		private long estimatedHeapBytesCache;
+		private int heapBytesVersion;
 
 		private CacheDirectory() {
 			initBuckets(256);
@@ -602,6 +608,7 @@ public class SketchBasedJoinEstimator {
 			dirtyTailA = NO_NODE;
 			dirtyHeadB = NO_NODE;
 			dirtyTailB = NO_NODE;
+			refreshEstimatedHeapBytes();
 		}
 
 		private void initBuckets(int capacity) {
@@ -736,6 +743,7 @@ public class SketchBasedJoinEstimator {
 			Arrays.fill(dirtyPrevB, previousLength, next, NO_NODE);
 			dirtyNextB = Arrays.copyOf(dirtyNextB, next);
 			Arrays.fill(dirtyNextB, previousLength, next, NO_NODE);
+			refreshEstimatedHeapBytes();
 		}
 
 		private void rehash(int newCapacity) {
@@ -751,6 +759,7 @@ public class SketchBasedJoinEstimator {
 				}
 				buckets[newSlot] = bucket;
 			}
+			refreshEstimatedHeapBytes();
 		}
 
 		private static byte recTypeFromPrefix(int keyPrefix) {
@@ -1011,7 +1020,20 @@ public class SketchBasedJoinEstimator {
 			return xs[entryId];
 		}
 
+		private int heapBytesVersion() {
+			return heapBytesVersion;
+		}
+
 		private long estimatedHeapBytes() {
+			return estimatedHeapBytesCache;
+		}
+
+		private void refreshEstimatedHeapBytes() {
+			estimatedHeapBytesCache = computeEstimatedHeapBytes();
+			heapBytesVersion++;
+		}
+
+		private long computeEstimatedHeapBytes() {
 			return align(OBJECT_HEADER_BYTES + 2L * INT_BYTES + 16L * REFERENCE_BYTES)
 					+ estimateLongArrayBytes(buckets.length)
 					+ estimateByteArrayBytes(flags.length)
@@ -1042,6 +1064,8 @@ public class SketchBasedJoinEstimator {
 		private byte[] slots = new byte[256];
 		private long[] bytes = new long[256];
 		private boolean[] used = new boolean[256];
+		private long estimatedHeapBytesCache;
+		private int heapBytesVersion;
 
 		private int head = NO_NODE;
 		private int tail = NO_NODE;
@@ -1051,6 +1075,7 @@ public class SketchBasedJoinEstimator {
 		private ResidentLru() {
 			Arrays.fill(prev, NO_NODE);
 			Arrays.fill(next, NO_NODE);
+			refreshEstimatedHeapBytes();
 		}
 
 		private void clear() {
@@ -1181,9 +1206,23 @@ public class SketchBasedJoinEstimator {
 			slots = Arrays.copyOf(slots, nextCapacity);
 			bytes = Arrays.copyOf(bytes, nextCapacity);
 			used = Arrays.copyOf(used, nextCapacity);
+			refreshEstimatedHeapBytes();
+		}
+
+		private int heapBytesVersion() {
+			return heapBytesVersion;
 		}
 
 		private long estimatedHeapBytes() {
+			return estimatedHeapBytesCache;
+		}
+
+		private void refreshEstimatedHeapBytes() {
+			estimatedHeapBytesCache = computeEstimatedHeapBytes();
+			heapBytesVersion++;
+		}
+
+		private long computeEstimatedHeapBytes() {
 			return align(OBJECT_HEADER_BYTES + 5L * INT_BYTES + 6L * REFERENCE_BYTES)
 					+ estimateIntArrayBytes(prev.length)
 					+ estimateIntArrayBytes(next.length)
@@ -1336,7 +1375,7 @@ public class SketchBasedJoinEstimator {
 		private final EnumMap<MemoryCategory, LongFunction<String>> labels = new EnumMap<>(MemoryCategory.class);
 
 		private MemoryRegistry() {
-			for (MemoryCategory category : MemoryCategory.values()) {
+			for (MemoryCategory category : MEMORY_CATEGORY_VALUES) {
 				ownerBytes.put(category, new LinkedHashMap<>());
 				totals.put(category, 0L);
 			}
@@ -1403,7 +1442,7 @@ public class SketchBasedJoinEstimator {
 			EnumMap<MemoryCategory, Long> totalsSnapshot = new EnumMap<>(MemoryCategory.class);
 			EnumMap<MemoryCategory, List<DebugMemoryOwnerView>> ownerSnapshot = new EnumMap<>(MemoryCategory.class);
 			long total = 0L;
-			for (MemoryCategory category : MemoryCategory.values()) {
+			for (MemoryCategory category : MEMORY_CATEGORY_VALUES) {
 				long categoryTotal = totals.getOrDefault(category, 0L);
 				totalsSnapshot.put(category, categoryTotal);
 				total = saturatingAdd(total, categoryTotal);
@@ -1434,11 +1473,11 @@ public class SketchBasedJoinEstimator {
 		private final int pi;
 		private final int oi;
 		private final int ci;
-		private final long hs;
-		private final long hp;
-		private final long ho;
-		private final long hc;
-		private final long sig;
+		private final long thetaHs;
+		private final long thetaHp;
+		private final long thetaHo;
+		private final long thetaHc;
+		private final long thetaSig;
 		private final long spKey;
 		private final long soKey;
 		private final long scKey;
@@ -1446,18 +1485,18 @@ public class SketchBasedJoinEstimator {
 		private final long pcKey;
 		private final long ocKey;
 
-		private IngestEvent(boolean isDelete, int si, int pi, int oi, int ci, long hs, long hp, long ho, long hc,
-				long sig, long spKey, long soKey, long scKey, long poKey, long pcKey, long ocKey) {
+		private IngestEvent(boolean isDelete, int si, int pi, int oi, int ci, long thetaHs, long thetaHp, long thetaHo,
+				long thetaHc, long thetaSig, long spKey, long soKey, long scKey, long poKey, long pcKey, long ocKey) {
 			this.isDelete = isDelete;
 			this.si = si;
 			this.pi = pi;
 			this.oi = oi;
 			this.ci = ci;
-			this.hs = hs;
-			this.hp = hp;
-			this.ho = ho;
-			this.hc = hc;
-			this.sig = sig;
+			this.thetaHs = thetaHs;
+			this.thetaHp = thetaHp;
+			this.thetaHo = thetaHo;
+			this.thetaHc = thetaHc;
+			this.thetaSig = thetaSig;
 			this.spKey = spKey;
 			this.soKey = soKey;
 			this.scKey = scKey;
@@ -1638,6 +1677,8 @@ public class SketchBasedJoinEstimator {
 	private final Object mappedChannelLock = new Object();
 	private final CacheDirectory cacheDirectory = new CacheDirectory();
 	private final ResidentLru residentLru = new ResidentLru();
+	private int cacheDirectoryMetadataVersion = -1;
+	private int residentLruMetadataVersion = -1;
 	private final MemoryRegistry memoryRegistry;
 	private final Map<Path, BlobStorage> blobStorages = new HashMap<>();
 	private final Path[] slotBlobBaseFiles = new Path[BufferSlot.values().length];
@@ -2130,11 +2171,18 @@ public class SketchBasedJoinEstimator {
 							// robustSpillBuffer.addStatements(robustQuadBatch, rebuildBatchSize);
 							// Arrays.fill(rebuildBatch, 0, rebuildBatchSize, null);
 							rebuildBatchSize = 0;
-							System.out.println(
-									"RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
-											+ seen / 1000 / 1000 + " million triples so far. Elapsed: "
-											+ (System.currentTimeMillis() - l) / 1000
-											+ " s.");
+//							if (logger.isDebugEnabled()) {
+//								logger.debug(
+//										"RdfJoinEstimator: Rebuilding {}, seen {} million triples so far. Elapsed: {} s.",
+//										rebuildIntoA ? "bufA" : "bufB",
+//										seen / 1000 / 1000,
+//										(System.currentTimeMillis() - l) / 1000);
+//							}
+
+							if (true) {
+								System.out.println("RdfJoinEstimator: Rebuilding "+(rebuildIntoA ? "bufA" : "bufB")+", seen "+seen / 1000 / 1000+" million triples so far. Elapsed: "+((System.currentTimeMillis() - l) / 1000)+" s.");
+
+							}
 
 						}
 //						if (seen > 0 && seen % ROBUST_HEADROOM_CHECK_INTERVAL == 0
@@ -2270,32 +2318,33 @@ public class SketchBasedJoinEstimator {
 		String p = str(st.getPredicate());
 		String o = str(st.getObject());
 		String c = str(st.getContext());
-		String signature = sig(s, p, o, c);
-		churnSampler.recordAdd(signature, samplingInterval());
+		churnSampler.recordAdd(s, p, o, c, samplingInterval());
 		seenTriples = approxStoreSize.incrementAndGet();
 
 		try {
-			ingestIncremental(s, p, o, c, false);
+			IngestEvent event = toIngestEvent(s, p, o, c, false);
 
-			while (true) {
-				long epoch = rebuildEpoch.get();
-				if ((epoch & 1L) != 0L) {
-					synchronized (bufA) {
-						ingest(bufA, st, false);
+			if (event != null) {
+				while (true) {
+					long epoch = rebuildEpoch.get();
+					if ((epoch & 1L) != 0L) {
+						synchronized (bufA) {
+							ingest(bufA, event);
+						}
+						synchronized (bufB) {
+							ingest(bufB, event);
+						}
+						break;
 					}
-					synchronized (bufB) {
-						ingest(bufB, st, false);
-					}
-					break;
-				}
 
-				State target = current;
-				synchronized (target) {
-					if (rebuildEpoch.get() != epoch) {
-						continue;
+					State target = current;
+					synchronized (target) {
+						if (rebuildEpoch.get() != epoch) {
+							continue;
+						}
+						ingest(target, event);
+						break;
 					}
-					ingest(target, st, false);
-					break;
 				}
 			}
 
@@ -2331,8 +2380,7 @@ public class SketchBasedJoinEstimator {
 		String p = str(st.getPredicate());
 		String o = str(st.getObject());
 		String c = str(st.getContext());
-		String signature = sig(s, p, o, c);
-		churnSampler.recordDelete(signature, samplingInterval());
+		churnSampler.recordDelete(s, p, o, c, samplingInterval());
 		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
 
 		try {
@@ -2353,10 +2401,10 @@ public class SketchBasedJoinEstimator {
 		deleteStatement(s, p, o, null);
 	}
 
-	private void ingestIncremental(String s, String p, String o, String c, boolean isDelete) {
+	private IngestEvent ingestIncremental(String s, String p, String o, String c, boolean isDelete) {
 		IngestEvent event = toIngestEvent(s, p, o, c, isDelete);
 		if (event == null) {
-			return;
+			return null;
 		}
 		IngestEvent[] batch = null;
 		int batchSize = 0;
@@ -2364,9 +2412,10 @@ public class SketchBasedJoinEstimator {
 			ensureIncrementalBufferCapacity(incrementalBufferCount + 1);
 			incrementalBuffer[incrementalBufferCount++] = event;
 			if (incrementalBufferCount >= INCREMENTAL_BATCH_SIZE) {
-				System.out.println("RdfJoinEstimator: Flushing incremental batch of " + incrementalBufferCount
-						+ " events. Seen triples: "
-						+ seenTriples);
+				if (logger.isDebugEnabled()) {
+					logger.debug("RdfJoinEstimator: Flushing incremental batch of {} events. Seen triples: {}",
+							incrementalBufferCount, seenTriples);
+				}
 				batch = drainIncrementalBufferLocked();
 				batchSize = batch.length;
 			}
@@ -2374,6 +2423,7 @@ public class SketchBasedJoinEstimator {
 		if (batch != null) {
 			applyIncrementalBatch(batch, batchSize);
 		}
+		return event;
 	}
 
 	private IngestEvent toIngestEvent(String s, String p, String o, String c, boolean isDelete) {
@@ -2388,14 +2438,19 @@ public class SketchBasedJoinEstimator {
 			long ho = valueFingerprint(o);
 			long hc = valueFingerprint(c);
 			long sig = quadFingerprint(hs, hp, ho, hc);
+			long thetaHs = thetaHash(hs);
+			long thetaHp = thetaHash(hp);
+			long thetaHo = thetaHash(ho);
+			long thetaHc = thetaHash(hc);
+			long thetaSig = thetaHash(sig);
 			long spKey = pairKey(si, pi);
 			long soKey = pairKey(si, oi);
 			long scKey = pairKey(si, ci);
 			long poKey = pairKey(pi, oi);
 			long pcKey = pairKey(pi, ci);
 			long ocKey = pairKey(oi, ci);
-			return new IngestEvent(isDelete, si, pi, oi, ci, hs, hp, ho, hc, sig, spKey, soKey, scKey, poKey, pcKey,
-					ocKey);
+			return new IngestEvent(isDelete, si, pi, oi, ci, thetaHs, thetaHp, thetaHo, thetaHc, thetaSig, spKey, soKey,
+					scKey, poKey, pcKey, ocKey);
 		} catch (NullPointerException npe) {
 			return null;
 		}
@@ -2486,10 +2541,9 @@ public class SketchBasedJoinEstimator {
 		synchronized (sketchCacheLock) {
 			entryId = cacheDirectory.findOrAdd(recType, isDelete, axisA, axisB, x, y);
 		}
-		SketchAddress address = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
-		UpdateSketch sketch = getSketchForWrite(state, address, entryId);
+		UpdateSketch sketch = getSketchForWrite(state, recType, isDelete, axisA, axisB, x, y, entryId);
 		for (int i = 0; i < valueCount; i++) {
-			sketch.update(values[i]);
+			hashUpdateRaw(sketch, values[i]);
 		}
 		markDirty(state, entryId);
 		touchResidentSketch(state, entryId, sketch, false);
@@ -2501,39 +2555,51 @@ public class SketchBasedJoinEstimator {
 		int pi = event.pi;
 		int oi = event.oi;
 		int ci = event.ci;
-		long hs = event.hs;
-		long hp = event.hp;
-		long ho = event.ho;
-		long hc = event.hc;
-		long sig = event.sig;
+		long thetaHs = event.thetaHs;
+		long thetaHp = event.thetaHp;
+		long thetaHo = event.thetaHo;
+		long thetaHc = event.thetaHc;
+		long thetaSig = event.thetaSig;
 
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.S.ordinal(), (byte) 0, si, 0, sig);
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.P.ordinal(), (byte) 0, pi, 0, sig);
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.O.ordinal(), (byte) 0, oi, 0, sig);
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.C.ordinal(), (byte) 0, ci, 0, sig);
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.S.ordinal(), (byte) 0, si, 0, thetaSig);
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.P.ordinal(), (byte) 0, pi, 0, thetaSig);
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.O.ordinal(), (byte) 0, oi, 0, thetaSig);
+		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.C.ordinal(), (byte) 0, ci, 0, thetaSig);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.P.ordinal(), si, 0, hp);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.O.ordinal(), si, 0, ho);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.C.ordinal(), si, 0, hc);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.P.ordinal(), si, 0,
+				thetaHp);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.O.ordinal(), si, 0,
+				thetaHo);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.C.ordinal(), si, 0,
+				thetaHc);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.S.ordinal(), pi, 0, hs);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.O.ordinal(), pi, 0, ho);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.C.ordinal(), pi, 0, hc);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.S.ordinal(), pi, 0,
+				thetaHs);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.O.ordinal(), pi, 0,
+				thetaHo);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.C.ordinal(), pi, 0,
+				thetaHc);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.S.ordinal(), oi, 0, hs);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.P.ordinal(), oi, 0, hp);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.C.ordinal(), oi, 0, hc);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.S.ordinal(), oi, 0,
+				thetaHs);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.P.ordinal(), oi, 0,
+				thetaHp);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.C.ordinal(), oi, 0,
+				thetaHc);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.S.ordinal(), ci, 0, hs);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.P.ordinal(), ci, 0, hp);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.O.ordinal(), ci, 0, ho);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.S.ordinal(), ci, 0,
+				thetaHs);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.P.ordinal(), ci, 0,
+				thetaHp);
+		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.O.ordinal(), ci, 0,
+				thetaHo);
 
-		accumulatePair(updates, Pair.SP, isDelete, event.spKey, sig, ho, hc);
-		accumulatePair(updates, Pair.SO, isDelete, event.soKey, sig, hp, hc);
-		accumulatePair(updates, Pair.SC, isDelete, event.scKey, sig, hp, ho);
-		accumulatePair(updates, Pair.PO, isDelete, event.poKey, sig, hs, hc);
-		accumulatePair(updates, Pair.PC, isDelete, event.pcKey, sig, hs, ho);
-		accumulatePair(updates, Pair.OC, isDelete, event.ocKey, sig, hs, hp);
+		accumulatePair(updates, Pair.SP, isDelete, event.spKey, thetaSig, thetaHo, thetaHc);
+		accumulatePair(updates, Pair.SO, isDelete, event.soKey, thetaSig, thetaHp, thetaHc);
+		accumulatePair(updates, Pair.SC, isDelete, event.scKey, thetaSig, thetaHp, thetaHo);
+		accumulatePair(updates, Pair.PO, isDelete, event.poKey, thetaSig, thetaHs, thetaHc);
+		accumulatePair(updates, Pair.PC, isDelete, event.pcKey, thetaSig, thetaHs, thetaHo);
+		accumulatePair(updates, Pair.OC, isDelete, event.ocKey, thetaSig, thetaHs, thetaHp);
 	}
 
 	private static void accumulatePair(BatchUpdateAccumulator updates, Pair pair, boolean isDelete, long key,
@@ -2549,80 +2615,72 @@ public class SketchBasedJoinEstimator {
 
 	/* ------------------------------------------------------------------ */
 
-	/**
-	 * Common ingestion path for both add and delete operations.
-	 *
-	 * @param t        target {@code State} (one of the two buffers)
-	 * @param st       statement to ingest
-	 * @param isDelete {@code false}=live sketch, {@code true}=tomb‑stone sketch
-	 */
-	private void ingest(State t, Statement st, boolean isDelete) {
+	private void ingest(State t, IngestEvent event) {
 		try {
-			String s = str(st.getSubject());
-			String p = str(st.getPredicate());
-			String o = str(st.getObject());
-			String c = str(st.getContext());
-
-			int si = hash(s), pi = hash(p), oi = hash(o), ci = hash(c);
-			long hs = valueFingerprint(s);
-			long hp = valueFingerprint(p);
-			long ho = valueFingerprint(o);
-			long hc = valueFingerprint(c);
-			long sig = quadFingerprint(hs, hp, ho, hc);
-			long spKey = pairKey(si, pi);
-			long soKey = pairKey(si, oi);
-			long scKey = pairKey(si, ci);
-			long poKey = pairKey(pi, oi);
-			long pcKey = pairKey(pi, ci);
-			long ocKey = pairKey(oi, ci);
+			boolean isDelete = event.isDelete;
+			int si = event.si;
+			int pi = event.pi;
+			int oi = event.oi;
+			int ci = event.ci;
+			long thetaHs = event.thetaHs;
+			long thetaHp = event.thetaHp;
+			long thetaHo = event.thetaHo;
+			long thetaHc = event.thetaHc;
+			long thetaSig = event.thetaSig;
+			long spKey = event.spKey;
+			long soKey = event.soKey;
+			long scKey = event.scKey;
+			long poKey = event.poKey;
+			long pcKey = event.pcKey;
+			long ocKey = event.ocKey;
 
 			/* single‑component cardinalities */
-			updateSketch(t, singleTripleAddress(isDelete, Component.S, si), sig);
-			updateSketch(t, singleTripleAddress(isDelete, Component.P, pi), sig);
-			updateSketch(t, singleTripleAddress(isDelete, Component.O, oi), sig);
-			updateSketch(t, singleTripleAddress(isDelete, Component.C, ci), sig);
+			updateSingleSketchRaw(t, isDelete, Component.S, si, thetaSig);
+			updateSingleSketchRaw(t, isDelete, Component.P, pi, thetaSig);
+			updateSingleSketchRaw(t, isDelete, Component.O, oi, thetaSig);
+			updateSingleSketchRaw(t, isDelete, Component.C, ci, thetaSig);
 
 			/* complement sets for singles */
-			updateSketch(t, singleComplementAddress(isDelete, Component.S, Component.P, si), hp);
-			updateSketch(t, singleComplementAddress(isDelete, Component.S, Component.O, si), ho);
-			updateSketch(t, singleComplementAddress(isDelete, Component.S, Component.C, si), hc);
+			updateComplementSketchRaw(t, isDelete, Component.S, Component.P, si, thetaHp);
+			updateComplementSketchRaw(t, isDelete, Component.S, Component.O, si, thetaHo);
+			updateComplementSketchRaw(t, isDelete, Component.S, Component.C, si, thetaHc);
 
-			updateSketch(t, singleComplementAddress(isDelete, Component.P, Component.S, pi), hs);
-			updateSketch(t, singleComplementAddress(isDelete, Component.P, Component.O, pi), ho);
-			updateSketch(t, singleComplementAddress(isDelete, Component.P, Component.C, pi), hc);
+			updateComplementSketchRaw(t, isDelete, Component.P, Component.S, pi, thetaHs);
+			updateComplementSketchRaw(t, isDelete, Component.P, Component.O, pi, thetaHo);
+			updateComplementSketchRaw(t, isDelete, Component.P, Component.C, pi, thetaHc);
 
-			updateSketch(t, singleComplementAddress(isDelete, Component.O, Component.S, oi), hs);
-			updateSketch(t, singleComplementAddress(isDelete, Component.O, Component.P, oi), hp);
-			updateSketch(t, singleComplementAddress(isDelete, Component.O, Component.C, oi), hc);
+			updateComplementSketchRaw(t, isDelete, Component.O, Component.S, oi, thetaHs);
+			updateComplementSketchRaw(t, isDelete, Component.O, Component.P, oi, thetaHp);
+			updateComplementSketchRaw(t, isDelete, Component.O, Component.C, oi, thetaHc);
 
-			updateSketch(t, singleComplementAddress(isDelete, Component.C, Component.S, ci), hs);
-			updateSketch(t, singleComplementAddress(isDelete, Component.C, Component.P, ci), hp);
-			updateSketch(t, singleComplementAddress(isDelete, Component.C, Component.O, ci), ho);
+			updateComplementSketchRaw(t, isDelete, Component.C, Component.S, ci, thetaHs);
+			updateComplementSketchRaw(t, isDelete, Component.C, Component.P, ci, thetaHp);
+			updateComplementSketchRaw(t, isDelete, Component.C, Component.O, ci, thetaHo);
 
 			/* pairs (triples + complements) */
-			updatePairSketch(t, isDelete, Pair.SP, REC_PAIR_TRIPLE, spKey, sig);
-			updatePairSketch(t, isDelete, Pair.SP, REC_PAIR_COMP1, spKey, ho);
-			updatePairSketch(t, isDelete, Pair.SP, REC_PAIR_COMP2, spKey, hc);
+			updatePairSketchRaw(t, isDelete, Pair.SP, REC_PAIR_TRIPLE, spKey, thetaSig);
+			updatePairSketchRaw(t, isDelete, Pair.SP, REC_PAIR_COMP1, spKey, thetaHo);
+			updatePairSketchRaw(t, isDelete, Pair.SP, REC_PAIR_COMP2, spKey, thetaHc);
 
-			updatePairSketch(t, isDelete, Pair.SO, REC_PAIR_TRIPLE, soKey, sig);
-			updatePairSketch(t, isDelete, Pair.SO, REC_PAIR_COMP1, soKey, hp);
-			updatePairSketch(t, isDelete, Pair.SO, REC_PAIR_COMP2, soKey, hc);
+			updatePairSketchRaw(t, isDelete, Pair.SO, REC_PAIR_TRIPLE, soKey, thetaSig);
+			updatePairSketchRaw(t, isDelete, Pair.SO, REC_PAIR_COMP1, soKey, thetaHp);
+			updatePairSketchRaw(t, isDelete, Pair.SO, REC_PAIR_COMP2, soKey, thetaHc);
 
-			updatePairSketch(t, isDelete, Pair.SC, REC_PAIR_TRIPLE, scKey, sig);
-			updatePairSketch(t, isDelete, Pair.SC, REC_PAIR_COMP1, scKey, hp);
-			updatePairSketch(t, isDelete, Pair.SC, REC_PAIR_COMP2, scKey, ho);
+			updatePairSketchRaw(t, isDelete, Pair.SC, REC_PAIR_TRIPLE, scKey, thetaSig);
+			updatePairSketchRaw(t, isDelete, Pair.SC, REC_PAIR_COMP1, scKey, thetaHp);
+			updatePairSketchRaw(t, isDelete, Pair.SC, REC_PAIR_COMP2, scKey, thetaHo);
 
-			updatePairSketch(t, isDelete, Pair.PO, REC_PAIR_TRIPLE, poKey, sig);
-			updatePairSketch(t, isDelete, Pair.PO, REC_PAIR_COMP1, poKey, hs);
-			updatePairSketch(t, isDelete, Pair.PO, REC_PAIR_COMP2, poKey, hc);
+			updatePairSketchRaw(t, isDelete, Pair.PO, REC_PAIR_TRIPLE, poKey, thetaSig);
+			updatePairSketchRaw(t, isDelete, Pair.PO, REC_PAIR_COMP1, poKey, thetaHs);
+			updatePairSketchRaw(t, isDelete, Pair.PO, REC_PAIR_COMP2, poKey, thetaHc);
 
-			updatePairSketch(t, isDelete, Pair.PC, REC_PAIR_TRIPLE, pcKey, sig);
-			updatePairSketch(t, isDelete, Pair.PC, REC_PAIR_COMP1, pcKey, hs);
-			updatePairSketch(t, isDelete, Pair.PC, REC_PAIR_COMP2, pcKey, ho);
+			updatePairSketchRaw(t, isDelete, Pair.PC, REC_PAIR_TRIPLE, pcKey, thetaSig);
+			updatePairSketchRaw(t, isDelete, Pair.PC, REC_PAIR_COMP1, pcKey, thetaHs);
+			updatePairSketchRaw(t, isDelete, Pair.PC, REC_PAIR_COMP2, pcKey, thetaHo);
 
-			updatePairSketch(t, isDelete, Pair.OC, REC_PAIR_TRIPLE, ocKey, sig);
-			updatePairSketch(t, isDelete, Pair.OC, REC_PAIR_COMP1, ocKey, hs);
-			updatePairSketch(t, isDelete, Pair.OC, REC_PAIR_COMP2, ocKey, hp);
+			updatePairSketchRaw(t, isDelete, Pair.OC, REC_PAIR_TRIPLE, ocKey, thetaSig);
+			updatePairSketchRaw(t, isDelete, Pair.OC, REC_PAIR_COMP1, ocKey, thetaHs);
+			updatePairSketchRaw(t, isDelete, Pair.OC, REC_PAIR_COMP2, ocKey, thetaHp);
 		} catch (NullPointerException npe) {
 			// ignore NPEs from null values (e.g. missing context)
 		} finally {
@@ -3348,7 +3406,7 @@ public class SketchBasedJoinEstimator {
 					new SingleBuild(k, Component.O, buckets),
 					new SingleBuild(k, Component.C, buckets));
 
-			for (Pair p : Pair.values()) {
+			for (Pair p : PAIR_VALUES) {
 				pairs.put(p, new PairBuild(k, buckets));
 				delPairs.put(p, new PairBuild(k, buckets));
 			}
@@ -3378,7 +3436,7 @@ public class SketchBasedJoinEstimator {
 		SingleBuild(int k, Component fixed, int buckets) {
 			this.k = k;
 			this.buckets = buckets;
-			for (Component c : Component.values()) {
+			for (Component c : COMPONENT_VALUES) {
 				if (c != fixed) {
 					cmpl.put(c, new AtomicReferenceArray<>(buckets));
 				}
@@ -3518,16 +3576,6 @@ public class SketchBasedJoinEstimator {
 				.build();
 	}
 
-	private static Method resolveHashUpdateMethod() {
-		try {
-			Method method = UpdateSketch.class.getDeclaredMethod("hashUpdate", long.class);
-			method.setAccessible(true);
-			return method;
-		} catch (NoSuchMethodException e) {
-			throw new ExceptionInInitializerError(e);
-		}
-	}
-
 	private static Field resolveHeapAlphaField(String fieldName) {
 		try {
 			Class<?> heapAlphaClass = Class.forName("org.apache.datasketches.theta.HeapAlphaSketch");
@@ -3539,21 +3587,8 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private static void hashUpdateRaw(UpdateSketch sketch, long hash) throws IOException {
-		try {
-			HASH_UPDATE_METHOD.invoke(sketch, hash);
-		} catch (IllegalAccessException e) {
-			throw new IOException("Unable to apply raw sketch hash", e);
-		} catch (InvocationTargetException e) {
-			Throwable cause = e.getCause();
-			if (cause instanceof RuntimeException) {
-				throw (RuntimeException) cause;
-			}
-			if (cause instanceof Error) {
-				throw (Error) cause;
-			}
-			throw new IOException("Unable to apply raw sketch hash", cause);
-		}
+	private static void hashUpdateRaw(UpdateSketch sketch, long hash) {
+		UpdateSketchAccess.hashUpdate(sketch, hash);
 	}
 
 	private static long align(long bytes) {
@@ -3596,6 +3631,10 @@ public class SketchBasedJoinEstimator {
 		return mix64(h ^ c);
 	}
 
+	private static long thetaHash(long value) {
+		return MurmurHash3.hash(value, THETA_UPDATE_SEED)[0] >>> 1;
+	}
+
 	private static long mix64(long value) {
 		long z = value;
 		z = (z ^ (z >>> 30)) * MIX64_C1;
@@ -3608,7 +3647,7 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private static Pair findPair(Component a, Component b) {
-		for (Pair p : Pair.values()) {
+		for (Pair p : PAIR_VALUES) {
 			if ((p.x == a && p.y == b) || (p.x == b && p.y == a)) {
 				return p;
 			}
@@ -4596,7 +4635,7 @@ public class SketchBasedJoinEstimator {
 
 	private StatementPattern bindPatternVar(StatementPattern pattern, String sharedVarName, Value sharedValue) {
 		StatementPattern boundPattern = pattern.clone();
-		for (Component component : Component.values()) {
+		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(boundPattern, component);
 			if (var == null || var.hasValue() || var.getName() == null || !sharedVarName.equals(var.getName())) {
 				continue;
@@ -4650,7 +4689,7 @@ public class SketchBasedJoinEstimator {
 
 	private boolean statementMatchesPatternVariableEqualities(StatementPattern pattern, Statement statement) {
 		Map<String, Value> seen = new HashMap<>();
-		for (Component component : Component.values()) {
+		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(pattern, component);
 			if (var == null || var.hasValue() || var.getName() == null) {
 				continue;
@@ -4992,7 +5031,7 @@ public class SketchBasedJoinEstimator {
 
 	private EnumSet<Component> collectPatternConstantComponents(StatementPattern pattern) {
 		EnumSet<Component> components = EnumSet.noneOf(Component.class);
-		for (Component component : Component.values()) {
+		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(pattern, component);
 			if (var != null && var.hasValue()) {
 				components.add(component);
@@ -5007,7 +5046,7 @@ public class SketchBasedJoinEstimator {
 		if (currentlyBoundVars == null || currentlyBoundVars.isEmpty()) {
 			return components;
 		}
-		for (Component component : Component.values()) {
+		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(pattern, component);
 			if (var == null || var.hasValue() || var.getName() == null || !currentlyBoundVars.contains(var.getName())) {
 				continue;
@@ -5038,7 +5077,7 @@ public class SketchBasedJoinEstimator {
 
 	private StatementPattern patternForAccessPrefix(StatementPattern pattern, Set<Component> prefixComponents) {
 		StatementPattern accessPattern = pattern.clone();
-		for (Component component : Component.values()) {
+		for (Component component : COMPONENT_VALUES) {
 			if (prefixComponents.contains(component)) {
 				continue;
 			}
@@ -5638,7 +5677,7 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private Component findPatternComponentByVarName(StatementPattern pattern, String varName) {
-		for (Component component : Component.values()) {
+		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(pattern, component);
 			if (var != null && varName.equals(var.getName())) {
 				return component;
@@ -5724,15 +5763,15 @@ public class SketchBasedJoinEstimator {
 			eventsSinceLastSample = 0L;
 		}
 
-		void recordAdd(String signature, long sampleEvery) {
-			record(signature, sampleEvery, true);
+		void recordAdd(String s, String p, String o, String c, long sampleEvery) {
+			record(s, p, o, c, sampleEvery, true);
 		}
 
-		void recordDelete(String signature, long sampleEvery) {
-			record(signature, sampleEvery, false);
+		void recordDelete(String s, String p, String o, String c, long sampleEvery) {
+			record(s, p, o, c, sampleEvery, false);
 		}
 
-		private void record(String signature, long sampleEvery, boolean isAdd) {
+		private void record(String s, String p, String o, String c, long sampleEvery, boolean isAdd) {
 			if (sampleEvery <= 0) {
 				return;
 			}
@@ -5741,6 +5780,7 @@ public class SketchBasedJoinEstimator {
 				return;
 			}
 			eventsSinceLastSample = 0L;
+			String signature = sig(s, p, o, c);
 
 			samples.compute(signature, (sig, state) -> {
 				if (state == null) {
@@ -6195,8 +6235,15 @@ public class SketchBasedJoinEstimator {
 
 	private void refreshCacheMetadataAccounting() {
 		synchronized (sketchCacheLock) {
+			int cacheVersion = cacheDirectory.heapBytesVersion();
+			int residentVersion = residentLru.heapBytesVersion();
+			if (cacheVersion == cacheDirectoryMetadataVersion && residentVersion == residentLruMetadataVersion) {
+				return;
+			}
 			long actualBytes = cacheDirectory.estimatedHeapBytes() + residentLru.estimatedHeapBytes();
 			long trackedBytes = Math.max(0L, actualBytes - baselineCacheMetadataBytes);
+			cacheDirectoryMetadataVersion = cacheVersion;
+			residentLruMetadataVersion = residentVersion;
 			memoryRegistry.replace(MemoryCategory.CACHE_METADATA, MEMORY_OWNER_CACHE_METADATA, trackedBytes);
 		}
 	}
@@ -6355,7 +6402,8 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private UpdateSketch getSketchForRead(State state, SketchAddress address) {
-		UpdateSketch sketch = getResidentSketch(state, address);
+		UpdateSketch sketch = getResidentSketch(state, address.recType, address.isDelete, address.axisA, address.axisB,
+				address.x, address.y);
 		if (sketch != null) {
 			touchResidentSketch(state, address, sketch, false);
 			return sketch;
@@ -6364,35 +6412,41 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private UpdateSketch getSketchForWrite(State state, SketchAddress address) {
-		UpdateSketch sketch = getResidentSketch(state, address);
+		return getSketchForWrite(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
+				address.y, -1);
+	}
+
+	private UpdateSketch getSketchForWrite(State state, SketchAddress address, int entryId) {
+		return getSketchForWrite(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
+				address.y, entryId);
+	}
+
+	private UpdateSketch getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x,
+			int y, int entryId) {
+		UpdateSketch sketch = getResidentSketch(state, recType, isDelete, axisA, axisB, x, y);
 		if (sketch == null) {
-			sketch = loadPersistedSketch(state, address);
+			SketchAddress address = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
+			sketch = entryId >= 0 ? loadPersistedSketch(state, address, entryId) : loadPersistedSketch(state, address);
 			if (sketch != null) {
-				setResidentSketch(state, address, sketch);
+				setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
 			}
 		}
 		if (sketch == null) {
 			ensureEstimatorCapacity(256L, true);
 			sketch = newSk(state.k);
-			setResidentSketch(state, address, sketch);
+			setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
 		}
 		return sketch;
 	}
 
-	private UpdateSketch getSketchForWrite(State state, SketchAddress address, int entryId) {
-		UpdateSketch sketch = getResidentSketch(state, address);
-		if (sketch == null) {
-			sketch = loadPersistedSketch(state, address, entryId);
-			if (sketch != null) {
-				setResidentSketch(state, address, sketch);
-			}
-		}
-		if (sketch == null) {
-			ensureEstimatorCapacity(256L, true);
-			sketch = newSk(state.k);
-			setResidentSketch(state, address, sketch);
-		}
-		return sketch;
+	private void updateSingleSketchRaw(State state, boolean isDelete, Component component, int idx, long thetaHash) {
+		updateSketchRaw(state, REC_SINGLE_TRIPLE, isDelete, (byte) component.ordinal(), (byte) 0, idx, 0, thetaHash);
+	}
+
+	private void updateComplementSketchRaw(State state, boolean isDelete, Component fixed, Component other, int idx,
+			long thetaHash) {
+		updateSketchRaw(state, REC_SINGLE_CPL, isDelete, (byte) fixed.ordinal(), (byte) other.ordinal(), idx, 0,
+				thetaHash);
 	}
 
 	private UpdateSketch loadPersistedSketch(State state, SketchAddress address) {
@@ -6620,87 +6674,99 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private UpdateSketch getResidentSketch(State state, SketchAddress address) {
-		switch (address.recType) {
+		return getResidentSketch(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
+				address.y);
+	}
+
+	private UpdateSketch getResidentSketch(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x,
+			int y) {
+		switch (recType) {
 		case REC_SINGLE_TRIPLE: {
-			Component component = Component.values()[address.axisA];
-			AtomicReferenceArray<UpdateSketch> arr = address.isDelete ? state.delSingleTriples.get(component)
+			Component component = COMPONENT_VALUES[axisA];
+			AtomicReferenceArray<UpdateSketch> arr = isDelete ? state.delSingleTriples.get(component)
 					: state.singleTriples.get(component);
-			return arr.get(address.x);
+			return arr.get(x);
 		}
 		case REC_SINGLE_CPL: {
-			Component fixed = Component.values()[address.axisA];
-			Component other = Component.values()[address.axisB];
-			SingleBuild build = address.isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
+			Component fixed = COMPONENT_VALUES[axisA];
+			Component other = COMPONENT_VALUES[axisB];
+			SingleBuild build = isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
 			AtomicReferenceArray<UpdateSketch> arr = build.cmpl.get(other);
-			return arr == null ? null : arr.get(address.x);
+			return arr == null ? null : arr.get(x);
 		}
 		case REC_PAIR_TRIPLE:
 		case REC_PAIR_COMP1:
 		case REC_PAIR_COMP2: {
-			Pair pair = Pair.values()[address.axisA];
-			PairBuild build = address.isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
-			PairBuild.Row row = build.rows.get(address.x);
+			Pair pair = PAIR_VALUES[axisA];
+			PairBuild build = isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
+			PairBuild.Row row = build.rows.get(x);
 			if (row == null) {
 				return null;
 			}
-			if (address.recType == REC_PAIR_TRIPLE) {
-				return row.triples.get(address.y);
+			if (recType == REC_PAIR_TRIPLE) {
+				return row.triples.get(y);
 			}
-			if (address.recType == REC_PAIR_COMP1) {
-				return row.comp1.get(address.y);
+			if (recType == REC_PAIR_COMP1) {
+				return row.comp1.get(y);
 			}
-			return row.comp2.get(address.y);
+			return row.comp2.get(y);
 		}
 		default:
-			throw new IllegalStateException("Unknown sketch record type: " + address.recType);
+			throw new IllegalStateException("Unknown sketch record type: " + recType);
 		}
 	}
 
 	private void setResidentSketch(State state, SketchAddress address, UpdateSketch sketch) {
-		switch (address.recType) {
+		setResidentSketch(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
+				address.y, sketch);
+	}
+
+	private void setResidentSketch(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y,
+			UpdateSketch sketch) {
+		switch (recType) {
 		case REC_SINGLE_TRIPLE: {
-			Component component = Component.values()[address.axisA];
-			AtomicReferenceArray<UpdateSketch> arr = address.isDelete ? state.delSingleTriples.get(component)
+			Component component = COMPONENT_VALUES[axisA];
+			AtomicReferenceArray<UpdateSketch> arr = isDelete ? state.delSingleTriples.get(component)
 					: state.singleTriples.get(component);
-			arr.set(address.x, sketch);
+			arr.set(x, sketch);
 			return;
 		}
 		case REC_SINGLE_CPL: {
-			Component fixed = Component.values()[address.axisA];
-			Component other = Component.values()[address.axisB];
-			SingleBuild build = address.isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
+			Component fixed = COMPONENT_VALUES[axisA];
+			Component other = COMPONENT_VALUES[axisB];
+			SingleBuild build = isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
 			AtomicReferenceArray<UpdateSketch> arr = build.cmpl.get(other);
 			if (arr != null) {
-				arr.set(address.x, sketch);
+				arr.set(x, sketch);
 			}
 			return;
 		}
 		case REC_PAIR_TRIPLE:
 		case REC_PAIR_COMP1:
 		case REC_PAIR_COMP2: {
-			Pair pair = Pair.values()[address.axisA];
-			PairBuild build = address.isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
-			PairBuild.Row row = build.getOrCreateRow(address.x);
+			Pair pair = PAIR_VALUES[axisA];
+			PairBuild build = isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
+			PairBuild.Row row = build.getOrCreateRow(x);
 			Map<Integer, UpdateSketch> target;
-			if (address.recType == REC_PAIR_TRIPLE) {
+			if (recType == REC_PAIR_TRIPLE) {
 				target = row.triples;
-			} else if (address.recType == REC_PAIR_COMP1) {
+			} else if (recType == REC_PAIR_COMP1) {
 				target = row.comp1;
 			} else {
 				target = row.comp2;
 			}
 			if (sketch == null) {
-				target.remove(address.y);
+				target.remove(y);
 				if (row.triples.isEmpty() && row.comp1.isEmpty() && row.comp2.isEmpty()) {
-					build.rows.remove(address.x);
+					build.rows.remove(x);
 				}
 			} else {
-				target.put(address.y, sketch);
+				target.put(y, sketch);
 			}
 			return;
 		}
 		default:
-			throw new IllegalStateException("Unknown sketch record type: " + address.recType);
+			throw new IllegalStateException("Unknown sketch record type: " + recType);
 		}
 	}
 
@@ -7724,20 +7790,35 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void updateSketch(State state, SketchAddress address, long value) {
+		updateSketchRaw(state, address, thetaHash(value));
+	}
+
+	private void updateSketchRaw(State state, SketchAddress address, long thetaHash) {
+		updateSketchRaw(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x, address.y,
+				thetaHash);
+	}
+
+	private void updateSketchRaw(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y,
+			long thetaHash) {
 		int entryId;
 		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.findOrAdd(address);
+			entryId = cacheDirectory.findOrAdd(recType, isDelete, axisA, axisB, x, y);
 		}
-		UpdateSketch sketch = getSketchForWrite(state, address, entryId);
-		sketch.update(value);
+		UpdateSketch sketch = getSketchForWrite(state, recType, isDelete, axisA, axisB, x, y, entryId);
+		hashUpdateRaw(sketch, thetaHash);
 		markDirty(state, entryId);
 		touchResidentSketch(state, entryId, sketch, false);
 	}
 
 	private void updatePairSketch(State state, boolean isDelete, Pair pair, byte recType, long key, long value) {
+		updatePairSketchRaw(state, isDelete, pair, recType, key, thetaHash(value));
+	}
+
+	private void updatePairSketchRaw(State state, boolean isDelete, Pair pair, byte recType, long key,
+			long thetaHash) {
 		int x = (int) (key >>> 32);
 		int y = (int) key;
-		updateSketch(state, pairAddress(recType, isDelete, pair, x, y), value);
+		updateSketchRaw(state, recType, isDelete, (byte) pair.ordinal(), (byte) 0, x, y, thetaHash);
 	}
 
 	private static void updateCell(AtomicReferenceArray<UpdateSketch> arr, int idx, long value, int k) {

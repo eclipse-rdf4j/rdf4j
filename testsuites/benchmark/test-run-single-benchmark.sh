@@ -16,13 +16,39 @@ if [[ ${STATUS} -ne 0 ]]; then
         exit ${STATUS}
 fi
 
-if [[ "${OUTPUT}" != *"mvn -pl testsuites/benchmark -am -P benchmarks -DskipTests package"* ]]; then
-        echo "Expected Maven command not found in output" >&2
+if [[ "${OUTPUT}" != *"mvn -T 2C -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -am -P benchmarks\\,quick package"* ]]; then
+        echo "Expected optimized parallel Maven command not found in output" >&2
         exit 1
 fi
 
 if [[ "${OUTPUT}" != *"ReasoningBenchmark.forwardChainingSchemaCachingRDFSInferencer"* ]]; then
         echo "Expected benchmark method not found in output" >&2
+        exit 1
+fi
+
+if [[ "${OUTPUT}" == *" clean package"* ]]; then
+        echo "Did not expect a clean rebuild in the default fast path" >&2
+        exit 1
+fi
+
+if [[ "${OUTPUT}" != *$'# On failure, reruns single-threaded:\nmvn -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -am -P benchmarks\\,quick package'* ]]; then
+        echo "Expected single-threaded fallback command not found in output" >&2
+        exit 1
+fi
+
+set +e
+CLEAN_OUTPUT="$(bash "${SCRIPT}" --dry-run --clean --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
+CLEAN_STATUS=$?
+set -e
+
+echo "${CLEAN_OUTPUT}"
+
+if [[ ${CLEAN_STATUS} -ne 0 ]]; then
+        exit ${CLEAN_STATUS}
+fi
+
+if [[ "${CLEAN_OUTPUT}" != *"mvn -T 2C -Dmaven.repo.local=.m2_repo -pl testsuites/benchmark -am -P benchmarks\\,quick clean package"* ]]; then
+        echo "Expected clean rebuild command not found in output" >&2
         exit 1
 fi
 
@@ -89,8 +115,13 @@ if [[ ${JFR_CPU_STATUS} -ne 0 ]]; then
         exit ${JFR_CPU_STATUS}
 fi
 
-if [[ "${JFR_CPU_OUTPUT}" != *"-XX:FlightRecorderOptions=enableThreadCpuTime=true\\,enableProcessCpuTime=true"* ]]; then
-        echo "Expected CPU time options to be appended when requested" >&2
+if [[ "${JFR_CPU_OUTPUT}" != *"jdk.CPUTimeSample#enabled=true"* ]]; then
+        echo "Expected CPU time sampling to be enabled when requested" >&2
+        exit 1
+fi
+
+if [[ "${JFR_CPU_OUTPUT}" != *"report-on-exit=cpu-time-hot-methods"* ]]; then
+        echo "Expected CPU time report to be enabled when requested" >&2
         exit 1
 fi
 

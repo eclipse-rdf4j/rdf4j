@@ -17,6 +17,7 @@ Environment:
   RDF4J_JMH_DOCKER_IMAGE    Container image to use (default: maven:3.9.14-sapmachine-26)
   RDF4J_JMH_DOCKER_PLATFORM Optional docker platform override (for example linux/amd64)
   RDF4J_JMH_DOCKER_M2_REPO  Maven local repo inside the container (default: /workspace/.m2_repo_linux_j25)
+  RDF4J_JMH_DOCKER_CONTAINER_NAME Optional reusable container name override
 USAGE
 }
 
@@ -27,6 +28,7 @@ DOCKER_PLATFORM="${RDF4J_JMH_DOCKER_PLATFORM:-}"
 DOCKER_WORKDIR="/workspace"
 INNER_HOME="/tmp/home"
 CONTAINER_M2_REPO="${RDF4J_JMH_DOCKER_M2_REPO:-${DOCKER_WORKDIR}/.m2_repo_linux_j25}"
+DOCKER_CONTAINER_NAME="${RDF4J_JMH_DOCKER_CONTAINER_NAME:-}"
 dry_run=false
 passthrough_args=()
 benchmark_id=""
@@ -491,13 +493,62 @@ print_command() {
         printf '\n'
 }
 
-docker_cmd=(docker run --rm)
+sanitize_container_name_component() {
+        local value="$1"
+
+        value="${value//[^A-Za-z0-9_.-]/-}"
+        value="${value##[-.]}"
+        value="${value%%[-.]}"
+        if [[ -z "${value}" ]]; then
+                value="repo"
+        fi
+
+        printf '%s\n' "${value}"
+}
+
+compute_container_name() {
+        local repo_component hash_input hash_value
+
+        if [[ -n "${DOCKER_CONTAINER_NAME}" ]]; then
+                printf '%s\n' "${DOCKER_CONTAINER_NAME}"
+                return 0
+        fi
+
+        repo_component="$(sanitize_container_name_component "$(basename "${REPO_ROOT}")")"
+        hash_input="${REPO_ROOT}|${DOCKER_IMAGE}|${DOCKER_PLATFORM}|$(id -u)|${CONTAINER_M2_REPO}"
+        if command -v shasum >/dev/null 2>&1; then
+                hash_value="$(printf '%s' "${hash_input}" | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
+        elif command -v sha256sum >/dev/null 2>&1; then
+                hash_value="$(printf '%s' "${hash_input}" | sha256sum | awk '{print substr($1, 1, 12)}')"
+        else
+                echo "Error: Need shasum or sha256sum to derive a reusable benchmark container name." >&2
+                exit 1
+        fi
+
+        printf 'rdf4j-jmh-%s-%s\n' "${repo_component}" "${hash_value}"
+}
+
+container_exists() {
+        local container_name="$1"
+        docker container inspect "${container_name}" >/dev/null 2>&1
+}
+
+container_running() {
+        local container_name="$1"
+        [[ "$(docker container inspect -f '{{.State.Running}}' "${container_name}" 2>/dev/null)" == "true" ]]
+}
+
+docker_create_cmd=(docker create)
+docker_start_cmd=()
+docker_exec_cmd=()
+container_name="$(compute_container_name)"
 
 if [[ -n "${DOCKER_PLATFORM}" ]]; then
-        docker_cmd+=(--platform "${DOCKER_PLATFORM}")
+        docker_create_cmd+=(--platform "${DOCKER_PLATFORM}")
 fi
 
-docker_cmd+=(
+docker_create_cmd+=(
+        --name "${container_name}"
         -v "${REPO_ROOT}:${DOCKER_WORKDIR}"
         -w "${DOCKER_WORKDIR}"
         -e "MAVEN_OPTS=-Dmaven.repo.local=${CONTAINER_M2_REPO} -Duser.home=${INNER_HOME}"
@@ -505,16 +556,39 @@ docker_cmd+=(
         -e "MAVEN_CONFIG=${INNER_HOME}/.m2"
         --user "$(id -u):$(id -g)"
         "${DOCKER_IMAGE}"
+        sleep infinity
+)
+
+docker_start_cmd=(docker start "${container_name}")
+docker_exec_cmd=(
+        docker exec
+        -w "${DOCKER_WORKDIR}"
+        "${container_name}"
         bash -c "mkdir -p \"\$HOME\" \"\$HOME/.m2\" && exec scripts/run-single-benchmark.sh \"\$@\" --enable-jfr --enable-jfr-cpu-times"
         run-single-benchmark-docker.sh
 )
 
-docker_cmd+=("${passthrough_args[@]}")
+docker_exec_cmd+=("${passthrough_args[@]}")
 
 if ${dry_run}; then
-        print_command "${docker_cmd[@]}"
+        echo "# Create reusable benchmark container if missing:"
+        print_command "${docker_create_cmd[@]}"
+        echo "# Start reusable benchmark container if stopped:"
+        print_command "${docker_start_cmd[@]}"
+        echo "# Run the benchmark inside the reusable container:"
+        print_command "${docker_exec_cmd[@]}"
         exit 0
 fi
 
-print_command "${docker_cmd[@]}"
-"${docker_cmd[@]}"
+if ! container_exists "${container_name}"; then
+        print_command "${docker_create_cmd[@]}"
+        "${docker_create_cmd[@]}" >/dev/null
+fi
+
+if ! container_running "${container_name}"; then
+        print_command "${docker_start_cmd[@]}"
+        "${docker_start_cmd[@]}" >/dev/null
+fi
+
+print_command "${docker_exec_cmd[@]}"
+"${docker_exec_cmd[@]}"

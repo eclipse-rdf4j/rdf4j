@@ -6,6 +6,7 @@ usage() {
 Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodName> [options]
 
 Options:
+  --clean                           Force a clean rebuild before packaging
   --dry-run                         Print the Maven and JMH commands without executing them
   --warmup-iterations <number>      Number of warmup iterations (default: 1)
   --measurement-iterations <number> Number of measurement iterations (default: 3)
@@ -26,6 +27,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 module=""
 benchmark_class=""
 benchmark_method=""
+clean_build=false
 dry_run=false
 warmup_iterations=1
 measurement_iterations=3
@@ -41,9 +43,14 @@ warmup_overridden=false
 measurement_overridden=false
 forks_overridden=false
 jfr_notice=""
+mvn_threads="${RDF4J_BENCHMARK_MVN_THREADS:-2C}"
 
 while [[ $# -gt 0 ]]; do
         case "$1" in
+        --clean)
+                clean_build=true
+                shift
+                ;;
         --module|-m)
                 module="$2"
                 shift 2
@@ -196,8 +203,24 @@ if ${enable_jfr}; then
         jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."
 fi
 
-mvn_cmd_parallel=(mvn "-T" "2C" "-pl" "${module}" "-am" "-P" "benchmarks,quick" "-DskipTests" clean package)
-mvn_cmd_single_threaded=(mvn "-pl" "${module}" "-am" "-P" "benchmarks,quick" "-DskipTests" clean package)
+mvn_common_args=(
+        "-Dmaven.repo.local=.m2_repo"
+        "-pl" "${module}"
+        "-am"
+        "-P" "benchmarks,quick"
+)
+mvn_goals=(package)
+if ${clean_build}; then
+        mvn_goals=(clean package)
+fi
+
+mvn_cmd_parallel=(mvn)
+if [[ -n "${mvn_threads}" ]]; then
+        mvn_cmd_parallel+=("-T" "${mvn_threads}")
+fi
+mvn_cmd_parallel+=("${mvn_common_args[@]}" "${mvn_goals[@]}")
+
+mvn_cmd_single_threaded=(mvn "${mvn_common_args[@]}" "${mvn_goals[@]}")
 
 benchmark_pattern="${benchmark_class}.${benchmark_method}"
 jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")
