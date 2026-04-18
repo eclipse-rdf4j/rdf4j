@@ -312,6 +312,34 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
+	void readCommittedCommitAppliesEstimatorUpdates(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var s = vf.createIRI("urn:rc:s");
+		var p = vf.createIRI("urn:rc:p");
+		var o = vf.createIRI("urn:rc:o");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.setRebuildAllowedSupplier(() -> false);
+
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.READ_COMMITTED);
+				conn.addStatement(s, p, o);
+				conn.commit();
+			}
+
+			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 0.0d,
+					"Estimator should track committed READ_COMMITTED additions");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void noneIsolationAppliesEstimatorUpdatesAcrossSinkFlushes(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s = vf.createIRI("urn:s");

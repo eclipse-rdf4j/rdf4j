@@ -2180,7 +2180,9 @@ public class SketchBasedJoinEstimator {
 //							}
 
 							if (true) {
-								System.out.println("RdfJoinEstimator: Rebuilding "+(rebuildIntoA ? "bufA" : "bufB")+", seen "+seen / 1000 / 1000+" million triples so far. Elapsed: "+((System.currentTimeMillis() - l) / 1000)+" s.");
+								System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB")
+										+ ", seen " + seen / 1000 / 1000 + " million triples so far. Elapsed: "
+										+ ((System.currentTimeMillis() - l) / 1000) + " s.");
 
 							}
 
@@ -2322,31 +2324,7 @@ public class SketchBasedJoinEstimator {
 		seenTriples = approxStoreSize.incrementAndGet();
 
 		try {
-			IngestEvent event = toIngestEvent(s, p, o, c, false);
-
-			if (event != null) {
-				while (true) {
-					long epoch = rebuildEpoch.get();
-					if ((epoch & 1L) != 0L) {
-						synchronized (bufA) {
-							ingest(bufA, event);
-						}
-						synchronized (bufB) {
-							ingest(bufB, event);
-						}
-						break;
-					}
-
-					State target = current;
-					synchronized (target) {
-						if (rebuildEpoch.get() != epoch) {
-							continue;
-						}
-						ingest(target, event);
-						break;
-					}
-				}
-			}
+			ingestIncremental(s, p, o, c, false);
 
 		} catch (MemoryPressureAbort | OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator update; unloading sketches", oom);
@@ -6235,17 +6213,21 @@ public class SketchBasedJoinEstimator {
 
 	private void refreshCacheMetadataAccounting() {
 		synchronized (sketchCacheLock) {
-			int cacheVersion = cacheDirectory.heapBytesVersion();
-			int residentVersion = residentLru.heapBytesVersion();
-			if (cacheVersion == cacheDirectoryMetadataVersion && residentVersion == residentLruMetadataVersion) {
-				return;
-			}
-			long actualBytes = cacheDirectory.estimatedHeapBytes() + residentLru.estimatedHeapBytes();
-			long trackedBytes = Math.max(0L, actualBytes - baselineCacheMetadataBytes);
-			cacheDirectoryMetadataVersion = cacheVersion;
-			residentLruMetadataVersion = residentVersion;
-			memoryRegistry.replace(MemoryCategory.CACHE_METADATA, MEMORY_OWNER_CACHE_METADATA, trackedBytes);
+			refreshCacheMetadataAccountingLocked();
 		}
+	}
+
+	private void refreshCacheMetadataAccountingLocked() {
+		int cacheVersion = cacheDirectory.heapBytesVersion();
+		int residentVersion = residentLru.heapBytesVersion();
+		if (cacheVersion == cacheDirectoryMetadataVersion && residentVersion == residentLruMetadataVersion) {
+			return;
+		}
+		long actualBytes = cacheDirectory.estimatedHeapBytes() + residentLru.estimatedHeapBytes();
+		long trackedBytes = Math.max(0L, actualBytes - baselineCacheMetadataBytes);
+		cacheDirectoryMetadataVersion = cacheVersion;
+		residentLruMetadataVersion = residentVersion;
+		memoryRegistry.replace(MemoryCategory.CACHE_METADATA, MEMORY_OWNER_CACHE_METADATA, trackedBytes);
 	}
 
 	DebugMemorySnapshot debugMemorySnapshot() {
@@ -6503,20 +6485,24 @@ public class SketchBasedJoinEstimator {
 	private void touchResidentSketch(State state, int entryId, UpdateSketch sketch, boolean enforceBudget) {
 		byte slot = slotByte(slotOf(state));
 		long bytes = estimatedSketchBytes(sketch);
+		boolean residentBytesChanged = true;
 		synchronized (sketchCacheLock) {
 			int nodeId = cacheDirectory.residentNode(entryId, slot);
 			if (nodeId == -1) {
 				int createdNodeId = residentLru.add(entryId, slot, bytes);
 				cacheDirectory.setResidentNode(entryId, slot, createdNodeId);
 				residentSketchBytes += bytes;
+				refreshCacheMetadataAccountingLocked();
 			} else {
 				long previousBytes = residentLru.bytes(nodeId);
 				residentLru.touch(nodeId, bytes);
 				residentSketchBytes += (bytes - previousBytes);
+				residentBytesChanged = bytes != previousBytes;
 			}
 		}
-		replaceTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId), bytes);
-		refreshCacheMetadataAccounting();
+		if (residentBytesChanged) {
+			replaceTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId), bytes);
+		}
 		if (enforceBudget) {
 			enforceSketchBudget();
 		}

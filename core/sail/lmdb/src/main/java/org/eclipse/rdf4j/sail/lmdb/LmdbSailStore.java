@@ -196,8 +196,10 @@ class LmdbSailStore implements SailStore {
 		final long[] predicates;
 		final long[] objects;
 		final long[] contexts;
+		final Statement[] statements;
 		final boolean explicit;
 		final int capacity;
+		Consumer<Statement> estimatorCallback;
 		int size;
 
 		BulkAddQuadsOperation(boolean explicit) {
@@ -207,6 +209,7 @@ class LmdbSailStore implements SailStore {
 			this.predicates = new long[capacity];
 			this.objects = new long[capacity];
 			this.contexts = new long[capacity];
+			this.statements = new Statement[capacity];
 		}
 
 		void add(long subject, long predicate, long object, long context) {
@@ -240,11 +243,20 @@ class LmdbSailStore implements SailStore {
 			}
 			if (size < capacity) {
 				for (int i = 0; i < size; i++) {
-					tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i], explicit);
+					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
+							explicit);
+					if (added && explicit && estimatorCallback != null) {
+						estimatorCallback.accept(statements[i]);
+					}
 				}
 				return;
 			}
-			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit);
+			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
+					statementIndex -> {
+						if (explicit && estimatorCallback != null) {
+							estimatorCallback.accept(statements[statementIndex]);
+						}
+					});
 		}
 	}
 
@@ -827,6 +839,7 @@ class LmdbSailStore implements SailStore {
 				Resource previousSubject = null;
 				long previousSubjectId = LmdbValue.UNKNOWN_ID;
 				BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit);
+				bulk.estimatorCallback = this::queueEstimatorAdd;
 
 				for (Statement statement : approved) {
 					last = statement;
@@ -856,6 +869,7 @@ class LmdbSailStore implements SailStore {
 					}
 
 					int batchIndex = bulk.size - 1;
+					bulk.statements[batchIndex] = valueStore.createStatement(subj, pred, obj, context);
 
 					Long predicateId = predicateCache.get(pred);
 					if (predicateId == null) {
@@ -879,6 +893,7 @@ class LmdbSailStore implements SailStore {
 					if (bulk.isFull()) {
 						submitOperation(bulk);
 						bulk = new BulkAddQuadsOperation(explicit);
+						bulk.estimatorCallback = this::queueEstimatorAdd;
 					}
 				}
 
