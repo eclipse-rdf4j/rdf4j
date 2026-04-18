@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -40,7 +41,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private final EvaluationStrategy strategy;
 	private final Function<BindingSet, BindingSet> retain;
 	private final Filter filterNode;
+	private final EvaluationStatistics evaluationStatistics;
 	private final boolean runtimeTelemetryEnabled;
+	private final boolean recordFilterOutcomes;
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
@@ -49,9 +52,16 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private long exprTrueCountActual;
 	private long exprFalseCountActual;
 	private long exprEvalTimeNanosActual;
+	private long recordedPassedCount;
+	private long recordedFilteredCount;
 
 	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
+		return supply(filter, strategy, context, null);
+	}
+
+	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
+			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
 		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
 		QueryValueEvaluationStep ves;
 		try {
@@ -68,7 +78,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			retain = Function.identity();
 		}
 
-		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain);
+		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics);
 	}
 
 	/*--------------*
@@ -77,9 +87,16 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter, QueryValueEvaluationStep condition,
 			EvaluationStrategy strategy) throws QueryEvaluationException {
+		this(filter, iter, condition, strategy, null);
+	}
+
+	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter, QueryValueEvaluationStep condition,
+			EvaluationStrategy strategy, EvaluationStatistics evaluationStatistics) throws QueryEvaluationException {
 		super(iter);
 		this.filterNode = filter;
+		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filter != null && filter.isRuntimeTelemetryEnabled();
+		this.recordFilterOutcomes = filter != null && evaluationStatistics != null;
 		this.condition = condition;
 		this.strategy = strategy;
 		if (!isPartOfSubQuery(filter)) {
@@ -94,11 +111,14 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	}
 
 	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
-			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain)
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
+			EvaluationStatistics evaluationStatistics)
 			throws QueryEvaluationException {
 		super(iter);
 		this.filterNode = filterNode;
+		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filterNode != null && filterNode.isRuntimeTelemetryEnabled();
+		this.recordFilterOutcomes = filterNode != null && evaluationStatistics != null;
 		this.condition = condition;
 		this.strategy = strategy;
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
@@ -137,38 +157,47 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
-		if (!runtimeTelemetryEnabled) {
-			try {
-				BindingSet scopeBindings = this.retain.apply(bindings);
-				return strategy.isTrue(condition, scopeBindings);
-			} catch (ValueExprEvaluationException e) {
-				return false;
-			}
+		if (runtimeTelemetryEnabled) {
+			sourceRowsScannedActual++;
+			exprEvalCountActual++;
 		}
-
-		sourceRowsScannedActual++;
-		exprEvalCountActual++;
-		long started = System.nanoTime();
+		long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 		try {
 
 			// Limit the bindings to the ones that are in scope for this filter
 			BindingSet scopeBindings = this.retain.apply(bindings);
 			boolean accepted = strategy.isTrue(condition, scopeBindings);
-			if (accepted) {
-				sourceRowsMatchedActual++;
-				exprTrueCountActual++;
-			} else {
-				sourceRowsFilteredActual++;
-				exprFalseCountActual++;
+			if (runtimeTelemetryEnabled) {
+				if (accepted) {
+					sourceRowsMatchedActual++;
+					exprTrueCountActual++;
+				} else {
+					sourceRowsFilteredActual++;
+					exprFalseCountActual++;
+				}
+			}
+			if (recordFilterOutcomes) {
+				if (accepted) {
+					recordedPassedCount++;
+				} else {
+					recordedFilteredCount++;
+				}
 			}
 			return accepted;
 		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
-			sourceRowsFilteredActual++;
-			predicateErrorCountActual++;
+			if (runtimeTelemetryEnabled) {
+				sourceRowsFilteredActual++;
+				predicateErrorCountActual++;
+			}
+			if (recordFilterOutcomes) {
+				recordedFilteredCount++;
+			}
 			return false;
 		} finally {
-			exprEvalTimeNanosActual += Math.max(0L, System.nanoTime() - started);
+			if (runtimeTelemetryEnabled) {
+				exprEvalTimeNanosActual += Math.max(0L, System.nanoTime() - started);
+			}
 		}
 	}
 
@@ -187,6 +216,14 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected void handleClose() {
+		if (filterNode != null && recordFilterOutcomes
+				&& (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
+			try {
+				evaluationStatistics.recordFilterOutcome(filterNode, recordedPassedCount, recordedFilteredCount);
+			} catch (RuntimeException e) {
+				// Estimation feedback must never break query evaluation.
+			}
+		}
 		if (filterNode != null && runtimeTelemetryEnabled) {
 			filterNode.setLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL,
 					Math.max(0L, filterNode.getLongMetricActual(TelemetryMetricNames.PREDICATE_ERROR_COUNT_ACTUAL))

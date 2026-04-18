@@ -22,12 +22,20 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -39,6 +47,9 @@ import sun.misc.Unsafe;
 class LmdbSailStoreEstimatorPersistenceTest {
 
 	private static final String SNAPSHOT_FILE = "join-estimator.rjes";
+	private static final String FILTER_SNAPSHOT_FILE = SNAPSHOT_FILE + ".filters";
+	private static final String LEARNED_FILTER_QUERY = "SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } "
+			+ "?s <urn:test:name> ?name . FILTER(?name = ?target) }";
 
 	@Test
 	void closeWritesEstimatorSnapshotAndReopensLazy(@TempDir File dataDir) throws Exception {
@@ -71,6 +82,69 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			loadedField.setAccessible(true);
 			assertFalse(loadedField.getBoolean(estimator), "Expected lazy startup with unloaded sketches");
 			assertDoesNotThrow(estimator::isReady);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void closeWritesFilterSelectivitySidecarAndReloadsItAfterRestart(@TempDir File dataDir) throws Exception {
+		Filter learnedFilter = firstFilter(LEARNED_FILTER_QUERY);
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		double learnedPassRatioBeforeShutdown;
+		try {
+			loadNameData(repository);
+			learnFilterPassRatio(repository);
+
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			learnedPassRatioBeforeShutdown = statistics.estimateFilterPassRatio(learnedFilter);
+			assertTrue(learnedPassRatioBeforeShutdown > 0.0d && learnedPassRatioBeforeShutdown < 1.0d,
+					"Expected runtime evaluation to populate learned filter selectivity before shutdown");
+		} finally {
+			repository.shutDown();
+		}
+
+		assertTrue(new File(dataDir, FILTER_SNAPSHOT_FILE).isFile(),
+				"Expected filter selectivity sidecar after LMDB shutdown");
+
+		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		reopened.init();
+		try {
+			EvaluationStatistics statistics = reopened.getBackingStore().getEvaluationStatistics();
+			assertEquals(learnedPassRatioBeforeShutdown, statistics.estimateFilterPassRatio(learnedFilter), 0.00001d,
+					"Expected learned filter selectivity to survive LMDB restart");
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void ignoresFilterSelectivitySidecarWhenEstimatorSnapshotRevisionChanges(@TempDir File dataDir) throws Exception {
+		Filter learnedFilter = firstFilter(LEARNED_FILTER_QUERY);
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			loadNameData(repository);
+			learnFilterPassRatio(repository);
+		} finally {
+			repository.shutDown();
+		}
+
+		Path snapshot = dataDir.toPath().resolve(SNAPSHOT_FILE);
+		FileTime originalTimestamp = Files.getLastModifiedTime(snapshot);
+		Files.setLastModifiedTime(snapshot, FileTime.fromMillis(originalTimestamp.toMillis() + 5_000L));
+
+		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		reopened.init();
+		try {
+			EvaluationStatistics statistics = reopened.getBackingStore().getEvaluationStatistics();
+			assertTrue(statistics.estimateFilterPassRatio(learnedFilter) < 0.0d,
+					"Expected mismatched estimator snapshot revision to invalidate persisted filter selectivity");
 		} finally {
 			reopened.shutDown();
 		}
@@ -309,6 +383,43 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		maxField.setAccessible(true);
 		minField.setLong(estimator, minBytes);
 		maxField.setLong(estimator, maxBytes);
+	}
+
+	private static void loadNameData(SailRepository repository) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI name = vf.createIRI("urn:test:name");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 8; i++) {
+				connection.add(vf.createIRI("urn:test:user:" + i), name, vf.createLiteral("u" + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void learnFilterPassRatio(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, LEARNED_FILTER_QUERY).evaluate()) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		}
+	}
+
+	private static Filter firstFilter(String query) {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		Filter[] found = new Filter[1];
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
 	}
 
 	private static void writeLegacySnapshot(Path snapshot) throws Exception {

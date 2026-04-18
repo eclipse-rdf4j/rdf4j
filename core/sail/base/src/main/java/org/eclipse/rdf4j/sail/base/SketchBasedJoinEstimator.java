@@ -323,6 +323,7 @@ public class SketchBasedJoinEstimator {
 	private volatile boolean running;
 	private Thread refresher;
 	private volatile JoinStatsProvider learnedStatsProvider;
+	private volatile PatternFilterSamplingEstimator patternFilterSamplingEstimator;
 	private volatile boolean robustSynopsisFresh;
 	private volatile int lastRobustSynopsisSpillSegmentCount;
 	private volatile SketchPlannerPath lastJoinOrderPlannerPath = SketchPlannerPath.ROBUST_NOT_READY;
@@ -1655,7 +1656,7 @@ public class SketchBasedJoinEstimator {
 	private long residentSketchBytes;
 
 	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
-	private static final int REBUILD_BATCH_SIZE = 4*1024 * 1024;
+	private static final int REBUILD_BATCH_SIZE = 4 * 1024 * 1024;
 	private final Object incrementalBufferLock = new Object();
 	private IngestEvent[] incrementalBuffer = new IngestEvent[INCREMENTAL_BATCH_SIZE * 2];
 	private int incrementalBufferCount;
@@ -1930,6 +1931,15 @@ public class SketchBasedJoinEstimator {
 		this.learnedStatsProvider = learnedStatsProvider;
 	}
 
+	public void setPatternFilterSamplingEstimator(PatternFilterSamplingEstimator patternFilterSamplingEstimator) {
+		this.patternFilterSamplingEstimator = patternFilterSamplingEstimator;
+	}
+
+	@FunctionalInterface
+	public interface PatternFilterSamplingEstimator {
+		double estimateFilterPassRatio(Filter filter, StatementPattern pattern);
+	}
+
 	/**
 	 * Install a store-provided gate for background rebuilds. Returning {@code false} pauses refresh-thread rebuild
 	 * attempts until the gate opens again.
@@ -2120,10 +2130,11 @@ public class SketchBasedJoinEstimator {
 							// robustSpillBuffer.addStatements(robustQuadBatch, rebuildBatchSize);
 							// Arrays.fill(rebuildBatch, 0, rebuildBatchSize, null);
 							rebuildBatchSize = 0;
-								System.out.println(
-										"RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
-												+ seen/1000/1000 + " million triples so far. Elapsed: " + (System.currentTimeMillis() - l) / 1000
-												+ " s.");
+							System.out.println(
+									"RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB") + ", seen "
+											+ seen / 1000 / 1000 + " million triples so far. Elapsed: "
+											+ (System.currentTimeMillis() - l) / 1000
+											+ " s.");
 
 						}
 //						if (seen > 0 && seen % ROBUST_HEADROOM_CHECK_INTERVAL == 0
@@ -2156,7 +2167,6 @@ public class SketchBasedJoinEstimator {
 //							break;
 //						}
 //					}
-
 
 				}
 				if (seen > 0) {
@@ -2267,27 +2277,27 @@ public class SketchBasedJoinEstimator {
 		try {
 			ingestIncremental(s, p, o, c, false);
 
-				while (true) {
-					long epoch = rebuildEpoch.get();
-					if ((epoch & 1L) != 0L) {
-						synchronized (bufA) {
-							ingest(bufA, st, false);
-						}
-						synchronized (bufB) {
-							ingest(bufB, st, false);
-						}
-						break;
+			while (true) {
+				long epoch = rebuildEpoch.get();
+				if ((epoch & 1L) != 0L) {
+					synchronized (bufA) {
+						ingest(bufA, st, false);
 					}
-
-					State target = current;
-					synchronized (target) {
-						if (rebuildEpoch.get() != epoch) {
-							continue;
-						}
-						ingest(target, st, false);
-						break;
+					synchronized (bufB) {
+						ingest(bufB, st, false);
 					}
+					break;
 				}
+
+				State target = current;
+				synchronized (target) {
+					if (rebuildEpoch.get() != epoch) {
+						continue;
+					}
+					ingest(target, st, false);
+					break;
+				}
+			}
 
 		} catch (MemoryPressureAbort | OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator update; unloading sketches", oom);
@@ -2354,7 +2364,8 @@ public class SketchBasedJoinEstimator {
 			ensureIncrementalBufferCapacity(incrementalBufferCount + 1);
 			incrementalBuffer[incrementalBufferCount++] = event;
 			if (incrementalBufferCount >= INCREMENTAL_BATCH_SIZE) {
-				System.out.println("RdfJoinEstimator: Flushing incremental batch of " + incrementalBufferCount + " events. Seen triples: "
+				System.out.println("RdfJoinEstimator: Flushing incremental batch of " + incrementalBufferCount
+						+ " events. Seen triples: "
 						+ seenTriples);
 				batch = drainIncrementalBufferLocked();
 				batchSize = batch.length;
@@ -3517,16 +3528,6 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	private static Method resolveAccessibleMethod(Class<?> owner, String methodName, Class<?>... parameterTypes) {
-		try {
-			Method method = owner.getDeclaredMethod(methodName, parameterTypes);
-			method.setAccessible(true);
-			return method;
-		} catch (NoSuchMethodException e) {
-			throw new ExceptionInInitializerError(e);
-		}
-	}
-
 	private static Field resolveHeapAlphaField(String fieldName) {
 		try {
 			Class<?> heapAlphaClass = Class.forName("org.apache.datasketches.theta.HeapAlphaSketch");
@@ -3552,61 +3553,6 @@ public class SketchBasedJoinEstimator {
 				throw (Error) cause;
 			}
 			throw new IOException("Unable to apply raw sketch hash", cause);
-		}
-	}
-
-	private static long invokeLongMethod(Method method, Object target) {
-		try {
-			Object value = method.invoke(target);
-			if (!(value instanceof Number number)) {
-				throw new IllegalStateException("Expected numeric result from " + method);
-			}
-			return Math.max(0L, number.longValue());
-		} catch (IllegalAccessException e) {
-			throw new IllegalStateException("Unable to invoke " + method, e);
-		} catch (InvocationTargetException e) {
-			Throwable cause = e.getCause();
-			if (cause instanceof RuntimeException runtimeException) {
-				throw runtimeException;
-			}
-			if (cause instanceof Error error) {
-				throw error;
-			}
-			throw new IllegalStateException("Unable to invoke " + method, cause);
-		}
-	}
-
-	private static void invokeVoidMethod(Method method, Object target, Object... args) {
-		try {
-			method.invoke(target, args);
-		} catch (IllegalAccessException e) {
-			throw new IllegalStateException("Unable to invoke " + method, e);
-		} catch (InvocationTargetException e) {
-			Throwable cause = e.getCause();
-			if (cause instanceof RuntimeException runtimeException) {
-				throw runtimeException;
-			}
-			if (cause instanceof Error error) {
-				throw error;
-			}
-			throw new IllegalStateException("Unable to invoke " + method, cause);
-		}
-	}
-
-	private static Object invokeObjectMethod(Method method, Object target, Object... args) {
-		try {
-			return method.invoke(target, args);
-		} catch (IllegalAccessException e) {
-			throw new IllegalStateException("Unable to invoke " + method, e);
-		} catch (InvocationTargetException e) {
-			Throwable cause = e.getCause();
-			if (cause instanceof RuntimeException runtimeException) {
-				throw runtimeException;
-			}
-			if (cause instanceof Error error) {
-				throw error;
-			}
-			throw new IllegalStateException("Unable to invoke " + method, cause);
 		}
 	}
 
@@ -3722,6 +3668,14 @@ public class SketchBasedJoinEstimator {
 	}
 
 	double filterMultiplierForSketchOptimizer(Filter filter, StatementPattern pattern) {
+		return resolveFilterMultiplier(filter, pattern);
+	}
+
+	public double estimateFilterPassRatio(Filter filter) {
+		StatementPattern pattern = basePatternForFilter(filter);
+		if (pattern == null) {
+			return -1.0d;
+		}
 		return resolveFilterMultiplier(filter, pattern);
 	}
 
@@ -5287,23 +5241,20 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private double resolveFilterMultiplier(Filter filter, StatementPattern pattern) {
-		if (!FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
-			return 1.0d;
-		}
-		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern);
-		if (learnedMultiplier > 0.0d) {
-			return learnedMultiplier;
-		}
-		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
-		if (heuristicMultiplier > 0.0d) {
-			return heuristicMultiplier;
-		}
-		return 1.0d;
+		double knownMultiplier = estimateKnownFilterMultiplier(filter, pattern);
+		return knownMultiplier > 0.0d ? knownMultiplier : 1.0d;
 	}
 
 	private double resolveFilterMultiplier(Filter filter, TuplePlanEstimate estimate) {
 		if (filter.getCondition() == null || estimate == null) {
 			return 1.0d;
+		}
+		StatementPattern patternLocalBase = basePatternForFilter(filter);
+		if (patternLocalBase != null) {
+			double knownMultiplier = estimateKnownFilterMultiplier(filter, patternLocalBase);
+			if (knownMultiplier > 0.0d) {
+				return knownMultiplier;
+			}
 		}
 		Set<String> conditionVars = VarNameCollector.process(filter.getCondition());
 		if (conditionVars.isEmpty()) {
@@ -5338,6 +5289,39 @@ public class SketchBasedJoinEstimator {
 			return normalizeFilterMultiplier(ratio);
 		}
 		return -1.0d;
+	}
+
+	private double resolveSampledFilterMultiplier(Filter filter, StatementPattern pattern) {
+		PatternFilterSamplingEstimator samplingEstimator = patternFilterSamplingEstimator;
+		if (samplingEstimator == null || filter == null || filter.getCondition() == null || pattern == null) {
+			return -1.0d;
+		}
+		double ratio = samplingEstimator.estimateFilterPassRatio(filter, pattern);
+		return isValidFilterMultiplier(ratio) ? normalizeFilterMultiplier(ratio) : -1.0d;
+	}
+
+	private double estimateKnownFilterMultiplier(Filter filter, StatementPattern pattern) {
+		if (filter == null || filter.getCondition() == null || pattern == null
+				|| !FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
+			return -1.0d;
+		}
+		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern);
+		if (learnedMultiplier > 0.0d) {
+			return learnedMultiplier;
+		}
+		double sampledMultiplier = resolveSampledFilterMultiplier(filter, pattern);
+		if (sampledMultiplier > 0.0d) {
+			return sampledMultiplier;
+		}
+		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
+		if (heuristicMultiplier > 0.0d) {
+			return heuristicMultiplier;
+		}
+		return -1.0d;
+	}
+
+	private StatementPattern basePatternForFilter(Filter filter) {
+		return FilterSelectivityKeys.patternLocalBaseForFilter(filter);
 	}
 
 	private double estimateHeuristicFilterMultiplier(Filter filter, StatementPattern pattern) {

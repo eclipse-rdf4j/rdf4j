@@ -86,6 +86,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	@Experimental
 	public static boolean REORDER_JOINS_WITH_SKETCHES = true;
 
+	private static final double MIN_NORMALIZED_JOIN_ROWS = 1.0e-9d;
+	private static final double AVOIDABLE_CROSS_JOIN_PENALTY = 10.0d;
+	private static final double UNANCHORED_INITIAL_PAIR_PENALTY = 5.0d;
+	private static final double SHARED_VAR_BONUS_PER_VAR = 1.7d;
+	private static final double MAX_SHARED_VAR_BONUS = 3.4d;
+	private static final double BOUND_ANCHOR_BONUS_PER_VAR = 1.4d;
+	private static final double MAX_BOUND_ANCHOR_BONUS = 2.8d;
+	private static final double CHEAP_FILTER_BONUS_PER_FILTER = 1.6d;
+	private static final double MAX_CHEAP_FILTER_BONUS = 2.56d;
+	private static final double EXPENSIVE_FILTER_BONUS_PER_FILTER = 1.1d;
+	private static final double MAX_EXPENSIVE_FILTER_BONUS = 1.21d;
+	private static final double MIN_UNLOCKED_FILTER_PASS_RATIO = 0.25d;
+
 	public enum JoinOrderStrategy {
 		GREEDY,
 		DYNAMIC_PROGRAMMING,
@@ -466,12 +479,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			List<DeferredFilter> pendingFilters = new ArrayList<>(orderedJoinSegment.deferredFilters);
 			Set<String> availableVars = new HashSet<>(orderedJoinSegment.boundBeforeSegment);
 
-			TupleExpr root = orderedJoinArgs.removeFirst();
+			TupleExpr root = applyCompatibleLocalDeferredFilters(orderedJoinArgs.removeFirst(), pendingFilters);
 			availableVars.addAll(root.getBindingNames());
 			root = applyCompatibleDeferredFilters(root, pendingFilters, availableVars);
 
 			while (!orderedJoinArgs.isEmpty()) {
-				TupleExpr next = orderedJoinArgs.removeFirst();
+				TupleExpr next = applyCompatibleLocalDeferredFilters(orderedJoinArgs.removeFirst(), pendingFilters);
 				root = createJoinWithEstimatedResultSize(root, next);
 				availableVars.addAll(next.getBindingNames());
 				root = applyCompatibleDeferredFilters(root, pendingFilters, availableVars);
@@ -598,19 +611,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			List<TupleExpr> remaining = new ArrayList<>(joinGroup);
 			Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(remaining.size());
 
-			Map<TupleExpr, Double> cardinalityMap = Collections.emptyMap();
+			Map<TupleExpr, Double> cardinalityMap = new IdentityHashMap<>(remaining.size());
 			Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
 
 			for (TupleExpr tupleExpr : remaining) {
 				double cardinality = statistics.getCardinality(tupleExpr);
+				double effectiveCardinality = estimateTupleExprRowsWithLocalDeferredFilters(tupleExpr, deferredFilters,
+						cardinality);
 
-				tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));
-				if (!hasCachedCardinality(tupleExpr)) {
-					if (cardinalityMap.isEmpty()) {
-						cardinalityMap = new HashMap<>();
-					}
-					cardinalityMap.put(tupleExpr, cardinality);
-				}
+				tupleExpr.setResultSizeEstimate(Math.max(effectiveCardinality, tupleExpr.getResultSizeEstimate()));
+				cardinalityMap.put(tupleExpr, effectiveCardinality);
 				if (tupleExpr instanceof ZeroLengthPath) {
 					varsMap.put(tupleExpr, ((ZeroLengthPath) tupleExpr).getVarList());
 				} else {
@@ -633,7 +643,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				boundVars.addAll(tupleExpr.getBindingNames());
 			}
 
-			if (REORDER_JOINS_WITH_SKETCHES && statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+			if (REORDER_JOINS_WITH_SKETCHES && orderedJoinArgs.size() > 2
+					&& (statistics.supportsJoinEstimation()
+							|| (!deferredFilters.isEmpty() && statistics.supportsFilterSelectivityCosting()))) {
 				orderedJoinArgs = new ArrayDeque<>(
 						reorderSegment(new ArrayList<>(orderedJoinArgs), boundBeforeSegment, deferredFilters));
 			}
@@ -818,36 +830,29 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> remaining = new ArrayList<>(segment);
 			JoinCardinalityCache cardinalityCache = new JoinCardinalityCache();
-			Map<String, List<TupleExpr>> tupleExprsByVariable = buildTupleExprsByVariable(segment);
+			Map<TupleExpr, Integer> originalOrder = new IdentityHashMap<>(segment.size());
+			for (int i = 0; i < segment.size(); i++) {
+				originalOrder.put(segment.get(i), i);
+			}
 			List<TupleExpr> ordered = new ArrayList<>(remaining.size());
 			Set<String> prefixBindingNames = new HashSet<>(outerBoundVars);
+			boolean hasConnectedInitialPair = hasConnectedInitialPair(remaining);
+			boolean hasAnchoredInitialPair = hasAnchoredInitialPair(remaining, outerBoundVars);
 
 			int bestLeftIndex = 0;
 			int bestRightIndex = 1;
-			int bestCheapFilterUnlocks = Integer.MIN_VALUE;
-			int bestTotalFilterUnlocks = Integer.MIN_VALUE;
-			int bestOuterBindingImpact = Integer.MIN_VALUE;
-			int bestSharedVarCount = Integer.MIN_VALUE;
-			double bestCost = Double.POSITIVE_INFINITY;
+			GreedyChoiceScore bestInitialScore = null;
 			for (int leftIndex = 0; leftIndex < remaining.size() - 1; leftIndex++) {
 				for (int rightIndex = leftIndex + 1; rightIndex < remaining.size(); rightIndex++) {
 					TupleExpr left = remaining.get(leftIndex);
 					TupleExpr right = remaining.get(rightIndex);
-					Set<String> availableVars = getAvailableVars(outerBoundVars, left, right);
-					int cheapFilterUnlocks = countCompatibleFilters(deferredFilters, availableVars, 0);
-					int totalFilterUnlocks = countCompatibleFilters(deferredFilters, availableVars);
-					int sharedVarCount = sharedJoinVariableCount(left, right);
-					int outerBindingImpact = estimateOuterBindingImpact(left, right, outerBoundVars,
-							tupleExprsByVariable);
-					double joinCost = cardinalityCache.get(left, right);
-					if (isBetterGreedyChoice(cheapFilterUnlocks, totalFilterUnlocks, outerBindingImpact, sharedVarCount,
-							joinCost, bestCheapFilterUnlocks, bestTotalFilterUnlocks, bestOuterBindingImpact,
-							bestSharedVarCount, bestCost)) {
-						bestCheapFilterUnlocks = cheapFilterUnlocks;
-						bestTotalFilterUnlocks = totalFilterUnlocks;
-						bestOuterBindingImpact = outerBindingImpact;
-						bestSharedVarCount = sharedVarCount;
-						bestCost = joinCost;
+					GreedyChoiceMetrics metrics = buildInitialGreedyChoiceMetrics(left, right, outerBoundVars,
+							deferredFilters, cardinalityCache, hasConnectedInitialPair, hasAnchoredInitialPair);
+					GreedyChoiceScore score = scoreGreedyChoice(metrics, originalOrder.get(left),
+							originalOrder.get(right));
+					traceGreedyChoice("initial", left, right, metrics, score);
+					if (bestInitialScore == null || compareGreedyChoices(score, bestInitialScore) < 0) {
+						bestInitialScore = score;
 						bestLeftIndex = leftIndex;
 						bestRightIndex = rightIndex;
 					}
@@ -856,49 +861,28 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			TupleExpr left = remaining.remove(bestLeftIndex);
 			TupleExpr right = remaining.remove(bestRightIndex > bestLeftIndex ? bestRightIndex - 1 : bestRightIndex);
-			if (left.getResultSizeEstimate() > 0 && right.getResultSizeEstimate() > 0) {
-				if (left.getResultSizeEstimate() > right.getResultSizeEstimate()) {
-					var temp = left;
-					left = right;
-					right = temp;
-				}
-			}
+			double joinCost = cardinalityCache.get(left, right);
+			TupleExpr[] orderedInitialPair = orderInitialPairByEffectiveLeafRows(left, right, deferredFilters);
+			left = orderedInitialPair[0];
+			right = orderedInitialPair[1];
 			ordered.add(left);
 			ordered.add(right);
 			prefixBindingNames.addAll(left.getBindingNames());
 			prefixBindingNames.addAll(right.getBindingNames());
 			List<DeferredFilter> pendingDeferredFilters = removeCompatibleFilters(deferredFilters, prefixBindingNames);
+			TupleExpr prefixForEstimation = new Join(left.clone(), right.clone());
 
 			while (!remaining.isEmpty()) {
 				TupleExpr bestCandidate = null;
-				int bestCandidateCheapFilterUnlocks = Integer.MIN_VALUE;
-				int bestCandidateTotalFilterUnlocks = Integer.MIN_VALUE;
-				int bestCandidateOuterBindingImpact = Integer.MIN_VALUE;
-				int bestCandidateSharedVarCount = Integer.MIN_VALUE;
-				double lowestJoinCost = Double.POSITIVE_INFINITY;
+				GreedyChoiceScore bestCandidateScore = null;
+				boolean hasConnectedCandidate = hasConnectedCandidate(remaining, prefixBindingNames);
 				for (TupleExpr candidate : remaining) {
-					Set<String> candidateAvailableVars = getAvailableVars(prefixBindingNames, candidate);
-					int cheapFilterUnlocks = countCompatibleFilters(pendingDeferredFilters, candidateAvailableVars, 0);
-					int totalFilterUnlocks = countCompatibleFilters(pendingDeferredFilters, candidateAvailableVars);
-					int sharedVarCount = sharedJoinVariableCount(candidate, prefixBindingNames);
-					double candidateCost = Double.POSITIVE_INFINITY;
-					for (TupleExpr existing : ordered) {
-						if (!sharesJoinVariable(existing, candidate)) {
-							continue;
-						}
-						candidateCost = Math.min(candidateCost, cardinalityCache.get(existing, candidate));
-					}
-					int candidateOuterBindingImpact = estimateOuterBindingImpact(candidate, outerBoundVars,
-							tupleExprsByVariable);
-					if (bestCandidate == null || isBetterGreedyChoice(cheapFilterUnlocks, totalFilterUnlocks,
-							candidateOuterBindingImpact, sharedVarCount, candidateCost,
-							bestCandidateCheapFilterUnlocks, bestCandidateTotalFilterUnlocks,
-							bestCandidateOuterBindingImpact, bestCandidateSharedVarCount, lowestJoinCost)) {
-						bestCandidateCheapFilterUnlocks = cheapFilterUnlocks;
-						bestCandidateTotalFilterUnlocks = totalFilterUnlocks;
-						bestCandidateOuterBindingImpact = candidateOuterBindingImpact;
-						bestCandidateSharedVarCount = sharedVarCount;
-						lowestJoinCost = candidateCost;
+					GreedyChoiceMetrics metrics = buildNextGreedyChoiceMetrics(prefixForEstimation, prefixBindingNames,
+							candidate, pendingDeferredFilters, cardinalityCache, hasConnectedCandidate);
+					GreedyChoiceScore score = scoreGreedyChoice(metrics, originalOrder.get(candidate), -1);
+					traceGreedyChoice("expand", prefixForEstimation, candidate, metrics, score);
+					if (bestCandidateScore == null || compareGreedyChoices(score, bestCandidateScore) < 0) {
+						bestCandidateScore = score;
 						bestCandidate = candidate;
 					}
 				}
@@ -910,6 +894,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				ordered.addLast(bestCandidate);
 				prefixBindingNames.addAll(bestCandidate.getBindingNames());
 				pendingDeferredFilters = removeCompatibleFilters(pendingDeferredFilters, prefixBindingNames);
+				prefixForEstimation = new Join(prefixForEstimation, bestCandidate.clone());
 			}
 
 			if (log.isTraceEnabled()) {
@@ -918,46 +903,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return ordered;
-		}
-
-		private Map<String, List<TupleExpr>> buildTupleExprsByVariable(List<TupleExpr> segment) {
-			Map<String, List<TupleExpr>> tupleExprsByVariable = new HashMap<>((segment.size() + 1) * 2);
-			for (TupleExpr tupleExpr : segment) {
-				for (String bindingName : tupleExpr.getBindingNames()) {
-					if (bindingName.startsWith("_const_")) {
-						continue;
-					}
-					tupleExprsByVariable.computeIfAbsent(bindingName, ignored -> new ArrayList<>(2)).add(tupleExpr);
-				}
-			}
-			return tupleExprsByVariable;
-		}
-
-		private int estimateOuterBindingImpact(TupleExpr left, TupleExpr right, Set<String> outerBoundVars,
-				Map<String, List<TupleExpr>> tupleExprsByVariable) {
-			Set<String> bindingNames = new HashSet<>(left.getBindingNames());
-			bindingNames.addAll(right.getBindingNames());
-			return estimateOuterBindingImpact(bindingNames, outerBoundVars, tupleExprsByVariable);
-		}
-
-		private int estimateOuterBindingImpact(TupleExpr tupleExpr, Set<String> outerBoundVars,
-				Map<String, List<TupleExpr>> tupleExprsByVariable) {
-			return estimateOuterBindingImpact(tupleExpr.getBindingNames(), outerBoundVars, tupleExprsByVariable);
-		}
-
-		private int estimateOuterBindingImpact(Set<String> bindingNames, Set<String> outerBoundVars,
-				Map<String, List<TupleExpr>> tupleExprsByVariable) {
-			if (outerBoundVars.isEmpty()) {
-				return 0;
-			}
-
-			int impact = 0;
-			for (String bindingName : bindingNames) {
-				if (!bindingName.startsWith("_const_") && outerBoundVars.contains(bindingName)) {
-					impact += tupleExprsByVariable.getOrDefault(bindingName, Collections.emptyList()).size();
-				}
-			}
-			return impact;
 		}
 
 		private Set<String> getAvailableVars(Set<String> baseBindingNames, TupleExpr tupleExpr) {
@@ -982,12 +927,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return compatibleFilters;
 		}
 
-		private int countCompatibleFilters(List<DeferredFilter> deferredFilters, Set<String> availableVars,
-				int requiredConditionCost) {
+		private int countCompatibleCheapFilters(List<DeferredFilter> deferredFilters, Set<String> availableVars) {
 			int compatibleFilters = 0;
 			for (DeferredFilter deferredFilter : deferredFilters) {
-				if (deferredFilter.conditionCost == requiredConditionCost
+				if (deferredFilter.conditionCost == 0
 						&& availableVars.containsAll(deferredFilter.requiredVars)) {
+					compatibleFilters++;
+				}
+			}
+			return compatibleFilters;
+		}
+
+		private int countCompatibleExpensiveFilters(List<DeferredFilter> deferredFilters, Set<String> availableVars) {
+			int compatibleFilters = 0;
+			for (DeferredFilter deferredFilter : deferredFilters) {
+				if (deferredFilter.conditionCost > 0 && availableVars.containsAll(deferredFilter.requiredVars)) {
 					compatibleFilters++;
 				}
 			}
@@ -1009,22 +963,326 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return pendingFilters;
 		}
 
-		private boolean isBetterGreedyChoice(int cheapFilterUnlocks, int totalFilterUnlocks, int outerBindingImpact,
-				int sharedVarCount, double joinCost, int bestCheapFilterUnlocks, int bestTotalFilterUnlocks,
-				int bestOuterBindingImpact, int bestSharedVarCount, double bestCost) {
-			if (cheapFilterUnlocks != bestCheapFilterUnlocks) {
-				return cheapFilterUnlocks > bestCheapFilterUnlocks;
+		private List<DeferredFilter> compatibleDeferredFilters(List<DeferredFilter> deferredFilters,
+				Set<String> availableVars) {
+			if (deferredFilters.isEmpty()) {
+				return List.of();
 			}
-			if (totalFilterUnlocks != bestTotalFilterUnlocks) {
-				return totalFilterUnlocks > bestTotalFilterUnlocks;
+
+			List<DeferredFilter> compatibleFilters = new ArrayList<>(deferredFilters.size());
+			for (DeferredFilter deferredFilter : deferredFilters) {
+				if (availableVars.containsAll(deferredFilter.requiredVars)) {
+					compatibleFilters.add(deferredFilter);
+				}
 			}
-			if (outerBindingImpact != bestOuterBindingImpact) {
-				return outerBindingImpact > bestOuterBindingImpact;
+			return compatibleFilters;
+		}
+
+		private double estimateTupleExprRowsWithLocalDeferredFilters(TupleExpr tupleExpr,
+				List<DeferredFilter> deferredFilters, double baseRows) {
+			if (!isFiniteNonNegative(baseRows)) {
+				return baseRows;
 			}
-			if (sharedVarCount != bestSharedVarCount) {
-				return sharedVarCount > bestSharedVarCount;
+
+			List<DeferredFilter> localFilters = compatibleLocalDeferredFilters(deferredFilters, tupleExpr);
+			if (localFilters.isEmpty()) {
+				return baseRows;
 			}
-			return joinCost < bestCost;
+
+			double filteredRows = statistics.getCardinality(wrapTupleExprWithDeferredFilters(tupleExpr.clone(),
+					localFilters));
+			if (isFiniteNonNegative(filteredRows) && filteredRows < baseRows) {
+				return filteredRows;
+			}
+
+			double combinedPassRatio = combinedCompatibleFilterPassRatio(localFilters);
+			if (combinedPassRatio > 0.0d) {
+				double passRatioRows = baseRows * combinedPassRatio;
+				if (isFiniteNonNegative(passRatioRows)) {
+					return passRatioRows;
+				}
+			}
+
+			return baseRows;
+		}
+
+		private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr,
+				List<DeferredFilter> deferredFilters) {
+			if (deferredFilters.isEmpty()) {
+				return tupleExpr;
+			}
+
+			List<DeferredFilter> localFilters = new ArrayList<>();
+			for (int i = 0; i < deferredFilters.size();) {
+				DeferredFilter deferredFilter = deferredFilters.get(i);
+				if (!canApplyDeferredFilterToTupleExpr(deferredFilter, tupleExpr)) {
+					i++;
+					continue;
+				}
+				localFilters.add(deferredFilter);
+				deferredFilters.remove(i);
+			}
+
+			return localFilters.isEmpty() ? tupleExpr : wrapTupleExprWithDeferredFilters(tupleExpr, localFilters);
+		}
+
+		private List<DeferredFilter> compatibleLocalDeferredFilters(List<DeferredFilter> deferredFilters,
+				TupleExpr tupleExpr) {
+			if (deferredFilters.isEmpty()) {
+				return List.of();
+			}
+
+			List<DeferredFilter> localFilters = new ArrayList<>(deferredFilters.size());
+			for (DeferredFilter deferredFilter : deferredFilters) {
+				if (canApplyDeferredFilterToTupleExpr(deferredFilter, tupleExpr)) {
+					localFilters.add(deferredFilter);
+				}
+			}
+			return localFilters;
+		}
+
+		private boolean canApplyDeferredFilterToTupleExpr(DeferredFilter deferredFilter, TupleExpr tupleExpr) {
+			if (!(tupleExpr instanceof StatementPattern)) {
+				return false;
+			}
+			return deferredFilter.patternLocalBase != null
+					&& tupleExpr.getBindingNames().containsAll(deferredFilter.requiredVars);
+		}
+
+		private TupleExpr wrapTupleExprWithDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {
+			TupleExpr current = tupleExpr;
+			for (DeferredFilter deferredFilter : sortDeferredFilters(deferredFilters)) {
+				Filter filterClone = deferredFilter.filter.clone();
+				filterClone.setArg(current);
+				current = filterClone;
+			}
+			return current;
+		}
+
+		private double combinedCompatibleFilterPassRatio(List<DeferredFilter> compatibleFilters) {
+			double combinedPassRatio = 1.0d;
+			boolean foundEstimatedFilter = false;
+			for (DeferredFilter deferredFilter : compatibleFilters) {
+				double passRatio = statistics.estimateFilterPassRatio(deferredFilter.filter);
+				if (Double.isFinite(passRatio) && passRatio > 0.0d && passRatio <= 1.0d) {
+					combinedPassRatio *= passRatio;
+					foundEstimatedFilter = true;
+				}
+			}
+			return foundEstimatedFilter ? combinedPassRatio : -1.0d;
+		}
+
+		private double combinedUnlockedFilterPassRatio(List<DeferredFilter> deferredFilters,
+				Set<String> availableVars) {
+			return combinedCompatibleFilterPassRatio(compatibleDeferredFilters(deferredFilters, availableVars));
+		}
+
+		private double estimateDeferredFilterAwareRows(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters,
+				Set<String> availableVars, double baseRows) {
+			if (!isFiniteNonNegative(baseRows)) {
+				return baseRows;
+			}
+
+			List<DeferredFilter> compatibleFilters = compatibleDeferredFilters(deferredFilters, availableVars);
+			if (compatibleFilters.isEmpty()) {
+				return baseRows;
+			}
+
+			double filteredRows = estimateRowsWithDeferredFilters(tupleExpr, compatibleFilters);
+			if (isFiniteNonNegative(filteredRows) && filteredRows < baseRows) {
+				return filteredRows;
+			}
+
+			double combinedPassRatio = combinedCompatibleFilterPassRatio(compatibleFilters);
+			if (combinedPassRatio > 0.0d) {
+				double passRatioRows = baseRows * combinedPassRatio;
+				if (isFiniteNonNegative(passRatioRows)) {
+					return passRatioRows;
+				}
+			}
+
+			return baseRows;
+		}
+
+		private double estimateRowsWithDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> compatibleFilters) {
+			return statistics.getCardinality(wrapTupleExprWithDeferredFilters(tupleExpr.clone(), compatibleFilters));
+		}
+
+		private GreedyChoiceMetrics buildInitialGreedyChoiceMetrics(TupleExpr left, TupleExpr right,
+				Set<String> outerBoundVars, List<DeferredFilter> deferredFilters, JoinCardinalityCache cardinalityCache,
+				boolean hasConnectedInitialPair, boolean hasAnchoredInitialPair) {
+			Set<String> availableVars = getAvailableVars(outerBoundVars, left, right);
+			int sharedVarCount = sharedJoinVariableCount(left, right);
+			int boundAnchorCount = boundAnchorCount(left, right, outerBoundVars);
+			double rawJoinRows = cardinalityCache.get(left, right);
+			double effectiveJoinRows = estimateDeferredFilterAwareRows(new Join(left.clone(), right.clone()),
+					deferredFilters, availableVars, rawJoinRows);
+			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, sharedVarCount, boundAnchorCount,
+					countCompatibleCheapFilters(deferredFilters, availableVars),
+					countCompatibleExpensiveFilters(deferredFilters, availableVars),
+					sharedVarCount == 0 && hasConnectedInitialPair, boundAnchorCount == 0 && hasAnchoredInitialPair,
+					combinedUnlockedFilterPassRatio(deferredFilters, availableVars));
+		}
+
+		private GreedyChoiceMetrics buildNextGreedyChoiceMetrics(TupleExpr prefixForEstimation,
+				Set<String> prefixBindingNames, TupleExpr candidate, List<DeferredFilter> deferredFilters,
+				JoinCardinalityCache cardinalityCache, boolean hasConnectedCandidate) {
+			Set<String> candidateAvailableVars = getAvailableVars(prefixBindingNames, candidate);
+			int sharedVarCount = sharedJoinVariableCount(candidate, prefixBindingNames);
+			double rawJoinRows = cardinalityCache.get(prefixForEstimation, candidate);
+			double effectiveJoinRows = estimateDeferredFilterAwareRows(
+					new Join(prefixForEstimation.clone(), candidate.clone()), deferredFilters, candidateAvailableVars,
+					rawJoinRows);
+			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, sharedVarCount, 0,
+					countCompatibleCheapFilters(deferredFilters, candidateAvailableVars),
+					countCompatibleExpensiveFilters(deferredFilters, candidateAvailableVars),
+					sharedVarCount == 0 && hasConnectedCandidate, false,
+					combinedUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars));
+		}
+
+		private boolean hasConnectedInitialPair(List<TupleExpr> tupleExprs) {
+			for (int leftIndex = 0; leftIndex < tupleExprs.size() - 1; leftIndex++) {
+				for (int rightIndex = leftIndex + 1; rightIndex < tupleExprs.size(); rightIndex++) {
+					if (sharedJoinVariableCount(tupleExprs.get(leftIndex), tupleExprs.get(rightIndex)) > 0) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private boolean hasAnchoredInitialPair(List<TupleExpr> tupleExprs, Set<String> outerBoundVars) {
+			if (outerBoundVars.isEmpty()) {
+				return false;
+			}
+			for (int leftIndex = 0; leftIndex < tupleExprs.size() - 1; leftIndex++) {
+				for (int rightIndex = leftIndex + 1; rightIndex < tupleExprs.size(); rightIndex++) {
+					if (boundAnchorCount(tupleExprs.get(leftIndex), tupleExprs.get(rightIndex), outerBoundVars) > 0) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private boolean hasConnectedCandidate(List<TupleExpr> tupleExprs, Set<String> prefixBindingNames) {
+			for (TupleExpr tupleExpr : tupleExprs) {
+				if (sharedJoinVariableCount(tupleExpr, prefixBindingNames) > 0) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private int compareGreedyChoices(GreedyChoiceScore left, GreedyChoiceScore right) {
+			int adjustedCostComparison = Double.compare(left.adjustedCost, right.adjustedCost);
+			if (adjustedCostComparison != 0) {
+				return adjustedCostComparison;
+			}
+			int rawCostComparison = Double.compare(left.rawCost, right.rawCost);
+			if (rawCostComparison != 0) {
+				return rawCostComparison;
+			}
+			int stableIndexComparison = Integer.compare(left.stableIndex, right.stableIndex);
+			if (stableIndexComparison != 0) {
+				return stableIndexComparison;
+			}
+			return Integer.compare(left.secondaryStableIndex, right.secondaryStableIndex);
+		}
+
+		private GreedyChoiceScore scoreGreedyChoice(GreedyChoiceMetrics metrics, int stableIndex,
+				int secondaryStableIndex) {
+			double normalizedJoinRows = normalizeJoinRows(metrics.effectiveJoinRows);
+			double adjustedCost = normalizedJoinRows;
+			if (adjustedCost != Double.POSITIVE_INFINITY) {
+				if (metrics.avoidableCrossJoin) {
+					adjustedCost *= AVOIDABLE_CROSS_JOIN_PENALTY;
+				}
+				if (metrics.unanchoredInitialPair) {
+					adjustedCost *= UNANCHORED_INITIAL_PAIR_PENALTY;
+				}
+				adjustedCost /= boundedBonus(metrics.sharedVarCount, SHARED_VAR_BONUS_PER_VAR, MAX_SHARED_VAR_BONUS);
+				adjustedCost /= boundedBonus(metrics.boundAnchorCount, BOUND_ANCHOR_BONUS_PER_VAR,
+						MAX_BOUND_ANCHOR_BONUS);
+				adjustedCost /= boundedBonus(metrics.cheapFilterUnlockCount, CHEAP_FILTER_BONUS_PER_FILTER,
+						MAX_CHEAP_FILTER_BONUS);
+				adjustedCost /= boundedBonus(metrics.expensiveFilterUnlockCount, EXPENSIVE_FILTER_BONUS_PER_FILTER,
+						MAX_EXPENSIVE_FILTER_BONUS);
+				if (Double.isFinite(metrics.combinedUnlockedFilterPassRatio)
+						&& metrics.combinedUnlockedFilterPassRatio > 0.0d) {
+					adjustedCost *= Math.max(metrics.combinedUnlockedFilterPassRatio,
+							MIN_UNLOCKED_FILTER_PASS_RATIO);
+				}
+			}
+			return new GreedyChoiceScore(adjustedCost, normalizedJoinRows, stableIndex, secondaryStableIndex);
+		}
+
+		private TupleExpr[] orderInitialPairByEffectiveLeafRows(TupleExpr left, TupleExpr right,
+				List<DeferredFilter> deferredFilters) {
+			double leftRows = estimateLeafRowsWithLocalDeferredFilters(left, deferredFilters);
+			double rightRows = estimateLeafRowsWithLocalDeferredFilters(right, deferredFilters);
+			if (isFiniteNonNegative(leftRows) && isFiniteNonNegative(rightRows) && leftRows > rightRows) {
+				return new TupleExpr[] { right, left };
+			}
+			if (left.getResultSizeEstimate() > 0 && right.getResultSizeEstimate() > 0
+					&& left.getResultSizeEstimate() > right.getResultSizeEstimate()) {
+				return new TupleExpr[] { right, left };
+			}
+			return new TupleExpr[] { left, right };
+		}
+
+		private double estimateLeafRowsWithLocalDeferredFilters(TupleExpr tupleExpr,
+				List<DeferredFilter> deferredFilters) {
+			double baseRows = statistics.getCardinality(tupleExpr);
+			return estimateTupleExprRowsWithLocalDeferredFilters(tupleExpr, deferredFilters, baseRows);
+		}
+
+		private double normalizeJoinRows(double joinRows) {
+			if (!Double.isFinite(joinRows) || joinRows < 0) {
+				return Double.POSITIVE_INFINITY;
+			}
+			return Math.max(joinRows, MIN_NORMALIZED_JOIN_ROWS);
+		}
+
+		private boolean isFiniteNonNegative(double value) {
+			return Double.isFinite(value) && value >= 0.0d;
+		}
+
+		private double boundedBonus(int count, double bonusPerUnit, double maxBonus) {
+			if (count <= 0) {
+				return 1.0d;
+			}
+			return Math.min(1.0d + count * (bonusPerUnit - 1.0d), maxBonus);
+		}
+
+		private int boundAnchorCount(TupleExpr left, TupleExpr right, Set<String> outerBoundVars) {
+			Set<String> bindingNames = new HashSet<>(left.getBindingNames());
+			bindingNames.addAll(right.getBindingNames());
+			return boundAnchorCount(bindingNames, outerBoundVars);
+		}
+
+		private int boundAnchorCount(Set<String> bindingNames, Set<String> outerBoundVars) {
+			int count = 0;
+			for (String bindingName : bindingNames) {
+				if (!bindingName.startsWith("_const_") && outerBoundVars.contains(bindingName)) {
+					count++;
+				}
+			}
+			return count;
+		}
+
+		private void traceGreedyChoice(String phase, TupleExpr left, TupleExpr right, GreedyChoiceMetrics metrics,
+				GreedyChoiceScore score) {
+			if (log.isTraceEnabled()) {
+				log.trace(
+						"Greedy {} choice left={} right={} rawRows={} effectiveRows={} adjusted={} sharedVars={} boundAnchors={} cheapFilters={} expensiveFilters={} filterPassRatio={} avoidableCrossJoin={} unanchoredInitialPair={}",
+						phase, left.toString().trim(), right.toString().trim(), metrics.rawJoinRows,
+						metrics.effectiveJoinRows, score.adjustedCost,
+						metrics.sharedVarCount, metrics.boundAnchorCount, metrics.cheapFilterUnlockCount,
+						metrics.expensiveFilterUnlockCount, metrics.combinedUnlockedFilterPassRatio,
+						metrics.avoidableCrossJoin,
+						metrics.unanchoredInitialPair);
+			}
 		}
 
 		private int sharedJoinVariableCount(TupleExpr left, TupleExpr right) {
@@ -1048,8 +1306,45 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return sharedVarCount;
 		}
 
-		private boolean sharesJoinVariable(TupleExpr left, TupleExpr right) {
-			return sharedJoinVariableCount(left, right) > 0;
+		private final class GreedyChoiceMetrics {
+			private final double rawJoinRows;
+			private final double effectiveJoinRows;
+			private final int sharedVarCount;
+			private final int boundAnchorCount;
+			private final int cheapFilterUnlockCount;
+			private final int expensiveFilterUnlockCount;
+			private final boolean avoidableCrossJoin;
+			private final boolean unanchoredInitialPair;
+			private final double combinedUnlockedFilterPassRatio;
+
+			private GreedyChoiceMetrics(double rawJoinRows, double effectiveJoinRows, int sharedVarCount,
+					int boundAnchorCount,
+					int cheapFilterUnlockCount, int expensiveFilterUnlockCount, boolean avoidableCrossJoin,
+					boolean unanchoredInitialPair, double combinedUnlockedFilterPassRatio) {
+				this.rawJoinRows = rawJoinRows;
+				this.effectiveJoinRows = effectiveJoinRows;
+				this.sharedVarCount = sharedVarCount;
+				this.boundAnchorCount = boundAnchorCount;
+				this.cheapFilterUnlockCount = cheapFilterUnlockCount;
+				this.expensiveFilterUnlockCount = expensiveFilterUnlockCount;
+				this.avoidableCrossJoin = avoidableCrossJoin;
+				this.unanchoredInitialPair = unanchoredInitialPair;
+				this.combinedUnlockedFilterPassRatio = combinedUnlockedFilterPassRatio;
+			}
+		}
+
+		private final class GreedyChoiceScore {
+			private final double adjustedCost;
+			private final double rawCost;
+			private final int stableIndex;
+			private final int secondaryStableIndex;
+
+			private GreedyChoiceScore(double adjustedCost, double rawCost, int stableIndex, int secondaryStableIndex) {
+				this.adjustedCost = adjustedCost;
+				this.rawCost = rawCost;
+				this.stableIndex = stableIndex;
+				this.secondaryStableIndex = secondaryStableIndex;
+			}
 		}
 
 		private interface OrderedJoinPlanItem {
@@ -1099,12 +1394,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			private final Set<String> requiredVars;
 			private final int conditionCost;
 			private final int originalIndex;
+			private final StatementPattern patternLocalBase;
 
 			private DeferredFilter(Filter filter, Set<String> requiredVars, int conditionCost, int originalIndex) {
 				this.filter = filter;
 				this.requiredVars = requiredVars;
 				this.conditionCost = conditionCost;
 				this.originalIndex = originalIndex;
+				this.patternLocalBase = FilterSelectivityKeys.patternLocalBaseForFilter(filter);
 			}
 		}
 
@@ -1122,7 +1419,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (cached != null) {
 					return cached;
 				}
-				double estimated = statistics.getCardinality(new Join(left, right));
+				double estimated = statistics.getCardinality(new Join(left.clone(), right.clone()));
 				row.put(right, estimated);
 				return estimated;
 			}
@@ -1450,8 +1747,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			double cost;
-
-			if (hasCachedCardinality(tupleExpr)) {
+			Double effectiveCardinality = cardinalityMap.get(tupleExpr);
+			if (effectiveCardinality != null) {
+				cost = effectiveCardinality;
+			} else if (hasCachedCardinality(tupleExpr)) {
 				cost = ((AbstractQueryModelNode) tupleExpr).getCardinality();
 			} else {
 				cost = cardinalityMap.get(tupleExpr);

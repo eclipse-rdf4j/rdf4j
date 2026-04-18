@@ -15,6 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,10 +24,14 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.junit.jupiter.api.Test;
 
@@ -55,13 +61,219 @@ class QueryJoinOptimizerGreedyOuterBindingsTest {
 				.containsExactly(ex("hasEncounter"), ex("hasObservation"), ex("otherA"), ex("otherB"));
 	}
 
+	@Test
+	void reorderSegmentAllowsDisconnectedInitialPairWhenItIsAnOrderOfMagnitudeCheaper() throws Exception {
+		StatementPattern connectedA = statementPattern("root", "shared", ex("connectedA"));
+		StatementPattern connectedB = statementPattern("shared", "leaf", ex("connectedB"));
+		StatementPattern disconnectedA = statementPattern("otherSubject", "otherObject", ex("disconnectedA"));
+		StatementPattern disconnectedB = statementPattern("thirdSubject", "thirdObject", ex("disconnectedB"));
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(
+				new PairwiseCostStatistics(Map.of(
+						pairKey(ex("connectedA"), ex("connectedB")), 20.0d,
+						pairKey(ex("disconnectedA"), ex("disconnectedB")), 1.0d)),
+				new EmptyTripleSource());
+
+		List<TupleExpr> reordered = invokeReorderSegment(optimizer,
+				List.of(connectedA, connectedB, disconnectedA, disconnectedB),
+				Set.of());
+
+		assertThat(predicates(reordered))
+				.as("A disconnected pair should still be allowed when the estimated join rows are an order of magnitude lower")
+				.containsExactly(ex("disconnectedA"), ex("disconnectedB"), ex("connectedA"), ex("connectedB"));
+	}
+
+	@Test
+	void reorderSegmentPrefersConnectedCandidateDuringExpansionOverDisconnectedCheaperPairwiseCost() throws Exception {
+		StatementPattern a = statementPattern("root", "shared", ex("pA"));
+		StatementPattern b = statementPattern("shared", "next", ex("pB"));
+		StatementPattern connected = statementPattern("next", "leaf", ex("pC"));
+		StatementPattern disconnected = statementPattern("otherSubject", "otherObject", ex("pD"));
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(
+				new PairwiseCostStatistics(Map.of(
+						pairKey(ex("pA"), ex("pB")), 1.0d,
+						pairKey(ex("pA"), ex("pC")), 80.0d,
+						pairKey(ex("pB"), ex("pC")), 50.0d,
+						pairKey(ex("pA"), ex("pD")), 2.0d,
+						pairKey(ex("pB"), ex("pD")), 2.0d,
+						pairKey(ex("pC"), ex("pD")), 3.0d,
+						pairKey(groupKey(ex("pA"), ex("pB")), ex("pC")), 4.0d,
+						pairKey(groupKey(ex("pA"), ex("pB")), ex("pD")), 60.0d)),
+				new EmptyTripleSource());
+
+		List<TupleExpr> reordered = invokeReorderSegment(optimizer,
+				List.of(a, b, connected, disconnected),
+				Set.of());
+
+		assertThat(predicates(reordered))
+				.as("Greedy expansion should still prefer the next connected candidate over a disconnected cheaper alternative")
+				.containsExactly(ex("pA"), ex("pB"), ex("pC"), ex("pD"));
+	}
+
+	@Test
+	void reorderSegmentPrefersLowerEstimatedUnlockedFilterPassRatioWhenFilterCountsTie() throws Exception {
+		StatementPattern lessSelectiveLeft = statementPattern("leftRoot", "leftJoin", ex("lessLeft"));
+		StatementPattern lessSelectiveRight = statementPattern("leftJoin", "leftValue", ex("lessRight"));
+		StatementPattern moreSelectiveLeft = statementPattern("rightRoot", "rightJoin", ex("moreLeft"));
+		StatementPattern moreSelectiveRight = statementPattern("rightJoin", "rightValue", ex("moreRight"));
+
+		Filter lessSelectiveFilter = equalsFilter(lessSelectiveRight.clone(), "leftValue", "common");
+		Filter moreSelectiveFilter = equalsFilter(moreSelectiveRight.clone(), "rightValue", "rare");
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(
+				new PairwiseCostStatistics(Map.of(
+						pairKey(ex("lessLeft"), ex("lessRight")), 10.0d,
+						pairKey(ex("moreLeft"), ex("moreRight")), 10.0d),
+						Map.of(
+								filterKey(lessSelectiveFilter), 0.50d,
+								filterKey(moreSelectiveFilter), 0.05d)),
+				new EmptyTripleSource());
+
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		List<TupleExpr> segment = List.of(lessSelectiveLeft, lessSelectiveRight, moreSelectiveLeft, moreSelectiveRight);
+		List<?> deferredFilters = buildDeferredFilters(joinVisitor, List.of(lessSelectiveFilter, moreSelectiveFilter),
+				segmentBindingNames(segment));
+
+		List<TupleExpr> reordered = invokeReorderSegment(joinVisitor, segment, Set.of(), deferredFilters);
+		List<String> reorderedPredicates = predicates(reordered);
+
+		assertThat(reorderedPredicates.subList(0, 2))
+				.as("When join rows and filter counts tie, the filtered leaf should surface first inside the winning pair")
+				.containsExactly(ex("moreRight"), ex("moreLeft"));
+		assertThat(reorderedPredicates)
+				.containsExactlyInAnyOrder(ex("moreLeft"), ex("moreRight"), ex("lessLeft"), ex("lessRight"));
+	}
+
+	@Test
+	void reorderSegmentPrefersDeferredFilterTrueCostOverCheaperRawJoinRows() throws Exception {
+		StatementPattern filteredLeft = statementPattern("filteredRoot", "filteredJoin", ex("filteredLeft"));
+		StatementPattern filteredRight = statementPattern("filteredJoin", "filteredValue", ex("filteredRight"));
+		StatementPattern cheapLeft = statementPattern("cheapRoot", "cheapJoin", ex("cheapLeft"));
+		StatementPattern cheapRight = statementPattern("cheapJoin", "cheapValue", ex("cheapRight"));
+
+		Filter selectiveFilter = equalsFilter(filteredRight.clone(), "filteredValue", "rare");
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(
+				new PairwiseCostStatistics(Map.of(
+						pairKey(ex("filteredLeft"), ex("filteredRight")), 1000.0d,
+						pairKey(ex("cheapLeft"), ex("cheapRight")), 10.0d),
+						Map.of(filterKey(selectiveFilter), 0.001d)),
+				new EmptyTripleSource());
+
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		List<TupleExpr> segment = List.of(filteredLeft, filteredRight, cheapLeft, cheapRight);
+		List<?> deferredFilters = buildDeferredFilters(joinVisitor, List.of(selectiveFilter),
+				segmentBindingNames(segment));
+
+		List<TupleExpr> reordered = invokeReorderSegment(joinVisitor, segment, Set.of(), deferredFilters);
+
+		assertThat(predicates(reordered).subList(0, 2))
+				.as("A deferred filter should lower the true pair cost and surface the filtered leaf first")
+				.containsExactly(ex("filteredRight"), ex("filteredLeft"));
+	}
+
+	@Test
+	void reorderSegmentPrefersDeferredFilterTrueCostDuringExpansion() throws Exception {
+		StatementPattern prefixLeft = statementPattern("root", "shared", ex("prefixLeft"));
+		StatementPattern prefixRight = statementPattern("shared", "mid", ex("prefixRight"));
+		StatementPattern selectiveCandidate = statementPattern("mid", "selectiveValue", ex("selectiveCandidate"));
+		StatementPattern cheapCandidate = statementPattern("mid", "cheapValue", ex("cheapCandidate"));
+
+		Filter selectiveFilter = equalsFilter(selectiveCandidate.clone(), "selectiveValue", "rare");
+
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(
+				new PairwiseCostStatistics(Map.of(
+						pairKey(ex("prefixLeft"), ex("prefixRight")), 1.0d,
+						pairKey(ex("prefixLeft"), ex("selectiveCandidate")), 10000.0d,
+						pairKey(ex("prefixRight"), ex("selectiveCandidate")), 10000.0d,
+						pairKey(ex("prefixLeft"), ex("cheapCandidate")), 100.0d,
+						pairKey(ex("prefixRight"), ex("cheapCandidate")), 100.0d,
+						pairKey(ex("selectiveCandidate"), ex("cheapCandidate")), 1000.0d,
+						pairKey(groupKey(ex("prefixLeft"), ex("prefixRight")), ex("selectiveCandidate")), 1000.0d,
+						pairKey(groupKey(ex("prefixLeft"), ex("prefixRight")), ex("cheapCandidate")), 10.0d),
+						Map.of(filterKey(selectiveFilter), 0.001d)),
+				new EmptyTripleSource());
+
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		List<?> deferredFilters = buildDeferredFilters(joinVisitor, List.of(selectiveFilter),
+				segmentBindingNames(List.of(prefixLeft, prefixRight, selectiveCandidate, cheapCandidate)));
+		Object cardinalityCache = newJoinCardinalityCache(joinVisitor);
+		TupleExpr prefixForEstimation = new Join(prefixLeft.clone(), prefixRight.clone());
+		Set<String> prefixBindingNames = segmentBindingNames(List.of(prefixLeft, prefixRight));
+
+		Object selectiveMetrics = buildNextGreedyChoiceMetrics(joinVisitor, prefixForEstimation, prefixBindingNames,
+				selectiveCandidate, deferredFilters, cardinalityCache, true);
+		Object cheapMetrics = buildNextGreedyChoiceMetrics(joinVisitor, prefixForEstimation, prefixBindingNames,
+				cheapCandidate, deferredFilters, cardinalityCache, true);
+		Object selectiveScore = scoreGreedyChoice(joinVisitor, selectiveMetrics, 2, -1);
+		Object cheapScore = scoreGreedyChoice(joinVisitor, cheapMetrics, 3, -1);
+
+		assertThat(compareGreedyChoices(joinVisitor, selectiveScore, cheapScore))
+				.as("Expansion should rank a newly unlocked selective filter by its true filtered cost")
+				.isLessThan(0);
+	}
+
+	@Test
+	void reorderSegmentOrdersPatternLocalDeferredFilterLeafBeforeOtherMandatoryPatterns() throws Exception {
+		StatementPattern encounterType = new StatementPattern(Var.of("enc"),
+				Var.of("rdfType", VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")),
+				Var.of("encType", VF.createIRI(ex("Encounter"))));
+		StatementPattern handledBy = statementPattern("enc", "practitioner", ex("handledBy"));
+		StatementPattern recordedOn = statementPattern("enc", "date", ex("recordedOn"));
+		Filter dateFilter = equalsFilter(recordedOn.clone(), "date", "2024-01-01");
+
+		Object joinVisitor = buildJoinVisitor(new QueryJoinOptimizer(new DeferredFilterLeafCostStatistics(),
+				new EmptyTripleSource()));
+		List<TupleExpr> segment = List.of(encounterType, handledBy, recordedOn);
+		List<?> deferredFilters = buildDeferredFilters(joinVisitor, List.of(dateFilter), segmentBindingNames(segment));
+
+		List<TupleExpr> reordered = invokeReorderSegment(joinVisitor, segment, Set.of(), deferredFilters);
+
+		assertThat(predicates(reordered))
+				.as("The recordedOn branch should win once its local filter true cost is priced inside greedy ordering")
+				.containsExactly(ex("recordedOn"), ex("handledBy"),
+						"http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+	}
+
+	@Test
+	void reorderSegmentOrdersPatternLocalDeferredFilterLeafWhenOnlyFilterSelectivityCostingIsAvailable()
+			throws Exception {
+		StatementPattern encounterType = new StatementPattern(Var.of("enc"),
+				Var.of("rdfType", VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")),
+				Var.of("encType", VF.createIRI(ex("Encounter"))));
+		StatementPattern handledBy = statementPattern("enc", "practitioner", ex("handledBy"));
+		StatementPattern recordedOn = statementPattern("enc", "date", ex("recordedOn"));
+		Filter dateFilter = equalsFilter(recordedOn.clone(), "date", "2024-01-01");
+
+		Object joinVisitor = buildJoinVisitor(new QueryJoinOptimizer(new DeferredFilterOnlyStatistics(),
+				new EmptyTripleSource()));
+		List<TupleExpr> segment = List.of(encounterType, handledBy, recordedOn);
+		List<?> deferredFilters = buildDeferredFilters(joinVisitor, List.of(dateFilter), segmentBindingNames(segment));
+
+		List<TupleExpr> reordered = invokeReorderSegment(joinVisitor, segment, Set.of(), deferredFilters);
+
+		assertThat(predicates(reordered))
+				.as("Filter-aware greedy reordering should still run before sketches are ready")
+				.containsExactly(ex("recordedOn"), ex("handledBy"),
+						"http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+	}
+
 	@SuppressWarnings("unchecked")
 	private static List<TupleExpr> invokeReorderSegment(QueryJoinOptimizer optimizer, List<TupleExpr> segment,
 			Set<String> outerBoundVars) throws Exception {
 		Object joinVisitor = buildJoinVisitor(optimizer);
-		Method reorderSegment = joinVisitor.getClass().getDeclaredMethod("reorderSegment", List.class, Set.class);
+		return invokeReorderSegment(joinVisitor, segment, outerBoundVars, List.of());
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<TupleExpr> invokeReorderSegment(Object joinVisitor, List<TupleExpr> segment,
+			Set<String> outerBoundVars, List<?> deferredFilters) throws Exception {
+		Method reorderSegment = joinVisitor.getClass()
+				.getDeclaredMethod("reorderSegment", List.class, Set.class,
+						List.class);
 		reorderSegment.setAccessible(true);
-		return (List<TupleExpr>) reorderSegment.invoke(joinVisitor, segment, outerBoundVars);
+		return (List<TupleExpr>) reorderSegment.invoke(joinVisitor, segment, outerBoundVars, deferredFilters);
 	}
 
 	private static Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
@@ -72,10 +284,70 @@ class QueryJoinOptimizerGreedyOuterBindingsTest {
 		return constructor.newInstance(optimizer);
 	}
 
+	@SuppressWarnings("unchecked")
+	private static List<?> buildDeferredFilters(Object joinVisitor, List<Filter> filters, Set<String> scopeBindingNames)
+			throws Exception {
+		Method buildDeferredFilters = joinVisitor.getClass()
+				.getDeclaredMethod("buildDeferredFilters", List.class,
+						Set.class);
+		buildDeferredFilters.setAccessible(true);
+		return (List<?>) buildDeferredFilters.invoke(joinVisitor, filters, scopeBindingNames);
+	}
+
+	private static Object newJoinCardinalityCache(Object joinVisitor) throws Exception {
+		for (Class<?> nestedClass : joinVisitor.getClass().getDeclaredClasses()) {
+			if ("JoinCardinalityCache".equals(nestedClass.getSimpleName())) {
+				Constructor<?> constructor = nestedClass.getDeclaredConstructor(joinVisitor.getClass());
+				constructor.setAccessible(true);
+				return constructor.newInstance(joinVisitor);
+			}
+		}
+		throw new NoSuchMethodException("JoinCardinalityCache");
+	}
+
+	private static Object buildNextGreedyChoiceMetrics(Object joinVisitor, TupleExpr prefixForEstimation,
+			Set<String> prefixBindingNames, TupleExpr candidate, List<?> deferredFilters, Object cardinalityCache,
+			boolean hasConnectedCandidate) throws Exception {
+		Method method = joinVisitor.getClass()
+				.getDeclaredMethod("buildNextGreedyChoiceMetrics", TupleExpr.class,
+						Set.class, TupleExpr.class, List.class, cardinalityCache.getClass(), boolean.class);
+		method.setAccessible(true);
+		return method.invoke(joinVisitor, prefixForEstimation, prefixBindingNames, candidate, deferredFilters,
+				cardinalityCache, hasConnectedCandidate);
+	}
+
+	private static Object scoreGreedyChoice(Object joinVisitor, Object metrics, int stableIndex,
+			int secondaryStableIndex) throws Exception {
+		Method method = joinVisitor.getClass()
+				.getDeclaredMethod("scoreGreedyChoice", metrics.getClass(), int.class,
+						int.class);
+		method.setAccessible(true);
+		return method.invoke(joinVisitor, metrics, stableIndex, secondaryStableIndex);
+	}
+
+	private static int compareGreedyChoices(Object joinVisitor, Object left, Object right) throws Exception {
+		Method method = joinVisitor.getClass()
+				.getDeclaredMethod("compareGreedyChoices", left.getClass(),
+						right.getClass());
+		method.setAccessible(true);
+		return (int) method.invoke(joinVisitor, left, right);
+	}
+
+	private static Set<String> segmentBindingNames(List<TupleExpr> segment) {
+		return segment.stream()
+				.flatMap(tupleExpr -> tupleExpr.getBindingNames().stream())
+				.collect(Collectors.toSet());
+	}
+
 	private static StatementPattern statementPattern(String subjectVarName, String objectVarName, String predicateIri) {
 		return new StatementPattern(Var.of(subjectVarName),
 				Var.of(subjectVarName + "Predicate", VF.createIRI(predicateIri)),
 				Var.of(objectVarName));
+	}
+
+	private static Filter equalsFilter(StatementPattern pattern, String varName, String value) {
+		return new Filter(pattern,
+				new Compare(Var.of(varName), new ValueConstant(VF.createLiteral(value)), Compare.CompareOp.EQ));
 	}
 
 	private static List<String> predicates(List<TupleExpr> tupleExprs) {
@@ -96,15 +368,53 @@ class QueryJoinOptimizerGreedyOuterBindingsTest {
 		return right + "|" + left;
 	}
 
+	private static String groupKey(String... predicates) {
+		ArrayList<String> normalized = new ArrayList<>(List.of(predicates));
+		Collections.sort(normalized);
+		return String.join("+", normalized);
+	}
+
+	private static String tupleExprKey(TupleExpr expr) {
+		ArrayList<String> predicates = new ArrayList<>();
+		collectPredicates(expr, predicates);
+		if (predicates.isEmpty()) {
+			return null;
+		}
+		Collections.sort(predicates);
+		return String.join("+", predicates);
+	}
+
+	private static void collectPredicates(TupleExpr expr, List<String> predicates) {
+		if (expr instanceof Join) {
+			Join join = (Join) expr;
+			collectPredicates(join.getLeftArg(), predicates);
+			collectPredicates(join.getRightArg(), predicates);
+			return;
+		}
+		if (expr instanceof StatementPattern) {
+			predicates.add(predicate(expr));
+		}
+	}
+
 	private static String ex(String localName) {
 		return "http://example.com/" + localName;
 	}
 
+	private static String filterKey(Filter filter) {
+		return FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+	}
+
 	private static final class PairwiseCostStatistics extends EvaluationStatistics {
 		private final Map<String, Double> joinCosts;
+		private final Map<String, Double> filterPassRatios;
 
 		private PairwiseCostStatistics(Map<String, Double> joinCosts) {
+			this(joinCosts, Map.of());
+		}
+
+		private PairwiseCostStatistics(Map<String, Double> joinCosts, Map<String, Double> filterPassRatios) {
 			this.joinCosts = joinCosts;
+			this.filterPassRatios = filterPassRatios;
 		}
 
 		@Override
@@ -116,13 +426,88 @@ class QueryJoinOptimizerGreedyOuterBindingsTest {
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof Join) {
 				Join join = (Join) expr;
-				return joinCosts.getOrDefault(pairKey(predicate(join.getLeftArg()), predicate(join.getRightArg())),
-						1000.0d);
+				String leftKey = tupleExprKey(join.getLeftArg());
+				String rightKey = tupleExprKey(join.getRightArg());
+				if (leftKey != null && rightKey != null) {
+					return joinCosts.getOrDefault(pairKey(leftKey, rightKey), 1000.0d);
+				}
+				return 1000.0d;
 			}
 			if (expr instanceof StatementPattern) {
 				return 10.0d;
 			}
 			return super.getCardinality(expr);
+		}
+
+		@Override
+		public double estimateFilterPassRatio(Filter filter) {
+			return filterPassRatios.getOrDefault(filterKey(filter), -1.0d);
+		}
+	}
+
+	private static class DeferredFilterLeafCostStatistics extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Filter filter && filter.getArg()instanceof StatementPattern statementPattern) {
+				if (predicate(statementPattern).equals(ex("recordedOn"))) {
+					return 0.1d;
+				}
+				return getCardinality(statementPattern);
+			}
+			if (expr instanceof Join join) {
+				String left = tupleExprKey(join.getLeftArg());
+				String right = tupleExprKey(join.getRightArg());
+				if (left != null && right != null) {
+					String pairKey = pairKey(left, right);
+					if (pairKey.equals(pairKey(ex("handledBy"), "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))) {
+						return 1.0d;
+					}
+					if (pairKey.equals(pairKey(ex("handledBy"), ex("recordedOn")))
+							|| pairKey.equals(pairKey(ex("recordedOn"),
+									"http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))) {
+						return 10.0d;
+					}
+				}
+				return 1000.0d;
+			}
+			if (expr instanceof StatementPattern statementPattern) {
+				String predicate = predicate(statementPattern);
+				if (predicate.equals(ex("handledBy"))) {
+					return 1.0d;
+				}
+				if (predicate.equals(ex("recordedOn"))) {
+					return 100.0d;
+				}
+				if (predicate.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")) {
+					return 10.0d;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+
+		@Override
+		public double estimateFilterPassRatio(Filter filter) {
+			return filter.getArg()instanceof StatementPattern statementPattern
+					&& predicate(statementPattern).equals(ex("recordedOn")) ? 0.01d : -1.0d;
+		}
+	}
+
+	private static final class DeferredFilterOnlyStatistics extends DeferredFilterLeafCostStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return false;
+		}
+
+		@Override
+		public boolean supportsFilterSelectivityCosting() {
+			return true;
 		}
 	}
 }

@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -387,6 +389,26 @@ public class ThemeQueryBenchmark {
 		var config = new TupleExprIRRenderer.Config();
 		config.verifyRoundTrip = false;
 		return new TupleExprIRRenderer(config).render(tupleExpr);
+	}
+
+	TupleExpr explainOptimizedTupleExpr() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			return (TupleExpr) explanation.tupleExpr();
+		}
+	}
+
+	EvaluationStatistics evaluationStatistics() {
+		try {
+			Method getBackingStore = LmdbStore.class.getDeclaredMethod("getBackingStore");
+			getBackingStore.setAccessible(true);
+			Object backingStore = getBackingStore.invoke(store);
+			Method getEvaluationStatistics = backingStore.getClass().getDeclaredMethod("getEvaluationStatistics");
+			getEvaluationStatistics.setAccessible(true);
+			return (EvaluationStatistics) getEvaluationStatistics.invoke(backingStore);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException("Unable to access benchmark evaluation statistics", e);
+		}
 	}
 
 	@TearDown(Level.Trial)

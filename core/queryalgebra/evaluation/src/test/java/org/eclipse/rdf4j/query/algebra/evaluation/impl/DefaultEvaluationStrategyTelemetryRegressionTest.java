@@ -14,15 +14,22 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.AfterEach;
@@ -99,6 +106,36 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		assertThat(presentUntouchedCount).isEqualTo(capacity - 2);
 	}
 
+	@Test
+	void filterEvaluationRecordsOutcomesWhenRuntimeTelemetryDisabled() {
+		BindingSetAssignment assignments = new BindingSetAssignment();
+		QueryBindingSet keep = new QueryBindingSet();
+		keep.addBinding("name", SimpleValueFactory.getInstance().createLiteral("keep"));
+		QueryBindingSet drop = new QueryBindingSet();
+		drop.addBinding("name", SimpleValueFactory.getInstance().createLiteral("drop"));
+		assignments.setBindingSets(List.of(keep, drop));
+
+		Filter filter = new Filter(assignments,
+				new Compare(Var.of("name"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("keep")),
+						Compare.CompareOp.EQ));
+		filter.setRuntimeTelemetryEnabled(false);
+
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null, 0,
+				statistics);
+
+		try (CloseableIteration<BindingSet> results = strategy.precompile(filter)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("name").stringValue()).isEqualTo("keep");
+			assertThat(results.hasNext()).isFalse();
+		}
+
+		assertThat(statistics.passedCount).isEqualTo(1L);
+		assertThat(statistics.filteredCount).isEqualTo(1L);
+	}
+
 	private static StatementPattern statementPatternWithMetrics(int index) {
 		StatementPattern statementPattern = new StatementPattern(
 				Var.of("s", SimpleValueFactory.getInstance().createIRI("urn:test:s" + index)),
@@ -136,6 +173,17 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 			return evictionCheckInterval.getInt(null);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Unable to inspect runtime telemetry eviction check interval", e);
+		}
+	}
+
+	private static final class RecordingEvaluationStatistics extends EvaluationStatistics {
+		private long passedCount;
+		private long filteredCount;
+
+		@Override
+		public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
+			this.passedCount += passedCount;
+			this.filteredCount += filteredCount;
 		}
 	}
 }

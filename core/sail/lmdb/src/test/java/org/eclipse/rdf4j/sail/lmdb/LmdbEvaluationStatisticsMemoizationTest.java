@@ -80,9 +80,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void supportsJoinEstimationDoesNotForceRobustRebuildWhenBaseSketchesAreReady() throws Exception {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(mock(SailStore.class),
-				SketchBasedJoinEstimator.Config.defaults().withNominalEntries(64));
-		setEstimatorSeenTriples(estimator, 1L);
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.isReady()).thenReturn(true);
 
 		ValueStore valueStore = mock(ValueStore.class);
 		ValueStoreRevision revision = mock(ValueStoreRevision.class);
@@ -94,6 +93,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertTrue(statistics.supportsJoinEstimation(),
 				"Ready base sketches should remain usable even when the robust synopsis is unavailable");
+		verify(estimator).isReady();
 	}
 
 	@Test
@@ -302,6 +302,72 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 	}
 
+	@Test
+	void samplesPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampled-filter").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+			StatementPattern pattern = (StatementPattern) filter.getArg();
+
+			double patternCardinality = statistics.getCardinality(pattern);
+			double filterCardinality = statistics.getCardinality(filter);
+			double filterPassRatio = statistics.estimateFilterPassRatio(filter);
+
+			assertTrue(filterPassRatio > 0.0d && filterPassRatio < 1.0d,
+					"Expected sampling fallback to estimate a selective pass ratio for CONTAINS over a single pattern");
+			assertTrue(filterCardinality < patternCardinality,
+					"Expected sampled filter selectivity to reduce estimated filter cardinality below the base pattern");
+		} finally {
+			repository.shutDown();
+			FileUtils.deleteDirectory(dataDir);
+		}
+	}
+
+	void recordsLearnedFilterPassRatioForExternalBoundPatternLocalFilter() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-learned-filter").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			Filter filter = firstFilter(
+					"SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } ?s <urn:test:name> ?name . FILTER(?name = ?target) }");
+			EvaluationStatistics beforeExecution = backingStore.getEvaluationStatistics();
+			assertTrue(beforeExecution.estimateFilterPassRatio(filter) < 0.0d,
+					"Expected external-bound filter to have no sampled or heuristic estimate before runtime learning");
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL,
+						"SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } ?s <urn:test:name> ?name . FILTER(?name = ?target) }")
+						.evaluate()) {
+					while (result.hasNext()) {
+						result.next();
+					}
+				}
+			}
+
+			EvaluationStatistics afterExecution = backingStore.getEvaluationStatistics();
+			double learnedPassRatio = afterExecution.estimateFilterPassRatio(filter);
+			assertTrue(learnedPassRatio > 0.0d && learnedPassRatio < 1.0d,
+					"Expected runtime evaluation to record a learned pass ratio for external-bound pattern-local filters");
+		} finally {
+			repository.shutDown();
+			FileUtils.deleteDirectory(dataDir);
+		}
+	}
+
 	private static void loadData(SailRepository repository) {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI follows = vf.createIRI("urn:test:follows");
@@ -343,6 +409,22 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		return new Filter(pattern, condition);
 	}
 
+	private static Filter firstFilter(String query) {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		final Filter[] found = new Filter[1];
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		assertNotNull(found[0], "Expected query to contain a FILTER");
+		return found[0];
+	}
+
 	private static LeftJoin leftJoin(String query) {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		final LeftJoin[] found = new LeftJoin[1];
@@ -372,13 +454,4 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		return (Map<?, ?>) field.get(null);
 	}
 
-	private static void setEstimatorSeenTriples(SketchBasedJoinEstimator estimator, long seenTriples) {
-		try {
-			Field field = SketchBasedJoinEstimator.class.getDeclaredField("seenTriples");
-			field.setAccessible(true);
-			field.setLong(estimator, seenTriples);
-		} catch (ReflectiveOperationException e) {
-			throw new AssertionError(e);
-		}
-	}
 }

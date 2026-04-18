@@ -16,12 +16,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.junit.jupiter.api.Test;
 
 class ThemeQueryBenchmarkSmokeTest {
+
+	private static final String MEDICAL = "http://example.com/theme/medical/";
+	private static final String MEDICAL_RECORDED_ON = MEDICAL + "recordedOn";
+	private static final String MEDICAL_RECORDED_ON_FILTER = "recordedOn-filter";
+	private static final String MEDICAL_HANDLED_BY_LABEL = "handledBy";
+	private static final String MEDICAL_TYPE_LABEL = "encounter-type";
 
 	@Test
 	void executeQueryReturnsExpectedCountForMedicalRecordsQueryTwo() throws Exception {
@@ -87,5 +105,140 @@ class ThemeQueryBenchmarkSmokeTest {
 				"Second benchmark trial should reuse the persisted join-estimator snapshot instead of rewriting it");
 		assertEquals(sketchesLastModified, Files.getLastModifiedTime(sketches).toMillis(),
 				"Second benchmark trial should reuse the persisted join-estimator sketches instead of rebuilding them");
+	}
+
+	@Test
+	void explainQueryPlacesRecordedOnFilterFirstForMedicalRecordsQueryTwo() throws Exception {
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 2;
+
+		benchmark.setup();
+		try {
+			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
+			Filter recordedOnFilter = findRecordedOnFilter(optimized);
+			assertTrue(recordedOnFilter != null,
+					"Expected optimized q2 plan to retain the recordedOn filter as a local filter leaf");
+			EvaluationStatistics statistics = benchmark.evaluationStatistics();
+			double passRatio = statistics.estimateFilterPassRatio(recordedOnFilter);
+			double baseRows = statistics.getCardinality(recordedOnFilter.getArg());
+			double filteredRows = statistics.getCardinality(recordedOnFilter);
+			assertRecordedOnMovesFirst(mandatoryLeafOrder, passRatio, baseRows, filteredRows);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, double passRatio, double baseRows,
+			double filteredRows) {
+		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
+		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
+		int typeIndex = mandatoryLeafOrder.indexOf(MEDICAL_TYPE_LABEL);
+
+		assertTrue(recordedOnIndex >= 0,
+				"Expected optimized q2 plan to keep the recordedOn filter attached to its local statement pattern");
+		assertTrue(handledByIndex >= 0 && typeIndex >= 0,
+				"Expected optimized q2 plan to retain handledBy and rdf:type in the mandatory prefix");
+		assertTrue(recordedOnIndex < handledByIndex && recordedOnIndex < typeIndex,
+				"Expected optimized q2 plan to place recordedOn + date filter before handledBy and rdf:type; order="
+						+ mandatoryLeafOrder + ", passRatio=" + passRatio + ", baseRows=" + baseRows
+						+ ", filteredRows=" + filteredRows);
+	}
+
+	private static List<String> collectMandatoryLeafOrder(TupleExpr optimized) {
+		ArrayList<String> leaves = new ArrayList<>();
+		TupleExpr mandatoryRoot = optimized;
+		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
+		if (leftJoin != null) {
+			mandatoryRoot = leftJoin.getLeftArg();
+		}
+		collectMandatoryLeafOrder(mandatoryRoot, leaves);
+		return leaves;
+	}
+
+	private static void collectMandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
+		if (tupleExpr instanceof Join join) {
+			collectMandatoryLeafOrder(join.getLeftArg(), leaves);
+			collectMandatoryLeafOrder(join.getRightArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			if (isRecordedOnFilter(filter)) {
+				leaves.add(MEDICAL_RECORDED_ON_FILTER);
+				return;
+			}
+			collectMandatoryLeafOrder(filter.getArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			String label = labelFor(statementPattern);
+			if (label != null) {
+				leaves.add(label);
+			}
+			return;
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+			collectMandatoryLeafOrder(unaryTupleOperator.getArg(), leaves);
+		}
+	}
+
+	private static boolean isRecordedOnFilter(Filter filter) {
+		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			return false;
+		}
+		return MEDICAL_RECORDED_ON.equals(statementPattern.getPredicateVar().getValue().stringValue())
+				&& VarNameCollector.process(filter.getCondition()).contains("date");
+	}
+
+	private static Filter findRecordedOnFilter(TupleExpr optimized) {
+		List<Filter> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (matches.isEmpty() && isRecordedOnFilter(node)) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.get(0);
+	}
+
+	private static String labelFor(StatementPattern statementPattern) {
+		if (statementPattern.getPredicateVar() == null || !statementPattern.getPredicateVar().hasValue()) {
+			return null;
+		}
+
+		Value predicate = statementPattern.getPredicateVar().getValue();
+		Value object = statementPattern.getObjectVar() != null ? statementPattern.getObjectVar().getValue() : null;
+		String predicateValue = predicate.stringValue();
+
+		if (MEDICAL_RECORDED_ON.equals(predicateValue)) {
+			return "recordedOn";
+		}
+		if ((MEDICAL + "handledBy").equals(predicateValue)) {
+			return MEDICAL_HANDLED_BY_LABEL;
+		}
+		if ("http://www.w3.org/1999/02/22-rdf-syntax-ns#type".equals(predicateValue)
+				&& object != null
+				&& (MEDICAL + "Encounter").equals(object.stringValue())) {
+			return MEDICAL_TYPE_LABEL;
+		}
+		return null;
+	}
+
+	private static <T extends TupleExpr> T findFirst(TupleExpr root, Class<T> type) {
+		List<T> matches = new ArrayList<>(1);
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+				if (matches.isEmpty() && type.isInstance(node)) {
+					matches.add(type.cast(node));
+				}
+				super.meetNode(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.get(0);
 	}
 }

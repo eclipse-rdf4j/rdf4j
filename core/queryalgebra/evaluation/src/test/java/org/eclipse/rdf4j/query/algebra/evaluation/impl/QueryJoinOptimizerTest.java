@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -400,7 +402,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		QueryRoot root = new QueryRoot(new Join(new Join(encounterObservationFilter, unrelatedA), unrelatedB));
 		new QueryJoinOptimizer(
 				new ParsedQueryPairwiseJoinStatistics(Map.of(
-						pairKey(ex("hasEncounter"), ex("hasObservation")), 5.0d,
+						pairKey(ex("hasEncounter"), ex("hasObservation")), 1.5d,
 						pairKey(ex("otherA"), ex("otherB")), 1.0d)),
 				new EmptyTripleSource()).optimize(root, null, null);
 
@@ -431,7 +433,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		QueryRoot root = new QueryRoot(new Join(new Join(filterChain, unrelatedA), unrelatedB));
 		new QueryJoinOptimizer(
 				new ParsedQueryPairwiseJoinStatistics(Map.of(
-						pairKey(ex("hasEncounter"), ex("hasObservation")), 5.0d,
+						pairKey(ex("hasEncounter"), ex("hasObservation")), 1.5d,
 						pairKey(ex("otherA"), ex("otherB")), 1.0d)),
 				new EmptyTripleSource()).optimize(root, null, null);
 
@@ -471,6 +473,81 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(outerLeaves.get(1)).isInstanceOf(Extension.class);
 		assertThat(getPredicateValue(((Extension) outerLeaves.get(1)).getArg())).isEqualTo(ex("pC"));
 		assertThat(getPredicateValue(outerLeaves.get(2))).isEqualTo(ex("pD"));
+	}
+
+	@Test
+	public void optimizePrefersConnectedInitialPairOverNotExistsCrossJoinInPharmaQuery() {
+		String query = String.join("\n",
+				"PREFIX pharma: <http://example.com/theme/pharma/>",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT ?drug ?disease WHERE {",
+				"  ?trial a pharma:ClinicalTrial ; pharma:studiesDisease ?disease ; pharma:hasArm ?arm .",
+				"  ?arm pharma:armDrug ?drug ; pharma:hasResult ?result .",
+				"  ?result pharma:responseRate ?rate .",
+				"  FILTER(?rate > 0.6)",
+				"  FILTER NOT EXISTS { ?drug pharma:indicatedFor ?disease . }",
+				"  OPTIONAL { ?drug pharma:targets ?target . BIND(?target AS ?optTarget) }",
+				"  FILTER(?optTarget != <http://example.com/theme/pharma/target/0>)",
+				"}");
+
+		QueryRoot root = optimizeWithStatistics(query,
+				new ParsedQueryPairwiseJoinStatistics(Map.of(
+						pairKey(pharma("studiesDisease"), pharma("armDrug")), 1.0d,
+						pairKey(pharma("studiesDisease"), pharma("hasArm")), 4.0d,
+						pairKey(pharma("hasArm"), pharma("armDrug")), 6.0d,
+						pairKey(pharma("armDrug"), pharma("hasResult")), 7.0d,
+						pairKey(pharma("hasResult"), pharma("responseRate")), 9.0d,
+						pairKey("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", pharma("studiesDisease")), 10.0d,
+						pairKey("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", pharma("hasArm")), 12.0d)));
+
+		assertThat(leadingPrefixPredicates(root.getArg(), 2))
+				.as("A NOT EXISTS unlock should not force a cross join when a moderately more expensive connected pair is available")
+				.containsExactlyInAnyOrder(pharma("studiesDisease"), pharma("hasArm"));
+	}
+
+	@Test
+	public void optimizeLetsCheapFilterBonusBeatSlightlyCheaperConnectedAlternative() {
+		StatementPattern a = statementPattern("s", "a", ex("pA"));
+		StatementPattern b = statementPattern("a", "b", ex("pB"));
+		Filter filteredPair = filter(new Join(a, b), "s", "b");
+		StatementPattern c = statementPattern("b", "c", ex("pC"));
+		StatementPattern x = statementPattern("other", "x", ex("pX"));
+
+		QueryRoot root = new QueryRoot(new Join(new Join(filteredPair, c), x));
+		new QueryJoinOptimizer(
+				new ParsedQueryPairwiseJoinStatistics(Map.of(
+						pairKey(ex("pA"), ex("pB")), 8.0d,
+						pairKey(ex("pB"), ex("pC")), 6.0d,
+						pairKey(ex("pC"), ex("pX")), 20.0d)),
+				new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(leadingPrefixPredicates(root.getArg(), 2))
+				.as("A newly unlocked cheap filter should be able to overcome a slightly cheaper connected alternative")
+				.containsExactlyInAnyOrder(ex("pA"), ex("pB"));
+	}
+
+	@Test
+	public void optimizeDiscountsNotExistsUnlockAgainstConnectedInitialPair() {
+		String query = String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?trial ex:pDisease ?disease .",
+				"  ?trial ex:pArm ?arm .",
+				"  ?arm ex:pDrug ?drug .",
+				"  FILTER NOT EXISTS { ?drug ex:pIndicated ?disease . }",
+				"  ?arm ex:pResult ?result .",
+				"}");
+
+		QueryRoot root = optimizeWithStatistics(query,
+				new ParsedQueryPairwiseJoinStatistics(Map.of(
+						pairKey(ex("pDisease"), ex("pDrug")), 1.0d,
+						pairKey(ex("pDisease"), ex("pArm")), 4.0d,
+						pairKey(ex("pArm"), ex("pDrug")), 6.0d,
+						pairKey(ex("pDrug"), ex("pResult")), 8.0d)));
+
+		assertThat(leadingPrefixPredicates(root.getArg(), 2))
+				.as("An expensive NOT EXISTS unlock should not dominate a substantially better connected first join")
+				.containsExactlyInAnyOrder(ex("pDisease"), ex("pArm"));
 	}
 
 	@Override
@@ -573,6 +650,38 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		leaves.add(tupleExpr);
 	}
 
+	private static List<String> leadingPrefixPredicates(TupleExpr tupleExpr, int limit) {
+		TupleExpr prefix = flattenJoinLeavesKeepingScopeBarriers(unwrapQueryRoot(tupleExpr)).get(0);
+		while (prefix instanceof Filter) {
+			prefix = unwrapQueryRoot(((Filter) prefix).getArg());
+		}
+		ArrayList<String> predicates = new ArrayList<>();
+		unwrapQueryRoot(prefix).visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern statementPattern) {
+				predicates.add(statementPattern.getPredicateVar().getValue().stringValue());
+			}
+		});
+		return predicates.stream().limit(limit).collect(Collectors.toList());
+	}
+
+	private static TupleExpr unwrapQueryRoot(TupleExpr tupleExpr) {
+		while (tupleExpr instanceof QueryRoot || tupleExpr instanceof Projection) {
+			if (tupleExpr instanceof QueryRoot) {
+				tupleExpr = ((QueryRoot) tupleExpr).getArg();
+			} else {
+				tupleExpr = ((Projection) tupleExpr).getArg();
+			}
+		}
+		return tupleExpr;
+	}
+
+	private static QueryRoot optimizeWithStatistics(String query, EvaluationStatistics statistics) {
+		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+		return root;
+	}
+
 	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
 		Class<?> joinVisitorClass = Class
 				.forName("org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer$JoinVisitor");
@@ -628,8 +737,34 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		return right + "|" + left;
 	}
 
+	private static String tupleExprKey(TupleExpr expr) {
+		ArrayList<String> predicates = new ArrayList<>();
+		collectTupleExprPredicates(expr, predicates);
+		if (predicates.isEmpty()) {
+			return null;
+		}
+		Collections.sort(predicates);
+		return String.join("+", predicates);
+	}
+
+	private static void collectTupleExprPredicates(TupleExpr expr, List<String> predicates) {
+		if (expr instanceof Join) {
+			Join join = (Join) expr;
+			collectTupleExprPredicates(join.getLeftArg(), predicates);
+			collectTupleExprPredicates(join.getRightArg(), predicates);
+			return;
+		}
+		if (expr instanceof StatementPattern) {
+			predicates.add(getPredicateValue(expr));
+		}
+	}
+
 	private static String ex(String localName) {
 		return "http://example.com/" + localName;
+	}
+
+	private static String pharma(String localName) {
+		return "http://example.com/theme/pharma/" + localName;
 	}
 
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {
@@ -713,8 +848,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof Join) {
 				Join join = (Join) expr;
-				String left = predicate(join.getLeftArg());
-				String right = predicate(join.getRightArg());
+				String left = tupleExprKey(join.getLeftArg());
+				String right = tupleExprKey(join.getRightArg());
 				if (left != null && right != null) {
 					return joinCosts.getOrDefault(pairKey(left, right), 1000.0d);
 				}

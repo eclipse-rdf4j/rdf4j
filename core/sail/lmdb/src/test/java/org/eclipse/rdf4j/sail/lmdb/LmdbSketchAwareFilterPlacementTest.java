@@ -18,18 +18,28 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,9 +52,16 @@ class LmdbSketchAwareFilterPlacementTest {
 	private static final IRI COPY = VF.createIRI(LIBRARY, "Copy");
 	private static final IRI LOCATED_AT = VF.createIRI(LIBRARY, "locatedAt");
 	private static final IRI NAME = VF.createIRI(LIBRARY, "name");
+	private static final String MEDICAL = "http://example.com/theme/medical/";
+	private static final IRI MEDICAL_ENCOUNTER = VF.createIRI(MEDICAL, "Encounter");
+	private static final IRI MEDICAL_HANDLED_BY = VF.createIRI(MEDICAL, "handledBy");
+	private static final IRI MEDICAL_RECORDED_ON = VF.createIRI(MEDICAL, "recordedOn");
+	private static final String MEDICAL_RECORDED_ON_FILTER = "recordedOn-filter";
+	private static final String MEDICAL_HANDLED_BY_LABEL = "handledBy";
+	private static final String MEDICAL_TYPE_LABEL = "encounter-type";
 
 	@Test
-	void optimizedQueryKeepsBranchNameFilterAboveSelectiveJoinWhenSketchesReady(@TempDir File dataDir)
+	void optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady(@TempDir File dataDir)
 			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
 		SailRepository repository = new SailRepository(store);
@@ -78,11 +95,141 @@ class LmdbSketchAwareFilterPlacementTest {
 
 			Filter branchNameFilter = findBranchNameFilter(optimized);
 			assertNotNull(branchNameFilter, "Expected optimized plan to retain the branch-name filter");
-			assertTrue(branchNameFilter.getArg().getBindingNames().contains("copy"),
-					"Branch-name filter should stay above the selective copy join when sketch estimation is ready");
+			assertTrue(branchNameFilter.getArg() instanceof org.eclipse.rdf4j.query.algebra.StatementPattern,
+					"Branch-name filter should be pushed onto its local statement pattern when sketch estimation is ready");
+			assertTrue(branchNameFilter.getArg().getBindingNames().contains("branch"),
+					"Branch-name filter should stay attached to the branch pattern");
+			assertTrue(!branchNameFilter.getArg().getBindingNames().contains("copy"),
+					"Branch-name filter should no longer sit above the copy join once local selectivity is known");
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	void filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadLibraryData(repository);
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+
+			assertTrue(statistics.supportsFilterSelectivityCosting(),
+					"Expected LMDB to expose local filter selectivity costing before sketches are ready");
+
+			String query = String.join("\n",
+					"PREFIX lib: <http://example.com/theme/library/>",
+					"SELECT ?branch WHERE {",
+					"  ?branch lib:name ?branchName .",
+					"  FILTER ((?branchName = \"Branch 0\") || (?branchName = \"Branch 1\"))",
+					"}");
+
+			Filter filter;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				filter = findBranchNameFilter((TupleExpr) explanation.tupleExpr());
+			}
+
+			assertNotNull(filter, "Expected optimized plan to retain the branch-name filter");
+			assertTrue(filter.getArg() instanceof StatementPattern,
+					"Expected the branch-name filter to remain attached to its statement pattern");
+
+			double passRatio = statistics.estimateFilterPassRatio(filter);
+			double baseRows = statistics.getCardinality(filter.getArg());
+			double filteredRows = statistics.getCardinality(filter);
+
+			assertTrue(passRatio > 0.0d && passRatio < 1.0d,
+					"Expected a selective pass ratio for the branch-name filter");
+			assertTrue(filteredRows < baseRows,
+					"Expected filter cardinality to honor local selectivity without requiring sketch-ready join estimation");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady(
+			@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadThemeData(repository, Theme.MEDICAL_RECORDS);
+			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+
+			assertTrue(statistics.supportsFilterSelectivityCosting(),
+					"Expected LMDB to expose local filter selectivity costing for q2");
+
+			TupleExpr coldOptimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				coldOptimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(coldOptimized));
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				try (var result = connection.prepareTupleQuery(query).evaluate()) {
+					while (result.hasNext()) {
+						result.next();
+					}
+				}
+			}
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInBenchmarkDataset(
+			@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadAllThemeData(repository);
+			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+
+			assertTrue(statistics.supportsFilterSelectivityCosting(),
+					"Expected LMDB to expose local filter selectivity costing for q2 in the mixed benchmark dataset");
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder) {
+		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
+		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
+		int typeIndex = mandatoryLeafOrder.indexOf(MEDICAL_TYPE_LABEL);
+
+		assertTrue(recordedOnIndex >= 0,
+				"Expected optimized q2 plan to keep the recordedOn filter attached to its local statement pattern");
+		assertTrue(handledByIndex >= 0 && typeIndex >= 0,
+				"Expected optimized q2 plan to retain handledBy and rdf:type in the mandatory prefix");
+		assertTrue(recordedOnIndex < handledByIndex && recordedOnIndex < typeIndex,
+				"Expected optimized q2 plan to place recordedOn + date filter before handledBy and rdf:type once learned/sample selectivity is available");
 	}
 
 	private static Filter findBranchNameFilter(TupleExpr optimized) {
@@ -124,5 +271,98 @@ class LmdbSketchAwareFilterPlacementTest {
 
 			connection.commit();
 		}
+	}
+
+	private static void loadThemeData(SailRepository repository, Theme theme) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			ThemeDataSetGenerator.generate(theme, new RDFInserter(connection));
+			connection.commit();
+		}
+	}
+
+	private static void loadAllThemeData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			var inserter = new RDFInserter(connection);
+			for (Theme theme : Theme.values()) {
+				ThemeDataSetGenerator.generate(theme, inserter);
+			}
+			connection.commit();
+		}
+	}
+
+	private static List<String> collectMandatoryLeafOrder(TupleExpr optimized) {
+		ArrayList<String> leaves = new ArrayList<>();
+		TupleExpr mandatoryRoot = optimized;
+		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
+		if (leftJoin != null) {
+			mandatoryRoot = leftJoin.getLeftArg();
+		}
+		collectMandatoryLeafOrder(mandatoryRoot, leaves);
+		return leaves;
+	}
+
+	private static void collectMandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
+		if (tupleExpr instanceof Join join) {
+			collectMandatoryLeafOrder(join.getLeftArg(), leaves);
+			collectMandatoryLeafOrder(join.getRightArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			if (isRecordedOnFilter(filter)) {
+				leaves.add(MEDICAL_RECORDED_ON_FILTER);
+				return;
+			}
+			collectMandatoryLeafOrder(filter.getArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			String label = labelFor(statementPattern);
+			if (label != null) {
+				leaves.add(label);
+			}
+			return;
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+			collectMandatoryLeafOrder(unaryTupleOperator.getArg(), leaves);
+		}
+	}
+
+	private static boolean isRecordedOnFilter(Filter filter) {
+		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			return false;
+		}
+		return MEDICAL_RECORDED_ON.equals(statementPattern.getPredicateVar().getValue())
+				&& VarNameCollector.process(filter.getCondition()).contains("date");
+	}
+
+	private static String labelFor(StatementPattern statementPattern) {
+		if (statementPattern.getPredicateVar() == null || !statementPattern.getPredicateVar().hasValue()) {
+			return null;
+		}
+		IRI predicate = (IRI) statementPattern.getPredicateVar().getValue();
+		if (MEDICAL_HANDLED_BY.equals(predicate)) {
+			return MEDICAL_HANDLED_BY_LABEL;
+		}
+		if (RDF_TYPE.equals(predicate) && statementPattern.getObjectVar() != null
+				&& MEDICAL_ENCOUNTER.equals(statementPattern.getObjectVar().getValue())) {
+			return MEDICAL_TYPE_LABEL;
+		}
+		return null;
+	}
+
+	private static <T extends QueryModelNode> T findFirst(QueryModelNode root, Class<T> type) {
+		List<T> matches = new ArrayList<>(1);
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
+				if (matches.isEmpty() && type.isInstance(node)) {
+					matches.add(type.cast(node));
+				}
+				super.meetNode(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.get(0);
 	}
 }

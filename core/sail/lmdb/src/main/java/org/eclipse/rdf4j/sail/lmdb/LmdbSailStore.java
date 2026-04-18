@@ -94,6 +94,7 @@ class LmdbSailStore implements SailStore {
 			SketchBasedJoinEstimator.Config.defaults()
 					.withThrottleEveryN(1024 * 1024)
 					.withThrottleMillis(2));
+	private LmdbFilterSelectivityStats filterSelectivityStats;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
 		t.setDaemon(true);
@@ -292,7 +293,10 @@ class LmdbSailStore implements SailStore {
 			initialized = true;
 			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 			boolean snapshotExists = Files.exists(estimatorPath);
+			filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore);
 			sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
+			sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
+			sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
 			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 			if (!snapshotExists) {
 				sketchBasedJoinEstimator.rebuildOnceSlow();
@@ -348,6 +352,7 @@ class LmdbSailStore implements SailStore {
 				if (persistFuture != null) {
 					persistFuture.cancel(false);
 				}
+				persistEstimatorState();
 				sketchBasedJoinEstimator.close();
 			} finally {
 				try {
@@ -393,6 +398,13 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void persistEstimatorState() {
+		sketchBasedJoinEstimator.persistIfDirty();
+		if (filterSelectivityStats != null) {
+			filterSelectivityStats.persistIfDirty();
+		}
+	}
+
 	SailException wrapTripleStoreException() {
 		return tripleStoreException instanceof SailException ? (SailException) tripleStoreException
 				: new SailException(tripleStoreException);
@@ -400,7 +412,7 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator);
+		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats);
 	}
 
 	@Override
@@ -651,7 +663,7 @@ class LmdbSailStore implements SailStore {
 			if (persistScheduled.compareAndSet(false, true)) {
 				persistFuture = estimatorPersistExec.schedule(() -> {
 					try {
-						sketchBasedJoinEstimator.persistIfDirty();
+						LmdbSailStore.this.persistEstimatorState();
 					} finally {
 						persistScheduled.set(false);
 					}
@@ -728,6 +740,7 @@ class LmdbSailStore implements SailStore {
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
 						applyEstimatorUpdates();
+						filterSelectivityStats.recordStoreMutation();
 						nonIsolatedUpdatesApplied = false;
 						try {
 							scheduleEstimatorPersist();

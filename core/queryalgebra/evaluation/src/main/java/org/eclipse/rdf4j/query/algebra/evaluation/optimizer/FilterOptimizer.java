@@ -402,9 +402,32 @@ public class FilterOptimizer implements QueryOptimizer {
 			}
 
 			double currentInputRows = statistics.getCardinality(join);
-			double candidateInputRows = statistics.getCardinality(candidateArg);
+			double candidateInputRows = estimateFilteredInputRows(candidateArg);
 			return isFiniteNonNegative(currentInputRows) && isFiniteNonNegative(candidateInputRows)
 					&& currentInputRows < candidateInputRows;
+		}
+
+		private double estimateFilteredInputRows(TupleExpr candidateArg) {
+			double baseRows = statistics.getCardinality(candidateArg);
+			if (!isFiniteNonNegative(baseRows) || filter.getCondition() == null) {
+				return baseRows;
+			}
+
+			Filter candidateFilter = new Filter(candidateArg.clone(), filter.getCondition().clone());
+			double filteredRows = statistics.getCardinality(candidateFilter);
+			if (isFiniteNonNegative(filteredRows) && filteredRows < baseRows) {
+				return filteredRows;
+			}
+
+			double passRatio = statistics.estimateFilterPassRatio(candidateFilter);
+			if (Double.isFinite(passRatio) && passRatio > 0.0d && passRatio <= 1.0d) {
+				double passRatioRows = baseRows * passRatio;
+				if (isFiniteNonNegative(passRatioRows)) {
+					return passRatioRows;
+				}
+			}
+
+			return baseRows;
 		}
 
 		private boolean hasSiblingWithHigherConditionCost() {

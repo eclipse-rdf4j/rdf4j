@@ -206,6 +206,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private QueryOptimizerPipeline pipeline;
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
+	private final EvaluationStatistics evaluationStatistics;
 
 	private QueryEvaluationMode queryEvaluationMode;
 
@@ -284,8 +285,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
+		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
 		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
-				tripleSource, evaluationStatistics);
+				tripleSource, this.evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
 		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
@@ -693,7 +695,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
-		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context);
+		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context, evaluationStatistics);
 
 	}
 

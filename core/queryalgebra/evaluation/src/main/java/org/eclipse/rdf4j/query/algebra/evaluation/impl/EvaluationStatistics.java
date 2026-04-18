@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -80,6 +81,18 @@ public class EvaluationStatistics {
 
 	public boolean supportsJoinEstimation() {
 		return false;
+	}
+
+	public boolean supportsFilterSelectivityCosting() {
+		return false;
+	}
+
+	public double estimateFilterPassRatio(Filter filter) {
+		return -1.0d;
+	}
+
+	public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
+		// no-op by default
 	}
 
 	/*-----------------------------------*

@@ -133,6 +133,14 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void pushesFilterWhenFilteredPatternIsMoreSelectiveThanJoinEstimate() {
+		String expectedQuery = "SELECT * WHERE {{?branch <urn:name> ?branchName . FILTER(?branchName = \"Branch 0\") } ?copy <urn:locatedAt> ?branch }";
+		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
+
+		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d, 1.0d));
+	}
+
+	@Test
 	public void pushesCheapCompareBelowJoinWhileKeepingExistsAtSelectiveJoin() {
 		String expectedQuery = "SELECT * WHERE {?s <urn:parent> ?u . {?u <urn:name> ?v . FILTER(?u != ?v) } FILTER EXISTS {?v <urn:follows> ?u .} }";
 		String query = "SELECT * WHERE {?s <urn:parent> ?u . ?u <urn:name> ?v . FILTER(?u != ?v && EXISTS {?v <urn:follows> ?u .}) }";
@@ -202,7 +210,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void standardPipelinePreJoinFilterPassIgnoresSelectiveJoinPlacement() {
+	public void standardPipelinePreJoinFilterPassKeepsFilterAboveJoinWhenJoinRemainsCheaperThanFilteredPattern() {
 		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . "
 				+ "FILTER(?branchName = \"Branch 0\") }";
 
@@ -210,18 +218,46 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
 				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
 				new EmptyTripleSource(),
-				new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d));
+				new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d, 20.0d));
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
 			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
 				break;
 			}
+			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
 		}
 
 		List<Filter> filters = findAll(root, Filter.class);
 		assertThat(filters)
-				.as("Before join ordering, the pre-pass should always push the filter as close as possible")
+				.as("Before join ordering, the pre-pass should keep the filter at the join when the filtered pattern is still less selective")
+				.singleElement()
+				.satisfies(filter -> {
+					assertThat(filter.getCondition()).isInstanceOf(Compare.class);
+					assertThat(filter.getArg()).isInstanceOf(Join.class);
+				});
+	}
+
+	@Test
+	public void standardPipelinePreJoinFilterPassStillPushesFilterBelowJoinWhenOnlyFilterSelectivityCostingIsAvailable() {
+		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . "
+				+ "FILTER(?branchName = \"Branch 0\") }";
+
+		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
+				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
+				new EmptyTripleSource(),
+				new FilterSelectivityOnlyStatistics(10.0d, 100.0d, 20.0d, 20.0d));
+
+		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
+				break;
+			}
+			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
+		}
+
+		List<Filter> filters = findAll(root, Filter.class);
+		assertThat(filters)
+				.as("Before sketches are ready, the pre-pass should still push a pattern-local filter below the join")
 				.singleElement()
 				.satisfies(filter -> {
 					assertThat(filter.getCondition()).isInstanceOf(Compare.class);
@@ -255,16 +291,23 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		assertEquals(expectedQuery, pq.getTupleExpr());
 	}
 
-	private static final class SelectiveJoinStatistics extends EvaluationStatistics {
+	private static class SelectiveJoinStatistics extends EvaluationStatistics {
 		private final double joinCardinality;
 		private final double namePatternCardinality;
 		private final double defaultPatternCardinality;
+		private final double filteredNameCardinality;
 
 		private SelectiveJoinStatistics(double joinCardinality, double namePatternCardinality,
 				double defaultPatternCardinality) {
+			this(joinCardinality, namePatternCardinality, defaultPatternCardinality, Double.NaN);
+		}
+
+		private SelectiveJoinStatistics(double joinCardinality, double namePatternCardinality,
+				double defaultPatternCardinality, double filteredNameCardinality) {
 			this.joinCardinality = joinCardinality;
 			this.namePatternCardinality = namePatternCardinality;
 			this.defaultPatternCardinality = defaultPatternCardinality;
+			this.filteredNameCardinality = filteredNameCardinality;
 		}
 
 		@Override
@@ -274,6 +317,10 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		@Override
 		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Filter filter && isNameFilter(filter)
+					&& Double.isFinite(filteredNameCardinality)) {
+				return filteredNameCardinality;
+			}
 			if (expr instanceof Join) {
 				return joinCardinality;
 			}
@@ -287,6 +334,43 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				return defaultPatternCardinality;
 			}
 			return super.getCardinality(expr);
+		}
+
+		@Override
+		public double estimateFilterPassRatio(Filter filter) {
+			if (!isNameFilter(filter) || !Double.isFinite(filteredNameCardinality)
+					|| !(namePatternCardinality > 0.0d)) {
+				return -1.0d;
+			}
+			double ratio = filteredNameCardinality / namePatternCardinality;
+			return ratio > 0.0d && ratio <= 1.0d ? ratio : -1.0d;
+		}
+
+		private boolean isNameFilter(Filter filter) {
+			if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+				return false;
+			}
+			return statementPattern.getPredicateVar() != null
+					&& statementPattern.getPredicateVar().hasValue()
+					&& "urn:name".equals(statementPattern.getPredicateVar().getValue().stringValue());
+		}
+	}
+
+	private static final class FilterSelectivityOnlyStatistics extends SelectiveJoinStatistics {
+
+		private FilterSelectivityOnlyStatistics(double joinCardinality, double namePatternCardinality,
+				double defaultPatternCardinality, double filteredNameCardinality) {
+			super(joinCardinality, namePatternCardinality, defaultPatternCardinality, filteredNameCardinality);
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return false;
+		}
+
+		@Override
+		public boolean supportsFilterSelectivityCosting() {
+			return true;
 		}
 	}
 

@@ -29,7 +29,9 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -52,6 +54,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 	private final int tripleStoreIdentity;
 	private final Map<CardinalityKey, Double> cardinalityCache = new ConcurrentHashMap<>();
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
+	private final LmdbFilterSelectivityStats filterSelectivityStats;
 	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster joinOrderWorkAdjuster;
 	private volatile long joinSupportCacheExpiryMs = Long.MIN_VALUE;
 	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
@@ -59,10 +62,16 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 
 	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
+		this(valueStore, tripleStore, sketchBasedJoinEstimator, null);
+	}
+
+	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.tripleStoreIdentity = System.identityHashCode(tripleStore);
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
+		this.filterSelectivityStats = filterSelectivityStats;
 		this.joinOrderWorkAdjuster = this::adjustJoinOrderWorkRows;
 	}
 
@@ -80,6 +89,11 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		joinSupportCacheRevisionId = revisionId;
 		joinSupportCacheExpiryMs = now + JOIN_SUPPORT_CACHE_TTL_MS;
 		return ready;
+	}
+
+	@Override
+	public boolean supportsFilterSelectivityCosting() {
+		return true;
 	}
 
 	@Override
@@ -143,6 +157,36 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		return new LmdbCardinalityCalculator();
 	}
 
+	@Override
+	public double estimateFilterPassRatio(Filter filter) {
+		double ratio = sketchBasedJoinEstimator.estimateFilterPassRatio(filter);
+		return Double.isFinite(ratio) && ratio > 0.0d && ratio <= 1.0d ? ratio : -1.0d;
+	}
+
+	@Override
+	public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
+		if (filterSelectivityStats == null || filter == null || filter.getCondition() == null
+				|| (passedCount <= 0L && filteredCount <= 0L)) {
+			return;
+		}
+
+		StatementPattern pattern = basePatternForFilter(filter);
+		if (pattern == null) {
+			return;
+		}
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (patternKey == null) {
+			return;
+		}
+		filterSelectivityStats.recordFilterOutcome(patternKey,
+				FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
+				passedCount, filteredCount);
+	}
+
+	private StatementPattern basePatternForFilter(Filter filter) {
+		return FilterSelectivityKeys.patternLocalBaseForFilter(filter);
+	}
+
 	protected class LmdbCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
@@ -181,7 +225,20 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 				}
 			}
 
-			super.meet(node);
+			node.getArg().visit(this);
+			double inputRows = this.cardinality;
+
+			double passRatio = LmdbEvaluationStatistics.this.estimateFilterPassRatio(node);
+			if (Double.isFinite(passRatio) && passRatio > 0.0d && passRatio <= 1.0d
+					&& Double.isFinite(inputRows) && inputRows >= 0.0d) {
+				double filteredRows = inputRows * passRatio;
+				if (Double.isFinite(filteredRows) && filteredRows >= 0.0d) {
+					this.cardinality = filteredRows;
+					return;
+				}
+			}
+
+			this.cardinality = inputRows;
 		}
 
 		@Override
