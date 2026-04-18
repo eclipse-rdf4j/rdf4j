@@ -7,14 +7,14 @@ Usage: $0 [existing run-single-benchmark.sh options]
        $0 <fullyQualifiedClass.method> [existing run-single-benchmark.sh options]
        $0 <fullyQualifiedClass.method> [flexible benchmark @Param values]
 
-Runs the benchmark helper inside a Linux Java 25 container with JFR CPU time profiling enabled.
+Runs the benchmark helper inside a Linux Java 26 container with JFR CPU time profiling enabled.
 Trailing benchmark parameter values are parsed flexibly. Examples:
   $0 org.example.Benchmark.test themeName:MEDICAL_RECORDS z_queryIndex:0
   $0 org.example.Benchmark.test themeName = MEDICAL_RECORDS, z_queryIndex = 0
   $0 org.example.Benchmark.test MEDICAL_RECORDS 0
 
 Environment:
-  RDF4J_JMH_DOCKER_IMAGE    Container image to use (default: maven:3.9.11-eclipse-temurin-25)
+  RDF4J_JMH_DOCKER_IMAGE    Container image to use (default: maven:3.9.14-sapmachine-26)
   RDF4J_JMH_DOCKER_PLATFORM Optional docker platform override (for example linux/amd64)
   RDF4J_JMH_DOCKER_M2_REPO  Maven local repo inside the container (default: /workspace/.m2_repo_linux_j25)
 USAGE
@@ -22,7 +22,7 @@ USAGE
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-DOCKER_IMAGE="${RDF4J_JMH_DOCKER_IMAGE:-maven:3.9.11-eclipse-temurin-25}"
+DOCKER_IMAGE="${RDF4J_JMH_DOCKER_IMAGE:-maven:3.9.14-sapmachine-26}"
 DOCKER_PLATFORM="${RDF4J_JMH_DOCKER_PLATFORM:-}"
 DOCKER_WORKDIR="/workspace"
 INNER_HOME="/tmp/home"
