@@ -2271,7 +2271,7 @@ public class SketchBasedJoinEstimator {
 						rebuildBatchSize++;
 						if (rebuildBatchSize == rebuildBatch.length) {
 							synchronized (tgt) {
-								ingestBatch(tgt, rebuildBatch, rebuildBatchSize);
+								ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
 							}
 							// robustSpillBuffer.addStatements(robustQuadBatch, rebuildBatchSize);
 							// Arrays.fill(rebuildBatch, 0, rebuildBatchSize, null);
@@ -2324,7 +2324,7 @@ public class SketchBasedJoinEstimator {
 				if (seen > 0) {
 					if (rebuildBatchSize > 0) {
 						synchronized (tgt) {
-							ingestBatch(tgt, rebuildBatch, rebuildBatchSize);
+							ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
 						}
 					}
 				}
@@ -2332,6 +2332,9 @@ public class SketchBasedJoinEstimator {
 
 			if (blobBaseForSlot(targetSlot) == null && persistenceBlobBaseFile != null) {
 				setBlobBaseForSlot(targetSlot, persistenceBlobBaseFile);
+			}
+			synchronized (tgt) {
+				rebuildResidentTrackingForSlot(tgt);
 			}
 			current = tgt; // single volatile write → visible to all readers
 			seenTriples = seen;
@@ -2702,6 +2705,46 @@ public class SketchBasedJoinEstimator {
 		applyBatchUpdates(state, buildBatchUpdates(batch, batchSize));
 	}
 
+	private void ingestRebuildBatch(State state, IngestEvent[] batch, int batchSize) {
+		if (batchSize == 0) {
+			return;
+		}
+		if (batchSize < PARALLEL_INGEST_MIN_BATCH_SIZE) {
+			for (int i = 0; i < batchSize; i++) {
+				IngestEvent event = batch[i];
+				if (event != null) {
+					applyRebuildIngestEvent(state, event, null);
+				}
+			}
+			return;
+		}
+
+		Future<?>[] futures = new Future<?>[INGEST_PARTITIONS.length];
+		try {
+			for (IngestPartition partition : INGEST_PARTITIONS) {
+				futures[partition.ordinal()] = ingestPartitionExecutor.submit(() -> applyRebuildPartition(state, batch,
+						batchSize, partition));
+			}
+			for (Future<?> future : futures) {
+				future.get();
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException("Interrupted while rebuilding join-estimator sketches", e);
+		} catch (ExecutionException e) {
+			throw new RuntimeException("Failed to rebuild join-estimator sketches", e.getCause());
+		}
+	}
+
+	private void applyRebuildPartition(State state, IngestEvent[] batch, int batchSize, IngestPartition partition) {
+		for (int i = 0; i < batchSize; i++) {
+			IngestEvent event = batch[i];
+			if (event != null) {
+				applyRebuildIngestEvent(state, event, partition);
+			}
+		}
+	}
+
 	private void applyBatchUpdates(State state, BatchUpdateAccumulator[] batchUpdates) {
 		byte slot = slotByte(slotOf(state));
 		for (BatchUpdateAccumulator updates : batchUpdates) {
@@ -2776,6 +2819,134 @@ public class SketchBasedJoinEstimator {
 			hashUpdateRaw(sketch, overflowValues[i - 1]);
 		}
 		markDirtyAndTouchResidentSketch(slot, entryId, sketch);
+	}
+
+	private void applyRebuildIngestEvent(State state, IngestEvent event, IngestPartition partition) {
+		if (partition == null) {
+			applyRebuildSingleUpdates(state, event);
+			applyRebuildPair(state, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
+					event.thetaHc);
+			applyRebuildPair(state, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
+					event.thetaHc);
+			applyRebuildPair(state, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
+					event.thetaHo);
+			applyRebuildPair(state, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
+					event.thetaHc);
+			applyRebuildPair(state, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
+					event.thetaHo);
+			applyRebuildPair(state, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
+					event.thetaHp);
+			return;
+		}
+		switch (partition) {
+		case SINGLES:
+			applyRebuildSingleUpdates(state, event);
+			break;
+		case SP:
+			applyRebuildPair(state, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
+					event.thetaHc);
+			break;
+		case SO:
+			applyRebuildPair(state, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
+					event.thetaHc);
+			break;
+		case SC:
+			applyRebuildPair(state, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
+					event.thetaHo);
+			break;
+		case PO:
+			applyRebuildPair(state, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
+					event.thetaHc);
+			break;
+		case PC:
+			applyRebuildPair(state, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
+					event.thetaHo);
+			break;
+		case OC:
+			applyRebuildPair(state, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
+					event.thetaHp);
+			break;
+		}
+	}
+
+	private void applyRebuildSingleUpdates(State state, IngestEvent event) {
+		boolean isDelete = event.isDelete;
+		int si = event.si;
+		int pi = event.pi;
+		int oi = event.oi;
+		int ci = event.ci;
+		long thetaHs = event.thetaHs;
+		long thetaHp = event.thetaHp;
+		long thetaHo = event.thetaHo;
+		long thetaHc = event.thetaHc;
+		long thetaSig = event.thetaSig;
+
+		applyRebuildSingleSketch(state, isDelete, Component.S, si, thetaSig);
+		applyRebuildSingleSketch(state, isDelete, Component.P, pi, thetaSig);
+		applyRebuildSingleSketch(state, isDelete, Component.O, oi, thetaSig);
+		applyRebuildSingleSketch(state, isDelete, Component.C, ci, thetaSig);
+
+		applyRebuildComplementSketch(state, isDelete, Component.S, Component.P, si, thetaHp);
+		applyRebuildComplementSketch(state, isDelete, Component.S, Component.O, si, thetaHo);
+		applyRebuildComplementSketch(state, isDelete, Component.S, Component.C, si, thetaHc);
+
+		applyRebuildComplementSketch(state, isDelete, Component.P, Component.S, pi, thetaHs);
+		applyRebuildComplementSketch(state, isDelete, Component.P, Component.O, pi, thetaHo);
+		applyRebuildComplementSketch(state, isDelete, Component.P, Component.C, pi, thetaHc);
+
+		applyRebuildComplementSketch(state, isDelete, Component.O, Component.S, oi, thetaHs);
+		applyRebuildComplementSketch(state, isDelete, Component.O, Component.P, oi, thetaHp);
+		applyRebuildComplementSketch(state, isDelete, Component.O, Component.C, oi, thetaHc);
+
+		applyRebuildComplementSketch(state, isDelete, Component.C, Component.S, ci, thetaHs);
+		applyRebuildComplementSketch(state, isDelete, Component.C, Component.P, ci, thetaHp);
+		applyRebuildComplementSketch(state, isDelete, Component.C, Component.O, ci, thetaHo);
+	}
+
+	private void applyRebuildPair(State state, Pair pair, boolean isDelete, long key, long triple, long comp1,
+			long comp2) {
+		int x = (int) (key >>> 32);
+		int y = (int) key;
+		PairBuild build = isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
+		PairBuild.Row row = build.getOrCreateRow(x);
+		hashUpdateRaw(sketchForRebuildMap(row.triples, y, state.k), triple);
+		hashUpdateRaw(sketchForRebuildMap(row.comp1, y, state.k), comp1);
+		hashUpdateRaw(sketchForRebuildMap(row.comp2, y, state.k), comp2);
+	}
+
+	private void applyRebuildSingleSketch(State state, boolean isDelete, Component component, int idx, long thetaHash) {
+		AtomicReferenceArray<UpdateSketch> sketches = isDelete ? state.delSingleTriples.get(component)
+				: state.singleTriples.get(component);
+		UpdateSketch sketch = sketches.get(idx);
+		if (sketch == null) {
+			sketch = newSk(state.k);
+			sketches.set(idx, sketch);
+		}
+		hashUpdateRaw(sketch, thetaHash);
+	}
+
+	private void applyRebuildComplementSketch(State state, boolean isDelete, Component fixed, Component other, int idx,
+			long thetaHash) {
+		SingleBuild build = isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
+		AtomicReferenceArray<UpdateSketch> sketches = build.cmpl.get(other);
+		if (sketches == null) {
+			return;
+		}
+		UpdateSketch sketch = sketches.get(idx);
+		if (sketch == null) {
+			sketch = newSk(state.k);
+			sketches.set(idx, sketch);
+		}
+		hashUpdateRaw(sketch, thetaHash);
+	}
+
+	private static UpdateSketch sketchForRebuildMap(Map<Integer, UpdateSketch> sketches, int idx, int k) {
+		UpdateSketch sketch = sketches.get(idx);
+		if (sketch == null) {
+			sketch = newSk(k);
+			sketches.put(idx, sketch);
+		}
+		return sketch;
 	}
 
 	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event, IngestPartition partition) {
@@ -3974,7 +4145,8 @@ public class SketchBasedJoinEstimator {
 		if (pattern == null) {
 			return -1.0d;
 		}
-		return resolveFilterMultiplier(filter, pattern);
+		double knownMultiplier = estimateKnownFilterMultiplier(filter, pattern);
+		return knownMultiplier > 0.0d ? knownMultiplier : -1.0d;
 	}
 
 	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
@@ -6871,6 +7043,95 @@ public class SketchBasedJoinEstimator {
 			cacheDirectory.clearResidentNodesForSlot(targetSlot);
 		}
 		refreshCacheMetadataAccounting();
+	}
+
+	private void rebuildResidentTrackingForSlot(State state) {
+		BufferSlot bufferSlot = slotOf(state);
+		byte slot = slotByte(bufferSlot);
+		clearResidentTrackingForSlot(bufferSlot);
+		synchronized (sketchCacheLock) {
+			cacheDirectory.clearDirtyForSlot(slot);
+		}
+
+		for (Component component : COMPONENT_VALUES) {
+			trackRebuiltArray(slot, SINGLE_TRIPLE_KEY_PREFIXES[component.ordinal()],
+					state.singleTriples.get(component));
+			trackRebuiltArray(slot, SINGLE_TRIPLE_KEY_PREFIXES[component.ordinal()] | DELETE_KEY_PREFIX_MASK,
+					state.delSingleTriples.get(component));
+		}
+		trackRebuiltSingles(slot, state.singles, false);
+		trackRebuiltSingles(slot, state.delSingles, true);
+		trackRebuiltPairs(slot, state.pairs, false);
+		trackRebuiltPairs(slot, state.delPairs, true);
+
+		dirty.set(true);
+		refreshCacheMetadataAccounting();
+		enforceSketchBudget();
+	}
+
+	private void trackRebuiltSingles(byte slot, StateComponents<SingleBuild> singles, boolean isDelete) {
+		int deleteMask = isDelete ? DELETE_KEY_PREFIX_MASK : 0;
+		for (Component fixed : COMPONENT_VALUES) {
+			SingleBuild build = singles.get(fixed);
+			for (Map.Entry<Component, AtomicReferenceArray<UpdateSketch>> entry : build.cmpl.entrySet()) {
+				int keyPrefix = SINGLE_COMPLEMENT_KEY_PREFIXES[fixed.ordinal()][entry.getKey().ordinal()] | deleteMask;
+				trackRebuiltArray(slot, keyPrefix, entry.getValue());
+			}
+		}
+	}
+
+	private void trackRebuiltPairs(byte slot, EnumMap<Pair, PairBuild> pairs, boolean isDelete) {
+		int deleteMask = isDelete ? DELETE_KEY_PREFIX_MASK : 0;
+		for (Pair pair : PAIR_VALUES) {
+			PairBuild build = pairs.get(pair);
+			int pairIndex = pair.ordinal();
+			int triplePrefix = PAIR_TRIPLE_KEY_PREFIXES[pairIndex] | deleteMask;
+			int comp1Prefix = PAIR_COMP1_KEY_PREFIXES[pairIndex] | deleteMask;
+			int comp2Prefix = PAIR_COMP2_KEY_PREFIXES[pairIndex] | deleteMask;
+			for (Map.Entry<Integer, PairBuild.Row> rowEntry : build.rows.entrySet()) {
+				int x = rowEntry.getKey();
+				PairBuild.Row row = rowEntry.getValue();
+				trackRebuiltMap(slot, triplePrefix, x, row.triples);
+				trackRebuiltMap(slot, comp1Prefix, x, row.comp1);
+				trackRebuiltMap(slot, comp2Prefix, x, row.comp2);
+			}
+		}
+	}
+
+	private void trackRebuiltArray(byte slot, int keyPrefix, AtomicReferenceArray<UpdateSketch> sketches) {
+		for (int x = 0; x < sketches.length(); x++) {
+			trackRebuiltSketch(slot, keyPrefix, x, 0, sketches.get(x));
+		}
+	}
+
+	private void trackRebuiltMap(byte slot, int keyPrefix, int x, Map<Integer, UpdateSketch> sketches) {
+		for (Map.Entry<Integer, UpdateSketch> entry : sketches.entrySet()) {
+			trackRebuiltSketch(slot, keyPrefix, x, entry.getKey(), entry.getValue());
+		}
+	}
+
+	private void trackRebuiltSketch(byte slot, int keyPrefix, int x, int y, UpdateSketch sketch) {
+		if (sketch == null) {
+			return;
+		}
+		long bytes = estimatedSketchBytes(sketch);
+		int keyHash = mixAddressHash(keyPrefix, x, y);
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.findOrAdd(keyPrefix, keyHash, x, y);
+			cacheDirectory.markDirty(entryId, slot);
+			int nodeId = cacheDirectory.residentNode(entryId, slot);
+			if (nodeId == -1) {
+				int createdNodeId = residentLru.add(entryId, slot, bytes);
+				cacheDirectory.setResidentNode(entryId, slot, createdNodeId);
+				residentSketchBytes += bytes;
+			} else {
+				long previousBytes = residentLru.bytes(nodeId);
+				residentLru.touch(nodeId, bytes);
+				residentSketchBytes += bytes - previousBytes;
+			}
+		}
+		replaceTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId), bytes);
 	}
 
 	private void removeResidentSketchTracking(int entryId, byte slot) {
