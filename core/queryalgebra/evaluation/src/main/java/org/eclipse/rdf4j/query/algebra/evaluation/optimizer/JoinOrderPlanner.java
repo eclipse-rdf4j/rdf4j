@@ -33,11 +33,20 @@ public interface JoinOrderPlanner {
 		private final List<TupleExpr> orderedArgs;
 		private final double estimatedFinalRows;
 		private final double estimatedTotalWork;
+		private final List<String> diagnostics;
 
 		public JoinOrderPlan(List<TupleExpr> orderedArgs, double estimatedFinalRows, double estimatedTotalWork) {
+			this(orderedArgs, estimatedFinalRows, estimatedTotalWork, List.of());
+		}
+
+		public JoinOrderPlan(List<TupleExpr> orderedArgs, double estimatedFinalRows, double estimatedTotalWork,
+				List<String> diagnostics) {
 			this.orderedArgs = Collections.unmodifiableList(new ArrayList<>(orderedArgs));
 			this.estimatedFinalRows = estimatedFinalRows;
 			this.estimatedTotalWork = estimatedTotalWork;
+			this.diagnostics = diagnostics == null || diagnostics.isEmpty()
+					? List.of()
+					: Collections.unmodifiableList(new ArrayList<>(diagnostics));
 		}
 
 		public List<TupleExpr> getOrderedArgs() {
@@ -50,6 +59,10 @@ public interface JoinOrderPlanner {
 
 		public double getEstimatedTotalWork() {
 			return estimatedTotalWork;
+		}
+
+		public List<String> getDiagnostics() {
+			return diagnostics;
 		}
 	}
 

@@ -316,6 +316,36 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(telemetry.toString()).contains("varianceActual=");
 	}
 
+	@Test
+	public void copiesOptimizerMetricsAtOptimizedLevelWithoutRuntimeTelemetry() {
+		Join join = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		join.setRuntimeTelemetryEnabled(true);
+		join.setSourceRowsScannedActual(99);
+		join.setLongMetricActual("optimizer.candidateCount", 3L);
+		join.setDoubleMetricActual("optimizer.score", 12.5);
+		join.setStringMetricActual("optimizer.strategy", "greedy");
+		join.setStringMetricActual("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8");
+		join.setStringMetricActual(TelemetryMetricNames.METRIC_ORIGIN + ".selectivityActual", "runtime");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Optimized);
+		join.visit(converter);
+
+		GenericPlanNode root = converter.getGenericPlanNode();
+		assertThat(root.getSourceRowsScannedActual()).isNull();
+		assertThat(root.getLongMetricsActual()).containsEntry("optimizer.candidateCount", 3L);
+		assertThat(root.getDoubleMetricsActual()).containsEntry("optimizer.score", 12.5);
+		assertThat(root.getStringMetricsActual())
+				.containsEntry("optimizer.strategy", "greedy")
+				.containsEntry("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8")
+				.doesNotContainKey(TelemetryMetricNames.METRIC_ORIGIN + ".selectivityActual");
+		assertThat(root.toString())
+				.contains("optimizer.strategy=greedy")
+				.doesNotContain("sourceRowsScannedActual=");
+	}
+
 	private static GenericPlanNode statementPattern(GenericPlanNode join, int index) {
 		return join.getPlans().get(index);
 	}

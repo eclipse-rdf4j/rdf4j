@@ -46,6 +46,7 @@ final class SketchJoinOrderPlanner {
 	private final Map<Long, Set<String>> variablesMemo = new HashMap<>();
 	private final SketchBasedJoinEstimator.SketchPlannerPath factorRejectionPath;
 	private final TupleExpr rejectedFactor;
+	private final List<String> diagnostics = new ArrayList<>();
 
 	SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
 			SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster,
@@ -63,28 +64,31 @@ final class SketchJoinOrderPlanner {
 
 	PlanOutcome plan(JoinOrderPlanner.Algorithm algorithm) {
 		if (factorRejectionPath != null) {
-			logger.debug("Sketch join reorder rejected: path={} factor={}", factorRejectionPath,
-					rejectedFactor == null ? "<unknown>" : describeTupleExpr(rejectedFactor));
-			return new PlanOutcome(Optional.empty(), factorRejectionPath);
+			recordDebug("rejected: path=" + factorRejectionPath + " factor="
+					+ (rejectedFactor == null ? "<unknown>" : describeTupleExpr(rejectedFactor)));
+			return new PlanOutcome(Optional.empty(), factorRejectionPath, List.copyOf(diagnostics));
 		}
 		if (factors.isEmpty()) {
-			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE);
+			recordDebug("fallback reason=" + SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE
+					+ " factors=[]");
+			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
+					List.copyOf(diagnostics));
 		}
 
 		logFactorEstimates();
 
 		SketchBasedJoinEstimator.SketchPlannerPath classification = classifyGraph();
 		if (classification != null) {
-			logger.debug("Sketch join reorder rejected: path={} factors={}", classification,
-					describeFactorOrder(indices()));
-			return new PlanOutcome(Optional.empty(), classification);
+			recordDebug("rejected: path=" + classification + " factors=" + describeFactorOrder(indices()));
+			return new PlanOutcome(Optional.empty(), classification, List.copyOf(diagnostics));
 		}
 		if (algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
 				&& factors.size() > MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS) {
-			logger.debug("Sketch join reorder rejected: path={} factorCount={} maxDynamicProgrammingArgs={}",
-					SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE, factors.size(),
-					MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS);
-			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE);
+			recordDebug("rejected: path=" + SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE
+					+ " factorCount=" + factors.size() + " maxDynamicProgrammingArgs="
+					+ MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS);
+			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
+					List.copyOf(diagnostics));
 		}
 
 		StatePlan result = switch (algorithm) {
@@ -93,20 +97,21 @@ final class SketchJoinOrderPlanner {
 		case GREEDY -> optimizeGreedy();
 		};
 		if (result == null) {
-			logger.debug("Sketch join reorder rejected: path={} factors={}",
-					SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE, describeFactorOrder(indices()));
-			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE);
+			recordDebug("rejected: path=" + SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE
+					+ " factors=" + describeFactorOrder(indices()));
+			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
+					List.copyOf(diagnostics));
 		}
 
 		List<TupleExpr> orderedArgs = new ArrayList<>(result.order().size());
 		for (Integer index : result.order()) {
 			orderedArgs.add(factors.get(index.intValue()).tupleExpr());
 		}
-		logger.debug("Sketch join reorder result: order={} estimate={} totalWork={}",
-				describeExprOrder(orderedArgs), result.estimate().summary(), result.totalWork());
+		recordDebug("result: order=" + describeExprOrder(orderedArgs) + " estimate=" + result.estimate().summary()
+				+ " totalWork=" + result.totalWork());
 		return new PlanOutcome(Optional.of(new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs),
-				result.estimate().outputRows(), result.totalWork())),
-				SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED);
+				result.estimate().outputRows(), result.totalWork(), List.copyOf(diagnostics))),
+				SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, List.copyOf(diagnostics));
 	}
 
 	private FactorBuildResult buildFactors(List<TupleExpr> expressions) {
@@ -192,10 +197,9 @@ final class SketchJoinOrderPlanner {
 		for (int i = 0; i < factors.size(); i++) {
 			PlanFactor factor = factors.get(i);
 			double adjustedWorkRows = adjustedWorkRows(i, initiallyBoundVars, factor.estimate().outputRows());
-			logger.debug(
-					"Sketch join reorder greedy seed candidate: factor={} estimate={} adjustedWorkRows={} boundVars={}",
-					describeFactor(i), factor.estimate().summary(), adjustedWorkRows,
-					new TreeSet<>(initiallyBoundVars));
+			recordDebug("greedy seed candidate: factor=" + describeFactor(i) + " estimate="
+					+ factor.estimate().summary() + " adjustedWorkRows=" + adjustedWorkRows + " boundVars="
+					+ new TreeSet<>(initiallyBoundVars));
 			if (adjustedWorkRows < bestSeedWork
 					|| adjustedWorkRows == bestSeedWork
 							&& (factor.estimate().outputRows() < bestSeedRows
@@ -214,8 +218,8 @@ final class SketchJoinOrderPlanner {
 		List<Integer> order = new ArrayList<>();
 		order.add(seed);
 		SketchBasedJoinEstimator.TuplePlanEstimate currentEstimate = factors.get(seed).estimate();
-		logger.debug("Sketch join reorder greedy seed: chosen={} estimate={} adjustedWorkRows={}",
-				describeFactor(seed), currentEstimate.summary(), bestSeedWork);
+		recordDebug("greedy seed: chosen=" + describeFactor(seed) + " estimate=" + currentEstimate.summary()
+				+ " adjustedWorkRows=" + bestSeedWork);
 
 		while (mask != allMask()) {
 			int bestNext = -1;
@@ -233,11 +237,10 @@ final class SketchJoinOrderPlanner {
 				SketchBasedJoinEstimator.JoinStepEstimate step = estimator
 						.estimateJoinStepForJoinOrdering(currentEstimate, candidateFactor.estimate());
 				double adjustedWorkRows = adjustedWorkRows(candidate, currentBoundVars, step.workRows());
-				logger.debug(
-						"Sketch join reorder greedy candidate: prefixOrder={} candidate={} sharedVar={} step={} adjustedWorkRows={} boundVars={}",
-						describeFactorOrder(order), describeFactor(candidate), sharedVariable, step.summary(),
-						adjustedWorkRows,
-						new TreeSet<>(currentBoundVars));
+				recordDebug("greedy candidate: prefixOrder=" + describeFactorOrder(order) + " candidate="
+						+ describeFactor(candidate) + " sharedVar=" + sharedVariable + " step=" + step.summary()
+						+ " adjustedWorkRows=" + adjustedWorkRows + " boundVars="
+						+ new TreeSet<>(currentBoundVars));
 				if (adjustedWorkRows < bestAdjustedWorkRows
 						|| adjustedWorkRows == bestAdjustedWorkRows
 								&& (step.outputRows() < bestStepRows
@@ -257,10 +260,10 @@ final class SketchJoinOrderPlanner {
 			totalWork += bestAdjustedWorkRows;
 			order.add(bestNext);
 			currentEstimate = estimator.joinedPlanEstimate(bestStep);
-			logger.debug(
-					"Sketch join reorder greedy choose: order={} chosen={} sharedVar={} estimate={} adjustedWorkRows={} totalWork={}",
-					describeFactorOrder(order), describeFactor(bestNext), bestSharedVar, currentEstimate.summary(),
-					bestAdjustedWorkRows, totalWork);
+			recordDebug("greedy choose: order=" + describeFactorOrder(order) + " chosen="
+					+ describeFactor(bestNext) + " sharedVar=" + bestSharedVar + " estimate="
+					+ currentEstimate.summary() + " adjustedWorkRows=" + bestAdjustedWorkRows + " totalWork="
+					+ totalWork);
 		}
 
 		return new StatePlan(List.copyOf(order), currentEstimate, totalWork);
@@ -276,8 +279,8 @@ final class SketchJoinOrderPlanner {
 			StatePlan seedPlan = new StatePlan(List.of(i), factor.estimate(), adjustedWorkRows);
 			bestByMask.put(bit(i), seedPlan);
 			statesBySize.computeIfAbsent(1, ignored -> new LinkedHashSet<>()).add(bit(i));
-			logger.debug("Sketch join reorder dp seed: factor={} estimate={} adjustedWorkRows={}", describeFactor(i),
-					factor.estimate().summary(), adjustedWorkRows);
+			recordDebug("dp seed: factor=" + describeFactor(i) + " estimate=" + factor.estimate().summary()
+					+ " adjustedWorkRows=" + adjustedWorkRows);
 		}
 
 		for (int size = 1; size < factors.size(); size++) {
@@ -302,17 +305,15 @@ final class SketchJoinOrderPlanner {
 					StatePlan candidatePlan = new StatePlan(List.copyOf(nextOrder), estimator.joinedPlanEstimate(step),
 							prefix.totalWork() + adjustedWorkRows);
 					StatePlan incumbent = bestByMask.get(nextMask);
-					logger.debug(
-							"Sketch join reorder dp candidate: prefixOrder={} candidate={} sharedVar={} step={} adjustedWorkRows={} totalWork={}",
-							describeFactorOrder(prefix.order()), describeFactor(candidate), sharedVariable,
-							step.summary(),
-							adjustedWorkRows, candidatePlan.totalWork());
+					recordDebug("dp candidate: prefixOrder=" + describeFactorOrder(prefix.order()) + " candidate="
+							+ describeFactor(candidate) + " sharedVar=" + sharedVariable + " step="
+							+ step.summary() + " adjustedWorkRows=" + adjustedWorkRows + " totalWork="
+							+ candidatePlan.totalWork());
 					if (isBetter(candidatePlan, incumbent)) {
 						bestByMask.put(nextMask, candidatePlan);
 						statesBySize.computeIfAbsent(size + 1, ignored -> new LinkedHashSet<>()).add(nextMask);
-						logger.debug("Sketch join reorder dp choose: order={} estimate={} totalWork={}",
-								describeFactorOrder(candidatePlan.order()), candidatePlan.estimate().summary(),
-								candidatePlan.totalWork());
+						recordDebug("dp choose: order=" + describeFactorOrder(candidatePlan.order()) + " estimate="
+								+ candidatePlan.estimate().summary() + " totalWork=" + candidatePlan.totalWork());
 					}
 				}
 			}
@@ -373,10 +374,14 @@ final class SketchJoinOrderPlanner {
 	private void logFactorEstimates() {
 		for (int i = 0; i < factors.size(); i++) {
 			PlanFactor factor = factors.get(i);
-			logger.debug("Sketch join reorder factor[{}]: expr={} estimate={}", i,
-					describeTupleExpr(factor.tupleExpr()),
-					factor.estimate().summary());
+			recordDebug("factor[" + i + "]: expr=" + describeTupleExpr(factor.tupleExpr()) + " estimate="
+					+ factor.estimate().summary());
 		}
+	}
+
+	private void recordDebug(String message) {
+		diagnostics.add(message);
+		logger.debug("Sketch join reorder {}", message);
 	}
 
 	private String describeFactor(int index) {
@@ -496,7 +501,8 @@ final class SketchJoinOrderPlanner {
 	}
 
 	record PlanOutcome(Optional<JoinOrderPlanner.JoinOrderPlan> plan,
-			SketchBasedJoinEstimator.SketchPlannerPath path) {
+			SketchBasedJoinEstimator.SketchPlannerPath path,
+			List<String> diagnostics) {
 	}
 
 	private record PlanFactor(int index, TupleExpr tupleExpr, SketchBasedJoinEstimator.TuplePlanEstimate estimate) {

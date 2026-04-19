@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -690,7 +691,29 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					join.setResultSizeEstimate(Math.max(join.getResultSizeEstimate(), estimatedResultSize));
 				}
 			}
+			copyOptimizerAnnotations(left, join);
+			if (join.getStringMetricActual(TelemetryMetricNames.OPTIMIZER_STRATEGY) == null) {
+				copyOptimizerAnnotations(right, join);
+			}
 			return join;
+		}
+
+		private void copyOptimizerAnnotations(TupleExpr source, TupleExpr target) {
+			for (Map.Entry<String, Long> entry : source.getLongMetricsActual().entrySet()) {
+				if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+					target.setLongMetricActual(entry.getKey(), entry.getValue());
+				}
+			}
+			for (Map.Entry<String, Double> entry : source.getDoubleMetricsActual().entrySet()) {
+				if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+					target.setDoubleMetricActual(entry.getKey(), entry.getValue());
+				}
+			}
+			for (Map.Entry<String, String> entry : source.getStringMetricsActual().entrySet()) {
+				if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+					target.setStringMetricActual(entry.getKey(), entry.getValue());
+				}
+			}
 		}
 
 		private Deque<TupleExpr> positionBindingSetAssignments(Deque<TupleExpr> orderedJoinArgs) {
@@ -838,10 +861,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			Set<String> prefixBindingNames = new HashSet<>(outerBoundVars);
 			boolean hasConnectedInitialPair = hasConnectedInitialPair(remaining);
 			boolean hasAnchoredInitialPair = hasAnchoredInitialPair(remaining, outerBoundVars);
+			List<String> decisionTrace = new ArrayList<>();
+			int candidateCount = 0;
 
 			int bestLeftIndex = 0;
 			int bestRightIndex = 1;
 			GreedyChoiceScore bestInitialScore = null;
+			GreedyChoiceCandidate bestInitialCandidate = null;
+			List<GreedyChoiceCandidate> initialCandidates = new ArrayList<>();
 			for (int leftIndex = 0; leftIndex < remaining.size() - 1; leftIndex++) {
 				for (int rightIndex = leftIndex + 1; rightIndex < remaining.size(); rightIndex++) {
 					TupleExpr left = remaining.get(leftIndex);
@@ -850,14 +877,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							deferredFilters, cardinalityCache, hasConnectedInitialPair, hasAnchoredInitialPair);
 					GreedyChoiceScore score = scoreGreedyChoice(metrics, originalOrder.get(left),
 							originalOrder.get(right));
+					GreedyChoiceCandidate candidate = new GreedyChoiceCandidate("initial", left, right, metrics,
+							score);
+					initialCandidates.add(candidate);
+					candidateCount++;
 					traceGreedyChoice("initial", left, right, metrics, score);
 					if (bestInitialScore == null || compareGreedyChoices(score, bestInitialScore) < 0) {
 						bestInitialScore = score;
+						bestInitialCandidate = candidate;
 						bestLeftIndex = leftIndex;
 						bestRightIndex = rightIndex;
 					}
 				}
 			}
+			recordGreedyCandidateTrace(decisionTrace, initialCandidates, bestInitialCandidate);
 
 			TupleExpr left = remaining.remove(bestLeftIndex);
 			TupleExpr right = remaining.remove(bestRightIndex > bestLeftIndex ? bestRightIndex - 1 : bestRightIndex);
@@ -871,30 +904,42 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			prefixBindingNames.addAll(right.getBindingNames());
 			List<DeferredFilter> pendingDeferredFilters = removeCompatibleFilters(deferredFilters, prefixBindingNames);
 			TupleExpr prefixForEstimation = new Join(left.clone(), right.clone());
+			GreedyChoiceCandidate chosenDecision = bestInitialCandidate;
 
 			while (!remaining.isEmpty()) {
 				TupleExpr bestCandidate = null;
 				GreedyChoiceScore bestCandidateScore = null;
+				GreedyChoiceCandidate bestCandidateDecision = null;
+				List<GreedyChoiceCandidate> expandCandidates = new ArrayList<>();
 				boolean hasConnectedCandidate = hasConnectedCandidate(remaining, prefixBindingNames);
 				for (TupleExpr candidate : remaining) {
 					GreedyChoiceMetrics metrics = buildNextGreedyChoiceMetrics(prefixForEstimation, prefixBindingNames,
 							candidate, pendingDeferredFilters, cardinalityCache, hasConnectedCandidate);
 					GreedyChoiceScore score = scoreGreedyChoice(metrics, originalOrder.get(candidate), -1);
+					GreedyChoiceCandidate candidateDecision = new GreedyChoiceCandidate("expand", prefixForEstimation,
+							candidate, metrics, score);
+					expandCandidates.add(candidateDecision);
+					candidateCount++;
 					traceGreedyChoice("expand", prefixForEstimation, candidate, metrics, score);
 					if (bestCandidateScore == null || compareGreedyChoices(score, bestCandidateScore) < 0) {
 						bestCandidateScore = score;
 						bestCandidate = candidate;
+						bestCandidateDecision = candidateDecision;
 					}
 				}
+				recordGreedyCandidateTrace(decisionTrace, expandCandidates, bestCandidateDecision);
 
 				if (bestCandidate == null) {
 					bestCandidate = remaining.get(0);
+					decisionTrace.add("fallback reason=no-greedy-candidate candidate="
+							+ describeTupleExprForOptimizer(bestCandidate));
 				}
 				remaining.remove(bestCandidate);
 				ordered.addLast(bestCandidate);
 				prefixBindingNames.addAll(bestCandidate.getBindingNames());
 				pendingDeferredFilters = removeCompatibleFilters(pendingDeferredFilters, prefixBindingNames);
 				prefixForEstimation = new Join(prefixForEstimation, bestCandidate.clone());
+				chosenDecision = bestCandidateDecision == null ? chosenDecision : bestCandidateDecision;
 			}
 
 			if (log.isTraceEnabled()) {
@@ -902,7 +947,207 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						ordered.stream().map(t -> t.toString().trim()).toList());
 			}
 
+			annotateGreedyDiagnostics(ordered, segment, outerBoundVars, deferredFilters, decisionTrace,
+					chosenDecision, candidateCount);
+
 			return ordered;
+		}
+
+		private void recordGreedyCandidateTrace(List<String> decisionTrace,
+				List<GreedyChoiceCandidate> candidates,
+				GreedyChoiceCandidate chosen) {
+			for (GreedyChoiceCandidate candidate : candidates) {
+				boolean isChosen = candidate == chosen;
+				decisionTrace.add(formatGreedyCandidate(candidate, isChosen,
+						isChosen ? "chosen" : rejectionReason(candidate.score, chosen == null ? null : chosen.score)));
+			}
+		}
+
+		private String formatGreedyCandidate(GreedyChoiceCandidate candidate, boolean chosen, String reason) {
+			return candidate.phase
+					+ " candidate left=" + describeTupleExprForOptimizer(candidate.left)
+					+ " right=" + describeTupleExprForOptimizer(candidate.right)
+					+ " score=" + formatOptimizerNumber(candidate.score.adjustedCost)
+					+ " rawRows=" + formatOptimizerNumber(candidate.metrics.rawJoinRows)
+					+ " effectiveRows=" + formatOptimizerNumber(candidate.metrics.effectiveJoinRows)
+					+ " sharedVars=" + candidate.metrics.sharedVarCount
+					+ " boundAnchors=" + candidate.metrics.boundAnchorCount
+					+ " cheapFilters=" + candidate.metrics.cheapFilterUnlockCount
+					+ " expensiveFilters=" + candidate.metrics.expensiveFilterUnlockCount
+					+ " filterPassRatio=" + formatOptimizerNumber(candidate.metrics.combinedUnlockedFilterPassRatio)
+					+ " tieBreakerIndex=" + candidate.score.stableIndex
+					+ " decision=" + (chosen ? "chosen" : "rejected")
+					+ " reason=" + reason;
+		}
+
+		private String rejectionReason(GreedyChoiceScore candidate, GreedyChoiceScore chosen) {
+			if (chosen == null) {
+				return "no chosen candidate";
+			}
+			int adjustedCostComparison = Double.compare(candidate.adjustedCost, chosen.adjustedCost);
+			if (adjustedCostComparison > 0) {
+				return "higher adjusted cost";
+			}
+			int rawCostComparison = Double.compare(candidate.rawCost, chosen.rawCost);
+			if (rawCostComparison > 0) {
+				return "higher raw rows";
+			}
+			int stableIndexComparison = Integer.compare(candidate.stableIndex, chosen.stableIndex);
+			if (stableIndexComparison > 0) {
+				return "later tie-breaker index";
+			}
+			int secondaryIndexComparison = Integer.compare(candidate.secondaryStableIndex, chosen.secondaryStableIndex);
+			if (secondaryIndexComparison > 0) {
+				return "later secondary tie-breaker index";
+			}
+			return "not selected";
+		}
+
+		private void annotateGreedyDiagnostics(List<TupleExpr> ordered, List<TupleExpr> originalOrder,
+				Set<String> outerBoundVars, List<DeferredFilter> deferredFilters, List<String> decisionTrace,
+				GreedyChoiceCandidate chosenDecision, int candidateCount) {
+			if (ordered.isEmpty()) {
+				return;
+			}
+
+			TupleExpr target = ordered.get(0);
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_STRATEGY, "greedy");
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_CONFIGURED_STRATEGY,
+					JOIN_ORDER_STRATEGY.name().toLowerCase());
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_THRESHOLDS, optimizerThresholds());
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_ORIGINAL_ORDER,
+					describeTupleExprOrderForOptimizer(originalOrder));
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_CHOSEN_ORDER,
+					describeTupleExprOrderForOptimizer(ordered));
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_INITIALLY_BOUND_VARS,
+					describeBindingNames(outerBoundVars));
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_SCOPE_BARRIERS,
+					"segment only; separator barriers preserved outside this segment");
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_ESTIMATE_SOURCE,
+					optimizerEstimateSource(deferredFilters));
+			target.setLongMetricActual(TelemetryMetricNames.OPTIMIZER_CANDIDATE_COUNT, candidateCount);
+			if (!decisionTrace.isEmpty()) {
+				target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE,
+						String.join("; ", decisionTrace));
+			}
+			if (chosenDecision != null) {
+				target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_DECISION,
+						chosenDecision.phase + " chosen " + describeTupleExprForOptimizer(chosenDecision.right));
+				target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_SCORE_COMPONENTS,
+						scoreComponents(chosenDecision));
+				if (Double.isFinite(chosenDecision.score.adjustedCost) && chosenDecision.score.adjustedCost >= 0.0d) {
+					target.setDoubleMetricActual(TelemetryMetricNames.OPTIMIZER_SCORE,
+							chosenDecision.score.adjustedCost);
+				}
+			}
+			target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_REJECTION_REASON,
+					decisionTrace.stream()
+							.filter(line -> line.contains("decision=rejected"))
+							.findFirst()
+							.map(line -> line.substring(line.indexOf("reason=") + "reason=".length()))
+							.orElse("<none>"));
+		}
+
+		private String scoreComponents(GreedyChoiceCandidate chosenDecision) {
+			return "rawRows=" + formatOptimizerNumber(chosenDecision.metrics.rawJoinRows)
+					+ ", effectiveRows=" + formatOptimizerNumber(chosenDecision.metrics.effectiveJoinRows)
+					+ ", adjustedCost=" + formatOptimizerNumber(chosenDecision.score.adjustedCost)
+					+ ", sharedVars=" + chosenDecision.metrics.sharedVarCount
+					+ ", boundAnchors=" + chosenDecision.metrics.boundAnchorCount
+					+ ", cheapFilters=" + chosenDecision.metrics.cheapFilterUnlockCount
+					+ ", expensiveFilters=" + chosenDecision.metrics.expensiveFilterUnlockCount
+					+ ", filterPassRatio="
+					+ formatOptimizerNumber(chosenDecision.metrics.combinedUnlockedFilterPassRatio)
+					+ ", tieBreakerIndex=" + chosenDecision.score.stableIndex;
+		}
+
+		private String optimizerThresholds() {
+			return "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=" + DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT
+					+ ", MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER="
+					+ MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER
+					+ ", AVOIDABLE_CROSS_JOIN_PENALTY=" + AVOIDABLE_CROSS_JOIN_PENALTY
+					+ ", UNANCHORED_INITIAL_PAIR_PENALTY=" + UNANCHORED_INITIAL_PAIR_PENALTY
+					+ ", SHARED_VAR_BONUS_PER_VAR=" + SHARED_VAR_BONUS_PER_VAR
+					+ ", MAX_SHARED_VAR_BONUS=" + MAX_SHARED_VAR_BONUS
+					+ ", BOUND_ANCHOR_BONUS_PER_VAR=" + BOUND_ANCHOR_BONUS_PER_VAR
+					+ ", MAX_BOUND_ANCHOR_BONUS=" + MAX_BOUND_ANCHOR_BONUS
+					+ ", CHEAP_FILTER_BONUS_PER_FILTER=" + CHEAP_FILTER_BONUS_PER_FILTER
+					+ ", MAX_CHEAP_FILTER_BONUS=" + MAX_CHEAP_FILTER_BONUS
+					+ ", EXPENSIVE_FILTER_BONUS_PER_FILTER=" + EXPENSIVE_FILTER_BONUS_PER_FILTER
+					+ ", MAX_EXPENSIVE_FILTER_BONUS=" + MAX_EXPENSIVE_FILTER_BONUS
+					+ ", MIN_UNLOCKED_FILTER_PASS_RATIO=" + MIN_UNLOCKED_FILTER_PASS_RATIO;
+		}
+
+		private String optimizerEstimateSource(List<DeferredFilter> deferredFilters) {
+			String statisticsName = statistics.getClass().getSimpleName().toLowerCase();
+			if (statisticsName.contains("sketch")) {
+				return deferredFilters.isEmpty() ? "sketch" : "sketch+filter stats";
+			}
+			if (!deferredFilters.isEmpty() && statistics.supportsFilterSelectivityCosting()) {
+				return "cardinality+learned filter stats";
+			}
+			if (statistics.supportsJoinEstimation()) {
+				return "cardinality";
+			}
+			return "heuristic";
+		}
+
+		private String describeTupleExprOrderForOptimizer(List<TupleExpr> tupleExprs) {
+			List<String> labels = new ArrayList<>(tupleExprs.size());
+			for (TupleExpr tupleExpr : tupleExprs) {
+				labels.add(describeTupleExprForOptimizer(tupleExpr));
+			}
+			return labels.toString();
+		}
+
+		private String describeTupleExprForOptimizer(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				StatementPattern pattern = (StatementPattern) tupleExpr;
+				return "SP(" + describeVarForOptimizer(pattern.getSubjectVar()) + ' '
+						+ describeVarForOptimizer(pattern.getPredicateVar()) + ' '
+						+ describeVarForOptimizer(pattern.getObjectVar()) + ')';
+			}
+			String signature = tupleExpr.getSignature().replace('\n', ' ').replaceAll("\\s+", " ").trim();
+			return signature.length() <= 160 ? signature : signature.substring(0, 157) + "...";
+		}
+
+		private String describeVarForOptimizer(Var var) {
+			if (var == null) {
+				return "null";
+			}
+			if (!var.hasValue()) {
+				return '?' + var.getName();
+			}
+			Value value = var.getValue();
+			if (value == null) {
+				return '?' + var.getName();
+			}
+			if (value instanceof IRI) {
+				return ((IRI) value).getLocalName();
+			}
+			return value.stringValue();
+		}
+
+		private String describeBindingNames(Set<String> bindingNames) {
+			if (bindingNames == null || bindingNames.isEmpty()) {
+				return "[]";
+			}
+			List<String> sorted = new ArrayList<>(bindingNames);
+			Collections.sort(sorted);
+			return sorted.toString();
+		}
+
+		private String formatOptimizerNumber(double value) {
+			if (Double.isNaN(value)) {
+				return "NaN";
+			}
+			if (value == Double.POSITIVE_INFINITY) {
+				return "Infinity";
+			}
+			if (value == Double.NEGATIVE_INFINITY) {
+				return "-Infinity";
+			}
+			return Double.toString(value);
 		}
 
 		private Set<String> getAvailableVars(Set<String> baseBindingNames, TupleExpr tupleExpr) {
@@ -1344,6 +1589,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				this.rawCost = rawCost;
 				this.stableIndex = stableIndex;
 				this.secondaryStableIndex = secondaryStableIndex;
+			}
+		}
+
+		private final class GreedyChoiceCandidate {
+			private final String phase;
+			private final TupleExpr left;
+			private final TupleExpr right;
+			private final GreedyChoiceMetrics metrics;
+			private final GreedyChoiceScore score;
+
+			private GreedyChoiceCandidate(String phase, TupleExpr left, TupleExpr right, GreedyChoiceMetrics metrics,
+					GreedyChoiceScore score) {
+				this.phase = phase;
+				this.left = left;
+				this.right = right;
+				this.metrics = metrics;
+				this.score = score;
 			}
 		}
 

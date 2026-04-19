@@ -19,6 +19,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
@@ -313,7 +314,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setLongMetricActual(String metricName, long metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled) {
+		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 			return;
 		}
 		if (longMetricsActual.isEmpty()) {
@@ -334,7 +335,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setDoubleMetricActual(String metricName, double metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled) {
+		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 			return;
 		}
 		if (doubleMetricsActual.isEmpty()) {
@@ -355,7 +356,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setStringMetricActual(String metricName, String metricValue) {
-		if (metricName == null || !runtimeTelemetryEnabled) {
+		if (metricName == null || !runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 			return;
 		}
 		if (stringMetricsActual.isEmpty()) {

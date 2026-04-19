@@ -435,7 +435,7 @@ public class GenericPlanNode {
 	}
 
 	public Long getLongMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled) {
+		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 			return null;
 		}
 		Long metricValue = longMetricsActual.get(metricName);
@@ -454,10 +454,8 @@ public class GenericPlanNode {
 	}
 
 	public Map<String, Double> getDoubleMetricsActual() {
-		if (!runtimeTelemetryEnabled || doubleMetricsActual.isEmpty()) {
-			return null;
-		}
-		return doubleMetricsActual;
+		Map<String, Double> visible = visibleDoubleMetricsActual();
+		return visible == null || visible.isEmpty() ? null : visible;
 	}
 
 	public void setDoubleMetricsActual(Map<String, Double> doubleMetricsActual) {
@@ -466,7 +464,7 @@ public class GenericPlanNode {
 	}
 
 	public Double getDoubleMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled) {
+		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 			return null;
 		}
 		return doubleMetricsActual.get(metricName);
@@ -490,7 +488,7 @@ public class GenericPlanNode {
 	}
 
 	public String getStringMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !isPreferredExplainAnnotationMetric(metricName)) {
+		if (!runtimeTelemetryEnabled && !isVisibleWithoutRuntimeTelemetry(metricName)) {
 			return null;
 		}
 		String metricValue = stringMetricsActual.get(metricName);
@@ -926,7 +924,7 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Long> entry : visibleLongMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Long metricValue = entry.getValue();
-				if (metricValue == null || metricValue <= 0) {
+				if (metricValue == null || metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
@@ -941,7 +939,7 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Double> entry : visibleDoubleMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Double metricValue = entry.getValue();
-				if (metricValue == null || metricValue <= 0) {
+				if (metricValue == null || metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
@@ -1012,6 +1010,13 @@ public class GenericPlanNode {
 				visible.put(metricName, metricValue);
 			}
 		}
+		for (Map.Entry<String, String> entry : stringMetricsActual.entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+					&& entry.getValue() != null
+					&& !entry.getValue().isEmpty()) {
+				visible.put(entry.getKey(), entry.getValue());
+			}
+		}
 		return visible;
 	}
 
@@ -1020,8 +1025,11 @@ public class GenericPlanNode {
 	}
 
 	private Map<String, Long> visibleLongMetricsActual() {
-		if (!runtimeTelemetryEnabled || longMetricsActual.isEmpty()) {
+		if (longMetricsActual.isEmpty()) {
 			return null;
+		}
+		if (!runtimeTelemetryEnabled) {
+			return optimizerMetrics(longMetricsActual);
 		}
 		Long outputRowsActual = longMetricsActual.get(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL);
 		if (!Objects.equals(outputRowsActual, getResultSizeActual())) {
@@ -1032,11 +1040,38 @@ public class GenericPlanNode {
 		return visible;
 	}
 
+	private Map<String, Double> visibleDoubleMetricsActual() {
+		if (doubleMetricsActual.isEmpty()) {
+			return null;
+		}
+		if (runtimeTelemetryEnabled) {
+			return doubleMetricsActual;
+		}
+		return optimizerMetrics(doubleMetricsActual);
+	}
+
 	private static boolean isPreferredExplainAnnotationMetric(String metricName) {
 		return TelemetryMetricNames.BINDING_STATE.equals(metricName)
 				|| TelemetryMetricNames.JOIN_TYPE.equals(metricName)
 				|| TelemetryMetricNames.INDEX_NAME.equals(metricName)
 				|| TelemetryMetricNames.INDEX_NAMES.equals(metricName);
+	}
+
+	private static boolean isVisibleWithoutRuntimeTelemetry(String metricName) {
+		return isPreferredExplainAnnotationMetric(metricName) || TelemetryMetricNames.isOptimizerMetric(metricName);
+	}
+
+	private static <T> Map<String, T> optimizerMetrics(Map<String, T> metrics) {
+		if (metrics == null || metrics.isEmpty()) {
+			return null;
+		}
+		Map<String, T> visible = new LinkedHashMap<>();
+		for (Map.Entry<String, T> entry : metrics.entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+				visible.put(entry.getKey(), entry.getValue());
+			}
+		}
+		return visible;
 	}
 
 	private void appendDerivedTelemetry(Map<String, String> metrics, Long sourceRowsScanned, Long sourceRowsMatched,

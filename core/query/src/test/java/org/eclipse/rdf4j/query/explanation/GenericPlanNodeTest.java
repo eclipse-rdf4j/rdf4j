@@ -353,6 +353,30 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void toStringSuppressesRuntimeTelemetryButKeepsOptimizerAnnotations() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setRuntimeTelemetryEnabled(false);
+		node.setSourceRowsScannedActual(7L);
+		node.setLongMetricActual("optimizer.candidateCount", 3L);
+		node.setDoubleMetricActual("optimizer.score", 12.5);
+		node.setStringMetricActual("optimizer.strategy", "greedy");
+		node.setStringMetricActual("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8");
+
+		String actual = node.toString();
+
+		assertFalse(actual.contains("sourceRowsScannedActual="), actual);
+		assertTrue(actual.contains("optimizer.candidateCount=3"), actual);
+		assertTrue(actual.contains("optimizer.score="), actual);
+		assertTrue(actual.contains("optimizer.strategy=greedy"), actual);
+		assertTrue(actual.contains("optimizer.thresholds=DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8"), actual);
+
+		String json = new ExplanationImpl(node, false, null).toJson();
+		assertTrue(json.contains("\"optimizer.candidateCount\""), json);
+		assertTrue(json.contains("\"optimizer.score\""), json);
+		assertTrue(json.contains("\"optimizer.strategy\""), json);
+	}
+
+	@Test
 	void explanationLevelHelpersExposeSharedVisibilityPolicy() {
 		assertFalse(Explanation.Level.Unoptimized.includesEvaluationAnnotations());
 		assertFalse(Explanation.Level.Unoptimized.includesRuntimeTelemetry());

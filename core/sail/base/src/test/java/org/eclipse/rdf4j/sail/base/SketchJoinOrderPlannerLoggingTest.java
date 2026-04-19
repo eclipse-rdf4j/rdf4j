@@ -13,8 +13,8 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -70,7 +70,7 @@ class SketchJoinOrderPlannerLoggingTest {
 	}
 
 	@Test
-	void debugLoggingExplainsGreedyReorderDecision() {
+	void debugLoggingExplainsGreedyReorderDecision() throws Exception {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -90,7 +90,8 @@ class SketchJoinOrderPlannerLoggingTest {
 		StatementPattern b = pattern("x", pB, "y");
 		List<TupleExpr> args = List.of(a, b);
 
-		assertTrue(estimator.planJoinOrder(args, Set.of(), JoinOrderPlanner.Algorithm.GREEDY).isPresent());
+		JoinOrderPlanner.JoinOrderPlan plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY).orElseThrow();
 
 		String logOutput = listAppender.list.stream()
 				.map(ILoggingEvent::getFormattedMessage)
@@ -108,6 +109,18 @@ class SketchJoinOrderPlannerLoggingTest {
 				.contains("outputRows=")
 				.contains("workRows=")
 				.contains("SP(?x urn:pB ?y)");
+
+		assertThat(diagnostics(plan))
+				.anySatisfy(line -> assertThat(line).contains("greedy seed"))
+				.anySatisfy(line -> assertThat(line).contains("greedy candidate"))
+				.anySatisfy(line -> assertThat(line).contains("greedy choose"))
+				.anySatisfy(line -> assertThat(line).contains("result: order="));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<String> diagnostics(JoinOrderPlanner.JoinOrderPlan plan) throws Exception {
+		Method method = plan.getClass().getMethod("getDiagnostics");
+		return (List<String>) method.invoke(plan);
 	}
 
 	private static StatementPattern pattern(String subjVar, IRI predicate, String objVar) {

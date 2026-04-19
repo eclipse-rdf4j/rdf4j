@@ -201,6 +201,54 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optimizerAnnotationsExposeGreedyDecisionDiagnostics() {
+		String query = String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:pA ?a .",
+				"  ?a ex:pB ?b .",
+				"  ?s ex:pC ?c .",
+				"}");
+
+		QueryRoot root = optimizeWithStatistics(query,
+				new ParsedQueryPairwiseJoinStatistics(Map.of(
+						pairKey(ex("pA"), ex("pB")), 100.0d,
+						pairKey(ex("pA"), ex("pC")), 80.0d,
+						pairKey(ex("pB"), ex("pC")), 5.0d)));
+
+		List<QueryModelNode> annotatedNodes = optimizerAnnotatedNodes(root);
+		assertThat(annotatedNodes).isNotEmpty();
+
+		QueryModelNode diagnostics = annotatedNodes.get(0);
+		assertThat(diagnostics.getStringMetricActual("optimizer.strategy")).isEqualTo("greedy");
+		assertThat(diagnostics.getStringMetricActual("optimizer.thresholds"))
+				.contains("DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8")
+				.contains("MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER=10")
+				.contains("MIN_UNLOCKED_FILTER_PASS_RATIO=0.25");
+		assertThat(diagnostics.getStringMetricActual("optimizer.originalOrder"))
+				.contains("pA")
+				.contains("pB")
+				.contains("pC");
+		assertThat(diagnostics.getStringMetricActual("optimizer.chosenOrder"))
+				.contains("pB")
+				.contains("pC");
+		assertThat(diagnostics.getStringMetricActual("optimizer.decisionTrace"))
+				.contains("candidate")
+				.contains("chosen")
+				.contains("score=");
+		assertThat(diagnostics.getStringMetricActual("optimizer.scoreComponents"))
+				.contains("rawRows=")
+				.contains("effectiveRows=")
+				.contains("adjustedCost=")
+				.contains("sharedVars=")
+				.contains("boundAnchors=")
+				.contains("filterPassRatio=")
+				.contains("tieBreakerIndex=");
+		assertThat(diagnostics.getStringMetricActual("optimizer.estimateSource")).isNotBlank();
+		assertThat(diagnostics.getDoubleMetricActual("optimizer.score")).isGreaterThanOrEqualTo(0.0d);
+	}
+
+	@Test
 	public void testValues() throws RDF4JException {
 		String query = String.join("\n", "",
 				"prefix ex: <ex:> ",
@@ -680,6 +728,21 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
 		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
 		return root;
+	}
+
+	private static List<QueryModelNode> optimizerAnnotatedNodes(QueryModelNode root) {
+		List<QueryModelNode> nodes = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
+				if (node.getStringMetricActual("optimizer.strategy") != null
+						|| node.getStringMetricActual("optimizer.decisionTrace") != null) {
+					nodes.add(node);
+				}
+				super.meetNode(node);
+			}
+		});
+		return nodes;
 	}
 
 	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
