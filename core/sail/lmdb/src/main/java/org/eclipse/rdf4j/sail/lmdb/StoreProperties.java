@@ -34,7 +34,7 @@ class StoreProperties {
 	 */
 	static final String INDEXES_KEY = "triple-indexes";
 
-	protected final Optional<File> propertiesFile;
+	protected final File propertiesFile;
 
 	protected String version;
 
@@ -45,11 +45,11 @@ class StoreProperties {
 	protected boolean dirty;
 
 	StoreProperties() {
-		this.propertiesFile = Optional.empty();
+		this.propertiesFile = null;
 	}
 
 	StoreProperties(File dir) {
-		this.propertiesFile = Optional.of(new File(dir, FILE_NAME));
+		this.propertiesFile = new File(dir, FILE_NAME);
 	}
 
 	/**
@@ -58,7 +58,7 @@ class StoreProperties {
 	 * @return <code>true</code> if loaded from file, else <code>false</code>
 	 */
 	boolean load() {
-		propertiesFile.filter(File::isFile).ifPresent(file -> {
+		Optional.ofNullable(propertiesFile).filter(File::isFile).ifPresent(file -> {
 			Properties properties = new Properties();
 			try (InputStream in = new FileInputStream(file)) {
 				properties.load(in);
@@ -79,7 +79,7 @@ class StoreProperties {
 		if (!dirty) {
 			return;
 		}
-		propertiesFile.ifPresent(file -> {
+		Optional.ofNullable(propertiesFile).ifPresent(file -> {
 			Properties properties = new Properties();
 			if (version != null) {
 				properties.setProperty(VERSION_KEY, version);
