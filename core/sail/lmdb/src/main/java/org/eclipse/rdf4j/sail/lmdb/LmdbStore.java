@@ -273,7 +273,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 			properties.save();
 
-			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel(false) {
+			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override
 				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta

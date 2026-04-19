@@ -254,6 +254,8 @@ class TripleStore implements Closeable {
 			endTransaction(false);
 			throw e;
 		}
+
+		resetAlignedWriteCursorState();
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -306,7 +308,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
-		for (String fieldSeq : indexSpecs) {
+		for (String fieldSeq : orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(fieldSeq));
 		}

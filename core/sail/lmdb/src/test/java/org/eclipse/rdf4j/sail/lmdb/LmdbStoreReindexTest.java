@@ -77,7 +77,7 @@ public class LmdbStoreReindexTest {
 			};
 			RDFLoader loader = new RDFLoader(conn.getParserConfig(), conn.getValueFactory());
 			loader.load(getClass().getResourceAsStream("/lmdbstore-testdata/SES-1867/initialState.nq"), "",
-				RDFFormat.NQUADS, inserter);
+					RDFFormat.NQUADS, inserter);
 			conn.commit();
 			logger.info("Number of statements: " + conn.size());
 
@@ -90,8 +90,8 @@ public class LmdbStoreReindexTest {
 
 			logger.info("Adding updated context");
 			conn.add(getClass().getResourceAsStream("/lmdbstore-testdata/SES-1867/newTriples.nt"), "",
-				RDFFormat.NTRIPLES,
-				newContext);
+					RDFFormat.NTRIPLES,
+					newContext);
 			conn.commit();
 
 			// Step 3: check whether oldContext is actually empty

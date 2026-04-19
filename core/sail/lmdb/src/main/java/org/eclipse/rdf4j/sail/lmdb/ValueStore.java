@@ -1127,7 +1127,7 @@ class ValueStore extends AbstractValueFactory {
 					valueIDCache.put(nv, id);
 				}
 				// only store hash for non-inlined values
-				if (! ValueIds.isInlined(id)) {
+				if (!ValueIds.isInlined(id)) {
 					storeHashIfAbsent(id, value);
 				}
 				return id;
