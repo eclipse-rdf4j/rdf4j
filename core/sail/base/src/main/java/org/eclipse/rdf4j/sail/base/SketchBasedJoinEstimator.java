@@ -44,9 +44,16 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -396,6 +403,16 @@ public class SketchBasedJoinEstimator {
 	private static final byte REC_PAIR_TRIPLE = 3;
 	private static final byte REC_PAIR_COMP1 = 4;
 	private static final byte REC_PAIR_COMP2 = 5;
+	private static final int DELETE_KEY_PREFIX_MASK = 1 << 8;
+	private static final int COMPONENT_S_INDEX = Component.S.ordinal();
+	private static final int COMPONENT_P_INDEX = Component.P.ordinal();
+	private static final int COMPONENT_O_INDEX = Component.O.ordinal();
+	private static final int COMPONENT_C_INDEX = Component.C.ordinal();
+	private static final int[] SINGLE_TRIPLE_KEY_PREFIXES = buildComponentKeyPrefixes(REC_SINGLE_TRIPLE);
+	private static final int[][] SINGLE_COMPLEMENT_KEY_PREFIXES = buildComponentPairKeyPrefixes(REC_SINGLE_CPL);
+	private static final int[] PAIR_TRIPLE_KEY_PREFIXES = buildPairKeyPrefixes(REC_PAIR_TRIPLE);
+	private static final int[] PAIR_COMP1_KEY_PREFIXES = buildPairKeyPrefixes(REC_PAIR_COMP1);
+	private static final int[] PAIR_COMP2_KEY_PREFIXES = buildPairKeyPrefixes(REC_PAIR_COMP2);
 
 	private static int packKeyPrefix(byte recType, boolean isDelete, byte axisA, byte axisB) {
 		int prefix = recType & 0xff;
@@ -403,6 +420,33 @@ public class SketchBasedJoinEstimator {
 		prefix |= (axisA & 0xff) << 16;
 		prefix |= (axisB & 0xff) << 24;
 		return prefix;
+	}
+
+	private static int[] buildComponentKeyPrefixes(byte recType) {
+		int[] prefixes = new int[COMPONENT_VALUES.length];
+		for (Component component : COMPONENT_VALUES) {
+			prefixes[component.ordinal()] = packKeyPrefix(recType, false, (byte) component.ordinal(), (byte) 0);
+		}
+		return prefixes;
+	}
+
+	private static int[][] buildComponentPairKeyPrefixes(byte recType) {
+		int[][] prefixes = new int[COMPONENT_VALUES.length][COMPONENT_VALUES.length];
+		for (Component axisA : COMPONENT_VALUES) {
+			for (Component axisB : COMPONENT_VALUES) {
+				prefixes[axisA.ordinal()][axisB.ordinal()] = packKeyPrefix(recType, false, (byte) axisA.ordinal(),
+						(byte) axisB.ordinal());
+			}
+		}
+		return prefixes;
+	}
+
+	private static int[] buildPairKeyPrefixes(byte recType) {
+		int[] prefixes = new int[PAIR_VALUES.length];
+		for (Pair pair : PAIR_VALUES) {
+			prefixes[pair.ordinal()] = packKeyPrefix(recType, false, (byte) pair.ordinal(), (byte) 0);
+		}
+		return prefixes;
 	}
 
 	private static int mixAddressHash(int keyPrefix, int x, int y) {
@@ -657,11 +701,15 @@ public class SketchBasedJoinEstimator {
 		}
 
 		private int findOrAdd(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y) {
+			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
+			int keyHash = mixAddressHash(keyPrefix, x, y);
+			return findOrAdd(keyPrefix, keyHash, x, y);
+		}
+
+		private int findOrAdd(int keyPrefix, int keyHash, int x, int y) {
 			if ((size + 1) * 10 >= buckets.length * 7) {
 				rehash(buckets.length << 1);
 			}
-			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
-			int keyHash = mixAddressHash(keyPrefix, x, y);
 			int slot = keyHash & bucketMask;
 			while (true) {
 				long bucket = buckets[slot];
@@ -1506,11 +1554,17 @@ public class SketchBasedJoinEstimator {
 		}
 	}
 
-	@FunctionalInterface
-	private interface BatchUpdateConsumer {
-		void accept(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y, long[] values,
-				int valueCount);
+	private enum IngestPartition {
+		SINGLES,
+		SP,
+		SO,
+		SC,
+		PO,
+		PC,
+		OC
 	}
+
+	private static final IngestPartition[] INGEST_PARTITIONS = IngestPartition.values();
 
 	private static final class BatchUpdateAccumulator {
 		private static final long EMPTY_BUCKET = 0L;
@@ -1520,9 +1574,11 @@ public class SketchBasedJoinEstimator {
 		private int bucketMask;
 
 		private int[] keyPrefixes;
+		private int[] keyHashes;
 		private int[] xs;
 		private int[] ys;
-		private long[][] values;
+		private long[] firstValues;
+		private long[][] overflowValues;
 		private int[] valueCounts;
 
 		private BatchUpdateAccumulator(int expectedUpdates) {
@@ -1539,9 +1595,10 @@ public class SketchBasedJoinEstimator {
 				entryCapacity <<= 1;
 			}
 			keyPrefixes = new int[entryCapacity];
+			keyHashes = new int[entryCapacity];
 			xs = new int[entryCapacity];
 			ys = new int[entryCapacity];
-			values = new long[entryCapacity][];
+			firstValues = new long[entryCapacity];
 			valueCounts = new int[entryCapacity];
 		}
 
@@ -1551,10 +1608,13 @@ public class SketchBasedJoinEstimator {
 		}
 
 		private void add(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y, long value) {
+			add(packKeyPrefix(recType, isDelete, axisA, axisB), x, y, value);
+		}
+
+		private void add(int keyPrefix, int x, int y, long value) {
 			if ((size + 1) * 10 >= buckets.length * 7) {
 				rehash(buckets.length << 1);
 			}
-			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
 			int keyHash = mixAddressHash(keyPrefix, x, y);
 			int slot = keyHash & bucketMask;
 			while (true) {
@@ -1564,11 +1624,11 @@ public class SketchBasedJoinEstimator {
 					ensureEntryCapacity(size);
 					buckets[slot] = encodeBucket(keyHash, entryId);
 					keyPrefixes[entryId] = keyPrefix;
+					keyHashes[entryId] = keyHash;
 					xs[entryId] = x;
 					ys[entryId] = y;
-					values[entryId] = new long[8];
-					valueCounts[entryId] = 0;
-					appendValue(entryId, value);
+					firstValues[entryId] = value;
+					valueCounts[entryId] = 1;
 					return;
 				}
 				if (bucketHash(bucket) == keyHash) {
@@ -1595,13 +1655,22 @@ public class SketchBasedJoinEstimator {
 		}
 
 		private void appendValue(int entryId, long value) {
-			long[] entryValues = values[entryId];
 			int count = valueCounts[entryId];
-			if (count == entryValues.length) {
-				entryValues = Arrays.copyOf(entryValues, count << 1);
-				values[entryId] = entryValues;
+			long[][] allOverflowValues = overflowValues;
+			if (allOverflowValues == null) {
+				allOverflowValues = new long[keyPrefixes.length][];
+				overflowValues = allOverflowValues;
 			}
-			entryValues[count] = value;
+			long[] entryValues = allOverflowValues[entryId];
+			int overflowIndex = count - 1;
+			if (entryValues == null) {
+				entryValues = new long[8];
+				allOverflowValues[entryId] = entryValues;
+			} else if (overflowIndex == entryValues.length) {
+				entryValues = Arrays.copyOf(entryValues, overflowIndex << 1);
+				allOverflowValues[entryId] = entryValues;
+			}
+			entryValues[overflowIndex] = value;
 			valueCounts[entryId] = count + 1;
 		}
 
@@ -1615,9 +1684,13 @@ public class SketchBasedJoinEstimator {
 				next <<= 1;
 			}
 			keyPrefixes = Arrays.copyOf(keyPrefixes, next);
+			keyHashes = Arrays.copyOf(keyHashes, next);
 			xs = Arrays.copyOf(xs, next);
 			ys = Arrays.copyOf(ys, next);
-			values = Arrays.copyOf(values, next);
+			firstValues = Arrays.copyOf(firstValues, next);
+			if (overflowValues != null) {
+				overflowValues = Arrays.copyOf(overflowValues, next);
+			}
 			valueCounts = Arrays.copyOf(valueCounts, next);
 		}
 
@@ -1636,12 +1709,12 @@ public class SketchBasedJoinEstimator {
 			}
 		}
 
-		private void forEach(BatchUpdateConsumer consumer) {
+		private void applyTo(SketchBasedJoinEstimator estimator, State state, byte slot) {
+			long[][] allOverflowValues = overflowValues;
 			for (int i = 0; i < size; i++) {
-				int keyPrefix = keyPrefixes[i];
-				consumer.accept((byte) keyPrefix, ((keyPrefix >>> 8) & 1) != 0, (byte) (keyPrefix >>> 16),
-						(byte) (keyPrefix >>> 24), xs[i], ys[i],
-						values[i],
+				estimator.applyGroupedUpdate(state, slot, keyPrefixes[i], keyHashes[i], xs[i], ys[i],
+						firstValues[i],
+						allOverflowValues == null ? null : allOverflowValues[i],
 						valueCounts[i]);
 			}
 		}
@@ -1697,10 +1770,22 @@ public class SketchBasedJoinEstimator {
 	private long residentSketchBytes;
 
 	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
-	private static final int REBUILD_BATCH_SIZE = 4 * 1024 * 1024;
+	private static final int ASYNC_INCREMENTAL_QUEUE_CAPACITY = 8;
+	private static final long ASYNC_INCREMENTAL_QUEUE_OFFER_TIMEOUT_MILLIS = 10L;
+	private static final int PARALLEL_INGEST_MIN_BATCH_SIZE = INCREMENTAL_BATCH_SIZE;
+	private static final int PARALLEL_INGEST_MAX_BATCH_SIZE = INCREMENTAL_BATCH_SIZE * 2;
+	private static final int REBUILD_BATCH_SIZE = PARALLEL_INGEST_MAX_BATCH_SIZE;
 	private final Object incrementalBufferLock = new Object();
+	private final Object asyncIncrementalDrainLock = new Object();
+	private final BlockingQueue<IngestEvent[]> asyncIncrementalBatches = new ArrayBlockingQueue<>(
+			ASYNC_INCREMENTAL_QUEUE_CAPACITY);
+	private final AtomicReference<Throwable> asyncIncrementalFailure = new AtomicReference<>();
+	private final ExecutorService asyncIncrementalExecutor;
+	private final ExecutorService ingestPartitionExecutor;
+	private final Future<?> asyncIncrementalWorker;
 	private IngestEvent[] incrementalBuffer = new IngestEvent[INCREMENTAL_BATCH_SIZE * 2];
 	private int incrementalBufferCount;
+	private int asyncIncrementalBatchCount;
 
 	// ──────────────────────────────────────────────────────────────
 	// Staleness tracking (global, lock‑free reads)
@@ -1847,6 +1932,11 @@ public class SketchBasedJoinEstimator {
 		this.robustRebuildEnableHeadroomBytes = enableHeadroom;
 		this.robustRebuildGcProbeFloorBytes = Math.max(MIN_ROBUST_REBUILD_HEADROOM_BYTES / 2, disableHeadroom / 2);
 		refreshCacheMetadataAccounting();
+		this.asyncIncrementalExecutor = Executors
+				.newThreadPerTaskExecutor(Thread.ofVirtual().name("RdfJoinEstimator-Ingest-", 0).factory());
+		this.ingestPartitionExecutor = Executors
+				.newThreadPerTaskExecutor(Thread.ofVirtual().name("RdfJoinEstimator-Partition-", 0).factory());
+		this.asyncIncrementalWorker = asyncIncrementalExecutor.submit(this::runAsyncIncrementalIngest);
 	}
 
 	private static int resolveSketchK(int kProp, int kCfg, int buckets, int kMult) {
@@ -2093,10 +2183,24 @@ public class SketchBasedJoinEstimator {
 		try {
 			persistIfDirty();
 		} finally {
+			shutdownAsyncIncrementalIngest();
 			clearEstimateCache();
 			closeMappedChannels();
 			deleteTemporaryBlobBaseForSlot((byte) 0);
 			deleteTemporaryBlobBaseForSlot((byte) 1);
+		}
+	}
+
+	private void shutdownAsyncIncrementalIngest() {
+		asyncIncrementalExecutor.shutdownNow();
+		try {
+			asyncIncrementalWorker.get(1, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} catch (Exception e) {
+			logger.debug("Join estimator async ingestion worker stopped with an exception", e);
+		} finally {
+			ingestPartitionExecutor.shutdownNow();
 		}
 	}
 
@@ -2136,6 +2240,7 @@ public class SketchBasedJoinEstimator {
 		rebuildEpoch.incrementAndGet(); // mark rebuild in progress (odd epoch)
 		long seen = 0L;
 		long l = System.currentTimeMillis();
+		long lastLoggedRebuildMillion = -1L;
 		lastRobustSynopsisSpillSegmentCount = 0;
 		try {
 			try (
@@ -2171,19 +2276,16 @@ public class SketchBasedJoinEstimator {
 							// robustSpillBuffer.addStatements(robustQuadBatch, rebuildBatchSize);
 							// Arrays.fill(rebuildBatch, 0, rebuildBatchSize, null);
 							rebuildBatchSize = 0;
-//							if (logger.isDebugEnabled()) {
-//								logger.debug(
-//										"RdfJoinEstimator: Rebuilding {}, seen {} million triples so far. Elapsed: {} s.",
-//										rebuildIntoA ? "bufA" : "bufB",
-//										seen / 1000 / 1000,
-//										(System.currentTimeMillis() - l) / 1000);
-//							}
-
-							if (true) {
-								System.out.println("RdfJoinEstimator: Rebuilding " + (rebuildIntoA ? "bufA" : "bufB")
-										+ ", seen " + seen / 1000 / 1000 + " million triples so far. Elapsed: "
-										+ ((System.currentTimeMillis() - l) / 1000) + " s.");
-
+							if (logger.isDebugEnabled()) {
+								long seenMillion = seen / 1_000_000;
+								if (seenMillion != lastLoggedRebuildMillion) {
+									lastLoggedRebuildMillion = seenMillion;
+									logger.debug(
+											"RdfJoinEstimator: Rebuilding {}, seen {} million triples so far. Elapsed: {} s.",
+											rebuildIntoA ? "bufA" : "bufB",
+											seenMillion,
+											(System.currentTimeMillis() - l) / 1000);
+								}
 							}
 
 						}
@@ -2380,12 +2482,12 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private IngestEvent ingestIncremental(String s, String p, String o, String c, boolean isDelete) {
+		rethrowAsyncIncrementalFailure();
 		IngestEvent event = toIngestEvent(s, p, o, c, isDelete);
 		if (event == null) {
 			return null;
 		}
 		IngestEvent[] batch = null;
-		int batchSize = 0;
 		synchronized (incrementalBufferLock) {
 			ensureIncrementalBufferCapacity(incrementalBufferCount + 1);
 			incrementalBuffer[incrementalBufferCount++] = event;
@@ -2395,11 +2497,10 @@ public class SketchBasedJoinEstimator {
 							incrementalBufferCount, seenTriples);
 				}
 				batch = drainIncrementalBufferLocked();
-				batchSize = batch.length;
 			}
 		}
 		if (batch != null) {
-			applyIncrementalBatch(batch, batchSize);
+			enqueueIncrementalBatch(batch);
 		}
 		return event;
 	}
@@ -2456,18 +2557,116 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private void flushPendingIncremental() {
+		rethrowAsyncIncrementalFailure();
+		waitForAsyncIncrementalBatches();
 		while (true) {
 			IngestEvent[] batch;
-			int batchSize;
 			synchronized (incrementalBufferLock) {
 				batch = drainIncrementalBufferLocked();
 				if (batch == null) {
-					return;
+					break;
 				}
-				batchSize = batch.length;
 			}
-			applyIncrementalBatch(batch, batchSize);
+			applyIncrementalBatch(batch, batch.length);
+			waitForAsyncIncrementalBatches();
 		}
+		rethrowAsyncIncrementalFailure();
+	}
+
+	private void enqueueIncrementalBatch(IngestEvent[] batch) {
+		if (batch.length == 0) {
+			return;
+		}
+		incrementAsyncIncrementalBatchCount();
+		boolean queued = false;
+		try {
+			while (!queued) {
+				rethrowAsyncIncrementalFailure();
+				queued = asyncIncrementalBatches.offer(batch, ASYNC_INCREMENTAL_QUEUE_OFFER_TIMEOUT_MILLIS,
+						TimeUnit.MILLISECONDS);
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			recordAsyncIncrementalFailure(e);
+			throw new RuntimeException("Interrupted while queueing incremental join-estimator ingestion", e);
+		} finally {
+			if (!queued) {
+				completeAsyncIncrementalBatch();
+			}
+		}
+		rethrowAsyncIncrementalFailure();
+	}
+
+	private void runAsyncIncrementalIngest() {
+		while (!Thread.currentThread().isInterrupted()) {
+			IngestEvent[] batch;
+			try {
+				batch = asyncIncrementalBatches.take();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
+			}
+			try {
+				applyIncrementalBatch(batch, batch.length);
+			} catch (Throwable t) {
+				recordAsyncIncrementalFailure(t);
+				return;
+			} finally {
+				completeAsyncIncrementalBatch();
+			}
+		}
+	}
+
+	private void incrementAsyncIncrementalBatchCount() {
+		synchronized (asyncIncrementalDrainLock) {
+			asyncIncrementalBatchCount++;
+		}
+	}
+
+	private void completeAsyncIncrementalBatch() {
+		synchronized (asyncIncrementalDrainLock) {
+			asyncIncrementalBatchCount--;
+			asyncIncrementalDrainLock.notifyAll();
+		}
+	}
+
+	private void waitForAsyncIncrementalBatches() {
+		synchronized (asyncIncrementalDrainLock) {
+			while (asyncIncrementalBatchCount > 0) {
+				if (asyncIncrementalFailure.get() != null) {
+					break;
+				}
+				try {
+					asyncIncrementalDrainLock.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					recordAsyncIncrementalFailure(e);
+					throw new RuntimeException("Interrupted while waiting for incremental join-estimator ingestion", e);
+				}
+			}
+		}
+		rethrowAsyncIncrementalFailure();
+	}
+
+	private void recordAsyncIncrementalFailure(Throwable failure) {
+		asyncIncrementalFailure.compareAndSet(null, failure);
+		synchronized (asyncIncrementalDrainLock) {
+			asyncIncrementalDrainLock.notifyAll();
+		}
+	}
+
+	private void rethrowAsyncIncrementalFailure() {
+		Throwable failure = asyncIncrementalFailure.get();
+		if (failure == null) {
+			return;
+		}
+		if (failure instanceof Error) {
+			throw (Error) failure;
+		}
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		throw new RuntimeException("Asynchronous incremental join-estimator ingestion failed", failure);
 	}
 
 	private void applyIncrementalBatch(IngestEvent[] batch, int batchSize) {
@@ -2475,14 +2674,15 @@ public class SketchBasedJoinEstimator {
 			return;
 		}
 
+		BatchUpdateAccumulator[] updates = buildBatchUpdates(batch, batchSize);
 		while (true) {
 			long epoch = rebuildEpoch.get();
 			if ((epoch & 1L) != 0L) {
 				synchronized (bufA) {
-					ingestBatch(bufA, batch, batchSize);
+					applyBatchUpdates(bufA, updates);
 				}
 				synchronized (bufB) {
-					ingestBatch(bufB, batch, batchSize);
+					applyBatchUpdates(bufB, updates);
 				}
 				return;
 			}
@@ -2492,43 +2692,142 @@ public class SketchBasedJoinEstimator {
 				if (rebuildEpoch.get() != epoch) {
 					continue;
 				}
-				ingestBatch(target, batch, batchSize);
+				applyBatchUpdates(target, updates);
 				return;
 			}
 		}
 	}
 
 	private void ingestBatch(State state, IngestEvent[] batch, int batchSize) {
-		BatchUpdateAccumulator updates = new BatchUpdateAccumulator(Math.max(64, batchSize << 5));
+		applyBatchUpdates(state, buildBatchUpdates(batch, batchSize));
+	}
+
+	private void applyBatchUpdates(State state, BatchUpdateAccumulator[] batchUpdates) {
+		byte slot = slotByte(slotOf(state));
+		for (BatchUpdateAccumulator updates : batchUpdates) {
+			updates.applyTo(this, state, slot);
+		}
+		enforceSketchBudget();
+	}
+
+	@SuppressWarnings("unchecked")
+	private BatchUpdateAccumulator[] buildBatchUpdates(IngestEvent[] batch, int batchSize) {
+		if (batchSize < PARALLEL_INGEST_MIN_BATCH_SIZE || batchSize > PARALLEL_INGEST_MAX_BATCH_SIZE) {
+			return new BatchUpdateAccumulator[] { buildBatchUpdates(batch, batchSize, null) };
+		}
+		Future<BatchUpdateAccumulator>[] futures = new Future[INGEST_PARTITIONS.length];
+		try {
+			for (IngestPartition partition : INGEST_PARTITIONS) {
+				futures[partition.ordinal()] = ingestPartitionExecutor.submit(() -> buildBatchUpdates(batch, batchSize,
+						partition));
+			}
+			BatchUpdateAccumulator[] updates = new BatchUpdateAccumulator[futures.length];
+			for (int i = 0; i < futures.length; i++) {
+				updates[i] = futures[i].get();
+			}
+			return updates;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException("Interrupted while preparing incremental join-estimator batch", e);
+		} catch (ExecutionException e) {
+			throw new RuntimeException("Failed to prepare incremental join-estimator batch", e.getCause());
+		}
+	}
+
+	private BatchUpdateAccumulator buildBatchUpdates(IngestEvent[] batch, int batchSize, IngestPartition partition) {
+		BatchUpdateAccumulator updates = new BatchUpdateAccumulator(Math.max(64, expectedBatchUpdates(batchSize,
+				partition)));
 		for (int i = 0; i < batchSize; i++) {
 			IngestEvent event = batch[i];
 			if (event == null) {
 				continue;
 			}
-			accumulateIngestEvent(updates, event);
+			accumulateIngestEvent(updates, event, partition);
 		}
-		updates.forEach(
-				(recType, isDelete, axisA, axisB, x, y, values, valueCount) -> applyGroupedUpdate(state, recType,
-						isDelete, axisA, axisB, x, y, values, valueCount));
-		enforceSketchBudget();
+		return updates;
 	}
 
-	private void applyGroupedUpdate(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y,
-			long[] values, int valueCount) {
+	private int expectedBatchUpdates(int batchSize, IngestPartition partition) {
+		if (partition == null) {
+			return batchSize << 5;
+		}
+		if (partition == IngestPartition.SINGLES) {
+			return batchSize << 3;
+		}
+		return batchSize << 1;
+	}
+
+	private void applyGroupedUpdate(State state, byte slot, int keyPrefix, int keyHash, int x, int y, long firstValue,
+			long[] overflowValues, int valueCount) {
+		if (valueCount == 0) {
+			return;
+		}
+		byte recType = (byte) keyPrefix;
+		boolean isDelete = ((keyPrefix >>> 8) & 1) != 0;
+		byte axisA = (byte) (keyPrefix >>> 16);
+		byte axisB = (byte) (keyPrefix >>> 24);
 		int entryId;
 		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.findOrAdd(recType, isDelete, axisA, axisB, x, y);
+			entryId = cacheDirectory.findOrAdd(keyPrefix, keyHash, x, y);
 		}
 		UpdateSketch sketch = getSketchForWrite(state, recType, isDelete, axisA, axisB, x, y, entryId);
-		for (int i = 0; i < valueCount; i++) {
-			hashUpdateRaw(sketch, values[i]);
+		hashUpdateRaw(sketch, firstValue);
+		for (int i = 1; i < valueCount; i++) {
+			hashUpdateRaw(sketch, overflowValues[i - 1]);
 		}
-		markDirty(state, entryId);
-		touchResidentSketch(state, entryId, sketch, false);
+		markDirtyAndTouchResidentSketch(slot, entryId, sketch);
 	}
 
-	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event) {
-		boolean isDelete = event.isDelete;
+	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event, IngestPartition partition) {
+		if (partition == null) {
+			accumulateSingleUpdates(updates, event);
+			accumulatePair(updates, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
+					event.thetaHc);
+			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
+					event.thetaHc);
+			accumulatePair(updates, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
+					event.thetaHo);
+			accumulatePair(updates, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
+					event.thetaHc);
+			accumulatePair(updates, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
+					event.thetaHo);
+			accumulatePair(updates, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
+					event.thetaHp);
+			return;
+		}
+		switch (partition) {
+		case SINGLES:
+			accumulateSingleUpdates(updates, event);
+			break;
+		case SP:
+			accumulatePair(updates, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
+					event.thetaHc);
+			break;
+		case SO:
+			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
+					event.thetaHc);
+			break;
+		case SC:
+			accumulatePair(updates, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
+					event.thetaHo);
+			break;
+		case PO:
+			accumulatePair(updates, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
+					event.thetaHc);
+			break;
+		case PC:
+			accumulatePair(updates, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
+					event.thetaHo);
+			break;
+		case OC:
+			accumulatePair(updates, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
+					event.thetaHp);
+			break;
+		}
+	}
+
+	private void accumulateSingleUpdates(BatchUpdateAccumulator updates, IngestEvent event) {
+		int deleteMask = event.isDelete ? DELETE_KEY_PREFIX_MASK : 0;
 		int si = event.si;
 		int pi = event.pi;
 		int oi = event.oi;
@@ -2539,45 +2838,26 @@ public class SketchBasedJoinEstimator {
 		long thetaHc = event.thetaHc;
 		long thetaSig = event.thetaSig;
 
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.S.ordinal(), (byte) 0, si, 0, thetaSig);
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.P.ordinal(), (byte) 0, pi, 0, thetaSig);
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.O.ordinal(), (byte) 0, oi, 0, thetaSig);
-		updates.add(REC_SINGLE_TRIPLE, isDelete, (byte) Component.C.ordinal(), (byte) 0, ci, 0, thetaSig);
+		updates.add(SINGLE_TRIPLE_KEY_PREFIXES[COMPONENT_S_INDEX] | deleteMask, si, 0, thetaSig);
+		updates.add(SINGLE_TRIPLE_KEY_PREFIXES[COMPONENT_P_INDEX] | deleteMask, pi, 0, thetaSig);
+		updates.add(SINGLE_TRIPLE_KEY_PREFIXES[COMPONENT_O_INDEX] | deleteMask, oi, 0, thetaSig);
+		updates.add(SINGLE_TRIPLE_KEY_PREFIXES[COMPONENT_C_INDEX] | deleteMask, ci, 0, thetaSig);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.P.ordinal(), si, 0,
-				thetaHp);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.O.ordinal(), si, 0,
-				thetaHo);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.S.ordinal(), (byte) Component.C.ordinal(), si, 0,
-				thetaHc);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_S_INDEX][COMPONENT_P_INDEX] | deleteMask, si, 0, thetaHp);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_S_INDEX][COMPONENT_O_INDEX] | deleteMask, si, 0, thetaHo);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_S_INDEX][COMPONENT_C_INDEX] | deleteMask, si, 0, thetaHc);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.S.ordinal(), pi, 0,
-				thetaHs);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.O.ordinal(), pi, 0,
-				thetaHo);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.P.ordinal(), (byte) Component.C.ordinal(), pi, 0,
-				thetaHc);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_P_INDEX][COMPONENT_S_INDEX] | deleteMask, pi, 0, thetaHs);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_P_INDEX][COMPONENT_O_INDEX] | deleteMask, pi, 0, thetaHo);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_P_INDEX][COMPONENT_C_INDEX] | deleteMask, pi, 0, thetaHc);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.S.ordinal(), oi, 0,
-				thetaHs);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.P.ordinal(), oi, 0,
-				thetaHp);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.O.ordinal(), (byte) Component.C.ordinal(), oi, 0,
-				thetaHc);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_O_INDEX][COMPONENT_S_INDEX] | deleteMask, oi, 0, thetaHs);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_O_INDEX][COMPONENT_P_INDEX] | deleteMask, oi, 0, thetaHp);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_O_INDEX][COMPONENT_C_INDEX] | deleteMask, oi, 0, thetaHc);
 
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.S.ordinal(), ci, 0,
-				thetaHs);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.P.ordinal(), ci, 0,
-				thetaHp);
-		updates.add(REC_SINGLE_CPL, isDelete, (byte) Component.C.ordinal(), (byte) Component.O.ordinal(), ci, 0,
-				thetaHo);
-
-		accumulatePair(updates, Pair.SP, isDelete, event.spKey, thetaSig, thetaHo, thetaHc);
-		accumulatePair(updates, Pair.SO, isDelete, event.soKey, thetaSig, thetaHp, thetaHc);
-		accumulatePair(updates, Pair.SC, isDelete, event.scKey, thetaSig, thetaHp, thetaHo);
-		accumulatePair(updates, Pair.PO, isDelete, event.poKey, thetaSig, thetaHs, thetaHc);
-		accumulatePair(updates, Pair.PC, isDelete, event.pcKey, thetaSig, thetaHs, thetaHo);
-		accumulatePair(updates, Pair.OC, isDelete, event.ocKey, thetaSig, thetaHs, thetaHp);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_C_INDEX][COMPONENT_S_INDEX] | deleteMask, ci, 0, thetaHs);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_C_INDEX][COMPONENT_P_INDEX] | deleteMask, ci, 0, thetaHp);
+		updates.add(SINGLE_COMPLEMENT_KEY_PREFIXES[COMPONENT_C_INDEX][COMPONENT_O_INDEX] | deleteMask, ci, 0, thetaHo);
 	}
 
 	private static void accumulatePair(BatchUpdateAccumulator updates, Pair pair, boolean isDelete, long key,
@@ -2585,10 +2865,11 @@ public class SketchBasedJoinEstimator {
 			long comp1, long comp2) {
 		int x = (int) (key >>> 32);
 		int y = (int) key;
-		byte axis = (byte) pair.ordinal();
-		updates.add(REC_PAIR_TRIPLE, isDelete, axis, (byte) 0, x, y, triple);
-		updates.add(REC_PAIR_COMP1, isDelete, axis, (byte) 0, x, y, comp1);
-		updates.add(REC_PAIR_COMP2, isDelete, axis, (byte) 0, x, y, comp2);
+		int pairIndex = pair.ordinal();
+		int deleteMask = isDelete ? DELETE_KEY_PREFIX_MASK : 0;
+		updates.add(PAIR_TRIPLE_KEY_PREFIXES[pairIndex] | deleteMask, x, y, triple);
+		updates.add(PAIR_COMP1_KEY_PREFIXES[pairIndex] | deleteMask, x, y, comp1);
+		updates.add(PAIR_COMP2_KEY_PREFIXES[pairIndex] | deleteMask, x, y, comp2);
 	}
 
 	/* ------------------------------------------------------------------ */
@@ -6020,10 +6301,7 @@ public class SketchBasedJoinEstimator {
 
 	private void unloadInternal(boolean markRebuildRequired) {
 		clearEstimateCache();
-		synchronized (incrementalBufferLock) {
-			Arrays.fill(incrementalBuffer, 0, incrementalBufferCount, null);
-			incrementalBufferCount = 0;
-		}
+		discardPendingIncremental();
 		synchronized (bufA) {
 			bufA.clear();
 		}
@@ -6044,6 +6322,38 @@ public class SketchBasedJoinEstimator {
 		sketchesLoaded = false;
 		if (markRebuildRequired) {
 			rebuildRequired.set(true);
+		}
+	}
+
+	private void discardPendingIncremental() {
+		synchronized (incrementalBufferLock) {
+			Arrays.fill(incrementalBuffer, 0, incrementalBufferCount, null);
+			incrementalBufferCount = 0;
+		}
+		int discardedQueuedBatches = 0;
+		while (asyncIncrementalBatches.poll() != null) {
+			discardedQueuedBatches++;
+		}
+		if (discardedQueuedBatches > 0) {
+			synchronized (asyncIncrementalDrainLock) {
+				asyncIncrementalBatchCount = Math.max(0, asyncIncrementalBatchCount - discardedQueuedBatches);
+				asyncIncrementalDrainLock.notifyAll();
+			}
+		}
+		waitForAsyncIncrementalBatchesIgnoringFailures();
+		asyncIncrementalFailure.set(null);
+	}
+
+	private void waitForAsyncIncrementalBatchesIgnoringFailures() {
+		synchronized (asyncIncrementalDrainLock) {
+			while (asyncIncrementalBatchCount > 0) {
+				try {
+					asyncIncrementalDrainLock.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+			}
 		}
 	}
 
@@ -6505,6 +6815,30 @@ public class SketchBasedJoinEstimator {
 		}
 		if (enforceBudget) {
 			enforceSketchBudget();
+		}
+	}
+
+	private void markDirtyAndTouchResidentSketch(byte slot, int entryId, UpdateSketch sketch) {
+		long bytes = estimatedSketchBytes(sketch);
+		boolean residentBytesChanged = true;
+		synchronized (sketchCacheLock) {
+			cacheDirectory.markDirty(entryId, slot);
+			dirty.set(true);
+			int nodeId = cacheDirectory.residentNode(entryId, slot);
+			if (nodeId == -1) {
+				int createdNodeId = residentLru.add(entryId, slot, bytes);
+				cacheDirectory.setResidentNode(entryId, slot, createdNodeId);
+				residentSketchBytes += bytes;
+				refreshCacheMetadataAccountingLocked();
+			} else {
+				long previousBytes = residentLru.bytes(nodeId);
+				residentLru.touch(nodeId, bytes);
+				residentSketchBytes += (bytes - previousBytes);
+				residentBytesChanged = bytes != previousBytes;
+			}
+		}
+		if (residentBytesChanged) {
+			replaceTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId), bytes);
 		}
 	}
 
