@@ -11,6 +11,11 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -83,6 +88,7 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractSail.class);
+	private static final Logger slowQueryLogger = LoggerFactory.getLogger("org.eclipse.rdf4j.sail.slowquery");
 
 	/**
 	 * Directory to store information related to this sail in (if any).
@@ -110,6 +116,9 @@ public abstract class AbstractSail implements Sail {
 	protected volatile long connectionTimeOut = DEFAULT_CONNECTION_TIMEOUT;
 
 	private long iterationCacheSyncThreshold = DEFAULT_ITERATION_SYNC_THRESHOLD;
+	private long slowQueryLogThresholdSeconds;
+	private String slowQueryLogFile;
+	private final Object slowQueryLogFileLock = new Object();
 
 	// track the results size that each node in the query plan produces during execution
 	private boolean trackResultSize;
@@ -423,6 +432,22 @@ public abstract class AbstractSail implements Sail {
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 	}
 
+	public long getSlowQueryLogThresholdSeconds() {
+		return slowQueryLogThresholdSeconds;
+	}
+
+	public void setSlowQueryLogThresholdSeconds(long slowQueryLogThresholdSeconds) {
+		this.slowQueryLogThresholdSeconds = slowQueryLogThresholdSeconds;
+	}
+
+	public String getSlowQueryLogFile() {
+		return slowQueryLogFile;
+	}
+
+	public void setSlowQueryLogFile(String slowQueryLogFile) {
+		this.slowQueryLogFile = slowQueryLogFile;
+	}
+
 	/**
 	 * Returns the status of the result size tracking for the query plan. Useful to determine which parts of a query
 	 * plan generated the most data.
@@ -455,5 +480,45 @@ public abstract class AbstractSail implements Sail {
 	 */
 	public void setDefaultQueryEvaluationMode(QueryEvaluationMode defaultQueryEvaluationMode) {
 		this.defaultQueryEvaluationMode = Objects.requireNonNull(defaultQueryEvaluationMode);
+	}
+
+	protected long getSlowQueryTimestampMillis() {
+		return SlowQueryTicker.currentTimeMillis();
+	}
+
+	void writeSlowQueryLogEntry(String logEntry) {
+		String configuredLogFile = slowQueryLogFile;
+		if (configuredLogFile == null || configuredLogFile.isBlank()) {
+			slowQueryLogger.warn(logEntry);
+			return;
+		}
+
+		Path configuredPath = Path.of(configuredLogFile.trim());
+		Path resolvedPath = configuredPath;
+		if (!configuredPath.isAbsolute()) {
+			File currentDataDir = getDataDir();
+			if (currentDataDir == null) {
+				slowQueryLogger.warn(logEntry + System.lineSeparator()
+						+ "Warning: configured slow query log file '" + configuredLogFile
+						+ "' is relative but dataDir is not set. Falling back to logger.");
+				return;
+			}
+			resolvedPath = currentDataDir.toPath().resolve(configuredPath).normalize();
+		}
+
+		try {
+			Path parent = resolvedPath.getParent();
+			if (parent != null) {
+				Files.createDirectories(parent);
+			}
+			synchronized (slowQueryLogFileLock) {
+				Files.writeString(resolvedPath, logEntry + System.lineSeparator() + System.lineSeparator(),
+						StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND,
+						StandardOpenOption.WRITE);
+			}
+		} catch (IOException e) {
+			slowQueryLogger.warn("Failed to write slow query log entry to {}", resolvedPath, e);
+			slowQueryLogger.warn(logEntry);
+		}
 	}
 }

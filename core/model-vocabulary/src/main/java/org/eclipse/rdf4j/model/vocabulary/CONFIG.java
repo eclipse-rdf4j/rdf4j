@@ -230,6 +230,13 @@ public class CONFIG {
 		/** <var>tag:rdf4j.org,2023:config/sail.defaultQueryEvaluationMode</var> */
 		public final static IRI defaultQueryEvaluationMode = createIRI(NAMESPACE,
 				"sail.defaultQueryEvaluationMode");
+
+		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogThresholdSeconds</var> */
+		public final static IRI slowQueryLogThresholdSeconds = createIRI(NAMESPACE,
+				"sail.slowQueryLogThresholdSeconds");
+
+		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogFile</var> */
+		public final static IRI slowQueryLogFile = createIRI(NAMESPACE, "sail.slowQueryLogFile");
 	}
 
 	/**

@@ -38,4 +38,14 @@ public class BaseSailSchema {
 	 */
 	public final static IRI DEFAULT_QUERY_EVALUATION_MODE = iri(NAMESPACE, "defaultQueryEvaluationMode");
 
+	/**
+	 * @deprecated use {@link CONFIG.Sail#slowQueryLogThresholdSeconds} instead.
+	 */
+	public final static IRI SLOW_QUERY_LOG_THRESHOLD_SECONDS = iri(NAMESPACE, "slowQueryLogThresholdSeconds");
+
+	/**
+	 * @deprecated use {@link CONFIG.Sail#slowQueryLogFile} instead.
+	 */
+	public final static IRI SLOW_QUERY_LOG_FILE = iri(NAMESPACE, "slowQueryLogFile");
+
 }
