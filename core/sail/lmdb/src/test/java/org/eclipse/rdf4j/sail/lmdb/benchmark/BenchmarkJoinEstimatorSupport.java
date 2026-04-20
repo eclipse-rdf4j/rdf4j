@@ -54,6 +54,23 @@ public final class BenchmarkJoinEstimatorSupport {
 		estimator.discardAndMarkForRebuild();
 	}
 
+	public static void persistEstimatorAfterBulkLoad(SailRepository repository, LmdbStore store) throws IOException {
+		repository.init();
+		SketchBasedJoinEstimator estimator = resolveEstimator(store);
+		estimator.rebuildOnceSlow();
+		persistReusableEstimatorSnapshot(estimator);
+	}
+
+	public static void persistStoreStatistics(LmdbStore store) throws IOException {
+		Object backingStore = invoke(GET_BACKING_STORE, store);
+		Method persistEstimatorState = reflectMethod(backingStore.getClass(), "persistEstimatorState");
+		invoke(persistEstimatorState, backingStore);
+	}
+
+	public static void releaseEstimatorMemory(LmdbStore store) throws IOException {
+		resolveEstimator(store).unload();
+	}
+
 	public static void prepareFixedMedicalRecordsExplanationStore(File storeDirectory) throws IOException {
 		FileUtils.deleteDirectory(storeDirectory);
 		Files.createDirectories(storeDirectory.toPath());

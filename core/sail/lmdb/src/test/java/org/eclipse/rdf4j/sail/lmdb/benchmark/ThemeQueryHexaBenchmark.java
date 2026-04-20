@@ -188,7 +188,9 @@ public class ThemeQueryHexaBenchmark {
 		storeConfig = ConfigUtil.createConfig();
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
+		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
+		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 	}
 
 	private DbFileSizes readExpectedDbFileSizes() throws IOException {

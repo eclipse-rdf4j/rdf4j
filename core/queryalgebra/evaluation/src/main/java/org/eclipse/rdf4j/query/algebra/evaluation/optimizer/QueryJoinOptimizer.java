@@ -36,14 +36,19 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -130,6 +135,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	}
 
 	private static int filterConditionCost(ValueExpr condition) {
+		if (condition instanceof And) {
+			And and = (And) condition;
+			return Math.max(filterConditionCost(and.getLeftArg()), filterConditionCost(and.getRightArg()));
+		}
 		if (condition instanceof Exists) {
 			return 100;
 		}
@@ -314,8 +323,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private TupleExpr reapplyDeferredFilters(TupleExpr root, List<DeferredFilter> deferredFilters) {
 			TupleExpr current = root;
 			for (DeferredFilter deferredFilter : deferredFilters) {
-				Filter clone = deferredFilter.filter.clone();
-				clone.setArg(current);
+				Filter clone = new Filter(current, deferredFilter.condition.clone());
 				annotateDeferredFilter(clone, deferredFilter, "root");
 				current = clone;
 			}
@@ -438,14 +446,74 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			List<DeferredFilter> deferredFilters = new ArrayList<>(filters.size());
-			for (int i = 0; i < filters.size(); i++) {
-				Filter filter = filters.get(i);
-				Set<String> requiredVars = new HashSet<>(VarNameCollector.process(filter.getCondition()));
-				requiredVars.retainAll(scopeBindingNames);
-				deferredFilters
-						.add(new DeferredFilter(filter, requiredVars, filterConditionCost(filter.getCondition()), i));
+			int originalIndex = 0;
+			for (Filter filter : filters) {
+				List<ValueExpr> conditions = new ArrayList<>();
+				collectConjunctiveConditions(filter.getCondition(), conditions);
+				for (ValueExpr condition : conditions) {
+					Set<String> requiredVars = new HashSet<>(VarNameCollector.process(condition));
+					requiredVars.retainAll(scopeBindingNames);
+					deferredFilters
+							.add(new DeferredFilter(filter, condition, requiredVars,
+									filterConditionCost(condition), originalIndex++));
+				}
 			}
 			return deferredFilters;
+		}
+
+		private void collectConjunctiveConditions(ValueExpr condition, List<ValueExpr> conditions) {
+			if (condition instanceof And) {
+				And and = (And) condition;
+				collectConjunctiveConditions(and.getLeftArg(), conditions);
+				collectConjunctiveConditions(and.getRightArg(), conditions);
+			} else {
+				conditions.add(condition);
+			}
+		}
+
+		private StatementPattern patternLocalBaseForFilterCondition(Filter filter, ValueExpr condition) {
+			Set<String> conditionVars = VarNameCollector.process(condition);
+			if (bindingSetAssignmentsCover(filter.getArg(), conditionVars)) {
+				return null;
+			}
+
+			Set<StatementPattern> patterns = FilterSelectivityKeys.originPatternsForFilter(filter);
+			StatementPattern match = null;
+			for (StatementPattern pattern : patterns) {
+				if (!FilterSelectivityKeys.conditionIntersectsPattern(condition, pattern)) {
+					continue;
+				}
+				if (match != null) {
+					return null;
+				}
+				match = pattern;
+			}
+			return match;
+		}
+
+		private boolean bindingSetAssignmentsCover(TupleExpr tupleExpr, Set<String> requiredVars) {
+			if (tupleExpr == null || requiredVars == null || requiredVars.isEmpty()) {
+				return false;
+			}
+
+			Set<String> bindingSetAssignmentNames = new HashSet<>();
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(BindingSetAssignment bindingSetAssignment) {
+					bindingSetAssignmentNames.addAll(bindingSetAssignment.getAssuredBindingNames());
+				}
+			});
+			return bindingSetAssignmentNames.containsAll(requiredVars);
+		}
+
+		private EvaluationStatistics.FilterPassEstimate estimateFilterPass(Filter filter, ValueExpr condition) {
+			if (condition == filter.getCondition()) {
+				return statistics.estimateFilterPass(filter);
+			}
+
+			Filter splitFilter = filter.clone();
+			splitFilter.setCondition(condition.clone());
+			return statistics.estimateFilterPass(splitFilter);
 		}
 
 		private void assignDeferredFilters(List<Object> rawPlanItems, List<DeferredFilter> deferredFilters,
@@ -539,15 +607,80 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter deferredFilter,
 				Set<String> boundBeforeSegment) {
-			if (deferredFilter.originPatterns.isEmpty()) {
-				return false;
+			int[] window = null;
+			if (deferredFilter.conditionCost == 0) {
+				if (groupDeferredFilterOnBindingAssignments(factors, deferredFilter, boundBeforeSegment)) {
+					return true;
+				}
+				window = smallestBindingCoveringWindow(factors, deferredFilter.requiredVars, boundBeforeSegment);
 			}
 
-			int[] window = smallestPatternCoveringWindow(factors, deferredFilter.originPatterns);
 			if (window == null) {
+				if (deferredFilter.originPatterns.isEmpty()) {
+					return false;
+				}
+				window = smallestPatternCoveringWindow(factors, deferredFilter.originPatterns);
+				if (window == null) {
+					return false;
+				}
+			}
+
+			return groupDeferredFilterOnWindow(factors, deferredFilter, boundBeforeSegment, window);
+		}
+
+		private boolean groupDeferredFilterOnBindingAssignments(List<SegmentFactor> factors,
+				DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
+			Set<String> missingVars = new HashSet<>(deferredFilter.requiredVars);
+			missingVars.removeAll(boundBeforeSegment);
+			if (missingVars.isEmpty()) {
 				return false;
 			}
 
+			List<Integer> selectedIndexes = new ArrayList<>();
+			for (int i = 0; i < factors.size(); i++) {
+				SegmentFactor factor = factors.get(i);
+				if (!isBindingOnlyFactor(factor) || Collections.disjoint(factor.bindingNames, missingVars)) {
+					continue;
+				}
+
+				selectedIndexes.add(i);
+				missingVars.removeAll(factor.bindingNames);
+				if (missingVars.isEmpty()) {
+					break;
+				}
+			}
+
+			if (!missingVars.isEmpty() || selectedIndexes.isEmpty()) {
+				return false;
+			}
+
+			Deque<TupleExpr> selectedRoots = new ArrayDeque<>(selectedIndexes.size());
+			Set<StatementPattern> containedPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (Integer selectedIndex : selectedIndexes) {
+				SegmentFactor factor = factors.get(selectedIndex);
+				selectedRoots.addLast(factor.tupleExpr);
+				containedPatterns.addAll(factor.containedPatterns);
+			}
+
+			TupleExpr groupedRoot = buildJoinRoot(selectedRoots);
+			TupleExpr filteredRoot = wrapTupleExprWithDeferredFilters(groupedRoot, List.of(deferredFilter),
+					"bindingAssignments");
+			SegmentFactor groupedFactor = new SegmentFactor(filteredRoot, containedPatterns);
+
+			int insertionIndex = selectedIndexes.get(0);
+			for (int i = selectedIndexes.size() - 1; i >= 0; i--) {
+				factors.remove((int) selectedIndexes.get(i));
+			}
+			factors.add(insertionIndex, groupedFactor);
+			return true;
+		}
+
+		private boolean isBindingOnlyFactor(SegmentFactor factor) {
+			return factor.containedPatterns.isEmpty() && !factor.bindingNames.isEmpty();
+		}
+
+		private boolean groupDeferredFilterOnWindow(List<SegmentFactor> factors, DeferredFilter deferredFilter,
+				Set<String> boundBeforeSegment, int[] window) {
 			Set<String> availableVars = new HashSet<>(boundBeforeSegment);
 			for (int i = window[0]; i <= window[1]; i++) {
 				availableVars.addAll(factors.get(i).bindingNames);
@@ -574,6 +707,44 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 			factors.add(window[0], groupedFactor);
 			return true;
+		}
+
+		private int[] smallestBindingCoveringWindow(List<SegmentFactor> factors, Set<String> requiredVars,
+				Set<String> boundBeforeSegment) {
+			if (factors.isEmpty()) {
+				return null;
+			}
+
+			int bestStart = -1;
+			int bestEnd = -1;
+			int bestCost = Integer.MAX_VALUE;
+			int bestSize = Integer.MAX_VALUE;
+
+			for (int start = 0; start < factors.size(); start++) {
+				Set<String> availableVars = new HashSet<>(boundBeforeSegment);
+				int cost = 0;
+				for (int end = start; end < factors.size(); end++) {
+					SegmentFactor factor = factors.get(end);
+					availableVars.addAll(factor.bindingNames);
+					cost += bindingWindowCost(factor);
+					if (availableVars.containsAll(requiredVars)) {
+						int size = end - start + 1;
+						if (cost < bestCost || (cost == bestCost && size < bestSize)) {
+							bestStart = start;
+							bestEnd = end;
+							bestCost = cost;
+							bestSize = size;
+						}
+						break;
+					}
+				}
+			}
+
+			return bestStart < 0 ? null : new int[] { bestStart, bestEnd };
+		}
+
+		private int bindingWindowCost(SegmentFactor factor) {
+			return factor.containedPatterns.isEmpty() ? 0 : 1;
 		}
 
 		private int[] smallestPatternCoveringWindow(List<SegmentFactor> factors,
@@ -830,7 +1001,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			for (DeferredFilter deferredFilter : deferredFilters) {
 				constraints.add(new JoinOrderPlanner.FilterConstraint(deferredFilter.requiredVars,
 						deferredFilter.filterPassEstimate.getPassRatio(), deferredFilter.conditionCost,
-						deferredFilter.filter.getCondition().toString(),
+						deferredFilter.condition.toString(),
 						deferredFilter.filterPassEstimate.getSource().name().toLowerCase(),
 						deferredFilter.filterPassEstimate.getEvidenceCount()));
 			}
@@ -1073,10 +1244,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			List<TupleExpr> bindingSetAssignments = new ArrayList<>();
+			Map<TupleExpr, Set<String>> bindingSetAssignmentNames = new IdentityHashMap<>();
 			List<TupleExpr> nonAssignments = new ArrayList<>(segment.size());
 			for (TupleExpr tupleExpr : segment) {
-				if (tupleExpr instanceof BindingSetAssignment) {
+				Optional<Set<String>> bindingNames = positionableBindingSetAssignmentNames(tupleExpr);
+				if (bindingNames.isPresent()) {
 					bindingSetAssignments.add(tupleExpr);
+					bindingSetAssignmentNames.put(tupleExpr, bindingNames.get());
 				} else {
 					nonAssignments.add(tupleExpr);
 				}
@@ -1093,7 +1267,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			Map<Integer, List<TupleExpr>> insertions = new HashMap<>();
 			for (TupleExpr bindingSetAssignment : bindingSetAssignments) {
-				int insertionIndex = findFirstUsageIndex(bindingSetAssignment.getAssuredBindingNames(),
+				int insertionIndex = findFirstUsageIndex(bindingSetAssignmentNames.get(bindingSetAssignment),
 						referencedVarNames);
 				insertions.computeIfAbsent(insertionIndex, key -> new ArrayList<>()).add(bindingSetAssignment);
 			}
@@ -1102,6 +1276,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			for (int i = 0; i <= nonAssignments.size(); i++) {
 				List<TupleExpr> insertedAssignments = insertions.get(i);
 				if (insertedAssignments != null) {
+					insertedAssignments.sort(Comparator.comparingInt(this::bindingSetAssignmentPositionPriority));
 					positioned.addAll(insertedAssignments);
 				}
 				if (i < nonAssignments.size()) {
@@ -1110,6 +1285,46 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return positioned;
+		}
+
+		private int bindingSetAssignmentPositionPriority(TupleExpr tupleExpr) {
+			return tupleExpr instanceof BindingSetAssignment ? 1 : 0;
+		}
+
+		private Optional<Set<String>> positionableBindingSetAssignmentNames(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof BindingSetAssignment) {
+				return Optional.of(tupleExpr.getAssuredBindingNames());
+			}
+
+			BindingSetAssignment leaf = bindingSetAssignmentLeaf(tupleExpr);
+			if (leaf == null) {
+				return Optional.empty();
+			}
+
+			Set<String> bindingNames = leaf.getAssuredBindingNames();
+			Set<String> referencedNames = VarNameCollector.process(tupleExpr);
+			if (!bindingNames.containsAll(referencedNames)) {
+				return Optional.empty();
+			}
+			return Optional.of(bindingNames);
+		}
+
+		private BindingSetAssignment bindingSetAssignmentLeaf(TupleExpr tupleExpr) {
+			TupleExpr current = tupleExpr;
+			while (isPositionableBindingSetAssignmentWrapper(current)) {
+				current = ((UnaryTupleOperator) current).getArg();
+			}
+			if (current instanceof BindingSetAssignment) {
+				return (BindingSetAssignment) current;
+			}
+			return null;
+		}
+
+		private boolean isPositionableBindingSetAssignmentWrapper(TupleExpr tupleExpr) {
+			return tupleExpr instanceof Filter
+					|| tupleExpr instanceof Distinct
+					|| tupleExpr instanceof Reduced
+					|| tupleExpr instanceof Slice;
 		}
 
 		private int findFirstUsageIndex(Set<String> bindingNames, List<Set<String>> referencedVarNames) {
@@ -1652,8 +1867,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				String scope) {
 			TupleExpr current = tupleExpr;
 			for (DeferredFilter deferredFilter : sortDeferredFilters(deferredFilters)) {
-				Filter filterClone = deferredFilter.filter.clone();
-				filterClone.setArg(current);
+				Filter filterClone = new Filter(current, deferredFilter.condition.clone());
 				annotateDeferredFilter(filterClone, deferredFilter, scope);
 				current = filterClone;
 			}
@@ -1765,9 +1979,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			double effectiveJoinRows = estimateDeferredFilterAwareRows(new Join(left.clone(), right.clone()),
 					deferredFilters, availableVars, rawJoinRows);
 			double factorWorkRows = estimateInitialFactorWorkRows(left, right, outerBoundVars, factorCostCache);
-			double baseCostRows = isFiniteNonNegative(factorWorkRows)
-					? Math.max(effectiveJoinRows, factorWorkRows)
-					: effectiveJoinRows;
+			double baseCostRows = factorAwareBaseCostRows(effectiveJoinRows, factorWorkRows,
+					containsLocalFilter(left) || containsLocalFilter(right));
 			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, baseCostRows, factorWorkRows,
 					sharedVarCount, boundAnchorCount,
 					countCompatibleCheapFilters(deferredFilters, availableVars),
@@ -1787,9 +2000,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					new Join(prefixForEstimation.clone(), candidate.clone()), deferredFilters, candidateAvailableVars,
 					rawJoinRows);
 			double factorWorkRows = estimateCandidateFactorWorkRows(candidate, prefixBindingNames, factorCostCache);
-			double baseCostRows = isFiniteNonNegative(factorWorkRows)
-					? Math.max(effectiveJoinRows, factorWorkRows)
-					: effectiveJoinRows;
+			double baseCostRows = factorAwareBaseCostRows(effectiveJoinRows, factorWorkRows,
+					containsLocalFilter(candidate));
 			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, baseCostRows, factorWorkRows,
 					sharedVarCount, 0,
 					countCompatibleCheapFilters(deferredFilters, candidateAvailableVars),
@@ -1797,6 +2009,34 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					sharedVarCount == 0 && hasConnectedCandidate, false,
 					combinedUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars),
 					shouldFloorUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars));
+		}
+
+		private double factorAwareBaseCostRows(double effectiveJoinRows, double factorWorkRows,
+				boolean hasLocalFilter) {
+			if (!isFiniteNonNegative(factorWorkRows)) {
+				return effectiveJoinRows;
+			}
+			if (hasLocalFilter && isFiniteNonNegative(effectiveJoinRows) && effectiveJoinRows < factorWorkRows) {
+				double blendedWorkRows = Math.sqrt(factorWorkRows * normalizeJoinRows(effectiveJoinRows));
+				if (isFiniteNonNegative(blendedWorkRows)) {
+					return Math.max(effectiveJoinRows, blendedWorkRows);
+				}
+			}
+			return Math.max(effectiveJoinRows, factorWorkRows);
+		}
+
+		private boolean containsLocalFilter(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Filter) {
+				return true;
+			}
+			if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
+				return containsLocalFilter(join.getLeftArg()) || containsLocalFilter(join.getRightArg());
+			}
+			if (tupleExpr instanceof UnaryTupleOperator && !TupleExprs.isVariableScopeChange(tupleExpr)) {
+				return containsLocalFilter(((UnaryTupleOperator) tupleExpr).getArg());
+			}
+			return false;
 		}
 
 		private double estimateInitialFactorWorkRows(TupleExpr left, TupleExpr right, Set<String> outerBoundVars,
@@ -2110,7 +2350,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private final class DeferredFilter {
-			private final Filter filter;
+			private final ValueExpr condition;
 			private final Set<String> requiredVars;
 			private final int conditionCost;
 			private final int originalIndex;
@@ -2118,15 +2358,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			private final Set<StatementPattern> originPatterns;
 			private final EvaluationStatistics.FilterPassEstimate filterPassEstimate;
 
-			private DeferredFilter(Filter filter, Set<String> requiredVars, int conditionCost, int originalIndex) {
-				this.filter = filter;
+			private DeferredFilter(Filter filter, ValueExpr condition, Set<String> requiredVars, int conditionCost,
+					int originalIndex) {
+				this.condition = condition;
 				this.requiredVars = requiredVars;
 				this.conditionCost = conditionCost;
 				this.originalIndex = originalIndex;
-				this.patternLocalBase = FilterSelectivityKeys.patternLocalBaseForFilter(filter);
+				this.patternLocalBase = patternLocalBaseForFilterCondition(filter, condition);
 				this.originPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
 				this.originPatterns.addAll(FilterSelectivityKeys.originPatternsForFilter(filter));
-				this.filterPassEstimate = statistics.estimateFilterPass(filter);
+				this.filterPassEstimate = estimateFilterPass(filter, condition);
 			}
 		}
 

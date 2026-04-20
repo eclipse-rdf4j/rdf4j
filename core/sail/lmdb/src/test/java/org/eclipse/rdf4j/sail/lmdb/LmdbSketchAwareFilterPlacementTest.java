@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -200,19 +201,19 @@ class LmdbSketchAwareFilterPlacementTest {
 	}
 
 	@Test
-	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInBenchmarkDataset(
+	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset(
 			@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
-			loadAllThemeData(repository);
+			loadThemeDataWithBulkEstimator(repository, store, Theme.MEDICAL_RECORDS);
 			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
 			assertTrue(statistics.supportsFilterSelectivityCosting(),
-					"Expected LMDB to expose local filter selectivity costing for q2 in the mixed benchmark dataset");
+					"Expected LMDB to expose local filter selectivity costing for q2 in the theme dataset");
 
 			TupleExpr optimized;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -227,14 +228,14 @@ class LmdbSketchAwareFilterPlacementTest {
 	}
 
 	@Test
-	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInBenchmarkDataset(
+	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset(
 			@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
-			loadAllThemeData(repository);
+			loadThemeDataWithBulkEstimator(repository, store, Theme.ELECTRICAL_GRID);
 			String query = ThemeQueryCatalog.queryFor(Theme.ELECTRICAL_GRID, 2);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -333,15 +334,11 @@ class LmdbSketchAwareFilterPlacementTest {
 		}
 	}
 
-	private static void loadAllThemeData(SailRepository repository) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			var inserter = new RDFInserter(connection);
-			for (Theme theme : Theme.values()) {
-				ThemeDataSetGenerator.generate(theme, inserter);
-			}
-			connection.commit();
-		}
+	private static void loadThemeDataWithBulkEstimator(SailRepository repository, LmdbStore store, Theme theme)
+			throws Exception {
+		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+		loadThemeData(repository, theme);
+		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 	}
 
 	private static List<String> collectMandatoryLeafOrder(TupleExpr optimized) {

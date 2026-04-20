@@ -515,7 +515,7 @@ final class SketchJoinOrderPlanner {
 				continue;
 			}
 			double filterPassRatio = filter.getEstimatedPassRatio();
-			if (Double.isFinite(filterPassRatio) && filterPassRatio > 0.0d && filterPassRatio <= 1.0d) {
+			if (Double.isFinite(filterPassRatio) && filterPassRatio >= 0.0d && filterPassRatio <= 1.0d) {
 				passRatio *= filterPassRatio;
 				found = true;
 			}

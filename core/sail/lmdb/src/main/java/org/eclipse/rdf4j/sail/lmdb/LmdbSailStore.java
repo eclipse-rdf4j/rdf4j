@@ -24,6 +24,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -362,9 +364,7 @@ class LmdbSailStore implements SailStore {
 	public void close() throws SailException {
 		try {
 			try {
-				if (persistFuture != null) {
-					persistFuture.cancel(false);
-				}
+				cancelAndDrainScheduledEstimatorPersist();
 				persistEstimatorState();
 				sketchBasedJoinEstimator.close();
 			} finally {
@@ -392,7 +392,15 @@ class LmdbSailStore implements SailStore {
 										throw new InterruptedSailException(e);
 									}
 								} finally {
-									estimatorPersistExec.shutdownNow();
+									estimatorPersistExec.shutdown();
+									try {
+										while (!estimatorPersistExec.awaitTermination(1, TimeUnit.SECONDS)) {
+											logger.warn("Waiting for join estimator persist executor to terminate");
+										}
+									} catch (InterruptedException e) {
+										Thread.currentThread().interrupt();
+										throw new InterruptedSailException(e);
+									}
 									tripleStore.close();
 								}
 							}
@@ -408,6 +416,26 @@ class LmdbSailStore implements SailStore {
 		} catch (IOException e) {
 			logger.warn("Failed to close store", e);
 			throw new SailException(e);
+		}
+	}
+
+	private void cancelAndDrainScheduledEstimatorPersist() {
+		ScheduledFuture<?> future = persistFuture;
+		if (future == null) {
+			return;
+		}
+		if (future.cancel(false)) {
+			return;
+		}
+		try {
+			future.get();
+		} catch (CancellationException e) {
+			// Already cancelled by the scheduler or another close path.
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException(e);
+		} catch (ExecutionException e) {
+			logger.warn("Scheduled join estimator persistence failed during close", e.getCause());
 		}
 	}
 

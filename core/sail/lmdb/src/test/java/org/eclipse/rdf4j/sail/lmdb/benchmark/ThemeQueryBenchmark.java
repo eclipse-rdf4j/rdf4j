@@ -68,7 +68,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Warmup(iterations = 100, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx32G" })
 @Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
@@ -99,31 +99,31 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-			"0",
+//			"0",
 			"1",
-			"2",
-			"3",
-			"4",
-			"5",
-			"6",
-			"7",
-			"8",
-			"9",
-			"10",
+//			"2",
+//			"3",
+//			"4",
+//			"5",
+//			"6",
+//			"7",
+//			"8",
+//			"9",
+//			"10",
 //			"11",
 //			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
+//			"MEDICAL_RECORDS",
 			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 
@@ -226,8 +226,9 @@ public class ThemeQueryBenchmark {
 		storeConfig = ConfigUtil.createConfig();
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
+		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 
 		repository.shutDown();
 		repository = null;

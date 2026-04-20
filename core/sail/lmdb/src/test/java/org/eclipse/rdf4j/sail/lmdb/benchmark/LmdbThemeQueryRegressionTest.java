@@ -12,52 +12,185 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbThemeQueryRegressionTest {
 
-	private static final Theme THEME = Theme.PHARMA;
-	private static final int[] QUERY_INDEXES = { 8, 10 };
-	private static final int ITERATIONS = 3;
+	private static final Map<Theme, List<Integer>> HIGH_VALUE_QUERY_INDEXES = Map.of(
+			Theme.SOCIAL_MEDIA, List.of(0, 4, 6, 8, 9, 10),
+			Theme.PHARMA, List.of(0, 5, 10),
+			Theme.LIBRARY, List.of(7),
+			Theme.MEDICAL_RECORDS, List.of(2, 5),
+			Theme.ENGINEERING, List.of(5, 9),
+			Theme.ELECTRICAL_GRID, List.of(2, 4, 5),
+			Theme.TRAIN, List.of(2, 7, 8));
+	private static final Map<Theme, List<Integer>> COUNT_REGRESSION_QUERY_INDEXES = Map.of(
+			Theme.PHARMA, List.of(8, 10));
+	private static final Map<Theme, List<Integer>> LEARNED_FILTER_PRIME_QUERY_INDEXES = Map.of(
+			Theme.PHARMA, List.of(0, 5, 10),
+			Theme.LIBRARY, List.of(7),
+			Theme.MEDICAL_RECORDS, List.of(2, 5),
+			Theme.ENGINEERING, List.of(5, 9),
+			Theme.ELECTRICAL_GRID, List.of(2, 4, 5),
+			Theme.TRAIN, List.of(2, 7, 8));
+	private static final List<ShapeAnchor> HIGH_VALUE_ANCHORS = List.of(
+			anchor(Theme.SOCIAL_MEDIA, 0, "VALUES", "<http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 4, "VALUES", "<http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 6, "VALUES", "<http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 9, "VALUES", "<http://example.com/theme/social/follows> ?b"),
+			anchor(Theme.SOCIAL_MEDIA, 10, "VALUES", "<http://example.com/theme/social/follows> ?b"),
+			anchor(Theme.PHARMA, 0, "VALUES ?disease", "<http://example.com/theme/pharma/hasArm> ?arm"),
+			anchor(Theme.PHARMA, 5, "VALUES ?marker", "<http://example.com/theme/pharma/hasArm> ?arm"),
+			anchor(Theme.PHARMA, 10, "VALUES ?marker", "<http://example.com/theme/pharma/testedIn> ?trial"),
+			anchor(Theme.LIBRARY, 7, "<http://example.com/theme/library/name> ?branchName",
+					"<http://example.com/theme/library/locatedAt> ?branch"),
+			anchor(Theme.MEDICAL_RECORDS, 2, "<http://example.com/theme/medical/recordedOn> ?date",
+					"<http://example.com/theme/medical/handledBy> ?practitioner"),
+			anchor(Theme.MEDICAL_RECORDS, 5, "<http://example.com/theme/medical/value> ?value",
+					"<http://example.com/theme/medical/hasEncounter> ?enc"),
+			anchor(Theme.ENGINEERING, 5, "<http://example.com/theme/engineering/measuredValue> ?value",
+					"?measurement a <http://example.com/theme/engineering/Measurement>"),
+			anchor(Theme.ENGINEERING, 9, "<http://example.com/theme/engineering/measuredValue> ?value",
+					"<http://example.com/theme/engineering/verifiedBy> ?measurement"),
+			anchor(Theme.ELECTRICAL_GRID, 2, "<http://example.com/theme/grid/name> ?name",
+					"<http://example.com/theme/grid/feeds> ?substation"),
+			anchor(Theme.ELECTRICAL_GRID, 4, "<http://example.com/theme/grid/name> ?name",
+					"<http://example.com/theme/grid/connectsTo> ?substation"),
+			anchor(Theme.ELECTRICAL_GRID, 5, "<http://example.com/theme/grid/capacity> ?capacity",
+					"?generator a <http://example.com/theme/grid/Generator>"),
+			anchor(Theme.TRAIN, 2, "<http://example.com/theme/train/name> ?lineName",
+					"<http://example.com/theme/train/partOfLine> ?line"),
+			anchor(Theme.TRAIN, 7, "<http://example.com/theme/train/name> ?name",
+					"<http://example.com/theme/train/passesThrough> ?op"));
 
-	@Test
-	void pharmaQueriesMatchExpectedCounts(@TempDir java.nio.file.Path dataDir) throws IOException {
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir.toFile(), ConfigUtil.createConfig()));
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("highValueThemes")
+	void highValueThemeQueriesExposePersistedOptimizerDiagnostics(Theme theme, @TempDir Path dataDir)
+			throws Exception {
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
 		try {
-			loadData(repository);
-			for (int iteration = 0; iteration < ITERATIONS; iteration++) {
-				for (int queryIndex : QUERY_INDEXES) {
-					String query = ThemeQueryCatalog.queryFor(THEME, queryIndex);
-					long expected = ThemeQueryCatalog.expectedCountFor(THEME, queryIndex);
-					long actual = executeQuery(repository, query);
-					if (actual != expected) {
-						throw new AssertionError(
-								mismatchMessage(repository, queryIndex, iteration, expected, actual, query));
-					}
-				}
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, primeableHighValueQueryIndexes(theme));
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			for (int queryIndex : HIGH_VALUE_QUERY_INDEXES.get(theme)) {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
+				assertContains(snapshot.plan(), "plannerId=lmdb-sketch");
+				assertContainsAny(snapshot.plan(), "plannedAccessRows", "optimizer.decisionTrace",
+						"plannedFilterEvidenceCount");
+				assertHighValueAnchors(theme, queryIndex, snapshot.renderedQuery());
+				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 			}
+			assertCountRegressionQueries(repository, theme);
+			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	private static Stream<Theme> highValueThemes() {
+		return Stream.of(Theme.PHARMA, Theme.LIBRARY, Theme.MEDICAL_RECORDS, Theme.ENGINEERING,
+				Theme.ELECTRICAL_GRID, Theme.TRAIN, Theme.SOCIAL_MEDIA);
+	}
+
+	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, int... queryIndexes) {
+		for (int queryIndex : queryIndexes) {
+			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+			long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+			long actual = executeQuery(repository, query);
+			if (actual != expected) {
+				throw new AssertionError("Unable to prime learned filter stats: theme=" + theme + ", queryIndex="
+						+ queryIndex + ", expected=" + expected + ", actual=" + actual);
+			}
+		}
+	}
+
+	private static int[] primeableHighValueQueryIndexes(Theme theme) {
+		return LEARNED_FILTER_PRIME_QUERY_INDEXES.getOrDefault(theme, List.of())
+				.stream()
+				.mapToInt(Integer::intValue)
+				.toArray();
+	}
+
+	private static void loadData(SailRepository repository, Theme theme) throws IOException {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			RDFInserter inserter = new RDFInserter(connection);
+			ThemeDataSetGenerator.generate(theme, inserter);
+			connection.commit();
+		}
+	}
+
+	private static void persistEstimatorAfterBulkLoad(SailRepository repository, LmdbStore store) throws Exception {
+		Method method;
+		try {
+			method = BenchmarkJoinEstimatorSupport.class.getDeclaredMethod("persistEstimatorAfterBulkLoad",
+					SailRepository.class, LmdbStore.class);
+		} catch (NoSuchMethodException e) {
+			throw new AssertionError(
+					"BenchmarkJoinEstimatorSupport must persist a reusable estimator snapshot after bulk load", e);
+		}
+		try {
+			method.invoke(null, repository, store);
+		} catch (InvocationTargetException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof Exception exception) {
+				throw exception;
+			}
+			if (cause instanceof Error error) {
+				throw error;
+			}
+			throw new AssertionError("Unable to persist benchmark estimator snapshot", cause);
+		}
+	}
+
+	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {
+		try {
+			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 		} finally {
 			repository.shutDown();
 		}
 	}
 
-	private static void loadData(SailRepository repository) throws IOException {
+	private static OptimizerSnapshot explainOptimized(SailRepository repository, Theme theme, int queryIndex) {
+		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			RDFInserter inserter = new RDFInserter(connection);
-			ThemeDataSetGenerator.generate(THEME, inserter);
-			connection.commit();
+			Explanation explanation = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized);
+			return new OptimizerSnapshot(
+					explanation.toString(),
+					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));
 		}
 	}
 
@@ -70,17 +203,70 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
-	private static String mismatchMessage(SailRepository repository, int queryIndex, int iteration, long expected,
-			long actual, String query) {
-		String explanation = "<explain failed>";
+	private static void assertCountRegressionQueries(SailRepository repository, Theme theme) {
+		for (int queryIndex : COUNT_REGRESSION_QUERY_INDEXES.getOrDefault(theme, List.of())) {
+			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+			long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+			long actual = executeQuery(repository, query);
+			if (actual != expected) {
+				throw new AssertionError("LMDB theme query mismatch: theme=" + theme + ", queryIndex=" + queryIndex
+						+ ", expected=" + expected + ", actual=" + actual + "\n" + explainBestEffort(repository,
+								query));
+			}
+		}
+	}
+
+	private static String explainBestEffort(SailRepository repository, String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			explanation = connection.prepareTupleQuery(query)
+			return connection.prepareTupleQuery(query)
 					.explain(Explanation.Level.Optimized)
 					.toString();
 		} catch (Exception ignored) {
-			// Best-effort explanation for diagnosis.
+			return "<explain failed>";
 		}
-		return "LMDB theme query mismatch: theme=" + THEME + ", queryIndex=" + queryIndex + ", iteration=" + iteration
-				+ ", expected=" + expected + ", actual=" + actual + "\n" + explanation;
+	}
+
+	private static void assertContains(String value, String expected) {
+		if (!value.contains(expected)) {
+			throw new AssertionError("Expected to find `" + expected + "` in:\n" + value);
+		}
+	}
+
+	private static void assertContainsAny(String value, String... expectedValues) {
+		for (String expected : expectedValues) {
+			if (value.contains(expected)) {
+				return;
+			}
+		}
+		throw new AssertionError("Expected to find one of `" + String.join("`, `", expectedValues) + "` in:\n"
+				+ value);
+	}
+
+	private static void assertBefore(String value, String first, String second, String message) {
+		int firstIndex = value.indexOf(first);
+		int secondIndex = value.indexOf(second);
+		if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
+			throw new AssertionError(message + "\nExpected `" + first + "` before `" + second + "` in:\n" + value);
+		}
+	}
+
+	private static void assertHighValueAnchors(Theme theme, int queryIndex, String renderedQuery) {
+		for (ShapeAnchor anchor : HIGH_VALUE_ANCHORS) {
+			if (anchor.theme() == theme && anchor.queryIndex() == queryIndex) {
+				assertBefore(renderedQuery, anchor.first(), anchor.second(),
+						"Expected theme=" + theme + ", queryIndex=" + queryIndex
+								+ " to retain the selective anchor before the broad scan");
+			}
+		}
+	}
+
+	private static ShapeAnchor anchor(Theme theme, int queryIndex, String first, String second) {
+		return new ShapeAnchor(theme, queryIndex, first, second);
+	}
+
+	private record OptimizerSnapshot(String plan, String renderedQuery) {
+	}
+
+	private record ShapeAnchor(Theme theme, int queryIndex, String first, String second) {
 	}
 }

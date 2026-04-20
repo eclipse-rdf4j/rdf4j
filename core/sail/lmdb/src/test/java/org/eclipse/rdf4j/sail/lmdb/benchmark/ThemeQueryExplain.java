@@ -186,8 +186,9 @@ public class ThemeQueryExplain {
 		storeConfig = ConfigUtil.createConfig();
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
+		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 
 		repository.shutDown();
 		repository = null;

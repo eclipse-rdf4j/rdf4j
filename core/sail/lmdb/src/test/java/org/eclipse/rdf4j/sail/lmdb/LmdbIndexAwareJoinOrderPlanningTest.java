@@ -87,17 +87,21 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
-	void plannerMayMoveFilteredNameEarlierWhenPoscExists(@TempDir File dataDir) throws Exception {
+	void plannerCostsTargetBoundFilteredNameLookupWhenPoscExists(@TempDir File dataDir) throws Exception {
 		PlannedBranch plannedBranch = planGeneratorBranch(dataDir, "spoc,ospc,psoc,posc");
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = plannedBranch.plan();
 
 		assertTrue(plan.isPresent(), "Expected LMDB planner to produce a plan for the generator branch");
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 		assertEquals(4, orderedArgs.size(), "Expected four join factors in the generator branch");
-		assertTrue(
-				orderedArgs.indexOf(plannedBranch.filteredNamePattern()) < orderedArgs
-						.indexOf(plannedBranch.feedsPattern()),
-				"With posc available, LMDB planner may use the grid:name filter before grid:feeds");
+		JoinFactorCostModel.FactorCostEstimate filteredNameCost = plannedBranch.targetBoundFilteredNameCost();
+		assertEquals("directLookup",
+				filteredNameCost.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+				"Expected posc to provide a direct target-bound grid:name lookup: "
+						+ filteredNameCost.getStringMetrics() + filteredNameCost.getDoubleMetrics());
+		assertTrue(filteredNameCost.getWorkRows() < GENERATOR_COUNT,
+				"Expected posc to make target-bound grid:name cheaper than generator type scan: "
+						+ filteredNameCost.getStringMetrics() + filteredNameCost.getDoubleMetrics());
 	}
 
 	@Test
@@ -176,15 +180,18 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			StatementPattern feedsPattern = transformerFeedsPattern();
 			Filter filteredNamePattern = filteredNameListMemberPattern();
 			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
-			Optional<JoinOrderPlanner.JoinOrderPlan> plan = planner.planJoinOrder(
+			JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(
 					List.of(typePattern, feedsPattern, filteredNamePattern),
 					Set.of(),
-					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+					List.of());
+			Optional<JoinOrderPlanner.JoinOrderPlan> plan = attempt.getPlan();
 
 			assertTrue(plan.isPresent(), "Expected LMDB planner to produce an electrical q2-style plan");
 			List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 			assertEquals(filteredNamePattern, orderedArgs.get(0),
-					"Electrical q2 should seed with the selective substation-name predicate-prefix scan");
+					"Electrical q2 should seed with the selective substation-name predicate-prefix scan\nDiagnostics: "
+							+ attempt.getDiagnostics());
 		} finally {
 			repository.shutDown();
 		}
@@ -256,6 +263,9 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			BindingSetAssignment targets = targetBindings();
 
 			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
+			JoinFactorCostModel.FactorCostEstimate targetBoundFilteredNameCost = ((JoinFactorCostModel) planner)
+					.estimateFactorCost(filteredNamePattern, Set.of("target"))
+					.orElseThrow();
 			return new PlannedBranch(
 					planner.planJoinOrder(List.of(targets, typePattern, feedsPattern, filteredNamePattern),
 							java.util.Set.of(),
@@ -263,7 +273,8 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					targets,
 					typePattern,
 					feedsPattern,
-					filteredNamePattern);
+					filteredNamePattern,
+					targetBoundFilteredNameCost);
 		} finally {
 			repository.shutDown();
 		}
@@ -443,7 +454,8 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	private record PlannedBranch(Optional<JoinOrderPlanner.JoinOrderPlan> plan, BindingSetAssignment targets,
-			StatementPattern typePattern, StatementPattern feedsPattern, Filter filteredNamePattern) {
+			StatementPattern typePattern, StatementPattern feedsPattern, Filter filteredNamePattern,
+			JoinFactorCostModel.FactorCostEstimate targetBoundFilteredNameCost) {
 	}
 
 	private static String predicateValue(StatementPattern statementPattern) {

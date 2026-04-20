@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -52,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -510,6 +512,23 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optimizeNormalizesPlannerOutputFilterWrappedBindingsBeforeFirstUse() {
+		BindingSetAssignment uValues = bindingSetAssignment("u", "u1");
+		Filter uRestriction = filter(uValues, "u", "u");
+		BindingSetAssignment vValues = bindingSetAssignment("v", "v1");
+		StatementPattern follows = statementPattern("u", "v", ex("follows"));
+		PlannerStatistics statistics = new PlannerStatistics(List.of(vValues, follows, uRestriction),
+				List.of(uRestriction, vValues, follows));
+
+		QueryRoot root = new QueryRoot(new Join(new Join(uRestriction, vValues), follows));
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(flattenJoinLeaves(root.getArg()))
+				.as("Filter-wrapped BindingSetAssignment factors should be positioned before first use")
+				.containsExactly(uRestriction, vValues, follows);
+	}
+
+	@Test
 	public void optimizePassesDeferredFilterConstraintsToPlannerForFilteredPrefixChoice() {
 		StatementPattern pValue = statementPattern("result", "p", ex("pValue"));
 		StatementPattern effectSize = statementPattern("result", "effect", ex("effectSize"));
@@ -726,6 +745,60 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optimizeLetsSelectiveLocalFilterOutputBeatBroadWorkRows() {
+		StatementPattern patientType = statementPattern("patient", "type", rdfType());
+		StatementPattern hasEncounter = statementPattern("patient", "enc", medical("hasEncounter"));
+		StatementPattern hasObservation = statementPattern("enc", "obs", medical("hasObservation"));
+		Filter valueFilter = filter(statementPattern("obs", "value", medical("value")), "value", "limit");
+
+		QueryRoot root = new QueryRoot(new Join(new Join(patientType, hasEncounter),
+				new Join(hasObservation, valueFilter)));
+		new QueryJoinOptimizer(
+				new LocalFilterWorkRowsStatistics(Map.of(
+						pairKey(rdfType(), medical("hasEncounter")), 100.0d,
+						pairKey(medical("hasObservation"), medical("value")), 120.0d)),
+				new EmptyTripleSource()).optimize(root, null, null);
+
+		List<String> leafPredicates = flattenedLeafPredicates(root.getArg());
+		assertThat(leafPredicates)
+				.as("A selective local literal filter should seed before a broad type-edge prefix even when its scan work is higher")
+				.startsWith(medical("value"));
+		assertThat(leafPredicates.indexOf(medical("value")))
+				.isLessThan(leafPredicates.indexOf(medical("hasEncounter")));
+	}
+
+	@Test
+	public void optimizeGroupsCheapValuesFilterBeforeCycleJoinAndExists() {
+		BindingSetAssignment userPairValues = bindingSetAssignment(Map.of(
+				"u1", ex("social/user/0"),
+				"u2", ex("social/user/1")));
+		BindingSetAssignment user3Values = bindingSetAssignment(Map.of("u3", ex("social/user/2")));
+		StatementPattern u1FollowsU2 = statementPattern("u1", "u2", social("follows"));
+		StatementPattern u2FollowsU1 = statementPattern("u2", "u1", social("follows"));
+		StatementPattern u1FollowsU3 = statementPattern("u1", "u3", social("follows"));
+		StatementPattern u3FollowsU1 = statementPattern("u3", "u1", social("follows"));
+		StatementPattern u2FollowsU3 = statementPattern("u2", "u3", social("follows"));
+		StatementPattern u3FollowsU2 = statementPattern("u3", "u2", social("follows"));
+		TupleExpr cycle = new Join(new Join(new Join(new Join(new Join(new Join(new Join(userPairValues, user3Values),
+				u1FollowsU2), u1FollowsU3), u2FollowsU1), u3FollowsU1), u2FollowsU3), u3FollowsU2);
+		Filter combinedFilter = new Filter(cycle, new And(
+				new Compare(Var.of("u1"), Var.of("u3"), CompareOp.NE),
+				new Exists(statementPattern("u1", "name", social("name")))));
+
+		QueryRoot root = new QueryRoot(combinedFilter);
+		new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+
+		Filter relocatedValuesFilter = compareFilter(root, "u1", "u3");
+		assertThat(countStatementPatterns(relocatedValuesFilter.getArg()))
+				.as("A cheap inequality over VALUES-bound variables should be applied before any cycle join")
+				.isZero();
+		Filter existsFilter = existsFilter(root);
+		assertThat(countStatementPatterns(relocatedValuesFilter.getArg()))
+				.as("The cheap VALUES inequality should be scheduled before the expensive EXISTS filter")
+				.isLessThanOrEqualTo(countStatementPatterns(existsFilter.getArg()));
+	}
+
+	@Test
 	public void optimizeDiscountsNotExistsUnlockAgainstConnectedInitialPair() {
 		String query = String.join("\n",
 				"PREFIX ex: <http://example.com/>",
@@ -864,6 +937,26 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		return predicates.stream().limit(limit).collect(Collectors.toList());
 	}
 
+	private static List<String> flattenedLeafPredicates(TupleExpr tupleExpr) {
+		return flattenJoinLeavesKeepingScopeBarriers(unwrapQueryRoot(tupleExpr)).stream()
+				.map(QueryJoinOptimizerTest::firstStatementPatternPredicate)
+				.filter(predicate -> predicate != null)
+				.collect(Collectors.toList());
+	}
+
+	private static String firstStatementPatternPredicate(TupleExpr tupleExpr) {
+		ArrayList<String> predicates = new ArrayList<>();
+		unwrapQueryRoot(tupleExpr).visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern statementPattern) {
+				if (predicates.isEmpty()) {
+					predicates.add(statementPattern.getPredicateVar().getValue().stringValue());
+				}
+			}
+		});
+		return predicates.isEmpty() ? null : predicates.get(0);
+	}
+
 	private static TupleExpr unwrapQueryRoot(TupleExpr tupleExpr) {
 		while (tupleExpr instanceof QueryRoot || tupleExpr instanceof Projection) {
 			if (tupleExpr instanceof QueryRoot) {
@@ -955,6 +1048,74 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		return assignment;
 	}
 
+	private static BindingSetAssignment bindingSetAssignment(Map<String, String> iriBindings) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		iriBindings.forEach((name, iri) -> bindingSet.addBinding(name, VF.createIRI(iri)));
+		assignment.setBindingSets(List.<BindingSet>of(bindingSet));
+		return assignment;
+	}
+
+	private static String rdfType() {
+		return "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+	}
+
+	private static String medical(String localName) {
+		return "http://example.com/theme/medical/" + localName;
+	}
+
+	private static String social(String localName) {
+		return "http://example.com/theme/social/" + localName;
+	}
+
+	private static Filter compareFilter(QueryModelNode root, String leftVarName, String rightVarName) {
+		return filters(root).stream()
+				.filter(filter -> isCompareFilter(filter, leftVarName, rightVarName))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing compare filter " + leftVarName + " != "
+						+ rightVarName + " in " + root));
+	}
+
+	private static Filter existsFilter(QueryModelNode root) {
+		return filters(root).stream()
+				.filter(filter -> filter.getCondition() instanceof Exists)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Missing EXISTS filter in " + root));
+	}
+
+	private static List<Filter> filters(QueryModelNode root) {
+		ArrayList<Filter> filters = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) throws RuntimeException {
+				filters.add(filter);
+				super.meet(filter);
+			}
+		});
+		return filters;
+	}
+
+	private static boolean isCompareFilter(Filter filter, String leftVarName, String rightVarName) {
+		if (!(filter.getCondition() instanceof Compare)) {
+			return false;
+		}
+		Compare compare = (Compare) filter.getCondition();
+		return compare.getOperator() == CompareOp.NE
+				&& compare.getLeftArg().equals(Var.of(leftVarName))
+				&& compare.getRightArg().equals(Var.of(rightVarName));
+	}
+
+	private static int countStatementPatterns(TupleExpr tupleExpr) {
+		ArrayList<StatementPattern> patterns = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern statementPattern) throws RuntimeException {
+				patterns.add(statementPattern);
+			}
+		});
+		return patterns.size();
+	}
+
 	private static String getPredicateValue(TupleExpr expr) {
 		return ((StatementPattern) expr).getPredicateVar().getValue().stringValue();
 	}
@@ -987,6 +1148,10 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			Join join = (Join) expr;
 			collectTupleExprPredicates(join.getLeftArg(), predicates);
 			collectTupleExprPredicates(join.getRightArg(), predicates);
+			return;
+		}
+		if (expr instanceof Filter) {
+			collectTupleExprPredicates(((Filter) expr).getArg(), predicates);
 			return;
 		}
 		if (expr instanceof StatementPattern) {
@@ -1197,6 +1362,61 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		@Override
 		public FilterPassEstimate estimateFilterPass(Filter filter) {
 			return new FilterPassEstimate(0.0d, FilterPassEstimate.Source.LEARNED_FILTER);
+		}
+	}
+
+	private static final class LocalFilterWorkRowsStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+		private final Map<String, Double> joinCosts;
+
+		private LocalFilterWorkRowsStatistics(Map<String, Double> joinCosts) {
+			this.joinCosts = joinCosts;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public boolean supportsFilterSelectivityCosting() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Join) {
+				Join join = (Join) expr;
+				String left = tupleExprKey(join.getLeftArg());
+				String right = tupleExprKey(join.getRightArg());
+				if (left != null && right != null) {
+					return joinCosts.getOrDefault(pairKey(left, right), 1000.0d);
+				}
+				return 1000.0d;
+			}
+			if (expr instanceof Filter) {
+				return 10.0d;
+			}
+			if (expr instanceof StatementPattern) {
+				return 1000.0d;
+			}
+			return super.getCardinality(expr);
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (factor instanceof Filter) {
+				return Optional.of(new FactorCostEstimate(10_000.0d, 10.0d));
+			}
+			if (factor instanceof StatementPattern) {
+				return Optional.of(new FactorCostEstimate(1_000.0d, 1_000.0d));
+			}
+			return Optional.empty();
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			return new FilterPassEstimate(0.01d, FilterPassEstimate.Source.LEARNED_FILTER);
 		}
 	}
 

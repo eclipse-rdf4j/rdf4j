@@ -191,9 +191,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 
 		Map<String, String> stringMetrics = new HashMap<>();
 		Map<String, Double> doubleMetrics = new HashMap<>();
-		Set<Component> accessLookupComponents = accessLookupComponents(accessShape);
-		TripleStore.IndexPrefixSelection prefixSelection = tripleStore
-				.selectBestIndexPrefix(accessLookupComponents);
+		TripleStore.IndexPrefixSelection prefixSelection = selectEffectiveIndexPrefix(accessShape);
 		Set<Component> prefixComponents = prefixSelection == null ? Set.of() : prefixSelection.prefixComponents();
 		int prefixScore = prefixSelection == null ? 0 : prefixSelection.prefixScore();
 		if (prefixSelection != null && prefixScore > 0) {
@@ -211,7 +209,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 					missingLookupComponents.toString());
 		}
 
-		double accessRows = prefixScore > 0 ? accessShape.estimateAccessRows(prefixComponents) : outputRows;
+		double accessRows = accessShape.estimateAccessRows(prefixComponents);
 		if (Double.isFinite(accessRows) && accessRows >= 0.0d) {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, accessRows);
 			if (!accessShape.filterLookupComponents().isEmpty() && canApplyFilterAtAccess(accessShape, prefixComponents)
@@ -268,6 +266,18 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		return Set.copyOf(accessLookupComponents);
 	}
 
+	private TripleStore.IndexPrefixSelection selectEffectiveIndexPrefix(
+			SketchBasedJoinEstimator.AccessShape accessShape) {
+		TripleStore.IndexPrefixSelection lookupSelection = tripleStore
+				.selectBestIndexPrefix(accessShape.lookupBoundComponents());
+		if (accessShape.filterLookupComponents().isEmpty() || lookupSelection == null
+				|| canApplyFilterAtAccess(accessShape, lookupSelection.prefixComponents())) {
+			return lookupSelection;
+		}
+
+		return tripleStore.selectBestIndexPrefix(accessLookupComponents(accessShape));
+	}
+
 	private boolean canApplyFilterAtAccess(SketchBasedJoinEstimator.AccessShape accessShape,
 			Set<Component> prefixComponents) {
 		if (accessShape.filterLookupComponents().isEmpty()) {
@@ -287,8 +297,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 			return defaultWorkRows;
 		}
 
-		TripleStore.IndexPrefixSelection prefixSelection = tripleStore
-				.selectBestIndexPrefix(accessLookupComponents(accessShape));
+		TripleStore.IndexPrefixSelection prefixSelection = selectEffectiveIndexPrefix(accessShape);
 		if (prefixSelection == null) {
 			return defaultWorkRows;
 		}
@@ -299,16 +308,27 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		}
 
 		double adjustedWorkRows = accessRows;
+		boolean filterAppliedAtAccess = false;
 		Set<Component> filterLookupComponents = accessShape.filterLookupComponents();
 		if (!filterLookupComponents.isEmpty()
 				&& canApplyFilterAtAccess(accessShape, prefixSelection.prefixComponents())) {
 			double filteredAccessRows = accessRows * accessShape.filterMultiplier();
 			if (Double.isFinite(filteredAccessRows) && filteredAccessRows >= 0.0d) {
 				adjustedWorkRows = filteredAccessRows;
+				filterAppliedAtAccess = true;
 			}
 		}
-		if (!accessShape.isDirectLookup(prefixSelection.prefixComponents())) {
-			adjustedWorkRows = Math.max(adjustedWorkRows, defaultWorkRows);
+		double workFloor = filterAppliedAtAccess ? 0.0d : defaultWorkRows;
+		double filterMultiplier = accessShape.filterMultiplier();
+		if (!filterAppliedAtAccess && Double.isFinite(filterMultiplier) && filterMultiplier > 0.0d
+				&& filterMultiplier < 1.0d) {
+			double unfilteredWorkRows = defaultWorkRows / filterMultiplier;
+			if (Double.isFinite(unfilteredWorkRows) && unfilteredWorkRows >= 0.0d) {
+				workFloor = Math.max(workFloor, unfilteredWorkRows);
+			}
+		}
+		if (Double.isFinite(workFloor) && workFloor >= 0.0d) {
+			adjustedWorkRows = Math.max(adjustedWorkRows, workFloor);
 		}
 
 		return adjustedWorkRows;

@@ -5815,7 +5815,7 @@ public class SketchBasedJoinEstimator {
 
 	private double resolveFilterMultiplier(Filter filter, StatementPattern pattern) {
 		double knownMultiplier = estimateKnownFilterMultiplier(filter, pattern);
-		return knownMultiplier > 0.0d ? knownMultiplier : 1.0d;
+		return knownMultiplier >= 0.0d ? knownMultiplier : 1.0d;
 	}
 
 	private double resolveFilterMultiplier(Filter filter, TuplePlanEstimate estimate) {
@@ -5825,7 +5825,7 @@ public class SketchBasedJoinEstimator {
 		StatementPattern patternLocalBase = basePatternForFilter(filter);
 		if (patternLocalBase != null) {
 			double knownMultiplier = estimateKnownFilterMultiplier(filter, patternLocalBase);
-			if (knownMultiplier > 0.0d) {
+			if (knownMultiplier >= 0.0d) {
 				return knownMultiplier;
 			}
 		}
@@ -7526,7 +7526,7 @@ public class SketchBasedJoinEstimator {
 	private void appendSketchPayload(State state, int entryId, SketchAddress address, UpdateSketch sketch)
 			throws IOException {
 		TrackedByteArray payload = serializeTrackedSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
-				transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch);
+				transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch, false);
 		try {
 			appendSketchPayload(state, entryId, address, payload.bytes);
 		} finally {
@@ -8046,8 +8046,16 @@ public class SketchBasedJoinEstimator {
 
 	private TrackedByteArray serializeTrackedSketchPayload(MemoryCategory category, long ownerId, UpdateSketch sketch)
 			throws IOException {
+		return serializeTrackedSketchPayload(category, ownerId, sketch, true);
+	}
+
+	private TrackedByteArray serializeTrackedSketchPayload(MemoryCategory category, long ownerId, UpdateSketch sketch,
+			boolean enforceCapacity)
+			throws IOException {
 		long predictedBytes = estimateByteArrayBytes(Math.max(128, sketch.getCurrentBytes()));
-		ensureEstimatorCapacity(predictedBytes, true);
+		if (enforceCapacity) {
+			ensureEstimatorCapacity(predictedBytes, true);
+		}
 		reserveTrackedMemory(category, ownerId, predictedBytes);
 		try (ByteArrayOutputStream bos = new ByteArrayOutputStream(128);
 				DataOutputStream out = new DataOutputStream(bos)) {
