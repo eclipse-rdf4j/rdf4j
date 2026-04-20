@@ -249,6 +249,27 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void plannedIndexMetricsDoNotOverwriteRuntimeIndexMetrics() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setRuntimeTelemetryEnabled(false);
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME, "posc");
+
+		String optimized = node.toString();
+
+		assertTrue(optimized.contains("plannedIndexName=posc"), optimized);
+
+		node.setRuntimeTelemetryEnabled(true);
+		node.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, "spoc");
+		String telemetry = node.toString();
+		String dot = node.toDot();
+
+		assertTrue(telemetry.contains("plannedIndexName=posc"), telemetry);
+		assertTrue(telemetry.contains("indexName=spoc"), telemetry);
+		assertTrue(dot.contains("<tr><td>Planned index</td><td>posc</td></tr>"), dot);
+		assertTrue(dot.contains("<tr><td>Index</td><td>spoc</td></tr>"), dot);
+	}
+
+	@Test
 	void regularJoinTypeIsHidden() {
 		GenericPlanNode join = new GenericPlanNode("Join");
 		join.setStringMetricActual("joinType", "regular join");

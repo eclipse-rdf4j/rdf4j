@@ -19,6 +19,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,6 +31,9 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -39,9 +43,11 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
@@ -55,11 +61,15 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static final IRI RDF_TYPE = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
 	private static final IRI GRID_SUBSTATION = VF.createIRI("http://example.com/theme/grid/Substation");
 	private static final IRI GRID_GENERATOR = VF.createIRI("http://example.com/theme/grid/Generator");
+	private static final IRI GRID_TRANSFORMER = VF.createIRI("http://example.com/theme/grid/Transformer");
 	private static final IRI GRID_FEEDS = VF.createIRI("http://example.com/theme/grid/feeds");
 	private static final IRI GRID_NAME = VF.createIRI("http://example.com/theme/grid/name");
 	private static final IRI GRID_ALIAS = VF.createIRI("http://example.com/theme/grid/alias");
+	private static final IRI SOCIAL_FOLLOWS = VF.createIRI("http://example.com/theme/social/follows");
+	private static final IRI SOCIAL_NAME = VF.createIRI("http://example.com/theme/social/name");
 	private static final int SUBSTATION_COUNT = 300;
 	private static final int GENERATOR_COUNT = 120;
+	private static final int TRANSFORMER_COUNT = 5_000;
 	private static final int NOISE_COUNT = 600;
 
 	@Test
@@ -124,6 +134,111 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	@Test
+	void optimizedPlanIncludesLmdbPlannedIndexMetrics(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticGridData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(plannedIndexMetricsQuery())
+						.explain(Explanation.Level.Optimized);
+				String optimizedPlan = explanation.toString();
+
+				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"), optimizedPlan);
+				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_INDEX_NAME + "="), optimizedPlan);
+				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH + "="),
+						optimizedPlan);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void plannerStartsElectricalQ2WithFilteredSubstationNameWhenOnlyPredicatePrefixIsAvailable(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticTransformerData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			StatementPattern typePattern = transformerTypePattern();
+			StatementPattern feedsPattern = transformerFeedsPattern();
+			Filter filteredNamePattern = filteredNameListMemberPattern();
+			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
+			Optional<JoinOrderPlanner.JoinOrderPlan> plan = planner.planJoinOrder(
+					List.of(typePattern, feedsPattern, filteredNamePattern),
+					Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+			assertTrue(plan.isPresent(), "Expected LMDB planner to produce an electrical q2-style plan");
+			List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+			assertEquals(filteredNamePattern, orderedArgs.get(0),
+					"Electrical q2 should seed with the selective substation-name predicate-prefix scan");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void optimizedSocialMediaQ4StartsWithUSideRestrictionBeforeFollowsProbe(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticSocialMediaQ4Data(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(socialMediaQ4Query())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			List<String> mandatoryLeafOrder = collectSocialMediaQ4MandatoryLeafOrder(optimized);
+			int uRestrictionIndex = mandatoryLeafOrder.indexOf("u-restriction");
+			int followsIndex = mandatoryLeafOrder.indexOf("follows");
+			Filter uRestriction = findFirstNotExistsFilter(optimized);
+
+			assertTrue(uRestrictionIndex >= 0, "Expected q4 plan to retain the u-side NOT EXISTS restriction");
+			assertTrue(followsIndex >= 0, "Expected q4 plan to retain the social:follows probe");
+			assertTrue(uRestrictionIndex < followsIndex,
+					"Optimized q4 should run the u-side restriction before probing ?u social:follows ?v: "
+							+ mandatoryLeafOrder);
+			assertTrue(uRestriction.getArg().getBindingNames().contains("u"),
+					"Expected q4 u-side restriction to evaluate with ?u bound");
+			assertTrue(!uRestriction.getArg().getBindingNames().contains("v"),
+					"Expected q4 u-side restriction before expanding ?v bindings: " + uRestriction);
+
+			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
+			StatementPattern followsByObject = new StatementPattern(Var.of("u"),
+					Var.of("followsPredicate", SOCIAL_FOLLOWS), Var.of("v"));
+			JoinFactorCostModel.FactorCostEstimate prefixScanCost = costModel
+					.estimateFactorCost(followsByObject, Set.of("v"))
+					.orElseThrow();
+			assertEquals("prefixScan",
+					prefixScanCost.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+			assertTrue(prefixScanCost.getWorkRows() >= prefixScanCost.getOutputRows(),
+					"Expected prefix scan work to stay at least as high as output rows: "
+							+ prefixScanCost.getDoubleMetrics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static PlannedBranch planGeneratorBranch(File dataDir, String indexes) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig(indexes);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -176,6 +291,51 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	private static void loadSyntheticSocialMediaQ4Data(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			List<Resource> queryUsers = new ArrayList<>();
+			for (int i = 7; i <= 11; i++) {
+				Resource user = socialUser(i);
+				queryUsers.add(user);
+				connection.add(user, SOCIAL_NAME, VF.createLiteral("user" + i));
+				if (i != 7) {
+					connection.add(user, SOCIAL_FOLLOWS, user);
+				}
+			}
+			connection.add(socialUser(7), SOCIAL_FOLLOWS, socialUser(8));
+			connection.add(socialUser(7), SOCIAL_FOLLOWS, socialUser(9));
+
+			for (int i = 0; i < 120; i++) {
+				Resource follower = socialUser(1000 + i);
+				Resource target = queryUsers.get(i % queryUsers.size());
+				connection.add(follower, SOCIAL_FOLLOWS, target);
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticTransformerData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < SUBSTATION_COUNT; i++) {
+				Resource substation = VF.createIRI("urn:test:substation:" + i);
+				connection.add(substation, GRID_NAME, VF.createLiteral("Substation " + i));
+			}
+			for (int i = 0; i < TRANSFORMER_COUNT; i++) {
+				Resource transformer = VF.createIRI("urn:test:transformer:" + i);
+				Resource substation = VF.createIRI("urn:test:substation:" + (i % SUBSTATION_COUNT));
+				connection.add(transformer, RDF_TYPE, GRID_TRANSFORMER);
+				connection.add(transformer, GRID_FEEDS, substation);
+			}
+			connection.commit();
+		}
+	}
+
+	private static Resource socialUser(int index) {
+		return VF.createIRI("http://example.com/theme/social/user/" + index);
+	}
+
 	private static StatementPattern generatorTypePattern() {
 		return new StatementPattern(Var.of("entity"), Var.of("rdfType", RDF_TYPE),
 				Var.of("generatorType", GRID_GENERATOR));
@@ -183,6 +343,16 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	private static StatementPattern feedsPattern() {
 		return new StatementPattern(Var.of("entity"), Var.of("feedsPredicate", GRID_FEEDS), Var.of("substation"));
+	}
+
+	private static StatementPattern transformerTypePattern() {
+		return new StatementPattern(Var.of("transformer"), Var.of("rdfType", RDF_TYPE),
+				Var.of("transformerType", GRID_TRANSFORMER));
+	}
+
+	private static StatementPattern transformerFeedsPattern() {
+		return new StatementPattern(Var.of("transformer"), Var.of("feedsPredicate", GRID_FEEDS),
+				Var.of("substation"));
 	}
 
 	private static Filter filteredNamePattern() {
@@ -193,6 +363,17 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 						new Compare(Var.of("name"), Var.of("target"), Compare.CompareOp.EQ),
 						new Compare(Var.of("name"), new ValueConstant(VF.createLiteral("Substation 3")),
 								Compare.CompareOp.EQ)));
+	}
+
+	private static Filter filteredNameListMemberPattern() {
+		StatementPattern namePattern = new StatementPattern(Var.of("substation"), Var.of("namePredicate", GRID_NAME),
+				Var.of("name"));
+		ListMemberOperator condition = new ListMemberOperator();
+		condition.addArgument(Var.of("name"));
+		condition.addArgument(new ValueConstant(VF.createLiteral("Substation 0")));
+		condition.addArgument(new ValueConstant(VF.createLiteral("Substation 1")));
+		condition.addArgument(new ValueConstant(VF.createLiteral("Substation 2")));
+		return new Filter(namePattern, condition);
 	}
 
 	private static BindingSetAssignment targetBindings() {
@@ -228,12 +409,110 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				"}");
 	}
 
+	private static String plannedIndexMetricsQuery() {
+		return String.join("\n",
+				"SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {",
+				"  VALUES ?target { \"Substation 1\" \"Substation 2\" }",
+				"  ?entity <http://example.com/theme/grid/feeds> ?substation .",
+				"  ?entity a <http://example.com/theme/grid/Generator> .",
+				"  ?substation <http://example.com/theme/grid/name> ?name .",
+				"  FILTER ((?name = ?target) || (?name = \"Substation 3\"))",
+				"}");
+	}
+
+	private static String socialMediaQ4Query() {
+		return String.join("\n",
+				"PREFIX social: <http://example.com/theme/social/>",
+				"SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {",
+				"  VALUES ?u { <http://example.com/theme/social/user/7>",
+				"              <http://example.com/theme/social/user/8>",
+				"              <http://example.com/theme/social/user/9>",
+				"              <http://example.com/theme/social/user/10>",
+				"              <http://example.com/theme/social/user/11> }",
+				"  VALUES ?v { <http://example.com/theme/social/user/7>",
+				"              <http://example.com/theme/social/user/8>",
+				"              <http://example.com/theme/social/user/9>",
+				"              <http://example.com/theme/social/user/10>",
+				"              <http://example.com/theme/social/user/11> }",
+				"  FILTER(?u != ?v)",
+				"  ?u social:follows ?v .",
+				"  FILTER NOT EXISTS { ?u social:follows ?u . }",
+				"  OPTIONAL { ?v social:name ?optName . }",
+				"  FILTER(?optName != \"\")",
+				"}");
+	}
+
 	private record PlannedBranch(Optional<JoinOrderPlanner.JoinOrderPlan> plan, BindingSetAssignment targets,
 			StatementPattern typePattern, StatementPattern feedsPattern, Filter filteredNamePattern) {
 	}
 
 	private static String predicateValue(StatementPattern statementPattern) {
 		return statementPattern.getPredicateVar().getValue().stringValue();
+	}
+
+	private static List<String> collectSocialMediaQ4MandatoryLeafOrder(TupleExpr optimized) {
+		List<String> leaves = new ArrayList<>();
+		TupleExpr mandatoryRoot = optimized;
+		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
+		if (leftJoin != null) {
+			mandatoryRoot = leftJoin.getLeftArg();
+		}
+		collectSocialMediaQ4MandatoryLeafOrder(mandatoryRoot, leaves);
+		return leaves;
+	}
+
+	private static void collectSocialMediaQ4MandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			collectSocialMediaQ4MandatoryLeafOrder(join.getLeftArg(), leaves);
+			collectSocialMediaQ4MandatoryLeafOrder(join.getRightArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof Filter) {
+			Filter filter = (Filter) tupleExpr;
+			if (containsNotExists(filter.getCondition())) {
+				leaves.add("u-restriction");
+				return;
+			}
+			collectSocialMediaQ4MandatoryLeafOrder(filter.getArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern) {
+			StatementPattern statementPattern = (StatementPattern) tupleExpr;
+			if (SOCIAL_FOLLOWS.equals(statementPattern.getPredicateVar().getValue())) {
+				leaves.add("follows");
+			}
+			return;
+		}
+		if (tupleExpr instanceof UnaryTupleOperator) {
+			collectSocialMediaQ4MandatoryLeafOrder(((UnaryTupleOperator) tupleExpr).getArg(), leaves);
+		}
+	}
+
+	private static boolean containsNotExists(QueryModelNode node) {
+		List<Not> matches = new ArrayList<>(1);
+		node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Not node) {
+				matches.add(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static Filter findFirstNotExistsFilter(TupleExpr tupleExpr) {
+		List<Filter> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (matches.isEmpty() && containsNotExists(node.getCondition())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		assertTrue(!matches.isEmpty(), "Expected a FILTER NOT EXISTS in optimized q4 plan");
+		return matches.get(0);
 	}
 
 	private static void collectStatementPatterns(TupleExpr tupleExpr, List<StatementPattern> patterns) {

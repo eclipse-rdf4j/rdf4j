@@ -12,6 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -30,8 +34,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -41,7 +47,7 @@ import org.slf4j.LoggerFactory;
 /**
  *
  */
-class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrderPlanner {
+class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrderPlanner, JoinFactorCostModel {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
@@ -99,10 +105,181 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 	@Override
 	public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			Algorithm algorithm) {
+		return planJoinOrder(args, initiallyBoundVars, algorithm, List.of());
+	}
+
+	@Override
+	public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+		return planJoinOrderAttempt(args, initiallyBoundVars, algorithm, deferredFilters).getPlan();
+	}
+
+	@Override
+	public PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
 		if (!supportsJoinEstimation()) {
+			return PlanningAttempt.rejected("lmdb-sketch", algorithm,
+					"ROBUST_NOT_READY", null,
+					List.of("rejected: sketch estimator not ready"));
+		}
+		PlanningAttempt attempt = sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars, algorithm,
+				joinOrderWorkAdjuster, deferredFilters);
+		if (attempt.getPlan().isEmpty()) {
+			return PlanningAttempt.rejected("lmdb-sketch", algorithm, attempt.getPlannerPath(),
+					attempt.getRejectedFactor(), attempt.getDiagnostics());
+		}
+		JoinOrderPlan enrichedPlan = enrichPlanWithAccessMetrics(attempt.getPlan().get());
+		return PlanningAttempt.planned(enrichedPlan, "lmdb-sketch", algorithm, attempt.getPlannerPath(),
+				enrichedPlan.getDiagnostics());
+	}
+
+	private JoinOrderPlan enrichPlanWithAccessMetrics(JoinOrderPlan plan) {
+		if (plan.getSteps().size() != plan.getOrderedArgs().size()) {
+			return plan;
+		}
+
+		List<JoinOrderPlanner.PlanStep> enrichedSteps = new ArrayList<>(plan.getSteps().size());
+		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
+			TupleExpr tupleExpr = plan.getOrderedArgs().get(i);
+			JoinOrderPlanner.PlanStep step = plan.getSteps().get(i);
+			Map<String, String> stringMetrics = new HashMap<>(step.getStringMetrics());
+			Map<String, Double> doubleMetrics = new HashMap<>(step.getDoubleMetrics());
+			Optional<FactorCostEstimate> factorCostEstimate = estimateLmdbFactorCost(tupleExpr,
+					step.getBoundVarsBefore(), step.getFactorOutputRows());
+			if (factorCostEstimate.isPresent()) {
+				stringMetrics.putAll(factorCostEstimate.get().getStringMetrics());
+				doubleMetrics.putAll(factorCostEstimate.get().getDoubleMetrics());
+			}
+			enrichedSteps.add(new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(), step.getFactorOutputRows(),
+					step.getPrefixOutputRows(), step.getStepWorkRows(), stringMetrics, doubleMetrics));
+		}
+
+		Map<String, String> summaryStringMetrics = new HashMap<>(plan.getSummaryStringMetrics());
+		summaryStringMetrics.put(TelemetryMetricNames.PLANNER_ID, "lmdb-sketch");
+		return new JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(), plan.getEstimatedTotalWork(),
+				plan.getDiagnostics(), summaryStringMetrics, plan.getSummaryDoubleMetrics(), enrichedSteps);
+	}
+
+	@Override
+	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+		return estimateLmdbFactorCost(factor, currentlyBoundVars);
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+		return estimateLmdbFactorCost(factor, currentlyBoundVars, Double.NaN);
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, Set<String> currentlyBoundVars,
+			double knownOutputRows) {
+		if (factor == null) {
 			return Optional.empty();
 		}
-		return sketchBasedJoinEstimator.planJoinOrder(args, initiallyBoundVars, algorithm, joinOrderWorkAdjuster);
+		Set<String> boundVars = currentlyBoundVars == null ? Set.of() : Set.copyOf(currentlyBoundVars);
+		if (factor instanceof Join join) {
+			return estimateJoinFactorCost(join, boundVars);
+		}
+		double outputRows = isFiniteNonNegative(knownOutputRows) ? knownOutputRows : estimateFactorOutputRows(factor);
+		if (!Double.isFinite(outputRows) || outputRows < 0.0d) {
+			return Optional.empty();
+		}
+
+		SketchBasedJoinEstimator.AccessShape accessShape = sketchBasedJoinEstimator
+				.accessShapeForJoinOrdering(factor, boundVars);
+		if (accessShape == null) {
+			return Optional.of(new FactorCostEstimate(outputRows, outputRows));
+		}
+
+		Map<String, String> stringMetrics = new HashMap<>();
+		Map<String, Double> doubleMetrics = new HashMap<>();
+		Set<Component> accessLookupComponents = accessLookupComponents(accessShape);
+		TripleStore.IndexPrefixSelection prefixSelection = tripleStore
+				.selectBestIndexPrefix(accessLookupComponents);
+		Set<Component> prefixComponents = prefixSelection == null ? Set.of() : prefixSelection.prefixComponents();
+		int prefixScore = prefixSelection == null ? 0 : prefixSelection.prefixScore();
+		if (prefixSelection != null && prefixScore > 0) {
+			stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_NAME, prefixSelection.indexFieldSequence());
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH, (double) prefixScore);
+		}
+		stringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
+				accessShape.lookupBoundComponents().toString());
+		stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+				accessMode(accessShape, prefixComponents, prefixScore));
+		Set<Component> missingLookupComponents = new HashSet<>(accessShape.lookupBoundComponents());
+		missingLookupComponents.removeAll(prefixComponents);
+		if (!missingLookupComponents.isEmpty()) {
+			stringMetrics.put(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS,
+					missingLookupComponents.toString());
+		}
+
+		double accessRows = prefixScore > 0 ? accessShape.estimateAccessRows(prefixComponents) : outputRows;
+		if (Double.isFinite(accessRows) && accessRows >= 0.0d) {
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, accessRows);
+			if (!accessShape.filterLookupComponents().isEmpty() && canApplyFilterAtAccess(accessShape, prefixComponents)
+					&& Double.isFinite(accessShape.filterMultiplier())
+					&& accessShape.filterMultiplier() >= 0.0d && accessShape.filterMultiplier() < 1.0d) {
+				doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS_AFTER_FILTER,
+						accessRows * accessShape.filterMultiplier());
+			}
+		}
+
+		double workRows = adjustJoinOrderWorkRows(accessShape, outputRows);
+		return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics));
+	}
+
+	private Optional<FactorCostEstimate> estimateJoinFactorCost(Join join, Set<String> boundVars) {
+		Optional<FactorCostEstimate> leftEstimate = estimateLmdbFactorCost(join.getLeftArg(), boundVars);
+		Set<String> rightBoundVars = new HashSet<>(boundVars);
+		rightBoundVars.addAll(join.getLeftArg().getBindingNames());
+		Optional<FactorCostEstimate> rightEstimate = estimateLmdbFactorCost(join.getRightArg(), rightBoundVars);
+		if (leftEstimate.isEmpty() || rightEstimate.isEmpty()
+				|| !isFiniteNonNegative(leftEstimate.get().getWorkRows())
+				|| !isFiniteNonNegative(rightEstimate.get().getWorkRows())) {
+			return Optional.empty();
+		}
+
+		double outputRows = Math.max(leftEstimate.get().getOutputRows(), rightEstimate.get().getOutputRows());
+		return Optional.of(
+				new FactorCostEstimate(leftEstimate.get().getWorkRows() + rightEstimate.get().getWorkRows(),
+						outputRows));
+	}
+
+	private String accessMode(SketchBasedJoinEstimator.AccessShape accessShape, Set<Component> prefixComponents,
+			int prefixScore) {
+		if (prefixScore <= 0) {
+			return "fullScan";
+		}
+		return accessShape.isDirectLookup(prefixComponents) ? "directLookup" : "prefixScan";
+	}
+
+	private double estimateFactorOutputRows(TupleExpr factor) {
+		if (factor instanceof BindingSetAssignment assignment) {
+			double rows = 0.0d;
+			for (Object ignored : assignment.getBindingSets()) {
+				rows += 1.0d;
+			}
+			return rows;
+		}
+		return getCardinality(factor);
+	}
+
+	private Set<Component> accessLookupComponents(SketchBasedJoinEstimator.AccessShape accessShape) {
+		Set<Component> accessLookupComponents = new HashSet<>(accessShape.lookupBoundComponents());
+		accessLookupComponents.removeAll(accessShape.filterLookupComponents());
+		return Set.copyOf(accessLookupComponents);
+	}
+
+	private boolean canApplyFilterAtAccess(SketchBasedJoinEstimator.AccessShape accessShape,
+			Set<Component> prefixComponents) {
+		if (accessShape.filterLookupComponents().isEmpty()) {
+			return false;
+		}
+		Set<Component> accessLookupComponents = accessLookupComponents(accessShape);
+		return prefixComponents.containsAll(accessLookupComponents)
+				&& prefixComponents.containsAll(accessShape.filterLookupComponents());
+	}
+
+	private boolean isFiniteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	private double adjustJoinOrderWorkRows(SketchBasedJoinEstimator.AccessShape accessShape, double defaultWorkRows) {
@@ -111,24 +288,27 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 		}
 
 		TripleStore.IndexPrefixSelection prefixSelection = tripleStore
-				.selectBestIndexPrefix(accessShape.lookupBoundComponents());
+				.selectBestIndexPrefix(accessLookupComponents(accessShape));
 		if (prefixSelection == null) {
 			return defaultWorkRows;
 		}
 
 		double accessRows = accessShape.estimateAccessRows(prefixSelection.prefixComponents());
-		if (!Double.isFinite(accessRows) || accessRows <= 0.0d) {
+		if (!Double.isFinite(accessRows) || accessRows < 0.0d) {
 			return defaultWorkRows;
 		}
 
 		double adjustedWorkRows = accessRows;
 		Set<Component> filterLookupComponents = accessShape.filterLookupComponents();
 		if (!filterLookupComponents.isEmpty()
-				&& accessShape.isDirectLookup(prefixSelection.prefixComponents())) {
+				&& canApplyFilterAtAccess(accessShape, prefixSelection.prefixComponents())) {
 			double filteredAccessRows = accessRows * accessShape.filterMultiplier();
-			if (Double.isFinite(filteredAccessRows) && filteredAccessRows > 0.0d) {
+			if (Double.isFinite(filteredAccessRows) && filteredAccessRows >= 0.0d) {
 				adjustedWorkRows = filteredAccessRows;
 			}
+		}
+		if (!accessShape.isDirectLookup(prefixSelection.prefixComponents())) {
+			adjustedWorkRows = Math.max(adjustedWorkRows, defaultWorkRows);
 		}
 
 		return adjustedWorkRows;
@@ -160,7 +340,12 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 	@Override
 	public double estimateFilterPassRatio(Filter filter) {
 		double ratio = sketchBasedJoinEstimator.estimateFilterPassRatio(filter);
-		return Double.isFinite(ratio) && ratio > 0.0d && ratio <= 1.0d ? ratio : -1.0d;
+		return Double.isFinite(ratio) && ratio >= 0.0d && ratio <= 1.0d ? ratio : -1.0d;
+	}
+
+	@Override
+	public FilterPassEstimate estimateFilterPass(Filter filter) {
+		return sketchBasedJoinEstimator.estimateFilterPass(filter);
 	}
 
 	@Override

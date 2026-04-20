@@ -138,7 +138,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		expr.visit(new FilterUnMerger());
 		expr.visit(new FilterOrganizer(statistics, considerJoinPlacementCost));
 		if (mergeAdjacentFilters) {
-			expr.visit(new FilterMerger());
+			expr.visit(new FilterMerger(statistics));
 		}
 	}
 
@@ -192,8 +192,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 	private static class FilterMerger extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
-		private FilterMerger() {
+		private final EvaluationStatistics statistics;
+
+		private FilterMerger(EvaluationStatistics statistics) {
 			super(false);
+			this.statistics = statistics;
 		}
 
 		@Override
@@ -207,6 +210,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 				Filter newFilter = new Filter(childFilter.getArg().clone(), merge);
 				transferScopeChange(filter, newFilter); // both have same scope flag
+				FilterSelectivityTelemetry.annotate(newFilter, statistics);
 				parent.replaceChildNode(filter, newFilter);
 			}
 		}
@@ -227,6 +231,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Filter filter) {
 			super.meet(filter);
 			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			FilterSelectivityTelemetry.annotate(filter, statistics);
 		}
 	}
 
@@ -401,10 +406,27 @@ public class FilterOptimizer implements QueryOptimizer {
 				return false;
 			}
 
+			if (statistics instanceof JoinFactorCostModel) {
+				JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
+				Filter candidateFilter = new Filter(candidateArg.clone(), filter.getCondition().clone());
+				OptionalWorkRows joinWork = estimateWorkRows(costModel, join);
+				OptionalWorkRows candidateWork = estimateWorkRows(costModel, candidateFilter);
+				if (joinWork.available && candidateWork.available) {
+					return joinWork.workRows < candidateWork.workRows;
+				}
+			}
+
 			double currentInputRows = statistics.getCardinality(join);
 			double candidateInputRows = estimateFilteredInputRows(candidateArg);
 			return isFiniteNonNegative(currentInputRows) && isFiniteNonNegative(candidateInputRows)
 					&& currentInputRows < candidateInputRows;
+		}
+
+		private OptionalWorkRows estimateWorkRows(JoinFactorCostModel costModel, TupleExpr tupleExpr) {
+			return costModel.estimateFactorCost(tupleExpr, Set.of())
+					.filter(estimate -> isFiniteNonNegative(estimate.getWorkRows()))
+					.map(estimate -> new OptionalWorkRows(true, estimate.getWorkRows()))
+					.orElseGet(() -> new OptionalWorkRows(false, -1.0d));
 		}
 
 		private double estimateFilteredInputRows(TupleExpr candidateArg) {
@@ -420,7 +442,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			}
 
 			double passRatio = statistics.estimateFilterPassRatio(candidateFilter);
-			if (Double.isFinite(passRatio) && passRatio > 0.0d && passRatio <= 1.0d) {
+			if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
 				double passRatioRows = baseRows * passRatio;
 				if (isFiniteNonNegative(passRatioRows)) {
 					return passRatioRows;
@@ -443,6 +465,16 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		private boolean isFiniteNonNegative(double value) {
 			return Double.isFinite(value) && value >= 0.0d;
+		}
+
+		private final class OptionalWorkRows {
+			private final boolean available;
+			private final double workRows;
+
+			private OptionalWorkRows(boolean available, double workRows) {
+				this.available = available;
+				this.workRows = workRows;
+			}
 		}
 	}
 }

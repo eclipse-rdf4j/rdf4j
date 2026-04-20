@@ -144,6 +144,9 @@ public class GenericPlanNode {
 	private Map<String, Long> longMetricsActual = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsActual = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsActual = new LinkedHashMap<>();
+	private Map<String, Long> longMetricsPlanned = new LinkedHashMap<>();
+	private Map<String, Double> doubleMetricsPlanned = new LinkedHashMap<>();
+	private Map<String, String> stringMetricsPlanned = new LinkedHashMap<>();
 
 	// true if this node introduces a new scope
 	private Boolean newScope;
@@ -403,6 +406,11 @@ public class GenericPlanNode {
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
+	@JsonIgnore
+	public boolean isRuntimeTelemetryEnabled() {
+		return runtimeTelemetryEnabled;
+	}
+
 	public void setEstimateStabilityMetricsEnabled(boolean estimateStabilityMetricsEnabled) {
 		this.estimateStabilityMetricsEnabled = estimateStabilityMetricsEnabled;
 	}
@@ -500,6 +508,66 @@ public class GenericPlanNode {
 			return;
 		}
 		stringMetricsActual.put(metricName, metricValue);
+	}
+
+	public Map<String, Long> getLongMetricsPlanned() {
+		return longMetricsPlanned.isEmpty() ? null : longMetricsPlanned;
+	}
+
+	public void setLongMetricsPlanned(Map<String, Long> longMetricsPlanned) {
+		this.longMetricsPlanned = longMetricsPlanned == null ? new LinkedHashMap<>()
+				: new LinkedHashMap<>(longMetricsPlanned);
+	}
+
+	public Long getLongMetricPlanned(String metricName) {
+		return longMetricsPlanned.get(metricName);
+	}
+
+	public void setLongMetricPlanned(String metricName, Long metricValue) {
+		if (metricName == null || metricValue == null || metricValue < 0) {
+			return;
+		}
+		longMetricsPlanned.put(metricName, metricValue);
+	}
+
+	public Map<String, Double> getDoubleMetricsPlanned() {
+		return doubleMetricsPlanned.isEmpty() ? null : doubleMetricsPlanned;
+	}
+
+	public void setDoubleMetricsPlanned(Map<String, Double> doubleMetricsPlanned) {
+		this.doubleMetricsPlanned = doubleMetricsPlanned == null ? new LinkedHashMap<>()
+				: new LinkedHashMap<>(doubleMetricsPlanned);
+	}
+
+	public Double getDoubleMetricPlanned(String metricName) {
+		return doubleMetricsPlanned.get(metricName);
+	}
+
+	public void setDoubleMetricPlanned(String metricName, Double metricValue) {
+		if (metricName == null || metricValue == null || metricValue < 0) {
+			return;
+		}
+		doubleMetricsPlanned.put(metricName, metricValue);
+	}
+
+	public Map<String, String> getStringMetricsPlanned() {
+		return stringMetricsPlanned.isEmpty() ? null : stringMetricsPlanned;
+	}
+
+	public void setStringMetricsPlanned(Map<String, String> stringMetricsPlanned) {
+		this.stringMetricsPlanned = stringMetricsPlanned == null ? new LinkedHashMap<>()
+				: new LinkedHashMap<>(stringMetricsPlanned);
+	}
+
+	public String getStringMetricPlanned(String metricName) {
+		return stringMetricsPlanned.get(metricName);
+	}
+
+	public void setStringMetricPlanned(String metricName, String metricValue) {
+		if (metricName == null || metricValue == null || metricValue.isEmpty()) {
+			return;
+		}
+		stringMetricsPlanned.put(metricName, metricValue);
 	}
 
 	public void setTimedOut(Boolean timedOut) {
@@ -919,6 +987,8 @@ public class GenericPlanNode {
 	}
 
 	private void appendMapTelemetry(Map<String, String> metrics) {
+		appendPlannedMapTelemetry(metrics);
+
 		Map<String, Long> visibleLongMetrics = getLongMetricsActual();
 		if (visibleLongMetrics != null) {
 			for (Map.Entry<String, Long> entry : visibleLongMetrics.entrySet()) {
@@ -962,6 +1032,53 @@ public class GenericPlanNode {
 		}
 	}
 
+	private void appendPlannedMapTelemetry(Map<String, String> metrics) {
+		for (Map.Entry<String, Long> entry : longMetricsPlanned.entrySet()) {
+			Long metricValue = entry.getValue();
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+				continue;
+			}
+			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
+		}
+		for (Map.Entry<String, Double> entry : doubleMetricsPlanned.entrySet()) {
+			Double metricValue = entry.getValue();
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+				continue;
+			}
+			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
+		}
+		for (Map.Entry<String, String> entry : orderedStringMetricsPlanned()) {
+			String metricName = entry.getKey();
+			String metricValue = entry.getValue();
+			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)) {
+				continue;
+			}
+			metrics.put(metricName, metricValue);
+		}
+	}
+
+	private List<Map.Entry<String, String>> orderedStringMetricsPlanned() {
+		List<Map.Entry<String, String>> orderedEntries = new ArrayList<>();
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_INDEX_NAME);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_BOUND_VARS);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_ID);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_ALGORITHM);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_PATH);
+		for (Map.Entry<String, String> entry : stringMetricsPlanned.entrySet()) {
+			if (orderedEntries.stream().anyMatch(ordered -> ordered.getKey().equals(entry.getKey()))) {
+				continue;
+			}
+			orderedEntries.add(entry);
+		}
+		return orderedEntries;
+	}
+
 	private List<Map.Entry<String, String>> orderedStringMetricsActual() {
 		Map<String, String> visibleStringMetrics = visibleStringMetricsActual();
 		List<Map.Entry<String, String>> orderedEntries = new ArrayList<>();
@@ -969,6 +1086,12 @@ public class GenericPlanNode {
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.JOIN_TYPE);
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.INDEX_NAME);
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.INDEX_NAMES);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.OPTIMIZER_PLANNER_ID);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.OPTIMIZER_PLANNER_PATH);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics,
+				TelemetryMetricNames.OPTIMIZER_PLANNER_REJECTED_FACTOR);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics,
+				TelemetryMetricNames.OPTIMIZER_PLANNER_DIAGNOSTICS);
 		for (Map.Entry<String, String> entry : visibleStringMetrics.entrySet()) {
 			if (isPreferredExplainAnnotationMetric(entry.getKey())) {
 				continue;
@@ -1470,11 +1593,22 @@ public class GenericPlanNode {
 	private void appendExplainAnnotationDotRows(List<String> rows) {
 		appendExplainAnnotationDotRow(rows, "Binding state", TelemetryMetricNames.BINDING_STATE);
 		appendExplainAnnotationDotRow(rows, "Join type", TelemetryMetricNames.JOIN_TYPE);
+		appendPlannedExplainAnnotationDotRow(rows, "Planned index", TelemetryMetricNames.PLANNED_INDEX_NAME);
+		appendPlannedExplainAnnotationDotRow(rows, "Planned bound vars", TelemetryMetricNames.PLANNED_BOUND_VARS);
 		if (getStringMetricActual(TelemetryMetricNames.INDEX_NAME) != null) {
 			appendExplainAnnotationDotRow(rows, "Index", TelemetryMetricNames.INDEX_NAME);
 		} else {
 			appendExplainAnnotationDotRow(rows, "Indexes", TelemetryMetricNames.INDEX_NAMES);
 		}
+	}
+
+	private void appendPlannedExplainAnnotationDotRow(List<String> rows, String label, String metricName) {
+		String metricValue = getStringMetricPlanned(metricName);
+		if (metricValue == null || metricValue.isEmpty()) {
+			return;
+		}
+		rows.add("<tr><td>" + StringEscapeUtils.escapeHtml4(label) + "</td><td>"
+				+ StringEscapeUtils.escapeHtml4(metricValue) + "</td></tr>");
 	}
 
 	private void appendExplainAnnotationDotRow(List<String> rows, String label, String metricName) {

@@ -97,6 +97,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
@@ -2069,6 +2070,28 @@ public class SketchBasedJoinEstimator {
 	@FunctionalInterface
 	public interface PatternFilterSamplingEstimator {
 		double estimateFilterPassRatio(Filter filter, StatementPattern pattern);
+
+		default PatternFilterSampleEstimate estimateFilterPass(Filter filter, StatementPattern pattern) {
+			return new PatternFilterSampleEstimate(estimateFilterPassRatio(filter, pattern), -1L);
+		}
+	}
+
+	public static final class PatternFilterSampleEstimate {
+		private final double passRatio;
+		private final long sampleSize;
+
+		public PatternFilterSampleEstimate(double passRatio, long sampleSize) {
+			this.passRatio = passRatio;
+			this.sampleSize = sampleSize;
+		}
+
+		public double getPassRatio() {
+			return passRatio;
+		}
+
+		public long getSampleSize() {
+			return sampleSize;
+		}
 	}
 
 	/**
@@ -2411,6 +2434,7 @@ public class SketchBasedJoinEstimator {
 
 	public void addStatement(Statement st) {
 		Objects.requireNonNull(st);
+		clearEstimateCacheIfPopulated();
 		if (!rebuildRequired.get() && !sketchesLoaded && persistenceEnabled && persistenceFile != null
 				&& hasSnapshotAvailable(persistenceFile)) {
 			tryLoadFromDisk();
@@ -2449,6 +2473,7 @@ public class SketchBasedJoinEstimator {
 
 	public void deleteStatement(Statement st) {
 		Objects.requireNonNull(st);
+		clearEstimateCacheIfPopulated();
 		if (!rebuildRequired.get() && !sketchesLoaded && persistenceEnabled && persistenceFile != null
 				&& hasSnapshotAvailable(persistenceFile)) {
 			tryLoadFromDisk();
@@ -3477,6 +3502,12 @@ public class SketchBasedJoinEstimator {
 		estimateCache.clear();
 	}
 
+	private void clearEstimateCacheIfPopulated() {
+		if (!estimateCache.isEmpty()) {
+			clearEstimateCache();
+		}
+	}
+
 	private double approxTotalRows() {
 		return Math.max(0.0d, (double) Math.max(seenTriples, approxStoreSize.get()));
 	}
@@ -4108,16 +4139,33 @@ public class SketchBasedJoinEstimator {
 
 	public Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster) {
+		return planJoinOrder(args, initiallyBoundVars, algorithm, workAdjuster, List.of());
+	}
+
+	public Optional<JoinOrderPlanner.JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		return planJoinOrderAttempt(args, initiallyBoundVars, algorithm, workAdjuster, deferredFilters).getPlan();
+	}
+
+	public JoinOrderPlanner.PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
 		if (!isReady()) {
 			recordJoinOrderPlannerPath(SketchPlannerPath.ROBUST_NOT_READY);
-			return Optional.empty();
+			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm,
+					SketchPlannerPath.ROBUST_NOT_READY.name(),
+					null, List.of("rejected: sketch estimator not ready"));
 		}
 		if (args == null || args.isEmpty()) {
 			recordJoinOrderPlannerPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
-			return Optional.empty();
+			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm,
+					SketchPlannerPath.UNSUPPORTED_SHAPE.name(),
+					null, List.of("rejected: empty join segment"));
 		}
 
-		return new SketchJoinOrderReorderer(this, workAdjuster).plan(args, initiallyBoundVars, algorithm);
+		return new SketchJoinOrderReorderer(this, workAdjuster).planAttempt(args, initiallyBoundVars, algorithm,
+				deferredFilters);
 	}
 
 	SketchPlannerPath lastJoinOrderPlannerPath() {
@@ -4146,7 +4194,45 @@ public class SketchBasedJoinEstimator {
 			return -1.0d;
 		}
 		double knownMultiplier = estimateKnownFilterMultiplier(filter, pattern);
-		return knownMultiplier > 0.0d ? knownMultiplier : -1.0d;
+		return knownMultiplier >= 0.0d ? knownMultiplier : -1.0d;
+	}
+
+	public EvaluationStatistics.FilterPassEstimate estimateFilterPass(Filter filter) {
+		StatementPattern pattern = basePatternForFilter(filter);
+		if (pattern == null || filter == null || filter.getCondition() == null) {
+			return new EvaluationStatistics.FilterPassEstimate(-1.0d,
+					EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
+		}
+		JoinStatsProvider statsProvider = learnedStatsProvider;
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (statsProvider != null && patternKey != null && statsProvider.hasStats(patternKey)) {
+			String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+			double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
+			if (isValidFilterMultiplier(ratio)) {
+				return new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
+						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
+						statsProvider.getFilterObservationCount(patternKey, filterKey));
+			}
+			ratio = statsProvider.getPatternPassRatio(patternKey);
+			if (isValidFilterMultiplier(ratio)) {
+				return new EvaluationStatistics.FilterPassEstimate(normalizeExactFilterMultiplier(ratio),
+						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN,
+						statsProvider.getPatternObservationCount(patternKey));
+			}
+		}
+		PatternFilterSampleEstimate sampledEstimate = resolveSampledFilterEstimate(filter, pattern);
+		if (sampledEstimate != null && isValidFilterMultiplier(sampledEstimate.getPassRatio())) {
+			return new EvaluationStatistics.FilterPassEstimate(
+					normalizeExactFilterMultiplier(sampledEstimate.getPassRatio()),
+					EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, sampledEstimate.getSampleSize());
+		}
+		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
+		if (heuristicMultiplier > 0.0d) {
+			return new EvaluationStatistics.FilterPassEstimate(heuristicMultiplier,
+					EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC);
+		}
+		return new EvaluationStatistics.FilterPassEstimate(-1.0d,
+				EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
 	}
 
 	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
@@ -4168,7 +4254,19 @@ public class SketchBasedJoinEstimator {
 	}
 
 	TuplePlanEstimate factorEstimateForJoinOrdering(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
-		return toPlannerTupleEstimate(tupleExpr, initiallyBoundVars);
+		if (!isSupportedJoinOrderingFactor(tupleExpr)) {
+			return null;
+		}
+		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars);
+	}
+
+	private boolean isSupportedJoinOrderingFactor(TupleExpr tupleExpr) {
+		TupleExpr current = tupleExpr;
+		while (current instanceof Filter || current instanceof Distinct || current instanceof Reduced
+				|| current instanceof Slice) {
+			current = ((UnaryTupleOperator) current).getArg();
+		}
+		return current instanceof StatementPattern || current instanceof BindingSetAssignment;
 	}
 
 	private TuplePlanEstimate estimatePatternTupleExprPlan(PatternEstimateInput input) {
@@ -4354,6 +4452,12 @@ public class SketchBasedJoinEstimator {
 
 	TuplePlanEstimate joinedPlanEstimate(JoinStepEstimate step) {
 		return new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
+	}
+
+	TuplePlanEstimate withOutputRowsForJoinOrdering(TuplePlanEstimate estimate, double outputRows) {
+		double rows = Math.max(0.0d, outputRows);
+		return new TuplePlanEstimate(rows, rows, estimate.localFilterMultiplier,
+				clampVarStatsToRows(estimate.varStats, rows, true));
 	}
 
 	boolean hasSharedJoinVariable(TuplePlanEstimate left, TuplePlanEstimate right) {
@@ -4560,7 +4664,6 @@ public class SketchBasedJoinEstimator {
 				.size() <= SketchJoinOrderPlanner.MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS
 						? JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
 						: JoinOrderPlanner.Algorithm.GREEDY;
-		algorithm = JoinOrderPlanner.Algorithm.GREEDY;
 		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(this, JoinOrderWorkAdjuster.NO_OP,
 				tupleExprs, bound)
 						.plan(algorithm);
@@ -5413,11 +5516,11 @@ public class SketchBasedJoinEstimator {
 			return null;
 		}
 		double filterMultiplier = resolveFilterMultiplier(filter, input.pattern);
-		double combinedMultiplier = normalizeFilterMultiplier(input.filterMultiplier * filterMultiplier);
+		double combinedMultiplier = normalizeExactFilterMultiplier(input.filterMultiplier * filterMultiplier);
 		return new PatternEstimateInput(input.pattern, combinedMultiplier);
 	}
 
-	AccessShape accessShapeForJoinOrdering(TupleExpr tupleExpr, Set<String> currentlyBoundVars) {
+	public AccessShape accessShapeForJoinOrdering(TupleExpr tupleExpr, Set<String> currentlyBoundVars) {
 		if (tupleExpr instanceof StatementPattern) {
 			return buildAccessShape((StatementPattern) tupleExpr, currentlyBoundVars, 1.0d, Set.of());
 		}
@@ -5752,22 +5855,28 @@ public class SketchBasedJoinEstimator {
 		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
 		double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
 		if (isValidFilterMultiplier(ratio)) {
-			return normalizeFilterMultiplier(ratio);
+			return normalizeExactFilterMultiplier(ratio);
 		}
 		ratio = statsProvider.getPatternPassRatio(patternKey);
 		if (isValidFilterMultiplier(ratio)) {
-			return normalizeFilterMultiplier(ratio);
+			return normalizeExactFilterMultiplier(ratio);
 		}
 		return -1.0d;
 	}
 
 	private double resolveSampledFilterMultiplier(Filter filter, StatementPattern pattern) {
+		PatternFilterSampleEstimate estimate = resolveSampledFilterEstimate(filter, pattern);
+		return estimate == null || !isValidFilterMultiplier(estimate.getPassRatio())
+				? -1.0d
+				: normalizeExactFilterMultiplier(estimate.getPassRatio());
+	}
+
+	private PatternFilterSampleEstimate resolveSampledFilterEstimate(Filter filter, StatementPattern pattern) {
 		PatternFilterSamplingEstimator samplingEstimator = patternFilterSamplingEstimator;
 		if (samplingEstimator == null || filter == null || filter.getCondition() == null || pattern == null) {
-			return -1.0d;
+			return null;
 		}
-		double ratio = samplingEstimator.estimateFilterPassRatio(filter, pattern);
-		return isValidFilterMultiplier(ratio) ? normalizeFilterMultiplier(ratio) : -1.0d;
+		return samplingEstimator.estimateFilterPass(filter, pattern);
 	}
 
 	private double estimateKnownFilterMultiplier(Filter filter, StatementPattern pattern) {
@@ -5776,11 +5885,11 @@ public class SketchBasedJoinEstimator {
 			return -1.0d;
 		}
 		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern);
-		if (learnedMultiplier > 0.0d) {
+		if (learnedMultiplier >= 0.0d) {
 			return learnedMultiplier;
 		}
 		double sampledMultiplier = resolveSampledFilterMultiplier(filter, pattern);
-		if (sampledMultiplier > 0.0d) {
+		if (sampledMultiplier >= 0.0d) {
 			return sampledMultiplier;
 		}
 		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
@@ -5994,28 +6103,38 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private boolean isValidFilterMultiplier(double value) {
-		return Double.isFinite(value) && value > 0.0d && value <= 1.0d;
+		return Double.isFinite(value) && value >= 0.0d && value <= 1.0d;
 	}
 
 	private double normalizeFilterMultiplier(double value) {
-		if (!Double.isFinite(value) || value <= 0.0d) {
+		if (!Double.isFinite(value) || value < 0.0d) {
 			return 1.0d;
 		}
+		if (value == 0.0d) {
+			return 0.0d;
+		}
 		return Math.max(MIN_FILTER_MULTIPLIER, Math.min(1.0d, value));
+	}
+
+	private double normalizeExactFilterMultiplier(double value) {
+		if (!Double.isFinite(value) || value < 0.0d) {
+			return 1.0d;
+		}
+		return Math.min(1.0d, value);
 	}
 
 	private double applyFilterMultiplier(double rows, double multiplier) {
 		if (!Double.isFinite(rows)) {
 			return rows;
 		}
-		if (!(multiplier > 0.0d) || multiplier >= 1.0d) {
+		if (!Double.isFinite(multiplier) || multiplier < 0.0d || multiplier >= 1.0d) {
 			return rows;
 		}
-		return rows * normalizeFilterMultiplier(multiplier);
+		return rows * normalizeExactFilterMultiplier(multiplier);
 	}
 
 	private TuplePlanEstimate applySubtreeFilterMultiplier(TuplePlanEstimate estimate, double multiplier) {
-		if (estimate == null || !(multiplier > 0.0d) || multiplier >= 1.0d) {
+		if (estimate == null || !Double.isFinite(multiplier) || multiplier < 0.0d || multiplier >= 1.0d) {
 			return estimate;
 		}
 		double filteredRows = normalizeRows(applyFilterMultiplier(estimate.outputRows, multiplier));

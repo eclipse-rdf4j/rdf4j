@@ -107,6 +107,25 @@ public final class TelemetryMetricNames {
 	public static final String BINDING_STATE = "bindingState";
 	public static final String JOIN_TYPE = "joinType";
 
+	public static final String PLANNER_ID = "plannerId";
+	public static final String PLANNER_ALGORITHM = "plannerAlgorithm";
+	public static final String PLANNER_PATH = "plannerPath";
+	public static final String PLANNED_INDEX_NAME = "plannedIndexName";
+	public static final String PLANNED_INDEX_PREFIX_LENGTH = "plannedIndexPrefixLength";
+	public static final String PLANNED_LOOKUP_COMPONENTS = "plannedLookupComponents";
+	public static final String PLANNED_BOUND_VARS = "plannedBoundVars";
+	public static final String PLANNED_WORK_ROWS = "plannedWorkRows";
+	public static final String PLANNED_FILTER_PASS_RATIO = "plannedFilterPassRatio";
+	public static final String PLANNED_FILTER_EVIDENCE_COUNT = "plannedFilterEvidenceCount";
+	public static final String FILTER_SELECTIVITY_SOURCE = "filterSelectivitySource";
+	public static final String PLANNED_INDEX_ACCESS_MODE = "plannedIndexAccessMode";
+	public static final String PLANNED_ACCESS_ROWS = "plannedAccessRows";
+	public static final String PLANNED_ACCESS_ROWS_AFTER_FILTER = "plannedAccessRowsAfterFilter";
+	public static final String PLANNED_MISSING_LOOKUP_COMPONENTS = "plannedMissingLookupComponents";
+	public static final String DEFERRED_FILTER_SCOPE = "deferredFilterScope";
+	public static final String SHARED_JOIN_VARS = "sharedJoinVars";
+	public static final String UNLOCKED_FILTERS = "unlockedFilters";
+
 	public static final String METRIC_ORIGIN = "metricOrigin";
 	public static final String SAMPLE_COUNT_ACTUAL = "sampleCountActual";
 	public static final String CONFIDENCE_SCORE_ACTUAL = "confidenceScoreActual";
@@ -128,6 +147,10 @@ public final class TelemetryMetricNames {
 	public static final String OPTIMIZER_CANDIDATE_COUNT = OPTIMIZER_PREFIX + "candidateCount";
 	public static final String OPTIMIZER_REJECTION_REASON = OPTIMIZER_PREFIX + "rejectionReason";
 	public static final String OPTIMIZER_ESTIMATE_SOURCE = OPTIMIZER_PREFIX + "estimateSource";
+	public static final String OPTIMIZER_PLANNER_ID = OPTIMIZER_PREFIX + "plannerId";
+	public static final String OPTIMIZER_PLANNER_PATH = OPTIMIZER_PREFIX + "plannerPath";
+	public static final String OPTIMIZER_PLANNER_REJECTED_FACTOR = OPTIMIZER_PREFIX + "plannerRejectedFactor";
+	public static final String OPTIMIZER_PLANNER_DIAGNOSTICS = OPTIMIZER_PREFIX + "plannerDiagnostics";
 
 	public static boolean isOptimizerMetric(String metricName) {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);

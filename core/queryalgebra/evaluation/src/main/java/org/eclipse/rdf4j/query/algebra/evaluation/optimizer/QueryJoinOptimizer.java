@@ -21,6 +21,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -156,6 +157,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
+		private final Map<TupleExpr, Double> plannedPrefixRowsByRightArg = new IdentityHashMap<>();
 
 		protected JoinVisitor() {
 			super(trackResultSize);
@@ -164,7 +166,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter node) {
+			if (!TupleExprs.isVariableScopeChange(node)) {
+				ArrayDeque<Filter> nestedFilters = new ArrayDeque<>();
+				TupleExpr filterArg = unwrapJoinFilterChain(node, nestedFilters);
+				if (filterArg instanceof Join) {
+					optimizeJoinReplacement(node, (Join) filterArg, new ArrayList<>(nestedFilters));
+					return;
+				}
+			}
+
 			node.getArg().visit(this);
+			annotateFilterSelectivity(node);
 
 			Set<String> origBoundVars = boundVars;
 			try {
@@ -209,27 +221,47 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join node) {
+			optimizeJoinReplacement(node, node, List.of());
+		}
+
+		private void optimizeJoinReplacement(TupleExpr replaceTarget, Join join,
+				List<Filter> additionalDeferredFilters) {
 			Set<String> origBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
 
-				CollectedJoinArgs collectedJoinArgs = collectJoinArgsForOrdering(node);
+				CollectedJoinArgs collectedJoinArgs = collectJoinArgsForOrdering(join);
+				collectedJoinArgs.deferredFilters.addAll(additionalDeferredFilters);
+				visitDeferredFilterConditions(collectedJoinArgs.deferredFilters, origBoundVars);
 				OrderedJoinPlan orderedJoinPlan = orderJoinArgsPreservingSeparators(collectedJoinArgs, origBoundVars);
 				TupleExpr root = buildOrderedJoinPlanRoot(orderedJoinPlan);
 
 				if (root != null) {
 					root = reapplyDeferredFilters(root, orderedJoinPlan.rootDeferredFilters);
 
-					if (TupleExprs.isVariableScopeChange(node)) {
+					if (TupleExprs.isVariableScopeChange(replaceTarget)) {
 						((AbstractQueryModelNode) root).setVariableScopeChange(true);
 					}
 
-					node.replaceWith(root);
+					replaceTarget.replaceWith(root);
 				} else {
 					throw new IllegalStateException("Expected at least one join argument");
 				}
 			} finally {
 				boundVars = origBoundVars;
+			}
+		}
+
+		private void visitDeferredFilterConditions(List<Filter> filters, Set<String> outerBoundVars) {
+			for (Filter filter : filters) {
+				Set<String> origBoundVars = boundVars;
+				try {
+					boundVars = new HashSet<>(outerBoundVars);
+					boundVars.addAll(filter.getArg().getAssuredBindingNames());
+					filter.getCondition().visit(this);
+				} finally {
+					boundVars = origBoundVars;
+				}
 			}
 		}
 
@@ -284,6 +316,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			for (DeferredFilter deferredFilter : deferredFilters) {
 				Filter clone = deferredFilter.filter.clone();
 				clone.setArg(current);
+				annotateDeferredFilter(clone, deferredFilter, "root");
 				current = clone;
 			}
 			return current;
@@ -476,44 +509,107 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return buildJoinRoot(orderedJoinSegment.orderedJoinArgs);
 			}
 
-			Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(orderedJoinSegment.orderedJoinArgs);
 			List<DeferredFilter> pendingFilters = new ArrayList<>(orderedJoinSegment.deferredFilters);
-			Set<String> availableVars = new HashSet<>(orderedJoinSegment.boundBeforeSegment);
-
-			TupleExpr root = applyCompatibleLocalDeferredFilters(orderedJoinArgs.removeFirst(), pendingFilters);
-			availableVars.addAll(root.getBindingNames());
-			root = applyCompatibleDeferredFilters(root, pendingFilters, availableVars);
-
-			while (!orderedJoinArgs.isEmpty()) {
-				TupleExpr next = applyCompatibleLocalDeferredFilters(orderedJoinArgs.removeFirst(), pendingFilters);
-				root = createJoinWithEstimatedResultSize(root, next);
-				availableVars.addAll(next.getBindingNames());
-				root = applyCompatibleDeferredFilters(root, pendingFilters, availableVars);
+			List<SegmentFactor> factors = new ArrayList<>(orderedJoinSegment.orderedJoinArgs.size());
+			for (TupleExpr tupleExpr : orderedJoinSegment.orderedJoinArgs) {
+				TupleExpr filtered = applyCompatibleLocalDeferredFilters(tupleExpr, pendingFilters);
+				factors.add(new SegmentFactor(filtered, collectPatternIdentities(filtered)));
 			}
 
-			if (!pendingFilters.isEmpty()) {
-				root = reapplyDeferredFilters(root, pendingFilters);
+			List<DeferredFilter> unresolvedFilters = new ArrayList<>();
+			for (DeferredFilter deferredFilter : sortDeferredFilters(pendingFilters)) {
+				if (!groupDeferredFilterOnSmallestWindow(factors, deferredFilter,
+						orderedJoinSegment.boundBeforeSegment)) {
+					unresolvedFilters.add(deferredFilter);
+				}
+			}
+
+			Deque<TupleExpr> roots = new ArrayDeque<>(factors.size());
+			for (SegmentFactor factor : factors) {
+				roots.addLast(factor.tupleExpr);
+			}
+			TupleExpr root = buildJoinRoot(roots);
+
+			if (!unresolvedFilters.isEmpty()) {
+				root = reapplyDeferredFilters(root, unresolvedFilters);
 			}
 
 			return root;
 		}
 
-		private TupleExpr applyCompatibleDeferredFilters(TupleExpr root, List<DeferredFilter> deferredFilters,
-				Set<String> availableVars) {
-			TupleExpr current = root;
-			for (int i = 0; i < deferredFilters.size();) {
-				DeferredFilter deferredFilter = deferredFilters.get(i);
-				if (!availableVars.containsAll(deferredFilter.requiredVars)) {
-					i++;
-					continue;
-				}
-
-				Filter clone = deferredFilter.filter.clone();
-				clone.setArg(current);
-				current = clone;
-				deferredFilters.remove(i);
+		private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter deferredFilter,
+				Set<String> boundBeforeSegment) {
+			if (deferredFilter.originPatterns.isEmpty()) {
+				return false;
 			}
-			return current;
+
+			int[] window = smallestPatternCoveringWindow(factors, deferredFilter.originPatterns);
+			if (window == null) {
+				return false;
+			}
+
+			Set<String> availableVars = new HashSet<>(boundBeforeSegment);
+			for (int i = window[0]; i <= window[1]; i++) {
+				availableVars.addAll(factors.get(i).bindingNames);
+			}
+			if (!availableVars.containsAll(deferredFilter.requiredVars)) {
+				return false;
+			}
+
+			Deque<TupleExpr> windowRoots = new ArrayDeque<>(window[1] - window[0] + 1);
+			Set<StatementPattern> containedPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (int i = window[0]; i <= window[1]; i++) {
+				SegmentFactor factor = factors.get(i);
+				windowRoots.addLast(factor.tupleExpr);
+				containedPatterns.addAll(factor.containedPatterns);
+			}
+
+			TupleExpr groupedRoot = buildJoinRoot(windowRoots);
+			TupleExpr filteredRoot = wrapTupleExprWithDeferredFilters(groupedRoot, List.of(deferredFilter),
+					"smallestWindow");
+			SegmentFactor groupedFactor = new SegmentFactor(filteredRoot, containedPatterns);
+
+			for (int i = window[1]; i >= window[0]; i--) {
+				factors.remove(i);
+			}
+			factors.add(window[0], groupedFactor);
+			return true;
+		}
+
+		private int[] smallestPatternCoveringWindow(List<SegmentFactor> factors,
+				Set<StatementPattern> originPatterns) {
+			int bestStart = -1;
+			int bestEnd = -1;
+			int bestSize = Integer.MAX_VALUE;
+
+			for (int start = 0; start < factors.size(); start++) {
+				Set<StatementPattern> covered = Collections.newSetFromMap(new IdentityHashMap<>());
+				for (int end = start; end < factors.size(); end++) {
+					covered.addAll(factors.get(end).containedPatterns);
+					if (covered.containsAll(originPatterns)) {
+						int size = end - start + 1;
+						if (size < bestSize) {
+							bestStart = start;
+							bestEnd = end;
+							bestSize = size;
+						}
+						break;
+					}
+				}
+			}
+
+			return bestStart < 0 ? null : new int[] { bestStart, bestEnd };
+		}
+
+		private Set<StatementPattern> collectPatternIdentities(TupleExpr tupleExpr) {
+			Set<StatementPattern> patterns = Collections.newSetFromMap(new IdentityHashMap<>());
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(StatementPattern statementPattern) {
+					patterns.add(statementPattern);
+				}
+			});
+			return patterns;
 		}
 
 		private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedJoinArgs) {
@@ -522,6 +618,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			Deque<TupleExpr> remaining = new ArrayDeque<>(orderedJoinArgs);
+			Map<TupleExpr, Double> plannedPrefixRowsForArgs = plannedPrefixRowsForArgs(orderedJoinArgs);
 
 			if (remaining.size() > 1) {
 				double cardinality = 0;
@@ -546,7 +643,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					cardinality = Math.max(cardinality, left.getResultSizeEstimate());
 					cardinality = Math.max(cardinality, right.getResultSizeEstimate());
-					Join join = createJoinWithEstimatedResultSize(left, right);
+					Join join = createJoinWithEstimatedResultSize(left, right,
+							plannedPrefixRowsForArgs.remove(right));
 					join.setOrder((Var) supportedOrders.toArray()[0]);
 					join.setMergeJoin(true);
 					remaining.addFirst(join);
@@ -559,7 +657,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				Set<Var> supportedOrders = new HashSet<>(root.getSupportedOrders(tripleSource));
 				supportedOrders.retainAll(next.getSupportedOrders(tripleSource));
 
-				Join join = createJoinWithEstimatedResultSize(root, next);
+				Join join = createJoinWithEstimatedResultSize(root, next,
+						plannedPrefixRowsForArgs.remove(next));
 				if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
 					mergeJoinForCrossJoin(remaining, supportedOrders, root, next, join);
 				}
@@ -567,10 +666,26 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			while (!remaining.isEmpty()) {
-				root = createJoinWithEstimatedResultSize(root, remaining.removeFirst());
+				TupleExpr next = remaining.removeFirst();
+				root = createJoinWithEstimatedResultSize(root, next, plannedPrefixRowsForArgs.remove(next));
 			}
 
 			return root;
+		}
+
+		private Map<TupleExpr, Double> plannedPrefixRowsForArgs(Deque<TupleExpr> orderedJoinArgs) {
+			if (plannedPrefixRowsByRightArg.isEmpty() || orderedJoinArgs.size() < 2) {
+				return new IdentityHashMap<>();
+			}
+
+			Map<TupleExpr, Double> plannedPrefixRowsForArgs = new IdentityHashMap<>();
+			for (TupleExpr tupleExpr : orderedJoinArgs) {
+				Double plannedPrefixRows = plannedPrefixRowsByRightArg.remove(tupleExpr);
+				if (plannedPrefixRows != null && isFiniteNonNegative(plannedPrefixRows)) {
+					plannedPrefixRowsForArgs.put(tupleExpr, plannedPrefixRows);
+				}
+			}
+			return plannedPrefixRowsForArgs;
 		}
 
 		private void appendOptimizedJoinGroup(Deque<TupleExpr> orderedJoinArgs, List<TupleExpr> joinGroup) {
@@ -634,6 +749,25 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				fillVarFreqMap(varList, varFreqMap);
 			}
 
+			JoinOrderPlanner.PlanningAttempt planningAttempt = planSegmentWithJoinOrderPlanner(remaining,
+					boundBeforeSegment, deferredFilters);
+			if (planningAttempt.getPlan().isPresent()) {
+				JoinOrderPlanner.JoinOrderPlan plan = planningAttempt.getPlan().get();
+				Deque<TupleExpr> plannedJoinArgs = new ArrayDeque<>(plan.getOrderedArgs());
+				Deque<TupleExpr> normalizedJoinArgs = positionBindingSetAssignments(plannedJoinArgs);
+				if (sameIdentityOrder(plan.getOrderedArgs(), new ArrayList<>(normalizedJoinArgs))) {
+					applyPlannerStepEstimates(plan);
+				} else {
+					applyPlannerSummaryEstimates(plan, normalizedJoinArgs);
+					applyRebuiltPlannerStepEstimates(normalizedJoinArgs, boundBeforeSegment);
+				}
+				for (TupleExpr tupleExpr : normalizedJoinArgs) {
+					tupleExpr.visit(this);
+					boundVars.addAll(tupleExpr.getBindingNames());
+				}
+				return normalizedJoinArgs;
+			}
+
 			while (!remaining.isEmpty()) {
 				TupleExpr tupleExpr = selectNextTupleExpr(remaining, cardinalityMap, varsMap, varFreqMap);
 				this.currentHighestCost = Math.max(currentHighestCost, tupleExpr.getCostEstimate());
@@ -651,7 +785,170 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						reorderSegment(new ArrayList<>(orderedJoinArgs), boundBeforeSegment, deferredFilters));
 			}
 
-			return positionBindingSetAssignments(orderedJoinArgs);
+			orderedJoinArgs = positionBindingSetAssignments(orderedJoinArgs);
+			annotatePlannerAttemptFailure(orderedJoinArgs, planningAttempt);
+			return orderedJoinArgs;
+		}
+
+		private JoinOrderPlanner.PlanningAttempt planSegmentWithJoinOrderPlanner(List<TupleExpr> segment,
+				Set<String> boundBeforeSegment, List<DeferredFilter> deferredFilters) {
+			if (!REORDER_JOINS_WITH_SKETCHES || segment.size() < 2 || !(statistics instanceof JoinOrderPlanner)) {
+				return JoinOrderPlanner.PlanningAttempt.unavailable(plannerAlgorithm(segment.size()));
+			}
+
+			JoinOrderPlanner planner = (JoinOrderPlanner) statistics;
+			JoinOrderPlanner.Algorithm algorithm = plannerAlgorithm(segment.size());
+			JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(new ArrayList<>(segment),
+					new HashSet<>(boundBeforeSegment), plannerAlgorithm(segment.size()),
+					toPlannerFilterConstraints(deferredFilters));
+			if (attempt.getPlan().isPresent() && !isValidPlannerOrder(segment, attempt.getPlan().get())) {
+				List<String> diagnostics = new ArrayList<>(attempt.getDiagnostics());
+				diagnostics.add("planner returned an invalid segment permutation");
+				return JoinOrderPlanner.PlanningAttempt.rejected(attempt.getPlannerId(), algorithm,
+						attempt.getPlannerPath(), attempt.getRejectedFactor(), diagnostics);
+			}
+			return attempt;
+		}
+
+		private JoinOrderPlanner.Algorithm plannerAlgorithm(int segmentSize) {
+			if (JOIN_ORDER_STRATEGY == JoinOrderStrategy.DYNAMIC_PROGRAMMING) {
+				return JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING;
+			}
+			if (JOIN_ORDER_STRATEGY == JoinOrderStrategy.HYBRID && segmentSize <= DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT) {
+				return JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING;
+			}
+			return JoinOrderPlanner.Algorithm.GREEDY;
+		}
+
+		private List<JoinOrderPlanner.FilterConstraint> toPlannerFilterConstraints(
+				List<DeferredFilter> deferredFilters) {
+			if (deferredFilters.isEmpty()) {
+				return List.of();
+			}
+
+			List<JoinOrderPlanner.FilterConstraint> constraints = new ArrayList<>(deferredFilters.size());
+			for (DeferredFilter deferredFilter : deferredFilters) {
+				constraints.add(new JoinOrderPlanner.FilterConstraint(deferredFilter.requiredVars,
+						deferredFilter.filterPassEstimate.getPassRatio(), deferredFilter.conditionCost,
+						deferredFilter.filter.getCondition().toString(),
+						deferredFilter.filterPassEstimate.getSource().name().toLowerCase(),
+						deferredFilter.filterPassEstimate.getEvidenceCount()));
+			}
+			return constraints;
+		}
+
+		private boolean isValidPlannerOrder(List<TupleExpr> originalSegment, JoinOrderPlanner.JoinOrderPlan plan) {
+			List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+			if (orderedArgs.size() != originalSegment.size()) {
+				return false;
+			}
+
+			Set<TupleExpr> originalIdentities = Collections.newSetFromMap(new IdentityHashMap<>());
+			originalIdentities.addAll(originalSegment);
+			Set<TupleExpr> plannedIdentities = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (TupleExpr tupleExpr : orderedArgs) {
+				if (!originalIdentities.contains(tupleExpr) || !plannedIdentities.add(tupleExpr)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private void applyPlannerStepEstimates(JoinOrderPlanner.JoinOrderPlan plan) {
+			applyPlannerSummaryEstimates(plan, new ArrayDeque<>(plan.getOrderedArgs()));
+
+			List<JoinOrderPlanner.PlanStep> steps = plan.getSteps();
+			if (steps.size() != plan.getOrderedArgs().size()) {
+				return;
+			}
+			for (int i = 0; i < steps.size(); i++) {
+				JoinOrderPlanner.PlanStep step = steps.get(i);
+				TupleExpr tupleExpr = plan.getOrderedArgs().get(i);
+				double rows = steps.get(i).getFactorOutputRows();
+				if (Double.isFinite(rows) && rows >= 0.0d) {
+					tupleExpr.setResultSizeEstimate(rows);
+				}
+				if (!step.getBoundVarsBefore().isEmpty()) {
+					tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_BOUND_VARS,
+							describeBindingNames(step.getBoundVarsBefore()));
+				}
+				if (Double.isFinite(step.getStepWorkRows()) && step.getStepWorkRows() >= 0.0d) {
+					tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS,
+							step.getStepWorkRows());
+				}
+				for (Map.Entry<String, String> entry : step.getStringMetrics().entrySet()) {
+					tupleExpr.setStringMetricPlanned(entry.getKey(), entry.getValue());
+				}
+				for (Map.Entry<String, Double> entry : step.getDoubleMetrics().entrySet()) {
+					tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+				}
+				if (i > 0 && isFiniteNonNegative(step.getPrefixOutputRows())) {
+					plannedPrefixRowsByRightArg.put(tupleExpr, step.getPrefixOutputRows());
+				}
+			}
+		}
+
+		private void applyPlannerSummaryEstimates(JoinOrderPlanner.JoinOrderPlan plan, Deque<TupleExpr> orderedArgs) {
+			if (orderedArgs.isEmpty()) {
+				return;
+			}
+
+			TupleExpr rootAnnotationTarget = orderedArgs.getFirst();
+			for (Map.Entry<String, String> entry : plan.getSummaryStringMetrics().entrySet()) {
+				rootAnnotationTarget.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Double> entry : plan.getSummaryDoubleMetrics().entrySet()) {
+				rootAnnotationTarget.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			rootAnnotationTarget.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS,
+					plan.getEstimatedTotalWork());
+		}
+
+		private void applyRebuiltPlannerStepEstimates(Deque<TupleExpr> orderedArgs, Set<String> boundBeforeSegment) {
+			Set<String> currentBoundVars = new HashSet<>(boundBeforeSegment);
+			JoinFactorCostModel costModel = statistics instanceof JoinFactorCostModel
+					? (JoinFactorCostModel) statistics
+					: null;
+
+			for (TupleExpr tupleExpr : orderedArgs) {
+				if (!currentBoundVars.isEmpty()) {
+					tupleExpr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_BOUND_VARS,
+							describeBindingNames(currentBoundVars));
+				}
+				if (costModel != null) {
+					Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel
+							.estimateFactorCost(tupleExpr, currentBoundVars);
+					if (estimate.isPresent()) {
+						JoinFactorCostModel.FactorCostEstimate factorCost = estimate.get();
+						if (isFiniteNonNegative(factorCost.getOutputRows())) {
+							tupleExpr.setResultSizeEstimate(factorCost.getOutputRows());
+						}
+						if (isFiniteNonNegative(factorCost.getWorkRows())) {
+							tupleExpr.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS,
+									factorCost.getWorkRows());
+						}
+						for (Map.Entry<String, String> entry : factorCost.getStringMetrics().entrySet()) {
+							tupleExpr.setStringMetricPlanned(entry.getKey(), entry.getValue());
+						}
+						for (Map.Entry<String, Double> entry : factorCost.getDoubleMetrics().entrySet()) {
+							tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+						}
+					}
+				}
+				currentBoundVars.addAll(tupleExpr.getBindingNames());
+			}
+		}
+
+		private boolean sameIdentityOrder(List<TupleExpr> left, List<TupleExpr> right) {
+			if (left.size() != right.size()) {
+				return false;
+			}
+			for (int i = 0; i < left.size(); i++) {
+				if (left.get(i) != right.get(i)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs, Set<String> outerBoundVars) {
@@ -684,8 +981,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private Join createJoinWithEstimatedResultSize(TupleExpr left, TupleExpr right) {
+			return createJoinWithEstimatedResultSize(left, right, null);
+		}
+
+		private Join createJoinWithEstimatedResultSize(TupleExpr left, TupleExpr right, Double plannedResultSize) {
 			Join join = new Join(left, right);
-			if (statistics.supportsJoinEstimation()) {
+			if (plannedResultSize != null && isFiniteNonNegative(plannedResultSize)) {
+				join.setResultSizeEstimate(Math.max(join.getResultSizeEstimate(), plannedResultSize));
+			} else if (statistics.supportsJoinEstimation()) {
 				double estimatedResultSize = statistics.getCardinality(join);
 				if (!Double.isNaN(estimatedResultSize) && estimatedResultSize >= 0) {
 					join.setResultSizeEstimate(Math.max(join.getResultSizeEstimate(), estimatedResultSize));
@@ -853,6 +1156,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> remaining = new ArrayList<>(segment);
 			JoinCardinalityCache cardinalityCache = new JoinCardinalityCache();
+			FactorCostCache factorCostCache = new FactorCostCache(statistics);
 			Map<TupleExpr, Integer> originalOrder = new IdentityHashMap<>(segment.size());
 			for (int i = 0; i < segment.size(); i++) {
 				originalOrder.put(segment.get(i), i);
@@ -874,7 +1178,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					TupleExpr left = remaining.get(leftIndex);
 					TupleExpr right = remaining.get(rightIndex);
 					GreedyChoiceMetrics metrics = buildInitialGreedyChoiceMetrics(left, right, outerBoundVars,
-							deferredFilters, cardinalityCache, hasConnectedInitialPair, hasAnchoredInitialPair);
+							deferredFilters, cardinalityCache, factorCostCache, hasConnectedInitialPair,
+							hasAnchoredInitialPair);
 					GreedyChoiceScore score = scoreGreedyChoice(metrics, originalOrder.get(left),
 							originalOrder.get(right));
 					GreedyChoiceCandidate candidate = new GreedyChoiceCandidate("initial", left, right, metrics,
@@ -914,7 +1219,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				boolean hasConnectedCandidate = hasConnectedCandidate(remaining, prefixBindingNames);
 				for (TupleExpr candidate : remaining) {
 					GreedyChoiceMetrics metrics = buildNextGreedyChoiceMetrics(prefixForEstimation, prefixBindingNames,
-							candidate, pendingDeferredFilters, cardinalityCache, hasConnectedCandidate);
+							candidate, pendingDeferredFilters, cardinalityCache, factorCostCache,
+							hasConnectedCandidate);
 					GreedyChoiceScore score = scoreGreedyChoice(metrics, originalOrder.get(candidate), -1);
 					GreedyChoiceCandidate candidateDecision = new GreedyChoiceCandidate("expand", prefixForEstimation,
 							candidate, metrics, score);
@@ -970,6 +1276,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					+ " score=" + formatOptimizerNumber(candidate.score.adjustedCost)
 					+ " rawRows=" + formatOptimizerNumber(candidate.metrics.rawJoinRows)
 					+ " effectiveRows=" + formatOptimizerNumber(candidate.metrics.effectiveJoinRows)
+					+ " baseCostRows=" + formatOptimizerNumber(candidate.metrics.baseCostRows)
+					+ " factorWorkRows=" + formatOptimizerNumber(candidate.metrics.factorWorkRows)
 					+ " sharedVars=" + candidate.metrics.sharedVarCount
 					+ " boundAnchors=" + candidate.metrics.boundAnchorCount
 					+ " cheapFilters=" + candidate.metrics.cheapFilterUnlockCount
@@ -1048,9 +1356,46 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							.orElse("<none>"));
 		}
 
+		private void annotatePlannerAttemptFailure(Deque<TupleExpr> orderedJoinArgs,
+				JoinOrderPlanner.PlanningAttempt planningAttempt) {
+			if (orderedJoinArgs.isEmpty() || planningAttempt == null || planningAttempt.getPlan().isPresent()) {
+				return;
+			}
+
+			TupleExpr target = orderedJoinArgs.getFirst();
+			if (planningAttempt.getPlannerId() != null) {
+				target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_PLANNER_ID,
+						planningAttempt.getPlannerId());
+			}
+			if (planningAttempt.getPlannerPath() != null) {
+				target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_PLANNER_PATH,
+						planningAttempt.getPlannerPath());
+			}
+			if (planningAttempt.getRejectedFactor() != null) {
+				target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_PLANNER_REJECTED_FACTOR,
+						planningAttempt.getRejectedFactor());
+			}
+			String diagnostics = summarizePlannerDiagnostics(planningAttempt.getDiagnostics());
+			if (diagnostics != null) {
+				target.setStringMetricActual(TelemetryMetricNames.OPTIMIZER_PLANNER_DIAGNOSTICS, diagnostics);
+			}
+		}
+
+		private String summarizePlannerDiagnostics(List<String> diagnostics) {
+			if (diagnostics == null || diagnostics.isEmpty()) {
+				return null;
+			}
+			if (diagnostics.size() == 1) {
+				return diagnostics.get(0);
+			}
+			return diagnostics.get(0) + "; " + diagnostics.get(diagnostics.size() - 1);
+		}
+
 		private String scoreComponents(GreedyChoiceCandidate chosenDecision) {
 			return "rawRows=" + formatOptimizerNumber(chosenDecision.metrics.rawJoinRows)
 					+ ", effectiveRows=" + formatOptimizerNumber(chosenDecision.metrics.effectiveJoinRows)
+					+ ", baseCostRows=" + formatOptimizerNumber(chosenDecision.metrics.baseCostRows)
+					+ ", factorWorkRows=" + formatOptimizerNumber(chosenDecision.metrics.factorWorkRows)
 					+ ", adjustedCost=" + formatOptimizerNumber(chosenDecision.score.adjustedCost)
 					+ ", sharedVars=" + chosenDecision.metrics.sharedVarCount
 					+ ", boundAnchors=" + chosenDecision.metrics.boundAnchorCount
@@ -1176,7 +1521,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			int compatibleFilters = 0;
 			for (DeferredFilter deferredFilter : deferredFilters) {
 				if (deferredFilter.conditionCost == 0
-						&& availableVars.containsAll(deferredFilter.requiredVars)) {
+						&& availableVars.containsAll(deferredFilter.requiredVars)
+						&& hasKnownSelectivePassRatio(deferredFilter)) {
 					compatibleFilters++;
 				}
 			}
@@ -1186,7 +1532,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private int countCompatibleExpensiveFilters(List<DeferredFilter> deferredFilters, Set<String> availableVars) {
 			int compatibleFilters = 0;
 			for (DeferredFilter deferredFilter : deferredFilters) {
-				if (deferredFilter.conditionCost > 0 && availableVars.containsAll(deferredFilter.requiredVars)) {
+				if (deferredFilter.conditionCost > 0 && availableVars.containsAll(deferredFilter.requiredVars)
+						&& hasKnownSelectivePassRatio(deferredFilter)) {
 					compatibleFilters++;
 				}
 			}
@@ -1241,7 +1588,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			double combinedPassRatio = combinedCompatibleFilterPassRatio(localFilters);
-			if (combinedPassRatio > 0.0d) {
+			if (combinedPassRatio >= 0.0d) {
 				double passRatioRows = baseRows * combinedPassRatio;
 				if (isFiniteNonNegative(passRatioRows)) {
 					return passRatioRows;
@@ -1268,7 +1615,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				deferredFilters.remove(i);
 			}
 
-			return localFilters.isEmpty() ? tupleExpr : wrapTupleExprWithDeferredFilters(tupleExpr, localFilters);
+			return localFilters.isEmpty() ? tupleExpr
+					: wrapTupleExprWithDeferredFilters(tupleExpr, localFilters, "localPattern");
 		}
 
 		private List<DeferredFilter> compatibleLocalDeferredFilters(List<DeferredFilter> deferredFilters,
@@ -1290,26 +1638,50 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (!(tupleExpr instanceof StatementPattern)) {
 				return false;
 			}
-			return deferredFilter.patternLocalBase != null
-					&& tupleExpr.getBindingNames().containsAll(deferredFilter.requiredVars);
+			if (deferredFilter.conditionCost > 0) {
+				return false;
+			}
+			return deferredFilter.patternLocalBase == tupleExpr;
 		}
 
 		private TupleExpr wrapTupleExprWithDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {
+			return wrapTupleExprWithDeferredFilters(tupleExpr, deferredFilters, null);
+		}
+
+		private TupleExpr wrapTupleExprWithDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters,
+				String scope) {
 			TupleExpr current = tupleExpr;
 			for (DeferredFilter deferredFilter : sortDeferredFilters(deferredFilters)) {
 				Filter filterClone = deferredFilter.filter.clone();
 				filterClone.setArg(current);
+				annotateDeferredFilter(filterClone, deferredFilter, scope);
 				current = filterClone;
 			}
 			return current;
+		}
+
+		private void annotateDeferredFilter(Filter filter, DeferredFilter deferredFilter, String scope) {
+			EvaluationStatistics.FilterPassEstimate estimate = deferredFilter.filterPassEstimate;
+			annotateFilterSelectivity(filter, estimate);
+			if (scope != null && !scope.isEmpty()) {
+				filter.setStringMetricPlanned(TelemetryMetricNames.DEFERRED_FILTER_SCOPE, scope);
+			}
+		}
+
+		private void annotateFilterSelectivity(Filter filter) {
+			FilterSelectivityTelemetry.annotate(filter, statistics);
+		}
+
+		private void annotateFilterSelectivity(Filter filter, EvaluationStatistics.FilterPassEstimate estimate) {
+			FilterSelectivityTelemetry.annotate(filter, statistics, estimate);
 		}
 
 		private double combinedCompatibleFilterPassRatio(List<DeferredFilter> compatibleFilters) {
 			double combinedPassRatio = 1.0d;
 			boolean foundEstimatedFilter = false;
 			for (DeferredFilter deferredFilter : compatibleFilters) {
-				double passRatio = statistics.estimateFilterPassRatio(deferredFilter.filter);
-				if (Double.isFinite(passRatio) && passRatio > 0.0d && passRatio <= 1.0d) {
+				double passRatio = deferredFilter.filterPassEstimate.getPassRatio();
+				if (isKnownPassRatio(deferredFilter)) {
 					combinedPassRatio *= passRatio;
 					foundEstimatedFilter = true;
 				}
@@ -1320,6 +1692,36 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private double combinedUnlockedFilterPassRatio(List<DeferredFilter> deferredFilters,
 				Set<String> availableVars) {
 			return combinedCompatibleFilterPassRatio(compatibleDeferredFilters(deferredFilters, availableVars));
+		}
+
+		private boolean shouldFloorUnlockedFilterPassRatio(List<DeferredFilter> deferredFilters,
+				Set<String> availableVars) {
+			boolean foundKnownFilter = false;
+			for (DeferredFilter deferredFilter : compatibleDeferredFilters(deferredFilters, availableVars)) {
+				if (!isKnownPassRatio(deferredFilter)) {
+					continue;
+				}
+				foundKnownFilter = true;
+				if (deferredFilter.filterPassEstimate
+						.getSource() != EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC) {
+					return false;
+				}
+			}
+			return foundKnownFilter;
+		}
+
+		private boolean hasKnownSelectivePassRatio(DeferredFilter deferredFilter) {
+			return isKnownPassRatio(deferredFilter) && deferredFilter.filterPassEstimate.getPassRatio() < 1.0d;
+		}
+
+		private boolean isKnownPassRatio(DeferredFilter deferredFilter) {
+			if (deferredFilter == null || deferredFilter.filterPassEstimate == null
+					|| deferredFilter.filterPassEstimate
+							.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN) {
+				return false;
+			}
+			double passRatio = deferredFilter.filterPassEstimate.getPassRatio();
+			return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d;
 		}
 
 		private double estimateDeferredFilterAwareRows(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters,
@@ -1339,7 +1741,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			double combinedPassRatio = combinedCompatibleFilterPassRatio(compatibleFilters);
-			if (combinedPassRatio > 0.0d) {
+			if (combinedPassRatio >= 0.0d) {
 				double passRatioRows = baseRows * combinedPassRatio;
 				if (isFiniteNonNegative(passRatioRows)) {
 					return passRatioRows;
@@ -1355,34 +1757,68 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private GreedyChoiceMetrics buildInitialGreedyChoiceMetrics(TupleExpr left, TupleExpr right,
 				Set<String> outerBoundVars, List<DeferredFilter> deferredFilters, JoinCardinalityCache cardinalityCache,
-				boolean hasConnectedInitialPair, boolean hasAnchoredInitialPair) {
+				FactorCostCache factorCostCache, boolean hasConnectedInitialPair, boolean hasAnchoredInitialPair) {
 			Set<String> availableVars = getAvailableVars(outerBoundVars, left, right);
 			int sharedVarCount = sharedJoinVariableCount(left, right);
 			int boundAnchorCount = boundAnchorCount(left, right, outerBoundVars);
 			double rawJoinRows = cardinalityCache.get(left, right);
 			double effectiveJoinRows = estimateDeferredFilterAwareRows(new Join(left.clone(), right.clone()),
 					deferredFilters, availableVars, rawJoinRows);
-			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, sharedVarCount, boundAnchorCount,
+			double factorWorkRows = estimateInitialFactorWorkRows(left, right, outerBoundVars, factorCostCache);
+			double baseCostRows = isFiniteNonNegative(factorWorkRows)
+					? Math.max(effectiveJoinRows, factorWorkRows)
+					: effectiveJoinRows;
+			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, baseCostRows, factorWorkRows,
+					sharedVarCount, boundAnchorCount,
 					countCompatibleCheapFilters(deferredFilters, availableVars),
 					countCompatibleExpensiveFilters(deferredFilters, availableVars),
 					sharedVarCount == 0 && hasConnectedInitialPair, boundAnchorCount == 0 && hasAnchoredInitialPair,
-					combinedUnlockedFilterPassRatio(deferredFilters, availableVars));
+					combinedUnlockedFilterPassRatio(deferredFilters, availableVars),
+					shouldFloorUnlockedFilterPassRatio(deferredFilters, availableVars));
 		}
 
 		private GreedyChoiceMetrics buildNextGreedyChoiceMetrics(TupleExpr prefixForEstimation,
 				Set<String> prefixBindingNames, TupleExpr candidate, List<DeferredFilter> deferredFilters,
-				JoinCardinalityCache cardinalityCache, boolean hasConnectedCandidate) {
+				JoinCardinalityCache cardinalityCache, FactorCostCache factorCostCache, boolean hasConnectedCandidate) {
 			Set<String> candidateAvailableVars = getAvailableVars(prefixBindingNames, candidate);
 			int sharedVarCount = sharedJoinVariableCount(candidate, prefixBindingNames);
 			double rawJoinRows = cardinalityCache.get(prefixForEstimation, candidate);
 			double effectiveJoinRows = estimateDeferredFilterAwareRows(
 					new Join(prefixForEstimation.clone(), candidate.clone()), deferredFilters, candidateAvailableVars,
 					rawJoinRows);
-			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, sharedVarCount, 0,
+			double factorWorkRows = estimateCandidateFactorWorkRows(candidate, prefixBindingNames, factorCostCache);
+			double baseCostRows = isFiniteNonNegative(factorWorkRows)
+					? Math.max(effectiveJoinRows, factorWorkRows)
+					: effectiveJoinRows;
+			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, baseCostRows, factorWorkRows,
+					sharedVarCount, 0,
 					countCompatibleCheapFilters(deferredFilters, candidateAvailableVars),
 					countCompatibleExpensiveFilters(deferredFilters, candidateAvailableVars),
 					sharedVarCount == 0 && hasConnectedCandidate, false,
-					combinedUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars));
+					combinedUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars),
+					shouldFloorUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars));
+		}
+
+		private double estimateInitialFactorWorkRows(TupleExpr left, TupleExpr right, Set<String> outerBoundVars,
+				FactorCostCache factorCostCache) {
+			Optional<JoinFactorCostModel.FactorCostEstimate> leftEstimate = factorCostCache.get(left, outerBoundVars);
+			Optional<JoinFactorCostModel.FactorCostEstimate> rightEstimate = factorCostCache.get(right, outerBoundVars);
+			if (leftEstimate.isPresent() && rightEstimate.isPresent()
+					&& isFiniteNonNegative(leftEstimate.get().getWorkRows())
+					&& isFiniteNonNegative(rightEstimate.get().getWorkRows())) {
+				return leftEstimate.get().getWorkRows() + rightEstimate.get().getWorkRows();
+			}
+			return -1.0d;
+		}
+
+		private double estimateCandidateFactorWorkRows(TupleExpr candidate, Set<String> prefixBindingNames,
+				FactorCostCache factorCostCache) {
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostCache.get(candidate,
+					prefixBindingNames);
+			if (estimate.isPresent() && isFiniteNonNegative(estimate.get().getWorkRows())) {
+				return estimate.get().getWorkRows();
+			}
+			return -1.0d;
 		}
 
 		private boolean hasConnectedInitialPair(List<TupleExpr> tupleExprs) {
@@ -1437,8 +1873,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private GreedyChoiceScore scoreGreedyChoice(GreedyChoiceMetrics metrics, int stableIndex,
 				int secondaryStableIndex) {
-			double normalizedJoinRows = normalizeJoinRows(metrics.effectiveJoinRows);
-			double adjustedCost = normalizedJoinRows;
+			double normalizedBaseCost = normalizeJoinRows(metrics.baseCostRows);
+			double adjustedCost = normalizedBaseCost;
 			if (adjustedCost != Double.POSITIVE_INFINITY) {
 				if (metrics.avoidableCrossJoin) {
 					adjustedCost *= AVOIDABLE_CROSS_JOIN_PENALTY;
@@ -1454,12 +1890,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				adjustedCost /= boundedBonus(metrics.expensiveFilterUnlockCount, EXPENSIVE_FILTER_BONUS_PER_FILTER,
 						MAX_EXPENSIVE_FILTER_BONUS);
 				if (Double.isFinite(metrics.combinedUnlockedFilterPassRatio)
-						&& metrics.combinedUnlockedFilterPassRatio > 0.0d) {
-					adjustedCost *= Math.max(metrics.combinedUnlockedFilterPassRatio,
-							MIN_UNLOCKED_FILTER_PASS_RATIO);
+						&& metrics.combinedUnlockedFilterPassRatio >= 0.0d) {
+					adjustedCost *= metrics.floorUnlockedFilterPassRatio
+							? Math.max(metrics.combinedUnlockedFilterPassRatio, MIN_UNLOCKED_FILTER_PASS_RATIO)
+							: metrics.combinedUnlockedFilterPassRatio;
 				}
 			}
-			return new GreedyChoiceScore(adjustedCost, normalizedJoinRows, stableIndex, secondaryStableIndex);
+			return new GreedyChoiceScore(adjustedCost, normalizeJoinRows(metrics.effectiveJoinRows), stableIndex,
+					secondaryStableIndex);
 		}
 
 		private TupleExpr[] orderInitialPairByEffectiveLeafRows(TupleExpr left, TupleExpr right,
@@ -1554,6 +1992,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private final class GreedyChoiceMetrics {
 			private final double rawJoinRows;
 			private final double effectiveJoinRows;
+			private final double baseCostRows;
+			private final double factorWorkRows;
 			private final int sharedVarCount;
 			private final int boundAnchorCount;
 			private final int cheapFilterUnlockCount;
@@ -1561,13 +2001,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			private final boolean avoidableCrossJoin;
 			private final boolean unanchoredInitialPair;
 			private final double combinedUnlockedFilterPassRatio;
+			private final boolean floorUnlockedFilterPassRatio;
 
-			private GreedyChoiceMetrics(double rawJoinRows, double effectiveJoinRows, int sharedVarCount,
-					int boundAnchorCount,
+			private GreedyChoiceMetrics(double rawJoinRows, double effectiveJoinRows, double baseCostRows,
+					double factorWorkRows, int sharedVarCount, int boundAnchorCount,
 					int cheapFilterUnlockCount, int expensiveFilterUnlockCount, boolean avoidableCrossJoin,
-					boolean unanchoredInitialPair, double combinedUnlockedFilterPassRatio) {
+					boolean unanchoredInitialPair, double combinedUnlockedFilterPassRatio,
+					boolean floorUnlockedFilterPassRatio) {
 				this.rawJoinRows = rawJoinRows;
 				this.effectiveJoinRows = effectiveJoinRows;
+				this.baseCostRows = baseCostRows;
+				this.factorWorkRows = factorWorkRows;
 				this.sharedVarCount = sharedVarCount;
 				this.boundAnchorCount = boundAnchorCount;
 				this.cheapFilterUnlockCount = cheapFilterUnlockCount;
@@ -1575,6 +2019,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				this.avoidableCrossJoin = avoidableCrossJoin;
 				this.unanchoredInitialPair = unanchoredInitialPair;
 				this.combinedUnlockedFilterPassRatio = combinedUnlockedFilterPassRatio;
+				this.floorUnlockedFilterPassRatio = floorUnlockedFilterPassRatio;
 			}
 		}
 
@@ -1630,6 +2075,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+		private final class SegmentFactor {
+			private final TupleExpr tupleExpr;
+			private final Set<String> bindingNames;
+			private final Set<StatementPattern> containedPatterns;
+
+			private SegmentFactor(TupleExpr tupleExpr, Set<StatementPattern> containedPatterns) {
+				this.tupleExpr = tupleExpr;
+				this.bindingNames = new HashSet<>(tupleExpr.getBindingNames());
+				this.containedPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+				this.containedPatterns.addAll(containedPatterns);
+			}
+		}
+
 		private final class OrderedJoinSeparator implements OrderedJoinPlanItem {
 			private final TupleExpr tupleExpr;
 
@@ -1657,6 +2115,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			private final int conditionCost;
 			private final int originalIndex;
 			private final StatementPattern patternLocalBase;
+			private final Set<StatementPattern> originPatterns;
+			private final EvaluationStatistics.FilterPassEstimate filterPassEstimate;
 
 			private DeferredFilter(Filter filter, Set<String> requiredVars, int conditionCost, int originalIndex) {
 				this.filter = filter;
@@ -1664,6 +2124,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				this.conditionCost = conditionCost;
 				this.originalIndex = originalIndex;
 				this.patternLocalBase = FilterSelectivityKeys.patternLocalBaseForFilter(filter);
+				this.originPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+				this.originPatterns.addAll(FilterSelectivityKeys.originPatternsForFilter(filter));
+				this.filterPassEstimate = statistics.estimateFilterPass(filter);
 			}
 		}
 
@@ -1684,6 +2147,32 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				double estimated = statistics.getCardinality(new Join(left.clone(), right.clone()));
 				row.put(right, estimated);
 				return estimated;
+			}
+		}
+
+		private final class FactorCostCache {
+			private final JoinFactorCostModel costModel;
+			private final Map<TupleExpr, Map<String, Optional<JoinFactorCostModel.FactorCostEstimate>>> cache = new IdentityHashMap<>();
+
+			private FactorCostCache(EvaluationStatistics statistics) {
+				this.costModel = statistics instanceof JoinFactorCostModel ? (JoinFactorCostModel) statistics : null;
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> get(TupleExpr factor, Set<String> boundVars) {
+				if (costModel == null) {
+					return Optional.empty();
+				}
+				String boundKey = describeBindingNames(boundVars);
+				Map<String, Optional<JoinFactorCostModel.FactorCostEstimate>> factorCache = cache.computeIfAbsent(
+						factor, ignored -> new HashMap<>());
+				Optional<JoinFactorCostModel.FactorCostEstimate> cached = factorCache.get(boundKey);
+				if (cached != null) {
+					return cached;
+				}
+				Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(factor,
+						boundVars == null ? Set.of() : Set.copyOf(boundVars));
+				factorCache.put(boundKey, estimate);
+				return estimate;
 			}
 		}
 

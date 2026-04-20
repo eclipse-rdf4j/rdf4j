@@ -51,9 +51,21 @@ final class SketchJoinOrderReorderer {
 
 	Optional<JoinOrderPlanner.JoinOrderPlan> plan(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm) {
+		return plan(args, initiallyBoundVars, algorithm, List.of());
+	}
+
+	Optional<JoinOrderPlanner.JoinOrderPlan> plan(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			JoinOrderPlanner.Algorithm algorithm, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		return planAttempt(args, initiallyBoundVars, algorithm, deferredFilters).getPlan();
+	}
+
+	JoinOrderPlanner.PlanningAttempt planAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			JoinOrderPlanner.Algorithm algorithm, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
 		if (args == null || args.isEmpty()) {
 			estimator.recordJoinOrderPlannerPath(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE);
-			return Optional.empty();
+			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm,
+					SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE.name(), null,
+					List.of("input: empty join segment"));
 		}
 
 		List<TupleExpr> expressions = List.copyOf(args);
@@ -78,15 +90,25 @@ final class SketchJoinOrderReorderer {
 			JoinOrderPlanner.JoinOrderPlan plan = new JoinOrderPlanner.JoinOrderPlan(planningInputs.prefixExpressions(),
 					0.0d, totalBindingRows(planningInputs.prefixExpressions()), inputDiagnostics);
 			estimator.recordJoinOrderPlannerPath(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED);
-			return Optional.of(plan);
+			return JoinOrderPlanner.PlanningAttempt.planned(plan, "sketch", algorithm,
+					SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED.name(), plan.getDiagnostics());
 		}
 
 		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(estimator, workAdjuster,
-				plannedExpressions, plannedBound)
+				plannedExpressions, plannedBound, deferredFilters)
 						.plan(algorithm);
 		estimator.recordJoinOrderPlannerPath(outcome.path());
-		return outcome.plan()
-				.map(plan -> prependBindingPrefixes(plan, planningInputs.prefixExpressions(), inputDiagnostics));
+		if (outcome.plan().isEmpty()) {
+			List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + outcome.diagnostics().size());
+			diagnostics.addAll(inputDiagnostics);
+			diagnostics.addAll(outcome.diagnostics());
+			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm, outcome.path().name(),
+					outcome.rejectedFactor(), diagnostics);
+		}
+		JoinOrderPlanner.JoinOrderPlan plan = prependBindingPrefixes(outcome.plan().get(),
+				planningInputs.prefixExpressions(), inputDiagnostics);
+		return JoinOrderPlanner.PlanningAttempt.planned(plan, "sketch", algorithm, outcome.path().name(),
+				plan.getDiagnostics());
 	}
 
 	private PlanningInputs promoteFilterLookupBindings(List<TupleExpr> expressions, Set<String> initiallyBoundVars) {
@@ -181,7 +203,8 @@ final class SketchJoinOrderReorderer {
 			diagnostics.addAll(inputDiagnostics);
 			diagnostics.addAll(plan.getDiagnostics());
 			return new JoinOrderPlanner.JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(),
-					plan.getEstimatedTotalWork(), diagnostics);
+					plan.getEstimatedTotalWork(), diagnostics, plan.getSummaryStringMetrics(),
+					plan.getSummaryDoubleMetrics(), plan.getSteps());
 		}
 		List<TupleExpr> orderedArgs = new ArrayList<>(prefixExpressions.size() + plan.getOrderedArgs().size());
 		orderedArgs.addAll(prefixExpressions);
@@ -191,7 +214,8 @@ final class SketchJoinOrderReorderer {
 		diagnostics.add("prefix promotion: prefixes=" + SketchJoinOrderPlanner.describeExprOrder(prefixExpressions));
 		diagnostics.addAll(plan.getDiagnostics());
 		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), plan.getEstimatedFinalRows(),
-				plan.getEstimatedTotalWork() + totalBindingRows(prefixExpressions), diagnostics);
+				plan.getEstimatedTotalWork() + totalBindingRows(prefixExpressions), diagnostics,
+				plan.getSummaryStringMetrics(), plan.getSummaryDoubleMetrics(), plan.getSteps());
 	}
 
 	private double totalBindingRows(List<TupleExpr> prefixExpressions) {

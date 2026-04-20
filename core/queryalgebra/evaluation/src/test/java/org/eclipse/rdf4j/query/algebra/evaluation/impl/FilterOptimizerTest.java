@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -267,6 +268,34 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				});
 	}
 
+	@Test
+	public void standardPipelineFinalFilterPassAnnotatesSelectivityFromCardinalityStatsUsedForPlacement() {
+		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . "
+				+ "FILTER(?branchName = \"Branch 0\" && ?branchName != \"Branch 1\") }";
+
+		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
+				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
+				new EmptyTripleSource(),
+				new CardinalityOnlyFilterStatistics(200.0d, 100.0d, 20.0d, 20.0d));
+
+		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
+		}
+
+		List<Filter> filters = findAll(root, Filter.class);
+		assertThat(filters)
+				.as("The final filter pass should retain planned selectivity telemetry on filters it recreates")
+				.singleElement()
+				.satisfies(filter -> {
+					assertThat(filter.getArg()).isInstanceOf(StatementPattern.class);
+					assertThat(filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO))
+							.isEqualTo(0.2d);
+					assertThat(filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))
+							.isEqualTo("cardinality");
+				});
+	}
+
 	void testOptimizer(String expectedQuery, String actualQuery)
 			throws MalformedQueryException, UnsupportedQueryLanguageException {
 		testOptimizer(expectedQuery, actualQuery, null);
@@ -371,6 +400,19 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		@Override
 		public boolean supportsFilterSelectivityCosting() {
 			return true;
+		}
+	}
+
+	private static final class CardinalityOnlyFilterStatistics extends SelectiveJoinStatistics {
+
+		private CardinalityOnlyFilterStatistics(double joinCardinality, double namePatternCardinality,
+				double defaultPatternCardinality, double filteredNameCardinality) {
+			super(joinCardinality, namePatternCardinality, defaultPatternCardinality, filteredNameCardinality);
+		}
+
+		@Override
+		public double estimateFilterPassRatio(Filter filter) {
+			return -1.0d;
 		}
 	}
 

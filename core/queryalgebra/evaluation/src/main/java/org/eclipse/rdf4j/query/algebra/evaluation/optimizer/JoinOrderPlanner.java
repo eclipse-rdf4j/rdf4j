@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -34,6 +36,9 @@ public interface JoinOrderPlanner {
 		private final double estimatedFinalRows;
 		private final double estimatedTotalWork;
 		private final List<String> diagnostics;
+		private final Map<String, String> summaryStringMetrics;
+		private final Map<String, Double> summaryDoubleMetrics;
+		private final List<PlanStep> steps;
 
 		public JoinOrderPlan(List<TupleExpr> orderedArgs, double estimatedFinalRows, double estimatedTotalWork) {
 			this(orderedArgs, estimatedFinalRows, estimatedTotalWork, List.of());
@@ -41,12 +46,27 @@ public interface JoinOrderPlanner {
 
 		public JoinOrderPlan(List<TupleExpr> orderedArgs, double estimatedFinalRows, double estimatedTotalWork,
 				List<String> diagnostics) {
+			this(orderedArgs, estimatedFinalRows, estimatedTotalWork, diagnostics, Map.of(), Map.of(), List.of());
+		}
+
+		public JoinOrderPlan(List<TupleExpr> orderedArgs, double estimatedFinalRows, double estimatedTotalWork,
+				List<String> diagnostics, Map<String, String> summaryStringMetrics,
+				Map<String, Double> summaryDoubleMetrics, List<PlanStep> steps) {
 			this.orderedArgs = Collections.unmodifiableList(new ArrayList<>(orderedArgs));
 			this.estimatedFinalRows = estimatedFinalRows;
 			this.estimatedTotalWork = estimatedTotalWork;
 			this.diagnostics = diagnostics == null || diagnostics.isEmpty()
 					? List.of()
 					: Collections.unmodifiableList(new ArrayList<>(diagnostics));
+			this.summaryStringMetrics = summaryStringMetrics == null || summaryStringMetrics.isEmpty()
+					? Map.of()
+					: Collections.unmodifiableMap(new HashMap<>(summaryStringMetrics));
+			this.summaryDoubleMetrics = summaryDoubleMetrics == null || summaryDoubleMetrics.isEmpty()
+					? Map.of()
+					: Collections.unmodifiableMap(new HashMap<>(summaryDoubleMetrics));
+			this.steps = steps == null || steps.isEmpty()
+					? List.of()
+					: Collections.unmodifiableList(new ArrayList<>(steps));
 		}
 
 		public List<TupleExpr> getOrderedArgs() {
@@ -64,7 +84,196 @@ public interface JoinOrderPlanner {
 		public List<String> getDiagnostics() {
 			return diagnostics;
 		}
+
+		public Map<String, String> getSummaryStringMetrics() {
+			return summaryStringMetrics;
+		}
+
+		public Map<String, Double> getSummaryDoubleMetrics() {
+			return summaryDoubleMetrics;
+		}
+
+		public List<PlanStep> getSteps() {
+			return steps;
+		}
+	}
+
+	final class FilterConstraint {
+		private final Set<String> requiredVars;
+		private final double estimatedPassRatio;
+		private final int conditionCost;
+		private final String debugLabel;
+		private final String selectivitySource;
+		private final long evidenceCount;
+
+		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, null, -1L);
+		}
+
+		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount) {
+			this.requiredVars = Set.copyOf(requiredVars);
+			this.estimatedPassRatio = estimatedPassRatio;
+			this.conditionCost = conditionCost;
+			this.debugLabel = debugLabel;
+			this.selectivitySource = selectivitySource;
+			this.evidenceCount = evidenceCount;
+		}
+
+		public Set<String> getRequiredVars() {
+			return requiredVars;
+		}
+
+		public double getEstimatedPassRatio() {
+			return estimatedPassRatio;
+		}
+
+		public int getConditionCost() {
+			return conditionCost;
+		}
+
+		public String getDebugLabel() {
+			return debugLabel;
+		}
+
+		public String getSelectivitySource() {
+			return selectivitySource;
+		}
+
+		public long getEvidenceCount() {
+			return evidenceCount;
+		}
+	}
+
+	final class PlanningAttempt {
+		private final Optional<JoinOrderPlan> plan;
+		private final String plannerId;
+		private final Algorithm algorithm;
+		private final String plannerPath;
+		private final String rejectedFactor;
+		private final List<String> diagnostics;
+
+		public PlanningAttempt(Optional<JoinOrderPlan> plan, String plannerId, Algorithm algorithm, String plannerPath,
+				String rejectedFactor, List<String> diagnostics) {
+			this.plan = plan == null ? Optional.empty() : plan;
+			this.plannerId = plannerId;
+			this.algorithm = algorithm;
+			this.plannerPath = plannerPath;
+			this.rejectedFactor = rejectedFactor;
+			this.diagnostics = diagnostics == null || diagnostics.isEmpty()
+					? List.of()
+					: Collections.unmodifiableList(new ArrayList<>(diagnostics));
+		}
+
+		public static PlanningAttempt planned(JoinOrderPlan plan, String plannerId, Algorithm algorithm,
+				String plannerPath, List<String> diagnostics) {
+			return new PlanningAttempt(Optional.of(plan), plannerId, algorithm, plannerPath, null, diagnostics);
+		}
+
+		public static PlanningAttempt rejected(String plannerId, Algorithm algorithm, String plannerPath,
+				String rejectedFactor, List<String> diagnostics) {
+			return new PlanningAttempt(Optional.empty(), plannerId, algorithm, plannerPath, rejectedFactor,
+					diagnostics);
+		}
+
+		public static PlanningAttempt unavailable(Algorithm algorithm) {
+			return rejected(null, algorithm, null, null, List.of());
+		}
+
+		public Optional<JoinOrderPlan> getPlan() {
+			return plan;
+		}
+
+		public String getPlannerId() {
+			return plannerId;
+		}
+
+		public Algorithm getAlgorithm() {
+			return algorithm;
+		}
+
+		public String getPlannerPath() {
+			return plannerPath;
+		}
+
+		public String getRejectedFactor() {
+			return rejectedFactor;
+		}
+
+		public List<String> getDiagnostics() {
+			return diagnostics;
+		}
+	}
+
+	final class PlanStep {
+		private final Set<String> boundVarsBefore;
+		private final double factorOutputRows;
+		private final double prefixOutputRows;
+		private final double stepWorkRows;
+		private final Map<String, String> stringMetrics;
+		private final Map<String, Double> doubleMetrics;
+
+		public PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
+				double stepWorkRows) {
+			this(boundVarsBefore, factorOutputRows, prefixOutputRows, stepWorkRows, Map.of(), Map.of());
+		}
+
+		public PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
+				double stepWorkRows, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics) {
+			this.boundVarsBefore = Set.copyOf(boundVarsBefore);
+			this.factorOutputRows = factorOutputRows;
+			this.prefixOutputRows = prefixOutputRows;
+			this.stepWorkRows = stepWorkRows;
+			this.stringMetrics = stringMetrics == null || stringMetrics.isEmpty()
+					? Map.of()
+					: Collections.unmodifiableMap(new HashMap<>(stringMetrics));
+			this.doubleMetrics = doubleMetrics == null || doubleMetrics.isEmpty()
+					? Map.of()
+					: Collections.unmodifiableMap(new HashMap<>(doubleMetrics));
+		}
+
+		public Set<String> getBoundVarsBefore() {
+			return boundVarsBefore;
+		}
+
+		public double getFactorOutputRows() {
+			return factorOutputRows;
+		}
+
+		public double getPrefixOutputRows() {
+			return prefixOutputRows;
+		}
+
+		public double getStepWorkRows() {
+			return stepWorkRows;
+		}
+
+		public Map<String, String> getStringMetrics() {
+			return stringMetrics;
+		}
+
+		public Map<String, Double> getDoubleMetrics() {
+			return doubleMetrics;
+		}
 	}
 
 	Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars, Algorithm algorithm);
+
+	default Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+		return planJoinOrder(args, initiallyBoundVars, algorithm);
+	}
+
+	default PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			Algorithm algorithm) {
+		return planJoinOrderAttempt(args, initiallyBoundVars, algorithm, List.of());
+	}
+
+	default PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+		Optional<JoinOrderPlan> plan = planJoinOrder(args, initiallyBoundVars, algorithm, deferredFilters);
+		return new PlanningAttempt(plan, null, algorithm, null, null,
+				plan.map(JoinOrderPlan::getDiagnostics).orElse(List.of()));
+	}
 }

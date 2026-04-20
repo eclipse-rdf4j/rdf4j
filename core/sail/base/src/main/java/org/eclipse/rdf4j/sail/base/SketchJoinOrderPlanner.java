@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,16 +47,27 @@ final class SketchJoinOrderPlanner {
 	private final Map<Long, Set<String>> variablesMemo = new HashMap<>();
 	private final SketchBasedJoinEstimator.SketchPlannerPath factorRejectionPath;
 	private final TupleExpr rejectedFactor;
+	private final List<JoinOrderPlanner.FilterConstraint> deferredFilters;
 	private final List<String> diagnostics = new ArrayList<>();
 
 	SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
 			SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster,
 			List<TupleExpr> expressions,
 			Set<String> initiallyBoundVars) {
+		this(estimator, workAdjuster, expressions, initiallyBoundVars, List.of());
+	}
+
+	SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
+			SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster,
+			List<TupleExpr> expressions,
+			Set<String> initiallyBoundVars,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
 		this.estimator = Objects.requireNonNull(estimator, "estimator");
 		this.workAdjuster = Objects.requireNonNull(workAdjuster, "workAdjuster");
 		this.initiallyBoundVars = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Set.of()
 				: Set.copyOf(initiallyBoundVars);
+		this.deferredFilters = deferredFilters == null || deferredFilters.isEmpty() ? List.of()
+				: List.copyOf(deferredFilters);
 		FactorBuildResult factorBuildResult = buildFactors(expressions);
 		this.factors = factorBuildResult.factors();
 		this.factorRejectionPath = factorBuildResult.rejectionPath();
@@ -66,13 +78,14 @@ final class SketchJoinOrderPlanner {
 		if (factorRejectionPath != null) {
 			recordDebug("rejected: path=" + factorRejectionPath + " factor="
 					+ (rejectedFactor == null ? "<unknown>" : describeTupleExpr(rejectedFactor)));
-			return new PlanOutcome(Optional.empty(), factorRejectionPath, List.copyOf(diagnostics));
+			return new PlanOutcome(Optional.empty(), factorRejectionPath, List.copyOf(diagnostics),
+					rejectedFactor == null ? null : describeTupleExpr(rejectedFactor));
 		}
 		if (factors.isEmpty()) {
 			recordDebug("fallback reason=" + SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE
 					+ " factors=[]");
 			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
-					List.copyOf(diagnostics));
+					List.copyOf(diagnostics), null);
 		}
 
 		logFactorEstimates();
@@ -80,7 +93,7 @@ final class SketchJoinOrderPlanner {
 		SketchBasedJoinEstimator.SketchPlannerPath classification = classifyGraph();
 		if (classification != null) {
 			recordDebug("rejected: path=" + classification + " factors=" + describeFactorOrder(indices()));
-			return new PlanOutcome(Optional.empty(), classification, List.copyOf(diagnostics));
+			return new PlanOutcome(Optional.empty(), classification, List.copyOf(diagnostics), null);
 		}
 		if (algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
 				&& factors.size() > MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS) {
@@ -88,7 +101,7 @@ final class SketchJoinOrderPlanner {
 					+ " factorCount=" + factors.size() + " maxDynamicProgrammingArgs="
 					+ MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS);
 			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
-					List.copyOf(diagnostics));
+					List.copyOf(diagnostics), null);
 		}
 
 		StatePlan result = switch (algorithm) {
@@ -100,7 +113,7 @@ final class SketchJoinOrderPlanner {
 			recordDebug("rejected: path=" + SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE
 					+ " factors=" + describeFactorOrder(indices()));
 			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
-					List.copyOf(diagnostics));
+					List.copyOf(diagnostics), null);
 		}
 
 		List<TupleExpr> orderedArgs = new ArrayList<>(result.order().size());
@@ -109,9 +122,17 @@ final class SketchJoinOrderPlanner {
 		}
 		recordDebug("result: order=" + describeExprOrder(orderedArgs) + " estimate=" + result.estimate().summary()
 				+ " totalWork=" + result.totalWork());
+		Map<String, String> summaryStringMetrics = Map.of(
+				TelemetryMetricNames.PLANNER_ID, "sketch",
+				TelemetryMetricNames.PLANNER_ALGORITHM, algorithm.name(),
+				TelemetryMetricNames.PLANNER_PATH,
+				SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED.name());
+		Map<String, Double> summaryDoubleMetrics = Map.of(
+				TelemetryMetricNames.PLANNED_WORK_ROWS, result.totalWork());
 		return new PlanOutcome(Optional.of(new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs),
-				result.estimate().outputRows(), result.totalWork(), List.copyOf(diagnostics))),
-				SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, List.copyOf(diagnostics));
+				result.estimate().outputRows(), result.totalWork(), List.copyOf(diagnostics), summaryStringMetrics,
+				summaryDoubleMetrics, buildPlanSteps(result.order()))),
+				SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, List.copyOf(diagnostics), null);
 	}
 
 	private FactorBuildResult buildFactors(List<TupleExpr> expressions) {
@@ -133,7 +154,8 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private SketchBasedJoinEstimator.SketchPlannerPath classifyGraph() {
-		if (!isConnected()) {
+		int physicalComponents = physicalComponentCount();
+		if (physicalComponents > 1 && !isConnectedWithDeferredFilters()) {
 			return SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE;
 		}
 		if (hasMultiSharedVariableAttachment()) {
@@ -145,12 +167,50 @@ final class SketchJoinOrderPlanner {
 			edgeCount += factor.arity();
 			variables.addAll(factor.joinVars());
 		}
-		return edgeCount == factors.size() + variables.size() - 1
+		return edgeCount == factors.size() + variables.size() - physicalComponents
 				? null
 				: SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_CYCLE;
 	}
 
-	private boolean isConnected() {
+	private int physicalComponentCount() {
+		Set<Integer> seenFactors = new LinkedHashSet<>();
+		int components = 0;
+		for (int i = 0; i < factors.size(); i++) {
+			if (seenFactors.contains(i)) {
+				continue;
+			}
+			components++;
+			visitPhysicalComponent(i, seenFactors);
+		}
+		return components;
+	}
+
+	private void visitPhysicalComponent(int startFactor, Set<Integer> seenFactors) {
+		Set<String> seenVariables = new LinkedHashSet<>();
+		ArrayDeque<Object> queue = new ArrayDeque<>();
+		queue.add(Integer.valueOf(startFactor));
+		seenFactors.add(startFactor);
+		while (!queue.isEmpty()) {
+			Object next = queue.removeFirst();
+			if (next instanceof Integer factorIndex) {
+				for (String variable : factors.get(factorIndex.intValue()).joinVars()) {
+					if (seenVariables.add(variable)) {
+						queue.addLast(variable);
+					}
+				}
+				continue;
+			}
+			String variable = (String) next;
+			for (int i = 0; i < factors.size(); i++) {
+				if (!seenFactors.contains(i) && factors.get(i).joinVars().contains(variable)) {
+					seenFactors.add(i);
+					queue.addLast(Integer.valueOf(i));
+				}
+			}
+		}
+	}
+
+	private boolean isConnectedWithDeferredFilters() {
 		Set<Integer> seenFactors = new LinkedHashSet<>();
 		Set<String> seenVariables = new LinkedHashSet<>();
 		ArrayDeque<Object> queue = new ArrayDeque<>();
@@ -173,8 +233,32 @@ final class SketchJoinOrderPlanner {
 					queue.addLast(Integer.valueOf(i));
 				}
 			}
+			for (String connectedVariable : deferredFilterVariablesConnectedTo(variable)) {
+				if (seenVariables.add(connectedVariable)) {
+					queue.addLast(connectedVariable);
+				}
+			}
 		}
 		return seenFactors.size() == factors.size();
+	}
+
+	private List<String> deferredFilterVariablesConnectedTo(String variable) {
+		if (deferredFilters.isEmpty()) {
+			return List.of();
+		}
+		LinkedHashSet<String> connected = new LinkedHashSet<>();
+		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
+			Set<String> requiredVars = filter.getRequiredVars();
+			if (!requiredVars.contains(variable)) {
+				continue;
+			}
+			for (String requiredVar : requiredVars) {
+				if (!requiredVar.equals(variable)) {
+					connected.add(requiredVar);
+				}
+			}
+		}
+		return List.copyOf(connected);
 	}
 
 	private boolean hasMultiSharedVariableAttachment() {
@@ -217,7 +301,8 @@ final class SketchJoinOrderPlanner {
 		double totalWork = bestSeedWork;
 		List<Integer> order = new ArrayList<>();
 		order.add(seed);
-		SketchBasedJoinEstimator.TuplePlanEstimate currentEstimate = factors.get(seed).estimate();
+		SketchBasedJoinEstimator.TuplePlanEstimate currentEstimate = applyUnlockedFilters(0L, mask,
+				factors.get(seed).estimate());
 		recordDebug("greedy seed: chosen=" + describeFactor(seed) + " estimate=" + currentEstimate.summary()
 				+ " adjustedWorkRows=" + bestSeedWork);
 
@@ -229,8 +314,8 @@ final class SketchJoinOrderPlanner {
 			SketchBasedJoinEstimator.JoinStepEstimate bestStep = null;
 			Set<String> currentBoundVars = boundVariables(mask);
 			for (int candidate : candidates(mask)) {
-				String sharedVariable = uniqueSharedVariable(mask, candidate);
-				if (sharedVariable == null) {
+				String connection = connectionReason(mask, candidate);
+				if (connection == null) {
 					continue;
 				}
 				PlanFactor candidateFactor = factors.get(candidate);
@@ -238,7 +323,7 @@ final class SketchJoinOrderPlanner {
 						.estimateJoinStepForJoinOrdering(currentEstimate, candidateFactor.estimate());
 				double adjustedWorkRows = adjustedWorkRows(candidate, currentBoundVars, step.workRows());
 				recordDebug("greedy candidate: prefixOrder=" + describeFactorOrder(order) + " candidate="
-						+ describeFactor(candidate) + " sharedVar=" + sharedVariable + " step=" + step.summary()
+						+ describeFactor(candidate) + " sharedVar=" + connection + " step=" + step.summary()
 						+ " adjustedWorkRows=" + adjustedWorkRows + " boundVars="
 						+ new TreeSet<>(currentBoundVars));
 				if (adjustedWorkRows < bestAdjustedWorkRows
@@ -246,7 +331,7 @@ final class SketchJoinOrderPlanner {
 								&& (step.outputRows() < bestStepRows
 										|| step.outputRows() == bestStepRows && candidate < bestNext)) {
 					bestNext = candidate;
-					bestSharedVar = sharedVariable;
+					bestSharedVar = connection;
 					bestAdjustedWorkRows = adjustedWorkRows;
 					bestStepRows = step.outputRows();
 					bestStep = step;
@@ -256,10 +341,11 @@ final class SketchJoinOrderPlanner {
 				return null;
 			}
 
+			long previousMask = mask;
 			mask |= bit(bestNext);
 			totalWork += bestAdjustedWorkRows;
 			order.add(bestNext);
-			currentEstimate = estimator.joinedPlanEstimate(bestStep);
+			currentEstimate = applyUnlockedFilters(previousMask, mask, estimator.joinedPlanEstimate(bestStep));
 			recordDebug("greedy choose: order=" + describeFactorOrder(order) + " chosen="
 					+ describeFactor(bestNext) + " sharedVar=" + bestSharedVar + " estimate="
 					+ currentEstimate.summary() + " adjustedWorkRows=" + bestAdjustedWorkRows + " totalWork="
@@ -276,9 +362,11 @@ final class SketchJoinOrderPlanner {
 		for (int i = 0; i < factors.size(); i++) {
 			PlanFactor factor = factors.get(i);
 			double adjustedWorkRows = adjustedWorkRows(i, initiallyBoundVars, factor.estimate().outputRows());
-			StatePlan seedPlan = new StatePlan(List.of(i), factor.estimate(), adjustedWorkRows);
-			bestByMask.put(bit(i), seedPlan);
-			statesBySize.computeIfAbsent(1, ignored -> new LinkedHashSet<>()).add(bit(i));
+			long seedMask = bit(i);
+			StatePlan seedPlan = new StatePlan(List.of(i), applyUnlockedFilters(0L, seedMask, factor.estimate()),
+					adjustedWorkRows);
+			bestByMask.put(seedMask, seedPlan);
+			statesBySize.computeIfAbsent(1, ignored -> new LinkedHashSet<>()).add(seedMask);
 			recordDebug("dp seed: factor=" + describeFactor(i) + " estimate=" + factor.estimate().summary()
 					+ " adjustedWorkRows=" + adjustedWorkRows);
 		}
@@ -291,8 +379,8 @@ final class SketchJoinOrderPlanner {
 				}
 				Set<String> currentBoundVars = boundVariables(mask);
 				for (int candidate : candidates(mask)) {
-					String sharedVariable = uniqueSharedVariable(mask, candidate);
-					if (sharedVariable == null) {
+					String connection = connectionReason(mask, candidate);
+					if (connection == null) {
 						continue;
 					}
 					SketchBasedJoinEstimator.JoinStepEstimate step = estimator
@@ -302,11 +390,12 @@ final class SketchJoinOrderPlanner {
 					List<Integer> nextOrder = new ArrayList<>(prefix.order().size() + 1);
 					nextOrder.addAll(prefix.order());
 					nextOrder.add(candidate);
-					StatePlan candidatePlan = new StatePlan(List.copyOf(nextOrder), estimator.joinedPlanEstimate(step),
+					StatePlan candidatePlan = new StatePlan(List.copyOf(nextOrder),
+							applyUnlockedFilters(mask, nextMask, estimator.joinedPlanEstimate(step)),
 							prefix.totalWork() + adjustedWorkRows);
 					StatePlan incumbent = bestByMask.get(nextMask);
 					recordDebug("dp candidate: prefixOrder=" + describeFactorOrder(prefix.order()) + " candidate="
-							+ describeFactor(candidate) + " sharedVar=" + sharedVariable + " step="
+							+ describeFactor(candidate) + " sharedVar=" + connection + " step="
 							+ step.summary() + " adjustedWorkRows=" + adjustedWorkRows + " totalWork="
 							+ candidatePlan.totalWork());
 					if (isBetter(candidatePlan, incumbent)) {
@@ -325,17 +414,53 @@ final class SketchJoinOrderPlanner {
 	private List<Integer> candidates(long mask) {
 		List<Integer> result = new ArrayList<>();
 		for (int i = 0; i < factors.size(); i++) {
-			if (!contains(mask, i) && uniqueSharedVariable(mask, i) != null) {
+			if (!contains(mask, i) && connectionReason(mask, i) != null) {
 				result.add(i);
 			}
 		}
 		return result;
 	}
 
+	private String connectionReason(long mask, int candidateIndex) {
+		String sharedVariable = uniqueSharedVariable(mask, candidateIndex);
+		if (sharedVariable != null) {
+			return sharedVariable;
+		}
+		return deferredFilterConnection(mask, candidateIndex);
+	}
+
 	private String uniqueSharedVariable(long mask, int candidateIndex) {
 		Set<String> shared = new TreeSet<>(variables(mask));
 		shared.retainAll(factors.get(candidateIndex).joinVars());
 		return shared.size() == 1 ? shared.iterator().next() : null;
+	}
+
+	private String deferredFilterConnection(long mask, int candidateIndex) {
+		if (deferredFilters.isEmpty()) {
+			return null;
+		}
+		Set<String> prefixVars = boundVariables(mask);
+		Set<String> candidateVars = factors.get(candidateIndex).joinVars();
+		LinkedHashSet<String> combinedVars = new LinkedHashSet<>(prefixVars);
+		combinedVars.addAll(candidateVars);
+		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
+			Set<String> requiredVars = filter.getRequiredVars();
+			if (prefixVars.containsAll(requiredVars) || !combinedVars.containsAll(requiredVars)
+					|| !intersects(requiredVars, prefixVars) || !intersects(requiredVars, candidateVars)) {
+				continue;
+			}
+			return "filter:" + filter.getDebugLabel();
+		}
+		return null;
+	}
+
+	private boolean intersects(Set<String> left, Set<String> right) {
+		for (String value : left) {
+			if (right.contains(value)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private Set<String> variables(long mask) {
@@ -361,6 +486,123 @@ final class SketchJoinOrderPlanner {
 				.accessShapeForJoinOrdering(factors.get(factorIndex).tupleExpr(), currentlyBoundVars);
 		double adjustedWorkRows = workAdjuster.adjustedWorkRows(accessShape, defaultWorkRows);
 		return Double.isFinite(adjustedWorkRows) && adjustedWorkRows > 0.0d ? adjustedWorkRows : defaultWorkRows;
+	}
+
+	private SketchBasedJoinEstimator.TuplePlanEstimate applyUnlockedFilters(long previousMask, long nextMask,
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate) {
+		double passRatio = newlyUnlockedFilterPassRatio(previousMask, nextMask);
+		if (passRatio >= 1.0d) {
+			return estimate;
+		}
+		double filteredRows = estimate.outputRows() * passRatio;
+		if (!Double.isFinite(filteredRows) || filteredRows < 0.0d) {
+			return estimate;
+		}
+		return estimator.withOutputRowsForJoinOrdering(estimate, filteredRows);
+	}
+
+	private double newlyUnlockedFilterPassRatio(long previousMask, long nextMask) {
+		if (deferredFilters.isEmpty()) {
+			return 1.0d;
+		}
+		Set<String> previousBound = boundVariables(previousMask);
+		Set<String> nextBound = boundVariables(nextMask);
+		double passRatio = 1.0d;
+		boolean found = false;
+		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
+			if (previousBound.containsAll(filter.getRequiredVars())
+					|| !nextBound.containsAll(filter.getRequiredVars())) {
+				continue;
+			}
+			double filterPassRatio = filter.getEstimatedPassRatio();
+			if (Double.isFinite(filterPassRatio) && filterPassRatio > 0.0d && filterPassRatio <= 1.0d) {
+				passRatio *= filterPassRatio;
+				found = true;
+			}
+		}
+		return found ? passRatio : 1.0d;
+	}
+
+	private List<String> newlyUnlockedFilterLabels(long previousMask, long nextMask) {
+		if (deferredFilters.isEmpty()) {
+			return List.of();
+		}
+		Set<String> previousBound = boundVariables(previousMask);
+		Set<String> nextBound = boundVariables(nextMask);
+		List<String> labels = new ArrayList<>();
+		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
+			if (!previousBound.containsAll(filter.getRequiredVars())
+					&& nextBound.containsAll(filter.getRequiredVars())) {
+				labels.add(describeUnlockedFilter(filter));
+			}
+		}
+		return labels;
+	}
+
+	private String describeUnlockedFilter(JoinOrderPlanner.FilterConstraint filter) {
+		String label = filter.getDebugLabel();
+		double passRatio = filter.getEstimatedPassRatio();
+		if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
+			label += " passRatio=" + passRatio;
+		}
+		if (filter.getSelectivitySource() != null) {
+			label += " source=" + filter.getSelectivitySource();
+		}
+		if (filter.getEvidenceCount() >= 0L) {
+			label += " evidence=" + filter.getEvidenceCount();
+		}
+		return label;
+	}
+
+	private List<JoinOrderPlanner.PlanStep> buildPlanSteps(List<Integer> order) {
+		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>(order.size());
+		long mask = 0L;
+		SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate = null;
+		for (Integer next : order) {
+			int factorIndex = next.intValue();
+			Set<String> boundBefore = boundVariables(mask);
+			long nextMask = mask | bit(factorIndex);
+			double factorOutputRows;
+			double stepWorkRows;
+			SketchBasedJoinEstimator.TuplePlanEstimate nextEstimate;
+			if (mask == 0L) {
+				SketchBasedJoinEstimator.TuplePlanEstimate factorEstimate = factors.get(factorIndex).estimate();
+				factorOutputRows = factorEstimate.outputRows();
+				stepWorkRows = adjustedWorkRows(factorIndex, boundBefore, factorOutputRows);
+				nextEstimate = applyUnlockedFilters(mask, nextMask, factorEstimate);
+			} else {
+				SketchBasedJoinEstimator.JoinStepEstimate step = estimator
+						.estimateJoinStepForJoinOrdering(prefixEstimate, factors.get(factorIndex).estimate());
+				factorOutputRows = step.outputRows();
+				stepWorkRows = adjustedWorkRows(factorIndex, boundBefore, step.workRows());
+				nextEstimate = applyUnlockedFilters(mask, nextMask, estimator.joinedPlanEstimate(step));
+			}
+
+			Map<String, String> stringMetrics = new HashMap<>();
+			Set<String> sharedJoinVars = sharedJoinVars(factors.get(factorIndex).tupleExpr(), boundBefore);
+			if (!sharedJoinVars.isEmpty()) {
+				stringMetrics.put(TelemetryMetricNames.SHARED_JOIN_VARS, sharedJoinVars.toString());
+			}
+			List<String> unlockedFilterLabels = newlyUnlockedFilterLabels(mask, nextMask);
+			if (!unlockedFilterLabels.isEmpty()) {
+				stringMetrics.put(TelemetryMetricNames.UNLOCKED_FILTERS, String.join(", ", unlockedFilterLabels));
+			}
+			steps.add(new JoinOrderPlanner.PlanStep(boundBefore, factorOutputRows, nextEstimate.outputRows(),
+					stepWorkRows, stringMetrics, Map.of()));
+			mask = nextMask;
+			prefixEstimate = nextEstimate;
+		}
+		return List.copyOf(steps);
+	}
+
+	private Set<String> sharedJoinVars(TupleExpr tupleExpr, Set<String> boundBefore) {
+		TreeSet<String> shared = new TreeSet<>();
+		for (String bindingName : tupleExpr.getBindingNames()) {
+			if (!bindingName.startsWith("_const_") && boundBefore.contains(bindingName)) {
+				shared.add(bindingName);
+			}
+		}
+		return shared;
 	}
 
 	private List<Integer> indices() {
@@ -502,7 +744,8 @@ final class SketchJoinOrderPlanner {
 
 	record PlanOutcome(Optional<JoinOrderPlanner.JoinOrderPlan> plan,
 			SketchBasedJoinEstimator.SketchPlannerPath path,
-			List<String> diagnostics) {
+			List<String> diagnostics,
+			String rejectedFactor) {
 	}
 
 	private record PlanFactor(int index, TupleExpr tupleExpr, SketchBasedJoinEstimator.TuplePlanEstimate estimate) {

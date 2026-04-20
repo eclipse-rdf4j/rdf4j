@@ -59,6 +59,13 @@ class LmdbSketchAwareFilterPlacementTest {
 	private static final String MEDICAL_RECORDED_ON_FILTER = "recordedOn-filter";
 	private static final String MEDICAL_HANDLED_BY_LABEL = "handledBy";
 	private static final String MEDICAL_TYPE_LABEL = "encounter-type";
+	private static final String GRID = "http://example.com/theme/grid/";
+	private static final IRI GRID_TRANSFORMER = VF.createIRI(GRID, "Transformer");
+	private static final IRI GRID_FEEDS = VF.createIRI(GRID, "feeds");
+	private static final IRI GRID_NAME = VF.createIRI(GRID, "name");
+	private static final String GRID_SUBSTATION_NAME_FILTER = "substation-name-filter";
+	private static final String GRID_FEEDS_LABEL = "grid-feeds";
+	private static final String GRID_TRANSFORMER_TYPE_LABEL = "transformer-type";
 
 	@Test
 	void optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady(@TempDir File dataDir)
@@ -219,6 +226,37 @@ class LmdbSketchAwareFilterPlacementTest {
 		}
 	}
 
+	@Test
+	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInBenchmarkDataset(
+			@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadAllThemeData(repository);
+			String query = ThemeQueryCatalog.queryFor(Theme.ELECTRICAL_GRID, 2);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				try (var result = connection.prepareTupleQuery(query).evaluate()) {
+					while (result.hasNext()) {
+						result.next();
+					}
+				}
+			}
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			assertSubstationNameMovesFirst(collectMandatoryLeafOrder(optimized));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder) {
 		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
 		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
@@ -230,6 +268,20 @@ class LmdbSketchAwareFilterPlacementTest {
 				"Expected optimized q2 plan to retain handledBy and rdf:type in the mandatory prefix");
 		assertTrue(recordedOnIndex < handledByIndex && recordedOnIndex < typeIndex,
 				"Expected optimized q2 plan to place recordedOn + date filter before handledBy and rdf:type once learned/sample selectivity is available");
+	}
+
+	private static void assertSubstationNameMovesFirst(List<String> mandatoryLeafOrder) {
+		int nameIndex = mandatoryLeafOrder.indexOf(GRID_SUBSTATION_NAME_FILTER);
+		int feedsIndex = mandatoryLeafOrder.indexOf(GRID_FEEDS_LABEL);
+		int typeIndex = mandatoryLeafOrder.indexOf(GRID_TRANSFORMER_TYPE_LABEL);
+
+		assertTrue(nameIndex >= 0,
+				"Expected optimized electrical q2 plan to keep the substation-name filter attached to its local pattern");
+		assertTrue(feedsIndex >= 0 && typeIndex >= 0,
+				"Expected optimized electrical q2 plan to retain feeds and transformer rdf:type in the mandatory prefix");
+		assertTrue(nameIndex < feedsIndex && nameIndex < typeIndex,
+				"Expected optimized electrical q2 plan to start with the selective substation-name lookup once evidence is available: "
+						+ mandatoryLeafOrder);
 	}
 
 	private static Filter findBranchNameFilter(TupleExpr optimized) {
@@ -314,6 +366,10 @@ class LmdbSketchAwareFilterPlacementTest {
 				leaves.add(MEDICAL_RECORDED_ON_FILTER);
 				return;
 			}
+			if (isSubstationNameFilter(filter)) {
+				leaves.add(GRID_SUBSTATION_NAME_FILTER);
+				return;
+			}
 			collectMandatoryLeafOrder(filter.getArg(), leaves);
 			return;
 		}
@@ -337,6 +393,14 @@ class LmdbSketchAwareFilterPlacementTest {
 				&& VarNameCollector.process(filter.getCondition()).contains("date");
 	}
 
+	private static boolean isSubstationNameFilter(Filter filter) {
+		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			return false;
+		}
+		return GRID_NAME.equals(statementPattern.getPredicateVar().getValue())
+				&& VarNameCollector.process(filter.getCondition()).contains("name");
+	}
+
 	private static String labelFor(StatementPattern statementPattern) {
 		if (statementPattern.getPredicateVar() == null || !statementPattern.getPredicateVar().hasValue()) {
 			return null;
@@ -348,6 +412,13 @@ class LmdbSketchAwareFilterPlacementTest {
 		if (RDF_TYPE.equals(predicate) && statementPattern.getObjectVar() != null
 				&& MEDICAL_ENCOUNTER.equals(statementPattern.getObjectVar().getValue())) {
 			return MEDICAL_TYPE_LABEL;
+		}
+		if (GRID_FEEDS.equals(predicate)) {
+			return GRID_FEEDS_LABEL;
+		}
+		if (RDF_TYPE.equals(predicate) && statementPattern.getObjectVar() != null
+				&& GRID_TRANSFORMER.equals(statementPattern.getObjectVar().getValue())) {
+			return GRID_TRANSFORMER_TYPE_LABEL;
 		}
 		return null;
 	}

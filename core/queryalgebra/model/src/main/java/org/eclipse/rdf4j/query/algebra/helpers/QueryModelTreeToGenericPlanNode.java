@@ -134,6 +134,11 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		} else if (level.includesEvaluationAnnotations()) {
 			copyOptimizerMetrics(node, genericPlanNode);
 		}
+		if (level.includesEvaluationAnnotations()) {
+			genericPlanNode.setLongMetricsPlanned(new LinkedHashMap<>(node.getLongMetricsPlanned()));
+			genericPlanNode.setDoubleMetricsPlanned(new LinkedHashMap<>(node.getDoubleMetricsPlanned()));
+			genericPlanNode.setStringMetricsPlanned(new LinkedHashMap<>(node.getStringMetricsPlanned()));
+		}
 		if (node == topTupleExpr && optimizerMetricWrapper != null) {
 			copyOptimizerMetricsIfAbsent(optimizerMetricWrapper, genericPlanNode);
 		}
@@ -265,7 +270,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 
 		if (node instanceof StatementPattern) {
-			applyIndexAnnotation((StatementPattern) node, genericPlanNode);
+			applyIndexAnnotation((StatementPattern) node, genericPlanNode, !level.includesRuntimeTelemetry());
 		}
 
 		if (cartesianJoinExplainAnalyzer != null) {
@@ -276,15 +281,22 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 	}
 
-	private static void applyIndexAnnotation(StatementPattern statementPattern, GenericPlanNode genericPlanNode) {
+	private static void applyIndexAnnotation(StatementPattern statementPattern, GenericPlanNode genericPlanNode,
+			boolean includeLegacyActualAlias) {
 		String indexName = statementPattern.getIndexName();
 		if (indexName == null || indexName.isEmpty()) {
 			return;
 		}
 		if (indexName.contains(",")) {
-			genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAMES, indexName);
+			genericPlanNode.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME, indexName);
+			if (includeLegacyActualAlias) {
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAMES, indexName);
+			}
 		} else {
-			genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
+			genericPlanNode.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME, indexName);
+			if (includeLegacyActualAlias) {
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
+			}
 		}
 	}
 

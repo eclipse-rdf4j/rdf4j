@@ -23,15 +23,19 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -46,10 +50,15 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
@@ -468,6 +477,128 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optimizeInvokesPlannerSpiWhenStatisticsProvidesPlan() {
+		StatementPattern a = statementPattern("s", "a", ex("pA"));
+		StatementPattern b = statementPattern("a", "b", ex("pB"));
+		StatementPattern c = statementPattern("b", "c", ex("pC"));
+		PlannerStatistics statistics = new PlannerStatistics(List.of(c, b, a));
+
+		QueryRoot root = new QueryRoot(new Join(new Join(a, b), c));
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(statistics.planCalls)
+				.as("QueryJoinOptimizer should delegate segment ordering to JoinOrderPlanner when available")
+				.isEqualTo(1);
+		assertThat(predicates(flattenJoinLeaves(root.getArg()))).containsExactly(ex("pC"), ex("pB"), ex("pA"));
+	}
+
+	@Test
+	public void optimizeNormalizesPlannerOutputBindingsBeforeFirstUse() {
+		BindingSetAssignment uValues = bindingSetAssignment("u", "u1");
+		BindingSetAssignment vValues = bindingSetAssignment("v", "v1");
+		StatementPattern follows = statementPattern("u", "v", ex("follows"));
+		StatementPattern name = statementPattern("v", "name", ex("name"));
+		PlannerStatistics statistics = new PlannerStatistics(List.of(follows, uValues, vValues, name),
+				List.of(uValues, vValues, follows, name));
+
+		QueryRoot root = new QueryRoot(new Join(new Join(new Join(uValues, vValues), follows), name));
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(flattenJoinLeaves(root.getArg()))
+				.as("Planner orders still need the same BindingSetAssignment positioning as fallback orders")
+				.containsExactly(uValues, vValues, follows, name);
+	}
+
+	@Test
+	public void optimizePassesDeferredFilterConstraintsToPlannerForFilteredPrefixChoice() {
+		StatementPattern pValue = statementPattern("result", "p", ex("pValue"));
+		StatementPattern effectSize = statementPattern("result", "effect", ex("effectSize"));
+		Filter significantResultFilter = filter(new Join(pValue, effectSize), "p", "effect");
+		StatementPattern cheapA = statementPattern("cheap", "mid", ex("cheapA"));
+		StatementPattern cheapB = statementPattern("mid", "leaf", ex("cheapB"));
+		PlannerStatistics statistics = new PlannerStatistics(List.of(pValue, effectSize, cheapA, cheapB),
+				List.of(cheapA, cheapB, pValue, effectSize));
+
+		QueryRoot root = new QueryRoot(new Join(new Join(cheapA, cheapB), significantResultFilter));
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(statistics.planCalls)
+				.as("QueryJoinOptimizer should call the planner for the whole original segment")
+				.isEqualTo(1);
+		assertThat(statistics.filterConstraints)
+				.as("Deferred filters should participate in planner-side prefix selection")
+				.singleElement()
+				.satisfies(filter -> {
+					assertThat(filter.getRequiredVars()).containsExactlyInAnyOrder("p", "effect");
+					assertThat(filter.getConditionCost()).isZero();
+				});
+		List<TupleExpr> outerLeaves = flattenJoinLeaves(root.getArg());
+		assertThat(outerLeaves.get(0)).isInstanceOf(Filter.class);
+		assertThat(predicates(flattenJoinLeaves(((Filter) outerLeaves.get(0)).getArg())))
+				.containsExactly(ex("pValue"), ex("effectSize"));
+		assertThat(predicates(outerLeaves.subList(1, outerLeaves.size())))
+				.containsExactly(ex("cheapA"), ex("cheapB"));
+	}
+
+	@Test
+	public void optimizeKeepsDeferredFilterOnSmallestCompatibleWindow() {
+		StatementPattern pValue = statementPattern("result", "p", ex("pValue"));
+		StatementPattern effectSize = statementPattern("result", "effect", ex("effectSize"));
+		Filter significantResultFilter = filter(new Join(pValue, effectSize), "p", "effect");
+		StatementPattern cheapA = statementPattern("cheap", "mid", ex("cheapA"));
+		StatementPattern cheapB = statementPattern("mid", "leaf", ex("cheapB"));
+
+		QueryRoot root = new QueryRoot(new Join(new Join(significantResultFilter, cheapA), cheapB));
+		new QueryJoinOptimizer(
+				new ParsedQueryPairwiseJoinStatistics(Map.of(
+						pairKey(ex("cheapA"), ex("cheapB")), 1.0d,
+						pairKey(ex("pValue"), ex("effectSize")), 100.0d)),
+				new EmptyTripleSource()).optimize(root, null, null);
+
+		Filter filter = firstFilter(root);
+		assertThat(predicates(flattenJoinLeaves(filter.getArg())))
+				.as("Deferred filters should wrap the smallest compatible window from their original subtree")
+				.containsExactlyInAnyOrder(ex("pValue"), ex("effectSize"));
+	}
+
+	@Test
+	public void optimizeAttachesLocalDeferredFilterByPatternIdentity() {
+		StatementPattern local = statementPattern("metric", "value", ex("localMetric"));
+		StatementPattern partner = statementPattern("metric", "other", ex("partnerMetric"));
+		Filter localFilter = new Filter(new Join(local, partner),
+				new Compare(Var.of("value"), Var.of("value"), CompareOp.NE));
+		StatementPattern sameBindings = statementPattern("otherMetric", "value", ex("sameBindingsMetric"));
+		PlannerStatistics statistics = new PlannerStatistics(List.of(sameBindings, local, partner),
+				List.of(local, partner, sameBindings));
+
+		QueryRoot root = new QueryRoot(new Join(localFilter, sameBindings));
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+		Filter filter = firstFilter(root);
+		assertThat(getPredicateValue(filter.getArg()))
+				.as("A local deferred filter must attach to its original StatementPattern identity")
+				.isEqualTo(ex("localMetric"));
+	}
+
+	@Test
+	public void optimizedTelemetryIncludesExpectedFilterSelectivityFromStatistics() {
+		StatementPattern pattern = statementPattern("result", "value", ex("measuredValue"));
+		Filter filter = filter(pattern, "value", "target");
+		QueryRoot root = new QueryRoot(filter);
+
+		new QueryJoinOptimizer(new FilterSelectivityStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(root.getArg(), null,
+				Explanation.Level.Telemetry);
+		root.getArg().visit(converter);
+		String telemetry = converter.getGenericPlanNode().toString();
+
+		assertThat(telemetry)
+				.contains(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO + "=0.25")
+				.contains(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE + "=heuristic");
+	}
+
+	@Test
 	public void optimizeSchedulesDeferredExistsByCorrelatedVarsAndOrdersFiltersByCost() {
 		StatementPattern encounter = statementPattern("patient", "enc", ex("hasEncounter"));
 		StatementPattern observation = statementPattern("enc", "obs", ex("hasObservation"));
@@ -571,6 +702,26 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		assertThat(leadingPrefixPredicates(root.getArg(), 2))
 				.as("A newly unlocked cheap filter should be able to overcome a slightly cheaper connected alternative")
+				.containsExactlyInAnyOrder(ex("pA"), ex("pB"));
+	}
+
+	@Test
+	public void optimizeTreatsKnownZeroPassFilterAsSelectiveForGreedyPrefix() {
+		StatementPattern a = statementPattern("s", "a", ex("pA"));
+		StatementPattern b = statementPattern("a", "b", ex("pB"));
+		Filter filteredPair = filter(new Join(a, b), "s", "b");
+		StatementPattern c = statementPattern("c", "x", ex("pC"));
+		StatementPattern x = statementPattern("x", "y", ex("pX"));
+
+		QueryRoot root = new QueryRoot(new Join(new Join(filteredPair, c), x));
+		new QueryJoinOptimizer(
+				new ZeroPassFilterStatistics(Map.of(
+						pairKey(ex("pA"), ex("pB")), 1000.0d,
+						pairKey(ex("pC"), ex("pX")), 1.0d)),
+				new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(leadingPrefixPredicates(root.getArg(), 2))
+				.as("A learned zero-pass filter should be able to drive greedy cost to zero")
 				.containsExactlyInAnyOrder(ex("pA"), ex("pB"));
 	}
 
@@ -745,6 +896,19 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		return nodes;
 	}
 
+	private static Filter firstFilter(QueryModelNode root) {
+		List<Filter> filters = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) throws RuntimeException {
+				filters.add(filter);
+				super.meet(filter);
+			}
+		});
+		assertThat(filters).isNotEmpty();
+		return filters.get(0);
+	}
+
 	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
 		Class<?> joinVisitorClass = Class
 				.forName("org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer$JoinVisitor");
@@ -781,6 +945,14 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	private static Filter filter(TupleExpr arg, String leftVarName, String rightVarName) {
 		return new Filter(arg, new Compare(Var.of(leftVarName), Var.of(rightVarName), CompareOp.NE));
+	}
+
+	private static BindingSetAssignment bindingSetAssignment(String varName, String localName) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		bindingSet.addBinding(varName, VF.createIRI(ex(localName)));
+		assignment.setBindingSets(List.<BindingSet>of(bindingSet));
+		return assignment;
 	}
 
 	private static String getPredicateValue(TupleExpr expr) {
@@ -833,6 +1005,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	private static final class PairwiseJoinStatistics extends EvaluationStatistics {
 		@Override
 		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public boolean supportsFilterSelectivityCosting() {
 			return true;
 		}
 
@@ -926,11 +1103,107 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			return super.getCardinality(expr);
 		}
 
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			if (filter.getCondition() instanceof Compare) {
+				return new FilterPassEstimate(0.25d, FilterPassEstimate.Source.HEURISTIC);
+			}
+			return new FilterPassEstimate(-1.0d, FilterPassEstimate.Source.UNKNOWN);
+		}
+
 		private String predicate(TupleExpr expr) {
 			if (expr instanceof StatementPattern) {
 				return getPredicateValue(expr);
 			}
 			return null;
+		}
+	}
+
+	private static final class PlannerStatistics extends EvaluationStatistics implements JoinOrderPlanner {
+		private final List<TupleExpr> orderedArgs;
+		private final List<TupleExpr> expectedArgs;
+		private List<JoinOrderPlanner.FilterConstraint> filterConstraints = List.of();
+		private int planCalls;
+
+		private PlannerStatistics(List<TupleExpr> orderedArgs) {
+			this(orderedArgs, List.of(orderedArgs.get(2), orderedArgs.get(1), orderedArgs.get(0)));
+		}
+
+		private PlannerStatistics(List<TupleExpr> orderedArgs, List<TupleExpr> expectedArgs) {
+			this.orderedArgs = orderedArgs;
+			this.expectedArgs = expectedArgs;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			return 10.0d;
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			planCalls++;
+			assertThat(args).containsExactlyElementsOf(expectedArgs);
+			return Optional.of(new JoinOrderPlan(orderedArgs, 1.0d, 1.0d));
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+			filterConstraints = List.copyOf(deferredFilters);
+			return planJoinOrder(args, initiallyBoundVars, algorithm);
+		}
+	}
+
+	private static final class ZeroPassFilterStatistics extends EvaluationStatistics {
+		private final Map<String, Double> joinCosts;
+
+		private ZeroPassFilterStatistics(Map<String, Double> joinCosts) {
+			this.joinCosts = joinCosts;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public boolean supportsFilterSelectivityCosting() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Join) {
+				Join join = (Join) expr;
+				String left = tupleExprKey(join.getLeftArg());
+				String right = tupleExprKey(join.getRightArg());
+				if (left != null && right != null) {
+					return joinCosts.getOrDefault(pairKey(left, right), 1000.0d);
+				}
+				return 1000.0d;
+			}
+			if (expr instanceof StatementPattern) {
+				return 10.0d;
+			}
+			return super.getCardinality(expr);
+		}
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			return new FilterPassEstimate(0.0d, FilterPassEstimate.Source.LEARNED_FILTER);
+		}
+	}
+
+	private static final class FilterSelectivityStatistics extends EvaluationStatistics {
+		@Override
+		public double estimateFilterPassRatio(Filter filter) {
+			return 0.25d;
 		}
 	}
 

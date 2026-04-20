@@ -51,6 +51,22 @@ public interface JoinStatsProvider {
 	}
 
 	/**
+	 * Returns the number of observed outcomes for a specific filter condition and pattern key, or a negative value when
+	 * unavailable.
+	 */
+	default long getFilterObservationCount(PatternKey key, String filterKey) {
+		return -1L;
+	}
+
+	/**
+	 * Returns the number of observed outcomes for all filters seen on a pattern key, or a negative value when
+	 * unavailable.
+	 */
+	default long getPatternObservationCount(PatternKey key) {
+		return -1L;
+	}
+
+	/**
 	 * Seeds statistics for the given key. Implementations may also invalidate or refresh existing entries if the
 	 * supplied default cardinality has drifted significantly from the stored baseline.
 	 */

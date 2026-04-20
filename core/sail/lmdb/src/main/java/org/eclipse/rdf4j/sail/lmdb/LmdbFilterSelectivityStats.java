@@ -137,6 +137,18 @@ class LmdbFilterSelectivityStats
 	}
 
 	@Override
+	public synchronized long getFilterObservationCount(PatternKey key, String filterKey) {
+		LearnedCounts counts = learnedByFilter.get(new PatternFilterKey(key, filterKey));
+		return counts == null ? -1L : counts.total();
+	}
+
+	@Override
+	public synchronized long getPatternObservationCount(PatternKey key) {
+		LearnedCounts counts = learnedByPattern.get(key);
+		return counts == null ? -1L : counts.total();
+	}
+
+	@Override
 	public synchronized void seedIfAbsent(PatternKey key, double defaultCardinality, long priorCalls) {
 		// not used for filter selectivity
 	}
@@ -159,32 +171,38 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public double estimateFilterPassRatio(Filter filter, StatementPattern pattern) {
+		return estimateFilterPass(filter, pattern).getPassRatio();
+	}
+
+	@Override
+	public SketchBasedJoinEstimator.PatternFilterSampleEstimate estimateFilterPass(Filter filter,
+			StatementPattern pattern) {
 		PatternFilterKey key = samplingKey(filter, pattern);
 		if (key == null) {
-			return -1.0d;
+			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
 		synchronized (this) {
 			SampledPassRatio cached = sampledByFilter.get(key);
 			if (cached != null) {
-				return cached.passRatio;
+				return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(cached.passRatio, cached.sampleSize);
 			}
 		}
 
 		if (!supportsSampling(filter, pattern)) {
-			return -1.0d;
+			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
 		SampledPassRatio sampled = sampleFilterPassRatio(filter, pattern);
 		if (sampled == null || !isValidPassRatio(sampled.passRatio)) {
-			return -1.0d;
+			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
 		synchronized (this) {
 			sampledByFilter.put(key, sampled);
 			dirty = true;
 		}
-		return sampled.passRatio;
+		return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
 	}
 
 	synchronized void persistIfDirty() {

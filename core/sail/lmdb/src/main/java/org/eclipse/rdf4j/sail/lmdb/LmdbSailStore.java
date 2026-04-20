@@ -93,7 +93,8 @@ class LmdbSailStore implements SailStore {
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
 			SketchBasedJoinEstimator.Config.defaults()
 					.withThrottleEveryN(1024 * 1024)
-					.withThrottleMillis(2));
+					.withThrottleMillis(2)
+					.withEstimateCacheSeconds(60));
 	private LmdbFilterSelectivityStats filterSelectivityStats;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
