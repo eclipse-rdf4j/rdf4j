@@ -53,6 +53,8 @@ public class ElasticsearchStoreFactoryTest {
 		config.setClusterName("elasticsearch");
 		config.setIndex("index1");
 		config.setPort(9300);
+		config.setSlowQueryLogThresholdSeconds(15L);
+		config.setSlowQueryLogFile("elasticsearch-slow.log");
 
 		ElasticsearchStore sail = (ElasticsearchStore) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -63,6 +65,8 @@ public class ElasticsearchStoreFactoryTest {
 		assertThat(sail.getHostname()).isEqualTo(config.getHostname());
 		assertThat(sail.getIndex()).isEqualTo(config.getIndex());
 		assertThat(sail.getPort()).isEqualTo(config.getPort());
+		assertThat(sail.getSlowQueryLogThresholdSeconds()).isEqualTo(config.getSlowQueryLogThresholdSeconds());
+		assertThat(sail.getSlowQueryLogFile()).isEqualTo(config.getSlowQueryLogFile());
 
 	}
 

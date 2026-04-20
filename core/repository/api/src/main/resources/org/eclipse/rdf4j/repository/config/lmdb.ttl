@@ -17,6 +17,10 @@
          config:sail.type "rdf4j:LmdbStore" ;
          config:sail.iterationCacheSyncThreshold {%Query Iteration Cache sync threshold|2097152%} ; # If each value is 128 bytes, this is 256 MB
          # @workbench.field len=16
+         config:sail.slowQueryLogThresholdSeconds "{%Slow query log threshold (seconds)|0%}" ;
+         # @workbench.field len=16
+         config:sail.slowQueryLogFile "{%Slow query log file|%}" ;
+         # @workbench.field len=48
          lmdb:tripleIndexes "{%Triple indexes|spoc,posc,ospc%}" ;
          # @workbench.field len=16
          lmdb:bulkOperationSize {%Bulk operation size|256%} ;
