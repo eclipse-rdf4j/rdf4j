@@ -324,32 +324,6 @@ public class ThemeQueryBenchmark {
 		return new File(STORE_DIRECTORY, "complete");
 	}
 
-	private void configureBenchmarkEstimatorProperties() {
-//		previousEstimatorNominalEntries = System.getProperty(ESTIMATOR_NOMINAL_ENTRIES_PROPERTY);
-//		if (previousEstimatorNominalEntries == null) {
-//			System.setProperty(ESTIMATOR_NOMINAL_ENTRIES_PROPERTY, BENCHMARK_ESTIMATOR_NOMINAL_ENTRIES);
-//		}
-//		previousEstimatorSketchK = System.getProperty(ESTIMATOR_SKETCH_K_PROPERTY);
-//		if (previousEstimatorSketchK == null) {
-//			System.setProperty(ESTIMATOR_SKETCH_K_PROPERTY, BENCHMARK_ESTIMATOR_SKETCH_K);
-//		}
-	}
-
-	private void restoreBenchmarkEstimatorProperties() {
-//		if (previousEstimatorNominalEntries == null) {
-//			System.clearProperty(ESTIMATOR_NOMINAL_ENTRIES_PROPERTY);
-//		} else {
-//			System.setProperty(ESTIMATOR_NOMINAL_ENTRIES_PROPERTY, previousEstimatorNominalEntries);
-//		}
-//		previousEstimatorNominalEntries = null;
-//		if (previousEstimatorSketchK == null) {
-//			System.clearProperty(ESTIMATOR_SKETCH_K_PROPERTY);
-//		} else {
-//			System.setProperty(ESTIMATOR_SKETCH_K_PROPERTY, previousEstimatorSketchK);
-//		}
-//		previousEstimatorSketchK = null;
-	}
-
 	private void captureQueryPlanSnapshot() throws IOException {
 		var benchmarkQuery = ThemeQueryCatalog.benchmarkQueryFor(theme, z_queryIndex);
 		var featureFlags = new FeatureFlagCollector()
@@ -489,25 +463,25 @@ public class ThemeQueryBenchmark {
 
 //		if(true) throw new IllegalStateException();
 
-		System.out.println("=== Explanation for theme " + themeName + " and query index " + z_queryIndex + " ===");
-		System.out.println("Query:\n" + query);
-		System.out.println();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE,
-					Values.iri("http://example.com/theme/library/Copy"))) {
-				System.out.println("Count of statements with rdf:type http://example.com/theme/library/Copy: "
-						+ statements.stream().count());
-			}
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (RepositoryResult<Statement> statements = connection.getStatements(null,
-					Values.iri("http://example.com/theme/library/locatedAt"), null)) {
-				System.out.println("Count of statements with http://example.com/theme/library/locatedAt: "
-						+ statements.stream().count());
-			}
-		}
+//		System.out.println("=== Explanation for theme " + themeName + " and query index " + z_queryIndex + " ===");
+//		System.out.println("Query:\n" + query);
+//		System.out.println();
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			try (RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE,
+//					Values.iri("http://example.com/theme/library/Copy"))) {
+//				System.out.println("Count of statements with rdf:type http://example.com/theme/library/Copy: "
+//						+ statements.stream().count());
+//			}
+//		}
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			try (RepositoryResult<Statement> statements = connection.getStatements(null,
+//					Values.iri("http://example.com/theme/library/locatedAt"), null)) {
+//				System.out.println("Count of statements with http://example.com/theme/library/locatedAt: "
+//						+ statements.stream().count());
+//			}
+//		}
 
 		try {
 //			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = false;
@@ -524,12 +498,23 @@ public class ThemeQueryBenchmark {
 //			}
 //			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
 			try (var connection = repository.getConnection()) {
-				System.out.println("=== Explanation with join reordering enabled ===");
+				System.out.println("=== Explanation Optimized ===");
 				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 				System.out.println(explain);
 				System.out.println();
 				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println("=== Rendered optimized TupleExpr with join reordering enabled ===");
+				System.out.println("=== Rendered Optimized TupleExpr ===");
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+
+			}
+			try (var connection = repository.getConnection()) {
+				System.out.println("=== Explanation Telemetry ===");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				System.out.println(explain);
+				System.out.println();
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println("=== Rendered Telemetry TupleExpr ===");
 				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
 				System.out.println();
 				System.out.println();
