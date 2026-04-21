@@ -169,7 +169,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor());
+		QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope();
+		try {
+			tupleExpr.visit(new JoinVisitor());
+		} finally {
+			scope.close();
+		}
+	}
+
+	private QueryOptimizationScopeProvider.QueryOptimizationScope beginQueryOptimizationScope() {
+		if (statistics instanceof QueryOptimizationScopeProvider) {
+			return ((QueryOptimizationScopeProvider) statistics).beginQueryOptimizationScope();
+		}
+		return QueryOptimizationScopeProvider.NO_OP_SCOPE;
 	}
 
 	/**

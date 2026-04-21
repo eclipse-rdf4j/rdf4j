@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
@@ -293,6 +295,44 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"VALUES-bound clique planning should use direct lookup work rows instead of sketch intersections");
 		assertEquals(userPairs, plan.get().getOrderedArgs().get(0));
 		assertEquals(u3Values, plan.get().getOrderedArgs().get(1));
+	}
+
+	@Test
+	void optimizationScopeCachesReadinessScan() {
+		StubSailStore store = new StubSailStore();
+		IRI predicate = VF.createIRI("urn:p");
+		store.add(VF.createStatement(VF.createIRI("urn:s"), predicate, VF.createIRI("urn:o")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			assertTrue(estimator.isReady());
+			assertTrue(estimator.isReady());
+			assertTrue(estimator.isReady());
+
+			assertEquals(1, estimator.scopedReadinessScansForTesting(),
+					"Readiness should scan active sketch groups once per stable optimization scope");
+		}
+	}
+
+	@Test
+	void optimizationScopeReusesJoinOrderingSketchIntersectionCache() {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), config());
+		SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache unscopedLeft = estimator
+				.newJoinOrderingSketchIntersectionCache();
+		SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache unscopedRight = estimator
+				.newJoinOrderingSketchIntersectionCache();
+		assertNotSame(unscopedLeft, unscopedRight);
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache scopedLeft = estimator
+					.newJoinOrderingSketchIntersectionCache();
+			SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache scopedRight = estimator
+					.newJoinOrderingSketchIntersectionCache();
+
+			assertSame(scopedLeft, scopedRight,
+					"Join-order transitions in one optimization should share the sketch-intersection memo");
+		}
 	}
 
 	@Test

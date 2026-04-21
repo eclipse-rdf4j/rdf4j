@@ -23,7 +23,12 @@ final class FilterSelectivityTelemetry {
 	}
 
 	static void annotate(Filter filter, EvaluationStatistics statistics) {
-		if (statistics == null) {
+		if (filter == null || statistics == null) {
+			return;
+		}
+		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+		if (isValidPassRatio(passRatio)) {
+			annotate(filter, statistics, null);
 			return;
 		}
 		annotate(filter, statistics, statistics.estimateFilterPass(filter));
@@ -35,8 +40,12 @@ final class FilterSelectivityTelemetry {
 			return;
 		}
 
-		double passRatio = estimate == null ? -1.0d : estimate.getPassRatio();
-		String source = estimate == null ? null : estimate.getSource().name().toLowerCase();
+		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+		String source = filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
+		if (!isValidPassRatio(passRatio)) {
+			passRatio = estimate == null ? -1.0d : estimate.getPassRatio();
+			source = estimate == null ? null : estimate.getSource().name().toLowerCase();
+		}
 		if (!isValidPassRatio(passRatio)) {
 			double cardinalityPassRatio = estimateCardinalityPassRatio(filter, statistics);
 			if (isValidPassRatio(cardinalityPassRatio)) {

@@ -102,6 +102,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKey
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
@@ -166,7 +167,7 @@ import org.slf4j.LoggerFactory;
  * }
  * </pre>
  */
-public class SketchBasedJoinEstimator {
+public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider {
 
 	public static final String REFRESH_THREAD_NAME = "RdfJoinEstimator-Refresh";
 
@@ -1751,6 +1752,7 @@ public class SketchBasedJoinEstimator {
 	private final Object mappedChannelLock = new Object();
 	private final CacheDirectory cacheDirectory = new CacheDirectory();
 	private final ResidentLru residentLru = new ResidentLru();
+	private final ThreadLocal<OptimizationScopeState> optimizationScope = new ThreadLocal<>();
 	private int cacheDirectoryMetadataVersion = -1;
 	private int residentLruMetadataVersion = -1;
 	private final MemoryRegistry memoryRegistry;
@@ -1957,7 +1959,61 @@ public class SketchBasedJoinEstimator {
 
 	/* --------------------------------------------------------------------- */
 
+	@Override
+	public QueryOptimizationScope beginQueryOptimizationScope() {
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			scope = new OptimizationScopeState();
+			optimizationScope.set(scope);
+		}
+		scope.depth++;
+		OptimizationScopeState openedScope = scope;
+		return new QueryOptimizationScope() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (closed) {
+					return;
+				}
+				closed = true;
+				openedScope.depth--;
+				if (openedScope.depth <= 0) {
+					optimizationScope.remove();
+				}
+			}
+		};
+	}
+
 	public boolean isReady() {
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return isReadyUnscoped(null);
+		}
+		long epoch = rebuildEpoch.get();
+		boolean rebuildRequiredNow = rebuildRequired.get();
+		boolean sketchesLoadedNow = sketchesLoaded;
+		if (scope.readyKnown && scope.readyEpoch == epoch && scope.readyRebuildRequired == rebuildRequiredNow
+				&& scope.readySketchesLoaded == sketchesLoadedNow) {
+			return scope.ready;
+		}
+		boolean ready = isReadyUnscoped(scope);
+		if (rebuildEpoch.get() == epoch) {
+			scope.readyEpoch = epoch;
+			scope.readyRebuildRequired = rebuildRequired.get();
+			scope.readySketchesLoaded = sketchesLoaded;
+			scope.ready = ready;
+			scope.readyKnown = true;
+		}
+		return ready;
+	}
+
+	int scopedReadinessScansForTesting() {
+		OptimizationScopeState scope = optimizationScope.get();
+		return scope == null ? 0 : scope.readinessScans;
+	}
+
+	private boolean isReadyUnscoped(OptimizationScopeState scope) {
 		if (rebuildRequired.get()) {
 			return false;
 		}
@@ -1975,6 +2031,9 @@ public class SketchBasedJoinEstimator {
 		flushPendingIncremental();
 		State snap = current;
 		synchronized (snap) {
+			if (scope != null) {
+				scope.readinessScans++;
+			}
 			return hasRequiredActiveSketchGroups(snap);
 		}
 	}
@@ -4567,10 +4626,15 @@ public class SketchBasedJoinEstimator {
 	}
 
 	JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
-		return estimateJoinStep(left, right);
+		return distinctCountJoinStepForJoinOrdering(left, right);
 	}
 
 	JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
+		return distinctCountJoinStepForJoinOrdering(left, right);
+	}
+
+	JoinStepEstimate exactJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
 		return estimateJoinStep(left, right, sketchIntersectionCache);
 	}
@@ -4672,7 +4736,8 @@ public class SketchBasedJoinEstimator {
 	}
 
 	JoinOrderingSketchIntersectionCache newJoinOrderingSketchIntersectionCache() {
-		return new JoinOrderingSketchIntersectionCache();
+		OptimizationScopeState scope = optimizationScope.get();
+		return scope == null ? new JoinOrderingSketchIntersectionCache() : scope.sketchIntersectionCache;
 	}
 
 	private double normalizeRows(double rows) {
@@ -4709,6 +4774,7 @@ public class SketchBasedJoinEstimator {
 		private final double outputRows;
 		private final double localFilterMultiplier;
 		private final Map<String, VarPlanStats> varStats;
+		private final Set<String> joinVars;
 
 		private TuplePlanEstimate(double baseRows, double outputRows, double localFilterMultiplier,
 				Map<String, VarPlanStats> varStats) {
@@ -4716,6 +4782,7 @@ public class SketchBasedJoinEstimator {
 			this.outputRows = outputRows;
 			this.localFilterMultiplier = localFilterMultiplier;
 			this.varStats = Collections.unmodifiableMap(new HashMap<>(varStats));
+			this.joinVars = Set.copyOf(this.varStats.keySet());
 		}
 
 		double outputRows() {
@@ -4731,7 +4798,7 @@ public class SketchBasedJoinEstimator {
 		}
 
 		Set<String> joinVars() {
-			return Set.copyOf(varStats.keySet());
+			return joinVars;
 		}
 
 		double distinct(String varName) {
@@ -4779,6 +4846,77 @@ public class SketchBasedJoinEstimator {
 		private SketchIntersectionResult intersect(Sketch left, Sketch right) {
 			return intersections.computeIfAbsent(new SketchPairKey(left, right),
 					ignored -> intersectJoinOrderingSketches(left, right));
+		}
+	}
+
+	private static final class OptimizationScopeState {
+		private int depth;
+		private long readyEpoch;
+		private boolean readyKnown;
+		private boolean ready;
+		private boolean readyRebuildRequired;
+		private boolean readySketchesLoaded;
+		private int readinessScans;
+		private final JoinOrderingSketchIntersectionCache sketchIntersectionCache = new JoinOrderingSketchIntersectionCache();
+		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
+		private final Map<AccessShapeCacheKey, AccessShape> accessShapeCache = new HashMap<>();
+	}
+
+	private static final class TuplePlanEstimateCacheKey {
+		private final TupleExpr tupleExpr;
+		private final Set<String> boundVars;
+		private final int hashCode;
+
+		private TuplePlanEstimateCacheKey(TupleExpr tupleExpr, Set<String> boundVars) {
+			this.tupleExpr = Objects.requireNonNull(tupleExpr, "tupleExpr");
+			this.boundVars = boundVars == null || boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
+			this.hashCode = 31 * System.identityHashCode(tupleExpr) + this.boundVars.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof TuplePlanEstimateCacheKey)) {
+				return false;
+			}
+			TuplePlanEstimateCacheKey that = (TuplePlanEstimateCacheKey) other;
+			return tupleExpr == that.tupleExpr && boundVars.equals(that.boundVars);
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+	}
+
+	private static final class AccessShapeCacheKey {
+		private final TupleExpr tupleExpr;
+		private final Set<String> boundVars;
+		private final int hashCode;
+
+		private AccessShapeCacheKey(TupleExpr tupleExpr, Set<String> boundVars) {
+			this.tupleExpr = Objects.requireNonNull(tupleExpr, "tupleExpr");
+			this.boundVars = boundVars == null || boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
+			this.hashCode = 31 * System.identityHashCode(tupleExpr) + this.boundVars.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof AccessShapeCacheKey)) {
+				return false;
+			}
+			AccessShapeCacheKey that = (AccessShapeCacheKey) other;
+			return tupleExpr == that.tupleExpr && boundVars.equals(that.boundVars);
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
 		}
 	}
 
@@ -5017,6 +5155,24 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
+		if (tupleExpr == null) {
+			return null;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return computeTupleExprPlan(tupleExpr, initiallyBoundVars);
+		}
+		TuplePlanEstimateCacheKey key = new TuplePlanEstimateCacheKey(tupleExpr, initiallyBoundVars);
+		Optional<TuplePlanEstimate> cached = scope.tupleEstimateCache.get(key);
+		if (cached != null) {
+			return cached.orElse(null);
+		}
+		TuplePlanEstimate estimate = computeTupleExprPlan(tupleExpr, key.boundVars);
+		scope.tupleEstimateCache.put(key, Optional.ofNullable(estimate));
+		return estimate;
+	}
+
+	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
 		if (tupleExpr == null) {
 			return null;
 		}
@@ -5826,17 +5982,31 @@ public class SketchBasedJoinEstimator {
 	}
 
 	public AccessShape accessShapeForJoinOrdering(TupleExpr tupleExpr, Set<String> currentlyBoundVars) {
+		if (tupleExpr == null) {
+			return null;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return computeAccessShapeForJoinOrdering(tupleExpr,
+					currentlyBoundVars == null ? Collections.emptySet() : currentlyBoundVars);
+		}
+		AccessShapeCacheKey key = new AccessShapeCacheKey(tupleExpr, currentlyBoundVars);
+		return scope.accessShapeCache.computeIfAbsent(key,
+				ignored -> computeAccessShapeForJoinOrdering(tupleExpr, key.boundVars));
+	}
+
+	private AccessShape computeAccessShapeForJoinOrdering(TupleExpr tupleExpr, Set<String> currentlyBoundVars) {
 		if (tupleExpr instanceof StatementPattern) {
 			return buildAccessShape((StatementPattern) tupleExpr, currentlyBoundVars, 1.0d, Set.of());
 		}
 		if (tupleExpr instanceof Filter) {
-			return accessShapeForJoinOrdering((Filter) tupleExpr, currentlyBoundVars);
+			return computeAccessShapeForJoinOrdering((Filter) tupleExpr, currentlyBoundVars);
 		}
 		return null;
 	}
 
-	private AccessShape accessShapeForJoinOrdering(Filter filter, Set<String> currentlyBoundVars) {
-		AccessShape accessShape = accessShapeForJoinOrdering(filter.getArg(), currentlyBoundVars);
+	private AccessShape computeAccessShapeForJoinOrdering(Filter filter, Set<String> currentlyBoundVars) {
+		AccessShape accessShape = computeAccessShapeForJoinOrdering(filter.getArg(), currentlyBoundVars);
 		if (accessShape == null) {
 			return null;
 		}

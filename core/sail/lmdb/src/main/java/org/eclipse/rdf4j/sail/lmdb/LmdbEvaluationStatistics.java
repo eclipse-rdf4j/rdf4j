@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKey
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
@@ -47,7 +48,9 @@ import org.slf4j.LoggerFactory;
 /**
  *
  */
-class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrderPlanner, JoinFactorCostModel {
+class LmdbEvaluationStatistics
+		extends EvaluationStatistics
+		implements JoinOrderPlanner, JoinFactorCostModel, QueryOptimizationScopeProvider {
 
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
@@ -101,6 +104,11 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 	@Override
 	public boolean supportsFilterSelectivityCosting() {
 		return true;
+	}
+
+	@Override
+	public QueryOptimizationScope beginQueryOptimizationScope() {
+		return sketchBasedJoinEstimator.beginQueryOptimizationScope();
 	}
 
 	@Override

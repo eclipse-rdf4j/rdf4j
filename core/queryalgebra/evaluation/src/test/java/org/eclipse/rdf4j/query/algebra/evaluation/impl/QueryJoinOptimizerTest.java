@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -74,6 +75,34 @@ import org.junit.jupiter.api.Test;
 public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	public void optimizerOpensOneStatisticsOptimizationScope() {
+		ScopedStatistics statistics = new ScopedStatistics();
+		QueryRoot root = new QueryRoot(new Join(
+				statementPattern("s", "o1", ex("pA")),
+				statementPattern("s", "o2", ex("pB"))));
+
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertEquals(1, statistics.openedScopes);
+		assertEquals(1, statistics.closedScopes);
+		assertEquals(0, statistics.activeScopes);
+		assertTrue(statistics.cardinalityCalls > 0, "Expected optimizer to use statistics inside the opened scope");
+	}
+
+	@Test
+	public void filterTelemetryUsesPlannedPassRatioWithoutCardinalityFallback() {
+		CardinalityCountingStatistics statistics = new CardinalityCountingStatistics();
+		Filter filter = filter(statementPattern("s", "o", ex("pA")), "s", "o");
+		filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, 0.25d);
+
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(new QueryRoot(filter), null, null);
+
+		assertEquals(0, statistics.filterCardinalityCalls,
+				"Existing planned filter pass ratio should avoid recursive full filter cardinality estimation");
+		assertEquals(0.25d, filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO), 0.0d);
+	}
 
 	@Test
 	public void testBindingSetAssignmentOptimization() throws RDF4JException {
@@ -1347,6 +1376,42 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				}
 			}
 			return null;
+		}
+	}
+
+	private static final class ScopedStatistics extends EvaluationStatistics implements QueryOptimizationScopeProvider {
+		private int openedScopes;
+		private int closedScopes;
+		private int activeScopes;
+		private int cardinalityCalls;
+
+		@Override
+		public QueryOptimizationScope beginQueryOptimizationScope() {
+			openedScopes++;
+			activeScopes++;
+			return () -> {
+				closedScopes++;
+				activeScopes--;
+			};
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			cardinalityCalls++;
+			assertTrue(activeScopes > 0, "Cardinality estimation should run inside the optimization scope");
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class CardinalityCountingStatistics extends EvaluationStatistics {
+		private int filterCardinalityCalls;
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Filter) {
+				filterCardinalityCalls++;
+			}
+			return super.getCardinality(expr);
 		}
 	}
 

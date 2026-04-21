@@ -165,19 +165,20 @@ final class SketchJoinOrderPlanner {
 			if (estimate == null) {
 				return new FactorBuildResult(List.of(), unsupportedPath(tupleExpr), tupleExpr);
 			}
-			if (estimate.joinVars().isEmpty() || estimate.joinVars().size() > 2) {
+			Set<String> joinVars = estimate.joinVars();
+			if (joinVars.isEmpty() || joinVars.size() > 2) {
 				return new FactorBuildResult(List.of(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
 						tupleExpr);
 			}
-			providedVars.addAll(estimate.joinVars());
-			pendingFactors.add(new PendingPlanFactor(i, tupleExpr, estimate));
+			providedVars.addAll(joinVars);
+			pendingFactors.add(new PendingPlanFactor(i, tupleExpr, estimate, joinVars));
 		}
 		List<PlanFactor> builtFactors = new ArrayList<>(pendingFactors.size());
 		for (PendingPlanFactor pending : pendingFactors) {
-			Set<String> connectivityVars = connectivityVars(pending.tupleExpr(), pending.estimate().joinVars(),
+			Set<String> connectivityVars = connectivityVars(pending.tupleExpr(), pending.joinVars(),
 					providedVars);
 			builtFactors.add(new PlanFactor(pending.index(), pending.tupleExpr(), pending.estimate(),
-					connectivityVars, Set.copyOf(pending.tupleExpr().getBindingNames())));
+					pending.joinVars(), connectivityVars, Set.copyOf(pending.tupleExpr().getBindingNames())));
 		}
 		return new FactorBuildResult(List.copyOf(builtFactors), null, null);
 	}
@@ -549,6 +550,10 @@ final class SketchJoinOrderPlanner {
 				candidate, currentBoundVars);
 		if (boundLookupStep != null) {
 			return capSmallValuesAnchoredLookup(mask, prefixEstimate, candidate, boundLookupStep);
+		}
+		if (isBindingSetAssignment(candidate) || containsNonSmallBindingSetAssignment(mask)) {
+			return estimator.exactJoinStepForJoinOrdering(prefixEstimate, factors.get(candidate).estimate(),
+					sketchIntersectionCache);
 		}
 		SketchBasedJoinEstimator.JoinStepEstimate step = estimator.estimateJoinStepForJoinOrdering(prefixEstimate,
 				factors.get(candidate).estimate(),
@@ -1120,12 +1125,25 @@ final class SketchJoinOrderPlanner {
 
 	private boolean isSmallBindingSetAssignment(int factorIndex) {
 		PlanFactor factor = factors.get(factorIndex);
-		if (!(factor.tupleExpr() instanceof BindingSetAssignment)) {
+		if (!isBindingSetAssignment(factorIndex)) {
 			return false;
 		}
 		double outputRows = factor.estimate().outputRows();
 		return Double.isFinite(outputRows) && outputRows >= 0.0d
 				&& outputRows <= SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS;
+	}
+
+	private boolean isBindingSetAssignment(int factorIndex) {
+		return factors.get(factorIndex).tupleExpr() instanceof BindingSetAssignment;
+	}
+
+	private boolean containsNonSmallBindingSetAssignment(long mask) {
+		for (int i = 0; i < factors.size(); i++) {
+			if (contains(mask, i) && isBindingSetAssignment(i) && !isSmallBindingSetAssignment(i)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private double newlyUnlockedFilterScoreRatio(long previousMask, long nextMask) {
@@ -1481,20 +1499,18 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private record PendingPlanFactor(int index, TupleExpr tupleExpr,
-			SketchBasedJoinEstimator.TuplePlanEstimate estimate) {
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate,
+			Set<String> joinVars) {
 	}
 
 	private record PlanFactor(int index, TupleExpr tupleExpr, SketchBasedJoinEstimator.TuplePlanEstimate estimate,
-			Set<String> connectivityVars, Set<String> bindingVars) {
+			Set<String> joinVars, Set<String> connectivityVars, Set<String> bindingVars) {
 		private PlanFactor {
 			Objects.requireNonNull(tupleExpr, "tupleExpr");
 			Objects.requireNonNull(estimate, "estimate");
+			Objects.requireNonNull(joinVars, "joinVars");
 			Objects.requireNonNull(connectivityVars, "connectivityVars");
 			Objects.requireNonNull(bindingVars, "bindingVars");
-		}
-
-		Set<String> joinVars() {
-			return estimate.joinVars();
 		}
 
 		int arity() {
