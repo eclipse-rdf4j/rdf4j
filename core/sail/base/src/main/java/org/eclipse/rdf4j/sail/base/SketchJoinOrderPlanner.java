@@ -202,8 +202,16 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private SketchBasedJoinEstimator.SketchPlannerPath classifyGraph() {
-		int physicalComponents = physicalComponentCount();
-		if (physicalComponents > 1 && !isConnectedWithDeferredFilters()) {
+		List<Set<Integer>> physicalComponents = physicalComponents();
+		int requiredPhysicalComponents = 0;
+		Set<Integer> requiredFactors = new LinkedHashSet<>();
+		for (Set<Integer> component : physicalComponents) {
+			if (!isIgnorableSmallBindingSetAssignmentComponent(component)) {
+				requiredPhysicalComponents++;
+				requiredFactors.addAll(component);
+			}
+		}
+		if (requiredPhysicalComponents > 1 && !isConnectedWithDeferredFilters(requiredFactors)) {
 			return SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE;
 		}
 		int edgeCount = 0;
@@ -212,30 +220,32 @@ final class SketchJoinOrderPlanner {
 			edgeCount += factor.arity();
 			variables.addAll(factor.connectivityVars());
 		}
-		boolean cyclicOrDense = edgeCount != factors.size() + variables.size() - physicalComponents;
-		recordDebug("graph classification: physicalComponents=" + physicalComponents + " variables="
+		boolean cyclicOrDense = edgeCount != factors.size() + variables.size() - physicalComponents.size();
+		recordDebug("graph classification: physicalComponents=" + physicalComponents.size()
+				+ " requiredPhysicalComponents=" + requiredPhysicalComponents + " variables="
 				+ new TreeSet<>(variables) + " edgeCount=" + edgeCount + " cyclicOrDense=" + cyclicOrDense);
 		return null;
 	}
 
-	private int physicalComponentCount() {
+	private List<Set<Integer>> physicalComponents() {
 		Set<Integer> seenFactors = new LinkedHashSet<>();
-		int components = 0;
+		List<Set<Integer>> components = new ArrayList<>();
 		for (int i = 0; i < factors.size(); i++) {
 			if (seenFactors.contains(i)) {
 				continue;
 			}
-			components++;
-			visitPhysicalComponent(i, seenFactors);
+			components.add(physicalComponent(i, seenFactors));
 		}
-		return components;
+		return List.copyOf(components);
 	}
 
-	private void visitPhysicalComponent(int startFactor, Set<Integer> seenFactors) {
+	private Set<Integer> physicalComponent(int startFactor, Set<Integer> seenFactors) {
+		Set<Integer> component = new LinkedHashSet<>();
 		Set<String> seenVariables = new LinkedHashSet<>();
 		ArrayDeque<Object> queue = new ArrayDeque<>();
 		queue.add(Integer.valueOf(startFactor));
 		seenFactors.add(startFactor);
+		component.add(startFactor);
 		while (!queue.isEmpty()) {
 			Object next = queue.removeFirst();
 			if (next instanceof Integer factorIndex) {
@@ -250,18 +260,36 @@ final class SketchJoinOrderPlanner {
 			for (int i = 0; i < factors.size(); i++) {
 				if (!seenFactors.contains(i) && factors.get(i).connectivityVars().contains(variable)) {
 					seenFactors.add(i);
+					component.add(i);
 					queue.addLast(Integer.valueOf(i));
 				}
 			}
 		}
+		return Set.copyOf(component);
 	}
 
-	private boolean isConnectedWithDeferredFilters() {
+	private boolean isIgnorableSmallBindingSetAssignmentComponent(Set<Integer> component) {
+		if (component.isEmpty()) {
+			return false;
+		}
+		for (Integer factorIndex : component) {
+			if (!isSmallBindingSetAssignment(factorIndex.intValue())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean isConnectedWithDeferredFilters(Set<Integer> requiredFactors) {
+		if (requiredFactors.isEmpty()) {
+			return true;
+		}
 		Set<Integer> seenFactors = new LinkedHashSet<>();
 		Set<String> seenVariables = new LinkedHashSet<>();
 		ArrayDeque<Object> queue = new ArrayDeque<>();
-		queue.add(Integer.valueOf(0));
-		seenFactors.add(0);
+		Integer startFactor = requiredFactors.iterator().next();
+		queue.add(startFactor);
+		seenFactors.add(startFactor);
 		while (!queue.isEmpty()) {
 			Object next = queue.removeFirst();
 			if (next instanceof Integer factorIndex) {
@@ -285,7 +313,7 @@ final class SketchJoinOrderPlanner {
 				}
 			}
 		}
-		return seenFactors.size() == factors.size();
+		return seenFactors.containsAll(requiredFactors);
 	}
 
 	private List<String> deferredFilterVariablesConnectedTo(String variable) {
@@ -642,7 +670,8 @@ final class SketchJoinOrderPlanner {
 		if (!sharedVariables.isEmpty()) {
 			return sharedVariables.size() == 1 ? sharedVariables.iterator().next() : "shared:" + sharedVariables;
 		}
-		if (mask != 0L && isSmallBindingSetAssignment(candidateIndex)) {
+		if (mask != 0L && isSmallBindingSetAssignment(candidateIndex)
+				&& !hasReachableNonSmallCandidate(mask, candidateIndex)) {
 			return "small-values-anchor";
 		}
 		if (isSmallBindingSetOnlyMask(mask)) {
@@ -653,6 +682,19 @@ final class SketchJoinOrderPlanner {
 			return filterConnection;
 		}
 		return null;
+	}
+
+	private boolean hasReachableNonSmallCandidate(long mask, int ignoredCandidateIndex) {
+		for (int i = 0; i < factors.size(); i++) {
+			if (i == ignoredCandidateIndex || contains(mask, i) || isSmallBindingSetAssignment(i)) {
+				continue;
+			}
+			if (!sharedVariables(mask, i).isEmpty() || deferredFilterConnection(mask, i) != null
+					|| isSmallBindingSetOnlyMask(mask)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean isSmallBindingSetOnlyMask(long mask) {

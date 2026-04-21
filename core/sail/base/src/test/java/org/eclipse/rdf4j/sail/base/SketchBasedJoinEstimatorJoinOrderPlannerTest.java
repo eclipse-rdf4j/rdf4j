@@ -366,7 +366,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void planJoinOrderHandlesDisconnectedBindingAssignmentAlongsideConnectedChain() {
+	void planJoinOrderSupportsDisconnectedSmallBindingAssignmentAlongsideConnectedChain() {
 		StubSailStore store = new StubSailStore();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
 		IRI patientType = VF.createIRI("urn:Patient");
@@ -408,17 +408,25 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		Optional<JoinOrderPlanner.JoinOrderPlan> greedyPlan = estimator.planJoinOrder(args, Set.of(),
 				JoinOrderPlanner.Algorithm.GREEDY);
-		assertTrue(greedyPlan.isEmpty(),
-				"Disconnected binding assignments should now fall back through Optional.empty()");
-		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE, estimator.lastJoinOrderPlannerPath(),
-				"Disconnected binding assignments should report an unsupported planner shape");
+		assertTrue(greedyPlan.isPresent(),
+				"Small disconnected binding assignments should not make the connected graph unsupported");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
+				"Small disconnected binding assignments should stay on the robust planner path");
+		assertEquals(bindings, greedyPlan.get().getOrderedArgs().get(greedyPlan.get().getOrderedArgs().size() - 1),
+				"Small disconnected binding assignments should be appended after the connected graph");
 
 		Optional<JoinOrderPlanner.JoinOrderPlan> dynamicProgrammingPlan = estimator.planJoinOrder(args, Set.of(),
 				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
-		assertTrue(dynamicProgrammingPlan.isEmpty(),
-				"Disconnected binding assignments should now fall back through Optional.empty()");
-		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE, estimator.lastJoinOrderPlannerPath(),
-				"Disconnected binding assignments should report an unsupported planner shape");
+		assertTrue(dynamicProgrammingPlan.isPresent(),
+				"Small disconnected binding assignments should not make the connected graph unsupported");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
+				"Small disconnected binding assignments should stay on the robust planner path");
+		assertEquals(bindings,
+				dynamicProgrammingPlan.get()
+						.getOrderedArgs()
+						.get(dynamicProgrammingPlan.get().getOrderedArgs().size()
+								- 1),
+				"Small disconnected binding assignments should be appended after the connected graph");
 	}
 
 	@Test
