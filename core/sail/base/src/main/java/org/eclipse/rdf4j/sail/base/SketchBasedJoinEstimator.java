@@ -1776,6 +1776,8 @@ public class SketchBasedJoinEstimator {
 	private static final int PARALLEL_INGEST_MIN_BATCH_SIZE = INCREMENTAL_BATCH_SIZE;
 	private static final int PARALLEL_INGEST_MAX_BATCH_SIZE = INCREMENTAL_BATCH_SIZE * 2;
 	private static final int REBUILD_BATCH_SIZE = PARALLEL_INGEST_MAX_BATCH_SIZE;
+	private static final int BOUNDED_REBUILD_BUDGET_CHECK_INTERVAL = 1024;
+	private static final long BULK_REBUILD_WITH_PERSISTENCE_MIN_HEAP_BYTES = 16L * 1024L * 1024L * 1024L;
 	private final Object incrementalBufferLock = new Object();
 	private final Object asyncIncrementalDrainLock = new Object();
 	private final BlockingQueue<IngestEvent[]> asyncIncrementalBatches = new ArrayBlockingQueue<>(
@@ -2734,6 +2736,10 @@ public class SketchBasedJoinEstimator {
 		if (batchSize == 0) {
 			return;
 		}
+		if (shouldUseBoundedPersistenceRebuild()) {
+			ingestBoundedRebuildBatch(state, batch, batchSize);
+			return;
+		}
 		if (batchSize < PARALLEL_INGEST_MIN_BATCH_SIZE) {
 			for (int i = 0; i < batchSize; i++) {
 				IngestEvent event = batch[i];
@@ -2759,6 +2765,29 @@ public class SketchBasedJoinEstimator {
 		} catch (ExecutionException e) {
 			throw new RuntimeException("Failed to rebuild join-estimator sketches", e.getCause());
 		}
+	}
+
+	private boolean shouldUseBoundedPersistenceRebuild() {
+		if (persistenceBlobBaseFile == null) {
+			return false;
+		}
+		Runtime runtime = Runtime.getRuntime();
+		long maxHeap = runtime.maxMemory();
+		return maxHeap < BULK_REBUILD_WITH_PERSISTENCE_MIN_HEAP_BYTES
+				|| availableHeapHeadroomBytes() < BULK_REBUILD_WITH_PERSISTENCE_MIN_HEAP_BYTES / 2;
+	}
+
+	private void ingestBoundedRebuildBatch(State state, IngestEvent[] batch, int batchSize) {
+		for (int i = 0; i < batchSize; i++) {
+			IngestEvent event = batch[i];
+			if (event != null) {
+				applyBoundedRebuildIngestEvent(state, event);
+			}
+			if ((i + 1) % BOUNDED_REBUILD_BUDGET_CHECK_INTERVAL == 0) {
+				enforceSketchBudget();
+			}
+		}
+		enforceSketchBudget();
 	}
 
 	private void applyRebuildPartition(State state, IngestEvent[] batch, int batchSize, IngestPartition partition) {
@@ -2892,6 +2921,63 @@ public class SketchBasedJoinEstimator {
 					event.thetaHp);
 			break;
 		}
+	}
+
+	private void applyBoundedRebuildIngestEvent(State state, IngestEvent event) {
+		applyBoundedRebuildSingleUpdates(state, event);
+		applyBoundedRebuildPair(state, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
+				event.thetaHc);
+		applyBoundedRebuildPair(state, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
+				event.thetaHc);
+		applyBoundedRebuildPair(state, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
+				event.thetaHo);
+		applyBoundedRebuildPair(state, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
+				event.thetaHc);
+		applyBoundedRebuildPair(state, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
+				event.thetaHo);
+		applyBoundedRebuildPair(state, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
+				event.thetaHp);
+	}
+
+	private void applyBoundedRebuildSingleUpdates(State state, IngestEvent event) {
+		boolean isDelete = event.isDelete;
+		int si = event.si;
+		int pi = event.pi;
+		int oi = event.oi;
+		int ci = event.ci;
+		long thetaHs = event.thetaHs;
+		long thetaHp = event.thetaHp;
+		long thetaHo = event.thetaHo;
+		long thetaHc = event.thetaHc;
+		long thetaSig = event.thetaSig;
+
+		updateSingleSketchRaw(state, isDelete, Component.S, si, thetaSig);
+		updateSingleSketchRaw(state, isDelete, Component.P, pi, thetaSig);
+		updateSingleSketchRaw(state, isDelete, Component.O, oi, thetaSig);
+		updateSingleSketchRaw(state, isDelete, Component.C, ci, thetaSig);
+
+		updateComplementSketchRaw(state, isDelete, Component.S, Component.P, si, thetaHp);
+		updateComplementSketchRaw(state, isDelete, Component.S, Component.O, si, thetaHo);
+		updateComplementSketchRaw(state, isDelete, Component.S, Component.C, si, thetaHc);
+
+		updateComplementSketchRaw(state, isDelete, Component.P, Component.S, pi, thetaHs);
+		updateComplementSketchRaw(state, isDelete, Component.P, Component.O, pi, thetaHo);
+		updateComplementSketchRaw(state, isDelete, Component.P, Component.C, pi, thetaHc);
+
+		updateComplementSketchRaw(state, isDelete, Component.O, Component.S, oi, thetaHs);
+		updateComplementSketchRaw(state, isDelete, Component.O, Component.P, oi, thetaHp);
+		updateComplementSketchRaw(state, isDelete, Component.O, Component.C, oi, thetaHc);
+
+		updateComplementSketchRaw(state, isDelete, Component.C, Component.S, ci, thetaHs);
+		updateComplementSketchRaw(state, isDelete, Component.C, Component.P, ci, thetaHp);
+		updateComplementSketchRaw(state, isDelete, Component.C, Component.O, ci, thetaHo);
+	}
+
+	private void applyBoundedRebuildPair(State state, Pair pair, boolean isDelete, long key, long triple, long comp1,
+			long comp2) {
+		updatePairSketchRaw(state, isDelete, pair, REC_PAIR_TRIPLE, key, triple);
+		updatePairSketchRaw(state, isDelete, pair, REC_PAIR_COMP1, key, comp1);
+		updatePairSketchRaw(state, isDelete, pair, REC_PAIR_COMP2, key, comp2);
 	}
 
 	private void applyRebuildSingleUpdates(State state, IngestEvent event) {
@@ -4266,7 +4352,36 @@ public class SketchBasedJoinEstimator {
 				|| current instanceof Slice) {
 			current = ((UnaryTupleOperator) current).getArg();
 		}
-		return current instanceof StatementPattern || current instanceof BindingSetAssignment;
+		if (current instanceof StatementPattern || current instanceof BindingSetAssignment) {
+			return true;
+		}
+		if (current instanceof Join) {
+			Join join = (Join) current;
+			return isSmallBindingSetAssignmentLookupJoin(join.getLeftArg(), join.getRightArg())
+					|| isSmallBindingSetAssignmentLookupJoin(join.getRightArg(), join.getLeftArg());
+		}
+		return false;
+	}
+
+	private boolean isSmallBindingSetAssignmentLookupJoin(TupleExpr assignmentArg, TupleExpr lookupArg) {
+		return assignmentArg instanceof BindingSetAssignment
+				&& lookupArg instanceof StatementPattern
+				&& isSmallBindingSetAssignment((BindingSetAssignment) assignmentArg);
+	}
+
+	private boolean isSmallBindingSetAssignment(BindingSetAssignment assignment) {
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets == null) {
+			return true;
+		}
+		double rows = 0.0d;
+		for (BindingSet ignored : bindingSets) {
+			rows++;
+			if (rows > SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private TuplePlanEstimate estimatePatternTupleExprPlan(PatternEstimateInput input) {
@@ -4384,6 +4499,11 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right) {
+		return estimateJoinStep(left, right, null);
+	}
+
+	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
 		if (left.outputRows <= 0.0d || right.baseRows <= 0.0d) {
 			return new JoinStepEstimate(0.0d, 0.0d, Collections.emptyMap());
 		}
@@ -4397,7 +4517,7 @@ public class SketchBasedJoinEstimator {
 				continue;
 			}
 			SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, entry.getValue(),
-					rightStats, disconnectedRows);
+					rightStats, disconnectedRows, sketchIntersectionCache);
 			if (shared.rows == 0.0d && left.localFilterMultiplier == 1.0d && right.localFilterMultiplier == 1.0d
 					&& entry.getValue().pattern != null && rightStats.pattern != null) {
 				Double exactJoinRows = zeroIntersectionFallbackJoinRows(entry.getValue().pattern, rightStats.pattern,
@@ -4450,6 +4570,52 @@ public class SketchBasedJoinEstimator {
 		return estimateJoinStep(left, right);
 	}
 
+	JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
+		return estimateJoinStep(left, right, sketchIntersectionCache);
+	}
+
+	JoinStepEstimate boundLookupJoinStepForJoinOrdering(TuplePlanEstimate prefix, TuplePlanEstimate right,
+			double workRows) {
+		double outputRows = normalizeRows(prefix.outputRows);
+		Map<String, VarPlanStats> mergedStats = new HashMap<>(prefix.varStats);
+		for (Map.Entry<String, VarPlanStats> entry : right.varStats.entrySet()) {
+			mergedStats.putIfAbsent(entry.getKey(),
+					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), null,
+							entry.getValue().pattern));
+		}
+		return new JoinStepEstimate(outputRows, normalizeRows(workRows), mergedStats);
+	}
+
+	JoinStepEstimate joinStepWithOutputRowsForJoinOrdering(TuplePlanEstimate prefix, TuplePlanEstimate right,
+			double outputRows, double workRows) {
+		double rows = normalizeRows(outputRows);
+		Map<String, VarPlanStats> mergedStats = new HashMap<>();
+		for (Map.Entry<String, VarPlanStats> entry : prefix.varStats.entrySet()) {
+			VarPlanStats stats = entry.getValue();
+			mergedStats.put(entry.getKey(), new VarPlanStats(clampDistinct(stats.distinct, rows), null,
+					stats.pattern));
+		}
+		for (Map.Entry<String, VarPlanStats> entry : right.varStats.entrySet()) {
+			if (mergedStats.containsKey(entry.getKey())) {
+				continue;
+			}
+			VarPlanStats stats = entry.getValue();
+			mergedStats.put(entry.getKey(), new VarPlanStats(clampDistinct(stats.distinct, rows), null,
+					stats.pattern));
+		}
+		return new JoinStepEstimate(rows, normalizeRows(workRows), mergedStats);
+	}
+
+	JoinStepEstimate distinctCountJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
+		return estimateJoinStep(withoutSketches(left), withoutSketches(right));
+	}
+
+	private TuplePlanEstimate withoutSketches(TuplePlanEstimate estimate) {
+		return new TuplePlanEstimate(estimate.baseRows, estimate.outputRows, estimate.localFilterMultiplier,
+				clampVarStatsToRows(estimate.varStats, estimate.outputRows, false));
+	}
+
 	TuplePlanEstimate joinedPlanEstimate(JoinStepEstimate step) {
 		return new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
 	}
@@ -4470,15 +4636,16 @@ public class SketchBasedJoinEstimator {
 	}
 
 	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
-			VarPlanStats rightStats, double disconnectedRows) {
+			VarPlanStats rightStats, double disconnectedRows,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
 		double leftDistinct = Math.max(1.0d, leftStats.distinct);
 		double rightDistinct = Math.max(1.0d, rightStats.distinct);
 		if (leftStats.sketch != null && rightStats.sketch != null) {
-			Intersection ix = SetOperation.builder().buildIntersection();
-			ix.intersect(leftStats.sketch);
-			ix.intersect(rightStats.sketch);
-			Sketch intersection = ix.getResult();
-			double distinct = Math.max(0.0d, intersection.getEstimate());
+			SketchIntersectionResult intersectionResult = sketchIntersectionCache == null
+					? intersectJoinOrderingSketches(leftStats.sketch, rightStats.sketch)
+					: sketchIntersectionCache.intersect(leftStats.sketch, rightStats.sketch);
+			Sketch intersection = intersectionResult.sketch;
+			double distinct = Math.min(intersectionResult.distinct, Math.min(leftDistinct, rightDistinct));
 			if (distinct == 0.0d) {
 				return new SharedVarEstimate(0.0d, 0.0d, intersection);
 			}
@@ -4494,6 +4661,18 @@ public class SketchBasedJoinEstimator {
 		rows = rows / Math.max(leftDistinct, rightDistinct);
 		rows = Math.min(rows, disconnectedRows);
 		return new SharedVarEstimate(normalizeRows(rows), Math.min(leftDistinct, rightDistinct), null);
+	}
+
+	private static SketchIntersectionResult intersectJoinOrderingSketches(Sketch left, Sketch right) {
+		Intersection ix = SetOperation.builder().buildIntersection();
+		ix.intersect(left);
+		ix.intersect(right);
+		Sketch intersection = ix.getResult();
+		return new SketchIntersectionResult(Math.max(0.0d, intersection.getEstimate()), intersection);
+	}
+
+	JoinOrderingSketchIntersectionCache newJoinOrderingSketchIntersectionCache() {
+		return new JoinOrderingSketchIntersectionCache();
 	}
 
 	private double normalizeRows(double rows) {
@@ -4555,6 +4734,11 @@ public class SketchBasedJoinEstimator {
 			return Set.copyOf(varStats.keySet());
 		}
 
+		double distinct(String varName) {
+			VarPlanStats stats = varStats.get(varName);
+			return stats == null ? 0.0d : stats.distinct;
+		}
+
 		String summary() {
 			return "baseRows=" + baseRows + ", outputRows=" + outputRows + ", filterMultiplier="
 					+ localFilterMultiplier + ", joinVars=" + summarizeVarStats(varStats);
@@ -4586,6 +4770,54 @@ public class SketchBasedJoinEstimator {
 			this.rows = rows;
 			this.distinct = distinct;
 			this.sketch = sketch;
+		}
+	}
+
+	static final class JoinOrderingSketchIntersectionCache {
+		private final Map<SketchPairKey, SketchIntersectionResult> intersections = new HashMap<>();
+
+		private SketchIntersectionResult intersect(Sketch left, Sketch right) {
+			return intersections.computeIfAbsent(new SketchPairKey(left, right),
+					ignored -> intersectJoinOrderingSketches(left, right));
+		}
+	}
+
+	private static final class SketchIntersectionResult {
+		private final double distinct;
+		private final Sketch sketch;
+
+		private SketchIntersectionResult(double distinct, Sketch sketch) {
+			this.distinct = distinct;
+			this.sketch = sketch;
+		}
+	}
+
+	private static final class SketchPairKey {
+		private final Sketch left;
+		private final Sketch right;
+		private final int hashCode;
+
+		private SketchPairKey(Sketch left, Sketch right) {
+			this.left = left;
+			this.right = right;
+			this.hashCode = System.identityHashCode(left) ^ System.identityHashCode(right);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof SketchPairKey)) {
+				return false;
+			}
+			SketchPairKey that = (SketchPairKey) other;
+			return left == that.left && right == that.right || left == that.right && right == that.left;
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
 		}
 	}
 
@@ -4867,7 +5099,7 @@ public class SketchBasedJoinEstimator {
 		TupleExpr otherArg = leftAssignment ? rightArg : leftArg;
 		Set<String> sharedNames = new HashSet<>(assignment.getBindingNames());
 		sharedNames.retainAll(otherArg.getBindingNames());
-		if (sharedNames.size() <= 1) {
+		if (sharedNames.isEmpty() || !isSmallBindingSetAssignment(assignment)) {
 			return null;
 		}
 
@@ -4952,12 +5184,85 @@ public class SketchBasedJoinEstimator {
 
 	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
 		if (tupleExpr instanceof StatementPattern) {
-			Double exactRows = exactBoundStatementPatternRows((StatementPattern) tupleExpr);
-			if (exactRows != null) {
-				return new TuplePlanEstimate(exactRows, exactRows, 1.0d, Collections.emptyMap());
+			TuplePlanEstimate exactPlan = exactBoundStatementPatternPlan((StatementPattern) tupleExpr);
+			if (exactPlan != null) {
+				return exactPlan;
 			}
 		}
 		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars);
+	}
+
+	private TuplePlanEstimate exactBoundStatementPatternPlan(StatementPattern pattern) {
+		if (boundComponentCount(pattern) < 2) {
+			return null;
+		}
+		if (hasIncompatibleBoundResource(pattern.getSubjectVar())
+				|| hasIncompatibleBoundPredicate(pattern.getPredicateVar())
+				|| hasIncompatibleBoundResource(pattern.getContextVar())) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+
+		Resource subject = exactBoundResource(pattern.getSubjectVar());
+		IRI predicate = exactBoundIri(pattern.getPredicateVar());
+		Value object = exactBoundValue(pattern.getObjectVar());
+		Resource[] contexts = exactBoundContexts(pattern.getContextVar());
+		if (contexts == null) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+
+		double rows = 0.0d;
+		Map<String, Set<Value>> distinctValues = new HashMap<>();
+		try (SailDataset dataset = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
+				CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, predicate, object,
+						contexts)) {
+			while (statements.hasNext()) {
+				Statement statement = statements.next();
+				if (!statementMatchesPatternVariableEqualities(pattern, statement)) {
+					continue;
+				}
+				rows++;
+				if (rows > zeroIntersectionRowBudget) {
+					return null;
+				}
+				collectExactPatternVarValues(pattern, statement, distinctValues);
+			}
+		} catch (SailException e) {
+			logger.debug("Falling back from exact bound pattern lookup for {}", pattern, e);
+			return null;
+		}
+
+		rows = normalizeRows(rows);
+		Map<String, VarPlanStats> varStats = new HashMap<>();
+		for (Map.Entry<String, Set<Value>> entry : distinctValues.entrySet()) {
+			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue().size(), rows), null,
+					pattern));
+		}
+		return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
+	}
+
+	private int boundComponentCount(StatementPattern pattern) {
+		int count = 0;
+		for (Component component : COMPONENT_VALUES) {
+			Var var = varForComponent(pattern, component);
+			if (hasBoundValue(var)) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private void collectExactPatternVarValues(StatementPattern pattern, Statement statement,
+			Map<String, Set<Value>> distinctValues) {
+		for (Component component : COMPONENT_VALUES) {
+			Var var = varForComponent(pattern, component);
+			if (var == null || var.hasValue() || var.getName() == null) {
+				continue;
+			}
+			Value value = statementValue(statement, component);
+			if (value != null) {
+				distinctValues.computeIfAbsent(var.getName(), ignored -> new HashSet<>()).add(value);
+			}
+		}
 	}
 
 	private Double exactBoundStatementPatternRows(StatementPattern pattern) {

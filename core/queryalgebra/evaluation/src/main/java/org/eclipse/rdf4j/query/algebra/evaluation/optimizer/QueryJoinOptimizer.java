@@ -19,6 +19,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,30 +29,42 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -72,6 +85,7 @@ import org.slf4j.LoggerFactory;
 public class QueryJoinOptimizer implements QueryOptimizer {
 
 	private static final Logger log = LoggerFactory.getLogger(QueryJoinOptimizer.class);
+	private static final int SMALL_LITERAL_FILTER_ANCHOR_LIMIT = 16;
 	/**
 	 * When deciding if merge join is the correct approach we will compare the cardinality of the two join arguments, if
 	 * one is bigger than the other by a factor of MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER then we will not use
@@ -167,6 +181,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
 		private final Map<TupleExpr, Double> plannedPrefixRowsByRightArg = new IdentityHashMap<>();
+		private int suppressedSmallLiteralFilterAnchors;
 
 		protected JoinVisitor() {
 			super(trackResultSize);
@@ -184,6 +199,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 
+			if (suppressedSmallLiteralFilterAnchors == 0) {
+				addFilterSemijoinAnchor(node);
+			}
 			node.getArg().visit(this);
 			annotateFilterSelectivity(node);
 
@@ -213,6 +231,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Difference difference) {
+			TupleExpr replacement = rewriteRedundantPatternMinusFilter(difference);
+			if (replacement != null) {
+				replacement.visit(this);
+				return;
+			}
+
+			difference.getLeftArg().visit(this);
+			try {
+				suppressedSmallLiteralFilterAnchors++;
+				difference.getRightArg().visit(this);
+			} finally {
+				suppressedSmallLiteralFilterAnchors--;
+			}
+		}
+
+		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
 			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
 		}
@@ -226,6 +261,97 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} finally {
 				boundVars = saveBoundVars;
 			}
+		}
+
+		private TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {
+			if (!(difference.getRightArg() instanceof Filter)) {
+				return null;
+			}
+
+			Filter rightFilter = (Filter) difference.getRightArg();
+			if (!(rightFilter.getArg() instanceof StatementPattern)) {
+				return null;
+			}
+
+			StatementPattern rightPattern = (StatementPattern) rightFilter.getArg();
+			Set<String> conditionVars = VarNameCollector.process(rightFilter.getCondition());
+			if (!rightPattern.getBindingNames().containsAll(conditionVars)
+					|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
+					|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
+					|| !containsEquivalentRequiredPattern(difference.getLeftArg(), rightPattern)) {
+				return null;
+			}
+
+			Filter replacement = new Filter(difference.getLeftArg().clone(),
+					new Not(rightFilter.getCondition().clone()));
+			difference.replaceWith(replacement);
+			return replacement;
+		}
+
+		private boolean containsEquivalentRequiredPattern(TupleExpr tupleExpr, StatementPattern expectedPattern) {
+			if (tupleExpr instanceof StatementPattern) {
+				return sameStatementPattern((StatementPattern) tupleExpr, expectedPattern);
+			}
+			if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
+				return containsEquivalentRequiredPattern(join.getLeftArg(), expectedPattern)
+						|| containsEquivalentRequiredPattern(join.getRightArg(), expectedPattern);
+			}
+			if (tupleExpr instanceof LeftJoin) {
+				return containsEquivalentRequiredPattern(((LeftJoin) tupleExpr).getLeftArg(), expectedPattern);
+			}
+			if (tupleExpr instanceof Difference) {
+				return containsEquivalentRequiredPattern(((Difference) tupleExpr).getLeftArg(), expectedPattern);
+			}
+			if (tupleExpr instanceof UnaryTupleOperator) {
+				return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
+			}
+			return false;
+		}
+
+		private boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
+			return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
+					&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
+					&& samePatternVar(left.getObjectVar(), right.getObjectVar())
+					&& samePatternVar(left.getContextVar(), right.getContextVar());
+		}
+
+		private boolean samePatternVar(Var left, Var right) {
+			if (left == null || right == null) {
+				return left == right;
+			}
+			if (left.hasValue() || right.hasValue()) {
+				return left.hasValue() && right.hasValue() && left.getValue().equals(right.getValue());
+			}
+			return left.getName() != null && left.getName().equals(right.getName());
+		}
+
+		private boolean isSafeTotalMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {
+			if (condition instanceof And) {
+				And and = (And) condition;
+				return isSafeTotalMinusLocalCondition(and.getLeftArg(), assuredConditionVars)
+						&& isSafeTotalMinusLocalCondition(and.getRightArg(), assuredConditionVars);
+			}
+			if (condition instanceof FunctionCall) {
+				FunctionCall functionCall = (FunctionCall) condition;
+				return FN.CONTAINS.stringValue().equals(functionCall.getURI()) && functionCall.getArgs().size() == 2
+						&& isSafeStringExpression(functionCall.getArgs().get(0), assuredConditionVars)
+						&& isSafeStringExpression(functionCall.getArgs().get(1), assuredConditionVars);
+			}
+			return false;
+		}
+
+		private boolean isSafeStringExpression(ValueExpr expression, Set<String> assuredConditionVars) {
+			if (expression instanceof Str) {
+				ValueExpr arg = ((Str) expression).getArg();
+				return arg instanceof Var && assuredConditionVars.contains(((Var) arg).getName());
+			}
+			if (expression instanceof ValueConstant) {
+				Value value = ((ValueConstant) expression).getValue();
+				return value instanceof Literal && !((Literal) value).getLanguage().isPresent()
+						&& XMLSchema.STRING.equals(((Literal) value).getDatatype());
+			}
+			return false;
 		}
 
 		@Override
@@ -420,6 +546,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<DeferredFilter> deferredFilters = buildDeferredFilters(collectedJoinArgs.deferredFilters,
 					scopeBindingNames);
+			if (suppressedSmallLiteralFilterAnchors == 0) {
+				addSmallLiteralFilterAnchors(rawPlanItems, deferredFilters);
+			}
 			assignDeferredFilters(rawPlanItems, deferredFilters, orderedJoinPlan.rootDeferredFilters, outerBoundVars);
 
 			for (Object rawPlanItem : rawPlanItems) {
@@ -438,6 +567,216 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return orderedJoinPlan;
+		}
+
+		private void addSmallLiteralFilterAnchors(List<Object> rawPlanItems, List<DeferredFilter> deferredFilters) {
+			if (deferredFilters.isEmpty()) {
+				return;
+			}
+			for (DeferredFilter deferredFilter : deferredFilters) {
+				BindingSetAssignment anchor = smallLiteralFilterAnchor(deferredFilter.condition);
+				if (anchor == null) {
+					continue;
+				}
+				String bindingName = anchor.getBindingNames().iterator().next();
+				RawJoinSegment segment = findAnchorSegment(rawPlanItems, deferredFilter, bindingName);
+				if (segment == null || segment.boundBeforeSegment.contains(bindingName)
+						|| (!isEmptyBindingSetAssignment(anchor) && !segmentMustBind(segment, bindingName))
+						|| segmentHasBindingSetAssignment(segment, bindingName)) {
+					continue;
+				}
+				int insertionIndex = anchorInsertionIndex(segment, deferredFilter, bindingName);
+				segment.joinArgs.add(insertionIndex, anchor);
+				segment.bindingNames.add(bindingName);
+			}
+		}
+
+		private BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition) {
+			if (condition instanceof ListMemberOperator) {
+				List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
+				if (arguments.isEmpty() || !(arguments.get(0) instanceof Var)) {
+					return null;
+				}
+
+				Var filterVar = (Var) arguments.get(0);
+				String bindingName = filterVar.getName();
+				if (bindingName == null || filterVar.hasValue()) {
+					return null;
+				}
+
+				LinkedHashSet<Value> values = new LinkedHashSet<>();
+				for (int i = 1; i < arguments.size(); i++) {
+					ValueExpr argument = arguments.get(i);
+					if (!(argument instanceof ValueConstant)) {
+						return null;
+					}
+					Value value = ((ValueConstant) argument).getValue();
+					if (!isSafeValuesAnchorValue(value)) {
+						return null;
+					}
+					values.add(value);
+				}
+				return smallLiteralFilterAnchor(bindingName, values);
+			}
+			if (condition instanceof Compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
+				Compare compare = (Compare) condition;
+				return smallLiteralFilterAnchor(compare.getLeftArg(), compare.getRightArg());
+			}
+			if (condition instanceof SameTerm) {
+				SameTerm sameTerm = (SameTerm) condition;
+				return smallLiteralFilterAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
+			}
+			return null;
+		}
+
+		private BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg) {
+			if (leftArg instanceof Var && rightArg instanceof ValueConstant) {
+				return smallLiteralFilterAnchor((Var) leftArg, (ValueConstant) rightArg);
+			}
+			if (rightArg instanceof Var && leftArg instanceof ValueConstant) {
+				return smallLiteralFilterAnchor((Var) rightArg, (ValueConstant) leftArg);
+			}
+			return null;
+		}
+
+		private BindingSetAssignment smallLiteralFilterAnchor(Var filterVar, ValueConstant valueConstant) {
+			String bindingName = filterVar.getName();
+			if (bindingName == null || filterVar.hasValue()) {
+				return null;
+			}
+			Value value = valueConstant.getValue();
+			if (!isSafeValuesAnchorValue(value)) {
+				return null;
+			}
+			LinkedHashSet<Value> values = new LinkedHashSet<>();
+			values.add(value);
+			return smallLiteralFilterAnchor(bindingName, values);
+		}
+
+		private BindingSetAssignment smallLiteralFilterAnchor(String bindingName, LinkedHashSet<Value> values) {
+			if (values.size() > SMALL_LITERAL_FILTER_ANCHOR_LIMIT) {
+				return null;
+			}
+
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			assignment.setBindingNames(Set.of(bindingName));
+			List<BindingSet> bindingSets = new ArrayList<>(values.size());
+			for (Value value : values) {
+				QueryBindingSet bindingSet = new QueryBindingSet();
+				bindingSet.addBinding(bindingName, value);
+				bindingSets.add(bindingSet);
+			}
+			assignment.setBindingSets(bindingSets);
+			return assignment;
+		}
+
+		private boolean isSafeValuesAnchorValue(Value value) {
+			return value != null && isValuesExpressible(value) && !isUnsafeCoreInEqualityValue(value);
+		}
+
+		private boolean isEmptyBindingSetAssignment(BindingSetAssignment assignment) {
+			return !assignment.getBindingSets().iterator().hasNext();
+		}
+
+		private void addFilterSemijoinAnchor(Filter filter) {
+			BindingSetAssignment anchor = smallLiteralFilterAnchor(filter.getCondition());
+			if (anchor == null) {
+				return;
+			}
+			String bindingName = anchor.getBindingNames().iterator().next();
+			TupleExpr arg = filter.getArg();
+			if ((!isEmptyBindingSetAssignment(anchor) && !arg.getAssuredBindingNames().contains(bindingName))
+					|| containsBindingSetAssignment(arg, bindingName)) {
+				return;
+			}
+			filter.setArg(new Join(arg, anchor));
+		}
+
+		private boolean containsBindingSetAssignment(TupleExpr tupleExpr, String bindingName) {
+			boolean[] found = new boolean[1];
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(BindingSetAssignment node) {
+					found[0] |= node.getBindingNames().contains(bindingName);
+				}
+			});
+			return found[0];
+		}
+
+		private boolean isValuesExpressible(Value value) {
+			return value instanceof IRI || value instanceof Literal;
+		}
+
+		private boolean isUnsafeCoreInEqualityValue(Value value) {
+			if (!(value instanceof Literal)) {
+				return false;
+			}
+			IRI datatype = ((Literal) value).getDatatype();
+			return XMLDatatypeUtil.isNumericDatatype(datatype)
+					|| XMLSchema.BOOLEAN.equals(datatype)
+					|| XMLSchema.DATETIME.equals(datatype);
+		}
+
+		private RawJoinSegment findAnchorSegment(List<Object> rawPlanItems, DeferredFilter deferredFilter,
+				String bindingName) {
+			for (Object rawPlanItem : rawPlanItems) {
+				if (!(rawPlanItem instanceof RawJoinSegment)) {
+					continue;
+				}
+				RawJoinSegment segment = (RawJoinSegment) rawPlanItem;
+				if (!segment.bindingNames.contains(bindingName)) {
+					continue;
+				}
+				if (deferredFilter.patternLocalBase == null
+						|| segmentContainsPattern(segment, deferredFilter.patternLocalBase)) {
+					return segment;
+				}
+			}
+			return null;
+		}
+
+		private boolean segmentContainsPattern(RawJoinSegment segment, StatementPattern pattern) {
+			for (TupleExpr joinArg : segment.joinArgs) {
+				if (collectPatternIdentities(joinArg).contains(pattern)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean segmentHasBindingSetAssignment(RawJoinSegment segment, String bindingName) {
+			for (TupleExpr joinArg : segment.joinArgs) {
+				Optional<Set<String>> names = positionableBindingSetAssignmentNames(joinArg);
+				if (names.isPresent() && names.get().contains(bindingName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean segmentMustBind(RawJoinSegment segment, String bindingName) {
+			for (TupleExpr joinArg : segment.joinArgs) {
+				if (joinArg.getAssuredBindingNames().contains(bindingName)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private int anchorInsertionIndex(RawJoinSegment segment, DeferredFilter deferredFilter, String bindingName) {
+			for (int i = 0; i < segment.joinArgs.size(); i++) {
+				TupleExpr joinArg = segment.joinArgs.get(i);
+				if (deferredFilter.patternLocalBase != null
+						&& collectPatternIdentities(joinArg).contains(deferredFilter.patternLocalBase)) {
+					return i;
+				}
+			}
+			for (int i = 0; i < segment.joinArgs.size(); i++) {
+				if (VarNameCollector.process(segment.joinArgs.get(i)).contains(bindingName)) {
+					return i;
+				}
+			}
+			return 0;
 		}
 
 		private List<DeferredFilter> buildDeferredFilters(List<Filter> filters, Set<String> scopeBindingNames) {
@@ -608,10 +947,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter deferredFilter,
 				Set<String> boundBeforeSegment) {
 			int[] window = null;
+			if (groupDeferredFilterOnBindingAssignments(factors, deferredFilter, boundBeforeSegment)) {
+				return true;
+			}
+
 			if (deferredFilter.conditionCost == 0) {
-				if (groupDeferredFilterOnBindingAssignments(factors, deferredFilter, boundBeforeSegment)) {
-					return true;
-				}
 				window = smallestBindingCoveringWindow(factors, deferredFilter.requiredVars, boundBeforeSegment);
 			}
 
@@ -1073,6 +1413,45 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 			rootAnnotationTarget.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS,
 					plan.getEstimatedTotalWork());
+			seedPlannerPrefixEstimates(plan, orderedArgs);
+		}
+
+		private void seedPlannerPrefixEstimates(JoinOrderPlanner.JoinOrderPlan plan, Deque<TupleExpr> orderedArgs) {
+			if (orderedArgs.size() < 2) {
+				return;
+			}
+
+			double finalRows = plan.getEstimatedFinalRows();
+			double prefixRows = orderedArgs.getFirst().getResultSizeEstimate();
+			if (!isFiniteNonNegative(prefixRows) && isFiniteNonNegative(finalRows)) {
+				prefixRows = finalRows;
+			}
+
+			boolean first = true;
+			for (TupleExpr tupleExpr : orderedArgs) {
+				if (first) {
+					first = false;
+					continue;
+				}
+
+				double factorRows = tupleExpr.getResultSizeEstimate();
+				if (isFiniteNonNegative(prefixRows) && isFiniteNonNegative(factorRows)) {
+					prefixRows = Math.max(prefixRows, factorRows);
+				} else if (isFiniteNonNegative(factorRows)) {
+					prefixRows = factorRows;
+				} else if (!isFiniteNonNegative(prefixRows) && isFiniteNonNegative(finalRows)) {
+					prefixRows = finalRows;
+				}
+
+				if (isFiniteNonNegative(prefixRows)) {
+					plannedPrefixRowsByRightArg.putIfAbsent(tupleExpr, prefixRows);
+				}
+			}
+
+			TupleExpr last = orderedArgs.getLast();
+			if (isFiniteNonNegative(finalRows)) {
+				plannedPrefixRowsByRightArg.put(last, finalRows);
+			}
 		}
 
 		private void applyRebuiltPlannerStepEstimates(Deque<TupleExpr> orderedArgs, Set<String> boundBeforeSegment) {
@@ -1245,12 +1624,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> bindingSetAssignments = new ArrayList<>();
 			Map<TupleExpr, Set<String>> bindingSetAssignmentNames = new IdentityHashMap<>();
+			Map<TupleExpr, Integer> bindingSetAssignmentNonAssignmentsBefore = new IdentityHashMap<>();
+			Map<TupleExpr, Integer> bindingSetAssignmentOriginalOrder = new IdentityHashMap<>();
 			List<TupleExpr> nonAssignments = new ArrayList<>(segment.size());
+			int originalOrder = 0;
 			for (TupleExpr tupleExpr : segment) {
 				Optional<Set<String>> bindingNames = positionableBindingSetAssignmentNames(tupleExpr);
 				if (bindingNames.isPresent()) {
 					bindingSetAssignments.add(tupleExpr);
 					bindingSetAssignmentNames.put(tupleExpr, bindingNames.get());
+					bindingSetAssignmentNonAssignmentsBefore.put(tupleExpr, nonAssignments.size());
+					bindingSetAssignmentOriginalOrder.put(tupleExpr, originalOrder++);
 				} else {
 					nonAssignments.add(tupleExpr);
 				}
@@ -1267,16 +1651,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			Map<Integer, List<TupleExpr>> insertions = new HashMap<>();
 			for (TupleExpr bindingSetAssignment : bindingSetAssignments) {
-				int insertionIndex = findFirstUsageIndex(bindingSetAssignmentNames.get(bindingSetAssignment),
+				int firstUsageIndex = findFirstUsageIndex(bindingSetAssignmentNames.get(bindingSetAssignment),
 						referencedVarNames);
-				insertions.computeIfAbsent(insertionIndex, key -> new ArrayList<>()).add(bindingSetAssignment);
+				insertions.computeIfAbsent(firstUsageIndex, key -> new ArrayList<>()).add(bindingSetAssignment);
 			}
 
 			List<TupleExpr> positioned = new ArrayList<>(segment.size());
 			for (int i = 0; i <= nonAssignments.size(); i++) {
 				List<TupleExpr> insertedAssignments = insertions.get(i);
 				if (insertedAssignments != null) {
-					insertedAssignments.sort(Comparator.comparingInt(this::bindingSetAssignmentPositionPriority));
+					insertedAssignments.sort(Comparator.comparingInt(this::bindingSetAssignmentPositionPriority)
+							.thenComparingInt(bindingSetAssignmentOriginalOrder::get));
 					positioned.addAll(insertedAssignments);
 				}
 				if (i < nonAssignments.size()) {
@@ -1435,7 +1820,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				for (TupleExpr candidate : remaining) {
 					GreedyChoiceMetrics metrics = buildNextGreedyChoiceMetrics(prefixForEstimation, prefixBindingNames,
 							candidate, pendingDeferredFilters, cardinalityCache, factorCostCache,
-							hasConnectedCandidate);
+							hasConnectedCandidate, remaining);
 					GreedyChoiceScore score = scoreGreedyChoice(metrics, originalOrder.get(candidate), -1);
 					GreedyChoiceCandidate candidateDecision = new GreedyChoiceCandidate("expand", prefixForEstimation,
 							candidate, metrics, score);
@@ -1992,7 +2377,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private GreedyChoiceMetrics buildNextGreedyChoiceMetrics(TupleExpr prefixForEstimation,
 				Set<String> prefixBindingNames, TupleExpr candidate, List<DeferredFilter> deferredFilters,
-				JoinCardinalityCache cardinalityCache, FactorCostCache factorCostCache, boolean hasConnectedCandidate) {
+				JoinCardinalityCache cardinalityCache, FactorCostCache factorCostCache, boolean hasConnectedCandidate,
+				List<TupleExpr> remaining) {
 			Set<String> candidateAvailableVars = getAvailableVars(prefixBindingNames, candidate);
 			int sharedVarCount = sharedJoinVariableCount(candidate, prefixBindingNames);
 			double rawJoinRows = cardinalityCache.get(prefixForEstimation, candidate);
@@ -2002,13 +2388,58 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			double factorWorkRows = estimateCandidateFactorWorkRows(candidate, prefixBindingNames, factorCostCache);
 			double baseCostRows = factorAwareBaseCostRows(effectiveJoinRows, factorWorkRows,
 					containsLocalFilter(candidate));
+			boolean avoidableCrossJoin = sharedVarCount == 0 && hasConnectedCandidate
+					&& !hasPendingBridgeToEndpointConstraint(candidate, prefixBindingNames, remaining, factorCostCache,
+							factorWorkRows);
 			return new GreedyChoiceMetrics(rawJoinRows, effectiveJoinRows, baseCostRows, factorWorkRows,
 					sharedVarCount, 0,
 					countCompatibleCheapFilters(deferredFilters, candidateAvailableVars),
 					countCompatibleExpensiveFilters(deferredFilters, candidateAvailableVars),
-					sharedVarCount == 0 && hasConnectedCandidate, false,
+					avoidableCrossJoin, false,
 					combinedUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars),
 					shouldFloorUnlockedFilterPassRatio(deferredFilters, candidateAvailableVars));
+		}
+
+		private boolean hasPendingBridgeToEndpointConstraint(TupleExpr candidate, Set<String> prefixBindingNames,
+				List<TupleExpr> remaining, FactorCostCache factorCostCache, double factorWorkRows) {
+			if (!(candidate instanceof StatementPattern)
+					|| sharedJoinVariableCount(candidate, prefixBindingNames) != 0) {
+				return false;
+			}
+			Set<String> candidateVars = nonConstantBindingNames(candidate);
+			if (candidateVars.size() != 1) {
+				return false;
+			}
+			double candidateRows = isFiniteNonNegative(factorWorkRows)
+					? factorWorkRows
+					: statistics.getCardinality(candidate);
+			if (!isFiniteNonNegative(candidateRows)) {
+				return false;
+			}
+			for (TupleExpr bridge : remaining) {
+				if (bridge == candidate || bridge instanceof BindingSetAssignment) {
+					continue;
+				}
+				Set<String> bridgeVars = nonConstantBindingNames(bridge);
+				if (bridgeVars.size() < 2 || Collections.disjoint(bridgeVars, prefixBindingNames)
+						|| Collections.disjoint(bridgeVars, candidateVars)) {
+					continue;
+				}
+				double bridgeRows = estimateCandidateFactorWorkRows(bridge, prefixBindingNames, factorCostCache);
+				if (!isFiniteNonNegative(bridgeRows)) {
+					bridgeRows = statistics.getCardinality(bridge);
+				}
+				if (isFiniteNonNegative(bridgeRows) && candidateRows <= Math.max(1.0d, bridgeRows)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private Set<String> nonConstantBindingNames(TupleExpr tupleExpr) {
+			Set<String> bindingNames = new LinkedHashSet<>(tupleExpr.getBindingNames());
+			bindingNames.removeIf(bindingName -> bindingName.startsWith("_const_"));
+			return bindingNames;
 		}
 
 		private double factorAwareBaseCostRows(double effectiveJoinRows, double factorWorkRows,

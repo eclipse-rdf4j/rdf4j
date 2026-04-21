@@ -58,6 +58,7 @@ public final class BenchmarkJoinEstimatorSupport {
 		repository.init();
 		SketchBasedJoinEstimator estimator = resolveEstimator(store);
 		estimator.rebuildOnceSlow();
+		awaitEstimatorReady(estimator, "bulk-load rebuild");
 		persistReusableEstimatorSnapshot(estimator);
 	}
 
@@ -109,9 +110,26 @@ public final class BenchmarkJoinEstimatorSupport {
 		return (SketchBasedJoinEstimator) invoke(getSketchBasedJoinEstimator, backingStore);
 	}
 
-	private static void persistReusableEstimatorSnapshot(SketchBasedJoinEstimator estimator) {
+	private static void persistReusableEstimatorSnapshot(SketchBasedJoinEstimator estimator) throws IOException {
 		estimator.persistIfDirty();
+		estimator.unload();
+		awaitEstimatorReady(estimator, "persisted snapshot reload");
+	}
 
+	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase) throws IOException {
+		long deadlineNanos = System.nanoTime() + ROBUST_READY_TIMEOUT_NANOS;
+		while (System.nanoTime() < deadlineNanos) {
+			if (estimator.isReady()) {
+				return;
+			}
+			try {
+				Thread.sleep(ROBUST_READY_POLL_MILLIS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while waiting for join estimator readiness after " + phase, e);
+			}
+		}
+		throw new IOException("Join estimator was not ready after " + phase);
 	}
 
 	private static void writeExpectedDbFileSizes(File storeDirectory) throws IOException {

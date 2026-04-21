@@ -491,7 +491,38 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(statistics.planCalls)
 				.as("QueryJoinOptimizer should delegate segment ordering to JoinOrderPlanner when available")
 				.isEqualTo(1);
+		assertThat(statistics.joinCardinalityCalls)
+				.as("Planner-provided orders should bypass clone-based greedy join-cardinality scoring")
+				.isZero();
 		assertThat(predicates(flattenJoinLeaves(root.getArg()))).containsExactly(ex("pC"), ex("pB"), ex("pA"));
+	}
+
+	@Test
+	public void optimizeDoesNotUseCloneBasedGreedyWhenPlannerProvidesDenseCyclePlan() {
+		BindingSetAssignment userPairValues = bindingSetAssignment(Map.of(
+				"u1", ex("social/user/0"),
+				"u2", ex("social/user/1")));
+		BindingSetAssignment user3Values = bindingSetAssignment(Map.of("u3", ex("social/user/2")));
+		StatementPattern u1FollowsU2 = statementPattern("u1", "u2", social("follows"));
+		StatementPattern u1FollowsU3 = statementPattern("u1", "u3", social("follows"));
+		StatementPattern u2FollowsU1 = statementPattern("u2", "u1", social("follows"));
+		StatementPattern u3FollowsU1 = statementPattern("u3", "u1", social("follows"));
+		StatementPattern u2FollowsU3 = statementPattern("u2", "u3", social("follows"));
+		StatementPattern u3FollowsU2 = statementPattern("u3", "u2", social("follows"));
+		List<TupleExpr> plannedOrder = List.of(userPairValues, user3Values, u1FollowsU2, u1FollowsU3,
+				u2FollowsU1, u3FollowsU1, u2FollowsU3, u3FollowsU2);
+		TupleExpr rootArg = new Join(new Join(new Join(new Join(new Join(new Join(new Join(userPairValues,
+				user3Values), u1FollowsU2), u1FollowsU3), u2FollowsU1), u3FollowsU1), u2FollowsU3), u3FollowsU2);
+		PlannerStatistics statistics = new PlannerStatistics(plannedOrder, plannedOrder);
+
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(new QueryRoot(rootArg), null, null);
+
+		assertThat(statistics.planCalls)
+				.as("Dense cyclic planner-supported segments should be delegated once")
+				.isEqualTo(1);
+		assertThat(statistics.joinCardinalityCalls)
+				.as("Dense cyclic planner-supported segments must not enter greedy clone-based scoring")
+				.isZero();
 	}
 
 	@Test
@@ -768,6 +799,74 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optimizeAddsValuesAnchorForMustBoundStringInFilter() {
+		QueryRoot root = optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:name ?name .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?name IN (\"Alice\", \"Bob\", \"Alice\"))",
+				"}"), new EvaluationStatistics());
+
+		List<BindingSetAssignment> assignments = bindingSetAssignments(root, "name");
+		assertThat(assignments)
+				.as("A must-bound string IN filter can be represented as a same-term VALUES semijoin")
+				.hasSize(1);
+		assertThat(assignments.get(0).getBindingSets())
+				.as("VALUES rows should be deduplicated by RDF-term identity")
+				.hasSize(2);
+	}
+
+	@Test
+	public void optimizeDoesNotAddValuesAnchorForBindProducedInFilterVariable() {
+		QueryRoot root = optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:p ?o .",
+				"  BIND((1 / 0) AS ?name)",
+				"  ?s ex:q ?q .",
+				"  FILTER (?name IN (\"Alice\", \"Bob\"))",
+				"}"), new EvaluationStatistics());
+
+		assertThat(bindingSetAssignments(root, "name"))
+				.as("BIND is not a must-bind proof: expression errors leave ?name unbound")
+				.isEmpty();
+	}
+
+	@Test
+	public void optimizeDoesNotAddValuesAnchorForUnknownTypeValueEqualityInFilter() {
+		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:value ?value .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?value IN (1, 2.0))",
+				"}"), new EvaluationStatistics()), "value"))
+						.as("Numeric IN equality can match non-identical RDF terms, so same-term VALUES is unsafe")
+						.isEmpty();
+
+		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:value ?value .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?value IN (\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>))",
+				"}"), new EvaluationStatistics()), "value"))
+						.as("Boolean IN equality is value equality, not RDF-term identity")
+						.isEmpty();
+
+		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:value ?value .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?value IN (\"2020-01-01T00:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>))",
+				"}"), new EvaluationStatistics()), "value"))
+						.as("dateTime IN equality is value equality, not RDF-term identity")
+						.isEmpty();
+	}
+
+	@Test
 	public void optimizeGroupsCheapValuesFilterBeforeCycleJoinAndExists() {
 		BindingSetAssignment userPairValues = bindingSetAssignment(Map.of(
 				"u1", ex("social/user/0"),
@@ -1000,6 +1099,20 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		});
 		assertThat(filters).isNotEmpty();
 		return filters.get(0);
+	}
+
+	private static List<BindingSetAssignment> bindingSetAssignments(QueryModelNode root, String bindingName) {
+		List<BindingSetAssignment> assignments = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment assignment) throws RuntimeException {
+				if (assignment.getBindingNames().contains(bindingName)) {
+					assignments.add(assignment);
+				}
+				super.meet(assignment);
+			}
+		});
+		return assignments;
 	}
 
 	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {
@@ -1289,6 +1402,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		private final List<TupleExpr> expectedArgs;
 		private List<JoinOrderPlanner.FilterConstraint> filterConstraints = List.of();
 		private int planCalls;
+		private int joinCardinalityCalls;
 
 		private PlannerStatistics(List<TupleExpr> orderedArgs) {
 			this(orderedArgs, List.of(orderedArgs.get(2), orderedArgs.get(1), orderedArgs.get(0)));
@@ -1306,6 +1420,9 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		@Override
 		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Join) {
+				joinCardinalityCalls++;
+			}
 			return 10.0d;
 		}
 

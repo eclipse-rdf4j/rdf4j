@@ -109,6 +109,30 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void unloadReloadsPersistedSnapshotOnDemand(@TempDir Path tempDir) {
+		Resource s = VF.createIRI("urn:s");
+		IRI p = VF.createIRI("urn:p");
+		Value o = VF.createIRI("urn:o");
+
+		StubSailStore sourceStore = new StubSailStore();
+		sourceStore.add(st(s, p, o));
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
+		writer.rebuildOnceSlow();
+
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(snapshot, false);
+		assertTrue(writer.persistIfDirty(), "Expected dirty snapshot write");
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(snapshot, true);
+		assertTrue(reader.isReady(), "Expected lazy load on first readiness check");
+
+		reader.unload();
+
+		assertTrue(reader.isReady(), "Expected persisted snapshot to lazy reload after unloading resident sketches");
+	}
+
+	@Test
 	void unloadAndOfflineWritesRequireRebuild() {
 		Resource s = VF.createIRI("urn:s");
 		IRI p = VF.createIRI("urn:p");

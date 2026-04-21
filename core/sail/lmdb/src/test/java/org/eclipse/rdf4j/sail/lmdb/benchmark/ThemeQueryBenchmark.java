@@ -23,6 +23,7 @@ import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.common.plan.FeatureFlagCollector;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
@@ -68,7 +69,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 100, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx32G" })
 @Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
@@ -99,17 +100,17 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-//			"0",
+			"0",
 			"1",
-//			"2",
-//			"3",
-//			"4",
-//			"5",
-//			"6",
-//			"7",
-//			"8",
-//			"9",
-//			"10",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
+			"9",
+			"10",
 //			"11",
 //			"12"
 	})
@@ -117,13 +118,13 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 //			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
+//			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
-//			"PHARMA"
+			"PHARMA"
 	})
 	public String themeName;
 
@@ -307,6 +308,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	private void loadData() throws IOException {
+		StopWatch started = StopWatch.createStarted();
 		try (var connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			var inserter = new RDFInserter(connection);
@@ -318,6 +320,9 @@ public class ThemeQueryBenchmark {
 			}
 			connection.commit();
 		}
+		started.stop();
+
+		System.out.println("Loaded theme datasets in " + started);
 	}
 
 	private File storeDirectory() {

@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -174,6 +175,124 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(greedyPlan.get().getOrderedArgs().containsAll(args));
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
 				"Supported flat segments should go through the robust planner");
+	}
+
+	@Test
+	void planJoinOrderSupportsMultiSharedValuesClique() {
+		StubSailStore store = new StubSailStore();
+		IRI follows = VF.createIRI("urn:follows");
+		List<Resource> users = List.of(VF.createIRI("urn:user:0"), VF.createIRI("urn:user:1"),
+				VF.createIRI("urn:user:2"));
+		for (Resource left : users) {
+			for (Resource right : users) {
+				if (!left.equals(right)) {
+					store.add(VF.createStatement(left, follows, right));
+				}
+			}
+		}
+
+		BindingSetAssignment userPairs = new BindingSetAssignment();
+		List<BindingSet> pairRows = new ArrayList<>();
+		for (Resource u1 : users) {
+			for (Resource u2 : users) {
+				if (!u1.equals(u2)) {
+					QueryBindingSet row = new QueryBindingSet();
+					row.addBinding("u1", u1);
+					row.addBinding("u2", u2);
+					pairRows.add(row);
+				}
+			}
+		}
+		userPairs.setBindingSets(pairRows);
+
+		BindingSetAssignment u3Values = new BindingSetAssignment();
+		List<BindingSet> u3Rows = new ArrayList<>();
+		for (Resource user : users) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("u3", user);
+			u3Rows.add(row);
+		}
+		u3Values.setBindingSets(u3Rows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern u1FollowsU2 = pattern("u1", follows, "u2");
+		StatementPattern u1FollowsU3 = pattern("u1", follows, "u3");
+		StatementPattern u2FollowsU1 = pattern("u2", follows, "u1");
+		StatementPattern u3FollowsU1 = pattern("u3", follows, "u1");
+		StatementPattern u2FollowsU3 = pattern("u2", follows, "u3");
+		StatementPattern u3FollowsU2 = pattern("u3", follows, "u2");
+		List<TupleExpr> args = List.of(userPairs, u3Values, u1FollowsU2, u1FollowsU3, u2FollowsU1,
+				u3FollowsU1, u2FollowsU3, u3FollowsU2);
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY);
+
+		assertTrue(plan.isPresent(), "Dense multi-shared VALUES cliques should stay on the sketch planner path");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
+				"Multi-shared VALUES cliques should no longer fall back to clone-based greedy scoring");
+		assertTrue(plan.get().getOrderedArgs().get(0) instanceof BindingSetAssignment,
+				"A bounded VALUES factor should anchor the dense clique before broad edge scans");
+		assertTrue(plan.get().getOrderedArgs().containsAll(args));
+	}
+
+	@Test
+	void dynamicProgrammingAvoidsSketchJoinsWhenSmallValuesBindClique() {
+		StubSailStore store = new StubSailStore();
+		IRI follows = VF.createIRI("urn:follows");
+		List<Resource> users = List.of(VF.createIRI("urn:user:0"), VF.createIRI("urn:user:1"),
+				VF.createIRI("urn:user:2"));
+		for (Resource left : users) {
+			for (Resource right : users) {
+				if (!left.equals(right)) {
+					store.add(VF.createStatement(left, follows, right));
+				}
+			}
+		}
+
+		BindingSetAssignment userPairs = new BindingSetAssignment();
+		List<BindingSet> pairRows = new ArrayList<>();
+		for (Resource u1 : users) {
+			for (Resource u2 : users) {
+				QueryBindingSet row = new QueryBindingSet();
+				row.addBinding("u1", u1);
+				row.addBinding("u2", u2);
+				pairRows.add(row);
+			}
+		}
+		userPairs.setBindingSets(pairRows);
+
+		BindingSetAssignment u3Values = new BindingSetAssignment();
+		List<BindingSet> u3Rows = new ArrayList<>();
+		for (Resource user : users) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("u3", user);
+			u3Rows.add(row);
+		}
+		u3Values.setBindingSets(u3Rows);
+
+		CountingSketchBasedJoinEstimator estimator = new CountingSketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern u1FollowsU2 = pattern("u1", follows, "u2");
+		StatementPattern u1FollowsU3 = pattern("u1", follows, "u3");
+		StatementPattern u2FollowsU1 = pattern("u2", follows, "u1");
+		StatementPattern u3FollowsU1 = pattern("u3", follows, "u1");
+		StatementPattern u2FollowsU3 = pattern("u2", follows, "u3");
+		StatementPattern u3FollowsU2 = pattern("u3", follows, "u2");
+		List<TupleExpr> args = List.of(userPairs, u3Values, u1FollowsU2, u1FollowsU3, u2FollowsU1,
+				u3FollowsU1, u2FollowsU3, u3FollowsU2);
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected DP planner to support dense values-bound cliques");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath());
+		assertEquals(0, estimator.sketchJoinEstimateCalls,
+				"VALUES-bound clique planning should use direct lookup work rows instead of sketch intersections");
+		assertEquals(userPairs, plan.get().getOrderedArgs().get(0));
+		assertEquals(u3Values, plan.get().getOrderedArgs().get(1));
 	}
 
 	@Test
@@ -534,6 +653,115 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planJoinOrderUsesDeferredFilterVarsProducedByCandidate() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("urn:rdfType");
+		IRI clinicalTrial = VF.createIRI("urn:ClinicalTrial");
+		IRI studiesDisease = VF.createIRI("urn:studiesDisease");
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI responseRate = VF.createIRI("urn:responseRate");
+		IRI armDrug = VF.createIRI("urn:armDrug");
+
+		for (int trialIndex = 0; trialIndex < 100; trialIndex++) {
+			Resource trial = VF.createIRI("urn:trial:" + trialIndex);
+			store.add(VF.createStatement(trial, rdfType, clinicalTrial));
+			store.add(VF.createStatement(trial, studiesDisease, VF.createIRI("urn:disease:" + trialIndex)));
+			for (int armIndex = 0; armIndex < 3; armIndex++) {
+				Resource arm = VF.createIRI("urn:arm:" + trialIndex + ':' + armIndex);
+				Resource result = VF.createIRI("urn:result:" + trialIndex + ':' + armIndex);
+				store.add(VF.createStatement(trial, hasArm, arm));
+				store.add(VF.createStatement(arm, hasResult, result));
+				store.add(VF.createStatement(result, responseRate, VF.createLiteral(armIndex == 0 ? 0.7d : 0.2d)));
+				store.add(VF.createStatement(arm, armDrug, VF.createIRI("urn:drug:" + trialIndex + ':' + armIndex)));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
+				Var.of("clinicalTrial", clinicalTrial));
+		StatementPattern studiesDiseasePattern = pattern("trial", studiesDisease, "disease");
+		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
+		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
+		StatementPattern responseRatePattern = pattern("result", responseRate, "rate");
+		StatementPattern armDrugPattern = pattern("arm", armDrug, "drug");
+		List<TupleExpr> args = List.of(trialTypePattern, studiesDiseasePattern, trialArmPattern, armResultPattern,
+				responseRatePattern, armDrugPattern);
+		List<JoinOrderPlanner.FilterConstraint> deferredFilters = List.of(
+				new JoinOrderPlanner.FilterConstraint(Set.of("rate"), 0.39d, 0, "?rate > 0.6", "learned_filter",
+						300L));
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP,
+				deferredFilters);
+
+		assertTrue(plan.isPresent(), "Expected planner to produce a clinical-trial chain plan");
+		assertEquals(responseRatePattern, plan.get().getOrderedArgs().get(0),
+				"Candidate-produced filter variables should let learned local filters anchor the chain");
+	}
+
+	@Test
+	void planJoinOrderKeepsSmallValuesAnchorBeforeBroadBridgeScan() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("urn:rdfType");
+		IRI clinicalTrial = VF.createIRI("urn:ClinicalTrial");
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI biomarker = VF.createIRI("urn:biomarker");
+		IRI pValue = VF.createIRI("urn:pValue");
+		List<Resource> markers = new ArrayList<>();
+		for (int i = 0; i < 12; i++) {
+			markers.add(VF.createIRI("urn:marker:" + i));
+		}
+		for (int trialIndex = 0; trialIndex < 96; trialIndex++) {
+			Resource trial = VF.createIRI("urn:trial:" + trialIndex);
+			store.add(VF.createStatement(trial, rdfType, clinicalTrial));
+			for (int armIndex = 0; armIndex < 3; armIndex++) {
+				Resource arm = VF.createIRI("urn:arm:" + trialIndex + ':' + armIndex);
+				Resource result = VF.createIRI("urn:result:" + trialIndex + ':' + armIndex);
+				store.add(VF.createStatement(trial, hasArm, arm));
+				store.add(VF.createStatement(arm, hasResult, result));
+				store.add(VF.createStatement(result, biomarker, markers.get((trialIndex + armIndex) % markers.size())));
+				store.add(VF.createStatement(result, pValue, VF.createLiteral(armIndex == 0 ? 0.04d : 0.08d)));
+			}
+		}
+
+		BindingSetAssignment markerValues = new BindingSetAssignment();
+		List<BindingSet> markerRows = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("marker", markers.get(i));
+			markerRows.add(row);
+		}
+		markerValues.setBindingSets(markerRows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
+				Var.of("clinicalTrial", clinicalTrial));
+		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
+		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
+		StatementPattern biomarkerPattern = pattern("result", biomarker, "marker");
+		Filter pValueFilter = new Filter(pattern("result", pValue, "p"),
+				new Compare(Var.of("p"), new ValueConstant(VF.createLiteral(0.05d)), Compare.CompareOp.LT));
+		List<TupleExpr> args = List.of(markerValues, trialTypePattern, trialArmPattern, armResultPattern,
+				biomarkerPattern, pValueFilter);
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to produce a pharma-shaped values-anchor plan");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
+				"Small VALUES anchors should stay on the compact planner path");
+		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+		assertTrue(orderedArgs.indexOf(markerValues) < orderedArgs.indexOf(trialArmPattern),
+				"Small VALUES filters should be applied before the broad hasArm bridge scan");
+	}
+
+	@Test
 	void cardinalityJoinSupportsBindingSetAssignment() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
@@ -731,7 +959,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void cardinalityListReturnsNegativeOneWhenRobustEstimatorRejectsCycle() {
+	void cardinalityListSupportsCycleWithCompactPlanner() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -752,11 +980,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		double rows = estimator.cardinality(List.of(pattern("x", pA, "y"), pattern("y", pB, "z"),
 				pattern("z", pC, "x")));
 
-		assertEquals(-1.0d, rows,
-				"Cycle-shaped join lists should now return -1 so higher-level cardinality fallback can take over");
-		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_CYCLE,
+		assertTrue(rows >= 0.0d, "Cycle-shaped join lists should use compact sketch cardinality planning");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED,
 				estimator.lastRobustCardinalityPath(),
-				"Rejected cycle estimates should report the explicit unsupported reason");
+				"Cycle estimates should no longer report an unsupported reason");
 	}
 
 	@Test
@@ -793,7 +1020,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void cardinalityJoinReturnsNegativeOneWhenFlattenedCycleIsUnsupported() {
+	void cardinalityJoinSupportsFlattenedCycle() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -815,11 +1042,11 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StatementPattern b = pattern("y", pB, "z");
 		StatementPattern c = pattern("z", pC, "x");
 
-		assertEquals(-1.0d, estimator.cardinality(new Join(new Join(a, b), c)),
-				"Flattened cycle joins should return -1 so evaluation statistics can use the generic fallback");
-		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_CYCLE,
+		assertTrue(estimator.cardinality(new Join(new Join(a, b), c)) >= 0.0d,
+				"Flattened cycle joins should use compact sketch cardinality planning");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED,
 				estimator.lastRobustCardinalityPath(),
-				"Rejected flattened cycles should report the explicit unsupported reason");
+				"Flattened cycles should no longer report an unsupported reason");
 	}
 
 	@Test
@@ -845,7 +1072,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void planJoinOrderFallsBackWhenRobustPlannerRejectsCycle() {
+	void planJoinOrderSupportsCycleWithCompactPlanner() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -871,10 +1098,12 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
 				JoinOrderPlanner.Algorithm.GREEDY);
 
-		assertTrue(plan.isEmpty(), "Cycle-shaped joins should now fall back through Optional.empty()");
-		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_CYCLE,
+		assertTrue(plan.isPresent(), "Cycle-shaped joins should stay on the compact sketch planner path");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED,
 				estimator.lastJoinOrderPlannerPath(),
-				"Rejected cycle plans should report the explicit unsupported reason");
+				"Cycle plans should no longer fall back to clone-based greedy scoring");
+		assertEquals(args.size(), plan.get().getOrderedArgs().size());
+		assertTrue(plan.get().getOrderedArgs().containsAll(args));
 	}
 
 	@Test
@@ -952,6 +1181,27 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		@Override
 		public long getTotalCalls() {
 			return 0L;
+		}
+	}
+
+	private static final class CountingSketchBasedJoinEstimator extends SketchBasedJoinEstimator {
+		private int sketchJoinEstimateCalls;
+
+		private CountingSketchBasedJoinEstimator(SailStore sailStore, Config cfg) {
+			super(sailStore, cfg);
+		}
+
+		@Override
+		JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
+			sketchJoinEstimateCalls++;
+			return super.estimateJoinStepForJoinOrdering(left, right);
+		}
+
+		@Override
+		JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right,
+				JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
+			sketchJoinEstimateCalls++;
+			return super.estimateJoinStepForJoinOrdering(left, right, sketchIntersectionCache);
 		}
 	}
 

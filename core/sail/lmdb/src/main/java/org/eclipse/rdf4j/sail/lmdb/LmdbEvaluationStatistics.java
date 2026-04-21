@@ -52,6 +52,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
 	private static final long JOIN_SUPPORT_CACHE_TTL_MS = 100;
+	private static final double DIRECT_LOOKUP_WORK_ROW_FLOOR = 1.0d;
 	private static final Map<SharedCardinalityKey, Double> sharedCardinalityCache = new ConcurrentHashMap<>();
 
 	private final ValueStore valueStore;
@@ -317,6 +318,9 @@ class LmdbEvaluationStatistics extends EvaluationStatistics implements JoinOrder
 				adjustedWorkRows = filteredAccessRows;
 				filterAppliedAtAccess = true;
 			}
+		}
+		if (accessShape.isDirectLookup(prefixSelection.prefixComponents())) {
+			return Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, adjustedWorkRows);
 		}
 		double workFloor = filterAppliedAtAccess ? 0.0d : defaultWorkRows;
 		double filterMultiplier = accessShape.filterMultiplier();

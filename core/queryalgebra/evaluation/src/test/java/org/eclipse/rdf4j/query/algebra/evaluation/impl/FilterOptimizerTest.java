@@ -270,8 +270,8 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void standardPipelineFinalFilterPassAnnotatesSelectivityFromCardinalityStatsUsedForPlacement() {
-		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . "
-				+ "FILTER(?branchName = \"Branch 0\" && ?branchName != \"Branch 1\") }";
+		String query = "SELECT * WHERE {?branch <urn:rank> ?rank . ?copy <urn:locatedAt> ?branch . "
+				+ "FILTER(?rank = 1 && ?rank != 2) }";
 
 		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
@@ -290,7 +290,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				.satisfies(filter -> {
 					assertThat(filter.getArg()).isInstanceOf(StatementPattern.class);
 					assertThat(filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO))
-							.isEqualTo(0.2d);
+							.isEqualTo(1.0d);
 					assertThat(filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))
 							.isEqualTo("cardinality");
 				});

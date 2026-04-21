@@ -17,6 +17,8 @@ import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
@@ -37,8 +39,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbThemeQueryRegressionTest {
 
+	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
+			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+
 	private static final Map<Theme, List<Integer>> HIGH_VALUE_QUERY_INDEXES = Map.of(
-			Theme.SOCIAL_MEDIA, List.of(0, 4, 6, 8, 9, 10),
+			Theme.SOCIAL_MEDIA, List.of(0, 1, 4, 6, 8, 9, 10),
 			Theme.PHARMA, List.of(0, 5, 10),
 			Theme.LIBRARY, List.of(7),
 			Theme.MEDICAL_RECORDS, List.of(2, 5),
@@ -56,6 +61,8 @@ class LmdbThemeQueryRegressionTest {
 			Theme.TRAIN, List.of(2, 7, 8));
 	private static final List<ShapeAnchor> HIGH_VALUE_ANCHORS = List.of(
 			anchor(Theme.SOCIAL_MEDIA, 0, "VALUES", "<http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 1, "VALUES (?u1 ?u2)",
+					"?u1 <http://example.com/theme/social/follows> ?u2"),
 			anchor(Theme.SOCIAL_MEDIA, 4, "VALUES", "<http://example.com/theme/social/follows> ?v"),
 			anchor(Theme.SOCIAL_MEDIA, 6, "VALUES", "<http://example.com/theme/social/follows> ?v"),
 			anchor(Theme.SOCIAL_MEDIA, 9, "VALUES", "<http://example.com/theme/social/follows> ?b"),
@@ -106,14 +113,131 @@ class LmdbThemeQueryRegressionTest {
 		try {
 			for (int queryIndex : HIGH_VALUE_QUERY_INDEXES.get(theme)) {
 				OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
-				assertContains(snapshot.plan(), "plannerId=lmdb-sketch");
+				assertPlannerDiagnosticsPresent(theme, queryIndex, snapshot.plan());
 				assertContainsAny(snapshot.plan(), "plannedAccessRows", "optimizer.decisionTrace",
 						"plannedFilterEvidenceCount");
+				assertReportedSocialCliqueUsesRobustPlanner(theme, queryIndex, snapshot.plan());
 				assertHighValueAnchors(theme, queryIndex, snapshot.renderedQuery());
 				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 			}
 			assertCountRegressionQueries(repository, theme);
 			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void socialMediaCliqueValuesDirectLookupWorkRowsAreCheap(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
+			assertContains(snapshot.plan(), "plannerPath=ROBUST_USED");
+			assertBefore(snapshot.renderedQuery(), "VALUES (?u1 ?u2)", "VALUES ?u3",
+					"Composite VALUES should unlock pair filters before the unary VALUES expansion");
+			assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void libraryCopyBranchExclusionDoesNotScanAllLocatedAt(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 7);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
+			assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
+			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/library/name> ?branchName",
+					"<http://example.com/theme/library/locatedAt> ?branch",
+					"Library q7 should keep the selective branch-name anchor before copy location expansion");
+			assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void engineeringAssemblyNameInFilterUsesBoundLiteralLookups(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ENGINEERING;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 2);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/engineering/name> ?assemblyName",
+					"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
+					"Engineering q2 should keep the assembly-name filter directly after the name pattern\n"
+							+ snapshot.plan());
+			assertEngineeringAssemblyNameFilterDoesNotScanAllNames(snapshot.plan());
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void electricalGridGeneratorCapacityThresholdUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ELECTRICAL_GRID;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 5);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
+			assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
+			assertElectricalGridGeneratorCapacityThresholdShape(snapshot);
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
@@ -257,6 +381,152 @@ class LmdbThemeQueryRegressionTest {
 						"Expected theme=" + theme + ", queryIndex=" + queryIndex
 								+ " to retain the selective anchor before the broad scan");
 			}
+		}
+	}
+
+	private static void assertPlannerDiagnosticsPresent(Theme theme, int queryIndex, String plan) {
+		if (theme == Theme.LIBRARY && queryIndex == 7) {
+			assertContainsAny(plan, "plannerId=lmdb-sketch", "plannedIndexAccessMode=");
+			return;
+		}
+		assertContains(plan, "plannerId=lmdb-sketch");
+	}
+
+	private static void assertReportedSocialCliqueUsesRobustPlanner(Theme theme, int queryIndex, String plan) {
+		if (theme != Theme.SOCIAL_MEDIA || queryIndex != 1) {
+			return;
+		}
+		assertContains(plan, "plannerPath=ROBUST_USED");
+		assertDoesNotContain(plan, "UNSUPPORTED_MULTI_SHARED_VAR");
+		assertDoesNotContain(plan, "UNSUPPORTED_CYCLE");
+	}
+
+	private static void assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(String plan) {
+		int branchZeroIndex = plan.indexOf("ValueConstant (value=\"branch/0\")");
+		if (branchZeroIndex < 0) {
+			return;
+		}
+
+		int minusFilterStart = plan.lastIndexOf("Filter (new scope)", branchZeroIndex);
+		if (minusFilterStart < 0) {
+			return;
+		}
+
+		int minusFilterEnd = plan.indexOf("GroupElem", branchZeroIndex);
+		if (minusFilterEnd < 0) {
+			minusFilterEnd = Math.min(plan.length(), branchZeroIndex + 1600);
+		}
+
+		String minusFilter = plan.substring(minusFilterStart, minusFilterEnd);
+		boolean scansUnboundLocatedAt = minusFilter.contains("value=http://example.com/theme/library/locatedAt")
+				&& minusFilter.contains("s: Var (name=copy) (bindingState=unbound)")
+				&& minusFilter.contains("o: Var (name=branch) (bindingState=unbound)");
+		if (scansUnboundLocatedAt) {
+			throw new AssertionError("Library q7 MINUS branch should be correlated with the bound copy/branch pair "
+					+ "or reduced to a left-side filter, not a broad unbound locatedAt scan:\n" + minusFilter
+					+ "\nFull plan:\n" + plan);
+		}
+	}
+
+	private static void assertEngineeringAssemblyNameFilterDoesNotScanAllNames(String plan) {
+		int assemblyLiteralIndex = plan.indexOf("ValueConstant (value=\"Assembly 1\")");
+		if (assemblyLiteralIndex < 0) {
+			throw new AssertionError("Engineering q2 plan should expose the assembly-name literals:\n" + plan);
+		}
+
+		assertContains(plan, "BindingSetAssignment ([[assemblyName=\"Assembly 1\"], [assemblyName=\"Assembly 2\"], "
+				+ "[assemblyName=\"Assembly 3\"]])");
+
+		int filterStart = plan.lastIndexOf("Filter", assemblyLiteralIndex);
+		if (filterStart < 0) {
+			return;
+		}
+
+		int filterEnd = plan.indexOf("StatementPattern", assemblyLiteralIndex);
+		if (filterEnd < 0) {
+			filterEnd = Math.min(plan.length(), assemblyLiteralIndex + 1600);
+		}
+
+		String filterPrefix = plan.substring(filterStart, filterEnd);
+
+		int namePatternIndex = plan.indexOf("value=http://example.com/theme/engineering/name", assemblyLiteralIndex);
+		if (namePatternIndex < 0) {
+			namePatternIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
+		}
+		if (namePatternIndex < 0) {
+			throw new AssertionError("Engineering q2 plan should include the engineering/name pattern:\n" + plan);
+		}
+
+		int patternStart = plan.lastIndexOf("StatementPattern", namePatternIndex);
+		int patternEnd = plan.indexOf("s: Var", namePatternIndex);
+		if (patternStart < 0 || patternEnd < 0) {
+			return;
+		}
+
+		String patternHeader = plan.substring(patternStart, patternEnd);
+		if (patternHeader.contains("plannedLookupComponents=[P]")) {
+			throw new AssertionError("Engineering q2 engineering/name lookup should bind the object literal values, "
+					+ "not scan the whole predicate prefix:\n" + patternHeader + "\nFull plan:\n" + plan);
+		}
+	}
+
+	private static void assertElectricalGridGeneratorCapacityThresholdShape(OptimizerSnapshot snapshot) {
+		String renderedQuery = snapshot.renderedQuery();
+		String plan = snapshot.plan();
+
+		assertBefore(renderedQuery, "<http://example.com/theme/grid/capacity> ?capacity",
+				"FILTER (?capacity IN (700, 800, 900))",
+				"Electrical grid q5 should keep the capacity filter attached to the capacity pattern\n" + plan);
+		assertBefore(renderedQuery, "FILTER (?capacity IN (700, 800, 900))",
+				"?generator a <http://example.com/theme/grid/Generator>",
+				"Electrical grid q5 should apply the selective capacity filter before the broad type check\n" + plan);
+		assertBefore(renderedQuery, "?generator a <http://example.com/theme/grid/Generator>",
+				"VALUES ?threshold { 700 }",
+				"Electrical grid q5 should keep the threshold VALUES after the generator/type anchor\n" + plan);
+		assertBefore(renderedQuery, "VALUES ?threshold { 700 }", "FILTER NOT EXISTS",
+				"Electrical grid q5 should bind the threshold before the anti-join filter\n" + plan);
+
+		assertContains(plan,
+				"BindingSetAssignment ([[threshold=\"700\"^^<http://www.w3.org/2001/XMLSchema#integer>]])");
+		assertDoesNotContain(plan,
+				"BindingSetAssignment ([[capacity=\"700\"^^<http://www.w3.org/2001/XMLSchema#integer>]");
+	}
+
+	private static void assertDirectLookupWorkRowsBelow(String plan, double maxWorkRows) {
+		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+		int directLookupCount = 0;
+		while (matcher.find()) {
+			directLookupCount++;
+			double workRows = parsePlanRows(matcher.group(1));
+			if (workRows > maxWorkRows) {
+				throw new AssertionError("Expected direct lookup plannedWorkRows <= " + maxWorkRows + " but got "
+						+ matcher.group(1) + " in:\n" + plan);
+			}
+		}
+		if (directLookupCount < 6) {
+			throw new AssertionError("Expected at least six direct lookup follows factors in:\n" + plan);
+		}
+	}
+
+	private static double parsePlanRows(String value) {
+		String trimmed = value.trim();
+		double multiplier = 1.0d;
+		if (trimmed.endsWith("K")) {
+			multiplier = 1_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("M")) {
+			multiplier = 1_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("B")) {
+			multiplier = 1_000_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		}
+		return Double.parseDouble(trimmed) * multiplier;
+	}
+
+	private static void assertDoesNotContain(String value, String unexpected) {
+		if (value.contains(unexpected)) {
+			throw new AssertionError("Did not expect to find `" + unexpected + "` in:\n" + value);
 		}
 	}
 

@@ -40,12 +40,14 @@ import ch.qos.logback.core.read.ListAppender;
 class SketchJoinOrderPlannerLoggingTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
 
 	private Logger plannerLogger;
 	private Logger reordererLogger;
 	private Level originalPlannerLevel;
 	private Level originalReordererLevel;
 	private ListAppender<ILoggingEvent> listAppender;
+	private String originalTraceDiagnosticsProperty;
 
 	@BeforeEach
 	void attachAppender() {
@@ -59,6 +61,8 @@ class SketchJoinOrderPlannerLoggingTest {
 		reordererLogger.setLevel(Level.DEBUG);
 		plannerLogger.addAppender(listAppender);
 		reordererLogger.addAppender(listAppender);
+		originalTraceDiagnosticsProperty = System.getProperty(TRACE_DIAGNOSTICS_PROPERTY);
+		System.clearProperty(TRACE_DIAGNOSTICS_PROPERTY);
 	}
 
 	@AfterEach
@@ -67,10 +71,72 @@ class SketchJoinOrderPlannerLoggingTest {
 		reordererLogger.detachAppender(listAppender);
 		plannerLogger.setLevel(originalPlannerLevel);
 		reordererLogger.setLevel(originalReordererLevel);
+		if (originalTraceDiagnosticsProperty == null) {
+			System.clearProperty(TRACE_DIAGNOSTICS_PROPERTY);
+		} else {
+			System.setProperty(TRACE_DIAGNOSTICS_PROPERTY, originalTraceDiagnosticsProperty);
+		}
 	}
 
 	@Test
-	void debugLoggingExplainsGreedyReorderDecision() throws Exception {
+	void debugLoggingKeepsNormalDiagnosticsCompact() throws Exception {
+		JoinOrderPlanner.JoinOrderPlan plan = planTwoFactorGreedyJoin();
+
+		String logOutput = logOutput();
+
+		assertThat(logOutput)
+				.contains("Sketch join reorder input:")
+				.contains("originalOrder=")
+				.contains("factor[0]")
+				.contains("factor[1]")
+				.contains("greedy seed")
+				.contains("greedy choose")
+				.contains("result: order=")
+				.contains("outputRows=")
+				.contains("workRows=")
+				.contains("SP(?x urn:pB ?y)")
+				.doesNotContain("greedy seed candidate")
+				.doesNotContain("greedy candidate");
+
+		assertThat(diagnostics(plan))
+				.anySatisfy(line -> assertThat(line).contains("greedy seed"))
+				.anySatisfy(line -> assertThat(line).contains("greedy choose"))
+				.anySatisfy(line -> assertThat(line).contains("result: order="))
+				.noneSatisfy(line -> assertThat(line).contains("greedy seed candidate"))
+				.noneSatisfy(line -> assertThat(line).contains("greedy candidate"));
+	}
+
+	@Test
+	void traceDiagnosticsExplainGreedyReorderDecision() throws Exception {
+		System.setProperty(TRACE_DIAGNOSTICS_PROPERTY, "true");
+
+		JoinOrderPlanner.JoinOrderPlan plan = planTwoFactorGreedyJoin();
+
+		String logOutput = logOutput();
+
+		assertThat(logOutput)
+				.contains("Sketch join reorder input:")
+				.contains("originalOrder=")
+				.contains("factor[0]")
+				.contains("factor[1]")
+				.contains("greedy seed")
+				.contains("greedy seed candidate")
+				.contains("greedy candidate")
+				.contains("greedy choose")
+				.contains("result: order=")
+				.contains("outputRows=")
+				.contains("workRows=")
+				.contains("SP(?x urn:pB ?y)");
+
+		assertThat(diagnostics(plan))
+				.anySatisfy(line -> assertThat(line).contains("greedy seed"))
+				.anySatisfy(line -> assertThat(line).contains("greedy seed candidate"))
+				.anySatisfy(line -> assertThat(line).contains("greedy candidate"))
+				.anySatisfy(line -> assertThat(line).contains("greedy choose"))
+				.anySatisfy(line -> assertThat(line).contains("result: order="));
+	}
+
+	private static JoinOrderPlanner.JoinOrderPlan planTwoFactorGreedyJoin() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -90,31 +156,13 @@ class SketchJoinOrderPlannerLoggingTest {
 		StatementPattern b = pattern("x", pB, "y");
 		List<TupleExpr> args = List.of(a, b);
 
-		JoinOrderPlanner.JoinOrderPlan plan = estimator.planJoinOrder(args, Set.of(),
-				JoinOrderPlanner.Algorithm.GREEDY).orElseThrow();
+		return estimator.planJoinOrder(args, Set.of(), JoinOrderPlanner.Algorithm.GREEDY).orElseThrow();
+	}
 
-		String logOutput = listAppender.list.stream()
+	private String logOutput() {
+		return listAppender.list.stream()
 				.map(ILoggingEvent::getFormattedMessage)
 				.collect(Collectors.joining("\n"));
-
-		assertThat(logOutput)
-				.contains("Sketch join reorder input:")
-				.contains("originalOrder=")
-				.contains("factor[0]")
-				.contains("factor[1]")
-				.contains("greedy seed")
-				.contains("greedy candidate")
-				.contains("greedy choose")
-				.contains("result: order=")
-				.contains("outputRows=")
-				.contains("workRows=")
-				.contains("SP(?x urn:pB ?y)");
-
-		assertThat(diagnostics(plan))
-				.anySatisfy(line -> assertThat(line).contains("greedy seed"))
-				.anySatisfy(line -> assertThat(line).contains("greedy candidate"))
-				.anySatisfy(line -> assertThat(line).contains("greedy choose"))
-				.anySatisfy(line -> assertThat(line).contains("result: order="));
 	}
 
 	@SuppressWarnings("unchecked")
