@@ -67,6 +67,11 @@
 				<version>${jakarta.jstl.version}</version>
 			</dependency>
 			<dependency>
+				<groupId>org.glassfish.web</groupId>
+				<artifactId>jakarta.servlet.jsp.jstl</artifactId>
+				<version>${jakarta.jstl.version}</version>
+			</dependency>
+			<dependency>
 				<groupId>org.ebaysf.web</groupId>
 				<artifactId>cors-filter</artifactId>
 				<version>1.0.1</version>

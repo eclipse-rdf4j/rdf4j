@@ -33,10 +33,7 @@
         <url-pattern>/*</url-pattern>
     </filter-mapping>
      -->
-    <!--	<filter-mapping>
-            <filter-name>CompressingFilter</filter-name>
-            <url-pattern>/*</url-pattern>
-        </filter-mapping>-->
+
 	<filter-mapping>
 		<filter-name>UrlRewriteFilter</filter-name>
 		<url-pattern>/</url-pattern>
