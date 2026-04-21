@@ -18,11 +18,13 @@ import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
+import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import org.apache.hc.core5.http.io.entity.InputStreamEntity;
+import org.apache.hc.core5.util.Timeout;
 import org.eclipse.rdf4j.http.client.spi.HttpHeader;
 import org.eclipse.rdf4j.http.client.spi.HttpRequest;
 import org.eclipse.rdf4j.http.client.spi.HttpRequestBody;
@@ -100,6 +102,11 @@ public class ApacheHC5RDF4JHttpClient implements RDF4JHttpClient {
 		for (HttpHeader header : request.getHeaders()) {
 			hcRequest.addHeader(header.getName(), header.getValue());
 		}
+
+		// Apply per-request response timeout if present
+		request.getResponseTimeout()
+				.ifPresent(timeout -> hcRequest
+						.setConfig(RequestConfig.custom().setResponseTimeout(Timeout.of(timeout)).build()));
 
 		// Set body. Repeatable (byte-backed) bodies use ByteArrayEntity so that Apache HC5's
 		// RedirectExec can follow redirects and the 408 retry loop can re-send the request.

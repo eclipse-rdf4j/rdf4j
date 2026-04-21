@@ -22,12 +22,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.http.client.spi.HttpHeader;
+import org.eclipse.rdf4j.http.client.spi.HttpRequest;
 import org.eclipse.rdf4j.http.client.spi.HttpResponse;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
@@ -297,6 +299,32 @@ public class SPARQLProtocolSessionTest {
 
 		// check that the OutputStream received content in XML format
 		assertThat(out.toString()).startsWith("<");
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void getQueryMethod_setsResponseTimeout_whenMaxQueryTimeIsPositive(String factoryName) {
+		this.factoryName = factoryName;
+		sparqlSession = createProtocolSession();
+
+		HttpRequest request = sparqlSession.getQueryMethod(
+				QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }", null, null, true, 30);
+
+		assertThat(request.getResponseTimeout())
+				.isPresent()
+				.hasValue(Duration.ofSeconds(30));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void getQueryMethod_noResponseTimeout_whenMaxQueryTimeIsZero(String factoryName) {
+		this.factoryName = factoryName;
+		sparqlSession = createProtocolSession();
+
+		HttpRequest request = sparqlSession.getQueryMethod(
+				QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }", null, null, true, 0);
+
+		assertThat(request.getResponseTimeout()).isEmpty();
 	}
 
 	@Test

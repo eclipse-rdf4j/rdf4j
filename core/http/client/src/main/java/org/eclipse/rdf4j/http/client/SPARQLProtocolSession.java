@@ -22,6 +22,7 @@ import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -498,6 +499,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		for (Map.Entry<String, String> additionalHeader : additionalHttpHeaders.entrySet()) {
 			builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 		}
+		if (maxQueryTime > 0) {
+			builder.responseTimeout(Duration.ofSeconds(maxQueryTime));
+		}
 		return builder.build();
 	}
 
@@ -528,6 +532,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			for (Map.Entry<String, String> additionalHeader : additionalHttpHeaders.entrySet()) {
 				builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 			}
+		}
+		if (maxQueryTime > 0) {
+			builder.responseTimeout(Duration.ofSeconds(maxQueryTime));
 		}
 		return builder.build();
 	}
