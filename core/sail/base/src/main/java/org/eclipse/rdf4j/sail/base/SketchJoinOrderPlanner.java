@@ -914,6 +914,9 @@ final class SketchJoinOrderPlanner {
 		if (!sharedVariables.isEmpty()) {
 			return sharedVariables.size() == 1 ? sharedVariables.iterator().next() : "shared:" + sharedVariables;
 		}
+		if (mask != 0L && canConnectSmallBindingSetAssignmentAfterEndpointTypeGuard(mask, candidateIndex)) {
+			return "small-values-endpoint-type-guard";
+		}
 		if (mask != 0L && isSmallBindingSetAssignment(candidateIndex)
 				&& !hasReachableNonSmallCandidate(mask, candidateIndex)) {
 			return "small-values-anchor";
@@ -932,6 +935,9 @@ final class SketchJoinOrderPlanner {
 		if (sharedVariableMask(mask, candidateIndex) != 0L) {
 			return true;
 		}
+		if (mask != 0L && canConnectSmallBindingSetAssignmentAfterEndpointTypeGuard(mask, candidateIndex)) {
+			return true;
+		}
 		if (mask != 0L && isSmallBindingSetAssignment(candidateIndex)
 				&& !hasReachableNonSmallCandidate(mask, candidateIndex)) {
 			return true;
@@ -940,6 +946,31 @@ final class SketchJoinOrderPlanner {
 			return true;
 		}
 		return deferredFilterConnection(mask, candidateIndex) != null;
+	}
+
+	private boolean canConnectSmallBindingSetAssignmentAfterEndpointTypeGuard(long mask, int assignmentIndex) {
+		if (!isSmallBindingSetAssignment(assignmentIndex) || contains(mask, assignmentIndex)) {
+			return false;
+		}
+		long assignmentVars = joinVarMasks[assignmentIndex];
+		if (assignmentVars == 0L) {
+			return false;
+		}
+		for (int i = 0; i < factors.size(); i++) {
+			if (!contains(mask, i)) {
+				continue;
+			}
+			String subjectName = endpointRdfTypeGuardSubjectName(i);
+			if (subjectName == null) {
+				continue;
+			}
+			int distance = shortestStructuralDistance(assignmentVars, variableMask(Set.of(subjectName), variableIds),
+					assignmentIndex, i);
+			if (distance > 1 && distance < Integer.MAX_VALUE) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean hasReachableNonSmallCandidate(long mask, int ignoredCandidateIndex) {
@@ -1261,8 +1292,99 @@ final class SketchJoinOrderPlanner {
 			if (Double.isFinite(bindingScoreRows) && bindingScoreRows >= 0.0d) {
 				scoreRows = Math.min(scoreRows, bindingScoreRows);
 			}
+			if (previousMask == 0L) {
+				double endpointTypeGuardScoreRows = delayedEndpointRdfTypeGuardScoreRowsForSmallBindingSetAssignment(
+						factorIndex);
+				if (Double.isFinite(endpointTypeGuardScoreRows) && endpointTypeGuardScoreRows >= 0.0d) {
+					double endpointTypeGuardSeedFloor = endpointTypeGuardScoreRows;
+					if (Double.isFinite(bindingScoreRows) && bindingScoreRows > 0.0d) {
+						endpointTypeGuardSeedFloor += bindingScoreRows;
+					}
+					scoreRows = Math.max(scoreRows, Math.nextUp(endpointTypeGuardSeedFloor));
+				}
+			}
 		}
 		return scoreRows;
+	}
+
+	private double delayedEndpointRdfTypeGuardScoreRowsForSmallBindingSetAssignment(int assignmentIndex) {
+		if (!isSmallBindingSetAssignment(assignmentIndex)) {
+			return Double.NaN;
+		}
+		long assignmentVars = joinVarMasks[assignmentIndex];
+		if (assignmentVars == 0L) {
+			return Double.NaN;
+		}
+
+		double bestScoreRows = Double.POSITIVE_INFINITY;
+		for (int i = 0; i < factors.size(); i++) {
+			String subjectName = endpointRdfTypeGuardSubjectName(i);
+			if (subjectName == null) {
+				continue;
+			}
+			int distance = shortestStructuralDistance(assignmentVars, variableMask(Set.of(subjectName), variableIds),
+					assignmentIndex, i);
+			if (distance <= 1 || distance == Integer.MAX_VALUE) {
+				continue;
+			}
+			double scoreRows = smallSameSubjectRdfTypeGuardScoreRows(i, subjectName);
+			if (Double.isFinite(scoreRows) && scoreRows >= 0.0d && scoreRows < bestScoreRows) {
+				bestScoreRows = scoreRows;
+			}
+		}
+		return bestScoreRows < Double.POSITIVE_INFINITY ? bestScoreRows : Double.NaN;
+	}
+
+	private int shortestStructuralDistance(long startVars, long targetVar, int assignmentIndex, int typeGuardIndex) {
+		if (startVars == 0L || targetVar == 0L) {
+			return Integer.MAX_VALUE;
+		}
+		if ((startVars & targetVar) != 0L) {
+			return 0;
+		}
+
+		long seenVars = startVars;
+		long frontier = startVars;
+		int distance = 0;
+		while (frontier != 0L) {
+			long nextFrontier = 0L;
+			for (int i = 0; i < factors.size(); i++) {
+				if (i == assignmentIndex || i == typeGuardIndex || isBindingSetAssignment(i)
+						|| endpointRdfTypeGuardSubjectName(i) != null) {
+					continue;
+				}
+				long factorVars = joinVarMasks[i];
+				if ((factorVars & frontier) == 0L) {
+					continue;
+				}
+				if ((factorVars & targetVar) != 0L) {
+					return distance + 1;
+				}
+				long newVars = factorVars & ~seenVars;
+				if (newVars != 0L) {
+					nextFrontier |= newVars;
+					seenVars |= newVars;
+				}
+			}
+			frontier = nextFrontier;
+			distance++;
+		}
+		return Integer.MAX_VALUE;
+	}
+
+	private String endpointRdfTypeGuardSubjectName(int factorIndex) {
+		PlanFactor factor = factors.get(factorIndex);
+		StatementPattern statementPattern = statementPattern(factor.tupleExpr());
+		if (statementPattern == null || !hasConstantValue(statementPattern.getPredicateVar(), RDF_TYPE_IRI)) {
+			return null;
+		}
+		Var subjectVar = statementPattern.getSubjectVar();
+		if (subjectVar == null || subjectVar.hasValue() || subjectVar.getName() == null
+				|| statementPattern.getObjectVar() == null || !statementPattern.getObjectVar().hasValue()) {
+			return null;
+		}
+		String subjectName = subjectVar.getName();
+		return hasOnlySubjectPlannerJoinVar(factor, subjectName) ? subjectName : null;
 	}
 
 	private double pendingSmallSameSubjectRdfTypeGuardScoreRows(int factorIndex) {

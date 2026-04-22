@@ -109,6 +109,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	public static boolean REORDER_JOINS_WITH_SKETCHES = true;
 
 	private static final double MIN_NORMALIZED_JOIN_ROWS = 1.0e-9d;
+	private static final String RDF_TYPE_IRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 	private static final double AVOIDABLE_CROSS_JOIN_PENALTY = 10.0d;
 	private static final double UNANCHORED_INITIAL_PAIR_PENALTY = 5.0d;
 	private static final double SHARED_VAR_BONUS_PER_VAR = 1.7d;
@@ -849,7 +850,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void collectConjunctiveConditions(ValueExpr condition, List<ValueExpr> conditions) {
-			if (condition instanceof And) {
+			if (condition instanceof And && !containsExists(condition)) {
 				And and = (And) condition;
 				collectConjunctiveConditions(and.getLeftArg(), conditions);
 				collectConjunctiveConditions(and.getRightArg(), conditions);
@@ -934,10 +935,25 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private List<DeferredFilter> sortDeferredFilters(List<DeferredFilter> deferredFilters) {
 			ArrayList<DeferredFilter> sorted = new ArrayList<>(deferredFilters);
-			sorted.sort(Comparator
-					.comparingInt((DeferredFilter deferredFilter) -> deferredFilter.conditionCost)
-					.thenComparingInt(deferredFilter -> deferredFilter.originalIndex));
+			sorted.sort(this::compareDeferredFilters);
 			return sorted;
+		}
+
+		private int compareDeferredFilters(DeferredFilter left, DeferredFilter right) {
+			boolean leftContainsExists = containsExists(left.condition);
+			boolean rightContainsExists = containsExists(right.condition);
+			if (left.requiredVars.equals(right.requiredVars) && (leftContainsExists || rightContainsExists)) {
+				return Integer.compare(left.originalIndex, right.originalIndex);
+			}
+			if (leftContainsExists != rightContainsExists) {
+				return leftContainsExists ? -1 : 1;
+			}
+
+			int byCost = Integer.compare(left.conditionCost, right.conditionCost);
+			if (byCost != 0) {
+				return byCost;
+			}
+			return Integer.compare(left.originalIndex, right.originalIndex);
 		}
 
 		private TupleExpr buildOrderedJoinPlanRoot(OrderedJoinPlan orderedJoinPlan) {
@@ -966,9 +982,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<DeferredFilter> pendingFilters = new ArrayList<>(orderedJoinSegment.deferredFilters);
 			List<SegmentFactor> factors = new ArrayList<>(orderedJoinSegment.orderedJoinArgs.size());
+			Set<String> prefixBindingNames = new HashSet<>(orderedJoinSegment.boundBeforeSegment);
 			for (TupleExpr tupleExpr : orderedJoinSegment.orderedJoinArgs) {
 				TupleExpr filtered = applyCompatibleLocalDeferredFilters(tupleExpr, pendingFilters);
+				filtered = applyPrefixBindingDeferredFilters(filtered, pendingFilters, prefixBindingNames);
 				factors.add(new SegmentFactor(filtered, collectPatternIdentities(filtered)));
+				prefixBindingNames.addAll(filtered.getBindingNames());
 			}
 
 			List<DeferredFilter> unresolvedFilters = new ArrayList<>();
@@ -990,6 +1009,70 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return root;
+		}
+
+		private TupleExpr applyPrefixBindingDeferredFilters(TupleExpr tupleExpr,
+				List<DeferredFilter> deferredFilters, Set<String> prefixBindingNames) {
+			if (deferredFilters.isEmpty()) {
+				return tupleExpr;
+			}
+
+			Optional<Set<String>> assignmentNames = positionableBindingSetAssignmentNames(tupleExpr);
+			if (assignmentNames.isEmpty()) {
+				return tupleExpr;
+			}
+
+			Set<String> availableNames = new HashSet<>(prefixBindingNames);
+			Set<String> assignmentBindingNames = assignmentNames.get();
+			availableNames.addAll(assignmentBindingNames);
+			List<DeferredFilter> prefixFilters = new ArrayList<>();
+			for (int i = 0; i < deferredFilters.size();) {
+				DeferredFilter deferredFilter = deferredFilters.get(i);
+				if (prefixBindingNames.containsAll(deferredFilter.requiredVars)
+						|| !availableNames.containsAll(deferredFilter.requiredVars)
+						|| deferredFilter.patternLocalBase != null
+						|| hasPendingSplitExistsFilter(deferredFilters, deferredFilter, availableNames,
+								assignmentBindingNames)
+						|| (!assignmentBindingNames.containsAll(deferredFilter.requiredVars)
+								&& containsExists(deferredFilter.condition))) {
+					i++;
+					continue;
+				}
+				prefixFilters.add(deferredFilter);
+				deferredFilters.remove(i);
+			}
+
+			return prefixFilters.isEmpty() ? tupleExpr
+					: wrapTupleExprWithDeferredFiltersInOriginalOrder(tupleExpr, prefixFilters, "bindingPrefix");
+		}
+
+		private boolean hasPendingSplitExistsFilter(List<DeferredFilter> deferredFilters, DeferredFilter candidate,
+				Set<String> availableNames, Set<String> assignmentBindingNames) {
+			if (containsExists(candidate.condition)) {
+				return false;
+			}
+			for (DeferredFilter deferredFilter : deferredFilters) {
+				if (deferredFilter == candidate || !containsExists(deferredFilter.condition)
+						|| !availableNames.containsAll(deferredFilter.requiredVars)
+						|| assignmentBindingNames.containsAll(deferredFilter.requiredVars)
+						|| assignmentBindingNames.containsAll(candidate.requiredVars)) {
+					continue;
+				}
+				return true;
+			}
+			return false;
+		}
+
+		private boolean containsExists(ValueExpr condition) {
+			boolean[] contains = { false };
+			condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+
+				@Override
+				public void meet(Exists node) {
+					contains[0] = true;
+				}
+			});
+			return contains[0];
 		}
 
 		private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter deferredFilter,
@@ -1738,6 +1821,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return new ArrayList<>(segment);
 			}
 
+			nonAssignments = promoteSameSubjectTypeGuards(nonAssignments);
+
 			List<Set<String>> referencedVarNames = new ArrayList<>(nonAssignments.size());
 			for (TupleExpr tupleExpr : nonAssignments) {
 				referencedVarNames.add(VarNameCollector.process(tupleExpr));
@@ -1745,8 +1830,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			Map<Integer, List<TupleExpr>> insertions = new HashMap<>();
 			for (TupleExpr bindingSetAssignment : bindingSetAssignments) {
-				int firstUsageIndex = findFirstUsageIndex(bindingSetAssignmentNames.get(bindingSetAssignment),
-						referencedVarNames);
+				Set<String> bindingNames = bindingSetAssignmentNames.get(bindingSetAssignment);
+				int firstUsageIndex = findFirstUsageIndex(bindingNames, referencedVarNames);
 				insertions.computeIfAbsent(firstUsageIndex, key -> new ArrayList<>()).add(bindingSetAssignment);
 			}
 
@@ -1764,6 +1849,93 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return positioned;
+		}
+
+		private List<TupleExpr> promoteSameSubjectTypeGuards(List<TupleExpr> segment) {
+			if (segment.size() < 2) {
+				return segment;
+			}
+
+			List<TupleExpr> promoted = new ArrayList<>(segment);
+			for (int i = 0; i < promoted.size(); i++) {
+				StatementPattern filteredPattern = localFilteredStatementPattern(promoted.get(i));
+				if (filteredPattern == null) {
+					continue;
+				}
+
+				String subjectName = unboundSubjectName(filteredPattern);
+				if (subjectName == null) {
+					continue;
+				}
+
+				int typeGuardIndex = sameSubjectTypeGuardIndex(promoted, i + 1, subjectName);
+				if (typeGuardIndex < 0) {
+					continue;
+				}
+
+				TupleExpr typeGuard = promoted.remove(typeGuardIndex);
+				promoted.add(i, typeGuard);
+				i++;
+			}
+			return promoted;
+		}
+
+		private StatementPattern localFilteredStatementPattern(TupleExpr tupleExpr) {
+			if (!(tupleExpr instanceof Filter)) {
+				return null;
+			}
+
+			Filter filter = (Filter) tupleExpr;
+			StatementPattern pattern = unwrapFilteredStatementPattern(filter);
+			if (pattern == null || isRdfTypePattern(pattern)
+					|| !FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
+				return null;
+			}
+			return pattern;
+		}
+
+		private StatementPattern unwrapFilteredStatementPattern(Filter filter) {
+			TupleExpr current = filter.getArg();
+			while (current instanceof Filter) {
+				current = ((Filter) current).getArg();
+			}
+			return current instanceof StatementPattern ? (StatementPattern) current : null;
+		}
+
+		private int sameSubjectTypeGuardIndex(List<TupleExpr> segment, int startIndex, String subjectName) {
+			for (int i = startIndex; i < segment.size(); i++) {
+				TupleExpr tupleExpr = segment.get(i);
+				if (tupleExpr instanceof StatementPattern
+						&& isSameSubjectRdfTypeGuard((StatementPattern) tupleExpr, subjectName)) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		private boolean isSameSubjectRdfTypeGuard(StatementPattern pattern, String subjectName) {
+			if (!isRdfTypePattern(pattern)) {
+				return false;
+			}
+
+			String guardSubjectName = unboundSubjectName(pattern);
+			return subjectName.equals(guardSubjectName)
+					&& pattern.getObjectVar() != null && pattern.getObjectVar().hasValue()
+					&& pattern.getContextVar() == null;
+		}
+
+		private boolean isRdfTypePattern(StatementPattern pattern) {
+			return hasConstantValue(pattern.getPredicateVar(), RDF_TYPE_IRI);
+		}
+
+		private boolean hasConstantValue(Var var, String value) {
+			return var != null && var.hasValue() && var.getValue() != null
+					&& value.equals(var.getValue().stringValue());
+		}
+
+		private String unboundSubjectName(StatementPattern pattern) {
+			Var subjectVar = pattern.getSubjectVar();
+			return subjectVar != null && !subjectVar.hasValue() ? subjectVar.getName() : null;
 		}
 
 		private int bindingSetAssignmentPositionPriority(TupleExpr tupleExpr) {
@@ -2351,6 +2523,40 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				current = filterClone;
 			}
 			return current;
+		}
+
+		private TupleExpr wrapTupleExprWithDeferredFiltersInOriginalOrder(TupleExpr tupleExpr,
+				List<DeferredFilter> deferredFilters, String scope) {
+			if (tupleExpr instanceof Filter && bindingSetAssignmentLeaf(tupleExpr) != null) {
+				Filter existingFilter = (Filter) tupleExpr;
+				ValueExpr condition = combinedDeferredFilterCondition(deferredFilters);
+				if (containsExists(existingFilter.getCondition()) && !containsExists(condition)) {
+					condition = new And(existingFilter.getCondition().clone(), condition);
+				} else {
+					condition = new And(condition, existingFilter.getCondition().clone());
+				}
+				Filter filterClone = new Filter(existingFilter.getArg(), condition);
+				annotateDeferredFilter(filterClone, deferredFilters.get(0), scope);
+				return filterClone;
+			}
+			if (deferredFilters.size() == 1) {
+				DeferredFilter deferredFilter = deferredFilters.get(0);
+				Filter filterClone = new Filter(tupleExpr, deferredFilter.condition.clone());
+				annotateDeferredFilter(filterClone, deferredFilter, scope);
+				return filterClone;
+			}
+
+			Filter filterClone = new Filter(tupleExpr, combinedDeferredFilterCondition(deferredFilters));
+			annotateDeferredFilter(filterClone, deferredFilters.get(0), scope);
+			return filterClone;
+		}
+
+		private ValueExpr combinedDeferredFilterCondition(List<DeferredFilter> deferredFilters) {
+			ValueExpr condition = deferredFilters.get(0).condition.clone();
+			for (int i = 1; i < deferredFilters.size(); i++) {
+				condition = new And(condition, deferredFilters.get(i).condition.clone());
+			}
+			return condition;
 		}
 
 		private void annotateDeferredFilter(Filter filter, DeferredFilter deferredFilter, String scope) {

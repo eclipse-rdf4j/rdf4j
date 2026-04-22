@@ -166,6 +166,16 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void mergesExistsBeforeCompareForValuesOnlyJoin() {
+		String expectedQuery = "SELECT * WHERE {VALUES ?u {<urn:u1> <urn:u2>} VALUES ?v {<urn:v1> <urn:v2>} "
+				+ "FILTER(EXISTS {?v <urn:follows> ?u .} && ?u != ?v) }";
+		String query = "SELECT * WHERE {VALUES ?u {<urn:u1> <urn:u2>} VALUES ?v {<urn:v1> <urn:v2>} "
+				+ "FILTER(?u != ?v) FILTER EXISTS {?v <urn:follows> ?u .} }";
+
+		testOptimizer(expectedQuery, query);
+	}
+
+	@Test
 	public void standardPipelineShowsInScopeFilterInsideJoinGroup() {
 		String query = String.join("\n",
 				"PREFIX med: <http://example.com/theme/medical/>",

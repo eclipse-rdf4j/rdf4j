@@ -825,7 +825,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	@Test
 	void planJoinOrderKeepsSmallValuesAnchorBeforeBroadBridgeScan() {
 		StubSailStore store = new StubSailStore();
-		IRI rdfType = VF.createIRI("urn:rdfType");
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
 		IRI clinicalTrial = VF.createIRI("urn:ClinicalTrial");
 		IRI hasArm = VF.createIRI("urn:hasArm");
 		IRI hasResult = VF.createIRI("urn:hasResult");
@@ -877,6 +877,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
 				"Small VALUES anchors should stay on the compact planner path");
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+		assertEquals(trialTypePattern, orderedArgs.get(0),
+				"The endpoint rdf:type guard should seed long small-VALUES anchored chains");
 		assertTrue(orderedArgs.indexOf(markerValues) < orderedArgs.indexOf(trialArmPattern),
 				"Small VALUES filters should be applied before the broad hasArm bridge scan");
 	}
