@@ -22,6 +22,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -855,6 +856,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		for (Map.Entry<String, String> additionalHeader : getAdditionalHttpHeaders().entrySet()) {
 			builder.header(additionalHeader.getKey(), additionalHeader.getValue());
 		}
+		if (maxQueryTime > 0) {
+			builder.responseTimeout(Duration.ofSeconds(maxQueryTime));
+		}
 		return builder.build();
 	}
 
@@ -917,6 +921,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		// functionality to provide custom http headers as required by the applications
 		for (Map.Entry<String, String> additionalHeader : getAdditionalHttpHeaders().entrySet()) {
 			builder.header(additionalHeader.getKey(), additionalHeader.getValue());
+		}
+		if (maxExecutionTime > 0) {
+			builder.responseTimeout(Duration.ofSeconds(maxExecutionTime));
 		}
 		return builder.build();
 	}

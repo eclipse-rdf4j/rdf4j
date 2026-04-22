@@ -53,8 +53,10 @@ public class JdkRDF4JHttpClient implements RDF4JHttpClient {
 				builder.header(header.getName(), header.getValue());
 			}
 
-			// Set socket timeout if configured
-			if (config.getSocketTimeoutMs() > 0) {
+			// Per-request response timeout takes precedence over the global socket timeout from config
+			if (request.getResponseTimeout().isPresent()) {
+				builder.timeout(request.getResponseTimeout().get());
+			} else if (config.getSocketTimeoutMs() > 0) {
 				builder.timeout(Duration.ofMillis(config.getSocketTimeoutMs()));
 			}
 

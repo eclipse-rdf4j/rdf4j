@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.http.client.spi;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -48,12 +49,14 @@ public class HttpRequest {
 	private final URI uri;
 	private final List<HttpHeader> headers;
 	private final HttpRequestBody body;
+	private final Duration responseTimeout;
 
 	private HttpRequest(Builder builder) {
 		this.method = builder.method;
 		this.uri = builder.uri;
 		this.headers = new ArrayList<>(builder.headers);
 		this.body = builder.body;
+		this.responseTimeout = builder.responseTimeout;
 	}
 
 	/**
@@ -143,6 +146,17 @@ public class HttpRequest {
 	}
 
 	/**
+	 * Returns the optional response timeout for this request. When present, the HTTP client must abort the request if
+	 * no response data arrives within this duration. Overrides any client-level socket timeout for this specific
+	 * request.
+	 *
+	 * @return an {@link Optional} containing the response timeout, or empty if no per-request timeout is set
+	 */
+	public Optional<Duration> getResponseTimeout() {
+		return Optional.ofNullable(responseTimeout);
+	}
+
+	/**
 	 * Creates a new {@link Builder} for the given HTTP method and target URI.
 	 *
 	 * @param method the HTTP method (e.g. {@code "GET"}, {@code "POST"}); must not be {@code null}
@@ -165,7 +179,8 @@ public class HttpRequest {
 	public static Builder copyOf(HttpRequest original, URI uri) {
 		return new Builder(original.method, uri)
 				.headers(original.headers)
-				.body(original.body);
+				.body(original.body)
+				.responseTimeout(original.responseTimeout);
 	}
 
 	/**
@@ -181,6 +196,7 @@ public class HttpRequest {
 		private final URI uri;
 		private final List<HttpHeader> headers = new ArrayList<>();
 		private HttpRequestBody body;
+		private Duration responseTimeout;
 
 		private Builder(String method, URI uri) {
 			this.method = method;
@@ -233,6 +249,19 @@ public class HttpRequest {
 		 */
 		public Builder body(HttpRequestBody body) {
 			this.body = body;
+			return this;
+		}
+
+		/**
+		 * Sets the response timeout for this request. When set, the HTTP client must abort the request if no response
+		 * data arrives within this duration, overriding any client-level socket timeout. Pass {@code null} to clear a
+		 * previously set timeout.
+		 *
+		 * @param timeout the response timeout, or {@code null} for no per-request timeout
+		 * @return this builder
+		 */
+		public Builder responseTimeout(Duration timeout) {
+			this.responseTimeout = timeout;
 			return this;
 		}
 
