@@ -184,8 +184,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 	 * @param object   The RDF value to serialise
 	 * @param contexts The set of contexts that are relevant to this object, including null contexts as they are found.
 	 * @param jg       the {@link JsonGenerator} to write to.
-	 * @throws IOException
-	 * @throws JsonGenerationException
+	 * @throws JacksonException
 	 */
 	protected static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg) {
 		jg.writeStartObject();

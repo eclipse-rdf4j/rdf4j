@@ -148,7 +148,7 @@ public class RDFJSONParserCustomTest {
 	public void testAllowBackslashEscapingAnyCharacterDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 5]");
+				.hasMessage("Found exception during parsing [line 1, column 5]");
 	}
 
 	@Test
@@ -163,14 +163,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(BACKSLASH_ESCAPED_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 5]");
+				.hasMessage("Found exception during parsing [line 1, column 5]");
 	}
 
 	@Test
 	public void testAllowCommentsDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(COMMENTS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 3]");
+				.hasMessage("Found exception during parsing [line 1, column 3]");
 	}
 
 	@Test
@@ -185,14 +185,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_COMMENTS, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(COMMENTS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 3]");
+				.hasMessage("Found exception during parsing [line 1, column 3]");
 	}
 
 	@Test
 	public void testAllowNonNumericNumbersDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 74]");
+				.hasMessage("Found exception during parsing [line 1, column 74]");
 	}
 
 	@Test
@@ -207,14 +207,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(NON_NUMERIC_NUMBERS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 74]");
+				.hasMessage("Found exception during parsing [line 1, column 74]");
 	}
 
 	@Test
 	public void testAllowNumericLeadingZeroesDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 72]");
+				.hasMessage("Found exception during parsing [line 1, column 72]");
 	}
 
 	@Test
@@ -229,14 +229,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(NUMERIC_LEADING_ZEROES_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 72]");
+				.hasMessage("Found exception during parsing [line 1, column 72]");
 	}
 
 	@Test
 	public void testAllowSingleQuotesDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 3]");
+				.hasMessage("Found exception during parsing [line 1, column 3]");
 	}
 
 	@Test
@@ -251,14 +251,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_SINGLE_QUOTES, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(SINGLE_QUOTES_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 3]");
+				.hasMessage("Found exception during parsing [line 1, column 3]");
 	}
 
 	@Test
 	public void testAllowUnquotedControlCharactersDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 75]");
+				.hasMessage("Found exception during parsing [line 1, column 75]");
 	}
 
 	@Test
@@ -273,14 +273,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_CONTROL_CHARS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 75]");
+				.hasMessage("Found exception during parsing [line 1, column 75]");
 	}
 
 	@Test
 	public void testAllowUnquotedFieldNamesDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 63]");
+				.hasMessage("Found exception during parsing [line 1, column 63]");
 	}
 
 	@Test
@@ -295,14 +295,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(UNQUOTED_FIELD_NAMES_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 63]");
+				.hasMessage("Found exception during parsing [line 1, column 63]");
 	}
 
 	@Test
 	public void testAllowYamlCommentsDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 2, column 2]");
+				.hasMessage("Found exception during parsing [line 2, column 2]");
 	}
 
 	@Test
@@ -317,14 +317,14 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_YAML_COMMENTS, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(YAML_COMMENTS_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 2, column 2]");
+				.hasMessage("Found exception during parsing [line 2, column 2]");
 	}
 
 	@Test
 	public void testAllowTrailingCommaDefault() {
 		assertThatThrownBy(() -> parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 113]");
+				.hasMessage("Found exception during parsing [line 1, column 113]");
 	}
 
 	@Test
@@ -339,7 +339,7 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.ALLOW_TRAILING_COMMA, false);
 		assertThatThrownBy(() -> parser.parse(new StringReader(TRAILING_COMMA_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 113]");
+				.hasMessage("Found exception during parsing [line 1, column 113]");
 	}
 
 	@Test
@@ -408,7 +408,7 @@ public class RDFJSONParserCustomTest {
 		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, true);
 		assertThatThrownBy(() -> parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), ""))
 				.isInstanceOf(RDFParseException.class)
-				.hasMessage("Found IOException during parsing [line 1, column 119]");
+				.hasMessage("Found exception during parsing [line 1, column 119]");
 	}
 
 	@Test

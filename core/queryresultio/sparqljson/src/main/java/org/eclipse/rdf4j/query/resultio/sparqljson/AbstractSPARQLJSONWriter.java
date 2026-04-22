@@ -223,14 +223,13 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			} else {
 				pp = null;
 			}
-			jg = JSON_FACTORY.createGenerator(new ObjectWriteContext.Base() {
-				@Override
-				public PrettyPrinter getPrettyPrinter() {
-					return pp;
-				}
-			}, writer);
-
 			try {
+				jg = JSON_FACTORY.createGenerator(new ObjectWriteContext.Base() {
+					@Override
+					public PrettyPrinter getPrettyPrinter() {
+						return pp;
+					}
+				}, writer);
 				if (getWriterConfig().isSet(BasicQueryWriterSettings.JSONP_CALLBACK)) {
 					// SES-1019 : Write the callbackfunction name as a wrapper for
 					// the results here

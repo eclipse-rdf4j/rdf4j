@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.core.TokenStreamFactory;
@@ -84,11 +85,11 @@ public class RDFJSONParser extends AbstractRDFParser {
 				this.rdfHandler.startRDF();
 			}
 
-			jp = configureNewJsonFactory().createParser(inputStream);
+			jp = configureNewJsonFactory().createParser(ObjectReadContext.empty(), inputStream);
 			rdfJsonToHandlerInternal(this.rdfHandler, this.valueFactory, jp);
 		} catch (JacksonException e) {
 			if (jp != null) {
-				reportFatalError("Found IOException during parsing", e, jp.currentLocation());
+				reportFatalError("Found exception during parsing", e, jp.currentLocation());
 			} else {
 				reportFatalError(e);
 			}
@@ -154,11 +155,11 @@ public class RDFJSONParser extends AbstractRDFParser {
 				this.rdfHandler.startRDF();
 			}
 
-			jp = configureNewJsonFactory().createParser(reader);
+			jp = configureNewJsonFactory().createParser(ObjectReadContext.empty(), reader);
 			rdfJsonToHandlerInternal(rdfHandler, valueFactory, jp);
 		} catch (JacksonException e) {
 			if (jp != null) {
-				reportFatalError("Found IOException during parsing", e, jp.currentLocation());
+				reportFatalError("Found exception during parsing", e, jp.currentLocation());
 			} else {
 				reportFatalError(e);
 			}
@@ -229,7 +230,7 @@ public class RDFJSONParser extends AbstractRDFParser {
 
 							jp.nextToken();
 
-							nextValue = jp.getText();
+							nextValue = jp.getString();
 						} else if (RDFJSONUtility.TYPE.equals(fieldName)) {
 							if (nextType != null) {
 								reportError(
@@ -240,7 +241,7 @@ public class RDFJSONParser extends AbstractRDFParser {
 
 							jp.nextToken();
 
-							nextType = jp.getText();
+							nextType = jp.getString();
 						} else if (RDFJSONUtility.LANG.equals(fieldName)) {
 							if (nextLanguage != null) {
 								reportError(
@@ -252,7 +253,7 @@ public class RDFJSONParser extends AbstractRDFParser {
 
 							jp.nextToken();
 
-							nextLanguage = jp.getText();
+							nextLanguage = jp.getString();
 						} else if (RDFJSONUtility.DATATYPE.equals(fieldName)) {
 							if (nextDatatype != null) {
 								reportError(
@@ -264,7 +265,7 @@ public class RDFJSONParser extends AbstractRDFParser {
 
 							jp.nextToken();
 
-							nextDatatype = jp.getText();
+							nextDatatype = jp.getString();
 						} else if (RDFJSONUtility.GRAPHS.equals(fieldName)) {
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								reportError("Expected graphs to start with an array", jp.currentLocation(),
@@ -272,7 +273,7 @@ public class RDFJSONParser extends AbstractRDFParser {
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
-								final String nextGraph = jp.getText();
+								final String nextGraph = jp.getString();
 								nextContexts.add(nextGraph);
 							}
 						} else {
