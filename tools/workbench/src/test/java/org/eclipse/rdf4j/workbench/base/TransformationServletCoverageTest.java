@@ -98,7 +98,7 @@ class TransformationServletCoverageTest {
 
 		assertThatThrownBy(() -> missing.init(new TestServletConfig("transform", new MockServletContext(),
 				java.util.Map.of())))
-				.isInstanceOf(MissingInitParameterException.class);
+						.isInstanceOf(MissingInitParameterException.class);
 
 		NoOpTransformationServlet servlet = new NoOpTransformationServlet();
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
@@ -107,7 +107,7 @@ class TransformationServletCoverageTest {
 
 		assertThatCode(
 				() -> servlet.service(mock(WorkbenchRequest.class), mock(HttpServletResponse.class), "/transform"))
-				.doesNotThrowAnyException();
+						.doesNotThrowAnyException();
 		assertThat(servlet.builderRequested).isTrue();
 	}
 
@@ -120,9 +120,9 @@ class TransformationServletCoverageTest {
 
 		assertThatThrownBy(() -> servlet.service(new MockHttpServletRequest("GET", "/transform"),
 				mock(HttpServletResponse.class)))
-				.isInstanceOf(ServletException.class)
-				.hasCauseInstanceOf(Exception.class)
-				.hasMessageContaining("boom");
+						.isInstanceOf(ServletException.class)
+						.hasCauseInstanceOf(Exception.class)
+						.hasMessageContaining("boom");
 	}
 
 	private static final class RecordingTransformationServlet extends TransformationServlet {

@@ -97,10 +97,10 @@ class ServiceQueryEvaluationStepTelemetryTest {
 		FederatedService federatedService = mock(FederatedService.class);
 		when(federatedService.select(eq(service), anySet(), any(BindingSet.class),
 				eq(service.getBaseURI())))
-				.thenAnswer(invocation -> {
-					LockSupport.parkNanos(1_000_000L);
-					return new CloseableIteratorIteration<>(List.of(singleBindingSet("s", "row")).iterator());
-				});
+						.thenAnswer(invocation -> {
+							LockSupport.parkNanos(1_000_000L);
+							return new CloseableIteratorIteration<>(List.of(singleBindingSet("s", "row")).iterator());
+						});
 
 		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
 		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);
@@ -139,7 +139,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 		when(responseRow.toString()).thenThrow(new AssertionError("response byte accounting should be disabled"));
 		when(federatedService.select(eq(service), anySet(), any(BindingSet.class),
 				eq(service.getBaseURI())))
-				.thenReturn(new CloseableIteratorIteration<>(List.of(responseRow).iterator()));
+						.thenReturn(new CloseableIteratorIteration<>(List.of(responseRow).iterator()));
 
 		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
 		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);

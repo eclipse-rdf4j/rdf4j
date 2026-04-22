@@ -1032,7 +1032,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return precompile(expr,
 				new QueryEvaluationContext.Minimal(DefaultEvaluationStrategy.this.sharedValueOfNow, dataset,
 						tripleSource.getComparator()))
-				.evaluate(bindings);
+								.evaluate(bindings);
 	}
 
 	protected QueryValueEvaluationStep prepare(Var var, QueryEvaluationContext context)
@@ -1167,7 +1167,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		return prepare(node,
 				new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator()))
-				.evaluate(bindings);
+						.evaluate(bindings);
 	}
 
 	/**
