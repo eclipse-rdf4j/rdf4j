@@ -52,7 +52,7 @@ public class TripleStoreAutoGrowTest {
 		tripleStore = new TripleStore(dataDir, config, null);
 		((Logger) LoggerFactory
 				.getLogger(TripleStore.class.getName()))
-						.setLevel(ch.qos.logback.classic.Level.DEBUG);
+				.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 
 	@Test

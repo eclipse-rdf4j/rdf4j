@@ -369,8 +369,8 @@ public class Section3Test extends BaseExamples {
 				.delete(book.has(p, v))
 				.where(and(book.has(dc.iri("date"), date).andHas(dc.iri("type"), dcmitype.iri("PhysicalObject")),
 						book.has(p, v))
-								.filter(Expressions.lt(date,
-										Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+						.filter(Expressions.lt(date,
+								Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
 
 		assertThat(deleteFromBookStoreQuery.getQueryString()).is(stringEqualsIgnoreCaseAndWhitespace(
 				"WITH <http://example/bookStore>\n"

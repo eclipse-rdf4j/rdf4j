@@ -229,7 +229,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.get(Protocol.getRepositoriesLocation(serverURL)))
-						.build();
+				.build();
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -249,7 +249,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.get(Protocol.getProtocolLocation(serverURL)))
-						.build();
+				.build();
 
 		try (HttpResponse response = executeOK(method)) {
 			return HttpUtils.toString(response);
@@ -324,7 +324,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.put(baseURI)
 						.body(HttpRequestBody.ofBytes(bytes, getPreferredRDFFormat().getDefaultMIMEType())))
-								.build();
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -355,7 +355,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.post(Protocol.getRepositoryConfigLocation(baseURI))
 						.body(HttpRequestBody.ofBytes(bytes, getPreferredRDFFormat().getDefaultMIMEType())))
-								.build();
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -370,7 +370,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.delete(Protocol.getRepositoryLocation(serverURL, repositoryID)))
-						.build();
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -431,7 +431,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.get(Protocol.getNamespacesLocation(getQueryURL())))
-						.build();
+				.build();
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -446,7 +446,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.get(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)))
-						.build();
+				.build();
 
 		try (HttpResponse response = execute(method)) {
 			int code = response.getStatusCode();
@@ -469,7 +469,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.put(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix))
 						.body(HttpRequestBody.ofString(name, "text/plain", StandardCharsets.UTF_8)))
-								.build();
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -485,7 +485,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.delete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)))
-						.build();
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -501,7 +501,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.delete(Protocol.getNamespacesLocation(getQueryURL())))
-						.build();
+				.build();
 
 		try {
 			executeNoContent(method);
@@ -534,7 +534,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.get(Protocol.getContextsLocation(getQueryURL())))
-						.build();
+				.build();
 
 		try {
 			getTupleQueryResult(method, handler);
@@ -623,7 +623,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				HttpRequests.post(Protocol.getTransactionsLocation(getRepositoryURL()))
 						.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
 						.body(HttpRequestBody.ofFormData(params)))
-								.build();
+				.build();
 
 		try (HttpResponse response = execute(method)) {
 			int code = response.getStatusCode();
@@ -695,7 +695,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		String requestURL = transactionURL;
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.delete(requestURL))
-						.build();
+				.build();
 
 		try (HttpResponse response = execute(method)) {
 			int code = response.getStatusCode();
@@ -784,7 +784,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.post(Protocol.getStatementsLocation(getQueryURL()))
 						.body(HttpRequestBody.ofBytes(bytes, Protocol.TXN_MIME_TYPE)))
-								.build();
+				.build();
 
 		try {
 			executeNoContent(method);

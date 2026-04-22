@@ -70,7 +70,7 @@ public class LogbackConfiguration extends AbstractLogConfiguration {
 			configurator = new LogConfigurator();
 			configurator.setContext(lc);
 			lc.reset();
-			configurator.doConfigure(configFile);
+			configurator.configure(configFile);
 		} catch (JoranException je) {
 			System.out.println("Logback configuration error");
 			je.printStackTrace();

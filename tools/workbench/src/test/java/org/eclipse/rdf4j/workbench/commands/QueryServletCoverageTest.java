@@ -41,12 +41,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import javax.servlet.ServletException;
-import javax.servlet.ServletOutputStream;
-import javax.servlet.WriteListener;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -68,6 +62,12 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletResponse;
 
 class QueryServletCoverageTest {
 
@@ -510,7 +510,7 @@ class QueryServletCoverageTest {
 		private final CountDownLatch longRequestEnteredCookies;
 		private final CountDownLatch releaseLongRequest;
 
-		private BlockingCookieHandler(javax.servlet.ServletConfig config, QueryServlet servlet, String longQuery,
+		private BlockingCookieHandler(jakarta.servlet.ServletConfig config, QueryServlet servlet, String longQuery,
 				String shortQuery, CountDownLatch longRequestEnteredCookies, CountDownLatch releaseLongRequest) {
 			super(config, servlet);
 			this.longQuery = longQuery;

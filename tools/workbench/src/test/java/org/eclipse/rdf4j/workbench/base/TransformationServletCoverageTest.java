@@ -21,9 +21,6 @@ import static org.mockito.Mockito.verify;
 
 import java.io.OutputStream;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
@@ -32,6 +29,9 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockServletContext;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletResponse;
 
 class TransformationServletCoverageTest {
 
@@ -98,7 +98,7 @@ class TransformationServletCoverageTest {
 
 		assertThatThrownBy(() -> missing.init(new TestServletConfig("transform", new MockServletContext(),
 				java.util.Map.of())))
-						.isInstanceOf(MissingInitParameterException.class);
+				.isInstanceOf(MissingInitParameterException.class);
 
 		NoOpTransformationServlet servlet = new NoOpTransformationServlet();
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
@@ -107,7 +107,7 @@ class TransformationServletCoverageTest {
 
 		assertThatCode(
 				() -> servlet.service(mock(WorkbenchRequest.class), mock(HttpServletResponse.class), "/transform"))
-						.doesNotThrowAnyException();
+				.doesNotThrowAnyException();
 		assertThat(servlet.builderRequested).isTrue();
 	}
 
@@ -120,9 +120,9 @@ class TransformationServletCoverageTest {
 
 		assertThatThrownBy(() -> servlet.service(new MockHttpServletRequest("GET", "/transform"),
 				mock(HttpServletResponse.class)))
-						.isInstanceOf(ServletException.class)
-						.hasCauseInstanceOf(Exception.class)
-						.hasMessageContaining("boom");
+				.isInstanceOf(ServletException.class)
+				.hasCauseInstanceOf(Exception.class)
+				.hasMessageContaining("boom");
 	}
 
 	private static final class RecordingTransformationServlet extends TransformationServlet {
@@ -151,7 +151,7 @@ class TransformationServletCoverageTest {
 		private String lastXslPath;
 
 		@Override
-		protected TupleResultBuilder getTupleResultBuilder(javax.servlet.http.HttpServletRequest req,
+		protected TupleResultBuilder getTupleResultBuilder(jakarta.servlet.http.HttpServletRequest req,
 				HttpServletResponse resp, OutputStream outputStream) {
 			return builder;
 		}
@@ -167,7 +167,7 @@ class TransformationServletCoverageTest {
 		private boolean builderRequested;
 
 		@Override
-		protected TupleResultBuilder getTupleResultBuilder(javax.servlet.http.HttpServletRequest req,
+		protected TupleResultBuilder getTupleResultBuilder(jakarta.servlet.http.HttpServletRequest req,
 				HttpServletResponse resp, OutputStream outputStream) {
 			builderRequested = true;
 			return mock(TupleResultBuilder.class);

@@ -59,7 +59,7 @@ public class OverflowBenchmarkReal {
 	public void setup() {
 		((Logger) (LoggerFactory
 				.getLogger("org.eclipse.rdf4j.sail.nativerdf.MemoryOverflowModel")))
-						.setLevel(ch.qos.logback.classic.Level.DEBUG);
+				.setLevel(ch.qos.logback.classic.Level.DEBUG);
 	}
 
 	public static void main(String[] args) throws RunnerException {
