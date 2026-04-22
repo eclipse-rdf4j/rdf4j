@@ -32,10 +32,11 @@ import java.util.zip.GZIPInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.core.StreamReadConstraints;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Reader for ValueStore WAL segments that yields minted records in LSN order across segments. It tolerates truncated or
@@ -419,12 +420,12 @@ public final class ValueStoreWalReader implements AutoCloseable {
 
 	private Parsed parseJson(byte[] jsonBytes) throws IOException {
 		Parsed parsed = new Parsed();
-		try (JsonParser jp = jsonFactory.createParser(jsonBytes)) {
+		try (JsonParser jp = jsonFactory.createParser(ObjectReadContext.empty(), jsonBytes)) {
 			if (jp.nextToken() != JsonToken.START_OBJECT) {
 				return parsed;
 			}
 			while (jp.nextToken() != JsonToken.END_OBJECT) {
-				String field = jp.getCurrentName();
+				String field = jp.currentName();
 				jp.nextToken();
 				if ("t".equals(field)) {
 					String t = jp.getValueAsString("");

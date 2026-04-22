@@ -20,9 +20,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Test utility helpers for inspecting ValueStore WAL segments.
@@ -64,10 +65,10 @@ public final class ValueStoreWalTestUtils {
 		}
 		// Skip header CRC
 		in.readNBytes(Integer.BYTES);
-		try (JsonParser parser = JSON_FACTORY.createParser(jsonBytes)) {
+		try (JsonParser parser = JSON_FACTORY.createParser(ObjectReadContext.empty(), jsonBytes)) {
 			while (parser.nextToken() != JsonToken.END_OBJECT) {
-				if (parser.currentToken() == JsonToken.FIELD_NAME) {
-					String field = parser.getCurrentName();
+				if (parser.currentToken() == JsonToken.PROPERTY_NAME) {
+					String field = parser.currentName();
 					parser.nextToken();
 					if ("segment".equals(field)) {
 						return parser.getIntValue();

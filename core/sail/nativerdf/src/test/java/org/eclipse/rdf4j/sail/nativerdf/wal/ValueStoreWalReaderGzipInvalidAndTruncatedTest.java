@@ -24,8 +24,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Tests gzip path for invalid length and truncated CRC conditions.
@@ -103,15 +104,15 @@ class ValueStoreWalReaderGzipInvalidAndTruncatedTest {
 	private static byte[] headerJson(int segment, int firstId) throws IOException {
 		JsonFactory f = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (JsonGenerator g = f.createGenerator(baos)) {
+		try (JsonGenerator g = f.createGenerator(ObjectWriteContext.empty(), baos)) {
 			g.writeStartObject();
-			g.writeStringField("t", "V");
-			g.writeNumberField("ver", 1);
-			g.writeStringField("store", "s");
-			g.writeStringField("engine", "valuestore");
-			g.writeNumberField("created", 0);
-			g.writeNumberField("segment", segment);
-			g.writeNumberField("firstId", firstId);
+			g.writeStringProperty("t", "V");
+			g.writeNumberProperty("ver", 1);
+			g.writeStringProperty("store", "s");
+			g.writeStringProperty("engine", "valuestore");
+			g.writeNumberProperty("created", 0);
+			g.writeNumberProperty("segment", segment);
+			g.writeNumberProperty("firstId", firstId);
 			g.writeEndObject();
 		}
 		baos.write('\n');
@@ -121,16 +122,16 @@ class ValueStoreWalReaderGzipInvalidAndTruncatedTest {
 	private static byte[] mintedJson(long lsn, int id) throws IOException {
 		JsonFactory f = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (JsonGenerator g = f.createGenerator(baos)) {
+		try (JsonGenerator g = f.createGenerator(ObjectWriteContext.empty(), baos)) {
 			g.writeStartObject();
-			g.writeStringField("t", "M");
-			g.writeNumberField("lsn", lsn);
-			g.writeNumberField("id", id);
-			g.writeStringField("vk", "I");
-			g.writeStringField("lex", "http://ex/id" + id);
-			g.writeStringField("dt", "");
-			g.writeStringField("lang", "");
-			g.writeNumberField("hash", 0);
+			g.writeStringProperty("t", "M");
+			g.writeNumberProperty("lsn", lsn);
+			g.writeNumberProperty("id", id);
+			g.writeStringProperty("vk", "I");
+			g.writeStringProperty("lex", "http://ex/id" + id);
+			g.writeStringProperty("dt", "");
+			g.writeStringProperty("lang", "");
+			g.writeNumberProperty("hash", 0);
 			g.writeEndObject();
 		}
 		baos.write('\n');
