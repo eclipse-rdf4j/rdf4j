@@ -80,8 +80,8 @@ class QueryServletFlowCoverageTest {
 
 			assertThatThrownBy(() -> servlet.init(
 					TestServletConfig.withParams("query", "transformations", "/transform", "cookie-max-age", "60")))
-					.isInstanceOf(ServletException.class)
-					.hasCauseInstanceOf(RepositoryException.class);
+							.isInstanceOf(ServletException.class)
+							.hasCauseInstanceOf(RepositoryException.class);
 		} finally {
 			if (previous == null) {
 				System.clearProperty(key);

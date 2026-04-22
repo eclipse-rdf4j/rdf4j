@@ -53,8 +53,8 @@ class ProxyRepositoryServletTest {
 		assertThatThrownBy(() -> servlet.init(TestServletConfig.withParams("proxy",
 				"default-command", "/summary",
 				"/summary", AbstractBrokenServlet.class.getName())))
-				.isInstanceOf(ServletException.class)
-				.hasCauseInstanceOf(InstantiationException.class);
+						.isInstanceOf(ServletException.class)
+						.hasCauseInstanceOf(InstantiationException.class);
 	}
 
 	@Test
