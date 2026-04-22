@@ -19,7 +19,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.model.BNode;
@@ -78,10 +77,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	protected boolean linksFound = false;
 
-	// supplier for a pretty printer, which is initialized in startDocument based on writer settings
-	protected Supplier<PrettyPrinter> prettyPrinterSupplier = () -> null;
-
-	protected final JsonGenerator jg;
+	protected JsonGenerator jg;
 
 	private final Writer writer;
 
@@ -91,12 +87,6 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	protected AbstractSPARQLJSONWriter(Writer writer) {
 		this.writer = writer;
-		jg = JSON_FACTORY.createGenerator(new ObjectWriteContext.Base() {
-			@Override
-			public PrettyPrinter getPrettyPrinter() {
-				return prettyPrinterSupplier.get();
-			}
-		}, writer);
 	}
 
 	@Override
@@ -223,15 +213,22 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			firstTupleWritten = false;
 			linksFound = false;
 
+			// Create the generator here so the pretty printer setting (which requires the writer config)
+			// is known at generator construction time, as Jackson 3 reads it from the ObjectWriteContext eagerly.
+			final PrettyPrinter pp;
 			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
 				// SES-2011: Always use \n for consistency
 				Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
-				// By default Jackson does not pretty print, so enable this unless
-				// PRETTY_PRINT setting is disabled
-				final PrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
-						.withObjectIndenter(indenter);
-				prettyPrinterSupplier = () -> pp;
+				pp = new DefaultPrettyPrinter().withArrayIndenter(indenter).withObjectIndenter(indenter);
+			} else {
+				pp = null;
 			}
+			jg = JSON_FACTORY.createGenerator(new ObjectWriteContext.Base() {
+				@Override
+				public PrettyPrinter getPrettyPrinter() {
+					return pp;
+				}
+			}, writer);
 
 			try {
 				if (getWriterConfig().isSet(BasicQueryWriterSettings.JSONP_CALLBACK)) {
