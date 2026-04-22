@@ -752,11 +752,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			}
 		}
 
-		HttpRequest methodWithAccept = withHeader(method, ACCEPT_PARAM_NAME,
-				String.join(", ", acceptValues));
+		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptValues));
 
 		try {
-			return executeOK(methodWithAccept);
+			return executeOK(method);
 		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		} catch (RDF4JException e) {
@@ -901,11 +900,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext, getPreferredRDFFormat());
 
-		HttpRequest methodWithAccept = withHeader(method, ACCEPT_PARAM_NAME,
-				String.join(", ", acceptParams));
+		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptParams));
 
 		try {
-			return executeOK(methodWithAccept);
+			return executeOK(method);
 		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {
 			throw e;
 		} catch (RDF4JException e) {
@@ -972,10 +970,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			}
 		}
 
-		HttpRequest methodWithAccept = withHeader(method, ACCEPT_PARAM_NAME,
-				String.join(", ", acceptValues));
+		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptValues));
 
-		return executeOK(methodWithAccept);
+		return executeOK(method);
 	}
 
 	/**
@@ -1250,19 +1247,4 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		this.passThroughEnabled = passThroughEnabled;
 	}
 
-	/**
-	 * Creates a new {@link HttpRequest} with an additional header added to the existing request.
-	 *
-	 * @param request the original request
-	 * @param name    the header name
-	 * @param value   the header value
-	 * @return a new request with the additional header
-	 */
-	private static HttpRequest withHeader(HttpRequest request, String name, String value) {
-		HttpRequest.Builder builder = HttpRequest.newBuilder(request.getMethod(), request.getUri())
-				.headers(request.getHeaders())
-				.header(name, value);
-		request.getBody().ifPresent(builder::body);
-		return builder.build();
-	}
 }
