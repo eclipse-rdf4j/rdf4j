@@ -97,7 +97,7 @@ final class SketchJoinOrderReorderer {
 
 		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(estimator, workAdjuster,
 				plannedExpressions, plannedBound, deferredFilters)
-						.plan(algorithm);
+				.plan(algorithm);
 		estimator.recordJoinOrderPlannerPath(outcome.path());
 		if (outcome.plan().isEmpty()) {
 			List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + outcome.diagnostics().size());

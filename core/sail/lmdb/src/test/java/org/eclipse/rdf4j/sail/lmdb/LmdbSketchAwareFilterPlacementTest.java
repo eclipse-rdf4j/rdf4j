@@ -383,7 +383,7 @@ class LmdbSketchAwareFilterPlacementTest {
 	}
 
 	private static boolean isRecordedOnFilter(Filter filter) {
-		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+		if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 			return false;
 		}
 		return MEDICAL_RECORDED_ON.equals(statementPattern.getPredicateVar().getValue())
@@ -391,7 +391,7 @@ class LmdbSketchAwareFilterPlacementTest {
 	}
 
 	private static boolean isSubstationNameFilter(Filter filter) {
-		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+		if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 			return false;
 		}
 		return GRID_NAME.equals(statementPattern.getPredicateVar().getValue())

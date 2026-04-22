@@ -790,8 +790,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				"  ?s ex:type ?type .",
 				"  FILTER (?value IN (1, 2.0))",
 				"}"), new EvaluationStatistics()), "value"))
-						.as("Numeric IN equality can match non-identical RDF terms, so same-term VALUES is unsafe")
-						.isEmpty();
+				.as("Numeric IN equality can match non-identical RDF terms, so same-term VALUES is unsafe")
+				.isEmpty();
 
 		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
 				"PREFIX ex: <http://example.com/>",
@@ -800,8 +800,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				"  ?s ex:type ?type .",
 				"  FILTER (?value IN (\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>))",
 				"}"), new EvaluationStatistics()), "value"))
-						.as("Boolean IN equality is value equality, not RDF-term identity")
-						.isEmpty();
+				.as("Boolean IN equality is value equality, not RDF-term identity")
+				.isEmpty();
 
 		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
 				"PREFIX ex: <http://example.com/>",
@@ -810,8 +810,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				"  ?s ex:type ?type .",
 				"  FILTER (?value IN (\"2020-01-01T00:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>))",
 				"}"), new EvaluationStatistics()), "value"))
-						.as("dateTime IN equality is value equality, not RDF-term identity")
-						.isEmpty();
+				.as("dateTime IN equality is value equality, not RDF-term identity")
+				.isEmpty();
 	}
 
 	@Test

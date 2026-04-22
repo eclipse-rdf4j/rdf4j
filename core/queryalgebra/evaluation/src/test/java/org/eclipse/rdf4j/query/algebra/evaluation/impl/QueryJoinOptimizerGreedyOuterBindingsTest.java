@@ -461,7 +461,7 @@ class QueryJoinOptimizerGreedyOuterBindingsTest {
 
 		@Override
 		public double getCardinality(TupleExpr expr) {
-			if (expr instanceof Filter filter && filter.getArg()instanceof StatementPattern statementPattern) {
+			if (expr instanceof Filter filter && filter.getArg() instanceof StatementPattern statementPattern) {
 				if (predicate(statementPattern).equals(ex("recordedOn"))) {
 					return 0.1d;
 				}
@@ -500,7 +500,7 @@ class QueryJoinOptimizerGreedyOuterBindingsTest {
 
 		@Override
 		public double estimateFilterPassRatio(Filter filter) {
-			return filter.getArg()instanceof StatementPattern statementPattern
+			return filter.getArg() instanceof StatementPattern statementPattern
 					&& predicate(statementPattern).equals(ex("recordedOn")) ? 0.01d : -1.0d;
 		}
 	}

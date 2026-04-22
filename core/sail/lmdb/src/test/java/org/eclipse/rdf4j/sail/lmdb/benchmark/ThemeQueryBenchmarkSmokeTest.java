@@ -184,7 +184,7 @@ class ThemeQueryBenchmarkSmokeTest {
 	}
 
 	private static boolean isRecordedOnFilter(Filter filter) {
-		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+		if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 			return false;
 		}
 		return MEDICAL_RECORDED_ON.equals(statementPattern.getPredicateVar().getValue().stringValue())
