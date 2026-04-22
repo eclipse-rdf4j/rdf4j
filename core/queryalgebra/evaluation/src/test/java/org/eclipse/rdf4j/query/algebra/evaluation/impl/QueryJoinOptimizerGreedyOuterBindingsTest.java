@@ -108,6 +108,7 @@ class QueryJoinOptimizerGreedyOuterBindingsTest {
 				Set.of());
 
 		assertThat(predicates(reordered))
+
 				.as("Greedy expansion should still prefer the next connected candidate over a disconnected cheaper alternative")
 				.containsExactly(ex("pA"), ex("pB"), ex("pC"), ex("pD"));
 	}
