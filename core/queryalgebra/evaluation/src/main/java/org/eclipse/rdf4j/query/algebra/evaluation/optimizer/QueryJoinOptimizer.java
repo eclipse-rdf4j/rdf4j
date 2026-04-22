@@ -387,6 +387,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				if (root != null) {
 					root = reapplyDeferredFilters(root, orderedJoinPlan.rootDeferredFilters);
+					normalizeFilterLocalBindingSetAssignmentOrder(root);
 
 					if (TupleExprs.isVariableScopeChange(replaceTarget)) {
 						((AbstractQueryModelNode) root).setVariableScopeChange(true);
@@ -398,6 +399,36 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			} finally {
 				boundVars = origBoundVars;
+			}
+		}
+
+		private void normalizeFilterLocalBindingSetAssignmentOrder(TupleExpr root) {
+			root.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Filter filter) {
+					filter.getArg().visit(this);
+
+					List<TupleExpr> factors = new ArrayList<>();
+					collectFilterJoinFactors(filter.getArg(), factors);
+					if (factors.size() < 2) {
+						return;
+					}
+
+					List<TupleExpr> positionedFactors = positionBindingSetAssignmentsInSegment(factors);
+					if (!sameIdentityOrder(factors, positionedFactors)) {
+						filter.setArg(buildJoinRoot(new ArrayDeque<>(positionedFactors)));
+					}
+				}
+			});
+		}
+
+		private void collectFilterJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+			if (tupleExpr instanceof Join && !isJoinOrderSeparator(tupleExpr)) {
+				Join join = (Join) tupleExpr;
+				collectFilterJoinFactors(join.getLeftArg(), factors);
+				collectFilterJoinFactors(join.getRightArg(), factors);
+			} else {
+				factors.add(tupleExpr);
 			}
 		}
 

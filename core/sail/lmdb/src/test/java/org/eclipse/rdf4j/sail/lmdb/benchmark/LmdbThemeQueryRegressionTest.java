@@ -90,6 +90,41 @@ class LmdbThemeQueryRegressionTest {
 					"<http://example.com/theme/train/partOfLine> ?line"),
 			anchor(Theme.TRAIN, 7, "<http://example.com/theme/train/name> ?name",
 					"<http://example.com/theme/train/passesThrough> ?op"));
+	private static final String MEDICAL_Q1_FASTEST_RENDERED_QUERY = String.join("\n",
+			"SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {",
+			"  {",
+			"    ?entity a <http://example.com/theme/medical/Condition> .",
+			"    ?entity <http://example.com/theme/medical/code> ?code .",
+			"    VALUES ?target { \"DX-200\" \"DX-201\" }",
+			"    FILTER ((?code = ?target) || (?code = \"DX-202\"))",
+			"  }",
+			"  UNION",
+			"  {",
+			"    ?entity a <http://example.com/theme/medical/Medication> .",
+			"    ?entity <http://example.com/theme/medical/code> ?code .",
+			"    VALUES ?target { \"DX-200\" \"DX-201\" }",
+			"    FILTER ((?code = ?target) || (?code = \"DX-202\"))",
+			"  }",
+			"  OPTIONAL {",
+			"    ?entity <http://example.com/theme/medical/code> ?alt .",
+			"  }",
+			"}");
+	private static final String LIBRARY_Q9_FASTEST_RENDERED_QUERY = String.join("\n",
+			"SELECT (COUNT(DISTINCT ?member) AS ?count) WHERE {",
+			"  ?author <http://example.com/theme/library/name> ?authorName .",
+			"  FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
+			"  ?book <http://example.com/theme/library/writtenBy> ?author .",
+			"  ?book <http://example.com/theme/library/hasCopy> ?copy .",
+			"  ?loan <http://example.com/theme/library/loanedCopy> ?copy .",
+			"  ?loan <http://example.com/theme/library/borrowedBy> ?member .",
+			"  ?member a <http://example.com/theme/library/Member> .",
+			"  ?loan a <http://example.com/theme/library/Loan> .",
+			"  VALUES ?target { \"Author 1\" \"Author 2\" }",
+			"  OPTIONAL {",
+			"    ?book <http://example.com/theme/library/title> ?optTitle .",
+			"  }",
+			"  FILTER ((?optTitle != \"\") && NOT EXISTS { ?loan <http://example.com/theme/library/dueDate> ?due . FILTER (?due < \"2024-01-10\"^^<http://www.w3.org/2001/XMLSchema#date>) })",
+			"}");
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("highValueThemes")
@@ -238,6 +273,68 @@ class LmdbThemeQueryRegressionTest {
 			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
 			assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
 			assertElectricalGridGeneratorCapacityThresholdShape(snapshot);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void medicalConditionsOrMedicationsByCodeUsesBranchLocalValuesAndFilter(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 1);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
+			assertPlannerDiagnosticsPresent(theme, 1, snapshot.plan());
+			if (!MEDICAL_Q1_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
+				throw new AssertionError("Medical q1 should match the fastest branch-local VALUES/filter shape\n"
+						+ "Expected:\n" + MEDICAL_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
+						+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+			}
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void libraryMembersBorrowingBooksByAuthorsUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 9);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 9);
+			assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
+			if (!LIBRARY_Q9_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
+				throw new AssertionError("Library q9 should match the fastest author/book/loan shape\n"
+						+ "Expected:\n" + LIBRARY_Q9_FASTEST_RENDERED_QUERY + "\nActual:\n"
+						+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+			}
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
