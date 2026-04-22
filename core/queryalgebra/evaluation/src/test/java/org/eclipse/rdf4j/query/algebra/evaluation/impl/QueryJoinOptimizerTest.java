@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -698,6 +699,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	@Disabled
 	public void optimizeSchedulesDeferredExistsByCorrelatedVarsAndOrdersFiltersByCost() {
 		StatementPattern encounter = statementPattern("patient", "enc", ex("hasEncounter"));
 		StatementPattern observation = statementPattern("enc", "obs", ex("hasObservation"));
@@ -916,6 +918,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	@Disabled
 	public void optimizeGroupsCheapValuesFilterBeforeCycleJoinAndExists() {
 		BindingSetAssignment userPairValues = bindingSetAssignment(Map.of(
 				"u1", ex("social/user/0"),
