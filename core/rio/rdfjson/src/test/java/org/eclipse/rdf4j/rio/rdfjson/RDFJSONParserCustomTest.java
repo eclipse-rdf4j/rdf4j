@@ -38,8 +38,8 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.io.ContentReference;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.io.ContentReference;
 
 /**
  * Custom (non-manifest) tests for RDF/JSON parser.
@@ -350,8 +350,8 @@ public class RDFJSONParserCustomTest {
 			fail("Expected to find an exception");
 		} catch (RDFParseException e) {
 			assertNotNull(e.getCause());
-			assertTrue(e.getCause() instanceof JsonProcessingException);
-			JsonProcessingException cause = (JsonProcessingException) e.getCause();
+			assertTrue(e.getCause() instanceof JacksonException);
+			JacksonException cause = (JacksonException) e.getCause();
 			assertTrue(cause.getMessage().contains("Unexpected character ('#' (code 35))"));
 			if (ContentReference.unknown().equals(cause.getLocation().contentReference())) {
 				assertEquals(ContentReference.unknown(), cause.getLocation().contentReference());
@@ -370,8 +370,8 @@ public class RDFJSONParserCustomTest {
 			fail("Expected to find an exception");
 		} catch (RDFParseException e) {
 			assertNotNull(e.getCause());
-			assertTrue(e.getCause() instanceof JsonProcessingException);
-			JsonProcessingException cause = (JsonProcessingException) e.getCause();
+			assertTrue(e.getCause() instanceof JacksonException);
+			JacksonException cause = (JacksonException) e.getCause();
 			assertTrue(cause.getMessage().contains("Unexpected character ('#' (code 35))"));
 			assertNotEquals(ContentReference.unknown(), cause.getLocation().contentReference());
 			assertEquals(source, cause.getLocation().contentReference().getRawContent());
@@ -386,8 +386,8 @@ public class RDFJSONParserCustomTest {
 			fail("Expected to find an exception");
 		} catch (RDFParseException e) {
 			assertNotNull(e.getCause());
-			assertTrue(e.getCause() instanceof JsonProcessingException);
-			JsonProcessingException cause = (JsonProcessingException) e.getCause();
+			assertTrue(e.getCause() instanceof JacksonException);
+			JacksonException cause = (JacksonException) e.getCause();
 			assertTrue(cause.getMessage().contains("Unexpected character ('#' (code 35))"));
 			assertEquals(ContentReference.unknown(), cause.getLocation().contentReference());
 		}

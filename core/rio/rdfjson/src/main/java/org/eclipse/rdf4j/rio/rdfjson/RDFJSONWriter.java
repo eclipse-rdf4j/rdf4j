@@ -38,14 +38,16 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonFactoryBuilder;
-import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.StreamWriteFeature;
-import com.fasterxml.jackson.core.util.DefaultIndenter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.PrettyPrinter;
+import tools.jackson.core.StreamWriteFeature;
+import tools.jackson.core.TokenStreamFactory;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.util.DefaultIndenter;
+import tools.jackson.core.util.DefaultPrettyPrinter;
+import tools.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
  * {@link RDFWriter} implementation for the RDF/JSON format
@@ -90,13 +92,18 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 		super.startRDF();
 		try {
 			isStreaming = getWriterConfig().get(RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);
-			jg = configureNewJsonFactory().createGenerator(writer);
+			PrettyPrinter pp = null;
 			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
 				Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
-				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
-						.withObjectIndenter(indenter);
-				jg.setPrettyPrinter(pp);
+				pp = new DefaultPrettyPrinter().withArrayIndenter(indenter).withObjectIndenter(indenter);
 			}
+			final PrettyPrinter finalPp = pp;
+			jg = configureNewJsonFactory().createGenerator(new ObjectWriteContext.Base() {
+				@Override
+				public PrettyPrinter getPrettyPrinter() {
+					return finalPp;
+				}
+			}, writer);
 			if (isStreaming) {
 				isEmptyStream = true;
 				lastWrittenPredicate = null;
@@ -105,7 +112,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 			} else {
 				graph = new TreeModel();
 			}
-		} catch (final IOException e) {
+		} catch (final JacksonException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
@@ -129,7 +136,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 				jg.close();
 				writer.flush();
 			}
-		} catch (final IOException e) {
+		} catch (final IOException | JacksonException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
@@ -180,32 +187,31 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 	 * @throws IOException
 	 * @throws JsonGenerationException
 	 */
-	public static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg)
-			throws JsonGenerationException, IOException {
+	protected static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg) {
 		jg.writeStartObject();
 		if (object instanceof Literal) {
-			jg.writeObjectField(RDFJSONUtility.VALUE, object.stringValue());
+			jg.writeStringProperty(RDFJSONUtility.VALUE, object.stringValue());
 
-			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.LITERAL);
+			jg.writeStringProperty(RDFJSONUtility.TYPE, RDFJSONUtility.LITERAL);
 			final Literal l = (Literal) object;
 
 			if (Literals.isLanguageLiteral(l)) {
-				jg.writeObjectField(RDFJSONUtility.LANG, l.getLanguage().orElse(null));
+				jg.writeStringProperty(RDFJSONUtility.LANG, l.getLanguage().orElse(null));
 			} else {
-				jg.writeObjectField(RDFJSONUtility.DATATYPE, l.getDatatype().stringValue());
+				jg.writeStringProperty(RDFJSONUtility.DATATYPE, l.getDatatype().stringValue());
 			}
 		} else if (object instanceof BNode) {
-			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((BNode) object));
+			jg.writeStringProperty(RDFJSONUtility.VALUE, resourceToString((BNode) object));
 
-			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.BNODE);
+			jg.writeStringProperty(RDFJSONUtility.TYPE, RDFJSONUtility.BNODE);
 		} else if (object instanceof IRI) {
-			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((IRI) object));
+			jg.writeStringProperty(RDFJSONUtility.VALUE, resourceToString((IRI) object));
 
-			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.URI);
+			jg.writeStringProperty(RDFJSONUtility.TYPE, RDFJSONUtility.URI);
 		}
 
 		if (contexts != null && !contexts.isEmpty() && !(contexts.size() == 1 && contexts.iterator().next() == null)) {
-			jg.writeArrayFieldStart(RDFJSONUtility.GRAPHS);
+			jg.writeArrayPropertyStart(RDFJSONUtility.GRAPHS);
 			for (final Resource nextContext : contexts) {
 				if (nextContext == null) {
 					jg.writeNull();
@@ -225,7 +231,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 	 * @param uriOrBnode The resource to serialise to a string
 	 * @return The string value of the RDF4J resource
 	 */
-	public static String resourceToString(final Resource uriOrBnode) {
+	protected static String resourceToString(final Resource uriOrBnode) {
 		if (uriOrBnode instanceof IRI) {
 			return uriOrBnode.stringValue();
 		} else {
@@ -233,22 +239,13 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 		}
 	}
 
-	public static void modelToRdfJsonInternal(final Model graph, final WriterConfig writerConfig,
-			final JsonGenerator jg) throws IOException {
-		if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
-			// SES-2011: Always use \n for consistency
-			Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
-			// By default Jackson does not pretty print, so enable this unless
-			// PRETTY_PRINT setting is disabled
-			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
-					.withObjectIndenter(indenter);
-			jg.setPrettyPrinter(pp);
-		}
+	protected static void modelToRdfJsonInternal(final Model graph, final WriterConfig writerConfig,
+			final JsonGenerator jg) {
 		jg.writeStartObject();
 		for (final Resource nextSubject : graph.subjects()) {
-			jg.writeObjectFieldStart(RDFJSONWriter.resourceToString(nextSubject));
+			jg.writeObjectPropertyStart(RDFJSONWriter.resourceToString(nextSubject));
 			for (final IRI nextPredicate : graph.filter(nextSubject, null, null).predicates()) {
-				jg.writeArrayFieldStart(nextPredicate.stringValue());
+				jg.writeArrayPropertyStart(nextPredicate.stringValue());
 				for (final Value nextObject : graph.filter(nextSubject, nextPredicate, null).objects()) {
 					// contexts are optional, so this may return empty in some
 					// scenarios depending on the interpretation of the way contexts
@@ -270,16 +267,14 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
 	private JsonFactory configureNewJsonFactory() {
-		JsonFactoryBuilder builder = new JsonFactoryBuilder();
-		// Disable features that may work for most JSON where the field names are
-		// in limited supply,
-		// but does not work for RDF/JSON where a wide range of URIs are used for
-		// subjects and predicates
-		builder.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);
-		builder.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);
-		builder.disable(StreamWriteFeature.AUTO_CLOSE_TARGET);
-
-		return builder.build();
+		return JsonFactory.builder()
+				// Disable features that may work for most JSON where the field names are
+				// in limited supply, but does not work for RDF/JSON where a wide range of
+				// URIs are used for subjects and predicates
+				.disable(TokenStreamFactory.Feature.INTERN_PROPERTY_NAMES)
+				.disable(TokenStreamFactory.Feature.CANONICALIZE_PROPERTY_NAMES)
+				.disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
+				.build();
 	}
 
 	/**
@@ -300,7 +295,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 					lastWrittenPredicate = null;
 				}
 
-				jg.writeObjectFieldStart(RDFJSONWriter.resourceToString(subj));
+				jg.writeObjectPropertyStart(RDFJSONWriter.resourceToString(subj));
 				lastWrittenSubject = subj;
 			}
 
@@ -310,7 +305,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 					jg.writeEndArray();
 				}
 
-				jg.writeArrayFieldStart(pred.stringValue());
+				jg.writeArrayPropertyStart(pred.stringValue());
 				lastWrittenPredicate = pred;
 			}
 
@@ -318,7 +313,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 			if (isEmptyStream) {
 				isEmptyStream = false;
 			}
-		} catch (final IOException e) {
+		} catch (final JacksonException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
