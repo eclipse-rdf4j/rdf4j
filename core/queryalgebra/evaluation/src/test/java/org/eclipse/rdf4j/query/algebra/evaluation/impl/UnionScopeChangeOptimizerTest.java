@@ -105,6 +105,7 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 
 	}
 
+	@Test
 	public void keepsScopeChangeOnNestedPathAlternative() {
 		Union nestedUnion = new Union();
 		nestedUnion.setVariableScopeChange(false);
