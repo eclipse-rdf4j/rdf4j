@@ -136,7 +136,7 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 		}
 
 		CloseableHttpClient httpClient = buildHttpClient(builder, config);
-		return new ApacheHC5RDF4JHttpClient(httpClient, config.getMaxConnectionsPerRoute());
+		return new ApacheHC5RDF4JHttpClient(httpClient, config.getMaxConnectionsPerRoute(), requestConfig);
 	}
 
 	/**

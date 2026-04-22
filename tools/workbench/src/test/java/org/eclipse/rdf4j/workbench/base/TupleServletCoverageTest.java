@@ -18,8 +18,6 @@ import static org.mockito.Mockito.when;
 import java.io.OutputStream;
 import java.util.Collections;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -27,6 +25,8 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 class TupleServletCoverageTest {
 
@@ -62,7 +62,7 @@ class TupleServletCoverageTest {
 		}
 
 		@Override
-		protected TupleResultBuilder getTupleResultBuilder(javax.servlet.http.HttpServletRequest req,
+		protected TupleResultBuilder getTupleResultBuilder(jakarta.servlet.http.HttpServletRequest req,
 				HttpServletResponse resp, OutputStream outputStream) {
 			return builder;
 		}

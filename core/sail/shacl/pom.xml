@@ -72,7 +72,6 @@
 		<dependency>
 			<groupId>org.topbraid</groupId>
 			<artifactId>shacl</artifactId>
-			<version>1.4.3</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

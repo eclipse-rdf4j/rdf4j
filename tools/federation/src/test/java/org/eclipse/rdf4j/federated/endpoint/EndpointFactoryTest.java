@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated.endpoint;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
 
@@ -33,10 +34,11 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 
 		String endpointUrl = ((SPARQLEmbeddedServer) server).getRepositoryUrl("endpoint1");
 		EndpointBase e = (EndpointBase) EndpointFactory.loadSPARQLEndpoint(endpointUrl);
+		URI endpointUri = URI.create(endpointUrl);
 
-		Assertions.assertEquals("http://localhost_18080", e.getName());
-		Assertions.assertEquals("sparql_localhost:18080_repositories_endpoint1", e.getId());
-		Assertions.assertEquals("http://localhost:18080/repositories/endpoint1", e.getEndpoint());
+		Assertions.assertEquals("http://localhost_" + endpointUri.getPort(), e.getName());
+		Assertions.assertEquals("sparql_" + endpointUrl.replace("http://", "").replace("/", "_"), e.getId());
+		Assertions.assertEquals(endpointUrl, e.getEndpoint());
 		Assertions.assertEquals(EndpointType.SparqlEndpoint, e.getType());
 	}
 

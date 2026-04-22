@@ -16,9 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -201,7 +203,8 @@ public class SPARQLServiceEvaluationTest {
 
 			try (RepositoryConnection con = rep.getConnection()) {
 				con.clear();
-				con.add(dataset, "",
+				String data = IOUtil.readString(new InputStreamReader(dataset, StandardCharsets.UTF_8));
+				con.add(new StringReader(rewriteFixtureUrls(data)), "",
 						Rio.getParserFormatForFileName(datasetFile).orElseThrow(Rio.unsupportedFormat(datasetFile)));
 			}
 		}
@@ -503,9 +506,7 @@ public class SPARQLServiceEvaluationTest {
 	 * @throws IOException
 	 */
 	private String readQueryString(String queryResource) throws RepositoryException, IOException {
-		try (InputStream stream = SPARQLServiceEvaluationTest.class.getResourceAsStream(queryResource)) {
-			return IOUtil.readString(new InputStreamReader(Objects.requireNonNull(stream), StandardCharsets.UTF_8));
-		}
+		return rewriteFixtureUrls(readResourceAsString(queryResource));
 	}
 
 	/**
@@ -520,7 +521,8 @@ public class SPARQLServiceEvaluationTest {
 		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFile);
 
 		if (tqrFormat.isPresent()) {
-			try (InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile)) {
+			try (InputStream in = new ByteArrayInputStream(
+					rewriteFixtureUrls(readResourceAsString(resultFile)).getBytes(StandardCharsets.UTF_8))) {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
 				parser.setValueFactory(SimpleValueFactory.getInstance());
 
@@ -553,11 +555,22 @@ public class SPARQLServiceEvaluationTest {
 		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
-		try (InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile)) {
+		try (InputStream in = new ByteArrayInputStream(
+				rewriteFixtureUrls(readResourceAsString(resultFile)).getBytes(StandardCharsets.UTF_8))) {
 			parser.parse(in, null); // TODO check
 		}
 
 		return result;
+	}
+
+	private String readResourceAsString(String resource) throws IOException {
+		try (InputStream stream = SPARQLServiceEvaluationTest.class.getResourceAsStream(resource)) {
+			return IOUtil.readString(new InputStreamReader(Objects.requireNonNull(stream), StandardCharsets.UTF_8));
+		}
+	}
+
+	private String rewriteFixtureUrls(String value) {
+		return value.replace("http://localhost:18080/rdf4j-server", server.getServerUrl());
 	}
 
 	/**

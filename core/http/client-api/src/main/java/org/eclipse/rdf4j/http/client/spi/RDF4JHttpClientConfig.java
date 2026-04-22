@@ -173,6 +173,27 @@ public class RDF4JHttpClientConfig {
 	}
 
 	/**
+	 * Returns a new {@link Builder} pre-populated with all settings from this config. Useful for creating a modified
+	 * copy without having to re-specify every field.
+	 *
+	 * @return a {@link Builder} seeded from this config
+	 */
+	public Builder toBuilder() {
+		return new Builder()
+				.connectTimeoutMs(connectTimeoutMs)
+				.socketTimeoutMs(socketTimeoutMs)
+				.connectionRequestTimeoutMs(connectionRequestTimeoutMs)
+				.maxConnectionsPerRoute(maxConnectionsPerRoute)
+				.maxConnectionsTotal(maxConnectionsTotal)
+				.maxRedirects(maxRedirects)
+				.followRedirects(followRedirects)
+				.idleConnectionTimeoutMs(idleConnectionTimeoutMs)
+				.sslContext(sslContext)
+				.disableHostnameVerification(disableHostnameVerification)
+				.defaultHeaders(defaultHeaders);
+	}
+
+	/**
 	 * Returns a new {@link RDF4JHttpClientConfig} with all settings at their default values.
 	 *
 	 * @return a default {@link RDF4JHttpClientConfig}

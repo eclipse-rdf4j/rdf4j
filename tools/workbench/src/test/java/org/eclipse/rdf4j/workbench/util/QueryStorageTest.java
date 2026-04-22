@@ -94,20 +94,20 @@ class QueryStorageTest {
 		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false,
 				new QueryLanguage("SERQL"),
 				"select * where { ?s ?p ?o }", true, 10, 0))
-						.isInstanceOf(RepositoryException.class)
-						.hasMessageContaining("May only save SPARQL queries");
+				.isInstanceOf(RepositoryException.class)
+				.hasMessageContaining("May only save SPARQL queries");
 		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false, QueryLanguage.SPARQL,
 				"select * where { ?s ?p ?o }", true, 13, 0))
-						.isInstanceOf(RepositoryException.class)
-						.hasMessageContaining("Illegal value for rows per page");
+				.isInstanceOf(RepositoryException.class)
+				.hasMessageContaining("Illegal value for rows per page");
 		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false, QueryLanguage.SPARQL,
 				"select * where { ?s ?p ?o }", true, 10, -1))
-						.isInstanceOf(RepositoryException.class)
-						.hasMessageContaining("Illegal value for query timeout");
+				.isInstanceOf(RepositoryException.class)
+				.hasMessageContaining("Illegal value for query timeout");
 		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false, QueryLanguage.SPARQL,
 				"select '''bad''' where { ?s ?p ?o }", true, 10, 0))
-						.isInstanceOf(IllegalArgumentException.class)
-						.hasMessageContaining("queryText may not contain '''-quoted strings.");
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("queryText may not contain '''-quoted strings.");
 
 		storage.shutdown();
 	}
@@ -160,7 +160,7 @@ class QueryStorageTest {
 		when(connection.hasStatement((IRI) org.mockito.ArgumentMatchers.any(), (IRI) org.mockito.ArgumentMatchers.any(),
 				(IRI) org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(false),
 				(IRI) org.mockito.ArgumentMatchers.any()))
-						.thenThrow(new RepositoryException("forbidden"));
+				.thenThrow(new RepositoryException("forbidden"));
 
 		QueryStorage storage = new QueryStorage(repository);
 
