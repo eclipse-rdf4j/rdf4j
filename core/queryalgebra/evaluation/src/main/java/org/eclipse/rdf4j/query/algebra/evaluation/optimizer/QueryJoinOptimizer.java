@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -193,6 +194,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
 		private final Map<TupleExpr, Double> plannedPrefixRowsByRightArg = new IdentityHashMap<>();
+		private final Set<TupleExpr> plannerOrderedArgs = Collections.newSetFromMap(new IdentityHashMap<>());
 		private int suppressedSmallLiteralFilterAnchors;
 
 		protected JoinVisitor() {
@@ -723,10 +725,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (!(value instanceof Literal)) {
 				return false;
 			}
-			IRI datatype = ((Literal) value).getDatatype();
-			return XMLDatatypeUtil.isNumericDatatype(datatype)
-					|| XMLSchema.BOOLEAN.equals(datatype)
-					|| XMLSchema.DATETIME.equals(datatype);
+			CoreDatatype coreDatatype = ((Literal) value).getCoreDatatype();
+			if(coreDatatype.isXSDDatatype()){
+				CoreDatatype.XSD xsdDatatype = coreDatatype.asXSDDatatypeOrNull();
+				return xsdDatatype.isNumericDatatype() || xsdDatatype.isCalendarDatatype() || xsdDatatype == CoreDatatype.XSD.BOOLEAN;
+			}
+			return false;
 		}
 
 		private RawJoinSegment findAnchorSegment(List<Object> rawPlanItems, DeferredFilter deferredFilter,
@@ -1142,6 +1146,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			Deque<TupleExpr> remaining = new ArrayDeque<>(orderedJoinArgs);
 			Map<TupleExpr, Double> plannedPrefixRowsForArgs = plannedPrefixRowsForArgs(orderedJoinArgs);
+			boolean plannerProvidedSegment = plannerProvidedSegment(orderedJoinArgs);
 
 			if (remaining.size() > 1) {
 				double cardinality = 0;
@@ -1167,7 +1172,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					cardinality = Math.max(cardinality, left.getResultSizeEstimate());
 					cardinality = Math.max(cardinality, right.getResultSizeEstimate());
 					Join join = createJoinWithEstimatedResultSize(left, right,
-							plannedPrefixRowsForArgs.remove(right));
+							plannedPrefixRowsForArgs.remove(right), plannerProvidedSegment);
 					join.setOrder((Var) supportedOrders.toArray()[0]);
 					join.setMergeJoin(true);
 					remaining.addFirst(join);
@@ -1181,7 +1186,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				supportedOrders.retainAll(next.getSupportedOrders(tripleSource));
 
 				Join join = createJoinWithEstimatedResultSize(root, next,
-						plannedPrefixRowsForArgs.remove(next));
+						plannedPrefixRowsForArgs.remove(next), plannerProvidedSegment);
 				if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
 					mergeJoinForCrossJoin(remaining, supportedOrders, root, next, join);
 				}
@@ -1190,10 +1195,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			while (!remaining.isEmpty()) {
 				TupleExpr next = remaining.removeFirst();
-				root = createJoinWithEstimatedResultSize(root, next, plannedPrefixRowsForArgs.remove(next));
+				root = createJoinWithEstimatedResultSize(root, next, plannedPrefixRowsForArgs.remove(next),
+						plannerProvidedSegment);
 			}
 
 			return root;
+		}
+
+		private boolean plannerProvidedSegment(Deque<TupleExpr> orderedJoinArgs) {
+			if (plannerOrderedArgs.isEmpty()) {
+				return false;
+			}
+			for (TupleExpr orderedJoinArg : orderedJoinArgs) {
+				if (!plannerOrderedArgs.contains(orderedJoinArg)) {
+					return false;
+				}
+			}
+			return !orderedJoinArgs.isEmpty();
 		}
 
 		private Map<TupleExpr, Double> plannedPrefixRowsForArgs(Deque<TupleExpr> orderedJoinArgs) {
@@ -1278,6 +1296,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				JoinOrderPlanner.JoinOrderPlan plan = planningAttempt.getPlan().get();
 				Deque<TupleExpr> plannedJoinArgs = new ArrayDeque<>(plan.getOrderedArgs());
 				Deque<TupleExpr> normalizedJoinArgs = positionBindingSetAssignments(plannedJoinArgs);
+				markPlannerOrderedArgs(normalizedJoinArgs);
 				if (sameIdentityOrder(plan.getOrderedArgs(), new ArrayList<>(normalizedJoinArgs))) {
 					applyPlannerStepEstimates(plan);
 				} else {
@@ -1331,6 +1350,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						attempt.getPlannerPath(), attempt.getRejectedFactor(), diagnostics);
 			}
 			return attempt;
+		}
+
+		private void markPlannerOrderedArgs(Deque<TupleExpr> orderedArgs) {
+			for (TupleExpr orderedArg : orderedArgs) {
+				plannerOrderedArgs.add(orderedArg);
+			}
 		}
 
 		private JoinOrderPlanner.Algorithm plannerAlgorithm(int segmentSize) {
@@ -1547,9 +1572,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private Join createJoinWithEstimatedResultSize(TupleExpr left, TupleExpr right, Double plannedResultSize) {
+			return createJoinWithEstimatedResultSize(left, right, plannedResultSize, false);
+		}
+
+		private Join createJoinWithEstimatedResultSize(TupleExpr left, TupleExpr right, Double plannedResultSize,
+				boolean plannerProvidedSegment) {
 			Join join = new Join(left, right);
 			if (plannedResultSize != null && isFiniteNonNegative(plannedResultSize)) {
 				join.setResultSizeEstimate(Math.max(join.getResultSizeEstimate(), plannedResultSize));
+			} else if (plannerProvidedSegment) {
+				double existingEstimate = maxFiniteResultSizeEstimate(left, right);
+				if (isFiniteNonNegative(existingEstimate)) {
+					join.setResultSizeEstimate(Math.max(join.getResultSizeEstimate(), existingEstimate));
+				}
 			} else if (statistics.supportsJoinEstimation()) {
 				double estimatedResultSize = statistics.getCardinality(join);
 				if (!Double.isNaN(estimatedResultSize) && estimatedResultSize >= 0) {
@@ -1561,6 +1596,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				copyOptimizerAnnotations(right, join);
 			}
 			return join;
+		}
+
+		private double maxFiniteResultSizeEstimate(TupleExpr left, TupleExpr right) {
+			double leftEstimate = left.getResultSizeEstimate();
+			double rightEstimate = right.getResultSizeEstimate();
+			if (isFiniteNonNegative(leftEstimate) && isFiniteNonNegative(rightEstimate)) {
+				return Math.max(leftEstimate, rightEstimate);
+			}
+			if (isFiniteNonNegative(leftEstimate)) {
+				return leftEstimate;
+			}
+			if (isFiniteNonNegative(rightEstimate)) {
+				return rightEstimate;
+			}
+			return Double.NaN;
 		}
 
 		private void copyOptimizerAnnotations(TupleExpr source, TupleExpr target) {

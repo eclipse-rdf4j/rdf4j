@@ -47,6 +47,7 @@ class LmdbThemeFastestRunSnapshotTest {
 
 	private static final Pattern THEME_HEADER = Pattern.compile("## ([A-Z_]+)");
 	private static final Pattern QUERY_HEADER = Pattern.compile("### (?:([A-Z_]+) )?Query (\\d+)");
+	private static final Pattern FILTER_PASS_RATIO = Pattern.compile("plannedFilterPassRatio=([0-9.]+)");
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.fastestRunSnapshot.queryKeys";
@@ -102,6 +103,50 @@ class LmdbThemeFastestRunSnapshotTest {
 			OptimizerSnapshot actual = explainOptimized(repository, Theme.PHARMA, 10);
 			assertTrue(actual.plan().contains("plannerPath=ROBUST_USED"), actual.plan());
 			assertFalse(actual.plan().contains("plannerPath=UNSUPPORTED_SHAPE"), actual.plan());
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void pharmaQueries0And1KeepFastPlanShape(@TempDir Path dataDir) throws Exception {
+		Path storeDir = prepareThemeStore(dataDir, Theme.PHARMA);
+		LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
+			assertPlanOrder(query0.plan(), "PHARMA:0",
+					"BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
+					"value=http://example.com/theme/pharma/studiesDisease",
+					"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/pValue",
+					"value=http://example.com/theme/pharma/effectSize",
+					"value=http://example.com/theme/pharma/biomarker, anonymous");
+			assertPlanBefore(query0.plan(), "PHARMA:0",
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/armDrug");
+			assertPlanBefore(query0.plan(), "PHARMA:0",
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/hasResult");
+			assertPlanBefore(query0.plan(), "PHARMA:0",
+					"value=http://example.com/theme/pharma/armDrug",
+					"value=http://example.com/theme/pharma/pValue");
+			assertPlanBefore(query0.plan(), "PHARMA:0",
+					"value=http://example.com/theme/pharma/hasResult",
+					"value=http://example.com/theme/pharma/pValue");
+
+			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+
+			OptimizerSnapshot query1 = explainOptimized(repository, Theme.PHARMA, 1);
+			assertPlanOrder(query1.plan(), "PHARMA:1",
+					"value=http://example.com/theme/pharma/synergyScore",
+					"value=http://example.com/theme/pharma/combinationOf",
+					"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+					"value=http://example.com/theme/pharma/hasSideEffect",
+					"value=http://example.com/theme/pharma/severity");
+			assertSelectiveFilterPlan(query1.plan(), "PHARMA:1",
+					"value=http://example.com/theme/pharma/synergyScore", 0.20, 0.35);
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
@@ -400,6 +445,46 @@ class LmdbThemeFastestRunSnapshotTest {
 			lines.add("... " + (signature.size() - to) + " more lines");
 		}
 		return String.join("\n", lines);
+	}
+
+	private static void assertPlanOrder(String plan, String key, String... needles) {
+		int previousIndex = -1;
+		for (String needle : needles) {
+			int index = plan.indexOf(needle);
+			assertTrue(index >= 0, key + " missing plan fragment: " + needle + "\n" + plan);
+			assertTrue(index > previousIndex,
+					key + " plan fragment out of order: " + needle + "\n" + plan);
+			previousIndex = index;
+		}
+	}
+
+	private static void assertPlanBefore(String plan, String key, String before, String after) {
+		int beforeIndex = plan.indexOf(before);
+		int afterIndex = plan.indexOf(after);
+		assertTrue(beforeIndex >= 0, key + " missing plan fragment: " + before + "\n" + plan);
+		assertTrue(afterIndex >= 0, key + " missing plan fragment: " + after + "\n" + plan);
+		assertTrue(beforeIndex < afterIndex,
+				key + " expected " + before + " before " + after + "\n" + plan);
+	}
+
+	private static void assertSelectiveFilterPlan(String plan, String key, String filteredPattern, double minRatio,
+			double maxRatio) {
+		int patternIndex = plan.indexOf(filteredPattern);
+		assertTrue(patternIndex >= 0, key + " missing filtered pattern: " + filteredPattern + "\n" + plan);
+
+		int filterIndex = plan.lastIndexOf("Filter (", patternIndex);
+		assertTrue(filterIndex >= 0, key + " should wrap " + filteredPattern + " in a planned filter:\n" + plan);
+
+		int filterLineEnd = plan.indexOf('\n', filterIndex);
+		String filterLine = plan.substring(filterIndex, filterLineEnd >= 0 ? filterLineEnd : plan.length());
+		Matcher ratioMatcher = FILTER_PASS_RATIO.matcher(filterLine);
+		assertTrue(ratioMatcher.find(),
+				key + " should include a filter pass ratio for " + filteredPattern + ":\n" + plan);
+
+		double ratio = Double.parseDouble(ratioMatcher.group(1));
+		assertTrue(ratio >= minRatio && ratio <= maxRatio,
+				key + " should apply the selective score filter before join-order scoring: " + filterLine + "\n"
+						+ plan);
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {

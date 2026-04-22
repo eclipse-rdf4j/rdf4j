@@ -201,27 +201,27 @@ class LmdbEvaluationStatistics
 		Map<String, String> stringMetrics = new HashMap<>();
 		Map<String, Double> doubleMetrics = new HashMap<>();
 		TripleStore.IndexPrefixSelection prefixSelection = selectEffectiveIndexPrefix(accessShape);
-		Set<Component> prefixComponents = prefixSelection == null ? Set.of() : prefixSelection.prefixComponents();
+		int prefixComponentMask = prefixSelection == null ? 0 : prefixSelection.prefixComponentMask();
 		int prefixScore = prefixSelection == null ? 0 : prefixSelection.prefixScore();
 		if (prefixSelection != null && prefixScore > 0) {
 			stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_NAME, prefixSelection.indexFieldSequence());
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH, (double) prefixScore);
 		}
 		stringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
-				accessShape.lookupBoundComponents().toString());
+				componentMaskString(accessShape.lookupBoundComponentMask()));
 		stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
-				accessMode(accessShape, prefixComponents, prefixScore));
-		Set<Component> missingLookupComponents = new HashSet<>(accessShape.lookupBoundComponents());
-		missingLookupComponents.removeAll(prefixComponents);
-		if (!missingLookupComponents.isEmpty()) {
+				accessMode(accessShape, prefixComponentMask, prefixScore));
+		int missingLookupComponentMask = accessShape.lookupBoundComponentMask() & ~prefixComponentMask;
+		if (missingLookupComponentMask != 0) {
 			stringMetrics.put(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS,
-					missingLookupComponents.toString());
+					componentMaskString(missingLookupComponentMask));
 		}
 
-		double accessRows = accessShape.estimateAccessRows(prefixComponents);
+		double accessRows = accessShape.estimateAccessRows(prefixComponentMask);
 		if (Double.isFinite(accessRows) && accessRows >= 0.0d) {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, accessRows);
-			if (!accessShape.filterLookupComponents().isEmpty() && canApplyFilterAtAccess(accessShape, prefixComponents)
+			if (accessShape.filterLookupComponentMask() != 0
+					&& canApplyFilterAtAccess(accessShape, prefixComponentMask)
 					&& Double.isFinite(accessShape.filterMultiplier())
 					&& accessShape.filterMultiplier() >= 0.0d && accessShape.filterMultiplier() < 1.0d) {
 				doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS_AFTER_FILTER,
@@ -250,12 +250,12 @@ class LmdbEvaluationStatistics
 						outputRows));
 	}
 
-	private String accessMode(SketchBasedJoinEstimator.AccessShape accessShape, Set<Component> prefixComponents,
+	private String accessMode(SketchBasedJoinEstimator.AccessShape accessShape, int prefixComponentMask,
 			int prefixScore) {
 		if (prefixScore <= 0) {
 			return "fullScan";
 		}
-		return accessShape.isDirectLookup(prefixComponents) ? "directLookup" : "prefixScan";
+		return accessShape.isDirectLookup(prefixComponentMask) ? "directLookup" : "prefixScan";
 	}
 
 	private double estimateFactorOutputRows(TupleExpr factor) {
@@ -269,32 +269,50 @@ class LmdbEvaluationStatistics
 		return getCardinality(factor);
 	}
 
-	private Set<Component> accessLookupComponents(SketchBasedJoinEstimator.AccessShape accessShape) {
-		Set<Component> accessLookupComponents = new HashSet<>(accessShape.lookupBoundComponents());
-		accessLookupComponents.removeAll(accessShape.filterLookupComponents());
-		return Set.copyOf(accessLookupComponents);
+	private int accessLookupComponentMask(SketchBasedJoinEstimator.AccessShape accessShape) {
+		return accessShape.lookupBoundComponentMask() & ~accessShape.filterLookupComponentMask();
 	}
 
 	private TripleStore.IndexPrefixSelection selectEffectiveIndexPrefix(
 			SketchBasedJoinEstimator.AccessShape accessShape) {
 		TripleStore.IndexPrefixSelection lookupSelection = tripleStore
-				.selectBestIndexPrefix(accessShape.lookupBoundComponents());
-		if (accessShape.filterLookupComponents().isEmpty() || lookupSelection == null
-				|| canApplyFilterAtAccess(accessShape, lookupSelection.prefixComponents())) {
+				.selectBestIndexPrefix(accessShape.lookupBoundComponentMask());
+		if (accessShape.filterLookupComponentMask() == 0 || lookupSelection == null
+				|| canApplyFilterAtAccess(accessShape, lookupSelection.prefixComponentMask())) {
 			return lookupSelection;
 		}
 
-		return tripleStore.selectBestIndexPrefix(accessLookupComponents(accessShape));
+		return tripleStore.selectBestIndexPrefix(accessLookupComponentMask(accessShape));
 	}
 
 	private boolean canApplyFilterAtAccess(SketchBasedJoinEstimator.AccessShape accessShape,
-			Set<Component> prefixComponents) {
-		if (accessShape.filterLookupComponents().isEmpty()) {
+			int prefixComponentMask) {
+		int filterLookupComponentMask = accessShape.filterLookupComponentMask();
+		if (filterLookupComponentMask == 0) {
 			return false;
 		}
-		Set<Component> accessLookupComponents = accessLookupComponents(accessShape);
-		return prefixComponents.containsAll(accessLookupComponents)
-				&& prefixComponents.containsAll(accessShape.filterLookupComponents());
+		int accessLookupComponentMask = accessLookupComponentMask(accessShape);
+		return (prefixComponentMask & accessLookupComponentMask) == accessLookupComponentMask
+				&& (prefixComponentMask & filterLookupComponentMask) == filterLookupComponentMask;
+	}
+
+	private String componentMaskString(int componentMask) {
+		if (componentMask == 0) {
+			return "[]";
+		}
+		StringBuilder builder = new StringBuilder("[");
+		boolean first = true;
+		for (Component component : Component.values()) {
+			if ((componentMask & (1 << component.ordinal())) == 0) {
+				continue;
+			}
+			if (!first) {
+				builder.append(", ");
+			}
+			builder.append(component);
+			first = false;
+		}
+		return builder.append(']').toString();
 	}
 
 	private boolean isFiniteNonNegative(double value) {
@@ -311,23 +329,23 @@ class LmdbEvaluationStatistics
 			return defaultWorkRows;
 		}
 
-		double accessRows = accessShape.estimateAccessRows(prefixSelection.prefixComponents());
+		int prefixComponentMask = prefixSelection.prefixComponentMask();
+		double accessRows = accessShape.estimateAccessRows(prefixComponentMask);
 		if (!Double.isFinite(accessRows) || accessRows < 0.0d) {
 			return defaultWorkRows;
 		}
 
 		double adjustedWorkRows = accessRows;
 		boolean filterAppliedAtAccess = false;
-		Set<Component> filterLookupComponents = accessShape.filterLookupComponents();
-		if (!filterLookupComponents.isEmpty()
-				&& canApplyFilterAtAccess(accessShape, prefixSelection.prefixComponents())) {
+		if (accessShape.filterLookupComponentMask() != 0
+				&& canApplyFilterAtAccess(accessShape, prefixComponentMask)) {
 			double filteredAccessRows = accessRows * accessShape.filterMultiplier();
 			if (Double.isFinite(filteredAccessRows) && filteredAccessRows >= 0.0d) {
 				adjustedWorkRows = filteredAccessRows;
 				filterAppliedAtAccess = true;
 			}
 		}
-		if (accessShape.isDirectLookup(prefixSelection.prefixComponents())) {
+		if (accessShape.isDirectLookup(prefixComponentMask)) {
 			return Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, adjustedWorkRows);
 		}
 		double workFloor = filterAppliedAtAccess ? 0.0d : defaultWorkRows;

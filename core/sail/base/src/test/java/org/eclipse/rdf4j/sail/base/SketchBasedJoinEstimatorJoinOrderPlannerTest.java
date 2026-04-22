@@ -316,6 +316,40 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void defaultConfigCachesPatternEstimatesAcrossOptimizationScopes() {
+		StubSailStore store = new StubSailStore();
+		IRI left = VF.createIRI("urn:left");
+		IRI right = VF.createIRI("urn:right");
+		for (int i = 0; i < 16; i++) {
+			Resource subject = VF.createIRI("urn:s" + i);
+			Resource middle = VF.createIRI("urn:m" + i);
+			store.add(VF.createStatement(subject, left, middle));
+			store.add(VF.createStatement(middle, right, VF.createIRI("urn:o" + i)));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern leftPattern = pattern("s", left, "m");
+		StatementPattern rightPattern = pattern("m", right, "o");
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			assertTrue(estimator.planJoinOrder(List.of(leftPattern, rightPattern), Set.of(),
+					JoinOrderPlanner.Algorithm.GREEDY).isPresent());
+		}
+
+		int cacheSize = estimateCacheSize(estimator);
+		assertTrue(cacheSize > 0, "Default planning should keep raw pattern estimates hot across prepare scopes");
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			assertTrue(estimator.planJoinOrder(List.of(leftPattern, rightPattern), Set.of(),
+					JoinOrderPlanner.Algorithm.GREEDY).isPresent());
+		}
+
+		assertEquals(cacheSize, estimateCacheSize(estimator),
+				"Repeated planning of the same pattern keys should reuse cached pattern estimates");
+	}
+
+	@Test
 	void optimizationScopeReusesJoinOrderingSketchIntersectionCache() {
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), config());
 		SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache unscopedLeft = estimator
@@ -370,6 +404,44 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(plan.isPresent(), "Expected planner to produce a plan");
 		assertEquals(b, plan.get().getOrderedArgs().get(0),
 				"Row-based objective should seed from the narrowest connected tuple");
+	}
+
+	@Test
+	void planJoinOrderExpandsFilteredSeedBeforeBoundTypeGuard() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI comboType = VF.createIRI("urn:Combination");
+		IRI synergyScore = VF.createIRI("urn:synergyScore");
+		IRI combinationOf = VF.createIRI("urn:combinationOf");
+
+		for (int i = 0; i < 300; i++) {
+			Resource combo = VF.createIRI("urn:combo:" + i);
+			store.add(VF.createStatement(combo, rdfType, comboType));
+			store.add(VF.createStatement(combo, synergyScore, VF.createLiteral(i % 10 / 10.0d)));
+			store.add(VF.createStatement(combo, combinationOf, VF.createIRI("urn:drug:" + i + ":a")));
+			store.add(VF.createStatement(combo, combinationOf, VF.createIRI("urn:drug:" + i + ":b")));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.30d));
+		estimator.rebuildOnceSlow();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("combo"), Var.of("rdfType", rdfType),
+				Var.of("comboType", comboType));
+		Filter filteredScore = new Filter(pattern("combo", synergyScore, "score"),
+				new Compare(Var.of("score"), new ValueConstant(VF.createLiteral(0.7d)), Compare.CompareOp.GT));
+		StatementPattern combinationPattern = pattern("combo", combinationOf, "drug");
+
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(
+				List.of(typePattern, filteredScore, combinationPattern), Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to produce a plan");
+		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+		assertEquals(filteredScore, orderedArgs.get(0),
+				"Selective score filter should seed the combination query");
+		assertTrue(orderedArgs.indexOf(combinationPattern) < orderedArgs.indexOf(typePattern),
+				"Bound rdf:type guard should not block the expanding combination edge after a selective seed");
 	}
 
 	@Test
@@ -1288,6 +1360,16 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			Field field = SketchBasedJoinEstimator.TuplePlanEstimate.class.getDeclaredField("varStats");
 			field.setAccessible(true);
 			return (Map<String, Object>) field.get(estimate);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	private static int estimateCacheSize(SketchBasedJoinEstimator estimator) {
+		try {
+			Field field = SketchBasedJoinEstimator.class.getDeclaredField("estimateCache");
+			field.setAccessible(true);
+			return ((Map<?, ?>) field.get(estimator)).size();
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError(e);
 		}

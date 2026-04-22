@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -70,6 +72,9 @@ final class FilterSelectivityTelemetry {
 		if (statistics == null || filter.getArg() == null) {
 			return -1.0d;
 		}
+		if (!isCheapCardinalityFallbackInput(filter.getArg())) {
+			return -1.0d;
+		}
 
 		double inputRows = statistics.getCardinality(filter.getArg());
 		double outputRows = statistics.getCardinality(filter);
@@ -80,6 +85,16 @@ final class FilterSelectivityTelemetry {
 			return outputRows == 0.0d ? 1.0d : -1.0d;
 		}
 		return Math.min(1.0d, outputRows / inputRows);
+	}
+
+	private static boolean isCheapCardinalityFallbackInput(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementPattern) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter) {
+			return isCheapCardinalityFallbackInput(((Filter) tupleExpr).getArg());
+		}
+		return false;
 	}
 
 	private static boolean isValidPassRatio(double value) {

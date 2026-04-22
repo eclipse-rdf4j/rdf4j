@@ -29,6 +29,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -37,9 +39,11 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -184,7 +188,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long QUAD_SEED = 0x9e3779b97f4a7c15L;
 	private static final long THETA_UPDATE_SEED = ThetaUtil.DEFAULT_UPDATE_SEED;
 	private static final Component[] COMPONENT_VALUES = Component.values();
+	private static final int COMPONENT_MASK_COUNT = 1 << COMPONENT_VALUES.length;
+	private static final long BOUND_VAR_MASK_OVERFLOW = Long.MIN_VALUE;
 	private static final Pair[] PAIR_VALUES = Pair.values();
+	private static final Set<Component>[] COMPONENT_SETS_BY_MASK = buildComponentSetsByMask();
 	private static final MemoryCategory[] MEMORY_CATEGORY_VALUES = MemoryCategory.values();
 	private static final double MIN_FILTER_MULTIPLIER = 0.05d;
 	private static final double DISCONNECTED_JOIN_WORK_PENALTY = 16.0d;
@@ -231,28 +238,27 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public static final class AccessShape {
 		private final StatementPattern pattern;
 		private final double filterMultiplier;
-		private final Set<Component> patternConstantComponents;
-		private final Map<Component, String> joinBoundVarNamesByComponent;
-		private final Set<Component> filterLookupComponents;
-		private final Set<Component> lookupBoundComponents;
+		private final int patternConstantComponentMask;
+		private final String[] joinBoundVarNamesByComponent;
+		private final int joinBoundComponentMask;
+		private final int filterLookupComponentMask;
+		private final int lookupBoundComponentMask;
+		private final double[] accessRowsByPrefixMask = new double[COMPONENT_MASK_COUNT];
 		private final AccessRowsEstimator accessRowsEstimator;
 
-		private AccessShape(StatementPattern pattern, double filterMultiplier, Set<Component> patternConstantComponents,
-				Map<Component, String> joinBoundVarNamesByComponent, Set<Component> filterLookupComponents,
+		private AccessShape(StatementPattern pattern, double filterMultiplier, int patternConstantComponentMask,
+				String[] joinBoundVarNamesByComponent, int filterLookupComponentMask,
 				AccessRowsEstimator accessRowsEstimator) {
 			this.pattern = Objects.requireNonNull(pattern, "pattern");
 			this.filterMultiplier = filterMultiplier;
-			this.patternConstantComponents = Set.copyOf(patternConstantComponents);
-			EnumMap<Component, String> joinBoundVarNames = new EnumMap<>(Component.class);
-			joinBoundVarNames.putAll(joinBoundVarNamesByComponent);
-			this.joinBoundVarNamesByComponent = Collections.unmodifiableMap(joinBoundVarNames);
-			this.filterLookupComponents = Set.copyOf(filterLookupComponents);
-			EnumSet<Component> lookupBound = EnumSet.noneOf(Component.class);
-			lookupBound.addAll(this.patternConstantComponents);
-			lookupBound.addAll(this.joinBoundVarNamesByComponent.keySet());
-			lookupBound.addAll(this.filterLookupComponents);
-			this.lookupBoundComponents = Set.copyOf(lookupBound);
+			this.patternConstantComponentMask = patternConstantComponentMask;
+			this.joinBoundVarNamesByComponent = joinBoundVarNamesByComponent.clone();
+			this.joinBoundComponentMask = componentMask(joinBoundVarNamesByComponent);
+			this.filterLookupComponentMask = filterLookupComponentMask;
+			this.lookupBoundComponentMask = patternConstantComponentMask | joinBoundComponentMask
+					| filterLookupComponentMask;
 			this.accessRowsEstimator = Objects.requireNonNull(accessRowsEstimator, "accessRowsEstimator");
+			Arrays.fill(accessRowsByPrefixMask, Double.NaN);
 		}
 
 		public StatementPattern pattern() {
@@ -264,33 +270,115 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		public Set<Component> patternConstantComponents() {
-			return patternConstantComponents;
+			return componentSet(patternConstantComponentMask);
+		}
+
+		public int patternConstantComponentMask() {
+			return patternConstantComponentMask;
 		}
 
 		public Map<Component, String> joinBoundVarNamesByComponent() {
-			return joinBoundVarNamesByComponent;
+			EnumMap<Component, String> components = new EnumMap<>(Component.class);
+			for (Component component : COMPONENT_VALUES) {
+				String varName = joinBoundVarNamesByComponent[component.ordinal()];
+				if (varName != null) {
+					components.put(component, varName);
+				}
+			}
+			return Collections.unmodifiableMap(components);
+		}
+
+		public int joinBoundComponentMask() {
+			return joinBoundComponentMask;
 		}
 
 		public Set<Component> filterLookupComponents() {
-			return filterLookupComponents;
+			return componentSet(filterLookupComponentMask);
+		}
+
+		public int filterLookupComponentMask() {
+			return filterLookupComponentMask;
 		}
 
 		public Set<Component> lookupBoundComponents() {
-			return lookupBoundComponents;
+			return componentSet(lookupBoundComponentMask);
+		}
+
+		public int lookupBoundComponentMask() {
+			return lookupBoundComponentMask;
 		}
 
 		public double estimateAccessRows(Set<Component> prefixComponents) {
-			return accessRowsEstimator.estimate(prefixComponents);
+			return estimateAccessRows(componentMask(prefixComponents));
+		}
+
+		public double estimateAccessRows(int prefixMask) {
+			double cachedRows = accessRowsByPrefixMask[prefixMask];
+			if (!Double.isNaN(cachedRows)) {
+				return cachedRows;
+			}
+			double rows = accessRowsEstimator.estimate(prefixMask);
+			if (!Double.isNaN(rows)) {
+				accessRowsByPrefixMask[prefixMask] = rows;
+			}
+			return rows;
 		}
 
 		public boolean isDirectLookup(Set<Component> prefixComponents) {
-			return prefixComponents.containsAll(lookupBoundComponents);
+			return isDirectLookup(componentMask(prefixComponents));
 		}
+
+		public boolean isDirectLookup(int prefixMask) {
+			return (prefixMask & lookupBoundComponentMask) == lookupBoundComponentMask;
+		}
+	}
+
+	private static int componentMask(String[] componentVarNames) {
+		int mask = 0;
+		for (Component component : COMPONENT_VALUES) {
+			if (componentVarNames[component.ordinal()] != null) {
+				mask |= 1 << component.ordinal();
+			}
+		}
+		return mask;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Set<Component>[] buildComponentSetsByMask() {
+		Set<Component>[] sets = new Set[COMPONENT_MASK_COUNT];
+		sets[0] = Set.of();
+		for (int mask = 1; mask < sets.length; mask++) {
+			EnumSet<Component> components = EnumSet.noneOf(Component.class);
+			for (Component component : COMPONENT_VALUES) {
+				if ((mask & (1 << component.ordinal())) != 0) {
+					components.add(component);
+				}
+			}
+			sets[mask] = Collections.unmodifiableSet(components);
+		}
+		return sets;
+	}
+
+	private static Set<Component> componentSet(int componentMask) {
+		return COMPONENT_SETS_BY_MASK[componentMask & (COMPONENT_MASK_COUNT - 1)];
+	}
+
+	private static int componentMask(Set<Component> components) {
+		if (components == null || components.isEmpty()) {
+			return 0;
+		}
+		int mask = 0;
+		for (Component component : components) {
+			if (component != null) {
+				mask |= 1 << component.ordinal();
+			}
+		}
+		return mask;
 	}
 
 	@FunctionalInterface
 	private interface AccessRowsEstimator {
-		double estimate(Set<Component> prefixComponents);
+		double estimate(int prefixComponentMask);
 	}
 
 	enum SketchPlannerPath {
@@ -379,6 +467,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final String ZERO_INTERSECTION_SKEW_RATIO_PROPERTY = "zeroIntersectionSkewRatio";
 	private static final String ZERO_INTERSECTION_ROW_BUDGET_PROPERTY = "zeroIntersectionRowBudget";
 	private static final String ZERO_INTERSECTION_SAMPLE_SIZE_PROPERTY = "zeroIntersectionSampleSize";
+	private static final long DEFAULT_ESTIMATE_CACHE_SECONDS = 60L;
 	private static final int MAX_ESTIMATE_CACHE_ENTRIES = 4096;
 	private static final long DEBUG_NO_HEADROOM_OVERRIDE = -1L;
 	private static final long OBJECT_HEADER_BYTES = 16L;
@@ -871,6 +960,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return new PersistedSketchRef(blobId, offsets[entryId], lengths[entryId]);
 		}
 
+		private boolean hasResidentOrPersistedRef(int entryId, byte slot) {
+			if (residentNode(entryId, slot) != NO_NODE) {
+				return true;
+			}
+			return persistedBlobIds(slot)[entryId] >= 0 && persistedLengths(slot)[entryId] > 0;
+		}
+
 		private List<ManifestSketchEntry> snapshotPersistedEntries(byte slot) {
 			List<ManifestSketchEntry> entries = new ArrayList<>();
 			for (int entryId = 0; entryId < size; entryId++) {
@@ -1060,6 +1156,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		private byte recType(int entryId) {
 			return recTypeFromPrefix(keyPrefixes[entryId]);
+		}
+
+		private boolean isDelete(int entryId) {
+			return isDeleteFromPrefix(keyPrefixes[entryId]);
 		}
 
 		private byte axisA(int entryId) {
@@ -2047,12 +2147,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		synchronized (sketchCacheLock) {
 			int entryCount = cacheDirectory.size();
 			for (int entryId = 0; entryId < entryCount; entryId++) {
-				SketchAddress address = cacheDirectory.toSketchAddress(entryId);
-				if (address.isDelete || !hasUsableActiveSketch(state, slot, entryId, address)) {
+				if (cacheDirectory.isDelete(entryId) || !cacheDirectory.hasResidentOrPersistedRef(entryId, slot)) {
 					continue;
 				}
 
-				switch (address.recType) {
+				switch (cacheDirectory.recType(entryId)) {
 				case REC_SINGLE_TRIPLE:
 					hasSingleTriples = true;
 					break;
@@ -2075,10 +2174,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		return false;
-	}
-
-	private boolean hasUsableActiveSketch(State state, byte slot, int entryId, SketchAddress address) {
-		return getResidentSketch(state, address) != null || cacheDirectory.persistedRef(entryId, slot) != null;
 	}
 
 	/**
@@ -2300,6 +2395,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 */
 	public synchronized long rebuildOnceSlow() {
 		flushPendingIncremental();
+		clearEstimateCacheIfPopulated();
 		closeMappedChannels(persistenceBlobBaseFile);
 
 //		try {
@@ -3391,7 +3487,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (rhs.sketch != null) {
 				ix.intersect(rhs.sketch);
 			}
-			Sketch inter = ix.getResult();
+			Sketch inter = ix.getResult(false, null);
 			double interDistinct = inter.getEstimate();
 
 			if (interDistinct == 0.0) { // early out
@@ -3824,7 +3920,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				Intersection ix = SetOperation.builder().buildIntersection();
 				ix.intersect(acc);
 				ix.intersect(sk);
-				acc = ix.getResult();
+				acc = ix.getResult(false, null);
 			}
 		}
 		return BindingSketchResult.of(acc);
@@ -3908,7 +4004,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Intersection ix = SetOperation.builder().buildIntersection();
 		ix.intersect(sa);
 		ix.intersect(sb);
-		return ix.getResult().getEstimate();
+		return ix.getResult(false, null).getEstimate();
 	}
 
 	private double joinSingles(State st, Component j,
@@ -3927,7 +4023,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Intersection ix = SetOperation.builder().buildIntersection();
 		ix.intersect(sa);
 		ix.intersect(sb);
-		return ix.getResult().getEstimate();
+		return ix.getResult(false, null).getEstimate();
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -4394,6 +4490,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return applyInitiallyBoundVars(estimate, initiallyBoundVars);
 	}
 
+	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate estimate;
+		if (tupleExpr instanceof BindingSetAssignment) {
+			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
+		} else {
+			PatternEstimateInput input = asSketchCompatibleInput(tupleExpr);
+			if (input == null) {
+				return null;
+			}
+			estimate = estimatePatternTupleExprPlan(input);
+		}
+		return applyInitiallyBoundVarMask(estimate, scope, initiallyBoundVarMask);
+	}
+
+	private SmallVarStatsMap newVarStatsMap() {
+		OptimizationScopeState scope = optimizationScope.get();
+		return new SmallVarStatsMap(scope == null ? null : scope.variableDictionary);
+	}
+
+	private SmallVarStatsMap copyVarStats(Map<String, VarPlanStats> varStats) {
+		SmallVarStatsMap copy = newVarStatsMap();
+		copy.putAll(varStats);
+		return copy;
+	}
+
 	TuplePlanEstimate planEstimateForJoinOrdering(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
 		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars);
 	}
@@ -4454,10 +4576,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private Map<String, VarPlanStats> estimatePatternVarStats(StatementPattern pattern, double baseRows) {
-		Map<String, VarPlanStats> varStats = new HashMap<>();
-		Set<String> seenVars = new HashSet<>();
+		Map<String, VarPlanStats> varStats = newVarStatsMap();
 		for (Var var : pattern.getVarList()) {
-			if (var == null || var.hasValue() || var.getName() == null || !seenVars.add(var.getName())) {
+			if (var == null || var.hasValue() || var.getName() == null || varStats.containsKey(var.getName())) {
 				continue;
 			}
 			JoinEstimate joinEstimate = estimate(getComponent(pattern, var),
@@ -4474,14 +4595,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private Map<String, VarPlanStats> estimateAllUnboundPatternVarStats(StatementPattern pattern, double rows) {
-		Map<String, VarPlanStats> varStats = new HashMap<>();
+		Map<String, VarPlanStats> varStats = newVarStatsMap();
 		double distinct = clampDistinct(rows, rows);
 		if (!(Double.isFinite(distinct) && distinct > 0.0d)) {
 			return varStats;
 		}
-		Set<String> seenVars = new HashSet<>();
 		for (Var var : pattern.getVarList()) {
-			if (var == null || var.hasValue() || var.getName() == null || !seenVars.add(var.getName())) {
+			if (var == null || var.hasValue() || var.getName() == null || varStats.containsKey(var.getName())) {
 				continue;
 			}
 			varStats.put(var.getName(), new VarPlanStats(distinct, null, pattern));
@@ -4510,7 +4630,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		rows = normalizeRows(rows);
-		Map<String, VarPlanStats> varStats = new HashMap<>();
+		Map<String, VarPlanStats> varStats = newVarStatsMap();
 		for (Map.Entry<String, Set<Value>> entry : valueSets.entrySet()) {
 			if (!entry.getValue().isEmpty()) {
 				double distinct = clampDistinct(entry.getValue().size(), rows);
@@ -4527,7 +4647,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return estimate;
 		}
 
-		Map<String, VarPlanStats> adjustedStats = new HashMap<>(estimate.varStats);
+		Map<String, VarPlanStats> adjustedStats = copyVarStats(estimate.varStats);
 		double selectivity = 1.0d;
 		boolean adjusted = false;
 		for (String varName : initiallyBoundVars) {
@@ -4543,7 +4663,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		double baseRows = normalizeRows(estimate.baseRows * selectivity);
 		double outputRows = normalizeRows(estimate.outputRows * selectivity);
-		Map<String, VarPlanStats> normalizedStats = new HashMap<>(adjustedStats.size());
+		Map<String, VarPlanStats> normalizedStats = newVarStatsMap();
 		for (Map.Entry<String, VarPlanStats> entry : adjustedStats.entrySet()) {
 			VarPlanStats stats = entry.getValue();
 			// Once an outer binding narrows the tuple subset, unconditional sketches no longer represent the remaining
@@ -4557,14 +4677,80 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new TuplePlanEstimate(baseRows, outputRows, estimate.localFilterMultiplier, normalizedStats);
 	}
 
+	private TuplePlanEstimate applyInitiallyBoundVarMask(TuplePlanEstimate estimate, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		if (estimate == null || initiallyBoundVarMask == 0L || estimate.varStats.isEmpty()) {
+			return estimate;
+		}
+
+		SmallVarStatsMap smallStats = asSmallVarStats(estimate.varStats);
+		if (smallStats == null || smallStats.dictionary != scope.variableDictionary) {
+			return applyInitiallyBoundVars(estimate, scope.variableDictionary.setOf(initiallyBoundVarMask));
+		}
+
+		long matchingMask = smallStats.variableMask() & initiallyBoundVarMask;
+		if (matchingMask == 0L) {
+			return estimate;
+		}
+
+		SmallVarStatsMap adjustedStats = copyVarStats(estimate.varStats);
+		double selectivity = 1.0d;
+		boolean adjusted = false;
+		long remaining = matchingMask;
+		while (remaining != 0L) {
+			int id = Long.numberOfTrailingZeros(remaining);
+			remaining &= ~(1L << id);
+			VarPlanStats stats = adjustedStats.getById(id);
+			if (stats == null || !Double.isFinite(stats.distinct) || stats.distinct <= 1.0d) {
+				continue;
+			}
+			String varName = scope.variableDictionary.name(id);
+			if (varName == null) {
+				continue;
+			}
+			selectivity /= Math.max(1.0d, stats.distinct);
+			adjustedStats.put(varName, new VarPlanStats(1.0d, null, stats.pattern));
+			adjusted = true;
+		}
+
+		if (!adjusted) {
+			return estimate;
+		}
+
+		double baseRows = normalizeRows(estimate.baseRows * selectivity);
+		double outputRows = normalizeRows(estimate.outputRows * selectivity);
+		SmallVarStatsMap normalizedStats = newVarStatsMap();
+		for (int i = 0; i < adjustedStats.size(); i++) {
+			VarPlanStats stats = adjustedStats.valueAt(i);
+			normalizedStats.putNew(adjustedStats.keyAt(i), adjustedStats.idAt(i),
+					new VarPlanStats(clampDistinct(stats.distinct, outputRows), null, null));
+		}
+
+		return new TuplePlanEstimate(baseRows, outputRows, estimate.localFilterMultiplier, normalizedStats);
+	}
+
+	private static SmallVarStatsMap asSmallVarStats(Map<String, VarPlanStats> varStats) {
+		return varStats instanceof SmallVarStatsMap ? (SmallVarStatsMap) varStats : null;
+	}
+
 	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right) {
 		return estimateJoinStep(left, right, null);
 	}
 
 	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
+		return estimateJoinStep(left, right, sketchIntersectionCache, true);
+	}
+
+	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
 		if (left.outputRows <= 0.0d || right.baseRows <= 0.0d) {
 			return new JoinStepEstimate(0.0d, 0.0d, Collections.emptyMap());
+		}
+		SmallVarStatsMap leftSmall = asSmallVarStats(left.varStats);
+		SmallVarStatsMap rightSmall = asSmallVarStats(right.varStats);
+		if (leftSmall != null && leftSmall.sameDictionary(rightSmall)) {
+			return estimateJoinStepSmall(left, right, sketchIntersectionCache, leftSmall, rightSmall, useSketches);
 		}
 
 		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
@@ -4576,8 +4762,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				continue;
 			}
 			SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, entry.getValue(),
-					rightStats, disconnectedRows, sketchIntersectionCache);
-			if (shared.rows == 0.0d && left.localFilterMultiplier == 1.0d && right.localFilterMultiplier == 1.0d
+					rightStats, disconnectedRows, sketchIntersectionCache, useSketches);
+			if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
+					&& right.localFilterMultiplier == 1.0d
 					&& entry.getValue().pattern != null && rightStats.pattern != null) {
 				Double exactJoinRows = zeroIntersectionFallbackJoinRows(entry.getValue().pattern, rightStats.pattern,
 						entry.getKey(), entry.getValue().distinct, rightStats.distinct, left.outputRows,
@@ -4603,24 +4790,111 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double outputRows = normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
 		double workRows = normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
 
-		Map<String, VarPlanStats> mergedStats = new HashMap<>();
+		Map<String, VarPlanStats> mergedStats = newVarStatsMap();
 		for (Map.Entry<String, VarPlanStats> entry : left.varStats.entrySet()) {
 			String varName = entry.getKey();
 			SharedVarEstimate shared = sharedVars.get(varName);
 			if (shared != null) {
 				mergedStats.put(varName, new VarPlanStats(clampDistinct(shared.distinct, outputRows), shared.sketch));
 			} else {
+				Sketch sketch = useSketches ? entry.getValue().sketch : null;
+				StatementPattern pattern = useSketches ? entry.getValue().pattern : null;
 				mergedStats.put(varName, new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows),
-						entry.getValue().sketch, entry.getValue().pattern));
+						sketch, pattern));
 			}
 		}
 		for (Map.Entry<String, VarPlanStats> entry : right.varStats.entrySet()) {
 			if (mergedStats.containsKey(entry.getKey())) {
 				continue;
 			}
+			Sketch sketch = useSketches ? entry.getValue().sketch : null;
+			StatementPattern pattern = useSketches ? entry.getValue().pattern : null;
 			mergedStats.put(entry.getKey(),
-					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), entry.getValue().sketch,
-							entry.getValue().pattern));
+					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), sketch, pattern));
+		}
+		return new JoinStepEstimate(outputRows, workRows, mergedStats);
+	}
+
+	private JoinStepEstimate estimateJoinStepSmall(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache, SmallVarStatsMap leftStatsMap,
+			SmallVarStatsMap rightStatsMap, boolean useSketches) {
+		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
+		double rawRows = Double.POSITIVE_INFINITY;
+		double[] sharedDistinctByLeftIndex = null;
+		Sketch[] sharedSketchByLeftIndex = null;
+		boolean hasSharedVars = false;
+
+		if ((leftStatsMap.variableMask() & rightStatsMap.variableMask()) != 0L) {
+			for (int i = 0; i < leftStatsMap.size(); i++) {
+				int id = leftStatsMap.idAt(i);
+				if (id == VariableDictionary.NO_ID) {
+					continue;
+				}
+				VarPlanStats rightStats = rightStatsMap.getById(id);
+				if (rightStats == null) {
+					continue;
+				}
+				VarPlanStats leftStats = leftStatsMap.valueAt(i);
+				SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftStats, rightStats,
+						disconnectedRows, sketchIntersectionCache, useSketches);
+				if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
+						&& right.localFilterMultiplier == 1.0d
+						&& leftStats.pattern != null && rightStats.pattern != null) {
+					Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftStats.pattern, rightStats.pattern,
+							leftStatsMap.keyAt(i), leftStats.distinct, rightStats.distinct, left.outputRows,
+							right.baseRows, disconnectedRows);
+					if (exactJoinRows != null && exactJoinRows > 0.0d) {
+						shared = new SharedVarEstimate(exactJoinRows, Math.min(leftStats.distinct,
+								rightStats.distinct), null);
+					}
+				}
+				if (sharedDistinctByLeftIndex == null) {
+					sharedDistinctByLeftIndex = new double[leftStatsMap.size()];
+					sharedSketchByLeftIndex = new Sketch[leftStatsMap.size()];
+					Arrays.fill(sharedDistinctByLeftIndex, Double.NaN);
+				}
+				sharedDistinctByLeftIndex[i] = shared.distinct;
+				sharedSketchByLeftIndex[i] = shared.sketch;
+				rawRows = Math.min(rawRows, shared.rows);
+				hasSharedVars = true;
+			}
+		}
+
+		double rawWorkRows;
+		if (!hasSharedVars) {
+			rawRows = disconnectedRows;
+			rawWorkRows = estimateDisconnectedJoinWorkRows(left.outputRows, right.baseRows);
+		} else {
+			rawRows = Math.min(rawRows, disconnectedRows);
+			rawWorkRows = rawRows;
+		}
+
+		double outputRows = normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
+		double workRows = normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
+
+		Map<String, VarPlanStats> mergedStats = newVarStatsMap();
+		for (int i = 0; i < leftStatsMap.size(); i++) {
+			VarPlanStats stats = leftStatsMap.valueAt(i);
+			if (sharedDistinctByLeftIndex != null && !Double.isNaN(sharedDistinctByLeftIndex[i])) {
+				mergedStats.put(leftStatsMap.keyAt(i),
+						new VarPlanStats(clampDistinct(sharedDistinctByLeftIndex[i], outputRows),
+								sharedSketchByLeftIndex[i]));
+			} else {
+				Sketch sketch = useSketches ? stats.sketch : null;
+				StatementPattern pattern = useSketches ? stats.pattern : null;
+				mergedStats.put(leftStatsMap.keyAt(i),
+						new VarPlanStats(clampDistinct(stats.distinct, outputRows), sketch, pattern));
+			}
+		}
+		for (int i = 0; i < rightStatsMap.size(); i++) {
+			String key = rightStatsMap.keyAt(i);
+			if (mergedStats.containsKey(key)) {
+				continue;
+			}
+			VarPlanStats stats = rightStatsMap.valueAt(i);
+			Sketch sketch = useSketches ? stats.sketch : null;
+			StatementPattern pattern = useSketches ? stats.pattern : null;
+			mergedStats.put(key, new VarPlanStats(clampDistinct(stats.distinct, outputRows), sketch, pattern));
 		}
 		return new JoinStepEstimate(outputRows, workRows, mergedStats);
 	}
@@ -4642,7 +4916,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	JoinStepEstimate boundLookupJoinStepForJoinOrdering(TuplePlanEstimate prefix, TuplePlanEstimate right,
 			double workRows) {
 		double outputRows = normalizeRows(prefix.outputRows);
-		Map<String, VarPlanStats> mergedStats = new HashMap<>(prefix.varStats);
+		Map<String, VarPlanStats> mergedStats = copyVarStats(prefix.varStats);
 		for (Map.Entry<String, VarPlanStats> entry : right.varStats.entrySet()) {
 			mergedStats.putIfAbsent(entry.getKey(),
 					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), null,
@@ -4654,7 +4928,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	JoinStepEstimate joinStepWithOutputRowsForJoinOrdering(TuplePlanEstimate prefix, TuplePlanEstimate right,
 			double outputRows, double workRows) {
 		double rows = normalizeRows(outputRows);
-		Map<String, VarPlanStats> mergedStats = new HashMap<>();
+		Map<String, VarPlanStats> mergedStats = newVarStatsMap();
 		for (Map.Entry<String, VarPlanStats> entry : prefix.varStats.entrySet()) {
 			VarPlanStats stats = entry.getValue();
 			mergedStats.put(entry.getKey(), new VarPlanStats(clampDistinct(stats.distinct, rows), null,
@@ -4672,12 +4946,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	JoinStepEstimate distinctCountJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
-		return estimateJoinStep(withoutSketches(left), withoutSketches(right));
-	}
-
-	private TuplePlanEstimate withoutSketches(TuplePlanEstimate estimate) {
-		return new TuplePlanEstimate(estimate.baseRows, estimate.outputRows, estimate.localFilterMultiplier,
-				clampVarStatsToRows(estimate.varStats, estimate.outputRows, false));
+		return estimateJoinStep(left, right, null, false);
 	}
 
 	TuplePlanEstimate joinedPlanEstimate(JoinStepEstimate step) {
@@ -4691,6 +4960,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	boolean hasSharedJoinVariable(TuplePlanEstimate left, TuplePlanEstimate right) {
+		SmallVarStatsMap leftSmall = asSmallVarStats(left.varStats);
+		SmallVarStatsMap rightSmall = asSmallVarStats(right.varStats);
+		if (leftSmall != null && leftSmall.sameDictionary(rightSmall)) {
+			return (leftSmall.variableMask() & rightSmall.variableMask()) != 0L;
+		}
 		for (String varName : left.varStats.keySet()) {
 			if (right.varStats.containsKey(varName)) {
 				return true;
@@ -4702,9 +4976,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
 			VarPlanStats rightStats, double disconnectedRows,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
+		return estimateSharedVarJoin(leftRows, rightRows, leftStats, rightStats, disconnectedRows,
+				sketchIntersectionCache, true);
+	}
+
+	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
+			VarPlanStats rightStats, double disconnectedRows,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
 		double leftDistinct = Math.max(1.0d, leftStats.distinct);
 		double rightDistinct = Math.max(1.0d, rightStats.distinct);
-		if (leftStats.sketch != null && rightStats.sketch != null) {
+		if (useSketches && leftStats.sketch != null && rightStats.sketch != null) {
 			SketchIntersectionResult intersectionResult = sketchIntersectionCache == null
 					? intersectJoinOrderingSketches(leftStats.sketch, rightStats.sketch)
 					: sketchIntersectionCache.intersect(leftStats.sketch, rightStats.sketch);
@@ -4731,7 +5012,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Intersection ix = SetOperation.builder().buildIntersection();
 		ix.intersect(left);
 		ix.intersect(right);
-		Sketch intersection = ix.getResult();
+		Sketch intersection = ix.getResult(false, null);
 		return new SketchIntersectionResult(Math.max(0.0d, intersection.getEstimate()), intersection);
 	}
 
@@ -4759,7 +5040,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (varStats.isEmpty()) {
 			return Collections.emptyMap();
 		}
-		Map<String, VarPlanStats> clamped = new HashMap<>(varStats.size());
+		Map<String, VarPlanStats> clamped = newVarStatsMap();
 		for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
 			VarPlanStats stats = entry.getValue();
 			clamped.put(entry.getKey(),
@@ -4781,8 +5062,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			this.baseRows = baseRows;
 			this.outputRows = outputRows;
 			this.localFilterMultiplier = localFilterMultiplier;
-			this.varStats = Collections.unmodifiableMap(new HashMap<>(varStats));
-			this.joinVars = Set.copyOf(this.varStats.keySet());
+			this.varStats = freezeVarStats(varStats);
+			this.joinVars = this.varStats.keySet();
 		}
 
 		double outputRows() {
@@ -4828,6 +5109,444 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
+	private static final class VariableDictionary {
+		private static final int NO_ID = -1;
+
+		private final Map<String, Integer> ids = new HashMap<>();
+		private String[] names = new String[8];
+		private int size;
+
+		private int id(String name) {
+			Integer existing = ids.get(name);
+			if (existing != null) {
+				return existing;
+			}
+			int id = size++;
+			ensureNameCapacity(size);
+			names[id] = name;
+			ids.put(name, id);
+			return id;
+		}
+
+		private int idIfKnown(String name) {
+			Integer existing = ids.get(name);
+			return existing == null ? NO_ID : existing;
+		}
+
+		private String name(int id) {
+			return id >= 0 && id < size ? names[id] : null;
+		}
+
+		private Set<String> setOf(long mask) {
+			if (mask == 0L) {
+				return Set.of();
+			}
+			return new VariableMaskSet(this, mask);
+		}
+
+		private long bit(int id) {
+			return id >= 0 && id < Long.SIZE - 1 ? 1L << id : 0L;
+		}
+
+		private long maskOf(Set<String> names) {
+			if (names == null || names.isEmpty()) {
+				return 0L;
+			}
+			long mask = 0L;
+			for (String name : names) {
+				if (name == null) {
+					continue;
+				}
+				int id = id(name);
+				long bit = bit(id);
+				if (bit == 0L) {
+					return BOUND_VAR_MASK_OVERFLOW;
+				}
+				mask |= bit;
+			}
+			return mask;
+		}
+
+		private long maskOf(String[] sourceNames, long sourceMask) {
+			if (sourceNames == null || sourceMask == 0L) {
+				return 0L;
+			}
+			long mask = 0L;
+			long remaining = sourceMask;
+			while (remaining != 0L) {
+				int sourceId = Long.numberOfTrailingZeros(remaining);
+				remaining &= ~(1L << sourceId);
+				if (sourceId < 0 || sourceId >= sourceNames.length) {
+					continue;
+				}
+				String name = sourceNames[sourceId];
+				if (name == null) {
+					continue;
+				}
+				int id = id(name);
+				long bit = bit(id);
+				if (bit == 0L) {
+					return BOUND_VAR_MASK_OVERFLOW;
+				}
+				mask |= bit;
+			}
+			return mask;
+		}
+
+		private void ensureNameCapacity(int minCapacity) {
+			if (minCapacity <= names.length) {
+				return;
+			}
+			int nextCapacity = names.length;
+			while (nextCapacity < minCapacity) {
+				nextCapacity <<= 1;
+			}
+			names = Arrays.copyOf(names, nextCapacity);
+		}
+	}
+
+	private static final class VariableMaskSet extends AbstractSet<String> {
+		private final VariableDictionary dictionary;
+		private final long mask;
+
+		private VariableMaskSet(VariableDictionary dictionary, long mask) {
+			this.dictionary = dictionary;
+			this.mask = mask;
+		}
+
+		@Override
+		public Iterator<String> iterator() {
+			return new Iterator<>() {
+				private long remaining = mask;
+
+				@Override
+				public boolean hasNext() {
+					return remaining != 0L;
+				}
+
+				@Override
+				public String next() {
+					if (remaining == 0L) {
+						throw new NoSuchElementException();
+					}
+					int id = Long.numberOfTrailingZeros(remaining);
+					remaining &= ~(1L << id);
+					String name = dictionary.name(id);
+					if (name == null) {
+						throw new NoSuchElementException();
+					}
+					return name;
+				}
+			};
+		}
+
+		@Override
+		public boolean contains(Object o) {
+			if (!(o instanceof String)) {
+				return false;
+			}
+			int id = dictionary.idIfKnown((String) o);
+			return id != VariableDictionary.NO_ID && (mask & dictionary.bit(id)) != 0L;
+		}
+
+		@Override
+		public int size() {
+			return Long.bitCount(mask);
+		}
+	}
+
+	private static final class ExternalVariableMaskSet extends AbstractSet<String> {
+		private final String[] names;
+		private final long mask;
+
+		private ExternalVariableMaskSet(String[] names, long mask) {
+			this.names = names;
+			this.mask = mask;
+		}
+
+		@Override
+		public Iterator<String> iterator() {
+			return new Iterator<>() {
+				private long remaining = mask;
+
+				@Override
+				public boolean hasNext() {
+					return remaining != 0L;
+				}
+
+				@Override
+				public String next() {
+					if (remaining == 0L) {
+						throw new NoSuchElementException();
+					}
+					int id = Long.numberOfTrailingZeros(remaining);
+					remaining &= ~(1L << id);
+					if (id < 0 || id >= names.length || names[id] == null) {
+						throw new NoSuchElementException();
+					}
+					return names[id];
+				}
+			};
+		}
+
+		@Override
+		public boolean contains(Object o) {
+			if (!(o instanceof String)) {
+				return false;
+			}
+			for (int i = 0; i < names.length && i < Long.SIZE; i++) {
+				if ((mask & (1L << i)) != 0L && o.equals(names[i])) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public int size() {
+			return Long.bitCount(mask);
+		}
+	}
+
+	private static final class SmallVarStatsMap extends AbstractMap<String, VarPlanStats> {
+		private static final int NO_ID = VariableDictionary.NO_ID;
+
+		private final VariableDictionary dictionary;
+		private String[] keys = new String[4];
+		private int[] ids = new int[4];
+		private VarPlanStats[] values = new VarPlanStats[4];
+		private int[] indexesById = new int[8];
+		private int size;
+		private long variableMask;
+		private boolean frozen;
+		private Set<Entry<String, VarPlanStats>> entrySet;
+		private Set<String> keySet;
+
+		private SmallVarStatsMap(VariableDictionary dictionary) {
+			this.dictionary = dictionary;
+			Arrays.fill(ids, NO_ID);
+			Arrays.fill(indexesById, -1);
+		}
+
+		private boolean sameDictionary(SmallVarStatsMap other) {
+			return other != null && dictionary != null && dictionary == other.dictionary;
+		}
+
+		private long variableMask() {
+			return variableMask;
+		}
+
+		private int idAt(int index) {
+			return ids[index];
+		}
+
+		private String keyAt(int index) {
+			return keys[index];
+		}
+
+		private VarPlanStats valueAt(int index) {
+			return values[index];
+		}
+
+		private VarPlanStats getById(int id) {
+			int index = indexForId(id);
+			return index < 0 ? null : values[index];
+		}
+
+		private void freeze() {
+			frozen = true;
+		}
+
+		@Override
+		public VarPlanStats put(String key, VarPlanStats value) {
+			Objects.requireNonNull(key, "key");
+			Objects.requireNonNull(value, "value");
+			if (frozen) {
+				throw new UnsupportedOperationException("frozen");
+			}
+			int id = dictionary == null ? NO_ID : dictionary.id(key);
+			int index = id == NO_ID ? indexOfKey(key) : indexForId(id);
+			if (index >= 0) {
+				VarPlanStats previous = values[index];
+				values[index] = value;
+				return previous;
+			}
+			putNew(key, id, value);
+			return null;
+		}
+
+		@Override
+		public void putAll(Map<? extends String, ? extends VarPlanStats> map) {
+			if (map instanceof SmallVarStatsMap) {
+				SmallVarStatsMap source = (SmallVarStatsMap) map;
+				if (source.sameDictionary(this)) {
+					for (int i = 0; i < source.size(); i++) {
+						int id = source.idAt(i);
+						int index = id == NO_ID ? indexOfKey(source.keyAt(i)) : indexForId(id);
+						if (index >= 0) {
+							values[index] = source.valueAt(i);
+						} else {
+							putNew(source.keyAt(i), id, source.valueAt(i));
+						}
+					}
+					return;
+				}
+			}
+			for (Entry<? extends String, ? extends VarPlanStats> entry : map.entrySet()) {
+				put(entry.getKey(), entry.getValue());
+			}
+		}
+
+		@Override
+		public VarPlanStats get(Object key) {
+			int index = indexOfLookupKey(key);
+			return index < 0 ? null : values[index];
+		}
+
+		@Override
+		public boolean containsKey(Object key) {
+			return indexOfLookupKey(key) >= 0;
+		}
+
+		@Override
+		public int size() {
+			return size;
+		}
+
+		@Override
+		public boolean isEmpty() {
+			return size == 0;
+		}
+
+		@Override
+		public Set<Entry<String, VarPlanStats>> entrySet() {
+			Set<Entry<String, VarPlanStats>> existing = entrySet;
+			if (existing != null) {
+				return existing;
+			}
+			entrySet = new AbstractSet<>() {
+				@Override
+				public Iterator<Entry<String, VarPlanStats>> iterator() {
+					return new Iterator<>() {
+						private int index;
+
+						@Override
+						public boolean hasNext() {
+							return index < size;
+						}
+
+						@Override
+						public Entry<String, VarPlanStats> next() {
+							if (!hasNext()) {
+								throw new NoSuchElementException();
+							}
+							int current = index++;
+							return new SimpleImmutableEntry<>(keys[current], values[current]);
+						}
+					};
+				}
+
+				@Override
+				public int size() {
+					return size;
+				}
+			};
+			return entrySet;
+		}
+
+		@Override
+		public Set<String> keySet() {
+			Set<String> existing = keySet;
+			if (existing != null) {
+				return existing;
+			}
+			if (dictionary != null && Long.bitCount(variableMask) == size) {
+				keySet = dictionary.setOf(variableMask);
+				return keySet;
+			}
+			return super.keySet();
+		}
+
+		private int indexOfLookupKey(Object key) {
+			if (!(key instanceof String)) {
+				return -1;
+			}
+			String name = (String) key;
+			if (dictionary != null) {
+				int id = dictionary.idIfKnown(name);
+				if (id != NO_ID) {
+					return indexForId(id);
+				}
+			}
+			return indexOfKey(name);
+		}
+
+		private int indexOfKey(String key) {
+			for (int i = 0; i < size; i++) {
+				if (key.equals(keys[i])) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		private int indexOfId(int id) {
+			for (int i = 0; i < size; i++) {
+				if (ids[i] == id) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		private int indexForId(int id) {
+			return id >= 0 && id < indexesById.length ? indexesById[id] : -1;
+		}
+
+		private void putNew(String key, int id, VarPlanStats value) {
+			ensureCapacity(size + 1);
+			if (id != NO_ID) {
+				ensureIdCapacity(id + 1);
+				indexesById[id] = size;
+			}
+			keys[size] = key;
+			ids[size] = id;
+			values[size] = value;
+			if (dictionary != null) {
+				variableMask |= dictionary.bit(id);
+			}
+			keySet = null;
+			size++;
+		}
+
+		private void ensureCapacity(int minCapacity) {
+			if (minCapacity <= keys.length) {
+				return;
+			}
+			int nextCapacity = keys.length;
+			while (nextCapacity < minCapacity) {
+				nextCapacity <<= 1;
+			}
+			keys = Arrays.copyOf(keys, nextCapacity);
+			ids = Arrays.copyOf(ids, nextCapacity);
+			Arrays.fill(ids, size, nextCapacity, NO_ID);
+			values = Arrays.copyOf(values, nextCapacity);
+		}
+
+		private void ensureIdCapacity(int minCapacity) {
+			if (minCapacity <= indexesById.length) {
+				return;
+			}
+			int current = indexesById.length;
+			int nextCapacity = current;
+			while (nextCapacity < minCapacity) {
+				nextCapacity <<= 1;
+			}
+			indexesById = Arrays.copyOf(indexesById, nextCapacity);
+			Arrays.fill(indexesById, current, nextCapacity, -1);
+		}
+	}
+
 	private static final class SharedVarEstimate {
 		private final double rows;
 		private final double distinct;
@@ -4857,6 +5576,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private boolean readyRebuildRequired;
 		private boolean readySketchesLoaded;
 		private int readinessScans;
+		private final VariableDictionary variableDictionary = new VariableDictionary();
 		private final JoinOrderingSketchIntersectionCache sketchIntersectionCache = new JoinOrderingSketchIntersectionCache();
 		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
 		private final Map<AccessShapeCacheKey, AccessShape> accessShapeCache = new HashMap<>();
@@ -4864,13 +5584,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static final class TuplePlanEstimateCacheKey {
 		private final TupleExpr tupleExpr;
-		private final Set<String> boundVars;
+		private final long boundVarMask;
 		private final int hashCode;
 
-		private TuplePlanEstimateCacheKey(TupleExpr tupleExpr, Set<String> boundVars) {
+		private TuplePlanEstimateCacheKey(TupleExpr tupleExpr, long boundVarMask) {
 			this.tupleExpr = Objects.requireNonNull(tupleExpr, "tupleExpr");
-			this.boundVars = boundVars == null || boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
-			this.hashCode = 31 * System.identityHashCode(tupleExpr) + this.boundVars.hashCode();
+			this.boundVarMask = boundVarMask;
+			this.hashCode = 31 * System.identityHashCode(tupleExpr) + Long.hashCode(boundVarMask);
 		}
 
 		@Override
@@ -4882,7 +5602,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return false;
 			}
 			TuplePlanEstimateCacheKey that = (TuplePlanEstimateCacheKey) other;
-			return tupleExpr == that.tupleExpr && boundVars.equals(that.boundVars);
+			return tupleExpr == that.tupleExpr && boundVarMask == that.boundVarMask;
 		}
 
 		@Override
@@ -4893,13 +5613,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static final class AccessShapeCacheKey {
 		private final TupleExpr tupleExpr;
-		private final Set<String> boundVars;
+		private final long boundVarMask;
 		private final int hashCode;
 
-		private AccessShapeCacheKey(TupleExpr tupleExpr, Set<String> boundVars) {
+		private AccessShapeCacheKey(TupleExpr tupleExpr, long boundVarMask) {
 			this.tupleExpr = Objects.requireNonNull(tupleExpr, "tupleExpr");
-			this.boundVars = boundVars == null || boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
-			this.hashCode = 31 * System.identityHashCode(tupleExpr) + this.boundVars.hashCode();
+			this.boundVarMask = boundVarMask;
+			this.hashCode = 31 * System.identityHashCode(tupleExpr) + Long.hashCode(boundVarMask);
 		}
 
 		@Override
@@ -4911,7 +5631,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return false;
 			}
 			AccessShapeCacheKey that = (AccessShapeCacheKey) other;
-			return tupleExpr == that.tupleExpr && boundVars.equals(that.boundVars);
+			return tupleExpr == that.tupleExpr && boundVarMask == that.boundVarMask;
 		}
 
 		@Override
@@ -4967,7 +5687,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private JoinStepEstimate(double outputRows, double workRows, Map<String, VarPlanStats> varStats) {
 			this.outputRows = outputRows;
 			this.workRows = workRows;
-			this.varStats = Collections.unmodifiableMap(new HashMap<>(varStats));
+			this.varStats = freezeVarStats(varStats);
 		}
 
 		double outputRows() {
@@ -4982,6 +5702,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return "outputRows=" + outputRows + ", workRows=" + workRows + ", joinVars="
 					+ summarizeVarStats(varStats);
 		}
+	}
+
+	private static Map<String, VarPlanStats> freezeVarStats(Map<String, VarPlanStats> varStats) {
+		if (varStats.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		if (varStats instanceof SmallVarStatsMap) {
+			SmallVarStatsMap smallMap = (SmallVarStatsMap) varStats;
+			smallMap.freeze();
+			return smallMap;
+		}
+		return Collections.unmodifiableMap(varStats);
 	}
 
 	private static String summarizeVarStats(Map<String, VarPlanStats> varStats) {
@@ -5162,12 +5894,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (scope == null) {
 			return computeTupleExprPlan(tupleExpr, initiallyBoundVars);
 		}
-		TuplePlanEstimateCacheKey key = new TuplePlanEstimateCacheKey(tupleExpr, initiallyBoundVars);
+		long boundVarMask = scope.variableDictionary.maskOf(initiallyBoundVars);
+		if (boundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return computeTupleExprPlan(tupleExpr, initiallyBoundVars);
+		}
+		return estimateTupleExprPlan(tupleExpr, scope, boundVarMask);
+	}
+
+	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, long initiallyBoundVarMask) {
+		if (tupleExpr == null) {
+			return null;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null || initiallyBoundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return computeTupleExprPlan(tupleExpr, Collections.emptySet());
+		}
+		return estimateTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask);
+	}
+
+	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimateCacheKey key = new TuplePlanEstimateCacheKey(tupleExpr, initiallyBoundVarMask);
 		Optional<TuplePlanEstimate> cached = scope.tupleEstimateCache.get(key);
 		if (cached != null) {
 			return cached.orElse(null);
 		}
-		TuplePlanEstimate estimate = computeTupleExprPlan(tupleExpr, key.boundVars);
+		TuplePlanEstimate estimate = computeTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask);
 		scope.tupleEstimateCache.put(key, Optional.ofNullable(estimate));
 		return estimate;
 	}
@@ -5214,8 +5966,63 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return null;
 	}
 
+	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		if (tupleExpr == null) {
+			return null;
+		}
+
+		TuplePlanEstimate plannerEstimate = toPlannerTupleEstimate(tupleExpr, scope, initiallyBoundVarMask);
+		if (plannerEstimate != null) {
+			return plannerEstimate;
+		}
+
+		if (tupleExpr instanceof Filter) {
+			return estimateFilteredTupleExprPlan((Filter) tupleExpr, scope, initiallyBoundVarMask);
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, scope,
+					initiallyBoundVarMask);
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin join = (LeftJoin) tupleExpr;
+			if (join.hasCondition()) {
+				return null;
+			}
+			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, scope,
+					initiallyBoundVarMask);
+		}
+		if (tupleExpr instanceof EmptySet) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+		if (tupleExpr instanceof SingletonSet) {
+			return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
+		}
+		if (tupleExpr instanceof Slice) {
+			return estimateSliceTupleExprPlan((Slice) tupleExpr, scope, initiallyBoundVarMask);
+		}
+		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
+			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, scope, initiallyBoundVarMask);
+		}
+		if (tupleExpr instanceof UnaryTupleOperator) {
+			return estimateTupleExprPlan(((UnaryTupleOperator) tupleExpr).getArg(), scope, initiallyBoundVarMask);
+		}
+		return null;
+	}
+
 	private TuplePlanEstimate estimateFilteredTupleExprPlan(Filter filter, Set<String> initiallyBoundVars) {
 		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), initiallyBoundVars);
+		if (argEstimate == null) {
+			return null;
+		}
+		double filterMultiplier = resolveFilterMultiplier(filter, argEstimate);
+		return applySubtreeFilterMultiplier(argEstimate, filterMultiplier);
+	}
+
+	private TuplePlanEstimate estimateFilteredTupleExprPlan(Filter filter, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), scope, initiallyBoundVarMask);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -5232,6 +6039,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg, initiallyBoundVars);
 		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg, initiallyBoundVars);
+		if (leftEstimate == null || rightEstimate == null) {
+			return null;
+		}
+		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
+		double outputRows = leftJoin ? Math.max(leftEstimate.outputRows, step.outputRows) : step.outputRows;
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d, step.varStats);
+	}
+
+	private TuplePlanEstimate estimateJoinedTupleExprPlan(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin,
+			OptimizationScopeState scope, long initiallyBoundVarMask) {
+		TuplePlanEstimate simulated = estimateBindingSetAssignmentJoinPlan(leftArg, rightArg, leftJoin, scope,
+				initiallyBoundVarMask);
+		if (simulated != null) {
+			return simulated;
+		}
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(leftArg, scope, initiallyBoundVarMask);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(rightArg, scope, initiallyBoundVarMask);
 		if (leftEstimate == null || rightEstimate == null) {
 			return null;
 		}
@@ -5309,7 +6133,88 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		totalRows = normalizeRows(totalRows);
-		Map<String, VarPlanStats> varStats = new HashMap<>();
+		Map<String, VarPlanStats> varStats = newVarStatsMap();
+		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
+			double distinct = clampDistinct(entry.getValue().size(), totalRows);
+			Sketch sketch = survivingAssignmentSketches.get(entry.getKey());
+			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.compact()));
+		}
+		for (Map.Entry<String, Double> entry : carriedDistinct.entrySet()) {
+			varStats.putIfAbsent(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue(), totalRows), null));
+		}
+		return new TuplePlanEstimate(totalRows, totalRows, 1.0d, varStats);
+	}
+
+	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
+			boolean leftJoin, OptimizationScopeState scope, long initiallyBoundVarMask) {
+		boolean leftAssignment = leftArg instanceof BindingSetAssignment;
+		boolean rightAssignment = rightArg instanceof BindingSetAssignment;
+		if (leftAssignment == rightAssignment) {
+			return null;
+		}
+		if (leftJoin && !leftAssignment) {
+			return null;
+		}
+
+		BindingSetAssignment assignment = (BindingSetAssignment) (leftAssignment ? leftArg : rightArg);
+		TupleExpr otherArg = leftAssignment ? rightArg : leftArg;
+		Set<String> sharedNames = new HashSet<>(assignment.getBindingNames());
+		sharedNames.retainAll(otherArg.getBindingNames());
+		if (sharedNames.isEmpty() || !isSmallBindingSetAssignment(assignment)) {
+			return null;
+		}
+
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets == null) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+
+		double totalRows = 0.0d;
+		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
+		Map<String, UpdateSketch> survivingAssignmentSketches = new HashMap<>();
+		Map<String, Double> carriedDistinct = new HashMap<>();
+
+		for (BindingSet bindingSet : bindingSets) {
+			TupleExpr boundOther = bindTupleExpr(otherArg, bindingSet);
+			TuplePlanEstimate rowEstimate = estimateBoundTupleExprPlan(boundOther, scope, initiallyBoundVarMask);
+			if (rowEstimate == null) {
+				return null;
+			}
+
+			double matchedRows = rowEstimate.outputRows;
+			double rowRows = leftJoin ? Math.max(1.0d, matchedRows) : matchedRows;
+			if (rowRows <= 0.0d) {
+				continue;
+			}
+
+			totalRows += rowRows;
+			if (!Double.isFinite(totalRows)) {
+				totalRows = Double.MAX_VALUE;
+			}
+
+			for (String bindingName : assignment.getBindingNames()) {
+				Value value = bindingSet.getValue(bindingName);
+				if (value == null) {
+					continue;
+				}
+				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
+				survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k))
+						.update(valueFingerprint(str(value)));
+			}
+
+			if (matchedRows <= 0.0d) {
+				continue;
+			}
+			for (Map.Entry<String, VarPlanStats> entry : rowEstimate.varStats.entrySet()) {
+				if (bindingSet.hasBinding(entry.getKey())) {
+					continue;
+				}
+				carriedDistinct.merge(entry.getKey(), entry.getValue().distinct, Double::sum);
+			}
+		}
+
+		totalRows = normalizeRows(totalRows);
+		Map<String, VarPlanStats> varStats = newVarStatsMap();
 		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
 			double distinct = clampDistinct(entry.getValue().size(), totalRows);
 			Sketch sketch = survivingAssignmentSketches.get(entry.getKey());
@@ -5346,6 +6251,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 		return estimateTupleExprPlan(tupleExpr, initiallyBoundVars);
+	}
+
+	private TuplePlanEstimate estimateBoundTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		if (tupleExpr instanceof StatementPattern) {
+			TuplePlanEstimate exactPlan = exactBoundStatementPatternPlan((StatementPattern) tupleExpr);
+			if (exactPlan != null) {
+				return exactPlan;
+			}
+		}
+		return estimateTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask);
 	}
 
 	private TuplePlanEstimate exactBoundStatementPatternPlan(StatementPattern pattern) {
@@ -5388,7 +6304,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		rows = normalizeRows(rows);
-		Map<String, VarPlanStats> varStats = new HashMap<>();
+		Map<String, VarPlanStats> varStats = newVarStatsMap();
 		for (Map.Entry<String, Set<Value>> entry : distinctValues.entrySet()) {
 			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue().size(), rows), null,
 					pattern));
@@ -5738,9 +6654,36 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new TuplePlanEstimate(rows, rows, 1.0d, clampVarStatsToRows(argEstimate.varStats, rows, false));
 	}
 
+	private TuplePlanEstimate estimateSliceTupleExprPlan(Slice slice, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(slice.getArg(), scope, initiallyBoundVarMask);
+		if (argEstimate == null) {
+			return null;
+		}
+		double rows = argEstimate.outputRows;
+		if (slice.hasOffset()) {
+			rows = Math.max(0.0d, rows - slice.getOffset());
+		}
+		if (slice.hasLimit()) {
+			rows = Math.min(rows, slice.getLimit());
+		}
+		rows = normalizeRows(rows);
+		return new TuplePlanEstimate(rows, rows, 1.0d, clampVarStatsToRows(argEstimate.varStats, rows, false));
+	}
+
 	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr,
 			Set<String> initiallyBoundVars) {
 		TuplePlanEstimate argEstimate = estimateTupleExprPlan(tupleExpr.getArg(), initiallyBoundVars);
+		if (argEstimate == null) {
+			return null;
+		}
+		double rows = normalizeRows(argEstimate.outputRows);
+		return new TuplePlanEstimate(rows, rows, 1.0d, argEstimate.varStats);
+	}
+
+	private TuplePlanEstimate estimateDistinctTupleExprPlan(UnaryTupleOperator tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(tupleExpr.getArg(), scope, initiallyBoundVarMask);
 		if (argEstimate == null) {
 			return null;
 		}
@@ -5917,7 +6860,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Intersection ix = SetOperation.builder().buildIntersection();
 		ix.intersect(leftStats.bindings);
 		ix.intersect(rightStats.bindings);
-		Sketch inter = ix.getResult();
+		Sketch inter = ix.getResult(false, null);
 		double interDistinct = inter.getEstimate();
 
 		if (interDistinct == 0.0) {
@@ -5990,17 +6933,60 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return computeAccessShapeForJoinOrdering(tupleExpr,
 					currentlyBoundVars == null ? Collections.emptySet() : currentlyBoundVars);
 		}
-		AccessShapeCacheKey key = new AccessShapeCacheKey(tupleExpr, currentlyBoundVars);
+		long boundVarMask = scope.variableDictionary.maskOf(currentlyBoundVars);
+		if (boundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return computeAccessShapeForJoinOrdering(tupleExpr,
+					currentlyBoundVars == null ? Collections.emptySet() : currentlyBoundVars);
+		}
+		AccessShapeCacheKey key = new AccessShapeCacheKey(tupleExpr, boundVarMask);
 		return scope.accessShapeCache.computeIfAbsent(key,
-				ignored -> computeAccessShapeForJoinOrdering(tupleExpr, key.boundVars));
+				ignored -> computeAccessShapeForJoinOrdering(tupleExpr, scope, boundVarMask));
+	}
+
+	AccessShape accessShapeForJoinOrdering(TupleExpr tupleExpr, String[] sourceVariableNames,
+			long sourceBoundVarMask) {
+		if (tupleExpr == null) {
+			return null;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return computeAccessShapeForJoinOrdering(tupleExpr,
+					externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
+		}
+		long boundVarMask = scope.variableDictionary.maskOf(sourceVariableNames, sourceBoundVarMask);
+		if (boundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return computeAccessShapeForJoinOrdering(tupleExpr,
+					externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
+		}
+		AccessShapeCacheKey key = new AccessShapeCacheKey(tupleExpr, boundVarMask);
+		return scope.accessShapeCache.computeIfAbsent(key,
+				ignored -> computeAccessShapeForJoinOrdering(tupleExpr, scope, boundVarMask));
+	}
+
+	private Set<String> externalVariableMaskSet(String[] sourceVariableNames, long sourceBoundVarMask) {
+		if (sourceVariableNames == null || sourceBoundVarMask == 0L) {
+			return Set.of();
+		}
+		return new ExternalVariableMaskSet(sourceVariableNames, sourceBoundVarMask);
 	}
 
 	private AccessShape computeAccessShapeForJoinOrdering(TupleExpr tupleExpr, Set<String> currentlyBoundVars) {
 		if (tupleExpr instanceof StatementPattern) {
-			return buildAccessShape((StatementPattern) tupleExpr, currentlyBoundVars, 1.0d, Set.of());
+			return buildAccessShape((StatementPattern) tupleExpr, currentlyBoundVars, 1.0d, 0);
 		}
 		if (tupleExpr instanceof Filter) {
 			return computeAccessShapeForJoinOrdering((Filter) tupleExpr, currentlyBoundVars);
+		}
+		return null;
+	}
+
+	private AccessShape computeAccessShapeForJoinOrdering(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long currentlyBoundVarMask) {
+		if (tupleExpr instanceof StatementPattern) {
+			return buildAccessShape((StatementPattern) tupleExpr, scope, currentlyBoundVarMask, 1.0d, 0);
+		}
+		if (tupleExpr instanceof Filter) {
+			return computeAccessShapeForJoinOrdering((Filter) tupleExpr, scope, currentlyBoundVarMask);
 		}
 		return null;
 	}
@@ -6017,41 +7003,67 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			filterMultiplier = lookupAnalysis.multiplier();
 		}
 		double combinedMultiplier = normalizeFilterMultiplier(accessShape.filterMultiplier() * filterMultiplier);
-		EnumSet<Component> combinedLookupComponents = EnumSet.noneOf(Component.class);
-		combinedLookupComponents.addAll(accessShape.filterLookupComponents());
-		combinedLookupComponents.addAll(lookupAnalysis.components());
+		int combinedLookupComponentMask = accessShape.filterLookupComponentMask()
+				| lookupAnalysis.componentMask();
 		return buildAccessShape(accessShape.pattern(), currentlyBoundVars, combinedMultiplier,
-				combinedLookupComponents);
+				combinedLookupComponentMask);
+	}
+
+	private AccessShape computeAccessShapeForJoinOrdering(Filter filter, OptimizationScopeState scope,
+			long currentlyBoundVarMask) {
+		AccessShape accessShape = computeAccessShapeForJoinOrdering(filter.getArg(), scope, currentlyBoundVarMask);
+		if (accessShape == null) {
+			return null;
+		}
+		LookupAnalysis lookupAnalysis = analyzeLookupBindings(accessShape.pattern(), filter.getCondition(),
+				scope, currentlyBoundVarMask);
+		double filterMultiplier = resolveFilterMultiplier(filter, accessShape.pattern());
+		if (filterMultiplier >= 1.0d && lookupAnalysis.multiplier() > 0.0d) {
+			filterMultiplier = lookupAnalysis.multiplier();
+		}
+		double combinedMultiplier = normalizeFilterMultiplier(accessShape.filterMultiplier() * filterMultiplier);
+		int combinedLookupComponentMask = accessShape.filterLookupComponentMask() | lookupAnalysis.componentMask();
+		return buildAccessShape(accessShape.pattern(), scope, currentlyBoundVarMask, combinedMultiplier,
+				combinedLookupComponentMask);
 	}
 
 	private AccessShape buildAccessShape(StatementPattern pattern, Set<String> currentlyBoundVars,
-			double filterMultiplier, Set<Component> filterLookupComponents) {
+			double filterMultiplier, int filterLookupComponentMask) {
 		StatementPattern patternClone = pattern.clone();
-		EnumSet<Component> patternConstantComponents = collectPatternConstantComponents(patternClone);
-		EnumMap<Component, String> joinBoundVarNamesByComponent = collectJoinBoundVarNames(patternClone,
+		int patternConstantComponentMask = collectPatternConstantComponentMask(patternClone);
+		String[] joinBoundVarNamesByComponent = collectJoinBoundVarNames(patternClone,
 				currentlyBoundVars);
-		EnumSet<Component> filterLookup = filterLookupComponents.isEmpty()
-				? EnumSet.noneOf(Component.class)
-				: EnumSet.copyOf(filterLookupComponents);
-		return new AccessShape(patternClone, filterMultiplier, patternConstantComponents, joinBoundVarNamesByComponent,
-				filterLookup,
-				prefixComponents -> estimateAccessRows(patternClone, joinBoundVarNamesByComponent, prefixComponents));
+		return new AccessShape(patternClone, filterMultiplier, patternConstantComponentMask,
+				joinBoundVarNamesByComponent,
+				filterLookupComponentMask,
+				prefixMask -> estimateAccessRows(patternClone, joinBoundVarNamesByComponent, prefixMask));
 	}
 
-	private EnumSet<Component> collectPatternConstantComponents(StatementPattern pattern) {
-		EnumSet<Component> components = EnumSet.noneOf(Component.class);
+	private AccessShape buildAccessShape(StatementPattern pattern, OptimizationScopeState scope,
+			long currentlyBoundVarMask, double filterMultiplier, int filterLookupComponentMask) {
+		StatementPattern patternClone = pattern.clone();
+		int patternConstantComponentMask = collectPatternConstantComponentMask(patternClone);
+		String[] joinBoundVarNamesByComponent = collectJoinBoundVarNames(patternClone, scope, currentlyBoundVarMask);
+		return new AccessShape(patternClone, filterMultiplier, patternConstantComponentMask,
+				joinBoundVarNamesByComponent,
+				filterLookupComponentMask,
+				prefixMask -> estimateAccessRows(patternClone, joinBoundVarNamesByComponent, prefixMask));
+	}
+
+	private int collectPatternConstantComponentMask(StatementPattern pattern) {
+		int componentMask = 0;
 		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(pattern, component);
 			if (var != null && var.hasValue()) {
-				components.add(component);
+				componentMask |= 1 << component.ordinal();
 			}
 		}
-		return components;
+		return componentMask;
 	}
 
-	private EnumMap<Component, String> collectJoinBoundVarNames(StatementPattern pattern,
+	private String[] collectJoinBoundVarNames(StatementPattern pattern,
 			Set<String> currentlyBoundVars) {
-		EnumMap<Component, String> components = new EnumMap<>(Component.class);
+		String[] components = new String[COMPONENT_VALUES.length];
 		if (currentlyBoundVars == null || currentlyBoundVars.isEmpty()) {
 			return components;
 		}
@@ -6060,34 +7072,120 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (var == null || var.hasValue() || var.getName() == null || !currentlyBoundVars.contains(var.getName())) {
 				continue;
 			}
-			components.put(component, var.getName());
+			components[component.ordinal()] = var.getName();
 		}
 		return components;
 	}
 
-	private double estimateAccessRows(StatementPattern pattern, Map<Component, String> joinBoundVarNamesByComponent,
-			Set<Component> prefixComponents) {
-		Set<Component> coveredComponents = prefixComponents == null || prefixComponents.isEmpty()
-				? Set.of()
-				: Set.copyOf(prefixComponents);
-		StatementPattern accessPattern = patternForAccessPrefix(pattern, coveredComponents);
-		Set<String> prefixBoundVars = new HashSet<>();
-		for (Map.Entry<Component, String> entry : joinBoundVarNamesByComponent.entrySet()) {
-			if (coveredComponents.contains(entry.getKey()) && entry.getValue() != null) {
-				prefixBoundVars.add(entry.getValue());
+	private String[] collectJoinBoundVarNames(StatementPattern pattern, OptimizationScopeState scope,
+			long currentlyBoundVarMask) {
+		String[] components = new String[COMPONENT_VALUES.length];
+		if (scope == null || currentlyBoundVarMask == 0L) {
+			return components;
+		}
+		for (Component component : COMPONENT_VALUES) {
+			Var var = varForComponent(pattern, component);
+			if (var == null || var.hasValue() || var.getName() == null) {
+				continue;
+			}
+			int id = scope.variableDictionary.idIfKnown(var.getName());
+			if (id != VariableDictionary.NO_ID && (currentlyBoundVarMask & scope.variableDictionary.bit(id)) != 0L) {
+				components[component.ordinal()] = var.getName();
 			}
 		}
-		TuplePlanEstimate estimate = estimateTupleExprPlan(accessPattern, prefixBoundVars);
+		return components;
+	}
+
+	private double estimateAccessRows(StatementPattern pattern, String[] joinBoundVarNamesByComponent,
+			int prefixComponentMask) {
+		StatementPattern accessPattern = patternForAccessPrefix(pattern, prefixComponentMask);
+		OptimizationScopeState scope = optimizationScope.get();
+		TuplePlanEstimate estimate;
+		if (scope == null) {
+			estimate = estimateTupleExprPlan(accessPattern,
+					boundVarNamesForAccessPrefix(joinBoundVarNamesByComponent, prefixComponentMask));
+		} else {
+			long boundVarMask = boundVarMaskForAccessPrefix(scope, joinBoundVarNamesByComponent, prefixComponentMask);
+			estimate = boundVarMask == BOUND_VAR_MASK_OVERFLOW
+					? estimateTupleExprPlan(accessPattern,
+							boundVarNamesForAccessPrefix(joinBoundVarNamesByComponent, prefixComponentMask))
+					: estimateTupleExprPlan(accessPattern, boundVarMask);
+		}
 		if (estimate == null) {
 			return 0.0d;
 		}
 		return estimate.outputRows();
 	}
 
-	private StatementPattern patternForAccessPrefix(StatementPattern pattern, Set<Component> prefixComponents) {
+	private long boundVarMaskForAccessPrefix(OptimizationScopeState scope,
+			String[] joinBoundVarNamesByComponent,
+			int prefixComponentMask) {
+		if (scope == null || prefixComponentMask == 0) {
+			return 0L;
+		}
+		long mask = 0L;
+		for (Component component : COMPONENT_VALUES) {
+			if ((prefixComponentMask & (1 << component.ordinal())) == 0) {
+				continue;
+			}
+			String varName = joinBoundVarNamesByComponent[component.ordinal()];
+			if (varName == null) {
+				continue;
+			}
+			int id = scope.variableDictionary.id(varName);
+			long bit = scope.variableDictionary.bit(id);
+			if (bit == 0L) {
+				return BOUND_VAR_MASK_OVERFLOW;
+			}
+			mask |= bit;
+		}
+		return mask;
+	}
+
+	private Set<String> boundVarNamesForAccessPrefix(String[] joinBoundVarNamesByComponent,
+			int prefixComponentMask) {
+		if (prefixComponentMask == 0) {
+			return Set.of();
+		}
+		String[] names = new String[COMPONENT_VALUES.length];
+		int count = 0;
+		for (Component component : COMPONENT_VALUES) {
+			if ((prefixComponentMask & (1 << component.ordinal())) == 0) {
+				continue;
+			}
+			String varName = joinBoundVarNamesByComponent[component.ordinal()];
+			if (varName == null || containsName(names, count, varName)) {
+				continue;
+			}
+			names[count++] = varName;
+		}
+		switch (count) {
+		case 0:
+			return Set.of();
+		case 1:
+			return Set.of(names[0]);
+		case 2:
+			return Set.of(names[0], names[1]);
+		case 3:
+			return Set.of(names[0], names[1], names[2]);
+		default:
+			return Set.of(names[0], names[1], names[2], names[3]);
+		}
+	}
+
+	private static boolean containsName(String[] names, int count, String name) {
+		for (int i = 0; i < count; i++) {
+			if (name.equals(names[i])) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private StatementPattern patternForAccessPrefix(StatementPattern pattern, int prefixComponentMask) {
 		StatementPattern accessPattern = pattern.clone();
 		for (Component component : COMPONENT_VALUES) {
-			if (prefixComponents.contains(component)) {
+			if ((prefixComponentMask & (1 << component.ordinal())) != 0) {
 				continue;
 			}
 			Var var = varForComponent(accessPattern, component);
@@ -6123,6 +7221,28 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return analyzeEqualityLookup(pattern, condition, currentlyBoundVars);
 	}
 
+	private LookupAnalysis analyzeLookupBindings(StatementPattern pattern, ValueExpr condition,
+			OptimizationScopeState scope, long currentlyBoundVarMask) {
+		if (condition == null) {
+			return LookupAnalysis.none();
+		}
+		if (condition instanceof And) {
+			And and = (And) condition;
+			return combineLookupAnalyses(analyzeLookupBindings(pattern, and.getLeftArg(), scope, currentlyBoundVarMask),
+					analyzeLookupBindings(pattern, and.getRightArg(), scope, currentlyBoundVarMask));
+		}
+		LookupAnalysis listMember = analyzeListMemberLookup(pattern, condition, scope, currentlyBoundVarMask);
+		if (!listMember.isNone()) {
+			return listMember;
+		}
+		LookupAnalysis disjunction = analyzeDisjunctiveEqualityLookup(pattern, condition, scope,
+				currentlyBoundVarMask);
+		if (!disjunction.isNone()) {
+			return disjunction;
+		}
+		return analyzeEqualityLookup(pattern, condition, scope, currentlyBoundVarMask);
+	}
+
 	private LookupAnalysis combineLookupAnalyses(LookupAnalysis left, LookupAnalysis right) {
 		if (left.isNone()) {
 			return right;
@@ -6130,13 +7250,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (right.isNone()) {
 			return left;
 		}
-		EnumSet<Component> components = EnumSet.noneOf(Component.class);
-		components.addAll(left.components());
-		components.addAll(right.components());
+		int componentMask = left.componentMask() | right.componentMask();
 		double multiplier = left.multiplier() > 0.0d && right.multiplier() > 0.0d
 				? normalizeFilterMultiplier(left.multiplier() * right.multiplier())
 				: Math.max(left.multiplier(), right.multiplier());
-		return new LookupAnalysis(components, multiplier);
+		return new LookupAnalysis(componentMask, multiplier);
 	}
 
 	private LookupAnalysis analyzeListMemberLookup(StatementPattern pattern, ValueExpr condition,
@@ -6170,10 +7288,59 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return lookupAnalysisFor(pattern, component, lookupKeys.size());
 	}
 
+	private LookupAnalysis analyzeListMemberLookup(StatementPattern pattern, ValueExpr condition,
+			OptimizationScopeState scope, long currentlyBoundVarMask) {
+		if (!(condition instanceof ListMemberOperator)) {
+			return LookupAnalysis.none();
+		}
+
+		List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
+		if (arguments == null || arguments.size() < 2 || !(arguments.get(0)instanceof Var listedVar)
+				|| listedVar.getName() == null) {
+			return LookupAnalysis.none();
+		}
+
+		Component component = findPatternComponentByVarName(pattern, listedVar.getName());
+		if (component == null) {
+			return LookupAnalysis.none();
+		}
+
+		Set<String> lookupKeys = new HashSet<>();
+		for (int i = 1; i < arguments.size(); i++) {
+			String lookupKey = lookupKey(arguments.get(i), scope, currentlyBoundVarMask);
+			if (lookupKey == null) {
+				return LookupAnalysis.none();
+			}
+			lookupKeys.add(lookupKey);
+		}
+		if (lookupKeys.isEmpty()) {
+			return LookupAnalysis.none();
+		}
+		return lookupAnalysisFor(pattern, component, lookupKeys.size());
+	}
+
 	private LookupAnalysis analyzeDisjunctiveEqualityLookup(StatementPattern pattern, ValueExpr condition,
 			Set<String> currentlyBoundVars) {
 		List<LookupValueCount> alternatives = new ArrayList<>();
 		if (!collectDisjunctiveEqualityAlternatives(pattern, condition, currentlyBoundVars, alternatives)
+				|| alternatives.isEmpty()) {
+			return LookupAnalysis.none();
+		}
+		Component component = alternatives.get(0).component();
+		int valueCount = 0;
+		for (LookupValueCount alternative : alternatives) {
+			if (alternative.component() != component) {
+				return LookupAnalysis.none();
+			}
+			valueCount += alternative.valueCount();
+		}
+		return lookupAnalysisFor(pattern, component, valueCount);
+	}
+
+	private LookupAnalysis analyzeDisjunctiveEqualityLookup(StatementPattern pattern, ValueExpr condition,
+			OptimizationScopeState scope, long currentlyBoundVarMask) {
+		List<LookupValueCount> alternatives = new ArrayList<>();
+		if (!collectDisjunctiveEqualityAlternatives(pattern, condition, scope, currentlyBoundVarMask, alternatives)
 				|| alternatives.isEmpty()) {
 			return LookupAnalysis.none();
 		}
@@ -6204,9 +7371,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return true;
 	}
 
+	private boolean collectDisjunctiveEqualityAlternatives(StatementPattern pattern, ValueExpr condition,
+			OptimizationScopeState scope, long currentlyBoundVarMask, List<LookupValueCount> alternatives) {
+		if (condition instanceof Or) {
+			Or or = (Or) condition;
+			return collectDisjunctiveEqualityAlternatives(pattern, or.getLeftArg(), scope, currentlyBoundVarMask,
+					alternatives)
+					&& collectDisjunctiveEqualityAlternatives(pattern, or.getRightArg(), scope, currentlyBoundVarMask,
+							alternatives);
+		}
+		LookupValueCount alternative = lookupValueCountForEquality(pattern, condition, scope, currentlyBoundVarMask);
+		if (alternative == null) {
+			return false;
+		}
+		alternatives.add(alternative);
+		return true;
+	}
+
 	private LookupAnalysis analyzeEqualityLookup(StatementPattern pattern, ValueExpr condition,
 			Set<String> currentlyBoundVars) {
 		LookupValueCount lookupValue = lookupValueCountForEquality(pattern, condition, currentlyBoundVars);
+		if (lookupValue == null) {
+			return LookupAnalysis.none();
+		}
+		return lookupAnalysisFor(pattern, lookupValue.component(), lookupValue.valueCount());
+	}
+
+	private LookupAnalysis analyzeEqualityLookup(StatementPattern pattern, ValueExpr condition,
+			OptimizationScopeState scope, long currentlyBoundVarMask) {
+		LookupValueCount lookupValue = lookupValueCountForEquality(pattern, condition, scope, currentlyBoundVarMask);
 		if (lookupValue == null) {
 			return LookupAnalysis.none();
 		}
@@ -6230,6 +7423,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return null;
 	}
 
+	private LookupValueCount lookupValueCountForEquality(StatementPattern pattern, ValueExpr condition,
+			OptimizationScopeState scope, long currentlyBoundVarMask) {
+		if (condition instanceof Compare compare) {
+			if (compare.getOperator() != Compare.CompareOp.EQ) {
+				return null;
+			}
+			return lookupValueCountForEquality(pattern, compare.getLeftArg(), compare.getRightArg(), scope,
+					currentlyBoundVarMask, compare.getRightArg(), compare.getLeftArg());
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			return lookupValueCountForEquality(pattern, sameTerm.getLeftArg(), sameTerm.getRightArg(), scope,
+					currentlyBoundVarMask,
+					sameTerm.getRightArg(), sameTerm.getLeftArg());
+		}
+		return null;
+	}
+
 	private LookupValueCount lookupValueCountForEquality(StatementPattern pattern, ValueExpr leftVarCandidate,
 			ValueExpr rightValueCandidate, Set<String> currentlyBoundVars, ValueExpr rightVarCandidate,
 			ValueExpr leftValueCandidate) {
@@ -6239,6 +7449,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return left;
 		}
 		return lookupValueCountForVarBinding(pattern, rightVarCandidate, leftValueCandidate, currentlyBoundVars);
+	}
+
+	private LookupValueCount lookupValueCountForEquality(StatementPattern pattern, ValueExpr leftVarCandidate,
+			ValueExpr rightValueCandidate, OptimizationScopeState scope, long currentlyBoundVarMask,
+			ValueExpr rightVarCandidate,
+			ValueExpr leftValueCandidate) {
+		LookupValueCount left = lookupValueCountForVarBinding(pattern, leftVarCandidate, rightValueCandidate,
+				scope, currentlyBoundVarMask);
+		if (left != null) {
+			return left;
+		}
+		return lookupValueCountForVarBinding(pattern, rightVarCandidate, leftValueCandidate, scope,
+				currentlyBoundVarMask);
 	}
 
 	private LookupValueCount lookupValueCountForVarBinding(StatementPattern pattern, ValueExpr maybePatternVarExpr,
@@ -6253,12 +7476,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new LookupValueCount(component, 1);
 	}
 
+	private LookupValueCount lookupValueCountForVarBinding(StatementPattern pattern, ValueExpr maybePatternVarExpr,
+			ValueExpr maybeLookupExpr, OptimizationScopeState scope, long currentlyBoundVarMask) {
+		if (!(maybePatternVarExpr instanceof Var patternVar) || patternVar.getName() == null) {
+			return null;
+		}
+		Component component = findPatternComponentByVarName(pattern, patternVar.getName());
+		if (component == null || lookupKey(maybeLookupExpr, scope, currentlyBoundVarMask) == null) {
+			return null;
+		}
+		return new LookupValueCount(component, 1);
+	}
+
 	private LookupAnalysis lookupAnalysisFor(StatementPattern pattern, Component component, int valueCount) {
 		if (component == null || valueCount <= 0) {
 			return LookupAnalysis.none();
 		}
 		double multiplier = estimateLookupFilterMultiplier(pattern, component, valueCount);
-		return new LookupAnalysis(EnumSet.of(component), multiplier);
+		return new LookupAnalysis(1 << component.ordinal(), multiplier);
 	}
 
 	private double estimateLookupFilterMultiplier(StatementPattern pattern, Component component, int valueCount) {
@@ -6284,6 +7519,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		if (valueExpr instanceof Var var && var.getName() != null && currentlyBoundVars.contains(var.getName())) {
 			return "var:" + var.getName();
+		}
+		return null;
+	}
+
+	private String lookupKey(ValueExpr valueExpr, OptimizationScopeState scope, long currentlyBoundVarMask) {
+		if (valueExpr instanceof ValueConstant constant && constant.getValue() != null) {
+			return "value:" + constant.getValue().stringValue();
+		}
+		if (valueExpr instanceof Var var && var.getName() != null && scope != null) {
+			int id = scope.variableDictionary.idIfKnown(var.getName());
+			if (id != VariableDictionary.NO_ID && (currentlyBoundVarMask & scope.variableDictionary.bit(id)) != 0L) {
+				return "var:" + var.getName();
+			}
 		}
 		return null;
 	}
@@ -6613,7 +7861,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return estimate;
 		}
 		double filteredRows = normalizeRows(applyFilterMultiplier(estimate.outputRows, multiplier));
-		Map<String, VarPlanStats> filteredStats = new HashMap<>(estimate.varStats.size());
+		Map<String, VarPlanStats> filteredStats = newVarStatsMap();
 		for (Map.Entry<String, VarPlanStats> entry : estimate.varStats.entrySet()) {
 			filteredStats.put(entry.getKey(),
 					new VarPlanStats(clampDistinct(entry.getValue().distinct, filteredRows), null));
@@ -6736,13 +7984,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		};
 	}
 
-	private record LookupAnalysis(Set<Component> components, double multiplier) {
+	private record LookupAnalysis(int componentMask, double multiplier) {
 		private static LookupAnalysis none() {
-			return new LookupAnalysis(Set.of(), -1.0d);
+			return new LookupAnalysis(0, -1.0d);
 		}
 
 		private boolean isNone() {
-			return components.isEmpty();
+			return componentMask == 0;
 		}
 	}
 
@@ -9114,7 +10362,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		// refresh cadence
 		long refreshSleepMillis = 1000L;
-		long estimateCacheSeconds = 0L;
+		long estimateCacheSeconds = DEFAULT_ESTIMATE_CACHE_SECONDS;
 		int zeroIntersectionExactDistinctLimit = DEFAULT_ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT;
 		double zeroIntersectionSkewRatio = DEFAULT_ZERO_INTERSECTION_SKEW_RATIO;
 		long zeroIntersectionRowBudget = DEFAULT_ZERO_INTERSECTION_ROW_BUDGET;

@@ -1111,27 +1111,47 @@ class TripleStore implements Closeable {
 	}
 
 	IndexPrefixSelection selectBestIndexPrefix(Set<Component> boundComponents) {
-		long subj = boundMask(boundComponents, Component.S);
-		long pred = boundMask(boundComponents, Component.P);
-		long obj = boundMask(boundComponents, Component.O);
-		long context = boundMask(boundComponents, Component.C);
+		return selectBestIndexPrefix(componentMask(boundComponents));
+	}
+
+	IndexPrefixSelection selectBestIndexPrefix(int boundComponentMask) {
+		long subj = boundMask(boundComponentMask, Component.S);
+		long pred = boundMask(boundComponentMask, Component.P);
+		long obj = boundMask(boundComponentMask, Component.O);
+		long context = boundMask(boundComponentMask, Component.C);
 		TripleIndex bestIndex = getBestIndex(subj, pred, obj, context);
 		if (bestIndex == null) {
-			return new IndexPrefixSelection("", 0, Set.of());
+			return new IndexPrefixSelection("", 0, 0);
 		}
 
 		int prefixScore = bestIndex.getPatternScore(subj, pred, obj, context);
-		EnumSet<Component> prefixComponents = EnumSet.noneOf(Component.class);
+		int prefixComponentMask = 0;
 		char[] fieldSequence = bestIndex.getFieldSeq();
 		for (int i = 0; i < prefixScore; i++) {
-			prefixComponents.add(toEstimatorComponent(fieldSequence[i]));
+			Component component = toEstimatorComponent(fieldSequence[i]);
+			prefixComponentMask |= 1 << component.ordinal();
 		}
 
-		return new IndexPrefixSelection(new String(fieldSequence), prefixScore, prefixComponents);
+		return new IndexPrefixSelection(new String(fieldSequence), prefixScore, prefixComponentMask);
 	}
 
 	private long boundMask(Set<Component> boundComponents, Component component) {
 		return boundComponents != null && boundComponents.contains(component) ? 1L : -1L;
+	}
+
+	private long boundMask(int boundComponentMask, Component component) {
+		return (boundComponentMask & (1 << component.ordinal())) != 0 ? 1L : -1L;
+	}
+
+	private int componentMask(Set<Component> components) {
+		if (components == null || components.isEmpty()) {
+			return 0;
+		}
+		int mask = 0;
+		for (Component component : components) {
+			mask |= 1 << component.ordinal();
+		}
+		return mask;
 	}
 
 	private Component toEstimatorComponent(char field) {
@@ -1152,12 +1172,12 @@ class TripleStore implements Closeable {
 	static final class IndexPrefixSelection {
 		private final String indexFieldSequence;
 		private final int prefixScore;
-		private final Set<Component> prefixComponents;
+		private final int prefixComponentMask;
 
-		private IndexPrefixSelection(String indexFieldSequence, int prefixScore, Set<Component> prefixComponents) {
+		private IndexPrefixSelection(String indexFieldSequence, int prefixScore, int prefixComponentMask) {
 			this.indexFieldSequence = indexFieldSequence;
 			this.prefixScore = prefixScore;
-			this.prefixComponents = Set.copyOf(prefixComponents);
+			this.prefixComponentMask = prefixComponentMask;
 		}
 
 		String indexFieldSequence() {
@@ -1168,7 +1188,17 @@ class TripleStore implements Closeable {
 			return prefixScore;
 		}
 
+		int prefixComponentMask() {
+			return prefixComponentMask;
+		}
+
 		Set<Component> prefixComponents() {
+			EnumSet<Component> prefixComponents = EnumSet.noneOf(Component.class);
+			for (Component component : Component.values()) {
+				if ((prefixComponentMask & (1 << component.ordinal())) != 0) {
+					prefixComponents.add(component);
+				}
+			}
 			return prefixComponents;
 		}
 	}

@@ -527,6 +527,26 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optimizeDoesNotRecomputeJoinCardinalityWhenPlannerHasNoPrefixRows() {
+		StatementPattern a = statementPattern("s", "a", ex("pA"));
+		StatementPattern b = statementPattern("a", "b", ex("pB"));
+		StatementPattern c = statementPattern("b", "c", ex("pC"));
+		PlannerStatistics statistics = new PlannerStatistics(List.of(c, b, a),
+				List.of(a, b, c), Double.NaN, Double.NaN);
+
+		QueryRoot root = new QueryRoot(new Join(new Join(a, b), c));
+		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(statistics.planCalls)
+				.as("QueryJoinOptimizer should delegate segment ordering to JoinOrderPlanner when available")
+				.isEqualTo(1);
+		assertThat(statistics.joinCardinalityCalls)
+				.as("Planner-provided segments should not fall back to recursive full join cardinality")
+				.isZero();
+		assertThat(predicates(flattenJoinLeaves(root.getArg()))).containsExactly(ex("pC"), ex("pB"), ex("pA"));
+	}
+
+	@Test
 	public void optimizeDoesNotUseCloneBasedGreedyWhenPlannerProvidesDenseCyclePlan() {
 		BindingSetAssignment userPairValues = bindingSetAssignment(Map.of(
 				"u1", ex("social/user/0"),
@@ -1465,6 +1485,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	private static final class PlannerStatistics extends EvaluationStatistics implements JoinOrderPlanner {
 		private final List<TupleExpr> orderedArgs;
 		private final List<TupleExpr> expectedArgs;
+		private final double estimatedFinalRows;
+		private final double statementCardinality;
 		private List<JoinOrderPlanner.FilterConstraint> filterConstraints = List.of();
 		private int planCalls;
 		private int joinCardinalityCalls;
@@ -1474,8 +1496,15 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 
 		private PlannerStatistics(List<TupleExpr> orderedArgs, List<TupleExpr> expectedArgs) {
+			this(orderedArgs, expectedArgs, 1.0d, 10.0d);
+		}
+
+		private PlannerStatistics(List<TupleExpr> orderedArgs, List<TupleExpr> expectedArgs,
+				double estimatedFinalRows, double statementCardinality) {
 			this.orderedArgs = orderedArgs;
 			this.expectedArgs = expectedArgs;
+			this.estimatedFinalRows = estimatedFinalRows;
+			this.statementCardinality = statementCardinality;
 		}
 
 		@Override
@@ -1488,7 +1517,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			if (expr instanceof Join) {
 				joinCardinalityCalls++;
 			}
-			return 10.0d;
+			return statementCardinality;
 		}
 
 		@Override
@@ -1496,7 +1525,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				Algorithm algorithm) {
 			planCalls++;
 			assertThat(args).containsExactlyElementsOf(expectedArgs);
-			return Optional.of(new JoinOrderPlan(orderedArgs, 1.0d, 1.0d));
+			return Optional.of(new JoinOrderPlan(orderedArgs, estimatedFinalRows, 1.0d));
 		}
 
 		@Override
