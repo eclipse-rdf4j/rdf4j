@@ -70,8 +70,10 @@ public abstract class AbstractHTTPQuery extends AbstractQuery {
 	@Override
 	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
 		super.setMaxExecutionTime(maxExecutionTimeSeconds);
-		// TODO allow per query timeouts on the http connection used
-		// Note: connection timeout is now configured via HttpClientConfig when building the client.
+		// maxExecutionTimeSeconds is propagated as a per-request response timeout on the HTTP connection:
+		// concrete subclasses pass getMaxExecutionTime() to SPARQLProtocolSession, which sets it on the
+		// HttpRequest via HttpRequest.Builder#responseTimeout(Duration). The ApacheHC5RDF4JHttpClient
+		// implementation applies it as a per-request RequestConfig#setResponseTimeout override.
 	}
 
 	@Override
