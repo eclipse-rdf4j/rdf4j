@@ -327,6 +327,32 @@ public class SPARQLProtocolSessionTest {
 		assertThat(request.getResponseTimeout()).isEmpty();
 	}
 
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void getUpdateMethod_setsResponseTimeout_whenMaxQueryTimeIsPositive(String factoryName) {
+		this.factoryName = factoryName;
+		sparqlSession = createProtocolSession();
+
+		HttpRequest request = sparqlSession.getUpdateMethod(
+				QueryLanguage.SPARQL, "INSERT DATA { <urn:s> <urn:p> <urn:o> }", null, null, true, 30);
+
+		assertThat(request.getResponseTimeout())
+				.isPresent()
+				.hasValue(Duration.ofSeconds(30));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void getUpdateMethod_noResponseTimeout_whenMaxQueryTimeIsZero(String factoryName) {
+		this.factoryName = factoryName;
+		sparqlSession = createProtocolSession();
+
+		HttpRequest request = sparqlSession.getUpdateMethod(
+				QueryLanguage.SPARQL, "INSERT DATA { <urn:s> <urn:p> <urn:o> }", null, null, true, 0);
+
+		assertThat(request.getResponseTimeout()).isEmpty();
+	}
+
 	@Test
 	public void getContentTypeSerialisationTest() {
 		{

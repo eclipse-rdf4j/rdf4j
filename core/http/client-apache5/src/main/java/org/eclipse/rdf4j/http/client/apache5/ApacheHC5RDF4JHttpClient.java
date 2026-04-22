@@ -47,9 +47,17 @@ public class ApacheHC5RDF4JHttpClient implements RDF4JHttpClient {
 	 */
 	private final int maxRetries408;
 
-	public ApacheHC5RDF4JHttpClient(CloseableHttpClient httpClient, int maxConnectionsPerRoute) {
+	/**
+	 * Default request config used as the base when building per-request overrides, so that factory-level settings
+	 * (connectionRequestTimeout, redirectsEnabled, cookieSpec) are preserved.
+	 */
+	private final RequestConfig defaultRequestConfig;
+
+	public ApacheHC5RDF4JHttpClient(CloseableHttpClient httpClient, int maxConnectionsPerRoute,
+			RequestConfig defaultRequestConfig) {
 		this.httpClient = httpClient;
 		this.maxRetries408 = maxConnectionsPerRoute + 1;
+		this.defaultRequestConfig = defaultRequestConfig;
 	}
 
 	@Override
@@ -103,10 +111,13 @@ public class ApacheHC5RDF4JHttpClient implements RDF4JHttpClient {
 			hcRequest.addHeader(header.getName(), header.getValue());
 		}
 
-		// Apply per-request response timeout if present
+		// Apply per-request response timeout if present, copying from the default config so that
+		// factory-level settings (connectionRequestTimeout, redirectsEnabled, cookieSpec) are preserved.
 		request.getResponseTimeout()
 				.ifPresent(timeout -> hcRequest
-						.setConfig(RequestConfig.custom().setResponseTimeout(Timeout.of(timeout)).build()));
+						.setConfig(RequestConfig.copy(defaultRequestConfig)
+								.setResponseTimeout(Timeout.of(timeout))
+								.build()));
 
 		// Set body. Repeatable (byte-backed) bodies use ByteArrayEntity so that Apache HC5's
 		// RedirectExec can follow redirects and the 408 retry loop can re-send the request.
