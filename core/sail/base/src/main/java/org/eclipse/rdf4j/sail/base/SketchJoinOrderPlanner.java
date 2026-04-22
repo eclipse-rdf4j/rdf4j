@@ -52,6 +52,7 @@ final class SketchJoinOrderPlanner {
 	private static final double SMALL_BINDING_SET_ASSIGNMENT_SCORE_RATIO = 0.05d;
 	private static final double BOUND_TYPE_GUARD_DELAY_PENALTY = 4.0d;
 	private static final double PENDING_SMALL_VALUES_ANCHOR_FILTER_PENALTY = 4.0d;
+	private static final double PENDING_TYPE_GUARD_BROAD_SCAN_RATIO = 4.0d;
 	private static final double BROAD_EDGE_PENDING_CONSTRAINT_PENALTY = 4.0d;
 	private static final double MAX_BROAD_EDGE_PENDING_CONSTRAINT_PENALTY = 1024.0d;
 	private static final double BROAD_EDGE_MIN_ROWS = 1024.0d;
@@ -1170,9 +1171,7 @@ final class SketchJoinOrderPlanner {
 		if (!(Double.isFinite(adjustedWorkRows) && adjustedWorkRows > 0.0d)) {
 			return defaultWorkRows;
 		}
-		return Double.isFinite(defaultWorkRows) && defaultWorkRows >= 0.0d
-				? Math.min(adjustedWorkRows, defaultWorkRows)
-				: adjustedWorkRows;
+		return adjustedWorkRows;
 	}
 
 	private double adjustedTransitionWorkRows(int factorIndex, long mask, long currentlyBoundVarMask,
@@ -1210,20 +1209,13 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private double applyUnlockedFilterWorkRows(long previousMask, long nextMask, double workRows) {
-		double passRatio = newlyUnlockedFilterPassRatio(previousMask, nextMask);
-		if (passRatio >= 1.0d) {
-			return workRows;
-		}
-		double filteredWorkRows = workRows * passRatio;
-		if (!Double.isFinite(filteredWorkRows) || filteredWorkRows < 0.0d) {
-			return workRows;
-		}
-		return filteredWorkRows;
+		return workRows;
 	}
 
 	private double orderingScoreRows(int factorIndex, long previousMask, long nextMask, double workRows,
 			double outputRows, double prefixRows) {
-		double scoreRows = workRows * newlyUnlockedFilterScoreRatio(previousMask, nextMask);
+		double unlockedFilterScoreRatio = newlyUnlockedFilterScoreRatio(previousMask, nextMask);
+		double scoreRows = workRows * unlockedFilterScoreRatio;
 		if (!Double.isFinite(scoreRows) || scoreRows < 0.0d) {
 			scoreRows = workRows;
 		}
@@ -1233,9 +1225,11 @@ final class SketchJoinOrderPlanner {
 			scoreRows *= pendingConstraintPenalty;
 		}
 		double localFilterMultiplier = selectiveLocalFilterMultiplier(factorIndex);
+		boolean hasSelectiveFilterScore = unlockedFilterScoreRatio < 1.0d;
 		if (localFilterMultiplier < 1.0d && Double.isFinite(outputRows) && outputRows >= 0.0d) {
 			scoreRows = Math.min(scoreRows, outputRows);
 			scoreRows *= Math.max(localFilterMultiplier, CHEAP_UNLOCKED_FILTER_SCORE_RATIO);
+			hasSelectiveFilterScore = true;
 		}
 		scoreRows *= pendingCheapFilterUnlockBeforeBroadEdgePenalty(previousMask, factorIndex);
 		if (hasSelectiveLocalFilter(factorIndex) && hasPendingSmallValuesAnchoredSibling(previousMask, factorIndex)) {
@@ -1243,6 +1237,14 @@ final class SketchJoinOrderPlanner {
 		}
 		if (hasSelectiveLocalFilter(factorIndex) && hasValuesAnchoredStructuralBridge(previousMask, factorIndex)) {
 			scoreRows *= PENDING_SMALL_VALUES_ANCHOR_FILTER_PENALTY;
+		}
+		if (previousMask == 0L && hasSelectiveFilterScore) {
+			double typeGuardScoreRows = pendingSmallSameSubjectRdfTypeGuardScoreRows(factorIndex);
+			if (Double.isFinite(typeGuardScoreRows) && typeGuardScoreRows >= 0.0d
+					&& Double.isFinite(workRows)
+					&& typeGuardScoreRows * PENDING_TYPE_GUARD_BROAD_SCAN_RATIO < workRows) {
+				scoreRows = Math.max(scoreRows, Math.nextUp(typeGuardScoreRows));
+			}
 		}
 		double reachableSelectiveFilterRatio = newlyReachableSelectiveLocalFilterRatio(previousMask, nextMask);
 		if (reachableSelectiveFilterRatio < 1.0d) {
@@ -1261,6 +1263,55 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		return scoreRows;
+	}
+
+	private double pendingSmallSameSubjectRdfTypeGuardScoreRows(int factorIndex) {
+		StatementPattern statementPattern = statementPattern(factors.get(factorIndex).tupleExpr());
+		if (statementPattern == null || hasConstantValue(statementPattern.getPredicateVar(), RDF_TYPE_IRI)) {
+			return Double.NaN;
+		}
+		Var subjectVar = statementPattern.getSubjectVar();
+		if (subjectVar == null || subjectVar.hasValue() || subjectVar.getName() == null) {
+			return Double.NaN;
+		}
+
+		String subjectName = subjectVar.getName();
+		double bestScoreRows = Double.POSITIVE_INFINITY;
+		for (int i = 0; i < factors.size(); i++) {
+			if (i == factorIndex) {
+				continue;
+			}
+			double scoreRows = smallSameSubjectRdfTypeGuardScoreRows(i, subjectName);
+			if (Double.isFinite(scoreRows) && scoreRows >= 0.0d && scoreRows < bestScoreRows) {
+				bestScoreRows = scoreRows;
+			}
+		}
+		return bestScoreRows < Double.POSITIVE_INFINITY ? bestScoreRows : Double.NaN;
+	}
+
+	private double smallSameSubjectRdfTypeGuardScoreRows(int factorIndex, String subjectName) {
+		PlanFactor factor = factors.get(factorIndex);
+		StatementPattern statementPattern = statementPattern(factor.tupleExpr());
+		if (statementPattern == null || !hasConstantValue(statementPattern.getPredicateVar(), RDF_TYPE_IRI)) {
+			return Double.NaN;
+		}
+		Var subjectVar = statementPattern.getSubjectVar();
+		if (subjectVar == null || subjectVar.hasValue() || !subjectName.equals(subjectVar.getName())
+				|| statementPattern.getObjectVar() == null || !statementPattern.getObjectVar().hasValue()) {
+			return Double.NaN;
+		}
+		if (!hasOnlySubjectPlannerJoinVar(factor, subjectName)) {
+			return Double.NaN;
+		}
+		double outputRows = factor.estimate().outputRows();
+		if (!(Double.isFinite(outputRows) && outputRows >= 0.0d && outputRows <= BROAD_EDGE_MIN_ROWS)) {
+			return Double.NaN;
+		}
+		double adjustedWorkRows = adjustedWorkRows(factorIndex, 0L, initiallyBoundVarMask, outputRows);
+		if (!Double.isFinite(adjustedWorkRows) || adjustedWorkRows < 0.0d) {
+			return outputRows;
+		}
+		return Math.max(outputRows, adjustedWorkRows);
 	}
 
 	private double boundTypeGuardDelayPenalty(long previousMask, int factorIndex) {
@@ -1284,17 +1335,29 @@ final class SketchJoinOrderPlanner {
 
 	private boolean isBoundRdfTypeGuard(long previousMask, int factorIndex) {
 		PlanFactor factor = factors.get(factorIndex);
-		if (factor.joinVars().size() != 1) {
-			return false;
-		}
 		StatementPattern statementPattern = statementPattern(factor.tupleExpr());
 		if (statementPattern == null || !hasConstantValue(statementPattern.getPredicateVar(), RDF_TYPE_IRI)) {
 			return false;
 		}
 		Var subjectVar = statementPattern.getSubjectVar();
 		return subjectVar != null && subjectVar.getName() != null
+				&& hasOnlySubjectPlannerJoinVar(factor, subjectVar.getName())
 				&& containsVariable(variablesMask(previousMask), subjectVar.getName())
 				&& statementPattern.getObjectVar() != null && statementPattern.getObjectVar().hasValue();
+	}
+
+	private static boolean hasOnlySubjectPlannerJoinVar(PlanFactor factor, String subjectName) {
+		boolean hasSubject = false;
+		for (String joinVar : factor.joinVars()) {
+			if (!isPlannerVariableName(joinVar)) {
+				continue;
+			}
+			if (!subjectName.equals(joinVar)) {
+				return false;
+			}
+			hasSubject = true;
+		}
+		return hasSubject;
 	}
 
 	private boolean introducesJoinVariable(long previousMask, int factorIndex) {

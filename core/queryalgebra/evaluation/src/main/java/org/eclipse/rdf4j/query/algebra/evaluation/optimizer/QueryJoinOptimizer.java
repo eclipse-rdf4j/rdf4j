@@ -726,9 +726,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return false;
 			}
 			CoreDatatype coreDatatype = ((Literal) value).getCoreDatatype();
-			if(coreDatatype.isXSDDatatype()){
+			if (coreDatatype.isXSDDatatype()) {
 				CoreDatatype.XSD xsdDatatype = coreDatatype.asXSDDatatypeOrNull();
-				return xsdDatatype.isNumericDatatype() || xsdDatatype.isCalendarDatatype() || xsdDatatype == CoreDatatype.XSD.BOOLEAN;
+				return xsdDatatype.isNumericDatatype() || xsdDatatype.isCalendarDatatype()
+						|| xsdDatatype == CoreDatatype.XSD.BOOLEAN;
 			}
 			return false;
 		}
@@ -1320,7 +1321,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				boundVars.addAll(tupleExpr.getBindingNames());
 			}
 
-			if (REORDER_JOINS_WITH_SKETCHES && orderedJoinArgs.size() > 2
+			if (REORDER_JOINS_WITH_SKETCHES && orderedJoinArgs.size() >= 2
 					&& (statistics.supportsJoinEstimation()
 							|| (!deferredFilters.isEmpty() && statistics.supportsFilterSelectivityCosting()))) {
 				orderedJoinArgs = new ArrayDeque<>(
