@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 
@@ -35,5 +36,9 @@ public final class LmdbTestUtil {
 		if (dataDir.exists()) {
 			throw new AssertionError("Expected LMDB data dir to be deleted: " + dataDir);
 		}
+	}
+
+	public static void deleteDir(Path dataDir) {
+		deleteDir(dataDir == null ? null : dataDir.toFile());
 	}
 }

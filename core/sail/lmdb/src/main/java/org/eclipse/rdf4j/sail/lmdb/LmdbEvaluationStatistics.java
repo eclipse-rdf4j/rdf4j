@@ -217,11 +217,11 @@ class LmdbEvaluationStatistics
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH, (double) prefixLength);
 		}
 		stringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
-				componentMaskString(accessPathEstimate == null ? accessShape.lookupBoundComponentMask()
+				componentMaskString(accessPathEstimate == null ? accessShape.physicalLookupComponentMask()
 						: accessPathEstimate.lookupComponentMask()));
 		stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
 				accessMode(accessPathEstimate));
-		int missingLookupComponentMask = accessPathEstimate == null ? accessShape.lookupBoundComponentMask()
+		int missingLookupComponentMask = accessPathEstimate == null ? accessShape.physicalLookupComponentMask()
 				: accessPathEstimate.missingLookupComponentMask();
 		if (missingLookupComponentMask != 0) {
 			stringMetrics.put(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS,
@@ -406,28 +406,20 @@ class LmdbEvaluationStatistics
 			if (!isFiniteNonNegative(rowsBefore)) {
 				continue;
 			}
-			boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, candidate.prefixComponentMask())
+			double rowsAfter = rowsBefore;
+			if (canApplyFilterAtAccess(accessShape, candidate.prefixComponentMask())
 					&& isFiniteNonNegative(accessShape.filterMultiplier())
-					&& accessShape.filterMultiplier() < 1.0d;
-			double rowsAfter = filterAppliedAtAccess ? rowsBefore * accessShape.filterMultiplier() : rowsBefore;
-			if (filterAppliedAtAccess && isFiniteNonNegative(factorRows)) {
-				double derivedRowsAfter = factorRows;
-				double derivedRowsBefore = factorRows;
-				if (accessShape.filterMultiplier() > 0.0d) {
-					double estimatedRowsBefore = factorRows / accessShape.filterMultiplier();
-					if (isFiniteNonNegative(estimatedRowsBefore)) {
-						derivedRowsBefore = estimatedRowsBefore;
-					}
-				}
-				rowsBefore = Math.min(rowsBefore, derivedRowsBefore);
-				rowsAfter = derivedRowsAfter;
+					&& accessShape.filterMultiplier() < 1.0d) {
+				rowsAfter = rowsBefore * accessShape.filterMultiplier();
+			}
+			if (isFiniteNonNegative(factorRows)) {
+				rowsAfter = Math.min(rowsAfter, factorRows);
 			}
 			if (!isFiniteNonNegative(rowsAfter)) {
 				continue;
 			}
 			boolean directLookup = candidate.missingLookupComponentMask() == 0;
-			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, rowsAfter)
-					: filterAppliedAtAccess ? rowsAfter : rowsBefore;
+			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, rowsBefore) : rowsBefore;
 			if (!isFiniteNonNegative(workRows)) {
 				continue;
 			}
@@ -471,7 +463,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private int desiredLookupComponentMask(SketchBasedJoinEstimator.AccessShape accessShape) {
-		return accessShape.lookupBoundComponentMask() | accessShape.filterLookupComponentMask();
+		return accessShape.physicalLookupComponentMask();
 	}
 
 	private List<Integer> effectiveLookupVariableMasks(int variableLookupComponentMask) {

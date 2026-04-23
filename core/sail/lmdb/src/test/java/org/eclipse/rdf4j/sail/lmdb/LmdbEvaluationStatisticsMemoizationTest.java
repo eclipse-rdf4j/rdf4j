@@ -28,7 +28,6 @@ import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -116,7 +115,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertEquals(2, cache.size(), "Equivalent follows patterns should share one memoized entry");
 		} finally {
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -166,7 +165,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		} finally {
 			sharedCardinalityCache().clear();
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -222,7 +221,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected LEFT JOIN cardinality to avoid multiplicative fallback when sketch estimator is ready");
 		} finally {
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -267,7 +266,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected LEFT JOIN cardinality to avoid multiplicative fallback for simple filter-wrapped patterns");
 		} finally {
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -298,7 +297,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected filter cardinality to use sketch selectivity instead of raw statement pattern cardinality");
 		} finally {
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -328,7 +327,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected sampled filter selectivity to reduce estimated filter cardinality below the base pattern");
 		} finally {
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -364,7 +363,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected runtime evaluation to record a learned pass ratio for external-bound pattern-local filters");
 		} finally {
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 

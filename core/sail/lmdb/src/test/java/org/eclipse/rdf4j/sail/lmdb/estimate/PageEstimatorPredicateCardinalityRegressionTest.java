@@ -19,7 +19,6 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.util.List;
 
-import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -33,6 +32,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 
@@ -57,7 +57,7 @@ class PageEstimatorPredicateCardinalityRegressionTest {
 			assertTrue(followsCardinality > 0, "Expected non-zero follows cardinality with page estimator enabled");
 		} finally {
 			repository.shutDown();
-			FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 

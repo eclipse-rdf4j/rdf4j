@@ -168,6 +168,36 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
+	void unboundLocalFilterDoesNotReducePhysicalAccessWork(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticTransformerData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
+			JoinFactorCostModel.FactorCostEstimate filteredNameCost = costModel
+					.estimateFactorCost(filteredNameListMemberPattern(), Set.of())
+					.orElseThrow();
+
+			assertEquals("[P]",
+					filteredNameCost.getStringMetrics().get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"An unbound filter value must not be counted as a physical lookup component: "
+							+ filteredNameCost.getStringMetrics() + filteredNameCost.getDoubleMetrics());
+			double plannedAccessRows = filteredNameCost.getDoubleMetrics()
+					.get(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+			assertTrue(filteredNameCost.getWorkRows() >= plannedAccessRows,
+					"Work should track rows accessed before local filtering: "
+							+ filteredNameCost.getDoubleMetrics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void plannerStartsElectricalQ2WithFilteredSubstationNameWhenOnlyPredicatePrefixIsAvailable(@TempDir File dataDir)
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");

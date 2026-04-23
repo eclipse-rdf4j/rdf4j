@@ -48,28 +48,32 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 	@Test
 	void pharmaQueriesUsePlannerCostInvariants(@TempDir Path dataDir) throws Exception {
 		Path themeDir = dataDir.resolve(THEME.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+				loadData(repository);
+				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+				primeLearnedFilterStats(repository);
+				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			for (int queryIndex : queryIndexes()) {
-				OptimizerSnapshot snapshot = explainOptimized(repository, queryIndex);
-				assertPlannerCostInvariants(queryIndex, snapshot);
-				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			repository = new SailRepository(store);
+			try {
+				for (int queryIndex : queryIndexes()) {
+					OptimizerSnapshot snapshot = explainOptimized(repository, queryIndex);
+					assertPlannerCostInvariants(queryIndex, snapshot);
+					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+				}
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
@@ -144,6 +148,13 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 			assertBefore(snapshot.renderedQuery, "?trial a <http://example.com/theme/pharma/ClinicalTrial> .",
 					"?trial <http://example.com/theme/pharma/hasArm> ?arm .",
 					key + " should prefer the exact ClinicalTrial guard before the broader hasArm fanout\n"
+							+ snapshot.plan);
+		}
+		if (queryIndex == 7) {
+			assertBefore(snapshot.plan,
+					"value=http://example.com/theme/pharma/hasResult",
+					"value=http://example.com/theme/pharma/pValue",
+					key + " correlated NOT EXISTS should use the bound ?arm hasResult probe before pValue filtering\n"
 							+ snapshot.plan);
 		}
 	}

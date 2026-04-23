@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
@@ -130,337 +132,250 @@ class LmdbThemeQueryRegressionTest {
 	@MethodSource("highValueThemes")
 	void highValueThemeQueriesExposePersistedOptimizerDiagnostics(Theme theme, @TempDir Path dataDir)
 			throws Exception {
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, primeableHighValueQueryIndexes(theme));
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, primeableHighValueQueryIndexes(theme));
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			for (int queryIndex : HIGH_VALUE_QUERY_INDEXES.get(theme)) {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
-				assertPlannerDiagnosticsPresent(theme, queryIndex, snapshot.plan());
-				assertContainsAny(snapshot.plan(), "plannedAccessRows", "optimizer.decisionTrace",
-						"plannedFilterEvidenceCount");
-				assertReportedSocialCliqueUsesRobustPlanner(theme, queryIndex, snapshot.plan());
-				assertHighValueAnchors(theme, queryIndex, snapshot.renderedQuery());
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				for (int queryIndex : HIGH_VALUE_QUERY_INDEXES.get(theme)) {
+					OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
+					assertPlannerDiagnosticsPresent(theme, queryIndex, snapshot.plan());
+					assertContainsAny(snapshot.plan(), "plannedAccessRows", "optimizer.decisionTrace",
+							"plannedFilterEvidenceCount");
+					assertReportedSocialCliqueUsesRobustPlanner(theme, queryIndex, snapshot.plan());
+					assertHighValueAnchors(theme, queryIndex, snapshot.renderedQuery());
+					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+				}
+				assertCountRegressionQueries(repository, theme);
 				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
-			assertCountRegressionQueries(repository, theme);
-			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void socialMediaCliqueValuesDirectLookupWorkRowsAreCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
+				assertContains(snapshot.plan(), "plannerPath=ROBUST_USED");
+				assertBefore(snapshot.renderedQuery(), "VALUES (?u1 ?u2)", "VALUES ?u3",
+						"Composite VALUES should unlock pair filters before the unary VALUES expansion");
+				assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
-			assertContains(snapshot.plan(), "plannerPath=ROBUST_USED");
-			assertBefore(snapshot.renderedQuery(), "VALUES (?u1 ?u2)", "VALUES ?u3",
-					"Composite VALUES should unlock pair filters before the unary VALUES expansion");
-			assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d);
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void libraryAuthorsByNameDoesNotReuseConditionedLearnedPatternStats(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 2);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+				assertDoesNotContain(snapshot.plan(), "sources={learned_pattern=1}",
+						"Library q2 should not reuse prefix-conditioned feedback as unconditional learned pattern stats");
+				assertDoesNotContain(snapshot.plan(), "filterSelectivitySource=learned_pattern",
+						"Library q2 should not reuse prefix-conditioned feedback as a learned-pattern source\n"
+								+ snapshot.plan());
+				assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name", 12.0d);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-			assertDoesNotContain(snapshot.plan(), "sources={learned_pattern=1}",
-					"Library q2 should not reuse prefix-conditioned feedback as unconditional learned pattern stats");
-			assertDoesNotContain(snapshot.plan(), "filterSelectivitySource=learned_pattern",
-					"Library q2 should not reuse prefix-conditioned feedback as a learned-pattern source\n"
-							+ snapshot.plan());
-			assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name", 12.0d);
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void libraryCopyBranchExclusionDoesNotScanAllLocatedAt(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 7);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 7);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
+				assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
+				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/library/name> ?branchName",
+						"<http://example.com/theme/library/locatedAt> ?branch",
+						"Library q7 should keep the selective branch-name anchor before copy location expansion");
+				assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
-			assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
-			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/library/name> ?branchName",
-					"<http://example.com/theme/library/locatedAt> ?branch",
-					"Library q7 should keep the selective branch-name anchor before copy location expansion");
-			assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void electricalGridSubstationNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 2);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/grid/name> ?name",
+						"<http://example.com/theme/grid/feeds> ?substation",
+						"Electrical grid q2 should keep the selective substation-name anchor before feeds\n"
+								+ snapshot.plan());
+				assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/grid/name", 10.0d);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/grid/name> ?name",
-					"<http://example.com/theme/grid/feeds> ?substation",
-					"Electrical grid q2 should keep the selective substation-name anchor before feeds\n"
-							+ snapshot.plan());
-			assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/grid/name", 10.0d);
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void engineeringAssemblyNameInFilterUsesBoundLiteralLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 2);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/engineering/name> ?assemblyName",
+						"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
+						"Engineering q2 should keep the assembly-name filter directly after the name pattern\n"
+								+ snapshot.plan());
+				assertEngineeringAssemblyNameFilterDoesNotScanAllNames(snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/engineering/name> ?assemblyName",
-					"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
-					"Engineering q2 should keep the assembly-name filter directly after the name pattern\n"
-							+ snapshot.plan());
-			assertEngineeringAssemblyNameFilterDoesNotScanAllNames(snapshot.plan());
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void trainLineNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 2);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/name> ?lineName",
+						"<http://example.com/theme/train/partOfLine> ?line",
+						"Train q2 should keep the selective line-name anchor before the broad line-membership edge\n"
+								+ snapshot.plan());
+				assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/train/name", 10.0d);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/name> ?lineName",
-					"<http://example.com/theme/train/partOfLine> ?line",
-					"Train q2 should keep the selective line-name anchor before the broad line-membership edge\n"
-							+ snapshot.plan());
-			assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/train/name", 10.0d);
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void trainScheduledTimeSeedStaysAheadOfBroadTypeAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 5);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 5);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
+				assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
+				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/scheduledTime> ?time",
+						"?service a <http://example.com/theme/train/TrainService>",
+						"Train q5 should keep the selective scheduledTime seed ahead of the broad rdf:type anchor\n"
+								+ snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
-			assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
-			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/scheduledTime> ?time",
-					"?service a <http://example.com/theme/train/TrainService>",
-					"Train q5 should keep the selective scheduledTime seed ahead of the broad rdf:type anchor\n"
-							+ snapshot.plan());
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void electricalGridGeneratorCapacityThresholdUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 5);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 5);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
+				assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
+				assertElectricalGridGeneratorCapacityThresholdShape(snapshot);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
-			assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
-			assertElectricalGridGeneratorCapacityThresholdShape(snapshot);
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void medicalConditionsOrMedicationsByCodeUsesBranchLocalValuesAndFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 1);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 1);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
-			assertPlannerDiagnosticsPresent(theme, 1, snapshot.plan());
-			if (!MEDICAL_Q1_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
-				throw new AssertionError("Medical q1 should match the fastest branch-local VALUES/filter shape\n"
-						+ "Expected:\n" + MEDICAL_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
-						+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
+				assertPlannerDiagnosticsPresent(theme, 1, snapshot.plan());
+				if (!MEDICAL_Q1_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
+					throw new AssertionError("Medical q1 should match the fastest branch-local VALUES/filter shape\n"
+							+ "Expected:\n" + MEDICAL_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
+							+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+				}
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void libraryMembersBorrowingBooksByAuthorsUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme, 9);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 9);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 9);
-			assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
-			if (!LIBRARY_Q9_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
-				throw new AssertionError("Library q9 should match the fastest author/book/loan shape\n"
-						+ "Expected:\n" + LIBRARY_Q9_FASTEST_RENDERED_QUERY + "\nActual:\n"
-						+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 9);
+				assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
+				if (!LIBRARY_Q9_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
+					throw new AssertionError("Library q9 should match the fastest author/book/loan shape\n"
+							+ "Expected:\n" + LIBRARY_Q9_FASTEST_RENDERED_QUERY + "\nActual:\n"
+							+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+				}
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
@@ -469,7 +384,34 @@ class LmdbThemeQueryRegressionTest {
 				Theme.ELECTRICAL_GRID, Theme.TRAIN, Theme.SOCIAL_MEDIA);
 	}
 
-	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, int... queryIndexes) {
+	private static Path prepareThemeStore(Path dataDir, Theme theme, int... primeIndexes) throws Exception {
+		return prepareThemeStore(dataDir, theme, IntStream.of(primeIndexes)
+				.boxed()
+				.collect(Collectors.toList()));
+	}
+
+	private static Path prepareThemeStore(Path dataDir, Theme theme, List<Integer> primeIndexes) throws Exception {
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		boolean prepared = false;
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, primeIndexes);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			prepared = true;
+			return themeDir;
+		} finally {
+			shutdownAndRelease(repository, store);
+			if (!prepared) {
+				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+			}
+		}
+	}
+
+	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, List<Integer> queryIndexes) {
 		for (int queryIndex : queryIndexes) {
 			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
 			long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);

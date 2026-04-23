@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -679,6 +680,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 				return smallLiteralFilterAnchor(bindingName, values);
 			}
+			if (condition instanceof Or) {
+				return smallLiteralOrEqualityFilterAnchor((Or) condition);
+			}
 			if (condition instanceof Compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
 				Compare compare = (Compare) condition;
 				return smallLiteralFilterAnchor(compare.getLeftArg(), compare.getRightArg());
@@ -688,6 +692,57 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return smallLiteralFilterAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
 			}
 			return null;
+		}
+
+		private BindingSetAssignment smallLiteralOrEqualityFilterAnchor(Or condition) {
+			OrEqualityAnchorCollector collector = new OrEqualityAnchorCollector();
+			if (!collectOrEqualityAnchorValues(condition, collector)) {
+				return null;
+			}
+			return smallLiteralFilterAnchor(collector.bindingName, collector.values);
+		}
+
+		private boolean collectOrEqualityAnchorValues(ValueExpr condition, OrEqualityAnchorCollector collector) {
+			if (condition instanceof Or) {
+				Or or = (Or) condition;
+				return collectOrEqualityAnchorValues(or.getLeftArg(), collector)
+						&& collectOrEqualityAnchorValues(or.getRightArg(), collector);
+			}
+			if (condition instanceof Compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
+				Compare compare = (Compare) condition;
+				return collectOrEqualityAnchorValue(compare.getLeftArg(), compare.getRightArg(), collector);
+			}
+			if (condition instanceof SameTerm) {
+				SameTerm sameTerm = (SameTerm) condition;
+				return collectOrEqualityAnchorValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), collector);
+			}
+			return false;
+		}
+
+		private boolean collectOrEqualityAnchorValue(ValueExpr leftArg, ValueExpr rightArg,
+				OrEqualityAnchorCollector collector) {
+			if (leftArg instanceof Var && rightArg instanceof ValueConstant) {
+				return collectOrEqualityAnchorValue((Var) leftArg, ((ValueConstant) rightArg).getValue(), collector);
+			}
+			if (rightArg instanceof Var && leftArg instanceof ValueConstant) {
+				return collectOrEqualityAnchorValue((Var) rightArg, ((ValueConstant) leftArg).getValue(), collector);
+			}
+			return false;
+		}
+
+		private boolean collectOrEqualityAnchorValue(Var filterVar, Value value,
+				OrEqualityAnchorCollector collector) {
+			String bindingName = filterVar.getName();
+			if (bindingName == null || filterVar.hasValue() || !isSafeValuesAnchorValue(value)) {
+				return false;
+			}
+			if (collector.bindingName == null) {
+				collector.bindingName = bindingName;
+			} else if (!collector.bindingName.equals(bindingName)) {
+				return false;
+			}
+			collector.values.add(value);
+			return true;
 		}
 
 		private BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg) {
@@ -733,6 +788,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		private boolean isSafeValuesAnchorValue(Value value) {
 			return value != null && isValuesExpressible(value) && !isUnsafeCoreInEqualityValue(value);
+		}
+
+		private final class OrEqualityAnchorCollector {
+			private String bindingName;
+			private final LinkedHashSet<Value> values = new LinkedHashSet<>();
 		}
 
 		private boolean isEmptyBindingSetAssignment(BindingSetAssignment assignment) {

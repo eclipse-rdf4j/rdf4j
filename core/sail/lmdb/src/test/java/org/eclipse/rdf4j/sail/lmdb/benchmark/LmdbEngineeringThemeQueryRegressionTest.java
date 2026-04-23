@@ -34,9 +34,10 @@ class LmdbEngineeringThemeQueryRegressionTest {
 
 	private static final String ENGINEERING_Q10_DEVELOP_RENDERED_QUERY = """
 			SELECT (COUNT(DISTINCT ?assembly) AS ?count) WHERE {
-			  ?assembly a <http://example.com/theme/engineering/Assembly> .
+			  VALUES ?name { "Assembly 1" "Assembly 2" }
 			  ?assembly <http://example.com/theme/engineering/name> ?name .
 			  FILTER ((?name = "Assembly 1") || (?name = "Assembly 2"))
+			  ?assembly a <http://example.com/theme/engineering/Assembly> .
 			  OPTIONAL {
 			    ?component <http://example.com/theme/engineering/partOf> ?assembly .
 			    BIND(?component AS ?optComponent)
@@ -48,30 +49,64 @@ class LmdbEngineeringThemeQueryRegressionTest {
 			}""";
 
 	@Test
+	void requirementExistsMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ENGINEERING;
+		Path themeDir = dataDir.resolve(theme.name());
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+				loadData(repository, theme);
+				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+				primeLearnedFilterStats(repository, theme, 7);
+				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+
+			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
+				assertEngineeringQ7DevelopPlanShape(snapshot.renderedQuery().trim(), snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void assemblyOptionalMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, 10);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+				loadData(repository, theme);
+				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+				primeLearnedFilterStats(repository, theme, 10);
+				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 
-		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 10);
-			assertEquals(ENGINEERING_Q10_DEVELOP_RENDERED_QUERY, snapshot.renderedQuery().trim(),
-					() -> "Optimized plan:\n" + snapshot.plan());
-			assertEngineeringQ10DevelopPlanShape(snapshot.plan());
+			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 10);
+				assertEquals(ENGINEERING_Q10_DEVELOP_RENDERED_QUERY, snapshot.renderedQuery().trim(),
+						() -> "Optimized plan:\n" + snapshot.plan());
+				assertEngineeringQ10DevelopPlanShape(snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
@@ -122,12 +157,31 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		}
 	}
 
+	private static void assertEngineeringQ7DevelopPlanShape(String renderedQuery, String plan) {
+		assertContains(renderedQuery, "VALUES ?name { \"REQ-1000\" \"REQ-1001\" }");
+		assertBefore(renderedQuery,
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"?requirement <http://example.com/theme/engineering/name> ?name .",
+				"Engineering q7 should keep the Requirement rdf:type anchor before the bound name filter\n" + plan);
+		assertBefore(renderedQuery,
+				"?requirement <http://example.com/theme/engineering/name> ?name .",
+				"FILTER EXISTS",
+				"Engineering q7 should apply the name filter before evaluating EXISTS\n" + plan);
+		assertBefore(plan,
+				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"value=http://example.com/theme/engineering/name",
+				"Engineering q7 plan should keep the Requirement rdf:type anchor before the name filter");
+		assertNamePatternUsesBoundSubject(plan, "Engineering q7", "requirement");
+		assertContains(plan, "ValueConstant (value=\"REQ-1000\")");
+	}
+
 	private static void assertEngineeringQ10DevelopPlanShape(String plan) {
 		assertContains(plan, "plannerId=lmdb-sketch");
 		assertDevelopOperatorSkeleton(plan);
-		assertBefore(plan, "value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+		assertBefore(plan, "BindingSetAssignment ([[name=\"Assembly 1\"], [name=\"Assembly 2\"]])",
 				"value=http://example.com/theme/engineering/name",
-				"Engineering q10 should keep the Assembly rdf:type anchor before the bound name filter");
+				"Engineering q10 should anchor the finite name set before the name access");
+		assertNamePatternUsesBoundValue(plan, "Engineering q10");
 		assertBefore(plan, "ValueConstant (value=\"Assembly 1\")",
 				"value=http://example.com/theme/engineering/partOf",
 				"Engineering q10 should apply the Assembly name filter before expanding optional partOf");
@@ -148,13 +202,14 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"Var (name=assembly) (bindingState=bound)",
 				"LeftJoin",
 				"Join (JoinIterator)",
-				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-				"value=http://example.com/theme/engineering/Assembly",
+				"BindingSetAssignment ([[name=\"Assembly 1\"], [name=\"Assembly 2\"]])",
 				"deferredFilterScope=localPattern) [right]",
 				"Or",
 				"ValueConstant (value=\"Assembly 1\")",
 				"ValueConstant (value=\"Assembly 2\")",
 				"value=http://example.com/theme/engineering/name",
+				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"value=http://example.com/theme/engineering/Assembly",
 				"Extension [right]",
 				"value=http://example.com/theme/engineering/partOf",
 				"ExtensionElem (optComponent)",
@@ -163,6 +218,31 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"GroupElem (count)",
 				"Count (Distinct)",
 				"ExtensionElem (count)");
+	}
+
+	private static void assertNamePatternUsesBoundValue(String plan, String label) {
+		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
+		if (predicateIndex < 0) {
+			throw new AssertionError(label + " plan should include the name pattern:\n" + plan);
+		}
+
+		String pattern = statementPatternWindow(plan, predicateIndex, "StatementPattern");
+		assertContains(pattern, "o: Var (name=name) (bindingState=bound)");
+		assertContains(pattern, "plannedBoundVars=[name]");
+		assertContains(pattern, "plannedLookupComponents=[P, O]");
+	}
+
+	private static void assertNamePatternUsesBoundSubject(String plan, String label, String subjectName) {
+		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
+		if (predicateIndex < 0) {
+			throw new AssertionError(label + " plan should include the name pattern:\n" + plan);
+		}
+
+		String pattern = statementPatternWindow(plan, predicateIndex, "BindingSetAssignment");
+		assertContains(pattern, "s: Var (name=" + subjectName + ") (bindingState=bound)");
+		assertContains(pattern, "o: Var (name=name) (bindingState=unbound)");
+		assertContains(pattern, "plannedBoundVars=[" + subjectName + "]");
+		assertContains(pattern, "plannedLookupComponents=[S, P]");
 	}
 
 	private static void assertOptionalPartOfUsesBoundAssembly(String plan) {

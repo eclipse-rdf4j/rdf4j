@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 
 public final class BenchmarkJoinEstimatorSupport {
 
@@ -70,6 +72,10 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	public static void releaseEstimatorMemory(LmdbStore store) throws IOException {
 		resolveEstimator(store).unload();
+	}
+
+	public static void deleteStoreDirectory(Path storeDirectory) {
+		LmdbTestUtil.deleteDir(storeDirectory);
 	}
 
 	public static void prepareFixedMedicalRecordsExplanationStore(File storeDirectory) throws IOException {

@@ -100,6 +100,7 @@ final class LmdbRegressionAnalysisSupport {
 				}
 			} finally {
 				shutdownAndRelease(repository, store);
+				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(preparedStore.storeDirectory());
 			}
 		}
 		return snapshots;
@@ -188,14 +189,19 @@ final class LmdbRegressionAnalysisSupport {
 		LmdbStoreConfig storeConfig = ConfigUtil.createConfig();
 		LmdbStore store = new LmdbStore(storeDirectory.toFile(), storeConfig);
 		SailRepository repository = new SailRepository(store);
+		boolean prepared = false;
 		try {
 			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 			loadThemeData(repository, theme);
 			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 			primeLearnedFilterStats(repository, theme);
 			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			prepared = true;
 		} finally {
 			shutdownAndRelease(repository, store);
+			if (!prepared) {
+				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
+			}
 		}
 		return new PreparedThemeStore(storeDirectory, storeConfig);
 	}

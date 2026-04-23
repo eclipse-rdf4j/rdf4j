@@ -284,6 +284,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return joinBoundComponentMask;
 		}
 
+		public Set<Component> physicalLookupComponents() {
+			return componentSet(physicalLookupComponentMask());
+		}
+
+		public int physicalLookupComponentMask() {
+			return patternConstantComponentMask | joinBoundComponentMask;
+		}
+
 		public Set<Component> filterLookupComponents() {
 			return componentSet(filterLookupComponentMask);
 		}

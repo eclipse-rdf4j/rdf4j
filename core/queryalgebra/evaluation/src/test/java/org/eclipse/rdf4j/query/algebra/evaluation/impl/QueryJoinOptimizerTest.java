@@ -873,6 +873,73 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void optimizeAddsValuesAnchorForMustBoundStringOrEqualityFilter() {
+		QueryRoot root = optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:name ?name .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?name = \"Alice\" || ?name = \"Bob\" || ?name = \"Alice\")",
+				"}"), new EvaluationStatistics());
+
+		List<BindingSetAssignment> assignments = bindingSetAssignments(root, "name");
+		assertThat(assignments)
+				.as("A same-variable string OR equality filter can be represented as a same-term VALUES semijoin")
+				.hasSize(1);
+		assertThat(assignments.get(0).getBindingSets())
+				.as("VALUES rows should be deduplicated by RDF-term identity")
+				.hasSize(2);
+	}
+
+	@Test
+	public void optimizeDoesNotAddValuesAnchorForUnsafeOrEqualityValues() {
+		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:rank ?rank .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?rank = 1 || ?rank = 2)",
+				"}"), new EvaluationStatistics()), "rank"))
+						.as("Numeric equality has SPARQL value semantics wider than same-term VALUES")
+						.isEmpty();
+		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT * WHERE {",
+				"  ?s ex:date ?date .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?date = \"2026-04-23\"^^xsd:date || ?date = \"2026-04-24\"^^xsd:date)",
+				"}"), new EvaluationStatistics()), "date"))
+						.as("Calendar equality has SPARQL value semantics wider than same-term VALUES")
+						.isEmpty();
+		assertThat(bindingSetAssignments(optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  ?s ex:active ?active .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?active = true || ?active = false)",
+				"}"), new EvaluationStatistics()), "active"))
+						.as("Boolean equality has SPARQL value semantics wider than same-term VALUES")
+						.isEmpty();
+	}
+
+	@Test
+	public void optimizeDoesNotAddPartialValuesAnchorForMixedVariableAndLiteralOrEquality() {
+		QueryRoot root = optimizeWithStatistics(String.join("\n",
+				"PREFIX ex: <http://example.com/>",
+				"SELECT * WHERE {",
+				"  VALUES ?target { \"Alice\" }",
+				"  ?s ex:name ?name .",
+				"  ?s ex:type ?type .",
+				"  FILTER (?name = ?target || ?name = \"Bob\")",
+				"}"), new EvaluationStatistics());
+
+		assertThat(bindingSetAssignments(root, "name"))
+				.as("Mixed variable/literal OR equality is not a legal same-term VALUES restriction")
+				.isEmpty();
+	}
+
+	@Test
 	public void optimizeDoesNotAddValuesAnchorForBindProducedInFilterVariable() {
 		QueryRoot root = optimizeWithStatistics(String.join("\n",
 				"PREFIX ex: <http://example.com/>",

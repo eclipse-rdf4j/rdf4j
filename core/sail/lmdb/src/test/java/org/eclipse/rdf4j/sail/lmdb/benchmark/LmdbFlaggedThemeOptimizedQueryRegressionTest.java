@@ -78,60 +78,68 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 
 	private static List<String> mismatchesForBenchmarkStore(Path dataDir, List<Theme> themes) throws Exception {
 		Path storeDir = dataDir.resolve("benchmark");
-		LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadBenchmarkData(repository);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, themes);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		List<String> mismatches = new ArrayList<>();
-		try {
-			for (Expectation expectation : expectationsForThemes(themes)) {
-				OptimizerSnapshot snapshot = explainOptimized(repository, expectation);
-				mismatches.addAll(invariantMismatches(expectation, snapshot));
-				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+				loadBenchmarkData(repository);
+				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+				primeLearnedFilterStats(repository, themes);
+				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
+
+			store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
+			repository = new SailRepository(store);
+			List<String> mismatches = new ArrayList<>();
+			try {
+				for (Expectation expectation : expectationsForThemes(themes)) {
+					OptimizerSnapshot snapshot = explainOptimized(repository, expectation);
+					mismatches.addAll(invariantMismatches(expectation, snapshot));
+					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+				}
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+			return mismatches;
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDir);
 		}
-		return mismatches;
 	}
 
 	private static List<String> mismatchesForHighlyConnectedStore(Path dataDir) throws Exception {
 		Path storeDir = dataDir.resolve(Theme.HIGHLY_CONNECTED.name());
-		LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
 		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadHighlyConnectedQuery5Fixture(repository);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, Theme.HIGHLY_CONNECTED);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		List<String> mismatches = new ArrayList<>();
-		try {
-			for (Expectation expectation : expectationsForTheme(Theme.HIGHLY_CONNECTED)) {
-				OptimizerSnapshot snapshot = explainOptimized(repository, expectation);
-				mismatches.addAll(invariantMismatches(expectation, snapshot));
-				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+				loadHighlyConnectedQuery5Fixture(repository);
+				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+				primeLearnedFilterStats(repository, Theme.HIGHLY_CONNECTED);
+				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
+
+			store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
+			repository = new SailRepository(store);
+			List<String> mismatches = new ArrayList<>();
+			try {
+				for (Expectation expectation : expectationsForTheme(Theme.HIGHLY_CONNECTED)) {
+					OptimizerSnapshot snapshot = explainOptimized(repository, expectation);
+					mismatches.addAll(invariantMismatches(expectation, snapshot));
+					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+				}
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+			return mismatches;
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDir);
 		}
-		return mismatches;
 	}
 
 	private static List<Theme> flaggedThemes() {
