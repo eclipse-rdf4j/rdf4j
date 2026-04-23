@@ -21,23 +21,18 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_set_compare;
 import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
-import java.util.Comparator;
 
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.Pointer;
-import org.lwjgl.util.lmdb.MDBCmpFuncI;
-import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,22 +116,16 @@ final class LmdbUtil {
 		return ret;
 	}
 
-	static int openDatabase(long env, String name, int flags, Comparator<ByteBuffer> comparator) throws IOException {
-		return transaction(env, (stack, txn) -> {
-			IntBuffer ip = stack.mallocInt(1);
+	static int openDatabase(long env, String name, int flags) throws IOException {
+		return transaction(env, (stack, txn) -> openDatabaseWithTxn(txn, name, flags));
+	}
 
+	static int openDatabaseWithTxn(long txn, String name, int flags) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			IntBuffer ip = stack.mallocInt(1);
 			E(mdb_dbi_open(txn, name, flags, ip));
-			int dbi = ip.get(0);
-			if (comparator != null) {
-				MDBCmpFuncI cmp = (a, b) -> {
-					MDBVal aVal = MDBVal.create(a);
-					MDBVal bVal = MDBVal.create(b);
-					return comparator.compare(aVal.mv_data(), bVal.mv_data());
-				};
-				mdb_set_compare(txn, dbi, cmp);
-			}
-			return dbi;
-		});
+			return ip.get(0);
+		}
 	}
 
 	/**
@@ -173,7 +162,6 @@ final class LmdbUtil {
 		if (percentageUsed > PERCENTAGE_FULL_TRIGGERS_RESIZE) {
 			return true;
 		}
-
 		return mapSize - nextPageNo * pageSize < Math.max(requiredSize, MIN_FREE_SPACE);
 	}
 
