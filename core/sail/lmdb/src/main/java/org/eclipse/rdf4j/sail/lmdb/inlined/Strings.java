@@ -28,7 +28,7 @@ public class Strings {
 		byte[] bytes = label.getBytes(StandardCharsets.UTF_8);
 		int maxLength = Values.MAX_LENGTH - 1;
 		if (bytes.length > maxLength) {
-			// multi-byte string is longer than maximum encodable length
+			// multibyte string is longer than maximum encodable length
 			return 0L;
 		}
 

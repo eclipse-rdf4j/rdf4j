@@ -133,9 +133,7 @@ public final class Varint {
 		}
 
 		if (value < 0) {
-			int bytes = descriptor(value) + 1;
-			bb.put((byte) (250 + (bytes - 3)));
-			writeSignificantBits(bb, value, bytes);
+			throw new IllegalArgumentException("Negative value can not be encoded as varint: " + value);
 		} else if (value <= 240) {
 			bb.put((byte) value);
 		} else if (value <= 2287) {
@@ -221,13 +219,12 @@ public final class Varint {
 	/**
 	 * Calculates required length in bytes to encode the given long value using variable-length encoding.
 	 *
-	 * @param value the value value
+	 * @param value the value
 	 * @return length in bytes
 	 */
 	public static int calcLengthUnsigned(long value) {
 		if (value < 0) {
-			int bytes = descriptor(value) + 1;
-			return 1 + bytes;
+			throw new IllegalArgumentException("Negative value can not be encoded as varint: " + value);
 		} else if (value <= 240) {
 			return 1;
 		} else if (value <= 2287) {

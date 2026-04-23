@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb.inlined;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -70,6 +71,7 @@ public class DecimalsTest {
 
 		for (double value : values) {
 			long packedValue = Decimals.packDouble(value);
+			assertFalse(packedValue < 0, "Packed value should be non-negative for value: " + value);
 			assertNotEquals(0L, packedValue, "Packing failed for value: " + value);
 			Literal literal = Decimals.unpackDouble(packedValue, SimpleValueFactory.getInstance());
 			if (Double.isNaN(value)) {
@@ -98,6 +100,7 @@ public class DecimalsTest {
 
 		for (float value : values) {
 			long packedValue = Decimals.packFloat(value);
+			assertFalse(packedValue < 0, "Packed value should be non-negative for value: " + value);
 			assertNotEquals(0L, packedValue, "Packing failed for value: " + value);
 			Literal literal = Decimals.unpackFloat(packedValue, SimpleValueFactory.getInstance());
 			if (Float.isNaN(value)) {
