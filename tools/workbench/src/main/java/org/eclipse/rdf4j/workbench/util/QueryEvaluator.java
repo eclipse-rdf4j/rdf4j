@@ -16,8 +16,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
@@ -37,6 +35,8 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Evaluates queries for QueryServlet.

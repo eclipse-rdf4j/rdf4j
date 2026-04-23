@@ -26,11 +26,6 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.zip.GZIPOutputStream;
 
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
@@ -62,8 +57,12 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 public class QueryServlet extends TransformationServlet {
 

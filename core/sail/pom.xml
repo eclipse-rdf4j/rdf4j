@@ -21,7 +21,6 @@
 		<module>lmdb</module>
 		<module>lucene-api</module>
 		<module>lucene</module>
-		<module>solr</module>
 		<module>elasticsearch</module>
 		<module>elasticsearch-store</module>
 		<module>extensible-store</module>

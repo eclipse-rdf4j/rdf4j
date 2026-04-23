@@ -177,11 +177,6 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
-			<artifactId>rdf4j-sail-solr</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-sail-memory</artifactId>
 			<version>${project.version}</version>
 			<exclusions>

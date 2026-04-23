@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Optional;
 
-import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCacheFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
@@ -495,21 +494,5 @@ public class FedXConfig {
 	 */
 	public int getConsumingIterationMax() {
 		return consumingIterationMax;
-	}
-
-	/**
-	 * Set the CollectionFactory to be used by the federation
-	 *
-	 * <p>
-	 * Can only be set before federation initialization.
-	 * </p>
-	 *
-	 * @param cf
-	 * @return the current config
-	 * @deprecated unusedO
-	 */
-	@Deprecated(forRemoval = true)
-	public FedXConfig withCollectionFactory(CollectionFactory cf) {
-		return this;
 	}
 }

@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
@@ -53,21 +52,21 @@ public class SPARQLResultsJSONWriter extends AbstractSPARQLJSONWriter implements
 	}
 
 	@Override
-	protected void writeValue(Value value) throws IOException, QueryResultHandlerException {
+	protected void writeValue(Value value) throws QueryResultHandlerException {
 		if (value instanceof Triple) {
 			jg.writeStartObject();
 
-			jg.writeStringField(AbstractSPARQLJSONParser.TYPE, SPARQLStarResultsJSONConstants.TRIPLE);
+			jg.writeStringProperty(AbstractSPARQLJSONParser.TYPE, SPARQLStarResultsJSONConstants.TRIPLE);
 
-			jg.writeObjectFieldStart(AbstractSPARQLJSONParser.VALUE);
+			jg.writeObjectPropertyStart(AbstractSPARQLJSONParser.VALUE);
 
-			jg.writeFieldName(SPARQLStarResultsJSONConstants.SUBJECT);
+			jg.writeName(SPARQLStarResultsJSONConstants.SUBJECT);
 			writeValue(((Triple) value).getSubject());
 
-			jg.writeFieldName(SPARQLStarResultsJSONConstants.PREDICATE);
+			jg.writeName(SPARQLStarResultsJSONConstants.PREDICATE);
 			writeValue(((Triple) value).getPredicate());
 
-			jg.writeFieldName(SPARQLStarResultsJSONConstants.OBJECT);
+			jg.writeName(SPARQLStarResultsJSONConstants.OBJECT);
 			writeValue(((Triple) value).getObject());
 
 			jg.writeEndObject();

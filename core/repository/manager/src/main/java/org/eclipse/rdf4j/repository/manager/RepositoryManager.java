@@ -22,8 +22,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
@@ -118,7 +118,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @return Returns the httpClient passed to {@link Repository} construction.
 	 */
 	@Override
-	public abstract HttpClient getHttpClient();
+	public abstract RDF4JHttpClient getHttpClient();
 
 	/**
 	 * Should be called before {@link #init()}.
@@ -126,7 +126,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * @param httpClient The httpClient to use for remote/service calls.
 	 */
 	@Override
-	public abstract void setHttpClient(HttpClient httpClient);
+	public abstract void setHttpClient(RDF4JHttpClient httpClient);
 
 	/**
 	 * Get the {@link ModelFactory} used for creating new {@link Model} objects in the manager.

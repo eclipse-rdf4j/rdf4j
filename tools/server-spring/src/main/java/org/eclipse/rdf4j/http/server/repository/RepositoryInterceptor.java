@@ -10,12 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository;
 
-import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND;
+import static jakarta.servlet.http.HttpServletResponse.SC_NOT_FOUND;
 
 import java.util.Objects;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -30,6 +27,9 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Interceptor for repository requests. Should not be a singleton bean! Configure as inner bean in openrdf-servlet.xml
@@ -65,18 +65,34 @@ public class RepositoryInterceptor extends ServerInterceptor {
 		repositoryManager = Objects.requireNonNull(repMan, "Repository manager was null");
 	}
 
+	private String resolvePath(HttpServletRequest request) {
+		String pathInfoStr = request.getPathInfo();
+		if (pathInfoStr == null || pathInfoStr.isEmpty()) {
+			pathInfoStr = request.getServletPath();
+		}
+		if (pathInfoStr != null && pathInfoStr.startsWith("/" + Protocol.REPOSITORIES)) {
+			pathInfoStr = pathInfoStr.substring(Protocol.REPOSITORIES.length() + 1);
+		}
+		return pathInfoStr;
+	}
+
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse respons, Object handler) throws Exception {
-		String pathInfoStr = request.getPathInfo();
+		String pathInfoStr = resolvePath(request);
 		logger.debug("path info: {}", pathInfoStr);
 
 		repositoryID = null;
 
 		if (pathInfoStr != null && !pathInfoStr.equals("/")) {
-			String[] pathInfo = pathInfoStr.substring(1).split("/");
-			if (pathInfo.length > 0) {
-				repositoryID = pathInfo[0];
-				logger.debug("repositoryID is '{}'", repositoryID);
+			if (pathInfoStr.startsWith("/")) {
+				pathInfoStr = pathInfoStr.substring(1);
+			}
+			if (!pathInfoStr.isEmpty()) {
+				String[] pathInfo = pathInfoStr.split("/");
+				if (pathInfo.length > 0 && !pathInfo[0].isEmpty()) {
+					repositoryID = pathInfo[0];
+					logger.debug("repositoryID is '{}'", repositoryID);
+				}
 			}
 		}
 
@@ -107,7 +123,8 @@ public class RepositoryInterceptor extends ServerInterceptor {
 			try {
 				// For requests to delete a repository, we must not attempt to initialize the repository. Otherwise a
 				// corrupt/invalid configuration can block deletion.
-				if ("DELETE".equals(request.getMethod()) && request.getPathInfo().equals("/" + nextRepositoryID)) {
+				String requestPath = resolvePath(request);
+				if ("DELETE".equals(request.getMethod()) && ("/" + nextRepositoryID).equals(requestPath)) {
 					request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
 					return;
 				}
@@ -150,4 +167,5 @@ public class RepositoryInterceptor extends ServerInterceptor {
 		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 		return conn;
 	}
+
 }

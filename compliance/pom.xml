@@ -14,7 +14,6 @@
 		<module>model</module>
 		<module>sparql</module>
 		<module>lucene</module>
-		<module>solr</module>
 		<module>elasticsearch</module>
 		<module>geosparql</module>
 	</modules>
