@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -59,14 +60,14 @@ class AASGeneratorTest {
 			assertThat(connection.hasStatement(VF.createIRI("urn:aas:ProductionLineAAS:PL-001"), modelVersion,
 					VF.createLiteral("3.1"), false)).isTrue();
 			assertThat(
-					connection.hasStatement(VF.createIRI("urn:aas:DriveUnitAAS:DU-101"), iri("assetInformation"), null,
+					connection.hasStatement(VF.createIRI("urn:aas:DriveUnitAAS:DU-1-1"), iri("assetInformation"), null,
 							false)).isTrue();
-			assertThat(connection.hasStatement(VF.createIRI("urn:submodel:DriveUnit:TechnicalData:DU-101"),
+			assertThat(connection.hasStatement(VF.createIRI("urn:submodel:DriveUnit:TechnicalData:DU-1-1"),
 					submodelElement,
-					VF.createIRI("urn:submodel:DriveUnit:TechnicalData:DU-101/motorConfig"), false)).isTrue();
+					VF.createIRI("urn:submodel:DriveUnit:TechnicalData:DU-1-1/motorConfig"), false)).isTrue();
 			assertThat(connection.hasStatement(
-					VF.createIRI("urn:submodel:Sensor:TechnicalData:SEN-101/measurementRange"),
-					value, VF.createIRI("urn:submodel:Sensor:TechnicalData:SEN-101/measurementRange.rangeMin"), false))
+					VF.createIRI("urn:submodel:Sensor:TechnicalData:SEN-1-1/measurementRange"),
+					value, VF.createIRI("urn:submodel:Sensor:TechnicalData:SEN-1-1/measurementRange.rangeMin"), false))
 							.isTrue();
 			assertThat(connection.hasStatement(null, semanticId, null, false)).isTrue();
 			assertThat(connection.hasStatement(null, keyType, null, false)).isTrue();
@@ -97,7 +98,56 @@ class AASGeneratorTest {
 							VF.createLiteral("Assembly Line 2"), false)).isTrue();
 			assertThat(connection.hasStatement(VF.createIRI("urn:submodel:ProductionLine:Overview:PL-002"),
 					submodelElement,
-					VF.createIRI("urn:submodel:ProductionLine:Overview:PL-002/consistsOf_DU_102"), false)).isTrue();
+					VF.createIRI("urn:submodel:ProductionLine:Overview:PL-002/consistsOf_DU_2_2"), false)).isTrue();
+		}
+		repository.shutDown();
+	}
+
+	@Test
+	void query1HasResults() {
+		Repository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		String query1 = """
+			PREFIX aas: <https://admin-shell.io/aas/3/>
+			SELECT ?propertyName ?propertyValue ?valueType
+			WHERE {
+			  <urn:aas:DriveUnitAAS:DU-1-1> a aas:AssetAdministrationShell ;
+			       aas:submodel/aas:submodelElement/(aas:value)* ?prop .
+			  ?prop a aas:Property ;
+			        aas:idShort ?propertyName ;
+			        aas:value ?propertyValue .
+			  OPTIONAL { ?prop aas:valueType ?valueType }
+			}
+			""";
+		try (RepositoryConnection connection = repository.getConnection()) {
+			new AASGenerator().generateAndAdd(connection, 20, 2, 2);
+			try (var result = connection.prepareTupleQuery(query1).evaluate()) {
+				assertThat(result.stream().count()).isEqualTo(3);
+			}
+		}
+		repository.shutDown();
+	}
+
+	@Test
+	void query2HasResults() {
+		Repository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		String query2 = """
+			PREFIX aas: <https://admin-shell.io/aas/3/>
+			SELECT * WHERE {
+			  ?aas a aas:AssetAdministrationShell ;
+			      aas:assetInformation/aas:specificAssetId [ aas:value "DriveUnit" ] ;
+			      aas:submodel/aas:submodelElement/(aas:value)* ?p1 .
+			  ?p1 aas:idShort "ratedPower" ;
+			      ?pred ?v1 .
+			  FILTER (?v1 > 9.0)
+			}
+			""";
+		try (RepositoryConnection connection = repository.getConnection()) {
+			new AASGenerator().generateAndAdd(connection, 20, 2, 2);
+			try (var result = connection.prepareTupleQuery(query2).evaluate()) {
+				assertThat(result.stream().count()).isEqualTo(40);
+			}
 		}
 		repository.shutDown();
 	}

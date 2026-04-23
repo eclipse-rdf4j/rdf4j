@@ -92,12 +92,12 @@ public class AASGenerator {
 			String productionLineId = String.format("PL-%03d", i);
 
 			List<String> driveUnitIds = new ArrayList<>();
-			for (int j = 0; j < driveUnitCount; j++) {
+			for (int j = 1; j <= driveUnitCount; j++) {
 				driveUnitIds.add("DU-" + i + "-" + j);
 			}
 
 			List<String> sensorIds = new ArrayList<>();
-			for (int j = 0; j < sensorCount; j++) {
+			for (int j = 1; j <= sensorCount; j++) {
 				sensorIds.add("SEN-" + i + "-" + j);
 			}
 
@@ -170,12 +170,14 @@ public class AASGenerator {
 				.add(ns1("submodelReference"), createReference(builder, tech, KEY_TYPE_SUBMODEL, 0))
 				.add(ns1("submodelReference"), createReference(builder, maintenance, KEY_TYPE_SUBMODEL, 1));
 
+		var id1 = addSpecificAssetId(builder, 0, "componentType", "DriveUnit");
+		var id2 = addSpecificAssetId(builder, 1, "parentLine", productionLineId);
 		builder.subject(assetInfo)
 				.add(RDF.TYPE, ASSET_INFORMATION)
 				.add(ns1("assetKind"), ASSET_KIND_INSTANCE)
 				.add(ns1("globalAssetId"), assetId)
-				.add(ns1("specificAssetId"), addSpecificAssetId(builder, 0, "componentType", "DriveUnit"))
-				.add(ns1("specificAssetId"), addSpecificAssetId(builder, 1, "parentLine", productionLineId));
+				.add(ns1("specificAssetId"), id1)
+				.add(ns1("specificAssetId"), id2);
 
 		builder.subject(tech)
 				.add(RDF.TYPE, SUBMODEL)
@@ -194,23 +196,23 @@ public class AASGenerator {
 				.add(ns1("value"), ratedPower)
 				.add(ns1("value"), ratedSpeed);
 
+		var semanticId = createReference(builder, iri(CONCEPT_RATED_POWER), KEY_TYPE_CONCEPT_DESCRIPTION, null);
 		builder.subject(ratedPower)
 				.add(RDF.TYPE, PROPERTY)
 				.add(ns1("idShort"), "ratedPower")
 				.add(ns1("index"), 0)
 				.add(ns1("conceptDescription"), iri(CONCEPT_RATED_POWER))
-				.add(ns1("semanticId"),
-						createReference(builder, iri(CONCEPT_RATED_POWER), KEY_TYPE_CONCEPT_DESCRIPTION, null))
+				.add(ns1("semanticId"), semanticId)
 				.add(ns1("value"), randomDouble(10, 25))
 				.add(ns1("valueType"), XSD.DOUBLE);
 
+		semanticId = createReference(builder, iri(CONCEPT_RATED_SPEED), KEY_TYPE_CONCEPT_DESCRIPTION, null);
 		builder.subject(ratedSpeed)
 				.add(RDF.TYPE, PROPERTY)
 				.add(ns1("idShort"), "ratedSpeed")
 				.add(ns1("index"), 1)
 				.add(ns1("conceptDescription"), iri(CONCEPT_RATED_SPEED))
-				.add(ns1("semanticId"),
-						createReference(builder, iri(CONCEPT_RATED_SPEED), KEY_TYPE_CONCEPT_DESCRIPTION, null))
+				.add(ns1("semanticId"), semanticId)
 				.add(ns1("value"), randomInt(2200, 3200))
 				.add(ns1("valueType"), XSD.INTEGER);
 
@@ -224,13 +226,13 @@ public class AASGenerator {
 				.add(ns1("modelingKind"), MODELLING_KIND_INSTANCE)
 				.add(ns1("submodelElement"), operatingHours);
 
+		semanticId = createReference(builder, iri(CONCEPT_OPERATING_HOURS), KEY_TYPE_CONCEPT_DESCRIPTION, null);
 		builder.subject(operatingHours)
 				.add(RDF.TYPE, PROPERTY)
 				.add(ns1("idShort"), "operatingHours")
 				.add(ns1("index"), 0)
 				.add(ns1("conceptDescription"), iri(CONCEPT_OPERATING_HOURS))
-				.add(ns1("semanticId"),
-						createReference(builder, iri(CONCEPT_OPERATING_HOURS), KEY_TYPE_CONCEPT_DESCRIPTION, null))
+				.add(ns1("semanticId"), semanticId)
 				.add(ns1("value"), randomDouble(500, 750))
 				.add(ns1("valueType"), XSD.DOUBLE);
 	}
@@ -251,6 +253,7 @@ public class AASGenerator {
 				.add(ns1("assetAdministrationShell"), aas)
 				.add(ns1("submodel"), tech);
 
+		var ref = createReference(builder, tech, KEY_TYPE_SUBMODEL, 0);
 		builder.subject(aas)
 				.add(RDF.TYPE, ASSET_ADMINISTRATION_SHELL)
 				.add(ns1("id"), aasId)
@@ -258,7 +261,7 @@ public class AASGenerator {
 				.add(ns1("modelVersion"), "3.1")
 				.add(ns1("assetInformation"), assetInfo)
 				.add(ns1("submodel"), tech)
-				.add(ns1("submodelReference"), createReference(builder, tech, KEY_TYPE_SUBMODEL, 0));
+				.add(ns1("submodelReference"), ref);
 
 		builder.subject(assetInfo)
 				.add(RDF.TYPE, ASSET_INFORMATION)
@@ -282,23 +285,23 @@ public class AASGenerator {
 				.add(ns1("value"), rangeMax)
 				.add(ns1("value"), rangeMin);
 
+		var semanticId = createReference(builder, iri(CONCEPT_MIN_TEMP), KEY_TYPE_CONCEPT_DESCRIPTION, null);
 		builder.subject(rangeMin)
 				.add(RDF.TYPE, PROPERTY)
 				.add(ns1("idShort"), "rangeMin")
 				.add(ns1("index"), 0)
 				.add(ns1("conceptDescription"), iri(CONCEPT_MIN_TEMP))
-				.add(ns1("semanticId"),
-						createReference(builder, iri(CONCEPT_MIN_TEMP), KEY_TYPE_CONCEPT_DESCRIPTION, null))
+				.add(ns1("semanticId"), semanticId)
 				.add(ns1("value"), randomDouble(-50, -10))
 				.add(ns1("valueType"), XSD.DOUBLE);
 
+		semanticId = createReference(builder, iri(CONCEPT_MAX_TEMP), KEY_TYPE_CONCEPT_DESCRIPTION, null);
 		builder.subject(rangeMax)
 				.add(RDF.TYPE, PROPERTY)
 				.add(ns1("idShort"), "rangeMax")
 				.add(ns1("index"), 1)
 				.add(ns1("conceptDescription"), iri(CONCEPT_MAX_TEMP))
-				.add(ns1("semanticId"),
-						createReference(builder, iri(CONCEPT_MAX_TEMP), KEY_TYPE_CONCEPT_DESCRIPTION, null))
+				.add(ns1("semanticId"), semanticId)
 				.add(ns1("value"), randomDouble(50, 150))
 				.add(ns1("valueType"), XSD.DOUBLE);
 	}
@@ -316,6 +319,7 @@ public class AASGenerator {
 				.add(ns1("assetAdministrationShell"), aas)
 				.add(ns1("submodel"), submodel);
 
+		var ref = createReference(builder, submodel, KEY_TYPE_SUBMODEL, 0);
 		builder.subject(aas)
 				.add(RDF.TYPE, ASSET_ADMINISTRATION_SHELL)
 				.add(ns1("id"), aasId)
@@ -323,7 +327,7 @@ public class AASGenerator {
 				.add(ns1("modelVersion"), "3.1")
 				.add(ns1("assetInformation"), assetInfo)
 				.add(ns1("submodel"), submodel)
-				.add(ns1("submodelReference"), createReference(builder, submodel, KEY_TYPE_SUBMODEL, 0));
+				.add(ns1("submodelReference"), ref);
 
 		builder.subject(assetInfo)
 				.add(RDF.TYPE, ASSET_INFORMATION)
@@ -349,7 +353,7 @@ public class AASGenerator {
 				.add(RDF.TYPE, PROPERTY)
 				.add(ns1("idShort"), "lineName")
 				.add(ns1("index"), 0)
-				.add(ns1("value"), "Assembly Line " + (lineIndex + 1))
+				.add(ns1("value"), "Assembly Line " + lineIndex)
 				.add(ns1("valueType"), XSD.STRING);
 
 		builder.subject(lineStatus)

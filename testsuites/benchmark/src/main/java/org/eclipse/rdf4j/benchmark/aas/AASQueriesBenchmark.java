@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -58,7 +59,7 @@ public class AASQueriesBenchmark {
 			PREFIX aas: <https://admin-shell.io/aas/3/>
 			SELECT ?propertyName ?propertyValue ?valueType
 			WHERE {
-			  <urn:aas:DriveUnitAAS:DU-101> a aas:AssetAdministrationShell ;
+			  <urn:aas:DriveUnitAAS:DU-1-1> a aas:AssetAdministrationShell ;
 			       aas:submodel/aas:submodelElement/(aas:value)* ?prop .
 			  ?prop a aas:Property ;
 			        aas:idShort ?propertyName ;
@@ -106,8 +107,8 @@ public class AASQueriesBenchmark {
 	@Param({ "100" })
 	private int sensorCount;
 
-	// @Param({ "lmdb" })
-	@Param({ "lmdb", "memory", "native" })
+	@Param({ "memory" })
+	// @Param({ "lmdb", "memory", "native" })
 	private String store;
 
 	private File dataDir;
@@ -131,6 +132,9 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println("Number of statements: " + connection.size());
 		}
+		/*try (SailRepositoryConnection connection = repository.getConnection()) {
+			System.out.println(connection.prepareTupleQuery(QUERY_2).explain(Explanation.Level.Executed));
+		}*/
 	}
 
 	@TearDown(Level.Trial)
