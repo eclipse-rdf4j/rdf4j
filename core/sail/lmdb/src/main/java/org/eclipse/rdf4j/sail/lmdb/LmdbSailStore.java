@@ -98,6 +98,7 @@ class LmdbSailStore implements SailStore {
 					.withThrottleMillis(2)
 					.withEstimateCacheSeconds(60));
 	private LmdbFilterSelectivityStats filterSelectivityStats;
+	private LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
 		t.setDaemon(true);
@@ -304,6 +305,7 @@ class LmdbSailStore implements SailStore {
 			var valueStore = new ValueStore(new File(dataDir, "values"), config);
 			this.valueStore = valueStore;
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
+			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
 			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
@@ -312,6 +314,7 @@ class LmdbSailStore implements SailStore {
 			sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 			sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
 			sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
+			sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
 			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 			if (!snapshotExists) {
 				sketchBasedJoinEstimator.rebuildOnceSlow();
@@ -453,7 +456,8 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats);
+		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
+				statementPatternCardinalitySource);
 	}
 
 	@Override

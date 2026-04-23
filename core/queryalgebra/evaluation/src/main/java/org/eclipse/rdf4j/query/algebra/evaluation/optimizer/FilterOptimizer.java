@@ -159,13 +159,7 @@ public class FilterOptimizer implements QueryOptimizer {
 	}
 
 	private static int filterConditionCost(ValueExpr condition) {
-		if (condition instanceof Exists) {
-			return 100;
-		}
-		if (condition instanceof Not not && not.getArg() instanceof Exists) {
-			return 100;
-		}
-		return 0;
+		return FilterConditionCostModel.conditionCostClass(condition);
 	}
 
 	private static And mergeConditionsInCostOrder(ValueExpr leftCondition, ValueExpr rightCondition) {

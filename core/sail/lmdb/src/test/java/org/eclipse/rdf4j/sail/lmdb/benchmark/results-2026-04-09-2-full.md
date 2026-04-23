@@ -1613,15 +1613,15 @@ VALUES (?a ?b) {
 (<http://example.com/theme/social/user/11> <http://example.com/theme/social/user/11>)
 }
 FILTER (?a != ?b)
-?a <http://example.com/theme/social/follows> ?b .
 VALUES ?c { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
 FILTER ((?b != ?c) && (?a != ?c))
-?b <http://example.com/theme/social/follows> ?c .
 VALUES ?d { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
 FILTER (?c != ?d)
-?c <http://example.com/theme/social/follows> ?d .
 VALUES ?e { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
 FILTER (?d != ?e)
+?a <http://example.com/theme/social/follows> ?b .
+?b <http://example.com/theme/social/follows> ?c .
+?c <http://example.com/theme/social/follows> ?d .
 ?d <http://example.com/theme/social/follows> ?e .
 ?e <http://example.com/theme/social/follows> ?a .
 OPTIONAL {

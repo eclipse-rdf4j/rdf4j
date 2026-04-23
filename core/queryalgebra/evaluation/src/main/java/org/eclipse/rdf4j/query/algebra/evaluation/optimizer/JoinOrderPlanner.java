@@ -26,6 +26,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public interface JoinOrderPlanner {
 
+	int DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = 20;
+	int FILTER_COST_CHEAP = 0;
+	int FILTER_COST_EXPENSIVE = 1;
+
 	enum Algorithm {
 		GREEDY,
 		DYNAMIC_PROGRAMMING
@@ -101,6 +105,11 @@ public interface JoinOrderPlanner {
 	final class FilterConstraint {
 		private final Set<String> requiredVars;
 		private final double estimatedPassRatio;
+		/**
+		 * Normalized filter evaluation-cost class. Use {@link #FILTER_COST_CHEAP} for filters whose evaluation is
+		 * effectively free compared with tuple access, and {@link #FILTER_COST_EXPENSIVE} for filters that may execute
+		 * a nested tuple expression.
+		 */
 		private final int conditionCost;
 		private final String debugLabel;
 		private final String selectivitySource;
@@ -208,8 +217,17 @@ public interface JoinOrderPlanner {
 
 	final class PlanStep {
 		private final Set<String> boundVarsBefore;
+		/**
+		 * Rows produced by evaluating this factor under the bindings available before the step.
+		 */
 		private final double factorOutputRows;
+		/**
+		 * Cumulative prefix rows after this factor is joined and newly unlocked deferred filters are applied.
+		 */
 		private final double prefixOutputRows;
+		/**
+		 * Incremental work for this step, including factor access and newly unlocked deferred-filter evaluation.
+		 */
 		private final double stepWorkRows;
 		private final Map<String, String> stringMetrics;
 		private final Map<String, Double> doubleMetrics;

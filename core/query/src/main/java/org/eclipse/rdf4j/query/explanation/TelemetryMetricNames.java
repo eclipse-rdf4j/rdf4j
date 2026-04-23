@@ -117,10 +117,12 @@ public final class TelemetryMetricNames {
 	public static final String PLANNED_WORK_ROWS = "plannedWorkRows";
 	public static final String PLANNED_FILTER_PASS_RATIO = "plannedFilterPassRatio";
 	public static final String PLANNED_FILTER_EVIDENCE_COUNT = "plannedFilterEvidenceCount";
+	public static final String PLANNED_FILTER_CONFIDENCE = "plannedFilterConfidence";
 	public static final String FILTER_SELECTIVITY_SOURCE = "filterSelectivitySource";
 	public static final String PLANNED_INDEX_ACCESS_MODE = "plannedIndexAccessMode";
 	public static final String PLANNED_ACCESS_ROWS = "plannedAccessRows";
 	public static final String PLANNED_ACCESS_ROWS_AFTER_FILTER = "plannedAccessRowsAfterFilter";
+	public static final String PLANNED_ACCESS_PATH_CANDIDATES = "plannedAccessPathCandidates";
 	public static final String PLANNED_MISSING_LOOKUP_COMPONENTS = "plannedMissingLookupComponents";
 	public static final String DEFERRED_FILTER_SCOPE = "deferredFilterScope";
 	public static final String SHARED_JOIN_VARS = "sharedJoinVars";
@@ -151,6 +153,12 @@ public final class TelemetryMetricNames {
 	public static final String OPTIMIZER_PLANNER_PATH = OPTIMIZER_PREFIX + "plannerPath";
 	public static final String OPTIMIZER_PLANNER_REJECTED_FACTOR = OPTIMIZER_PREFIX + "plannerRejectedFactor";
 	public static final String OPTIMIZER_PLANNER_DIAGNOSTICS = OPTIMIZER_PREFIX + "plannerDiagnostics";
+	public static final String OPTIMIZER_STRUCTURAL_SUMMARY = OPTIMIZER_PREFIX + "structuralSummary";
+	public static final String OPTIMIZER_LOGICAL_EXPLORATION = OPTIMIZER_PREFIX + "logicalExploration";
+	public static final String OPTIMIZER_PHYSICAL_REFINEMENT = OPTIMIZER_PREFIX + "physicalRefinement";
+	public static final String OPTIMIZER_RUNTIME_HINTS = OPTIMIZER_PREFIX + "runtimeHints";
+	public static final String OPTIMIZER_RUNTIME_FEEDBACK = OPTIMIZER_PREFIX + "runtimeFeedback";
+	public static final String OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE = OPTIMIZER_PREFIX + "runtimeFeedbackConfidence";
 
 	public static boolean isOptimizerMetric(String metricName) {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);

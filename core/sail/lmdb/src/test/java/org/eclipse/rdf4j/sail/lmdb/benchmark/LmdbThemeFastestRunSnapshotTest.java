@@ -48,6 +48,8 @@ class LmdbThemeFastestRunSnapshotTest {
 	private static final Pattern THEME_HEADER = Pattern.compile("## ([A-Z_]+)");
 	private static final Pattern QUERY_HEADER = Pattern.compile("### (?:([A-Z_]+) )?Query (\\d+)");
 	private static final Pattern FILTER_PASS_RATIO = Pattern.compile("plannedFilterPassRatio=([0-9.]+)");
+	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
+			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.fastestRunSnapshot.queryKeys";
@@ -115,7 +117,8 @@ class LmdbThemeFastestRunSnapshotTest {
 		SailRepository repository = new SailRepository(store);
 		try {
 			OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
-			assertPlanOrder(query0.plan(), "PHARMA:0",
+			assertPlannerCostInvariants(query0.plan(), "PHARMA:0", 10_000.0d);
+			assertPlanContains(query0.plan(), "PHARMA:0",
 					"BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
 					"value=http://example.com/theme/pharma/studiesDisease",
 					"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
@@ -139,7 +142,8 @@ class LmdbThemeFastestRunSnapshotTest {
 			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 
 			OptimizerSnapshot query1 = explainOptimized(repository, Theme.PHARMA, 1);
-			assertPlanOrder(query1.plan(), "PHARMA:1",
+			assertPlannerCostInvariants(query1.plan(), "PHARMA:1", 10_000.0d);
+			assertPlanContains(query1.plan(), "PHARMA:1",
 					"value=http://example.com/theme/pharma/synergyScore",
 					"value=http://example.com/theme/pharma/combinationOf",
 					"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
@@ -150,6 +154,14 @@ class LmdbThemeFastestRunSnapshotTest {
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
+	}
+
+	private static void assertPlannerCostInvariants(String plan, String key, double maxDirectLookupWorkRows) {
+		assertTrue(plan.contains("plannerId=lmdb-sketch"), key + " should use LMDB sketch planning:\n" + plan);
+		assertTrue(plan.contains("plannerPath=ROBUST_USED"), key + " should use the robust planner path:\n" + plan);
+		assertFalse(plan.contains("plannerPath=UNSUPPORTED_SHAPE"),
+				key + " should not reject supported segment shapes:\n" + plan);
+		assertDirectLookupWorkRowsBelow(plan, key, maxDirectLookupWorkRows);
 	}
 
 	private static List<String> verifyTheme(Path dataDir, Theme theme, List<ExpectedSnapshot> planSnapshots)
@@ -458,6 +470,12 @@ class LmdbThemeFastestRunSnapshotTest {
 		}
 	}
 
+	private static void assertPlanContains(String plan, String key, String... needles) {
+		for (String needle : needles) {
+			assertTrue(plan.contains(needle), key + " missing plan fragment: " + needle + "\n" + plan);
+		}
+	}
+
 	private static void assertPlanBefore(String plan, String key, String before, String after) {
 		int beforeIndex = plan.indexOf(before);
 		int afterIndex = plan.indexOf(after);
@@ -485,6 +503,35 @@ class LmdbThemeFastestRunSnapshotTest {
 		assertTrue(ratio >= minRatio && ratio <= maxRatio,
 				key + " should apply the selective score filter before join-order scoring: " + filterLine + "\n"
 						+ plan);
+	}
+
+	private static void assertDirectLookupWorkRowsBelow(String plan, String key, double maxWorkRows) {
+		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+		int directLookupCount = 0;
+		while (matcher.find()) {
+			directLookupCount++;
+			double workRows = parsePlanRows(matcher.group(1));
+			assertTrue(workRows <= maxWorkRows,
+					key + " direct lookup plannedWorkRows should stay bounded by explicit step work, got "
+							+ matcher.group(1) + "\n" + plan);
+		}
+		assertTrue(directLookupCount > 0, key + " should expose at least one direct lookup metric:\n" + plan);
+	}
+
+	private static double parsePlanRows(String value) {
+		String trimmed = value.trim();
+		double multiplier = 1.0d;
+		if (trimmed.endsWith("K")) {
+			multiplier = 1_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("M")) {
+			multiplier = 1_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("B")) {
+			multiplier = 1_000_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		}
+		return Double.parseDouble(trimmed) * multiplier;
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {

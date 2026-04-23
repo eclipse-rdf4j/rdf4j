@@ -43,6 +43,14 @@ public interface JoinStatsProvider {
 	}
 
 	/**
+	 * Returns the observed pass ratio for a generalized filter template and pattern key, or a negative value when
+	 * unavailable.
+	 */
+	default double getFilterTemplatePassRatio(PatternKey key, String filterTemplateKey) {
+		return -1.0d;
+	}
+
+	/**
 	 * Returns the observed aggregate pass ratio for all filters seen on a pattern key, or a negative value when
 	 * unavailable.
 	 */
@@ -55,6 +63,14 @@ public interface JoinStatsProvider {
 	 * unavailable.
 	 */
 	default long getFilterObservationCount(PatternKey key, String filterKey) {
+		return -1L;
+	}
+
+	/**
+	 * Returns the number of observed outcomes for a generalized filter template and pattern key, or a negative value
+	 * when unavailable.
+	 */
+	default long getFilterTemplateObservationCount(PatternKey key, String filterTemplateKey) {
 		return -1L;
 	}
 

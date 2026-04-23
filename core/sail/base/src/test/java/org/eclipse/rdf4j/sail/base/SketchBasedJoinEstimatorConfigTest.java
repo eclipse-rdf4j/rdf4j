@@ -15,17 +15,14 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.datasketches.common.ResizeFactor;
-import org.apache.datasketches.theta.Intersection;
-import org.apache.datasketches.theta.SetOperation;
-import org.apache.datasketches.theta.Sketch;
-import org.apache.datasketches.theta.UpdateSketch;
-import org.apache.datasketches.thetacommon.ThetaUtil;
+import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -175,14 +172,19 @@ class SketchBasedJoinEstimatorConfigTest {
 		var kField = bufA.getClass().getDeclaredField("k");
 		kField.setAccessible(true);
 
-		assertEquals(ThetaUtil.DEFAULT_NOMINAL_ENTRIES, kField.getInt(bufA));
+		var defaultKField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_SKETCH_NOMINAL_ENTRIES");
+		defaultKField.setAccessible(true);
+		assertEquals(defaultKField.getInt(null), kField.getInt(bufA));
 	}
 
 	@Test
 	void sketchesUseResizeFactorX8() throws Exception {
 		var newSkMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("newSk", int.class);
 		newSkMethod.setAccessible(true);
-		UpdateSketch sketch = (UpdateSketch) newSkMethod.invoke(null, ThetaUtil.DEFAULT_NOMINAL_ENTRIES);
+		var defaultKField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_SKETCH_NOMINAL_ENTRIES");
+		defaultKField.setAccessible(true);
+		ArrayOfDoublesUpdatableSketch sketch = (ArrayOfDoublesUpdatableSketch) newSkMethod.invoke(null,
+				defaultKField.getInt(null));
 		assertEquals(ResizeFactor.X8, sketch.getResizeFactor());
 	}
 
@@ -291,7 +293,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void zeroIntersectionRowBudgetZeroDisablesRareOverlapFallback() throws Exception {
+	void tupleSketchJoinSurvivesWhenRareOverlapFallbackDisabled() throws Exception {
 		PropertyState properties = PropertyState.capture(EXACT_LIMIT_PROPERTY, SKEW_RATIO_PROPERTY, ROW_BUDGET_PROPERTY,
 				SAMPLE_SIZE_PROPERTY);
 		try {
@@ -307,10 +309,15 @@ class SketchBasedJoinEstimatorConfigTest {
 					.withZeroIntersectionRowBudget(0L)
 					.withZeroIntersectionSampleSize(32));
 
-			assertEquals(0.0d, fixture.thetaIntersectionDistinct, 0.0d,
-					"Test precondition: raw theta intersection should miss the rare overlap");
-			assertEquals(0.0d, fixture.estimator.cardinality(fixture.join), 0.0d,
-					"Zero row budget should disable the rare-overlap fallback");
+			double estimate = fixture.estimator.cardinality(fixture.join);
+			double relativeError = Math.abs(estimate - fixture.actualJoinRows) / fixture.actualJoinRows;
+
+			assertTrue(estimate > 0.0d,
+					() -> "Tuple sketch dot products should estimate rare overlap without fallback sampling. actual="
+							+ fixture.actualJoinRows);
+			assertTrue(relativeError <= 0.35d,
+					() -> "Sampled tuple-sketch rare-overlap estimate should stay bounded. estimate=" + estimate
+							+ ", actual=" + fixture.actualJoinRows + ", error=" + relativeError);
 		} finally {
 			properties.restore();
 		}
@@ -330,14 +337,11 @@ class SketchBasedJoinEstimatorConfigTest {
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(rareOverlapStore, config);
 			estimator.rebuildOnceSlow();
 
-			double thetaIntersectionDistinct = rawThetaIntersectionDistinct(estimator, locatedAt, hasName);
-			if (thetaIntersectionDistinct == 0.0d) {
-				return new RareOverlapFixture(estimator, rareOverlapJoin(locatedAt, hasName),
-						thetaIntersectionDistinct);
-			}
+			return new RareOverlapFixture(estimator, rareOverlapJoin(locatedAt, hasName),
+					overlapBranches * copiesPerBranch);
 		}
 
-		throw new AssertionError("Unable to construct a zero-intersection rare-overlap fixture");
+		throw new AssertionError("Unable to construct a rare-overlap fixture");
 	}
 
 	private static void populateRareOverlapData(StubSailStore store, IRI locatedAt, IRI hasName, int overlapBranches,
@@ -357,27 +361,6 @@ class SketchBasedJoinEstimatorConfigTest {
 			Resource noiseSubject = VF.createIRI("urn:noise:" + noiseIndex);
 			store.add(VF.createStatement(noiseSubject, hasName, VF.createLiteral("Noise " + noiseIndex)));
 		}
-	}
-
-	private static double rawThetaIntersectionDistinct(SketchBasedJoinEstimator estimator, IRI locatedAt, IRI hasName)
-			throws Exception {
-		Object leftEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O, null, locatedAt.stringValue(),
-				null, null);
-		Object rightEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.S, null, hasName.stringValue(),
-				null, null);
-		Sketch leftBindings = bindingsSketch(leftEstimate);
-		Sketch rightBindings = bindingsSketch(rightEstimate);
-
-		Intersection intersection = SetOperation.builder().buildIntersection();
-		intersection.intersect(leftBindings);
-		intersection.intersect(rightBindings);
-		return intersection.getResult().getEstimate();
-	}
-
-	private static Sketch bindingsSketch(Object joinEstimate) throws Exception {
-		Field bindingsField = joinEstimate.getClass().getDeclaredField("bindings");
-		bindingsField.setAccessible(true);
-		return (Sketch) bindingsField.get(joinEstimate);
 	}
 
 	private static Join rareOverlapJoin(IRI locatedAt, IRI hasName) {
@@ -404,7 +387,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		return field.getDouble(target);
 	}
 
-	private record RareOverlapFixture(SketchBasedJoinEstimator estimator, Join join, double thetaIntersectionDistinct) {
+	private record RareOverlapFixture(SketchBasedJoinEstimator estimator, Join join, int actualJoinRows) {
 	}
 
 	private static final class PropertyState {

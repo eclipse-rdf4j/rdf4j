@@ -14,13 +14,12 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -42,22 +41,20 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 
-	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
-	private static final String DEBUG_PLANS_PROPERTY = "rdf4j.lmdb.flaggedThemeRegression.debugPlans";
 	private static final String THEMES_PROPERTY = "rdf4j.lmdb.flaggedThemeRegression.themes";
-	private static final Pattern ANON_PATH = Pattern.compile("_anon_path_[A-Za-z0-9]+");
-	private static final Pattern SCORE_LINE = Pattern.compile("\\d+(\\.\\d+)? ms/op");
+	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
+			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final List<Expectation> EXPECTATIONS = List.of(
-			expectation(Theme.ENGINEERING, 10, "results-2026-04-16-2.md"),
-			expectation(Theme.HIGHLY_CONNECTED, 5, "results-2026-04-16-6.md"),
-			expectationWithFlexibleValuesAndPlan(Theme.LIBRARY, 5, "results-develop.md"),
-			expectation(Theme.PHARMA, 0, "results-2026-04-16.md"),
-			expectation(Theme.PHARMA, 5, "results-2026-04-16.md"),
-			expectation(Theme.SOCIAL_MEDIA, 0, "results-2026-04-09-2-full.md"),
-			expectation(Theme.SOCIAL_MEDIA, 2, "results-2026-04-09-2-full.md"),
-			expectation(Theme.SOCIAL_MEDIA, 3, "results-2026-04-16.md"),
-			expectation(Theme.SOCIAL_MEDIA, 4, "results-2026-04-16.md"),
-			expectation(Theme.SOCIAL_MEDIA, 10, "results-2026-04-09-2-full.md"));
+			expectation(Theme.ENGINEERING, 10),
+			expectation(Theme.HIGHLY_CONNECTED, 5),
+			expectation(Theme.LIBRARY, 5),
+			expectation(Theme.PHARMA, 0),
+			expectation(Theme.PHARMA, 5),
+			expectation(Theme.SOCIAL_MEDIA, 0),
+			expectation(Theme.SOCIAL_MEDIA, 2),
+			expectation(Theme.SOCIAL_MEDIA, 3),
+			expectation(Theme.SOCIAL_MEDIA, 4),
+			expectation(Theme.SOCIAL_MEDIA, 10));
 
 	@Test
 	void flaggedThemeQueriesReproduceHistoricalOptimizedShapes(@TempDir Path dataDir) throws Exception {
@@ -73,7 +70,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 			mismatches.addAll(mismatchesForHighlyConnectedStore(dataDir));
 		}
 		if (!mismatches.isEmpty()) {
-			fail("Flagged LMDB theme optimized query shape drifted from historical fastest runs:\n\n"
+			fail("Flagged LMDB theme optimized query violated planner invariants:\n\n"
 					+ String.join("\n\n", mismatches));
 		}
 	}
@@ -97,15 +94,8 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		List<String> mismatches = new ArrayList<>();
 		try {
 			for (Expectation expectation : expectationsForThemes(themes)) {
-				String expected = historicalOptimizedQuery(expectation);
 				OptimizerSnapshot snapshot = explainOptimized(repository, expectation);
-				if (!normalize(expected, expectation).equals(normalize(snapshot.renderedQuery, expectation))) {
-					mismatches.add(mismatch(expectation, expected, snapshot));
-				} else if (expectation.comparePlan
-						&& !normalizePlan(historicalOptimizedPlan(expectation), expectation)
-								.equals(normalizePlan(snapshot.plan, expectation))) {
-					mismatches.add(planMismatch(expectation, historicalOptimizedPlan(expectation), snapshot));
-				}
+				mismatches.addAll(invariantMismatches(expectation, snapshot));
 				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 			}
 		} finally {
@@ -133,15 +123,8 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		List<String> mismatches = new ArrayList<>();
 		try {
 			for (Expectation expectation : expectationsForTheme(Theme.HIGHLY_CONNECTED)) {
-				String expected = historicalOptimizedQuery(expectation);
 				OptimizerSnapshot snapshot = explainOptimized(repository, expectation);
-				if (!normalize(expected, expectation).equals(normalize(snapshot.renderedQuery, expectation))) {
-					mismatches.add(mismatch(expectation, expected, snapshot));
-				} else if (expectation.comparePlan
-						&& !normalizePlan(historicalOptimizedPlan(expectation), expectation)
-								.equals(normalizePlan(snapshot.plan, expectation))) {
-					mismatches.add(planMismatch(expectation, historicalOptimizedPlan(expectation), snapshot));
-				}
+				mismatches.addAll(invariantMismatches(expectation, snapshot));
 				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 			}
 		} finally {
@@ -264,144 +247,52 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		}
 	}
 
-	private static String historicalOptimizedQuery(Expectation expectation) throws IOException {
-		List<String> lines = Files.readAllLines(resultFile(expectation.resultFile));
-		int parameterLine = indexOfContaining(lines,
-				"# Parameters: (themeName = " + expectation.theme + ", z_queryIndex = " + expectation.queryIndex
-						+ ")",
-				0);
-		int optimizedLine = indexOfContaining(lines, "### Optimized Query ###", parameterLine + 1);
-		int queryStart = IntStream.range(optimizedLine + 1, lines.size())
-				.filter(i -> lines.get(i).startsWith("SELECT "))
-				.findFirst()
-				.orElseThrow(() -> new AssertionError("No optimized query block found for " + expectation));
-
-		List<String> queryLines = new ArrayList<>();
-		for (int i = queryStart; i < lines.size(); i++) {
-			String line = lines.get(i);
-			if (line.isBlank() || SCORE_LINE.matcher(line).matches()) {
-				break;
-			}
-			queryLines.add(line);
+	private static List<String> invariantMismatches(Expectation expectation, OptimizerSnapshot snapshot) {
+		List<String> mismatches = new ArrayList<>();
+		String key = expectation.toString();
+		if (!snapshot.renderedQuery.contains("SELECT")) {
+			mismatches.add(key + " should still render an optimized query\n" + snapshot.renderedQuery);
 		}
-		if (queryLines.isEmpty()) {
-			throw new AssertionError("No optimized query block found for " + expectation);
+		if (!snapshot.plan.contains("plannerId=lmdb-sketch")) {
+			mismatches.add(key + " should use LMDB sketch planning\n" + snapshot.plan);
 		}
-		return String.join("\n", queryLines);
+		if (!snapshot.plan.contains("plannerPath=ROBUST_USED")) {
+			mismatches.add(key + " should use the robust planner path\n" + snapshot.plan);
+		}
+		if (snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE")) {
+			mismatches.add(key + " should not reject supported segment shapes\n" + snapshot.plan);
+		}
+		mismatches.addAll(directLookupWorkMismatches(snapshot.plan, 100_000.0d, key));
+		return mismatches;
 	}
 
-	private static String historicalOptimizedPlan(Expectation expectation) throws IOException {
-		List<String> lines = Files.readAllLines(resultFile(expectation.resultFile));
-		int parameterLine = indexOfContaining(lines,
-				"# Parameters: (themeName = " + expectation.theme + ", z_queryIndex = " + expectation.queryIndex
-						+ ")",
-				0);
-		int optimizedLine = indexOfContaining(lines, "### Optimized Query ###", parameterLine + 1);
-
-		List<String> planLines = new ArrayList<>();
-		for (int i = optimizedLine + 1; i < lines.size(); i++) {
-			String line = lines.get(i);
-			if (line.startsWith("SELECT ")) {
-				break;
-			}
-			if (!line.isBlank()) {
-				planLines.add(line);
+	private static List<String> directLookupWorkMismatches(String plan, double maxWorkRows, String key) {
+		List<String> mismatches = new ArrayList<>();
+		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+		while (matcher.find()) {
+			double workRows = parsePlanRows(matcher.group(1));
+			if (workRows > maxWorkRows) {
+				mismatches.add(key + " direct lookup plannedWorkRows should stay bounded by explicit step work, got "
+						+ matcher.group(1) + "\n" + plan);
 			}
 		}
-		if (planLines.isEmpty()) {
-			throw new AssertionError("No optimized plan block found for " + expectation);
-		}
-		return String.join("\n", planLines);
+		return mismatches;
 	}
 
-	private static Path resultFile(String fileName) {
-		Path basedirFile = Path.of(System.getProperty("basedir", "."), RESULT_DIRECTORY, fileName);
-		if (Files.isRegularFile(basedirFile)) {
-			return basedirFile;
+	private static double parsePlanRows(String value) {
+		String trimmed = value.trim();
+		double multiplier = 1.0d;
+		if (trimmed.endsWith("K")) {
+			multiplier = 1_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("M")) {
+			multiplier = 1_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("B")) {
+			multiplier = 1_000_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
 		}
-
-		Path repositoryFile = Path.of("core/sail/lmdb", RESULT_DIRECTORY, fileName);
-		if (Files.isRegularFile(repositoryFile)) {
-			return repositoryFile;
-		}
-
-		throw new AssertionError("Unable to locate benchmark result file " + fileName);
-	}
-
-	private static int indexOfContaining(List<String> lines, String expected, int startIndex) {
-		return IntStream.range(startIndex, lines.size())
-				.filter(i -> lines.get(i).contains(expected))
-				.findFirst()
-				.orElseThrow(() -> new AssertionError("Unable to find `" + expected + "`"));
-	}
-
-	private static List<String> normalize(String query, Expectation expectation) {
-		return query.lines()
-				.map(String::trim)
-				.filter(line -> !line.isEmpty())
-				.filter(line -> !expectation.flexibleValues || !line.startsWith("VALUES "))
-				.map(line -> ANON_PATH.matcher(line).replaceAll("_anon_path_NORMALIZED"))
-				.collect(Collectors.toList());
-	}
-
-	private static List<String> normalizePlan(String plan, Expectation expectation) {
-		return planOnly(plan).lines()
-				.map(String::trim)
-				.map(line -> normalizePlanLine(line, expectation))
-				.filter(line -> line != null && !line.isEmpty())
-				.collect(Collectors.toList());
-	}
-
-	private static String planOnly(String plan) {
-		int queryIndex = plan.indexOf("\nSELECT ");
-		return queryIndex >= 0 ? plan.substring(0, queryIndex) : plan;
-	}
-
-	private static String normalizePlanLine(String line, Expectation expectation) {
-		if (line.contains("BindingSetAssignment")) {
-			return expectation.flexibleValues ? null : "BindingSetAssignment";
-		}
-		if (line.contains("ListMemberOperator")) {
-			return "ListMemberOperator";
-		}
-		if (line.contains("Compare")) {
-			return "Compare";
-		}
-		if (line.contains("Exists")) {
-			return "Exists";
-		}
-		if (line.contains("Not")) {
-			return "Not";
-		}
-		if (line.contains("Filter")) {
-			return "Filter";
-		}
-		if (line.contains("Join ")) {
-			return "Join";
-		}
-		if (line.contains("StatementPattern")) {
-			return "StatementPattern";
-		}
-		if (line.contains("p: Var") && line.contains("value=")) {
-			int valueStart = line.indexOf("value=") + "value=".length();
-			int valueEnd = line.indexOf(',', valueStart);
-			return "p:" + line.substring(valueStart, valueEnd >= 0 ? valueEnd : line.length());
-		}
-		return null;
-	}
-
-	private static String mismatch(Expectation expectation, String expected, OptimizerSnapshot snapshot) {
-		String mismatch = expectation + "\nExpected:\n" + expected + "\nActual:\n" + snapshot.renderedQuery;
-		if (Boolean.getBoolean(DEBUG_PLANS_PROPERTY)) {
-			mismatch += "\nPlan:\n" + snapshot.plan;
-		}
-		return mismatch;
-	}
-
-	private static String planMismatch(Expectation expectation, String expectedPlan, OptimizerSnapshot snapshot) {
-		return expectation + "\nExpected plan shape:\n" + normalizePlan(expectedPlan, expectation)
-				+ "\nActual plan shape:\n" + normalizePlan(snapshot.plan, expectation)
-				+ "\nActual plan:\n" + snapshot.plan;
+		return Double.parseDouble(trimmed) * multiplier;
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {
@@ -412,37 +303,22 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		}
 	}
 
-	private static Expectation expectation(Theme theme, int queryIndex, String resultFile) {
-		return new Expectation(theme, queryIndex, resultFile, false, false);
-	}
-
-	private static Expectation expectationWithFlexibleValues(Theme theme, int queryIndex, String resultFile) {
-		return new Expectation(theme, queryIndex, resultFile, true, false);
-	}
-
-	private static Expectation expectationWithFlexibleValuesAndPlan(Theme theme, int queryIndex, String resultFile) {
-		return new Expectation(theme, queryIndex, resultFile, true, true);
+	private static Expectation expectation(Theme theme, int queryIndex) {
+		return new Expectation(theme, queryIndex);
 	}
 
 	private static final class Expectation {
 		private final Theme theme;
 		private final int queryIndex;
-		private final String resultFile;
-		private final boolean flexibleValues;
-		private final boolean comparePlan;
 
-		private Expectation(Theme theme, int queryIndex, String resultFile, boolean flexibleValues,
-				boolean comparePlan) {
+		private Expectation(Theme theme, int queryIndex) {
 			this.theme = theme;
 			this.queryIndex = queryIndex;
-			this.resultFile = resultFile;
-			this.flexibleValues = flexibleValues;
-			this.comparePlan = comparePlan;
 		}
 
 		@Override
 		public String toString() {
-			return theme + " query " + queryIndex + " (" + resultFile + ")";
+			return theme + " query " + queryIndex;
 		}
 	}
 

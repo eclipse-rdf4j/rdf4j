@@ -20,9 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MonitorInfo;
@@ -31,7 +28,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -629,23 +625,28 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
-	void legacyV2ManifestWithSingleBlobLoadsSuccessfully(@TempDir Path tempDir) throws Exception {
-		Resource s = VF.createIRI("urn:s");
-		IRI p = VF.createIRI("urn:p");
-		Value o = VF.createIRI("urn:o");
+	void legacyThetaManifestsAreRejected(@TempDir Path tempDir) throws Exception {
+		for (int legacyVersion : List.of(2, 3)) {
+			Resource s = VF.createIRI("urn:s" + legacyVersion);
+			IRI p = VF.createIRI("urn:p" + legacyVersion);
+			Value o = VF.createIRI("urn:o" + legacyVersion);
 
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		writer.configurePersistence(snapshot, false);
-		writer.addStatement(st(s, p, o));
-		assertTrue(writer.persistIfDirty(), "Expected persisted snapshot");
+			Path snapshot = tempDir.resolve("join-estimator-v" + legacyVersion + ".rjes");
+			SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+			writer.configurePersistence(snapshot, false);
+			writer.addStatement(st(s, p, o));
+			assertTrue(writer.persistIfDirty(), "Expected persisted snapshot");
 
-		rewriteManifestAsVersion2(snapshot);
+			rewriteManifestVersion(snapshot, legacyVersion);
 
-		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		reader.configurePersistence(snapshot, true);
-		assertTrue(reader.isReady(), "Expected legacy v2 manifest to load");
-		assertEquals(1.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 1.0);
+			SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+			reader.configurePersistence(snapshot, true);
+			IllegalStateException exception = assertThrows(IllegalStateException.class, reader::isReady);
+			assertNotNull(exception.getMessage());
+			assertTrue(exception.getMessage()
+					.contains("Unsupported theta join estimator snapshot version: " + legacyVersion));
+			assertTrue(exception.getMessage().contains("rebuild required for tuple sketches"));
+		}
 	}
 
 	@Test
@@ -670,7 +671,9 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(recordTypes.contains((byte) 3), "pair triple sketches should be tracked");
 		assertTrue(recordTypes.contains((byte) 4), "pair comp1 sketches should be tracked");
 		assertTrue(recordTypes.contains((byte) 5), "pair comp2 sketches should be tracked");
-		assertTrue(hasDeleteResidentSketch(estimator), "tombstone sketches should be tracked in the same LRU");
+		assertTrue(recordTypes.contains((byte) 6), "global component sketches should be tracked");
+		assertFalse(hasDeleteResidentSketch(estimator),
+				"signed tuple sketches should not create separate tombstone residents");
 	}
 
 	@Test
@@ -695,6 +698,16 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 		assertEquals(0L, residentSketchBytes(estimator),
 				"Expected eviction to drain resident cache down to min budget");
+	}
+
+	@Test
+	void persistentRebuildUsesFastPathWhenHeapHeadroomIsHealthy(@TempDir Path tempDir) throws Exception {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
+		forceAvailableHeapHeadroom(estimator, Long.MAX_VALUE);
+
+		assertFalse(shouldUseBoundedPersistenceRebuild(estimator),
+				"Persistence should not force bounded rebuild when heap headroom is healthy");
 	}
 
 	private static void flushIncrementalBuffer(SketchBasedJoinEstimator estimator) {
@@ -842,71 +855,15 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertNull(persistFailure.get(), "Persist thread should not fail");
 	}
 
-	private static void rewriteManifestAsVersion2(Path snapshot) throws Exception {
-		byte[] original = Files.readAllBytes(snapshot);
-		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(original));
-				ByteArrayOutputStream bos = new ByteArrayOutputStream(original.length);
-				DataOutputStream out = new DataOutputStream(bos)) {
-			byte[] magic = new byte[4];
-			in.readFully(magic);
-			out.write(magic);
-			int version = in.readUnsignedByte();
-			assertEquals(3, version, "Expected v3 manifest before downgrade");
-			out.writeByte(2);
-
-			int buckets = in.readInt();
-			int sketchK = in.readInt();
-			String defaultContext = readString(in);
-			long seenTriples = in.readLong();
-			long approxStoreSize = in.readLong();
-			long lastPublishMs = in.readLong();
-			out.writeInt(buckets);
-			out.writeInt(sketchK);
-			writeString(out, defaultContext);
-			out.writeLong(seenTriples);
-			out.writeLong(approxStoreSize);
-			out.writeLong(lastPublishMs);
-
-			int count = in.readInt();
-			out.writeInt(count);
-			for (int i = 0; i < count; i++) {
-				byte recType = in.readByte();
-				boolean isDelete = in.readBoolean();
-				byte axisA = in.readByte();
-				byte axisB = in.readByte();
-				int x = in.readInt();
-				int y = in.readInt();
-				int blobId = in.readInt();
-				long offset = in.readLong();
-				int length = in.readInt();
-
-				assertEquals(0, blobId, "Expected single-blob snapshot before v2 downgrade");
-				out.writeByte(recType);
-				out.writeBoolean(isDelete);
-				out.writeByte(axisA);
-				out.writeByte(axisB);
-				out.writeInt(x);
-				out.writeInt(y);
-				out.writeLong(offset);
-				out.writeInt(length);
-			}
-
-			out.flush();
-			Files.write(snapshot, bos.toByteArray());
-		}
-	}
-
-	private static void writeString(DataOutputStream out, String value) throws Exception {
-		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-		out.writeInt(bytes.length);
-		out.write(bytes);
-	}
-
-	private static String readString(DataInputStream in) throws Exception {
-		int length = in.readInt();
-		byte[] bytes = new byte[length];
-		in.readFully(bytes);
-		return new String(bytes, StandardCharsets.UTF_8);
+	private static void rewriteManifestVersion(Path snapshot, int version) throws Exception {
+		byte[] bytes = Files.readAllBytes(snapshot);
+		assertEquals('R', bytes[0], "Expected join estimator manifest magic");
+		assertEquals('J', bytes[1], "Expected join estimator manifest magic");
+		assertEquals('E', bytes[2], "Expected join estimator manifest magic");
+		assertEquals('S', bytes[3], "Expected join estimator manifest magic");
+		assertEquals(4, bytes[4] & 0xff, "Expected v4 manifest before downgrade");
+		bytes[4] = (byte) version;
+		Files.write(snapshot, bytes);
 	}
 
 	private static int hash(SketchBasedJoinEstimator estimator, String value) throws Exception {
@@ -986,6 +943,10 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			boolean allowUnload) throws Exception {
 		invokePrivate(estimator, "ensureEstimatorCapacity", new Class<?>[] { long.class, boolean.class },
 				predictedBytes, allowUnload);
+	}
+
+	private static boolean shouldUseBoundedPersistenceRebuild(SketchBasedJoinEstimator estimator) throws Exception {
+		return (boolean) invokePrivate(estimator, "shouldUseBoundedPersistenceRebuild", new Class<?>[0]);
 	}
 
 	private static Object invokePrivate(Object target, String methodName, Class<?>[] parameterTypes, Object... args)

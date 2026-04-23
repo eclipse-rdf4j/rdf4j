@@ -56,6 +56,27 @@ class FilterSelectivityTelemetryTest {
 		assertEquals(0.5d, filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO));
 	}
 
+	@Test
+	void annotatesLearnedEvidenceConfidence() {
+		Filter filter = new Filter(pattern("s", "p", "o"),
+				new Compare(Var.of("o"), new ValueConstant(VF.createIRI("urn:o")), Compare.CompareOp.EQ));
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public FilterPassEstimate estimateFilterPass(Filter filter) {
+				return new FilterPassEstimate(0.25d, FilterPassEstimate.Source.LEARNED_TEMPLATE, 300L);
+			}
+		};
+
+		FilterSelectivityTelemetry.annotate(filter, statistics);
+
+		assertEquals(0.25d, filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO));
+		assertEquals("learned_template",
+				filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE));
+		assertEquals(300L, filter.getLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT));
+		assertEquals(300.0d / 364.0d,
+				filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE), 1.0e-12);
+	}
+
 	private static StatementPattern pattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(Var.of(subjectName), Var.of("p", VF.createIRI("urn:" + predicateName)),
 				Var.of(objectName));

@@ -63,9 +63,32 @@ final class FilterSelectivityTelemetry {
 			filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
 					estimate.getEvidenceCount());
 		}
+		double confidence = confidenceScore(estimate, source);
+		if (Double.isFinite(confidence)) {
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE, confidence);
+		}
 		if (source != null) {
 			filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, source);
 		}
+	}
+
+	private static double confidenceScore(EvaluationStatistics.FilterPassEstimate estimate, String source) {
+		if (estimate != null && estimate.getEvidenceCount() >= 0L) {
+			long evidenceCount = estimate.getEvidenceCount();
+			return evidenceCount / (evidenceCount + 64.0d);
+		}
+		if (source == null) {
+			return Double.NaN;
+		}
+		if ("heuristic".equals(source)) {
+			return 0.25d;
+		}
+		if ("learned_filter".equals(source) || "learned_template".equals(source)
+				|| "learned_pattern".equals(source) || "sampled".equals(source)
+				|| CARDINALITY_SOURCE.equals(source)) {
+			return 0.5d;
+		}
+		return Double.NaN;
 	}
 
 	private static double estimateCardinalityPassRatio(Filter filter, EvaluationStatistics statistics) {

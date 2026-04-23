@@ -103,7 +103,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	public static JoinOrderStrategy JOIN_ORDER_STRATEGY = JoinOrderStrategy.HYBRID;
 
 	@Experimental
-	public static int DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = 8;
+	public static int DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT;
 
 	@Experimental
 	public static boolean REORDER_JOINS_WITH_SKETCHES = true;
@@ -151,17 +151,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	}
 
 	private static int filterConditionCost(ValueExpr condition) {
-		if (condition instanceof And) {
-			And and = (And) condition;
-			return Math.max(filterConditionCost(and.getLeftArg()), filterConditionCost(and.getRightArg()));
-		}
-		if (condition instanceof Exists) {
-			return 100;
-		}
-		if (condition instanceof Not not && not.getArg() instanceof Exists) {
-			return 100;
-		}
-		return 0;
+		return FilterConditionCostModel.conditionCostClass(condition);
 	}
 
 	/**
@@ -414,6 +404,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					if (factors.size() < 2) {
 						return;
 					}
+					if (isPlannerOrderedSegment(factors)) {
+						return;
+					}
 
 					List<TupleExpr> positionedFactors = positionBindingSetAssignmentsInSegment(factors);
 					if (!sameIdentityOrder(factors, positionedFactors)) {
@@ -421,6 +414,28 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 			});
+		}
+
+		private boolean isPlannerOrderedSegment(List<TupleExpr> factors) {
+			if (plannerOrderedArgs.isEmpty()) {
+				return false;
+			}
+			for (TupleExpr factor : factors) {
+				if (!isPlannerOrderedFactor(factor)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean isPlannerOrderedFactor(TupleExpr factor) {
+			if (plannerOrderedArgs.contains(factor)) {
+				return true;
+			}
+			if (factor instanceof UnaryTupleOperator) {
+				return isPlannerOrderedFactor(((UnaryTupleOperator) factor).getArg());
+			}
+			return false;
 		}
 
 		private void collectFilterJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
@@ -850,7 +865,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void collectConjunctiveConditions(ValueExpr condition, List<ValueExpr> conditions) {
-			if (condition instanceof And && !containsExists(condition)) {
+			if (condition instanceof And) {
 				And and = (And) condition;
 				collectConjunctiveConditions(and.getLeftArg(), conditions);
 				collectConjunctiveConditions(and.getRightArg(), conditions);
@@ -940,18 +955,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private int compareDeferredFilters(DeferredFilter left, DeferredFilter right) {
-			boolean leftContainsExists = containsExists(left.condition);
-			boolean rightContainsExists = containsExists(right.condition);
-			if (left.requiredVars.equals(right.requiredVars) && (leftContainsExists || rightContainsExists)) {
-				return Integer.compare(left.originalIndex, right.originalIndex);
-			}
-			if (leftContainsExists != rightContainsExists) {
-				return leftContainsExists ? -1 : 1;
-			}
-
 			int byCost = Integer.compare(left.conditionCost, right.conditionCost);
 			if (byCost != 0) {
 				return byCost;
+			}
+			boolean leftContainsExists = containsExists(left.condition);
+			boolean rightContainsExists = containsExists(right.condition);
+			if (leftContainsExists != rightContainsExists) {
+				return leftContainsExists ? 1 : -1;
 			}
 			return Integer.compare(left.originalIndex, right.originalIndex);
 		}
@@ -1375,13 +1386,25 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private Deque<TupleExpr> optimizeJoinGroup(List<TupleExpr> joinGroup) {
-			return optimizeJoinGroup(joinGroup, List.of(), new HashSet<>(boundVars));
+			return optimizeJoinGroup(joinPlanningProblem(joinGroup, List.of(), new HashSet<>(boundVars)));
 		}
 
 		private Deque<TupleExpr> optimizeJoinGroup(List<TupleExpr> joinGroup, List<DeferredFilter> deferredFilters,
 				Set<String> boundBeforeSegment) {
-			List<TupleExpr> remaining = new ArrayList<>(joinGroup);
+			return optimizeJoinGroup(joinPlanningProblem(joinGroup, deferredFilters, boundBeforeSegment));
+		}
+
+		private JoinPlanningProblem<DeferredFilter> joinPlanningProblem(List<TupleExpr> joinGroup,
+				List<DeferredFilter> deferredFilters, Set<String> boundBeforeSegment) {
+			return new JoinPlanningProblem<>(JoinPlanningProblem.factorNodes(joinGroup), deferredFilters,
+					boundBeforeSegment, JoinPlanningProblem.scopeFor(joinGroup));
+		}
+
+		private Deque<TupleExpr> optimizeJoinGroup(JoinPlanningProblem<DeferredFilter> planningProblem) {
+			List<TupleExpr> remaining = new ArrayList<>(planningProblem.tupleExprFactors());
 			Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(remaining.size());
+			List<DeferredFilter> deferredFilters = planningProblem.deferredFilters();
+			Set<String> boundBeforeSegment = planningProblem.boundBeforeSegment();
 
 			Map<TupleExpr, Double> cardinalityMap = new IdentityHashMap<>(remaining.size());
 			Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
@@ -1410,19 +1433,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (planningAttempt.getPlan().isPresent()) {
 				JoinOrderPlanner.JoinOrderPlan plan = planningAttempt.getPlan().get();
 				Deque<TupleExpr> plannedJoinArgs = new ArrayDeque<>(plan.getOrderedArgs());
-				Deque<TupleExpr> normalizedJoinArgs = positionBindingSetAssignments(plannedJoinArgs);
-				markPlannerOrderedArgs(normalizedJoinArgs);
-				if (sameIdentityOrder(plan.getOrderedArgs(), new ArrayList<>(normalizedJoinArgs))) {
-					applyPlannerStepEstimates(plan);
-				} else {
-					applyPlannerSummaryEstimates(plan, normalizedJoinArgs);
-					applyRebuiltPlannerStepEstimates(normalizedJoinArgs, boundBeforeSegment);
-				}
-				for (TupleExpr tupleExpr : normalizedJoinArgs) {
+				markPlannerOrderedArgs(plannedJoinArgs);
+				applyPlannerStepEstimates(plan);
+				annotateStructuralPlanningProblem(plannedJoinArgs, planningProblem);
+				for (TupleExpr tupleExpr : plannedJoinArgs) {
 					tupleExpr.visit(this);
 					boundVars.addAll(tupleExpr.getBindingNames());
 				}
-				return normalizedJoinArgs;
+				return plannedJoinArgs;
 			}
 
 			while (!remaining.isEmpty()) {
@@ -1436,6 +1454,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			if (REORDER_JOINS_WITH_SKETCHES && orderedJoinArgs.size() >= 2
+					&& !(statistics instanceof JoinOrderPlanner)
 					&& (statistics.supportsJoinEstimation()
 							|| (!deferredFilters.isEmpty() && statistics.supportsFilterSelectivityCosting()))) {
 				orderedJoinArgs = new ArrayDeque<>(
@@ -1465,6 +1484,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						attempt.getPlannerPath(), attempt.getRejectedFactor(), diagnostics);
 			}
 			return attempt;
+		}
+
+		private void annotateStructuralPlanningProblem(Deque<TupleExpr> orderedJoinArgs,
+				JoinPlanningProblem<DeferredFilter> planningProblem) {
+			if (orderedJoinArgs.isEmpty()) {
+				return;
+			}
+			orderedJoinArgs.getFirst()
+					.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_STRUCTURAL_SUMMARY,
+							planningProblem.summary());
 		}
 
 		private void markPlannerOrderedArgs(Deque<TupleExpr> orderedArgs) {
@@ -1653,35 +1682,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return true;
 		}
 
-		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs, Set<String> outerBoundVars) {
-			if (orderedJoinArgs.size() < 2) {
-				return orderedJoinArgs;
-			}
-
-			List<TupleExpr> originalOrder = new ArrayList<>(orderedJoinArgs);
-
-			Deque<TupleExpr> reordered = new ArrayDeque<>(originalOrder.size());
-			List<TupleExpr> currentSegment = new ArrayList<>();
-			Set<String> boundBeforeSegment = new HashSet<>(outerBoundVars);
-
-			for (TupleExpr tupleExpr : originalOrder) {
-				if (isJoinOrderSeparator(tupleExpr)) {
-					appendReorderedSegment(reordered, currentSegment, boundBeforeSegment);
-					reordered.addLast(tupleExpr);
-					boundBeforeSegment.addAll(tupleExpr.getBindingNames());
-				} else {
-					currentSegment.add(tupleExpr);
-				}
-			}
-			appendReorderedSegment(reordered, currentSegment, boundBeforeSegment);
-
-			return positionBindingSetAssignments(reordered);
-		}
-
-		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
-			return reorderJoinArgs(orderedJoinArgs, new HashSet<>(boundVars));
-		}
-
 		private Join createJoinWithEstimatedResultSize(TupleExpr left, TupleExpr right) {
 			return createJoinWithEstimatedResultSize(left, right, null);
 		}
@@ -1766,20 +1766,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			appendBindingSetAssignmentsPositionedSegment(reordered, currentSegment);
 
 			return reordered;
-		}
-
-		private void appendReorderedSegment(Deque<TupleExpr> reordered, List<TupleExpr> segment,
-				Set<String> boundBeforeSegment) {
-			if (segment.isEmpty()) {
-				return;
-			}
-
-			List<TupleExpr> reorderedSegment = reorderSegment(segment, boundBeforeSegment);
-			for (TupleExpr tupleExpr : reorderedSegment) {
-				reordered.addLast(tupleExpr);
-				boundBeforeSegment.addAll(tupleExpr.getBindingNames());
-			}
-			segment.clear();
 		}
 
 		private void appendBindingSetAssignmentsPositionedSegment(Deque<TupleExpr> reordered, List<TupleExpr> segment) {
@@ -1992,10 +1978,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return referencedVarNames.size();
 		}
 
-		private List<TupleExpr> reorderSegment(List<TupleExpr> segment, Set<String> boundBeforeSegment) {
-			return reorderSegment(segment, boundBeforeSegment, List.of());
-		}
-
 		private List<TupleExpr> reorderSegment(List<TupleExpr> segment, Set<String> boundBeforeSegment,
 				List<DeferredFilter> deferredFilters) {
 			if (segment.size() < 2) {
@@ -2008,10 +1990,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
 			return TupleExprs.isVariableScopeChange(tupleExpr) || TupleExprs.containsExtension(tupleExpr)
 					|| TupleExprs.containsSubquery(tupleExpr);
-		}
-
-		private List<TupleExpr> greedyReorderByJoinCardinality(List<TupleExpr> segment, Set<String> outerBoundVars) {
-			return greedyReorderByJoinCardinality(segment, outerBoundVars, List.of());
 		}
 
 		private List<TupleExpr> greedyReorderByJoinCardinality(List<TupleExpr> segment, Set<String> outerBoundVars,

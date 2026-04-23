@@ -107,6 +107,7 @@ public class EvaluationStatistics {
 	public static final class FilterPassEstimate {
 		public enum Source {
 			LEARNED_FILTER,
+			LEARNED_TEMPLATE,
 			LEARNED_PATTERN,
 			SAMPLED,
 			HEURISTIC,

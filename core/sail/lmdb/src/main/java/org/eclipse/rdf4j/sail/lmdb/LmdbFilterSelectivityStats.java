@@ -61,7 +61,7 @@ class LmdbFilterSelectivityStats
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String SIDECAR_SUFFIX = ".filters";
-	private static final int PERSIST_VERSION = 1;
+	private static final int PERSIST_VERSION = 2;
 	private static final int SAMPLE_SCAN_BUDGET = 4096;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final long MISSING_VALUE_ID = Long.MIN_VALUE;
@@ -72,6 +72,7 @@ class LmdbFilterSelectivityStats
 	private final Path sidecarPath;
 
 	private final Map<PatternFilterKey, LearnedCounts> learnedByFilter = new HashMap<>();
+	private final Map<PatternFilterKey, LearnedCounts> learnedByTemplate = new HashMap<>();
 	private final Map<PatternKey, LearnedCounts> learnedByPattern = new HashMap<>();
 	private final Map<PatternFilterKey, SampledPassRatio> sampledByFilter = new HashMap<>();
 
@@ -87,10 +88,12 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public synchronized void reset() {
-		if (learnedByFilter.isEmpty() && learnedByPattern.isEmpty() && sampledByFilter.isEmpty()) {
+		if (learnedByFilter.isEmpty() && learnedByTemplate.isEmpty() && learnedByPattern.isEmpty()
+				&& sampledByFilter.isEmpty()) {
 			return;
 		}
 		learnedByFilter.clear();
+		learnedByTemplate.clear();
 		learnedByPattern.clear();
 		sampledByFilter.clear();
 		dirty = true;
@@ -113,6 +116,11 @@ class LmdbFilterSelectivityStats
 	@Override
 	public synchronized void recordFilterOutcome(PatternKey key, String filterKey, long passedCount,
 			long filteredCount) {
+		recordFilterOutcome(key, filterKey, null, passedCount, filteredCount);
+	}
+
+	public synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
+			long passedCount, long filteredCount) {
 		if (key == null || filterKey == null || (passedCount <= 0L && filteredCount <= 0L)) {
 			return;
 		}
@@ -120,6 +128,11 @@ class LmdbFilterSelectivityStats
 		PatternFilterKey patternFilterKey = new PatternFilterKey(key, filterKey);
 		learnedByFilter.computeIfAbsent(patternFilterKey, ignored -> new LearnedCounts())
 				.add(passedCount, filteredCount);
+		if (filterTemplateKey != null) {
+			PatternFilterKey patternTemplateKey = new PatternFilterKey(key, filterTemplateKey);
+			learnedByTemplate.computeIfAbsent(patternTemplateKey, ignored -> new LearnedCounts())
+					.add(passedCount, filteredCount);
+		}
 		learnedByPattern.computeIfAbsent(key, ignored -> new LearnedCounts()).add(passedCount, filteredCount);
 		dirty = true;
 	}
@@ -127,6 +140,12 @@ class LmdbFilterSelectivityStats
 	@Override
 	public synchronized double getFilterPassRatio(PatternKey key, String filterKey) {
 		LearnedCounts counts = learnedByFilter.get(new PatternFilterKey(key, filterKey));
+		return counts == null ? -1.0d : counts.passRatio();
+	}
+
+	@Override
+	public synchronized double getFilterTemplatePassRatio(PatternKey key, String filterTemplateKey) {
+		LearnedCounts counts = learnedByTemplate.get(new PatternFilterKey(key, filterTemplateKey));
 		return counts == null ? -1.0d : counts.passRatio();
 	}
 
@@ -139,6 +158,12 @@ class LmdbFilterSelectivityStats
 	@Override
 	public synchronized long getFilterObservationCount(PatternKey key, String filterKey) {
 		LearnedCounts counts = learnedByFilter.get(new PatternFilterKey(key, filterKey));
+		return counts == null ? -1L : counts.total();
+	}
+
+	@Override
+	public synchronized long getFilterTemplateObservationCount(PatternKey key, String filterTemplateKey) {
+		LearnedCounts counts = learnedByTemplate.get(new PatternFilterKey(key, filterTemplateKey));
 		return counts == null ? -1L : counts.total();
 	}
 
@@ -224,6 +249,11 @@ class LmdbFilterSelectivityStats
 				entry.getKey().writeTo(out);
 				entry.getValue().writeTo(out);
 			}
+			out.writeInt(learnedByTemplate.size());
+			for (var entry : learnedByTemplate.entrySet()) {
+				entry.getKey().writeTo(out);
+				entry.getValue().writeTo(out);
+			}
 			out.writeInt(sampledByFilter.size());
 			for (var entry : sampledByFilter.entrySet()) {
 				entry.getKey().writeTo(out);
@@ -266,6 +296,7 @@ class LmdbFilterSelectivityStats
 		}
 
 		Map<PatternFilterKey, LearnedCounts> loadedLearned = new HashMap<>();
+		Map<PatternFilterKey, LearnedCounts> loadedTemplates = new HashMap<>();
 		Map<PatternKey, LearnedCounts> loadedPatternTotals = new HashMap<>();
 		Map<PatternFilterKey, SampledPassRatio> loadedSampled = new HashMap<>();
 
@@ -290,6 +321,16 @@ class LmdbFilterSelectivityStats
 						.add(counts.passedCount, counts.filteredCount);
 			}
 
+			int templateEntries = in.readInt();
+			for (int i = 0; i < templateEntries; i++) {
+				PatternFilterKey key = PatternFilterKey.readFrom(in);
+				LearnedCounts counts = LearnedCounts.readFrom(in);
+				if (counts.total() <= 0L) {
+					continue;
+				}
+				loadedTemplates.put(key, counts);
+			}
+
 			int sampledEntries = in.readInt();
 			for (int i = 0; i < sampledEntries; i++) {
 				PatternFilterKey key = PatternFilterKey.readFrom(in);
@@ -306,6 +347,8 @@ class LmdbFilterSelectivityStats
 		synchronized (this) {
 			learnedByFilter.clear();
 			learnedByFilter.putAll(loadedLearned);
+			learnedByTemplate.clear();
+			learnedByTemplate.putAll(loadedTemplates);
 			learnedByPattern.clear();
 			learnedByPattern.putAll(loadedPatternTotals);
 			sampledByFilter.clear();

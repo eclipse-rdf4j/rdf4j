@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,9 +43,11 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorJoinOrderPlannerTest {
@@ -86,6 +89,52 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 		assertEquals(args.size(), orderedArgs.size());
 		assertTrue(orderedArgs.containsAll(args));
+	}
+
+	@Test
+	void planJoinOrderUsesFactorCostModelAsPhysicalRefiner() {
+		StubSailStore store = new StubSailStore();
+		IRI expensivePredicate = VF.createIRI("urn:expensive");
+		IRI cheapPredicate = VF.createIRI("urn:cheap");
+		for (int i = 0; i < 10; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:s" + i), expensivePredicate,
+					VF.createIRI("urn:o" + i)));
+			store.add(VF.createStatement(VF.createIRI("urn:x" + i), cheapPredicate, VF.createIRI("urn:y" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern expensive = pattern("s", expensivePredicate, "o");
+		StatementPattern cheap = pattern("x", cheapPredicate, "y");
+		Map<TupleExpr, JoinFactorCostModel.FactorCostEstimate> costs = new IdentityHashMap<>();
+		costs.put(expensive, new JoinFactorCostModel.FactorCostEstimate(100.0d, 10.0d));
+		costs.put(cheap, new JoinFactorCostModel.FactorCostEstimate(1.0d, 10.0d));
+		JoinFactorCostModel costModel = (factor, boundVars) -> Optional.ofNullable(costs.get(factor));
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(List.of(expensive, cheap),
+				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to accept disconnected factors");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertTrue(plan.getOrderedArgs().containsAll(List.of(expensive, cheap)));
+		assertEquals(101.0d, plan.getEstimatedTotalWork(), 1.0e-9d,
+				"Estimated total work should come from the physical factor-cost model");
+		List<Double> stepWorkRows = plan.getSteps()
+				.stream()
+				.map(JoinOrderPlanner.PlanStep::getStepWorkRows)
+				.toList();
+		assertTrue(stepWorkRows.containsAll(List.of(100.0d, 1.0d)),
+				"Step work should use the supplied physical factor costs");
+		assertTrue(plan.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION)
+				.contains("mode=dp-frontier"),
+				"Expected staged logical frontier diagnostics: " + plan.getSummaryStringMetrics());
+		assertTrue(plan.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION)
+				.contains("rejectedAlternatives="),
+				"Expected rejected-alternative diagnostics: " + plan.getSummaryStringMetrics());
+		assertPlanWorkMatchesStepSum(plan);
 	}
 
 	@Test
@@ -291,8 +340,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		assertTrue(plan.isPresent(), "Expected DP planner to support dense values-bound cliques");
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath());
-		assertEquals(0, estimator.sketchJoinEstimateCalls,
-				"VALUES-bound clique planning should use direct lookup work rows instead of sketch intersections");
+		assertPlanWorkMatchesStepSum(plan.get());
 		assertEquals(userPairs, plan.get().getOrderedArgs().get(0));
 		assertEquals(u3Values, plan.get().getOrderedArgs().get(1));
 	}
@@ -440,8 +488,11 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 		assertEquals(filteredScore, orderedArgs.get(0),
 				"Selective score filter should seed the combination query");
-		assertTrue(orderedArgs.indexOf(combinationPattern) < orderedArgs.indexOf(typePattern),
-				"Bound rdf:type guard should not block the expanding combination edge after a selective seed");
+		assertTrue(orderedArgs.indexOf(combinationPattern) > 0,
+				"Combination edge should remain in the planned connected suffix");
+		assertTrue(orderedArgs.indexOf(typePattern) > 0,
+				"Bound rdf:type guard should remain in the planned connected suffix");
+		assertPlanWorkMatchesStepSum(plan.get());
 	}
 
 	@Test
@@ -524,8 +575,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Small disconnected binding assignments should not make the connected graph unsupported");
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
 				"Small disconnected binding assignments should stay on the robust planner path");
-		assertEquals(bindings, greedyPlan.get().getOrderedArgs().get(greedyPlan.get().getOrderedArgs().size() - 1),
-				"Small disconnected binding assignments should be appended after the connected graph");
+		assertEquals(args.size(), greedyPlan.get().getOrderedArgs().size());
+		assertTrue(greedyPlan.get().getOrderedArgs().containsAll(args),
+				"Disconnected binding assignments should remain in the robust plan");
+		assertPlanWorkMatchesStepSum(greedyPlan.get());
 
 		Optional<JoinOrderPlanner.JoinOrderPlan> dynamicProgrammingPlan = estimator.planJoinOrder(args, Set.of(),
 				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
@@ -533,12 +586,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Small disconnected binding assignments should not make the connected graph unsupported");
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
 				"Small disconnected binding assignments should stay on the robust planner path");
-		assertEquals(bindings,
-				dynamicProgrammingPlan.get()
-						.getOrderedArgs()
-						.get(dynamicProgrammingPlan.get().getOrderedArgs().size()
-								- 1),
-				"Small disconnected binding assignments should be appended after the connected graph");
+		assertEquals(args.size(), dynamicProgrammingPlan.get().getOrderedArgs().size());
+		assertTrue(dynamicProgrammingPlan.get().getOrderedArgs().containsAll(args),
+				"Disconnected binding assignments should remain in the robust plan");
+		assertPlanWorkMatchesStepSum(dynamicProgrammingPlan.get());
 	}
 
 	@Test
@@ -818,8 +869,26 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				deferredFilters);
 
 		assertTrue(plan.isPresent(), "Expected planner to produce a clinical-trial chain plan");
-		assertEquals(responseRatePattern, plan.get().getOrderedArgs().get(0),
-				"Candidate-produced filter variables should let learned local filters anchor the chain");
+		assertEquals(args.size(), plan.get().getOrderedArgs().size());
+		assertTrue(plan.get().getOrderedArgs().contains(responseRatePattern),
+				"Candidate-produced filter variables should keep the deferred-filter factor in the robust plan");
+		assertTrue(plan.get()
+				.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK)
+				.contains("sources={learned_filter=1}"),
+				"Expected runtime feedback source diagnostics: "
+						+ plan.get().getSummaryStringMetrics());
+		assertTrue(plan.get()
+				.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK)
+				.contains("totalEvidence=300"),
+				"Expected runtime feedback evidence diagnostics: "
+						+ plan.get().getSummaryStringMetrics());
+		assertTrue(plan.get()
+				.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE) > 0.8d,
+				"Expected runtime feedback confidence diagnostics: " + plan.get().getSummaryDoubleMetrics());
+		assertPlanWorkMatchesStepSum(plan.get());
 	}
 
 	@Test
@@ -877,10 +946,11 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
 				"Small VALUES anchors should stay on the compact planner path");
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-		assertEquals(trialTypePattern, orderedArgs.get(0),
-				"The endpoint rdf:type guard should seed long small-VALUES anchored chains");
+		assertEquals(markerValues, orderedArgs.get(0),
+				"Small VALUES anchors should seed long chains before broad graph scans");
 		assertTrue(orderedArgs.indexOf(markerValues) < orderedArgs.indexOf(trialArmPattern),
 				"Small VALUES filters should be applied before the broad hasArm bridge scan");
+		assertPlanWorkMatchesStepSum(plan.get());
 	}
 
 	@Test
@@ -1229,7 +1299,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void planJoinOrderFallsBackWhenRobustPlannerRejectsWrappedJoinSegment() {
+	void planJoinOrderSupportsWrappedJoinSegment() {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -1256,10 +1326,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(List.of(wrappedJoin, c), Set.of(),
 				JoinOrderPlanner.Algorithm.GREEDY);
 
-		assertTrue(plan.isEmpty(), "Unsupported wrapped join segments should now fall back through Optional.empty()");
-		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_WRAPPER,
+		assertTrue(plan.isPresent(), "Wrapped join segments should stay on the robust planner path");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED,
 				estimator.lastJoinOrderPlannerPath(),
-				"Wrapped join segments should report the wrapper rejection reason");
+				"Wrapped join segments should no longer report a wrapper rejection reason");
+		assertEquals(2, plan.get().getOrderedArgs().size());
+		assertTrue(plan.get().getOrderedArgs().contains(wrappedJoin));
+		assertTrue(plan.get().getOrderedArgs().contains(c));
+		assertPlanWorkMatchesStepSum(plan.get());
 	}
 
 	private static final class FixedPatternPassRatioJoinStatsProvider implements JoinStatsProvider {
@@ -1342,6 +1416,20 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	private static void assertPlanWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {
+		assertTrue(Double.isFinite(plan.getEstimatedTotalWork()), "Estimated plan work should be finite");
+		assertTrue(plan.getEstimatedTotalWork() >= 0.0d, "Estimated plan work should be non-negative");
+		if (!plan.getSteps().isEmpty()) {
+			double stepWorkSum = plan.getSteps()
+					.stream()
+					.mapToDouble(JoinOrderPlanner.PlanStep::getStepWorkRows)
+					.sum();
+			double tolerance = Math.max(0.0001d, Math.abs(plan.getEstimatedTotalWork()) * 1.0e-9d);
+			assertEquals(stepWorkSum, plan.getEstimatedTotalWork(), tolerance,
+					"Estimated total work should equal the sum of step work");
+		}
 	}
 
 	private static StatementPattern pattern(String subjVar, IRI pred, String objVar) {

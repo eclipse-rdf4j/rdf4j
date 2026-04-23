@@ -3931,33 +3931,43 @@ Projection
 ║     ProjectionElem "count"
 ╚══ Extension
    ├── Group ()
-   │  ╠══ Filter
+   │  ╠══ Filter (filterSelectivitySource=unknown, deferredFilterScope=smallestWindow)
    │  ║  ├── Not
    │  ║  │     Exists
-   │  ║  │        Filter
+   │  ║  │        Filter (plannedFilterEvidenceCount=217, plannedFilterPassRatio=0, filterSelectivitySource=learned_filter)
    │  ║  │        ╠══ Compare (<)
    │  ║  │        ║     Var (name=due) (bindingState=bound)
    │  ║  │        ║     Var (name=threshold) (bindingState=bound)
-   │  ║  │        ╚══ StatementPattern (resultSizeEstimate=348)
+   │  ║  │        ╚══ StatementPattern (resultSizeEstimate=10.2K)
    │  ║  │              s: Var (name=loan) (bindingState=bound)
    │  ║  │              p: Var (name=_const_945d14c4_uri, value=http://example.com/theme/library/dueDate, anonymous)
    │  ║  │              o: Var (name=due) (bindingState=unbound)
-   │  ║  └── Join (JoinIterator) (joinType=Cartesian product)
-   │  ║     ╠══ BindingSetAssignment ([[threshold="2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>]]) (costEstimate=6.00, resultSizeEstimate=1.00) [left]
-   │  ║     ╚══ Join (JoinIterator) [right]
-   │  ║        ├── StatementPattern (costEstimate=1.1K, resultSizeEstimate=348) [left]
-   │  ║        │     s: Var (name=loan) (bindingState=unbound)
-   │  ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-   │  ║        │     o: Var (name=_const_6cf0e34e_uri, value=http://example.com/theme/library/Loan, anonymous)
-   │  ║        └── Filter [right]
-   │  ║           ╠══ ListMemberOperator
-   │  ║           ║     Var (name=loanDate) (bindingState=bound)
-   │  ║           ║     ValueConstant (value="2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>)
-   │  ║           ║     ValueConstant (value="2024-01-02"^^<http://www.w3.org/2001/XMLSchema#date>)
-   │  ║           ╚══ StatementPattern (costEstimate=19, resultSizeEstimate=348)
-   │  ║                 s: Var (name=loan) (bindingState=bound)
-   │  ║                 p: Var (name=_const_f4588bfc_uri, value=http://example.com/theme/library/loanDate, anonymous)
-   │  ║                 o: Var (name=loanDate) (bindingState=unbound)
+   │  ║  └── Join (JoinIterator) (resultSizeEstimate=217)
+   │  ║     ╠══ Join (JoinIterator) (resultSizeEstimate=217, joinType=Cartesian product) [left]
+   │  ║     ║  ├── Filter (resultSizeEstimate=217, plannedFilterEvidenceCount=10.1K, plannedAccessRows=10.2K, plannedFilterPassRatio=0.02, plannedIndexPrefixLength=1.00, plannedWorkRows=10.2K, plannedIndexName=psoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[P, O], plannedMissingLookupComponents=[O], plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, filterSelectivitySource=learned_filter) [left]
+   │  ║     ║  │  ╠══ ListMemberOperator
+   │  ║     ║  │  ║     Var (name=loanDate) (bindingState=bound)
+   │  ║     ║  │  ║     ValueConstant (value="2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+   │  ║     ║  │  ║     ValueConstant (value="2024-01-02"^^<http://www.w3.org/2001/XMLSchema#date>)
+   │  ║     ║  │  ╚══ StatementPattern (resultSizeEstimate=10.2K)
+   │  ║     ║  │        s: Var (name=loan) (bindingState=unbound)
+   │  ║     ║  │        p: Var (name=_const_f4588bfc_uri, value=http://example.com/theme/library/loanDate, anonymous)
+   │  ║     ║  │        o: Var (name=loanDate) (bindingState=unbound)
+   │  ║     ║  └── BindingSetAssignment ([[threshold="2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>]]) (resultSizeEstimate=1.00, plannedWorkRows=218, plannedBoundVars=[loan, loanDate], unlockedFilters=Not [right]
+   │  ║     ║        Exists
+   │  ║     ║           Filter
+   │  ║     ║              Compare (<)
+   │  ║     ║                 Var (name=due)
+   │  ║     ║                 Var (name=threshold)
+   │  ║     ║              StatementPattern (resultSizeEstimate=10.2K)
+   │  ║     ║                 Var (name=loan)
+   │  ║     ║                 Var (name=_const_945d14c4_uri, value=http://example.com/theme/library/dueDate, anonymous)
+   │  ║     ║                 Var (name=due)
+   │  ║     ║      source=unknown)
+   │  ║     ╚══ StatementPattern (resultSizeEstimate=10.2K, plannedAccessRows=1.00, plannedIndexPrefixLength=3.00, plannedWorkRows=217, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P, O], plannedBoundVars=[loan, loanDate, threshold], sharedJoinVars=[loan]) [right]
+   │  ║           s: Var (name=loan) (bindingState=bound)
+   │  ║           p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │  ║           o: Var (name=_const_6cf0e34e_uri, value=http://example.com/theme/library/Loan, anonymous)
    │  ╚══ GroupElem (count)
    │        Count (Distinct)
    │           Var (name=loan) (bindingState=bound)
@@ -3966,10 +3976,10 @@ Projection
             Var (name=loan) (bindingState=unbound)
 
 SELECT (COUNT(DISTINCT ?loan) AS ?count) WHERE {
-  VALUES ?threshold { "2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date> }
-  ?loan a <http://example.com/theme/library/Loan> .
   ?loan <http://example.com/theme/library/loanDate> ?loanDate .
   FILTER (?loanDate IN ("2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>, "2024-01-02"^^<http://www.w3.org/2001/XMLSchema#date>))
+  VALUES ?threshold { "2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date> }
+  ?loan a <http://example.com/theme/library/Loan> .
   FILTER NOT EXISTS {
     ?loan <http://example.com/theme/library/dueDate> ?due .
     FILTER (?due < ?threshold)

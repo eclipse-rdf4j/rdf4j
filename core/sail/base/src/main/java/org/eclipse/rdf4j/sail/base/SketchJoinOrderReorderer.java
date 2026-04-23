@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.slf4j.Logger;
@@ -39,6 +40,7 @@ final class SketchJoinOrderReorderer {
 
 	private final SketchBasedJoinEstimator estimator;
 	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster;
+	private final JoinFactorCostModel factorCostModel;
 
 	SketchJoinOrderReorderer(SketchBasedJoinEstimator estimator) {
 		this(estimator, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP);
@@ -48,6 +50,13 @@ final class SketchJoinOrderReorderer {
 			SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster) {
 		this.estimator = Objects.requireNonNull(estimator, "estimator");
 		this.workAdjuster = Objects.requireNonNull(workAdjuster, "workAdjuster");
+		this.factorCostModel = null;
+	}
+
+	SketchJoinOrderReorderer(SketchBasedJoinEstimator estimator, JoinFactorCostModel factorCostModel) {
+		this.estimator = Objects.requireNonNull(estimator, "estimator");
+		this.workAdjuster = SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP;
+		this.factorCostModel = Objects.requireNonNull(factorCostModel, "factorCostModel");
 	}
 
 	Optional<JoinOrderPlanner.JoinOrderPlan> plan(List<TupleExpr> args, Set<String> initiallyBoundVars,
@@ -95,9 +104,12 @@ final class SketchJoinOrderReorderer {
 					SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED.name(), plan.getDiagnostics());
 		}
 
-		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(estimator, workAdjuster,
-				plannedExpressions, plannedBound, deferredFilters)
-						.plan(algorithm);
+		SketchJoinOrderPlanner planner = factorCostModel == null
+				? new SketchJoinOrderPlanner(estimator, workAdjuster, plannedExpressions, plannedBound,
+						deferredFilters)
+				: new SketchJoinOrderPlanner(estimator, factorCostModel, plannedExpressions, plannedBound,
+						deferredFilters);
+		SketchJoinOrderPlanner.PlanOutcome outcome = planner.plan(algorithm);
 		estimator.recordJoinOrderPlannerPath(outcome.path());
 		if (outcome.plan().isEmpty()) {
 			List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + outcome.diagnostics().size());

@@ -1115,24 +1115,62 @@ class TripleStore implements Closeable {
 	}
 
 	IndexPrefixSelection selectBestIndexPrefix(int boundComponentMask) {
+		List<IndexAccessPath> accessPaths = indexAccessPaths(boundComponentMask);
+		if (accessPaths.isEmpty()) {
+			return new IndexPrefixSelection("", 0, 0);
+		}
+
+		IndexAccessPath bestPath = accessPaths.get(0);
+		for (IndexAccessPath candidate : accessPaths) {
+			if (candidate.prefixLength() > bestPath.prefixLength()) {
+				bestPath = candidate;
+			}
+		}
+		return new IndexPrefixSelection(bestPath.indexFieldSequence(), bestPath.prefixLength(),
+				bestPath.prefixComponentMask());
+	}
+
+	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
 		long subj = boundMask(boundComponentMask, Component.S);
 		long pred = boundMask(boundComponentMask, Component.P);
 		long obj = boundMask(boundComponentMask, Component.O);
 		long context = boundMask(boundComponentMask, Component.C);
-		TripleIndex bestIndex = getBestIndex(subj, pred, obj, context);
-		if (bestIndex == null) {
-			return new IndexPrefixSelection("", 0, 0);
+		List<IndexAccessPath> accessPaths = new ArrayList<>(indexes.size());
+		for (TripleIndex index : indexes) {
+			int prefixScore = index.getPatternScore(subj, pred, obj, context);
+			int prefixComponentMask = 0;
+			char[] fieldSequence = index.getFieldSeq();
+			for (int i = 0; i < prefixScore; i++) {
+				Component component = toEstimatorComponent(fieldSequence[i]);
+				prefixComponentMask |= 1 << component.ordinal();
+			}
+			accessPaths.add(new IndexAccessPath(new String(fieldSequence), prefixScore, prefixComponentMask));
+		}
+		return List.copyOf(accessPaths);
+	}
+
+	static final class IndexAccessPath {
+		private final String indexFieldSequence;
+		private final int prefixLength;
+		private final int prefixComponentMask;
+
+		private IndexAccessPath(String indexFieldSequence, int prefixLength, int prefixComponentMask) {
+			this.indexFieldSequence = indexFieldSequence;
+			this.prefixLength = prefixLength;
+			this.prefixComponentMask = prefixComponentMask;
 		}
 
-		int prefixScore = bestIndex.getPatternScore(subj, pred, obj, context);
-		int prefixComponentMask = 0;
-		char[] fieldSequence = bestIndex.getFieldSeq();
-		for (int i = 0; i < prefixScore; i++) {
-			Component component = toEstimatorComponent(fieldSequence[i]);
-			prefixComponentMask |= 1 << component.ordinal();
+		String indexFieldSequence() {
+			return indexFieldSequence;
 		}
 
-		return new IndexPrefixSelection(new String(fieldSequence), prefixScore, prefixComponentMask);
+		int prefixLength() {
+			return prefixLength;
+		}
+
+		int prefixComponentMask() {
+			return prefixComponentMask;
+		}
 	}
 
 	private long boundMask(Set<Component> boundComponents, Component component) {

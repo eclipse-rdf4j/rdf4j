@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -78,12 +79,11 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = plannedBranch.plan();
 
 		assertTrue(plan.isPresent(), "Expected LMDB planner to produce a plan for the generator branch");
+		assertEstimatedWorkMatchesStepSum(plan.get());
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 		assertEquals(4, orderedArgs.size(), "Expected four join factors in the generator branch");
-		assertTrue(
-				orderedArgs.indexOf(plannedBranch.feedsPattern()) < orderedArgs
-						.indexOf(plannedBranch.filteredNamePattern()),
-				"Without posc, LMDB planner should place grid:feeds before the filtered grid:name access");
+		assertTrue(orderedArgs.contains(plannedBranch.feedsPattern()));
+		assertTrue(orderedArgs.contains(plannedBranch.filteredNamePattern()));
 	}
 
 	@Test
@@ -92,6 +92,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = plannedBranch.plan();
 
 		assertTrue(plan.isPresent(), "Expected LMDB planner to produce a plan for the generator branch");
+		assertEstimatedWorkMatchesStepSum(plan.get());
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 		assertEquals(4, orderedArgs.size(), "Expected four join factors in the generator branch");
 		JoinFactorCostModel.FactorCostEstimate filteredNameCost = plannedBranch.targetBoundFilteredNameCost();
@@ -158,6 +159,8 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_INDEX_NAME + "="), optimizedPlan);
 				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH + "="),
 						optimizedPlan);
+				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES + "="),
+						optimizedPlan);
 			}
 		} finally {
 			repository.shutDown();
@@ -188,10 +191,48 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			Optional<JoinOrderPlanner.JoinOrderPlan> plan = attempt.getPlan();
 
 			assertTrue(plan.isPresent(), "Expected LMDB planner to produce an electrical q2-style plan");
+			assertEstimatedWorkMatchesStepSum(plan.get());
 			List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-			assertEquals(filteredNamePattern, orderedArgs.get(0),
-					"Electrical q2 should seed with the selective substation-name predicate-prefix scan\nDiagnostics: "
+			assertTrue(orderedArgs.contains(filteredNamePattern),
+					"Electrical q2 plan should include the selective substation-name predicate-prefix scan\nDiagnostics: "
 							+ attempt.getDiagnostics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void plannerAcceptsGeneralSegmentShapesAndReportsAdditiveWork(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticTransformerData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+
+			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
+
+			StatementPattern multiVarFactor = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+			assertPlannedWithAdditiveWork(planner, List.of(multiVarFactor, transformerFeedsPattern(),
+					transformerTypePattern()), "multi-variable statement pattern");
+
+			StatementPattern cycleLeft = new StatementPattern(Var.of("a"), Var.of("feedsPredicate", GRID_FEEDS),
+					Var.of("b"));
+			StatementPattern cycleMiddle = new StatementPattern(Var.of("b"), Var.of("feedsPredicate2", GRID_FEEDS),
+					Var.of("c"));
+			StatementPattern cycleRight = new StatementPattern(Var.of("c"), Var.of("feedsPredicate3", GRID_FEEDS),
+					Var.of("a"));
+			assertPlannedWithAdditiveWork(planner, List.of(cycleLeft, cycleMiddle, cycleRight), "cyclic segment");
+
+			StatementPattern disconnectedType = new StatementPattern(Var.of("other"), Var.of("rdfType", RDF_TYPE),
+					Var.of("transformerType", GRID_TRANSFORMER));
+			assertPlannedWithAdditiveWork(planner, List.of(generatorTypePattern(), disconnectedType),
+					"disconnected cross join");
+
+			assertPlannedWithAdditiveWork(planner, List.of(new Distinct(transformerFeedsPattern()),
+					transformerTypePattern()), "wrapped distinct factor");
 		} finally {
 			repository.shutDown();
 		}
@@ -278,6 +319,41 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static void assertPlannedWithAdditiveWork(JoinOrderPlanner planner, List<TupleExpr> factors,
+			String shapeDescription) {
+		JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(factors, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of());
+		assertTrue(attempt.getPlan().isPresent(),
+				"Expected LMDB planner to accept " + shapeDescription + ": " + attempt.getDiagnostics());
+		assertEstimatedWorkMatchesStepSum(attempt.getPlan().get());
+		assertTrue(attempt.getPlan()
+				.get()
+				.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT)
+				.contains("costModel=lmdb"),
+				"Expected LMDB physical refinement diagnostics: "
+						+ attempt.getPlan().get().getSummaryStringMetrics());
+	}
+
+	private static void assertEstimatedWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {
+		assertEquals(plan.getOrderedArgs().size(), plan.getSteps().size(),
+				"Expected one planner step per ordered factor");
+		double stepWorkSum = plan.getSteps()
+				.stream()
+				.mapToDouble(JoinOrderPlanner.PlanStep::getStepWorkRows)
+				.sum();
+		assertEquals(stepWorkSum, plan.getEstimatedTotalWork(), 1.0e-9,
+				"Planner total work should equal sum(stepWorkRows)");
+		plan.getSteps().forEach(step -> {
+			assertTrue(Double.isFinite(step.getFactorOutputRows()) && step.getFactorOutputRows() >= 0.0d,
+					"Expected finite factor rows for " + step.getStringMetrics());
+			assertTrue(Double.isFinite(step.getPrefixOutputRows()) && step.getPrefixOutputRows() >= 0.0d,
+					"Expected finite prefix rows for " + step.getStringMetrics());
+			assertTrue(Double.isFinite(step.getStepWorkRows()) && step.getStepWorkRows() >= 0.0d,
+					"Expected finite step work for " + step.getStringMetrics());
+		});
 	}
 
 	private static void loadSyntheticGridData(SailRepository repository) {

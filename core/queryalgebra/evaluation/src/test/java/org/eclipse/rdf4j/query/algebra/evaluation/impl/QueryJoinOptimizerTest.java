@@ -262,7 +262,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		QueryModelNode diagnostics = annotatedNodes.get(0);
 		assertThat(diagnostics.getStringMetricActual("optimizer.strategy")).isEqualTo("greedy");
 		assertThat(diagnostics.getStringMetricActual("optimizer.thresholds"))
-				.contains("DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8")
+				.contains("DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT="
+						+ JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT)
 				.contains("MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER=10")
 				.contains("MIN_UNLOCKED_FILTER_PASS_RATIO=0.25");
 		assertThat(diagnostics.getStringMetricActual("optimizer.originalOrder"))
@@ -523,7 +524,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(statistics.joinCardinalityCalls)
 				.as("Planner-provided orders should bypass clone-based greedy join-cardinality scoring")
 				.isZero();
-		assertThat(predicates(flattenJoinLeaves(root.getArg()))).containsExactly(ex("pC"), ex("pB"), ex("pA"));
+		List<TupleExpr> leaves = flattenJoinLeaves(root.getArg());
+		assertThat(predicates(leaves)).containsExactly(ex("pC"), ex("pB"), ex("pA"));
+		assertThat(leaves.get(0).getStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_STRUCTURAL_SUMMARY))
+				.contains("factors=3")
+				.contains("deferredFilters=0")
+				.contains("scopeBindings=");
 	}
 
 	@Test
@@ -575,7 +581,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void optimizeNormalizesPlannerOutputBindingsBeforeFirstUse() {
+	public void optimizePreservesPlannerOutputBindingsWithoutPostReorder() {
 		BindingSetAssignment uValues = bindingSetAssignment("u", "u1");
 		BindingSetAssignment vValues = bindingSetAssignment("v", "v1");
 		StatementPattern follows = statementPattern("u", "v", ex("follows"));
@@ -587,12 +593,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
 
 		assertThat(flattenJoinLeaves(root.getArg()))
-				.as("Planner orders still need the same BindingSetAssignment positioning as fallback orders")
-				.containsExactly(uValues, vValues, follows, name);
+				.as("Planner orders should remain authoritative after planning")
+				.containsExactly(follows, uValues, vValues, name);
 	}
 
 	@Test
-	public void optimizeNormalizesPlannerOutputFilterWrappedBindingsBeforeFirstUse() {
+	public void optimizePreservesPlannerOutputFilterWrappedBindingsWithoutPostReorder() {
 		BindingSetAssignment uValues = bindingSetAssignment("u", "u1");
 		Filter uRestriction = filter(uValues, "u", "u");
 		BindingSetAssignment vValues = bindingSetAssignment("v", "v1");
@@ -604,8 +610,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		new QueryJoinOptimizer(statistics, new EmptyTripleSource()).optimize(root, null, null);
 
 		assertThat(flattenJoinLeaves(root.getArg()))
-				.as("Filter-wrapped BindingSetAssignment factors should be positioned before first use")
-				.containsExactly(uRestriction, vValues, follows);
+				.as("Filter-wrapped BindingSetAssignment factors should not be moved after planner ordering")
+				.containsExactly(vValues, follows, uRestriction);
 	}
 
 	@Test

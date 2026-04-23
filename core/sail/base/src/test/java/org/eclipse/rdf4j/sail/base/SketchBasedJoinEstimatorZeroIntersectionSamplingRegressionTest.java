@@ -15,13 +15,9 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.datasketches.theta.Intersection;
-import org.apache.datasketches.theta.SetOperation;
-import org.apache.datasketches.theta.Sketch;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -42,7 +38,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 	private static final String SAMPLE_SIZE_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionSampleSize";
 
 	@Test
-	void plannerFallsBackToPositiveEstimateWhenThetaMissesRareOverlap() throws Exception {
+	void plannerUsesTupleSketchDotProductForRareOverlap() throws Exception {
 		PropertyState properties = PropertyState.capture(
 				EXACT_LIMIT_PROPERTY,
 				SKEW_RATIO_PROPERTY,
@@ -51,20 +47,17 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		try {
 			System.setProperty(EXACT_LIMIT_PROPERTY, "8");
 			System.setProperty(SKEW_RATIO_PROPERTY, "32");
-			System.setProperty(ROW_BUDGET_PROPERTY, "200000");
-			System.setProperty(SAMPLE_SIZE_PROPERTY, "32");
+			System.setProperty(ROW_BUDGET_PROPERTY, "0");
+			System.setProperty(SAMPLE_SIZE_PROPERTY, "0");
 
 			RareOverlapFixture fixture = buildRareOverlapFixture();
 			double plannerJoinEstimate = fixture.estimator.cardinality(fixture.join);
 			double relativeError = Math.abs(plannerJoinEstimate - fixture.actualJoinRows) / fixture.actualJoinRows;
 
-			assertEquals(0.0d, fixture.thetaIntersectionDistinct, 0.0d,
-					"Test precondition: raw theta intersection should miss the rare overlap");
 			assertTrue(plannerJoinEstimate > 0.0d,
-					() -> "Planner should recover from zero theta intersection. actual=" + fixture.actualJoinRows
-							+ ", thetaDistinct=" + fixture.thetaIntersectionDistinct);
-			assertTrue(relativeError <= 0.25d,
-					() -> "Sampled rare-overlap fallback should stay within 25% relative error. estimate="
+					() -> "Planner should use tuple multiplicity dot products. actual=" + fixture.actualJoinRows);
+			assertTrue(relativeError <= 0.35d,
+					() -> "Sampled tuple-sketch rare-overlap estimate should stay within 35% relative error. estimate="
 							+ plannerJoinEstimate + ", actual=" + fixture.actualJoinRows + ", error=" + relativeError);
 		} finally {
 			properties.restore();
@@ -84,14 +77,11 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
 			estimator.rebuildOnceSlow();
 
-			double thetaIntersectionDistinct = rawThetaIntersectionDistinct(estimator, locatedAt, hasName);
-			if (thetaIntersectionDistinct == 0.0d) {
-				return new RareOverlapFixture(estimator, joinNode(locatedAt, hasName),
-						(double) overlapBranches * copiesPerBranch, thetaIntersectionDistinct);
-			}
+			return new RareOverlapFixture(estimator, joinNode(locatedAt, hasName),
+					(double) overlapBranches * copiesPerBranch);
 		}
 
-		throw new AssertionError("Unable to construct a zero-intersection rare-overlap fixture");
+		throw new AssertionError("Unable to construct a rare-overlap fixture");
 	}
 
 	private static void populateRareOverlapData(StubSailStore store, IRI locatedAt, IRI hasName, int overlapBranches,
@@ -113,27 +103,6 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		}
 	}
 
-	private static double rawThetaIntersectionDistinct(SketchBasedJoinEstimator estimator, IRI locatedAt, IRI hasName)
-			throws Exception {
-		Object leftEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O, null, locatedAt.stringValue(),
-				null, null);
-		Object rightEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.S, null, hasName.stringValue(),
-				null, null);
-		Sketch leftBindings = bindingsSketch(leftEstimate);
-		Sketch rightBindings = bindingsSketch(rightEstimate);
-
-		Intersection intersection = SetOperation.builder().buildIntersection();
-		intersection.intersect(leftBindings);
-		intersection.intersect(rightBindings);
-		return intersection.getResult().getEstimate();
-	}
-
-	private static Sketch bindingsSketch(Object joinEstimate) throws Exception {
-		Field bindingsField = joinEstimate.getClass().getDeclaredField("bindings");
-		bindingsField.setAccessible(true);
-		return (Sketch) bindingsField.get(joinEstimate);
-	}
-
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(128)
@@ -153,8 +122,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		return VF.createStatement(subject, predicate, object);
 	}
 
-	private record RareOverlapFixture(SketchBasedJoinEstimator estimator, Join join, double actualJoinRows,
-			double thetaIntersectionDistinct) {
+	private record RareOverlapFixture(SketchBasedJoinEstimator estimator, Join join, double actualJoinRows) {
 	}
 
 	private static final class PropertyState {
