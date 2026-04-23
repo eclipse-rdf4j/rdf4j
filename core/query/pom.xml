@@ -25,12 +25,14 @@
 			<artifactId>jackson-annotations</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>com.fasterxml.jackson.core</groupId>
+			<groupId>tools.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
+			<version>${jackson3.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>com.fasterxml.jackson.core</groupId>
+			<groupId>tools.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
+			<version>${jackson3.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.commons</groupId>

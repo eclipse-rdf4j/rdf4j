@@ -31,10 +31,11 @@ import java.util.zip.GZIPInputStream;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.core.StreamReadConstraints;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Utility to search a ValueStore WAL for a specific minted value ID efficiently.
@@ -267,12 +268,12 @@ public final class ValueStoreWalSearch {
 
 	private Parsed parseJson(byte[] jsonBytes) throws IOException {
 		Parsed parsed = new Parsed();
-		try (JsonParser jp = jsonFactory.createParser(jsonBytes)) {
+		try (JsonParser jp = jsonFactory.createParser(ObjectReadContext.empty(), jsonBytes)) {
 			if (jp.nextToken() != JsonToken.START_OBJECT) {
 				return parsed;
 			}
 			while (jp.nextToken() != JsonToken.END_OBJECT) {
-				String field = jp.getCurrentName();
+				String field = jp.currentName();
 				jp.nextToken();
 				if ("t".equals(field)) {
 					String t = jp.getValueAsString("");
