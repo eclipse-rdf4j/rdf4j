@@ -191,6 +191,38 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void libraryAuthorsByNameDoesNotReuseConditionedLearnedPatternStats(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 2);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+			assertDoesNotContain(snapshot.plan(), "sources={learned_pattern=1}",
+					"Library q2 should not reuse prefix-conditioned feedback as unconditional learned pattern stats");
+			assertDoesNotContain(snapshot.plan(), "filterSelectivitySource=learned_pattern",
+					"Library q2 should not reuse prefix-conditioned feedback as a learned-pattern source\n"
+							+ snapshot.plan());
+			assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name", 12.0d);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
 	void libraryCopyBranchExclusionDoesNotScanAllLocatedAt(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = dataDir.resolve(theme.name());
@@ -215,6 +247,37 @@ class LmdbThemeQueryRegressionTest {
 					"<http://example.com/theme/library/locatedAt> ?branch",
 					"Library q7 should keep the selective branch-name anchor before copy location expansion");
 			assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void electricalGridSubstationNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ELECTRICAL_GRID;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 2);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/grid/name> ?name",
+					"<http://example.com/theme/grid/feeds> ?substation",
+					"Electrical grid q2 should keep the selective substation-name anchor before feeds\n"
+							+ snapshot.plan());
+			assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/grid/name", 10.0d);
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
@@ -246,6 +309,67 @@ class LmdbThemeQueryRegressionTest {
 					"Engineering q2 should keep the assembly-name filter directly after the name pattern\n"
 							+ snapshot.plan());
 			assertEngineeringAssemblyNameFilterDoesNotScanAllNames(snapshot.plan());
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void trainLineNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.TRAIN;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 2);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
+			assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/name> ?lineName",
+					"<http://example.com/theme/train/partOfLine> ?line",
+					"Train q2 should keep the selective line-name anchor before the broad line-membership edge\n"
+							+ snapshot.plan());
+			assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/train/name", 10.0d);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void trainScheduledTimeSeedStaysAheadOfBroadTypeAnchor(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.TRAIN;
+		Path themeDir = dataDir.resolve(theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, 5);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
+			assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
+			assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/scheduledTime> ?time",
+					"?service a <http://example.com/theme/train/TrainService>",
+					"Train q5 should keep the selective scheduledTime seed ahead of the broad rdf:type anchor\n"
+							+ snapshot.plan());
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
@@ -453,6 +577,12 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
+	private static void assertDoesNotContain(String value, String unexpected, String message) {
+		if (value.contains(unexpected)) {
+			throw new AssertionError(message + "\nDid not expect to find `" + unexpected + "` in:\n" + value);
+		}
+	}
+
 	private static void assertContainsAny(String value, String... expectedValues) {
 		for (String expected : expectedValues) {
 			if (value.contains(expected)) {
@@ -602,6 +732,50 @@ class LmdbThemeQueryRegressionTest {
 		}
 		if (directLookupCount < 6) {
 			throw new AssertionError("Expected at least six direct lookup follows factors in:\n" + plan);
+		}
+	}
+
+	private static void assertDirectLookupWorkRowsBelow(String plan, double maxWorkRows, int minDirectLookups) {
+		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+		int directLookupCount = 0;
+		while (matcher.find()) {
+			directLookupCount++;
+			double workRows = parsePlanRows(matcher.group(1));
+			if (workRows > maxWorkRows) {
+				throw new AssertionError("Expected direct lookup plannedWorkRows <= " + maxWorkRows + " but got "
+						+ matcher.group(1) + " in:\n" + plan);
+			}
+		}
+		if (directLookupCount < minDirectLookups) {
+			throw new AssertionError(
+					"Expected at least " + minDirectLookups + " direct lookup factors in:\n" + plan);
+		}
+	}
+
+	private static void assertPredicateLookupWorkRowsBelow(String plan, String predicateIri, double maxWorkRows) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		if (predicateIndex < 0) {
+			throw new AssertionError("Expected to find predicate `" + predicateIri + "` in:\n" + plan);
+		}
+		int patternStart = plan.lastIndexOf("StatementPattern", predicateIndex);
+		int patternEnd = plan.indexOf("s: Var", predicateIndex);
+		if (patternStart < 0 || patternEnd < 0 || patternStart >= patternEnd) {
+			throw new AssertionError("Expected a statement-pattern header for predicate `" + predicateIri + "` in:\n"
+					+ plan);
+		}
+		String header = plan.substring(patternStart, patternEnd);
+		assertDoesNotContain(header, "plannedIndexAccessMode=fullScan");
+		assertContains(header, "plannedLookupComponents=[P, O]");
+		Matcher matcher = Pattern.compile("plannedWorkRows=([^,)]*)").matcher(header);
+		if (!matcher.find()) {
+			throw new AssertionError(
+					"Expected plannedWorkRows for predicate `" + predicateIri + "` in:\n" + header + "\nFull plan:\n"
+							+ plan);
+		}
+		double workRows = parsePlanRows(matcher.group(1));
+		if (workRows > maxWorkRows) {
+			throw new AssertionError("Expected `" + predicateIri + "` plannedWorkRows <= " + maxWorkRows + " but got "
+					+ matcher.group(1) + " in:\n" + header + "\nFull plan:\n" + plan);
 		}
 	}
 

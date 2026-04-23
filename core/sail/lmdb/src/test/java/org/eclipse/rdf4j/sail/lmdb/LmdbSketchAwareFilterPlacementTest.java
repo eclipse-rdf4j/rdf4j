@@ -28,17 +28,20 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -196,6 +199,38 @@ class LmdbSketchAwareFilterPlacementTest {
 	}
 
 	@Test
+	void prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadLibraryData(repository);
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+
+			Filter conditioned = new Filter(
+					new Join(bindingAssignment("authorName", "Author 1", "Author 2", "Author 3"),
+							new StatementPattern(Var.of("author"), Var.of("namePredicate", NAME),
+									Var.of("authorName"))),
+					listMember("authorName", "Author 1", "Author 2", "Author 3"));
+			statistics.recordFilterOutcome(conditioned, 1L, 99L);
+
+			Filter unconditioned = new Filter(
+					new StatementPattern(Var.of("author"), Var.of("namePredicate", NAME), Var.of("authorName")),
+					listMember("authorName", "Author 1", "Author 2", "Author 3"));
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(unconditioned);
+
+			assertTrue(estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER
+					&& estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE
+					&& estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN,
+					"Prefix-conditioned local filter feedback should not be reused as unconditional learned stats: "
+							+ estimate.getSource() + " ratio=" + estimate.getPassRatio());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void nonLocalEqualityFilterReceivesHeuristicPassRatio(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
 		SailRepository repository = new SailRepository(store);
@@ -218,6 +253,31 @@ class LmdbSketchAwareFilterPlacementTest {
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC, estimate.getSource());
 			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 1.0d,
 					"Expected non-local equality to derive a selective tuple-var heuristic");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadThemeDataWithBulkEstimator(repository, store, Theme.SOCIAL_MEDIA);
+			String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 3);
+
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				optimizedPlan = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+			}
+
+			assertTrue(!optimizedPlan.contains("deferredFilterScope=bindingPrefix"),
+					"Pairwise VALUES inequality should stay on its minimal binding window, not a binding-prefix split:\n"
+							+ optimizedPlan);
 		} finally {
 			repository.shutDown();
 		}
@@ -443,6 +503,28 @@ class LmdbSketchAwareFilterPlacementTest {
 		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadThemeData(repository, theme);
 		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+	}
+
+	private static BindingSetAssignment bindingAssignment(String bindingName, String... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new ArrayList<>(values.length);
+		for (String value : values) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding(bindingName, VF.createLiteral(value));
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static ListMemberOperator listMember(String variable, String... values) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(Var.of(variable));
+		for (String value : values) {
+			operator.addArgument(new ValueConstant(VF.createLiteral(value)));
+		}
+		return operator;
 	}
 
 	private static List<String> collectMandatoryLeafOrder(TupleExpr optimized) {

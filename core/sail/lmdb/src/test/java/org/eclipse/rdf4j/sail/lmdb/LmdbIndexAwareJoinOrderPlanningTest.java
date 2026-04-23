@@ -279,8 +279,10 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					.orElseThrow();
 			assertEquals("prefixScan",
 					prefixScanCost.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
-			assertTrue(prefixScanCost.getWorkRows() >= prefixScanCost.getOutputRows(),
-					"Expected prefix scan work to stay at least as high as output rows: "
+			double plannedAccessRows = prefixScanCost.getDoubleMetrics()
+					.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, prefixScanCost.getWorkRows());
+			assertTrue(prefixScanCost.getWorkRows() <= plannedAccessRows,
+					"Expected prefix scan work to track access rows rather than an inflated factor-row floor: "
 							+ prefixScanCost.getDoubleMetrics());
 		} finally {
 			repository.shutDown();

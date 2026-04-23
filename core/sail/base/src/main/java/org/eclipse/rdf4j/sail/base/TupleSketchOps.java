@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
 
 import org.apache.datasketches.common.ResizeFactor;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesCombiner;
@@ -26,6 +27,8 @@ import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketc
 final class TupleSketchOps {
 
 	private static final int NUMBER_OF_VALUES = 1;
+	private static final int SMALL_INTERSECTION_RETAINED_ENTRY_THRESHOLD = 1024;
+	private static final long EMPTY_KEY = Long.MIN_VALUE;
 	private static final double[] POSITIVE_ONE = { 1.0d };
 	private static final double[] NEGATIVE_ONE = { -1.0d };
 	private static final ArrayOfDoublesCombiner MULTIPLY_POSITIVE_SUMMARIES = (left, right) -> new double[] {
@@ -92,22 +95,34 @@ final class TupleSketchOps {
 	}
 
 	static double estimateIntersectionProductSum(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
-		ArrayOfDoublesSketch intersection = intersectProduct(left, right, k);
-		return estimatePositiveSum(intersection);
+		return intersectProductStats(left, right, k).positiveSum();
 	}
 
 	static ArrayOfDoublesSketch intersectProduct(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
-		return intersect(left, right, k, MULTIPLY_POSITIVE_SUMMARIES);
+		return intersectProductStats(left, right, k).sketch();
 	}
 
 	static ArrayOfDoublesSketch intersectMin(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
-		return intersect(left, right, k, MIN_POSITIVE_SUMMARIES);
+		return intersectMinStats(left, right, k).sketch();
 	}
 
-	private static ArrayOfDoublesSketch intersect(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k,
-			ArrayOfDoublesCombiner combiner) {
+	static IntersectionStats intersectProductStats(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
+		return intersect(left, right, k, MULTIPLY_POSITIVE_SUMMARIES, true);
+	}
+
+	private static IntersectionStats intersectMinStats(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
+		return intersect(left, right, k, MIN_POSITIVE_SUMMARIES, false);
+	}
+
+	private static IntersectionStats intersect(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k,
+			ArrayOfDoublesCombiner combiner, boolean productMode) {
 		if (left == null || right == null || left.getRetainedEntries() == 0 || right.getRetainedEntries() == 0) {
-			return newSketch(k).compact();
+			return new IntersectionStats(newSketch(k).compact(), 0.0d, 0.0d);
+		}
+		if (Math.max(left.getRetainedEntries(),
+				right.getRetainedEntries()) <= SMALL_INTERSECTION_RETAINED_ENTRY_THRESHOLD
+				&& !left.isEstimationMode() && !right.isEstimationMode()) {
+			return intersectSmall(left, right, k, productMode);
 		}
 		ArrayOfDoublesIntersection intersection = new ArrayOfDoublesSetOperationBuilder()
 				.setNominalEntries(k)
@@ -115,7 +130,119 @@ final class TupleSketchOps {
 				.buildIntersection();
 		intersection.intersect(left, combiner);
 		intersection.intersect(right, combiner);
-		return intersection.getResult();
+		return summarizePositiveEntries(intersection.getResult());
+	}
+
+	private static IntersectionStats intersectSmall(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k,
+			boolean productMode) {
+		ArrayOfDoublesSketch smaller = left.getRetainedEntries() <= right.getRetainedEntries() ? left : right;
+		ArrayOfDoublesSketch larger = smaller == left ? right : left;
+		DirectLookupTable largerLookup = buildLookupTable(larger);
+		ArrayOfDoublesUpdatableSketch intersection = newSketch(k);
+		double[] scratch = new double[1];
+		double positiveDistinct = 0.0d;
+		double positiveSum = 0.0d;
+		ArrayOfDoublesSketchIterator iterator = smaller.iterator();
+		while (iterator.next()) {
+			long key = iterator.getKey();
+			double combinedValue = combinePositiveValue(iterator.getValues()[0],
+					largerLookup.find(key), productMode);
+			if (combinedValue <= 0.0d) {
+				continue;
+			}
+			scratch[0] = combinedValue;
+			intersection.update(key, scratch);
+			positiveDistinct += 1.0d;
+			positiveSum += combinedValue;
+		}
+		return new IntersectionStats(intersection.compact(), positiveDistinct, positiveSum);
+	}
+
+	private static DirectLookupTable buildLookupTable(ArrayOfDoublesSketch sketch) {
+		int capacity = 1;
+		int requiredCapacity = Math.max(4, sketch.getRetainedEntries() << 1);
+		while (capacity < requiredCapacity) {
+			capacity <<= 1;
+		}
+		long[] keys = new long[capacity];
+		double[] values = new double[capacity];
+		Arrays.fill(keys, EMPTY_KEY);
+		ArrayOfDoublesSketchIterator iterator = sketch.iterator();
+		while (iterator.next()) {
+			insert(keys, values, iterator.getKey(), iterator.getValues()[0]);
+		}
+		return new DirectLookupTable(keys, values);
+	}
+
+	private static void insert(long[] keys, double[] values, long key, double value) {
+		int mask = keys.length - 1;
+		int slot = mixSlot(key) & mask;
+		while (true) {
+			long existing = keys[slot];
+			if (existing == EMPTY_KEY || existing == key) {
+				keys[slot] = key;
+				values[slot] = value;
+				return;
+			}
+			slot = (slot + 1) & mask;
+		}
+	}
+
+	private static int mixSlot(long key) {
+		long mixed = key ^ (key >>> 33);
+		mixed *= 0xff51afd7ed558ccdL;
+		mixed ^= (mixed >>> 33);
+		mixed *= 0xc4ceb9fe1a85ec53L;
+		mixed ^= (mixed >>> 33);
+		return (int) mixed;
+	}
+
+	private static final class DirectLookupTable {
+		private final long[] keys;
+		private final double[] values;
+
+		private DirectLookupTable(long[] keys, double[] values) {
+			this.keys = keys;
+			this.values = values;
+		}
+
+		private double find(long targetKey) {
+			int mask = keys.length - 1;
+			int slot = mixSlot(targetKey) & mask;
+			while (true) {
+				long key = keys[slot];
+				if (key == EMPTY_KEY) {
+					return 0.0d;
+				}
+				if (key == targetKey) {
+					return values[slot];
+				}
+				slot = (slot + 1) & mask;
+			}
+		}
+	}
+
+	private static double combinePositiveValue(double left, double right, boolean productMode) {
+		double positiveLeft = Math.max(0.0d, left);
+		double positiveRight = Math.max(0.0d, right);
+		return productMode ? positiveLeft * positiveRight : Math.min(positiveLeft, positiveRight);
+	}
+
+	private static IntersectionStats summarizePositiveEntries(ArrayOfDoublesSketch sketch) {
+		if (sketch == null || sketch.getRetainedEntries() == 0) {
+			return new IntersectionStats(sketch, 0.0d, 0.0d);
+		}
+		double positiveDistinct = 0.0d;
+		double positiveSum = 0.0d;
+		ArrayOfDoublesSketchIterator iterator = sketch.iterator();
+		while (iterator.next()) {
+			double value = iterator.getValues()[0];
+			if (value > 0.0d) {
+				positiveDistinct += 1.0d;
+				positiveSum += value;
+			}
+		}
+		return new IntersectionStats(sketch, scaleByTheta(positiveDistinct, sketch), scaleByTheta(positiveSum, sketch));
 	}
 
 	private static double scaleByTheta(double value, ArrayOfDoublesSketch sketch) {
@@ -127,6 +254,30 @@ final class TupleSketchOps {
 			return value;
 		}
 		return value / theta;
+	}
+
+	static final class IntersectionStats {
+		private final ArrayOfDoublesSketch sketch;
+		private final double positiveDistinct;
+		private final double positiveSum;
+
+		private IntersectionStats(ArrayOfDoublesSketch sketch, double positiveDistinct, double positiveSum) {
+			this.sketch = sketch;
+			this.positiveDistinct = positiveDistinct;
+			this.positiveSum = positiveSum;
+		}
+
+		ArrayOfDoublesSketch sketch() {
+			return sketch;
+		}
+
+		double positiveDistinct() {
+			return positiveDistinct;
+		}
+
+		double positiveSum() {
+			return positiveSum;
+		}
 	}
 
 }

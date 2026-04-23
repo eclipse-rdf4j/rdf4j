@@ -3523,8 +3523,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private JoinEstimate joinWithPatternStats(Component newJoinVar, PatternStats rhs) {
-			ArrayOfDoublesSketch inter = TupleSketchOps.intersectProduct(this.bindings, rhs.sketch, snap.k);
-			double interDistinct = TupleSketchOps.estimatePositiveDistinct(inter);
+			TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(this.bindings,
+					rhs.sketch, snap.k);
+			ArrayOfDoublesSketch inter = intersectionStats.sketch();
+			double interDistinct = intersectionStats.positiveDistinct();
 
 			if (interDistinct == 0.0) { // early out
 				this.bindings = inter;
@@ -3535,7 +3537,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 
 			/* round to nearest whole solution count if enabled */
-			this.resultSize = roundJoinEstimate(TupleSketchOps.estimatePositiveSum(inter));
+			this.resultSize = roundJoinEstimate(intersectionStats.positiveSum());
 
 			/* carry forward */
 			this.bindings = inter;
@@ -5038,7 +5040,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (distinct == 0.0d) {
 				return new SharedVarEstimate(0.0d, 0.0d, intersection);
 			}
-			double rows = Math.min(disconnectedRows, TupleSketchOps.estimatePositiveSum(intersection));
+			double rows = Math.min(disconnectedRows, intersectionResult.rows);
 			return new SharedVarEstimate(normalizeRows(rows), distinct, intersection);
 		}
 		double rows = leftRows * rightRows;
@@ -5052,9 +5054,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static SketchIntersectionResult intersectJoinOrderingSketches(ArrayOfDoublesSketch left,
 			ArrayOfDoublesSketch right) {
-		ArrayOfDoublesSketch intersection = TupleSketchOps.intersectProduct(left, right,
+		TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(left, right,
 				DEFAULT_SKETCH_NOMINAL_ENTRIES);
-		return new SketchIntersectionResult(TupleSketchOps.estimatePositiveDistinct(intersection), intersection);
+		return new SketchIntersectionResult(intersectionStats.positiveDistinct(), intersectionStats.positiveSum(),
+				intersectionStats.sketch());
 	}
 
 	JoinOrderingSketchIntersectionCache newJoinOrderingSketchIntersectionCache() {
@@ -5683,10 +5686,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static final class SketchIntersectionResult {
 		private final double distinct;
+		private final double rows;
 		private final ArrayOfDoublesSketch sketch;
 
-		private SketchIntersectionResult(double distinct, ArrayOfDoublesSketch sketch) {
+		private SketchIntersectionResult(double distinct, double rows, ArrayOfDoublesSketch sketch) {
 			this.distinct = distinct;
+			this.rows = rows;
 			this.sketch = sketch;
 		}
 	}
@@ -6946,15 +6951,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private TupleSketchStats mergeTupleSketchStats(TupleSketchStats leftStats, TupleSketchStats rightStats) {
-		ArrayOfDoublesSketch inter = TupleSketchOps.intersectProduct(leftStats.bindings, rightStats.bindings,
-				DEFAULT_SKETCH_NOMINAL_ENTRIES);
-		double interDistinct = TupleSketchOps.estimatePositiveDistinct(inter);
+		TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(leftStats.bindings,
+				rightStats.bindings, DEFAULT_SKETCH_NOMINAL_ENTRIES);
+		ArrayOfDoublesSketch inter = intersectionStats.sketch();
+		double interDistinct = intersectionStats.positiveDistinct();
 
 		if (interDistinct == 0.0) {
 			return new TupleSketchStats(inter, 0.0, 0.0);
 		}
 
-		double joinRows = roundJoinEstimate(TupleSketchOps.estimatePositiveSum(inter));
+		double joinRows = roundJoinEstimate(intersectionStats.positiveSum());
 		return new TupleSketchStats(inter, interDistinct, joinRows);
 	}
 
@@ -7089,7 +7095,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		LookupAnalysis lookupAnalysis = analyzeLookupBindings(accessShape.pattern(), filter.getCondition(),
 				currentlyBoundVars);
-		double filterMultiplier = resolveFilterMultiplier(filter, accessShape.pattern());
+		double filterMultiplier = resolveFilterMultiplier(filter, accessShape.pattern(), currentlyBoundVars);
 		if (filterMultiplier >= 1.0d && lookupAnalysis.multiplier() > 0.0d) {
 			filterMultiplier = lookupAnalysis.multiplier();
 		}
@@ -7108,7 +7114,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		LookupAnalysis lookupAnalysis = analyzeLookupBindings(accessShape.pattern(), filter.getCondition(),
 				scope, currentlyBoundVarMask);
-		double filterMultiplier = resolveFilterMultiplier(filter, accessShape.pattern());
+		double filterMultiplier = resolveFilterMultiplier(filter, accessShape.pattern(), scope, currentlyBoundVarMask);
 		if (filterMultiplier >= 1.0d && lookupAnalysis.multiplier() > 0.0d) {
 			filterMultiplier = lookupAnalysis.multiplier();
 		}
@@ -7632,6 +7638,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return knownMultiplier >= 0.0d ? knownMultiplier : 1.0d;
 	}
 
+	private double resolveFilterMultiplier(Filter filter, StatementPattern pattern, Set<String> currentlyBoundVars) {
+		double knownMultiplier = estimateKnownFilterMultiplier(filter, pattern, currentlyBoundVars);
+		return knownMultiplier >= 0.0d ? knownMultiplier : 1.0d;
+	}
+
+	private double resolveFilterMultiplier(Filter filter, StatementPattern pattern, OptimizationScopeState scope,
+			long currentlyBoundVarMask) {
+		double knownMultiplier = estimateKnownFilterMultiplier(filter, pattern, scope, currentlyBoundVarMask);
+		return knownMultiplier >= 0.0d ? knownMultiplier : 1.0d;
+	}
+
 	private double resolveFilterMultiplier(Filter filter, TuplePlanEstimate estimate) {
 		if (filter.getCondition() == null || estimate == null) {
 			return 1.0d;
@@ -7658,6 +7675,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern) {
+		return resolveLearnedFilterMultiplier(filter, pattern, 0);
+	}
+
+	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern,
+			Set<String> currentlyBoundVars) {
+		return resolveLearnedFilterMultiplier(filter, pattern, localBoundComponentMask(pattern, currentlyBoundVars));
+	}
+
+	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern, OptimizationScopeState scope,
+			long currentlyBoundVarMask) {
+		return resolveLearnedFilterMultiplier(filter, pattern,
+				localBoundComponentMask(pattern, scope, currentlyBoundVarMask));
+	}
+
+	private double resolveLearnedFilterMultiplier(Filter filter, StatementPattern pattern,
+			int localBoundComponentMask) {
 		JoinStatsProvider statsProvider = learnedStatsProvider;
 		if (statsProvider == null || filter.getCondition() == null) {
 			return -1.0d;
@@ -7666,14 +7699,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (patternKey == null) {
 			return -1.0d;
 		}
-		String filterKey = FilterSelectivityKeys.filterKeyFor(filter.getCondition());
+		String filterKey = qualifiedFilterKey(filter, localBoundComponentMask);
 		double ratio = statsProvider.getFilterPassRatio(patternKey, filterKey);
 		if (isValidFilterMultiplier(ratio)) {
 			return normalizeExactFilterMultiplier(ratio);
 		}
-		String templateKey = FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern);
+		ratio = statsProvider.getFilterPassRatio(patternKey, FilterSelectivityKeys.filterKeyFor(filter.getCondition()));
+		if (isValidFilterMultiplier(ratio)) {
+			return normalizeExactFilterMultiplier(ratio);
+		}
+		String templateKey = qualifiedFilterTemplateKey(filter, pattern, localBoundComponentMask);
 		if (templateKey != null) {
 			ratio = statsProvider.getFilterTemplatePassRatio(patternKey, templateKey);
+			if (isValidFilterMultiplier(ratio)) {
+				return normalizeExactFilterMultiplier(ratio);
+			}
+		}
+		String unconditionalTemplateKey = FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern);
+		if (unconditionalTemplateKey != null) {
+			ratio = statsProvider.getFilterTemplatePassRatio(patternKey, unconditionalTemplateKey);
 			if (isValidFilterMultiplier(ratio)) {
 				return normalizeExactFilterMultiplier(ratio);
 			}
@@ -7718,6 +7762,103 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return heuristicMultiplier;
 		}
 		return -1.0d;
+	}
+
+	private double estimateKnownFilterMultiplier(Filter filter, StatementPattern pattern,
+			Set<String> currentlyBoundVars) {
+		if (filter == null || filter.getCondition() == null || pattern == null
+				|| !FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
+			return -1.0d;
+		}
+		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern, currentlyBoundVars);
+		if (learnedMultiplier >= 0.0d) {
+			return learnedMultiplier;
+		}
+		double sampledMultiplier = resolveSampledFilterMultiplier(filter, pattern);
+		if (sampledMultiplier >= 0.0d) {
+			return sampledMultiplier;
+		}
+		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
+		if (heuristicMultiplier > 0.0d) {
+			return heuristicMultiplier;
+		}
+		return -1.0d;
+	}
+
+	private double estimateKnownFilterMultiplier(Filter filter, StatementPattern pattern, OptimizationScopeState scope,
+			long currentlyBoundVarMask) {
+		if (filter == null || filter.getCondition() == null || pattern == null
+				|| !FilterSelectivityKeys.conditionIntersectsPattern(filter.getCondition(), pattern)) {
+			return -1.0d;
+		}
+		double learnedMultiplier = resolveLearnedFilterMultiplier(filter, pattern, scope, currentlyBoundVarMask);
+		if (learnedMultiplier >= 0.0d) {
+			return learnedMultiplier;
+		}
+		double sampledMultiplier = resolveSampledFilterMultiplier(filter, pattern);
+		if (sampledMultiplier >= 0.0d) {
+			return sampledMultiplier;
+		}
+		double heuristicMultiplier = estimateHeuristicFilterMultiplier(filter, pattern);
+		if (heuristicMultiplier > 0.0d) {
+			return heuristicMultiplier;
+		}
+		return -1.0d;
+	}
+
+	private String qualifiedFilterKey(Filter filter, int localBoundComponentMask) {
+		return FilterSelectivityKeys.qualifyFilterKey(FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
+				localBoundComponentMask);
+	}
+
+	private String qualifiedFilterTemplateKey(Filter filter, StatementPattern pattern, int localBoundComponentMask) {
+		return FilterSelectivityKeys.qualifyFilterKey(
+				FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern),
+				localBoundComponentMask);
+	}
+
+	private int localBoundComponentMask(StatementPattern pattern, Set<String> currentlyBoundVars) {
+		if (pattern == null || currentlyBoundVars == null || currentlyBoundVars.isEmpty()) {
+			return 0;
+		}
+		int componentMask = 0;
+		componentMask |= localBoundComponentMask(pattern.getSubjectVar(), currentlyBoundVars, Component.S);
+		componentMask |= localBoundComponentMask(pattern.getPredicateVar(), currentlyBoundVars, Component.P);
+		componentMask |= localBoundComponentMask(pattern.getObjectVar(), currentlyBoundVars, Component.O);
+		componentMask |= localBoundComponentMask(pattern.getContextVar(), currentlyBoundVars, Component.C);
+		return componentMask;
+	}
+
+	private int localBoundComponentMask(StatementPattern pattern, OptimizationScopeState scope,
+			long currentlyBoundVarMask) {
+		if (pattern == null || scope == null || currentlyBoundVarMask == 0L) {
+			return 0;
+		}
+		int componentMask = 0;
+		componentMask |= localBoundComponentMask(pattern.getSubjectVar(), scope, currentlyBoundVarMask, Component.S);
+		componentMask |= localBoundComponentMask(pattern.getPredicateVar(), scope, currentlyBoundVarMask, Component.P);
+		componentMask |= localBoundComponentMask(pattern.getObjectVar(), scope, currentlyBoundVarMask, Component.O);
+		componentMask |= localBoundComponentMask(pattern.getContextVar(), scope, currentlyBoundVarMask, Component.C);
+		return componentMask;
+	}
+
+	private int localBoundComponentMask(Var var, Set<String> currentlyBoundVars, Component component) {
+		if (var == null || var.hasValue() || var.getName() == null || !currentlyBoundVars.contains(var.getName())) {
+			return 0;
+		}
+		return 1 << component.ordinal();
+	}
+
+	private int localBoundComponentMask(Var var, OptimizationScopeState scope, long currentlyBoundVarMask,
+			Component component) {
+		if (var == null || var.hasValue() || var.getName() == null || scope == null) {
+			return 0;
+		}
+		int id = scope.variableDictionary.idIfKnown(var.getName());
+		if (id == VariableDictionary.NO_ID || (currentlyBoundVarMask & scope.variableDictionary.bit(id)) == 0L) {
+			return 0;
+		}
+		return 1 << component.ordinal();
 	}
 
 	private StatementPattern basePatternForFilter(Filter filter) {

@@ -48,6 +48,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 			expectation(Theme.ENGINEERING, 10),
 			expectation(Theme.HIGHLY_CONNECTED, 5),
 			expectation(Theme.LIBRARY, 5),
+			expectation(Theme.LIBRARY, 7),
 			expectation(Theme.PHARMA, 0),
 			expectation(Theme.PHARMA, 5),
 			expectation(Theme.SOCIAL_MEDIA, 0),
@@ -262,6 +263,16 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		if (snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE")) {
 			mismatches.add(key + " should not reject supported segment shapes\n" + snapshot.plan);
 		}
+		if (expectation.theme == Theme.SOCIAL_MEDIA && (expectation.queryIndex == 3 || expectation.queryIndex == 10)
+				&& snapshot.plan.contains("deferredFilterScope=bindingPrefix")) {
+			mismatches.add(key + " should keep clique/pair inequality filters on binding windows, not a "
+					+ "binding-prefix ladder\n" + snapshot.plan);
+		}
+		if (expectation.theme == Theme.LIBRARY && expectation.queryIndex == 7
+				&& scansUnboundLocatedAt(snapshot.plan)) {
+			mismatches.add(key + " should not evaluate the branch exclusion as a broad unbound locatedAt scan\n"
+					+ snapshot.plan);
+		}
 		mismatches.addAll(directLookupWorkMismatches(snapshot.plan, 100_000.0d, key));
 		return mismatches;
 	}
@@ -293,6 +304,28 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 			trimmed = trimmed.substring(0, trimmed.length() - 1);
 		}
 		return Double.parseDouble(trimmed) * multiplier;
+	}
+
+	private static boolean scansUnboundLocatedAt(String plan) {
+		int branchZeroIndex = plan.indexOf("ValueConstant (value=\"branch/0\")");
+		if (branchZeroIndex < 0) {
+			return false;
+		}
+
+		int minusFilterStart = plan.lastIndexOf("Filter (new scope)", branchZeroIndex);
+		if (minusFilterStart < 0) {
+			return false;
+		}
+
+		int minusFilterEnd = plan.indexOf("GroupElem", branchZeroIndex);
+		if (minusFilterEnd < 0) {
+			minusFilterEnd = Math.min(plan.length(), branchZeroIndex + 1600);
+		}
+
+		String minusFilter = plan.substring(minusFilterStart, minusFilterEnd);
+		return minusFilter.contains("value=http://example.com/theme/library/locatedAt")
+				&& minusFilter.contains("s: Var (name=copy) (bindingState=unbound)")
+				&& minusFilter.contains("o: Var (name=branch) (bindingState=unbound)");
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {

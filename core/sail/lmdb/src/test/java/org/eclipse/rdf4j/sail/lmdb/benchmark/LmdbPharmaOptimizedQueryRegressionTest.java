@@ -140,6 +140,12 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 		assertFalse(snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE"),
 				key + " should not reject supported segment shapes:\n" + snapshot.plan);
 		assertDirectLookupWorkRowsBelow(snapshot.plan, 100_000.0d, key);
+		if (queryIndex == 0) {
+			assertBefore(snapshot.renderedQuery, "?trial a <http://example.com/theme/pharma/ClinicalTrial> .",
+					"?trial <http://example.com/theme/pharma/hasArm> ?arm .",
+					key + " should prefer the exact ClinicalTrial guard before the broader hasArm fanout\n"
+							+ snapshot.plan);
+		}
 	}
 
 	private static void assertDirectLookupWorkRowsBelow(String plan, double maxWorkRows, String key) {
@@ -166,6 +172,13 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 			trimmed = trimmed.substring(0, trimmed.length() - 1);
 		}
 		return Double.parseDouble(trimmed) * multiplier;
+	}
+
+	private static void assertBefore(String value, String first, String second, String message) {
+		int firstIndex = value.indexOf(first);
+		int secondIndex = value.indexOf(second);
+		assertTrue(firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex,
+				message + "\nExpected `" + first + "` before `" + second + "` in:\n" + value);
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {

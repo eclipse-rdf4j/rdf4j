@@ -116,11 +116,16 @@ class LmdbFilterSelectivityStats
 	@Override
 	public synchronized void recordFilterOutcome(PatternKey key, String filterKey, long passedCount,
 			long filteredCount) {
-		recordFilterOutcome(key, filterKey, null, passedCount, filteredCount);
+		recordFilterOutcome(key, filterKey, null, passedCount, filteredCount, true);
 	}
 
 	public synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
 			long passedCount, long filteredCount) {
+		recordFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount, true);
+	}
+
+	synchronized void recordFilterOutcome(PatternKey key, String filterKey, String filterTemplateKey,
+			long passedCount, long filteredCount, boolean includePatternAggregate) {
 		if (key == null || filterKey == null || (passedCount <= 0L && filteredCount <= 0L)) {
 			return;
 		}
@@ -133,7 +138,9 @@ class LmdbFilterSelectivityStats
 			learnedByTemplate.computeIfAbsent(patternTemplateKey, ignored -> new LearnedCounts())
 					.add(passedCount, filteredCount);
 		}
-		learnedByPattern.computeIfAbsent(key, ignored -> new LearnedCounts()).add(passedCount, filteredCount);
+		if (includePatternAggregate) {
+			learnedByPattern.computeIfAbsent(key, ignored -> new LearnedCounts()).add(passedCount, filteredCount);
+		}
 		dirty = true;
 	}
 

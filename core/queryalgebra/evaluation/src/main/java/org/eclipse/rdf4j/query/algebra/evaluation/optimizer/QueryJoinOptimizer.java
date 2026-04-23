@@ -991,13 +991,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return buildJoinRoot(orderedJoinSegment.orderedJoinArgs);
 			}
 
+			List<TupleExpr> orderedJoinArgs = new ArrayList<>(orderedJoinSegment.orderedJoinArgs);
 			List<DeferredFilter> pendingFilters = new ArrayList<>(orderedJoinSegment.deferredFilters);
-			List<SegmentFactor> factors = new ArrayList<>(orderedJoinSegment.orderedJoinArgs.size());
+			List<SegmentFactor> factors = new ArrayList<>(orderedJoinArgs.size());
+			List<Set<StatementPattern>> remainingPatternsAfterFactor = remainingPatternsAfterFactors(
+					orderedJoinArgs);
 			Set<String> prefixBindingNames = new HashSet<>(orderedJoinSegment.boundBeforeSegment);
-			for (TupleExpr tupleExpr : orderedJoinSegment.orderedJoinArgs) {
+			for (int i = 0; i < orderedJoinArgs.size(); i++) {
+				TupleExpr tupleExpr = orderedJoinArgs.get(i);
 				TupleExpr filtered = applyCompatibleLocalDeferredFilters(tupleExpr, pendingFilters);
-				filtered = applyPrefixBindingDeferredFilters(filtered, pendingFilters, prefixBindingNames);
-				factors.add(new SegmentFactor(filtered, collectPatternIdentities(filtered)));
+				Set<StatementPattern> currentPatterns = collectPatternIdentities(filtered);
+				filtered = applyPrefixBindingDeferredFilters(filtered, pendingFilters, prefixBindingNames,
+						currentPatterns, remainingPatternsAfterFactor.get(i));
+				factors.add(new SegmentFactor(filtered, currentPatterns));
 				prefixBindingNames.addAll(filtered.getBindingNames());
 			}
 
@@ -1022,8 +1028,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return root;
 		}
 
+		private List<Set<StatementPattern>> remainingPatternsAfterFactors(List<TupleExpr> orderedJoinArgs) {
+			List<Set<StatementPattern>> remainingPatterns = new ArrayList<>(orderedJoinArgs.size());
+			Set<StatementPattern> suffixPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (int i = orderedJoinArgs.size() - 1; i >= 0; i--) {
+				remainingPatterns.add(0, Collections.newSetFromMap(new IdentityHashMap<>()));
+				remainingPatterns.get(0).addAll(suffixPatterns);
+				suffixPatterns.addAll(collectPatternIdentities(orderedJoinArgs.get(i)));
+			}
+			return remainingPatterns;
+		}
+
 		private TupleExpr applyPrefixBindingDeferredFilters(TupleExpr tupleExpr,
-				List<DeferredFilter> deferredFilters, Set<String> prefixBindingNames) {
+				List<DeferredFilter> deferredFilters, Set<String> prefixBindingNames,
+				Set<StatementPattern> currentPatterns, Set<StatementPattern> remainingPatterns) {
 			if (deferredFilters.isEmpty()) {
 				return tupleExpr;
 			}
@@ -1042,6 +1060,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (prefixBindingNames.containsAll(deferredFilter.requiredVars)
 						|| !availableNames.containsAll(deferredFilter.requiredVars)
 						|| deferredFilter.patternLocalBase != null
+						|| deferredFilter.originPatterns.isEmpty()
+						|| !currentPatterns.containsAll(deferredFilter.originPatterns)
+						|| !Collections.disjoint(remainingPatterns, deferredFilter.originPatterns)
 						|| hasPendingSplitExistsFilter(deferredFilters, deferredFilter, availableNames,
 								assignmentBindingNames)
 						|| (!assignmentBindingNames.containsAll(deferredFilter.requiredVars)

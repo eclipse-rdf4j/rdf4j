@@ -89,6 +89,13 @@ public final class FilterSelectivityKeys {
 		return templateKey(condition, localRoles(patternLocalBase));
 	}
 
+	public static String qualifyFilterKey(String filterKey, int localBoundComponentMask) {
+		if (filterKey == null || localBoundComponentMask == 0) {
+			return filterKey;
+		}
+		return "ctx:" + localBoundComponentMask + ':' + filterKey;
+	}
+
 	public static StatementPattern patternLocalBaseForFilter(Filter filter) {
 		if (filter == null || filter.getCondition() == null || filter.getArg() == null) {
 			return null;
