@@ -1789,7 +1789,7 @@ class ValueStore extends AbstractValueFactory {
 	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
 			throws IOException {
 		// Get datatype ID
-		long datatypeID = LmdbValue.UNKNOWN_ID;
+		long datatypeID = 0L;
 
 		if (dt != null) {
 			datatypeID = getId(dt, create);
@@ -1877,7 +1877,8 @@ class ValueStore extends AbstractValueFactory {
 		// Get datatype
 		long datatypeID = Varint.readUnsignedHeap(bb);
 		IRI datatype = null;
-		if (datatypeID != LmdbValue.UNKNOWN_ID) {
+		// literal without a datatype
+		if (datatypeID > 0) {
 			datatype = (IRI) getValue(datatypeID);
 		}
 
