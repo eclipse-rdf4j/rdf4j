@@ -77,7 +77,7 @@ public class Integers {
 	}
 
 	static long packByte(Literal literal) {
-		return ValueIds.createId(ValueIds.T_BYTE, literal.byteValue());
+		return ValueIds.createId(ValueIds.T_BYTE, 0xFF & literal.byteValue());
 	}
 
 	static long packUnsignedLong(Literal literal) {

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb.inlined;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -146,6 +147,8 @@ class ValuesTest {
 		for (Literal literal : literals) {
 			try {
 				long packed = Values.packLiteral(literal);
+				assertFalse(packed < 0, "Packed value should be non-negative for value: " + literal);
+
 				// If the literal is not inlined, packed==0. Only test roundtrip if it is inlined.
 				if (packed != 0L) {
 					Literal unpacked = Values.unpackLiteral(packed, vf);
@@ -165,6 +168,8 @@ class ValuesTest {
 		ByteBuffer bb = ByteBuffer.allocate(Long.BYTES + 1);
 		for (Literal literal : literals) {
 			long packed = Values.packLiteral(literal);
+			assertFalse(packed < 0, "Packed value should be non-negative for value: " + literal);
+
 			// If the literal is not inlined, packed==0. Only test roundtrip if it is inlined.
 			if (packed != 0L) {
 				bb.clear();

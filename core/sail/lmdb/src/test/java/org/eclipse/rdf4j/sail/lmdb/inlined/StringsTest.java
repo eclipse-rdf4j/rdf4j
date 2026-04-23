@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb.inlined;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -26,6 +27,7 @@ class StringsTest {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		Literal literal = valueFactory.createLiteral("test", XSD.STRING);
 		long packed = Strings.packString(literal);
+		assertFalse(packed < 0, "Packed value should be non-negative for value: " + literal);
 
 		// Assert that the packed value is not 0
 		assertNotEquals(0L, packed, "Packed value should not be 0 for valid input.");
@@ -38,6 +40,7 @@ class StringsTest {
 		String longString = "a".repeat(Values.MAX_LENGTH);
 		Literal literal = valueFactory.createLiteral(longString, XSD.STRING);
 		long packed = Strings.packString(literal);
+		assertFalse(packed < 0, "Packed value should be non-negative for value: " + literal);
 
 		// Assert that the packed value is 0
 		assertEquals(0L, packed, "Packed value should be 0 for input exceeding max length.");
@@ -48,6 +51,7 @@ class StringsTest {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		Literal literal = valueFactory.createLiteral("test", XSD.STRING);
 		long packed = Strings.packString(literal);
+		assertFalse(packed < 0, "Packed value should be non-negative for value: " + literal);
 
 		Literal unpackedLiteral = Strings.unpackString(packed, valueFactory);
 
