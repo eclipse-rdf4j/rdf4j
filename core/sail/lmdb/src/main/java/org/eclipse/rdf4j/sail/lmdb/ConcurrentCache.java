@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Fixed-size concurrent cache with approximate FIFO eviction per hash set. The cache never grows beyond its slot
@@ -21,16 +22,20 @@ import java.util.Objects;
 public class ConcurrentCache<K, V> {
 
 	private static final int WAYS = 4;
+	private static final float LOAD_FACTOR = 0.75f;
 
 	private final Entry<K, V>[] entries;
 	private final int[] nextVictim;
 	private final int setMask;
 	private final int setShift;
 
+	protected final ConcurrentHashMap<K, V> cache;
+
 	private volatile long generation = 1;
 
 	@SuppressWarnings("unchecked")
 	public ConcurrentCache(int capacity) {
+		cache = new ConcurrentHashMap<>((int) (Math.max(1, capacity) / LOAD_FACTOR), LOAD_FACTOR);
 		if (capacity <= 0) {
 			entries = (Entry<K, V>[]) new Entry[0];
 			nextVictim = new int[0];
@@ -50,7 +55,7 @@ public class ConcurrentCache<K, V> {
 	public V get(Object key) {
 		Objects.requireNonNull(key);
 		if (entries.length == 0) {
-			return null;
+			return cache.get(key);
 		}
 
 		int hash = spread(key.hashCode());
@@ -65,14 +70,17 @@ public class ConcurrentCache<K, V> {
 				return entry.value;
 			}
 		}
-		return null;
+		return cache.get(key);
 	}
 
 	public V put(K key, V value) {
 		Objects.requireNonNull(key);
 		Objects.requireNonNull(value);
+		cleanUp();
+
+		V previous = cache.put(key, value);
 		if (entries.length == 0) {
-			return null;
+			return previous;
 		}
 
 		int hash = spread(key.hashCode());
@@ -96,13 +104,13 @@ public class ConcurrentCache<K, V> {
 				if (entry.value != value) {
 					entries[slot] = new Entry<>(key, value, hash, currentGeneration);
 				}
-				return entry.value;
+				return previous;
 			}
 		}
 
 		if (emptySlot >= 0) {
 			entries[emptySlot] = new Entry<>(key, value, hash, currentGeneration);
-			return null;
+			return previous;
 		}
 
 		int firstVictim = nextVictim[setIndex] & (WAYS - 1);
@@ -112,17 +120,21 @@ public class ConcurrentCache<K, V> {
 			Entry<K, V> victim = entries[slot];
 			if (victim == null || victim.generation != currentGeneration || onEntryRemoval(victim.key)) {
 				entries[slot] = new Entry<>(key, value, hash, currentGeneration);
+				if (victim != null && victim.generation == currentGeneration && !sameKey(victim.key, key)) {
+					cache.remove(victim.key, victim.value);
+				}
 				nextVictim[setIndex] = (victimOffset + 1) & (WAYS - 1);
-				return null;
+				return previous;
 			}
 		}
 
-		return null;
+		return previous;
 	}
 
 	public void clear() {
 		long nextGeneration = generation + 1;
 		generation = nextGeneration == 0 ? 1 : nextGeneration;
+		cache.clear();
 		Arrays.fill(entries, null);
 		Arrays.fill(nextVictim, 0);
 	}
@@ -134,6 +146,10 @@ public class ConcurrentCache<K, V> {
 	protected boolean onEntryRemoval(K key) {
 		// Hook method, doing nothing by default
 		return true;
+	}
+
+	protected void cleanUp() {
+		// Legacy hook. Eviction happens during put.
 	}
 
 	private int setBase(int hash) {
