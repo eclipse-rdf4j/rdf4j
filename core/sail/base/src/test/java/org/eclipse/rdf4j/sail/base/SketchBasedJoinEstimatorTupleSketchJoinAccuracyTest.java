@@ -39,7 +39,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		addRows(store, "urn:tuple:right:cold:", rightPredicate, cold, 50);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		double estimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
 				SketchBasedJoinEstimator.Component.P, leftPredicate.stringValue(),

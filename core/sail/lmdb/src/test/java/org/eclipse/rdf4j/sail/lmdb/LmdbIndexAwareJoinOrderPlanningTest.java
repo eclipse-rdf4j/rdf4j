@@ -114,7 +114,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticGridData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(electricalGridQuery())
@@ -148,7 +148,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticGridData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(plannedIndexMetricsQuery())
@@ -176,7 +176,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel.FactorCostEstimate filteredNameCost = costModel
@@ -207,7 +207,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			StatementPattern typePattern = transformerTypePattern();
 			StatementPattern feedsPattern = transformerFeedsPattern();
@@ -240,7 +240,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticTransformerData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
 
@@ -277,7 +277,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 		try {
 			loadSyntheticSocialMediaQ4Data(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			TupleExpr optimized;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -328,7 +328,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		try {
 			loadSyntheticGridData(repository);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			estimator.rebuildOnceSlow();
+			estimator.rebuild();
 
 			StatementPattern typePattern = generatorTypePattern();
 			StatementPattern feedsPattern = feedsPattern();

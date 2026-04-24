@@ -67,7 +67,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(s2, name, VF.createLiteral("bob")));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
 		QueryBindingSet row1 = new QueryBindingSet();
@@ -103,7 +103,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern expensive = pattern("s", expensivePredicate, "o");
 		StatementPattern cheap = pattern("x", cheapPredicate, "y");
@@ -155,7 +155,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(substation2, name, VF.createLiteral("Substation 2")));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
 		QueryBindingSet row1 = new QueryBindingSet();
@@ -204,7 +204,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "o");
 		StatementPattern b = pattern("s", pB, "x");
@@ -266,7 +266,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		u3Values.setBindingSets(u3Rows);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern u1FollowsU2 = pattern("u1", follows, "u2");
 		StatementPattern u1FollowsU3 = pattern("u1", follows, "u3");
@@ -324,7 +324,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		u3Values.setBindingSets(u3Rows);
 
 		CountingSketchBasedJoinEstimator estimator = new CountingSketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern u1FollowsU2 = pattern("u1", follows, "u2");
 		StatementPattern u1FollowsU3 = pattern("u1", follows, "u3");
@@ -351,7 +351,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		IRI predicate = VF.createIRI("urn:p");
 		store.add(VF.createStatement(VF.createIRI("urn:s"), predicate, VF.createIRI("urn:o")));
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		try (var ignored = estimator.beginQueryOptimizationScope()) {
 			assertTrue(estimator.isReady());
@@ -375,7 +375,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			store.add(VF.createStatement(middle, right, VF.createIRI("urn:o" + i)));
 		}
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern leftPattern = pattern("s", left, "m");
 		StatementPattern rightPattern = pattern("m", right, "o");
@@ -440,7 +440,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		bindings.setBindingSets(bindingSets);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
 		StatementPattern b = pattern("x", pB, "y");
@@ -472,7 +472,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
 		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.30d));
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern typePattern = new StatementPattern(Var.of("combo"), Var.of("rdfType", rdfType),
 				Var.of("comboType", comboType));
@@ -517,7 +517,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		bindings.setBindingSets(bindingSets);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern pattern = pattern("s", pA, "x");
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(List.of(pattern, bindings), Set.of(),
@@ -551,7 +551,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
 		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.005d));
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		BindingSetAssignment bindings = new BindingSetAssignment();
 		QueryBindingSet limitBinding = new QueryBindingSet();
@@ -606,7 +606,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
 		StatementPattern valuePattern = pattern("obs", hasValue, "value");
@@ -635,7 +635,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
 		StatementPattern valuePattern = pattern("obs", hasValue, "value");
@@ -664,7 +664,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(VF.createIRI("urn:s3"), pB, VF.createIRI("urn:o3")));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern allUnbound = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		SketchBasedJoinEstimator.TuplePlanEstimate estimate = estimator.planEstimateForJoinOrdering(allUnbound,
@@ -691,7 +691,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
 		StatementPattern valuePattern = pattern("obs", hasValue, "value");
@@ -723,7 +723,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
 		StatementPattern valuePattern = pattern("obs", hasValue, "value");
@@ -754,7 +754,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
 		StatementPattern valuePattern = pattern("obs", hasValue, "value");
@@ -791,7 +791,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
 		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
@@ -849,7 +849,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
 				Var.of("clinicalTrial", clinicalTrial));
@@ -927,7 +927,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		markerValues.setBindingSets(markerRows);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
 				Var.of("clinicalTrial", clinicalTrial));
@@ -993,7 +993,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		markerValues.setBindingSets(markerRows);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
 				Var.of("clinicalTrial", clinicalTrial));
@@ -1079,7 +1079,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		anchorValues.setBindingSets(anchorRows);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern anchorResultPattern = pattern("anchor", hasResult, "result");
 		StatementPattern pValuePattern = pattern("result", pValue, "pValueLiteral");
@@ -1154,7 +1154,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		anchorValues.setBindingSets(anchorRows);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern anchorResultPattern = pattern("anchor", hasResult, "result");
 		StatementPattern pValuePattern = pattern("result", pValue, "pValueLiteral");
@@ -1228,7 +1228,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		trialValues.setBindingSets(trialRows);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern typeGuardPattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
 				Var.of("clinicalTrial", clinicalTrial));
@@ -1297,7 +1297,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		markerValues.setBindingSets(markerRows);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
 				Var.of("clinicalTrial", clinicalTrial));
@@ -1352,7 +1352,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		bindings.setBindingSets(bindingSets);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		double rows = estimator.cardinality(new Join(bindings, pattern("s", pA, "x")));
 		assertTrue(rows >= 0.0d, "Expected cardinality(Join) to support BindingSetAssignment");
@@ -1385,7 +1385,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				new Compare(Var.of("name"), new ValueConstant(VF.createLiteral("alice")), Compare.CompareOp.EQ));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		double unfilteredRows = estimator.cardinality(new Join(bindings, namePattern));
 		double filteredRows = estimator.cardinality(new Join(bindings, filteredName));
@@ -1412,7 +1412,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				row("s", s2, "target", VF.createLiteral("bob"))));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		double rows = estimator.cardinality(new Join(bindings, pattern("s", name, "target")));
 
@@ -1449,7 +1449,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		Join nested = new Join(bindings, a);
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		double rows = estimator.cardinality(new Join(nested, b));
 		assertTrue(rows >= 0.0d, "Expected cardinality(Join) to support nested joins with BindingSetAssignment");
@@ -1473,7 +1473,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		store.add(VF.createStatement(c1, knows, rebecca));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = new StatementPattern(Var.of("pete", pete), Var.of("predA", knows), Var.of("b"));
 		StatementPattern b = pattern("b", knows, "c");
@@ -1498,7 +1498,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern encounterPattern = pattern("enc", hasObservation, "obs");
 		StatementPattern valuePattern = pattern("obs", hasValue, "value");
@@ -1518,7 +1518,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StubSailStore store = new StubSailStore();
 		IRI pA = VF.createIRI("urn:pA");
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
 		Union unsupported = new Union(pattern("x", pA, "y"), pattern("x", pA, "z"));
@@ -1544,7 +1544,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		double rows = estimator.cardinality(List.of(pattern("x", pA, "y"), pattern("y", pB, "z"),
 				pattern("z", pC, "x")));
@@ -1572,7 +1572,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
 		StatementPattern b = pattern("x", pB, "y");
@@ -1605,7 +1605,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("x", pA, "y");
 		StatementPattern b = pattern("y", pB, "z");
@@ -1629,7 +1629,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(args, Set.of(),
 				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
@@ -1657,7 +1657,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("x", pA, "y");
 		StatementPattern b = pattern("y", pB, "z");
@@ -1692,7 +1692,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
 		StatementPattern b = pattern("x", pB, "y");

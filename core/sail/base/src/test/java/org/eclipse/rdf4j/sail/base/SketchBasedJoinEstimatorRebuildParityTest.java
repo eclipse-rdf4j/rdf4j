@@ -56,7 +56,7 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 		StubSailStore rebuildStore = new StubSailStore();
 		rebuildStore.addAll(statements);
 		SketchBasedJoinEstimator rebuilt = new SketchBasedJoinEstimator(rebuildStore, config());
-		rebuilt.rebuildOnceSlow();
+		rebuilt.rebuild();
 
 		SketchBasedJoinEstimator incremental = new SketchBasedJoinEstimator(new StubSailStore(), config());
 		for (Statement statement : statements) {
@@ -100,7 +100,7 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 		AtomicReference<Throwable> rebuildFailure = new AtomicReference<>();
 		Thread rebuildThread = new Thread(() -> {
 			try {
-				estimator.rebuildOnceSlow();
+				estimator.rebuild();
 			} catch (Throwable t) {
 				rebuildFailure.set(t);
 			}

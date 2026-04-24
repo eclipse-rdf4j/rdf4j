@@ -88,7 +88,7 @@ class LmdbSketchAwareFilterPlacementTest {
 
 		try {
 			loadLibraryData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			String query = String.join("\n",
 					"PREFIX lib: <http://example.com/theme/library/>",
@@ -238,7 +238,7 @@ class LmdbSketchAwareFilterPlacementTest {
 
 		try {
 			loadLibraryData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
 			StatementPattern left = new StatementPattern(Var.of("copy"), Var.of("locatedAt", LOCATED_AT),
@@ -291,7 +291,7 @@ class LmdbSketchAwareFilterPlacementTest {
 
 		try {
 			loadLibraryData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuildOnceSlow();
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
 			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
 			List<TupleExpr> factors = List.of(

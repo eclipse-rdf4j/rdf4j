@@ -62,11 +62,11 @@ final class SketchEstimatorMemoryPolicy {
 	static SketchEstimatorMemoryPolicy resolve(SketchBasedJoinEstimator.Config config,
 			SketchEstimatorMemoryProbe memoryProbe) {
 		long maxMemoryBytes = Math.max(1L, memoryProbe.maxMemoryBytes());
-		double estimatorBudget = clampPercent(config.estimatorMemoryBudgetPercent, 0.50d);
-		double residentTarget = clampPercent(config.residentSketchMemoryTargetPercent, 0.25d);
+		double estimatorBudget = clampPercent(config.estimatorMemoryBudgetPercent, 0.70d);
+		double residentTarget = clampPercent(config.residentSketchMemoryTargetPercent, 0.50d);
 		double residentCeiling = Math.max(residentTarget,
-				clampPercent(config.residentSketchMemoryCeilingPercent, 0.30d));
-		double highPressure = clampPercent(config.highMemoryPressurePercent, 0.80d);
+				clampPercent(config.residentSketchMemoryCeilingPercent, 0.70d));
+		double highPressure = clampPercent(config.highMemoryPressurePercent, 0.75d);
 		double loadedFloor = clampPercent(config.loadedBucketFloorPercent, 0.05d);
 
 		int bucketCount = Math.max(MIN_BUCKET_COUNT, config.nominalEntries);

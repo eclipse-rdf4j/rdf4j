@@ -71,7 +71,7 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	private void rebuild(SketchBasedJoinEstimator est) {
-		est.rebuildOnceSlow();
+		est.rebuild();
 	}
 
 	@Test
@@ -224,7 +224,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		assertEquals(0.80d, doubleField(defaults, "highMemoryPressurePercent"), 0.0d);
 		assertEquals(0.05d, doubleField(defaults, "loadedBucketFloorPercent"), 0.0d);
 		assertEquals(500L, longField(defaults, "memoryMonitorIntervalMillis"));
-		assertEquals(64, intField(defaults, "memoryPressureUnloadBatchSize"));
+		assertEquals(1024, intField(defaults, "memoryPressureUnloadBatchSize"));
 	}
 
 	@Test
@@ -469,7 +469,7 @@ class SketchBasedJoinEstimatorConfigTest {
 					noiseSubjects);
 
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(rareOverlapStore, config);
-			estimator.rebuildOnceSlow();
+			estimator.rebuild();
 
 			return new RareOverlapFixture(estimator, rareOverlapJoin(locatedAt, hasName),
 					overlapBranches * copiesPerBranch);

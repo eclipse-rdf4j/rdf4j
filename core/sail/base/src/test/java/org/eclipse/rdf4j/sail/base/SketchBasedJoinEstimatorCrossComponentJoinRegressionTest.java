@@ -47,7 +47,7 @@ class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest {
 		store.add(st(branch2, hasName, VF.createLiteral("Branch 2")));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O, null,
 				locatedAt.stringValue(), null, null)

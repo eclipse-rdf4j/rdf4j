@@ -150,7 +150,7 @@ class SketchJoinOrderPlannerLoggingTest {
 		store.add(VF.createStatement(VF.createIRI("urn:x0"), pB, y));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
 		StatementPattern b = pattern("x", pB, "y");

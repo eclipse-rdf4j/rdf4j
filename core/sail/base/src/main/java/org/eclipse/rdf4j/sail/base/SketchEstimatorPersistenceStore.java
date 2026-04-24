@@ -23,11 +23,14 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 
@@ -40,15 +43,29 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	private static final int INDEX_VERSION = 1;
 	private static final byte[] INDEX_MAGIC = new byte[] { 'R', 'J', 'E', 'I' };
 	private static final byte[] FILE_GROWTH_MARKER = new byte[] { 0 };
+	private static final int FRAMED_PAYLOAD_HEADER_BYTES = Integer.BYTES + Integer.BYTES;
+	private static final long DEFAULT_MAPPED_SKETCH_FILE_BYTES = 100L * 1024L * 1024L;
 
 	private final Path directory;
 	private final Logger logger;
-	private final FileChannel[][] sketchChannels = new FileChannel[2][4];
+	private final long mappedSketchFileChunkBytes;
 	private final long[][] appendOffsets = new long[2][4];
+	private final Map<MappedSketchChunkKey, MappedSketchChunk> mappedSketchFiles = new HashMap<>();
+	private int mappedSketchFileMapCount;
 
 	private SketchEstimatorPersistenceStore(Path directory, Logger logger) {
+		this(directory, logger, DEFAULT_MAPPED_SKETCH_FILE_BYTES);
+	}
+
+	private SketchEstimatorPersistenceStore(Path directory, Logger logger, int ignoredMappedSketchFileLimit,
+			long mappedSketchFileChunkBytes) {
+		this(directory, logger, mappedSketchFileChunkBytes);
+	}
+
+	private SketchEstimatorPersistenceStore(Path directory, Logger logger, long mappedSketchFileChunkBytes) {
 		this.directory = directory.toAbsolutePath().normalize();
 		this.logger = logger;
+		this.mappedSketchFileChunkBytes = Math.max(1L, mappedSketchFileChunkBytes);
 	}
 
 	static SketchEstimatorPersistenceStore open(Path path, Logger logger) throws IOException {
@@ -60,6 +77,21 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		}
 		Files.createDirectories(directory);
 		SketchEstimatorPersistenceStore store = new SketchEstimatorPersistenceStore(directory, logger);
+		store.ensureLayout();
+		return store;
+	}
+
+	static SketchEstimatorPersistenceStore open(Path path, Logger logger, int mappedSketchFileLimit,
+			long mappedSketchFileChunkBytes) throws IOException {
+		Path directory = path.toAbsolutePath().normalize();
+		if (Files.isRegularFile(directory)) {
+			logger.warn("Ignoring regular-file join estimator snapshot {}; rebuilding directory-backed store",
+					directory);
+			Files.deleteIfExists(directory);
+		}
+		Files.createDirectories(directory);
+		SketchEstimatorPersistenceStore store = new SketchEstimatorPersistenceStore(directory, logger,
+				mappedSketchFileLimit, mappedSketchFileChunkBytes);
 		store.ensureLayout();
 		return store;
 	}
@@ -88,39 +120,86 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	}
 
 	synchronized Ref append(byte slot, byte fileKind, byte[] payload, long generation) throws IOException {
-		FileChannel channel = sketchChannel(slot, fileKind);
-		long offset = appendOffsets[slot][fileKind];
-		ensureChannelSize(channel, offset + payload.length);
-		try (Arena arena = Arena.ofConfined()) {
-			MemorySegment segment = channel.map(FileChannel.MapMode.READ_WRITE, offset, payload.length, arena);
-			MemorySegment.copy(MemorySegment.ofArray(payload), 0L, segment, 0L, payload.length);
+		long offset = reservePayloadRange(slot, fileKind, payload.length);
+		if (payload.length > 0) {
+			MappedSketchSlice slice = mappedSketchSlice(slot, fileKind, offset, payload.length, true);
+			MemorySegment.copy(MemorySegment.ofArray(payload), 0L, slice.segment, 0L, payload.length);
 		}
-		appendOffsets[slot][fileKind] = offset + payload.length;
 		return new Ref(slot, fileKind, offset, payload.length, generation);
 	}
 
+	synchronized Ref appendFramedPayload(byte slot, byte fileKind, int formatMarker, byte[] payload, long generation)
+			throws IOException {
+		FramedPayloadAllocation allocation = allocateFramedPayload(slot, fileKind, formatMarker, payload.length,
+				generation);
+		if (payload.length > 0) {
+			MemorySegment.copy(MemorySegment.ofArray(payload), 0L, allocation.payload, 0L, payload.length);
+		}
+		return allocation.ref;
+	}
+
+	synchronized FramedPayloadAllocation allocateFramedPayload(byte slot, byte fileKind, int formatMarker,
+			int payloadLength, long generation) throws IOException {
+		if (payloadLength < 0) {
+			throw new IOException("Persisted sketch frame length is negative: slot=" + slot + " fileKind=" + fileKind
+					+ " length=" + payloadLength);
+		}
+		long frameLength = FRAMED_PAYLOAD_HEADER_BYTES + (long) payloadLength;
+		if (frameLength > Integer.MAX_VALUE) {
+			throw new IOException("Persisted sketch frame too large: slot=" + slot + " fileKind=" + fileKind
+					+ " length=" + frameLength);
+		}
+		long offset = reservePayloadRange(slot, fileKind, (int) frameLength);
+		MappedSketchSlice frame = mappedSketchSlice(slot, fileKind, offset, (int) frameLength, true);
+		writeIntBigEndian(frame.segment, 0L, formatMarker);
+		writeIntBigEndian(frame.segment, Integer.BYTES, payloadLength);
+		Ref ref = new Ref(slot, fileKind, offset, (int) frameLength, generation);
+		MemorySegment payload = frame.segment.asSlice(FRAMED_PAYLOAD_HEADER_BYTES, payloadLength);
+		return new FramedPayloadAllocation(ref, payload);
+	}
+
 	synchronized void flush() throws IOException {
-		for (byte slot = 0; slot < 2; slot++) {
-			for (byte fileKind : new byte[] { FILE_KIND_GLOBAL, FILE_KIND_SINGLES, FILE_KIND_PAIRS }) {
-				FileChannel channel = sketchChannels[slot][fileKind];
-				if (channel != null) {
-					channel.force(false);
-				}
-			}
+		for (MappedSketchChunk mapped : mappedSketchFiles.values()) {
+			mapped.force();
 		}
 	}
 
 	synchronized byte[] read(Ref ref) throws IOException {
-		FileChannel channel = sketchChannel(ref.slot, ref.fileKind);
 		long end = ref.offset + ref.length;
-		if (ref.offset < 0 || ref.length < 0 || end < ref.offset || end > channel.size()) {
+		long logicalEnd = appendOffsets[ref.slot][ref.fileKind];
+		if (ref.offset < 0 || ref.length < 0 || end < ref.offset || end > logicalEnd) {
 			throw new IOException("Persisted sketch ref exceeds store bounds: slot=" + ref.slot + " fileKind="
 					+ ref.fileKind + " offset=" + ref.offset + " length=" + ref.length);
 		}
-		try (Arena arena = Arena.ofConfined()) {
-			MemorySegment segment = channel.map(FileChannel.MapMode.READ_ONLY, ref.offset, ref.length, arena);
-			return segment.toArray(ValueLayout.JAVA_BYTE);
+		if (ref.length == 0) {
+			return new byte[0];
 		}
+		MappedSketchSlice slice = mappedSketchSlice(ref.slot, ref.fileKind, ref.offset, ref.length, false);
+		return slice.segment.toArray(ValueLayout.JAVA_BYTE);
+	}
+
+	synchronized <T> T readFramedPayload(Ref ref, int expectedFormatMarker, SegmentReader<T> reader)
+			throws IOException {
+		if (ref.length < FRAMED_PAYLOAD_HEADER_BYTES) {
+			throw new IOException("Persisted sketch frame is too short: slot=" + ref.slot + " fileKind="
+					+ ref.fileKind + " offset=" + ref.offset + " length=" + ref.length);
+		}
+		long end = ref.offset + ref.length;
+		long logicalEnd = appendOffsets[ref.slot][ref.fileKind];
+		if (ref.offset < 0 || ref.length < 0 || end < ref.offset || end > logicalEnd) {
+			throw new IOException("Persisted sketch ref exceeds store bounds: slot=" + ref.slot + " fileKind="
+					+ ref.fileKind + " offset=" + ref.offset + " length=" + ref.length);
+		}
+		MappedSketchSlice frame = mappedSketchSlice(ref.slot, ref.fileKind, ref.offset, ref.length, false);
+		int actualFormatMarker = readIntBigEndian(frame.segment, 0L);
+		if (actualFormatMarker != expectedFormatMarker) {
+			throw new IOException("Unsupported sketch payload format: " + actualFormatMarker);
+		}
+		int payloadLength = readIntBigEndian(frame.segment, Integer.BYTES);
+		if (payloadLength < 0 || payloadLength != ref.length - FRAMED_PAYLOAD_HEADER_BYTES) {
+			throw new IOException("Invalid sketch payload length: " + payloadLength + " frameLength=" + ref.length);
+		}
+		return reader.read(frame.segment.asSlice(FRAMED_PAYLOAD_HEADER_BYTES, payloadLength));
 	}
 
 	void writeIndex(byte slot, List<IndexEntry> entries) throws IOException {
@@ -147,7 +226,7 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		writeAtomicallyMapped(indexPath(slot), bos.toByteArray());
 	}
 
-	List<IndexEntry> readIndex(byte slot) throws IOException {
+	synchronized List<IndexEntry> readIndex(byte slot) throws IOException {
 		Path indexPath = indexPath(slot);
 		if (!Files.isRegularFile(indexPath)) {
 			return List.of();
@@ -182,68 +261,123 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 				long offset = in.readLong();
 				int length = in.readInt();
 				long generation = in.readLong();
-				entries.add(new IndexEntry(recType, delete, axisA, axisB, x, y,
-						new Ref(refSlot, fileKind, offset, length, generation)));
+				Ref ref = new Ref(refSlot, fileKind, offset, length, generation);
+				observeRef(ref);
+				entries.add(new IndexEntry(recType, delete, axisA, axisB, x, y, ref));
 			}
 			return entries;
 		}
 	}
 
-	long approximateSize() throws IOException {
+	synchronized long approximateSize() throws IOException {
 		long size = 0L;
 		for (byte slot = 0; slot < 2; slot++) {
 			size += Files.exists(indexPath(slot)) ? Files.size(indexPath(slot)) : 0L;
-			size += Files.exists(sketchesPath(slot, FILE_KIND_GLOBAL))
-					? Files.size(sketchesPath(slot, FILE_KIND_GLOBAL))
-					: 0L;
-			size += Files.exists(sketchesPath(slot, FILE_KIND_SINGLES))
-					? Files.size(sketchesPath(slot, FILE_KIND_SINGLES))
-					: 0L;
-			size += Files.exists(sketchesPath(slot, FILE_KIND_PAIRS)) ? Files.size(sketchesPath(slot, FILE_KIND_PAIRS))
-					: 0L;
+			size += appendOffsets[slot][FILE_KIND_GLOBAL];
+			size += appendOffsets[slot][FILE_KIND_SINGLES];
+			size += appendOffsets[slot][FILE_KIND_PAIRS];
 		}
 		size += Files.exists(metadataPath()) ? Files.size(metadataPath()) : 0L;
 		return size;
 	}
 
 	@Override
-	public void close() {
-		for (byte slot = 0; slot < 2; slot++) {
-			for (byte fileKind : new byte[] { FILE_KIND_GLOBAL, FILE_KIND_SINGLES, FILE_KIND_PAIRS }) {
-				FileChannel channel = sketchChannels[slot][fileKind];
-				if (channel != null) {
-					try {
-						channel.close();
-					} catch (IOException e) {
-						logger.warn("Failed to close join estimator sketch store channel: slot={} fileKind={}", slot,
-								fileKind, e);
-					}
-					sketchChannels[slot][fileKind] = null;
-				}
-			}
-		}
+	public synchronized void close() {
+		closeMappedSketchFiles();
 	}
 
-	private FileChannel sketchChannel(byte slot, byte fileKind) throws IOException {
-		FileChannel channel = sketchChannels[slot][fileKind];
-		if (channel == null) {
-			Path file = sketchesPath(slot, fileKind);
-			Files.createDirectories(file.getParent());
-			channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.READ,
-					StandardOpenOption.WRITE);
-			sketchChannels[slot][fileKind] = channel;
-			appendOffsets[slot][fileKind] = channel.size();
+	private long reservePayloadRange(byte slot, byte fileKind, int payloadLength) throws IOException {
+		if (payloadLength < 0) {
+			throw new IOException("Persisted sketch payload length is negative: slot=" + slot + " fileKind="
+					+ fileKind + " length=" + payloadLength);
 		}
-		return channel;
+		if (payloadLength > mappedSketchFileChunkBytes) {
+			throw new IOException("Persisted sketch payload exceeds mapped chunk size: slot=" + slot + " fileKind="
+					+ fileKind + " length=" + payloadLength + " chunk=" + mappedSketchFileChunkBytes);
+		}
+		long offset = appendOffsets[slot][fileKind];
+		long chunkOffset = offsetInChunk(offset);
+		if (payloadLength > 0 && chunkOffset + payloadLength > mappedSketchFileChunkBytes) {
+			offset += mappedSketchFileChunkBytes - chunkOffset;
+		}
+		long end = offset + payloadLength;
+		if (end < offset) {
+			throw new IOException("Persisted sketch payload offset overflow: slot=" + slot + " fileKind=" + fileKind);
+		}
+		appendOffsets[slot][fileKind] = end;
+		return offset;
+	}
+
+	private MappedSketchSlice mappedSketchSlice(byte slot, byte fileKind, long offset, int length, boolean create)
+			throws IOException {
+		if (length < 0 || offset < 0L) {
+			throw new IOException("Invalid mapped sketch slice: slot=" + slot + " fileKind=" + fileKind + " offset="
+					+ offset + " length=" + length);
+		}
+		long chunkOffset = offsetInChunk(offset);
+		if (chunkOffset + length > mappedSketchFileChunkBytes) {
+			throw new IOException("Persisted sketch ref crosses mapped chunk boundary: slot=" + slot + " fileKind="
+					+ fileKind + " offset=" + offset + " length=" + length + " chunk="
+					+ mappedSketchFileChunkBytes);
+		}
+		MappedSketchChunk mapped = mappedSketchFile(slot, fileKind, chunkStart(offset), create);
+		return new MappedSketchSlice(mapped.segment.asSlice(chunkOffset, length));
+	}
+
+	private MappedSketchChunk mappedSketchFile(byte slot, byte fileKind, long chunkStart, boolean create)
+			throws IOException {
+		MappedSketchChunkKey key = mappedSketchChunkKey(slot, fileKind, chunkStart);
+		MappedSketchChunk mapped = mappedSketchFiles.get(key);
+		if (mapped == null) {
+			mapped = new MappedSketchChunk(sketchesPartPath(slot, fileKind, chunkStart),
+					mappedSketchFileChunkBytes);
+			mapped.map(create);
+			mappedSketchFileMapCount++;
+			mappedSketchFiles.put(key, mapped);
+		}
+		return mapped;
+	}
+
+	private void closeMappedSketchFiles() {
+		for (MappedSketchChunk mapped : mappedSketchFiles.values()) {
+			mapped.close();
+		}
+		mappedSketchFiles.clear();
+	}
+
+	private MappedSketchChunkKey mappedSketchChunkKey(byte slot, byte fileKind, long offset) {
+		return new MappedSketchChunkKey(slot, fileKind, chunkStart(offset));
+	}
+
+	private long chunkStart(long offset) {
+		return offset - offsetInChunk(offset);
+	}
+
+	private long offsetInChunk(long offset) {
+		return offset % mappedSketchFileChunkBytes;
+	}
+
+	private void observeRef(Ref ref) throws IOException {
+		long end = ref.offset + ref.length;
+		if (ref.offset < 0L || ref.length < 0 || end < ref.offset) {
+			throw new IOException("Invalid persisted sketch ref: slot=" + ref.slot + " fileKind=" + ref.fileKind
+					+ " offset=" + ref.offset + " length=" + ref.length);
+		}
+		appendOffsets[ref.slot][ref.fileKind] = Math.max(appendOffsets[ref.slot][ref.fileKind], end);
+	}
+
+	synchronized int debugMappedSketchFileCount() {
+		return mappedSketchFiles.size();
+	}
+
+	synchronized int debugMappedSketchFileMapCount() {
+		return mappedSketchFileMapCount;
 	}
 
 	private void ensureLayout() throws IOException {
 		for (byte slot = 0; slot < 2; slot++) {
 			Files.createDirectories(slotDirectory(slot));
 			touch(indexPath(slot));
-			touch(sketchesPath(slot, FILE_KIND_GLOBAL));
-			touch(sketchesPath(slot, FILE_KIND_SINGLES));
-			touch(sketchesPath(slot, FILE_KIND_PAIRS));
 		}
 	}
 
@@ -262,22 +396,22 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		return slotDirectory(slot).resolve("index.bin");
 	}
 
-	private Path sketchesPath(byte slot, byte fileKind) {
-		String fileName;
+	private Path sketchesPartPath(byte slot, byte fileKind, long chunkStart) {
+		long partIndex = chunkStart / mappedSketchFileChunkBytes;
+		return slotDirectory(slot).resolve(sketchesBaseName(fileKind) + ".part" + (partIndex + 1L) + ".sketches");
+	}
+
+	private static String sketchesBaseName(byte fileKind) {
 		switch (fileKind) {
 		case FILE_KIND_GLOBAL:
-			fileName = "global.sketches";
-			break;
+			return "global";
 		case FILE_KIND_SINGLES:
-			fileName = "singles.sketches";
-			break;
+			return "singles";
 		case FILE_KIND_PAIRS:
-			fileName = "pairs.sketches";
-			break;
+			return "pairs";
 		default:
 			throw new IllegalArgumentException("Unknown sketch file kind: " + fileKind);
 		}
-		return slotDirectory(slot).resolve(fileName);
 	}
 
 	private Path slotDirectory(byte slot) {
@@ -332,6 +466,131 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		}
 		if (current > size) {
 			channel.truncate(size);
+		}
+	}
+
+	private static void writeIntBigEndian(MemorySegment segment, long offset, int value) {
+		segment.set(ValueLayout.JAVA_BYTE, offset, (byte) (value >>> 24));
+		segment.set(ValueLayout.JAVA_BYTE, offset + 1L, (byte) (value >>> 16));
+		segment.set(ValueLayout.JAVA_BYTE, offset + 2L, (byte) (value >>> 8));
+		segment.set(ValueLayout.JAVA_BYTE, offset + 3L, (byte) value);
+	}
+
+	private static int readIntBigEndian(MemorySegment segment, long offset) {
+		return ((segment.get(ValueLayout.JAVA_BYTE, offset) & 0xff) << 24)
+				| ((segment.get(ValueLayout.JAVA_BYTE, offset + 1L) & 0xff) << 16)
+				| ((segment.get(ValueLayout.JAVA_BYTE, offset + 2L) & 0xff) << 8)
+				| (segment.get(ValueLayout.JAVA_BYTE, offset + 3L) & 0xff);
+	}
+
+	@FunctionalInterface
+	interface SegmentReader<T> {
+		T read(MemorySegment payload) throws IOException;
+	}
+
+	static final class FramedPayloadAllocation {
+		final Ref ref;
+		final MemorySegment payload;
+
+		FramedPayloadAllocation(Ref ref, MemorySegment payload) {
+			this.ref = ref;
+			this.payload = payload;
+		}
+	}
+
+	private static final class MappedSketchSlice {
+		private final MemorySegment segment;
+
+		private MappedSketchSlice(MemorySegment segment) {
+			this.segment = segment;
+		}
+	}
+
+	private static final class MappedSketchChunkKey {
+		private final byte slot;
+		private final byte fileKind;
+		private final long chunkStart;
+
+		private MappedSketchChunkKey(byte slot, byte fileKind, long chunkStart) {
+			this.slot = slot;
+			this.fileKind = fileKind;
+			this.chunkStart = chunkStart;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof MappedSketchChunkKey)) {
+				return false;
+			}
+			MappedSketchChunkKey that = (MappedSketchChunkKey) other;
+			return slot == that.slot && fileKind == that.fileKind && chunkStart == that.chunkStart;
+		}
+
+		@Override
+		public int hashCode() {
+			int result = slot;
+			result = 31 * result + fileKind;
+			result = 31 * result + Long.hashCode(chunkStart);
+			return result;
+		}
+	}
+
+	private static final class MappedSketchChunk implements AutoCloseable {
+		private final Path file;
+		private final long length;
+		private Arena arena;
+		private MemorySegment segment;
+
+		private MappedSketchChunk(Path file, long length) {
+			this.file = file;
+			this.length = length;
+		}
+
+		private void map(boolean create) throws IOException {
+			if (!create && !Files.isRegularFile(file)) {
+				throw new NoSuchFileException(file.toString());
+			}
+			Files.createDirectories(file.getParent());
+			try (FileChannel channel = create
+					? FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.READ,
+							StandardOpenOption.WRITE)
+					: FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+				if (create) {
+					ensureChannelSize(channel, length);
+				} else if (channel.size() < length) {
+					throw new IOException("Persisted sketch part is smaller than configured chunk: " + file
+							+ " size=" + channel.size() + " chunk=" + length);
+				}
+				Arena mappedArena = Arena.ofShared();
+				try {
+					MemorySegment mappedSegment = channel.map(FileChannel.MapMode.READ_WRITE, 0L, length,
+							mappedArena);
+					arena = mappedArena;
+					segment = mappedSegment;
+				} catch (IOException | RuntimeException e) {
+					mappedArena.close();
+					throw e;
+				}
+			}
+		}
+
+		private void force() {
+			if (segment != null) {
+				segment.force();
+			}
+		}
+
+		@Override
+		public void close() {
+			if (arena != null) {
+				force();
+				arena.close();
+				arena = null;
+				segment = null;
+			}
 		}
 	}
 

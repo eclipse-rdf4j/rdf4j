@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -20,11 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MonitorInfo;
 import java.lang.management.ThreadInfo;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -42,6 +46,9 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.datasketches.common.ResizeFactor;
+import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
+import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketchBuilder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -55,10 +62,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final long DEFAULT_MAPPED_SKETCH_FILE_BYTES = 100L * 1024L * 1024L;
 
 	private static Statement st(Resource s, IRI p, Value o, Resource c) {
 		return VF.createStatement(s, p, o, c);
@@ -121,7 +130,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		StubSailStore sourceStore = new StubSailStore();
 		sourceStore.add(st(s, p, o));
 		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
-		writer.rebuildOnceSlow();
+		writer.rebuild();
 		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
 		writer.configurePersistence(storeDirectory, false);
 		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
@@ -168,6 +177,212 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void appendsReusePreallocatedMappedSketchPartFile(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		byte[] firstPayload = new byte[] { 1, 2, 3, 4 };
+		byte[] secondPayload = new byte[] { 5, 6, 7 };
+
+		try (SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(storeDirectory,
+				LoggerFactory.getLogger(SketchBasedJoinEstimatorPersistenceTest.class))) {
+			SketchEstimatorPersistenceStore.Ref first = store.append((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, firstPayload, 1L);
+			SketchEstimatorPersistenceStore.Ref second = store.append((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, secondPayload, 1L);
+
+			assertEquals(0L, first.offset);
+			assertEquals(firstPayload.length, second.offset);
+			assertFalse(Files.exists(storeDirectory.resolve("a/global.sketches")),
+					"Sketch payload storage should use fixed part files, not a growing monolith");
+			assertTrue(
+					Files.size(storeDirectory.resolve("a/global.part1.sketches")) >= DEFAULT_MAPPED_SKETCH_FILE_BYTES,
+					"Sketch payload part files should be allocated in large chunks before mapping");
+			assertEquals(1, debugMappedSketchFileCount(store), "One payload file should stay mapped");
+			assertEquals(1, debugMappedSketchFileMapCount(store), "Second append should reuse the existing mapping");
+
+			assertArrayEquals(firstPayload, store.read(first));
+			assertArrayEquals(secondPayload, store.read(second));
+			assertEquals(1, debugMappedSketchFileMapCount(store), "Reads should reuse the write mapping");
+		}
+	}
+
+	@Test
+	void appendsCreateNewFixedPartFilesInsteadOfGrowingPayloadFiles(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		byte[] firstPayload = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+		byte[] secondPayload = new byte[] { 11, 12, 13, 14, 15, 16, 17, 18, 19 };
+
+		try (SketchEstimatorPersistenceStore store = openStoreForTesting(storeDirectory, 4, 16L)) {
+			SketchEstimatorPersistenceStore.Ref first = store.append((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, firstPayload, 1L);
+			SketchEstimatorPersistenceStore.Ref second = store.append((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, secondPayload, 1L);
+
+			assertEquals(0L, first.offset);
+			assertEquals(16L, second.offset, "Second payload should start in part2 instead of growing part1");
+			assertEquals(16L, Files.size(storeDirectory.resolve("a/global.part1.sketches")));
+			assertEquals(16L, Files.size(storeDirectory.resolve("a/global.part2.sketches")));
+			assertFalse(Files.exists(storeDirectory.resolve("a/global.sketches")),
+					"Part files should replace the old growing payload file");
+			assertArrayEquals(firstPayload, store.read(first));
+			assertArrayEquals(secondPayload, store.read(second));
+		}
+	}
+
+	@Test
+	void framedPayloadRoundTripExposesMappedPayloadSegment(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		byte[] payload = new byte[] { 11, 12, 13, 14, 15 };
+		int marker = 0x524a4553;
+
+		try (SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(storeDirectory,
+				LoggerFactory.getLogger(SketchBasedJoinEstimatorPersistenceTest.class))) {
+			Method append = SketchEstimatorPersistenceStore.class.getDeclaredMethod("appendFramedPayload",
+					byte.class, byte.class, int.class, byte[].class, long.class);
+			Method read = Arrays.stream(SketchEstimatorPersistenceStore.class.getDeclaredMethods())
+					.filter(method -> method.getName().equals("readFramedPayload"))
+					.filter(method -> method.getParameterCount() == 3)
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("Expected mapped framed-payload read path"));
+			Object ref = append.invoke(store, (byte) 0, SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, marker,
+					payload, 1L);
+
+			Class<?> readerType = read.getParameterTypes()[2];
+			AtomicBoolean sawMappedPayload = new AtomicBoolean(false);
+			Object reader = Proxy.newProxyInstance(readerType.getClassLoader(), new Class<?>[] { readerType },
+					(proxy, method, args) -> {
+						switch (method.getName()) {
+						case "read":
+							MemorySegment segment = (MemorySegment) args[0];
+							sawMappedPayload.set(segment.byteSize() == payload.length);
+							return segment.toArray(ValueLayout.JAVA_BYTE);
+						case "toString":
+							return "test-framed-payload-reader";
+						case "hashCode":
+							return System.identityHashCode(proxy);
+						case "equals":
+							return proxy == args[0];
+						default:
+							throw new UnsupportedOperationException(method.toString());
+						}
+					});
+
+			assertArrayEquals(payload, (byte[]) read.invoke(store, ref, marker, reader));
+			assertTrue(sawMappedPayload.get(), "Expected read path to expose only the mapped sketch payload");
+		}
+	}
+
+	@Test
+	void directFramedSketchRoundTripWrapsMappedUpdatableSketch(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		int marker = 0x524a4553;
+		int k = 64;
+		int sketchBytes = new ArrayOfDoublesUpdatableSketchBuilder()
+				.setNominalEntries(k)
+				.setResizeFactor(ResizeFactor.X8)
+				.setNumberOfValues(1)
+				.build()
+				.getMaxBytes();
+
+		try (SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(storeDirectory,
+				LoggerFactory.getLogger(SketchBasedJoinEstimatorPersistenceTest.class))) {
+			Method allocate = SketchEstimatorPersistenceStore.class.getDeclaredMethod("allocateFramedPayload",
+					byte.class, byte.class, int.class, int.class, long.class);
+			Method read = Arrays.stream(SketchEstimatorPersistenceStore.class.getDeclaredMethods())
+					.filter(method -> method.getName().equals("readFramedPayload"))
+					.filter(method -> method.getParameterCount() == 3)
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("Expected mapped framed-payload read path"));
+			Object allocation = allocate.invoke(store, (byte) 0, SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL,
+					marker, sketchBytes, 1L);
+
+			Field refField = allocation.getClass().getDeclaredField("ref");
+			Field payloadField = allocation.getClass().getDeclaredField("payload");
+			refField.setAccessible(true);
+			payloadField.setAccessible(true);
+
+			Object ref = refField.get(allocation);
+			MemorySegment payload = (MemorySegment) payloadField.get(allocation);
+			ArrayOfDoublesUpdatableSketch sketch = new ArrayOfDoublesUpdatableSketchBuilder()
+					.setNominalEntries(k)
+					.setResizeFactor(ResizeFactor.X8)
+					.setNumberOfValues(1)
+					.build(payload);
+			assertTrue(sketch.hasMemorySegment(), "New persisted sketch should be backed by the mapped payload");
+			sketch.update(42L, new double[] { 1.0d });
+
+			Class<?> readerType = read.getParameterTypes()[2];
+			AtomicBoolean sawMappedSketch = new AtomicBoolean(false);
+			Object reader = Proxy.newProxyInstance(readerType.getClassLoader(), new Class<?>[] { readerType },
+					(proxy, method, args) -> {
+						switch (method.getName()) {
+						case "read":
+							ArrayOfDoublesUpdatableSketch wrapped = ArrayOfDoublesUpdatableSketch
+									.wrap((MemorySegment) args[0]);
+							sawMappedSketch.set(wrapped.hasMemorySegment());
+							return wrapped;
+						case "toString":
+							return "test-direct-sketch-reader";
+						case "hashCode":
+							return System.identityHashCode(proxy);
+						case "equals":
+							return proxy == args[0];
+						default:
+							throw new UnsupportedOperationException(method.toString());
+						}
+					});
+
+			ArrayOfDoublesUpdatableSketch wrapped = (ArrayOfDoublesUpdatableSketch) read.invoke(store, ref, marker,
+					reader);
+			assertTrue(sawMappedSketch.get(), "Expected persisted sketch reload to wrap mapped payload");
+			assertTrue(wrapped.hasMemorySegment(), "Reloaded persisted sketch should remain mapped");
+			assertEquals(1.0d, wrapped.getEstimate(), 0.0d);
+		}
+	}
+
+	@Test
+	void mappedSketchFilesStayMappedAndReuseOsPaging(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		byte[] payload = new byte[] { 9, 8, 7, 6 };
+
+		try (SketchEstimatorPersistenceStore store = openStoreForTesting(storeDirectory, 1, 1024L)) {
+			SketchEstimatorPersistenceStore.Ref global = store.append((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, payload, 1L);
+			SketchEstimatorPersistenceStore.Ref singles = store.append((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_SINGLES, payload, 1L);
+			store.append((byte) 0, SketchEstimatorPersistenceStore.FILE_KIND_SINGLES, payload, 1L);
+
+			assertEquals(2, debugMappedSketchFileCount(store), "Mapped sketch parts should remain store-resident");
+			assertEquals(2, debugMappedSketchFileMapCount(store),
+					"Each touched part should be mapped once");
+
+			assertArrayEquals(payload, store.read(global), "Mapped part data should remain available through the OS");
+			assertArrayEquals(payload, store.read(singles), "Mapped part data should remain available through the OS");
+			assertEquals(2, debugMappedSketchFileMapCount(store), "Rereading mapped parts must not remap files");
+			assertEquals(2, debugMappedSketchFileCount(store), "Rereading mapped parts must not close arenas");
+		}
+	}
+
+	@Test
+	void mappedSketchFilesCanBeReusedAcrossThreads(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		byte[] payload = new byte[] { 1, 3, 3, 7 };
+
+		try (SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(storeDirectory,
+				LoggerFactory.getLogger(SketchBasedJoinEstimatorPersistenceTest.class))) {
+			SketchEstimatorPersistenceStore.Ref ref = store.append((byte) 0,
+					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, payload, 1L);
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			try {
+				Future<byte[]> read = executor.submit(() -> store.read(ref));
+				assertArrayEquals(payload, read.get(2, TimeUnit.SECONDS),
+						"Cached mapped sketch files must be reusable from estimator worker threads");
+			} finally {
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
 	void persistSnapshotThenLazyLoadOnDemand(@TempDir Path tempDir) {
 		Resource s = VF.createIRI("urn:s");
 		IRI p = VF.createIRI("urn:p");
@@ -176,7 +391,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		StubSailStore sourceStore = new StubSailStore();
 		sourceStore.add(st(s, p, o));
 		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
-		writer.rebuildOnceSlow();
+		writer.rebuild();
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		writer.configurePersistence(snapshot, false);
@@ -199,7 +414,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		StubSailStore sourceStore = new StubSailStore();
 		sourceStore.add(st(s, p, o));
 		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
-		writer.rebuildOnceSlow();
+		writer.rebuild();
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		writer.configurePersistence(snapshot, false);
@@ -223,7 +438,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		StubSailStore store = new StubSailStore();
 		store.add(st(s, p, o));
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, smallConfig());
-		est.rebuildOnceSlow();
+		est.rebuild();
 		assertTrue(est.isReady());
 
 		est.unload();
@@ -232,7 +447,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		est.addStatement(st(VF.createIRI("urn:s2"), p, o));
 		assertFalse(est.isReady(), "Writes while unloaded should force rebuild before readiness");
 
-		est.rebuildOnceSlow();
+		est.rebuild();
 		assertTrue(est.isReady(), "Rebuild should restore readiness");
 	}
 
@@ -244,7 +459,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 		StubSailStore store = new StubSailStore();
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, smallConfig());
-		est.rebuildOnceSlow();
+		est.rebuild();
 		assertFalse(est.isReady(), "Expected empty rebuild to remain unready");
 
 		store.add(st(s, p, o));
@@ -264,7 +479,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		store.add(st(s, p1, o));
 		store.add(st(s, p2, o));
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, smallConfig());
-		est.rebuildOnceSlow();
+		est.rebuild();
 		est.unload();
 
 		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("p1", p1), Var.of("o", o));
@@ -291,7 +506,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		}
 
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, smallConfig());
-		est.rebuildOnceSlow();
+		est.rebuild();
 
 		double twoConstants = est.estimateCount(SketchBasedJoinEstimator.Component.S, null, p.stringValue(),
 				o.stringValue(),
@@ -318,7 +533,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
-		writer.rebuildOnceSlow();
+		writer.rebuild();
 		writer.configurePersistence(snapshot, false);
 		assertTrue(writer.persistIfDirty());
 
@@ -531,7 +746,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
-	void repeatedPersistKeepsFixedDirectoryStoreFiles(@TempDir Path tempDir) throws Exception {
+	void repeatedPersistUsesFixedPartFilesWithoutLegacyPayloadFiles(@TempDir Path tempDir) throws Exception {
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		estimator.configurePersistence(snapshot, false);
@@ -541,7 +756,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			estimator.addStatement(st(VF.createIRI("urn:fixed:s" + i), predicate, VF.createIRI("urn:fixed:o" + i)));
 		}
 		assertTrue(estimator.persistIfDirty(), "Expected first persist to write fixed store files");
-		assertEquals(9, countStoreFiles(snapshot), "Expected metadata plus two fixed slot file sets");
+		assertTrue(countPartFiles(snapshot) > 0, "Expected first persist to create fixed sketch part files");
+		assertNoLegacyPayloadFiles(snapshot);
 
 		for (int i = 0; i < 320; i++) {
 			estimator.addStatement(st(VF.createIRI("urn:fixed:s2-" + i), predicate,
@@ -549,7 +765,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		}
 		assertTrue(estimator.persistIfDirty(), "Expected second persist to update fixed store files");
 
-		assertEquals(9, countStoreFiles(snapshot), "Repeated persists must not create sidecar shards");
+		assertTrue(countPartFiles(snapshot) > 0, "Repeated persists should keep using fixed sketch part files");
+		assertNoLegacyPayloadFiles(snapshot);
 		assertFalse(Files.exists(snapshot.resolveSibling("join-estimator.rjes.sketches")),
 				"Directory store must not create legacy sidecar blobs");
 	}
@@ -656,7 +873,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		store.add(st(subject, predicate, object));
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallConfig());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 		estimator.configurePersistence(snapshot, false);
 
 		Object stateLockA = privateFieldValue(estimator, "bufA");
@@ -789,22 +1006,22 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	private static void assertDirectoryPayloadLayout(Path storeDirectory) throws Exception {
 		assertTrue(Files.isDirectory(storeDirectory), "Expected estimator persistence path to be a directory");
 		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/index.bin")), "Expected a/index.bin");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/global.sketches")), "Expected a/global.sketches");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/singles.sketches")), "Expected a/singles.sketches");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/pairs.sketches")), "Expected a/pairs.sketches");
 		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/index.bin")), "Expected b/index.bin");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/global.sketches")), "Expected b/global.sketches");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/singles.sketches")), "Expected b/singles.sketches");
-		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/pairs.sketches")), "Expected b/pairs.sketches");
+		assertNoLegacyPayloadFiles(storeDirectory);
 	}
 
 	private static boolean hasAnyPayloadBytes(Path storeDirectory) throws Exception {
-		return Files.size(storeDirectory.resolve("a/global.sketches")) > 0L
-				|| Files.size(storeDirectory.resolve("a/singles.sketches")) > 0L
-				|| Files.size(storeDirectory.resolve("a/pairs.sketches")) > 0L
-				|| Files.size(storeDirectory.resolve("b/global.sketches")) > 0L
-				|| Files.size(storeDirectory.resolve("b/singles.sketches")) > 0L
-				|| Files.size(storeDirectory.resolve("b/pairs.sketches")) > 0L;
+		try (var paths = Files.walk(storeDirectory)) {
+			return paths.filter(Files::isRegularFile)
+					.filter(SketchBasedJoinEstimatorPersistenceTest::isSketchPartFile)
+					.anyMatch(path -> {
+						try {
+							return Files.size(path) > 0L;
+						} catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+					});
+		}
 	}
 
 	private static Object invokePrivate(Object target, String methodName, Class<?>[] parameterTypes, Object... args)
@@ -812,6 +1029,28 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Method method = target.getClass().getDeclaredMethod(methodName, parameterTypes);
 		method.setAccessible(true);
 		return method.invoke(target, args);
+	}
+
+	private static SketchEstimatorPersistenceStore openStoreForTesting(Path directory, int mappedFileLimit,
+			long mappedFileChunkBytes) throws Exception {
+		Method method = SketchEstimatorPersistenceStore.class.getDeclaredMethod("open", Path.class,
+				org.slf4j.Logger.class, int.class, long.class);
+		method.setAccessible(true);
+		return (SketchEstimatorPersistenceStore) method.invoke(null, directory,
+				LoggerFactory.getLogger(SketchBasedJoinEstimatorPersistenceTest.class), mappedFileLimit,
+				mappedFileChunkBytes);
+	}
+
+	private static int debugMappedSketchFileCount(SketchEstimatorPersistenceStore store) throws Exception {
+		Method method = SketchEstimatorPersistenceStore.class.getDeclaredMethod("debugMappedSketchFileCount");
+		method.setAccessible(true);
+		return (int) method.invoke(store);
+	}
+
+	private static int debugMappedSketchFileMapCount(SketchEstimatorPersistenceStore store) throws Exception {
+		Method method = SketchEstimatorPersistenceStore.class.getDeclaredMethod("debugMappedSketchFileMapCount");
+		method.setAccessible(true);
+		return (int) method.invoke(store);
 	}
 
 	private static Set<Integer> residentSinglePredicateHashes(SketchBasedJoinEstimator estimator) throws Exception {
@@ -861,10 +1100,26 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		return false;
 	}
 
-	private static int countStoreFiles(Path snapshot) throws Exception {
+	private static int countPartFiles(Path snapshot) throws Exception {
 		try (var paths = Files.walk(snapshot)) {
-			return (int) paths.filter(Files::isRegularFile).count();
+			return (int) paths.filter(Files::isRegularFile)
+					.filter(SketchBasedJoinEstimatorPersistenceTest::isSketchPartFile)
+					.count();
 		}
+	}
+
+	private static boolean isSketchPartFile(Path path) {
+		String fileName = path.getFileName().toString();
+		return fileName.contains(".part") && fileName.endsWith(".sketches");
+	}
+
+	private static void assertNoLegacyPayloadFiles(Path snapshot) throws Exception {
+		assertFalse(Files.exists(snapshot.resolve("a/global.sketches")), "Legacy global sketch file must not exist");
+		assertFalse(Files.exists(snapshot.resolve("a/singles.sketches")), "Legacy singles sketch file must not exist");
+		assertFalse(Files.exists(snapshot.resolve("a/pairs.sketches")), "Legacy pairs sketch file must not exist");
+		assertFalse(Files.exists(snapshot.resolve("b/global.sketches")), "Legacy global sketch file must not exist");
+		assertFalse(Files.exists(snapshot.resolve("b/singles.sketches")), "Legacy singles sketch file must not exist");
+		assertFalse(Files.exists(snapshot.resolve("b/pairs.sketches")), "Legacy pairs sketch file must not exist");
 	}
 
 	@SuppressWarnings("unchecked")

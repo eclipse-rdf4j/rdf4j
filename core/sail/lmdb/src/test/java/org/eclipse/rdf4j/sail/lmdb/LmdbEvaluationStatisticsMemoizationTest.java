@@ -202,7 +202,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
@@ -234,7 +234,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
@@ -279,7 +279,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
@@ -310,7 +310,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter filter = firstFilter(
@@ -339,7 +339,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuildOnceSlow();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
 
 			Filter filter = firstFilter(
 					"SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } ?s <urn:test:name> ?name . FILTER(?name = ?target) }");

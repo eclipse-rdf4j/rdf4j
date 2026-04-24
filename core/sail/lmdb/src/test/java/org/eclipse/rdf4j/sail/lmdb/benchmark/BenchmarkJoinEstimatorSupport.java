@@ -59,7 +59,7 @@ public final class BenchmarkJoinEstimatorSupport {
 	public static void persistEstimatorAfterBulkLoad(SailRepository repository, LmdbStore store) throws IOException {
 		repository.init();
 		SketchBasedJoinEstimator estimator = resolveEstimator(store);
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 		awaitEstimatorReady(estimator, "bulk-load rebuild");
 		persistReusableEstimatorSnapshot(estimator);
 	}

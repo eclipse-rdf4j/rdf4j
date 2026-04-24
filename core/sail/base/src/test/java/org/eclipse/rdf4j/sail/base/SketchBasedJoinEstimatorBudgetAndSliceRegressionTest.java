@@ -18,11 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -33,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 
@@ -62,7 +66,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 
 		StatementPattern pattern = new StatementPattern(Var.of("enc"), Var.of("p", predicate), Var.of("obs"));
 		Slice slice = new Slice(pattern, 0L, 1L);
@@ -88,23 +92,74 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		store.add(st(VF.createIRI("urn:s1"), p2, VF.createIRI("urn:o2"), c));
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 		assertTrue(estimator.isReady(), "Expected populated rebuild to be ready");
 
 		clearActiveSingles(estimator);
 		assertFalse(estimator.isReady(), "Estimator should not be ready without active single-complement sketches");
 
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 		assertTrue(estimator.isReady(), "Rebuild should restore active single-complement sketches");
 
 		clearActivePairs(estimator);
 		assertFalse(estimator.isReady(), "Estimator should not be ready without active pair sketches");
 
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 		assertTrue(estimator.isReady(), "Rebuild should restore active pair sketches");
 
 		clearActiveSingleTriples(estimator);
 		assertFalse(estimator.isReady(), "Estimator should not be ready without active single-triple sketches");
+	}
+
+	@Test
+	void rebuildSketchesAreLruTrackedAndEvictableBeforePublish(@TempDir Path tempDir) throws Exception {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), config());
+		try {
+			estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
+			Object activeState = activeState(estimator);
+
+			applyRebuildGlobalComponentSketch(estimator, activeState, SketchBasedJoinEstimator.Component.S, 1L);
+
+			assertEquals(1, estimator.debugResidentSketches().size(),
+					"Rebuild-created sketches must enter the LRU immediately");
+			assertTrue(globalComponentSketch(activeState, SketchBasedJoinEstimator.Component.S).hasMemorySegment(),
+					"Rebuild-created persisted sketches should be backed by mapped payloads immediately");
+			assertEquals(1, activeLoadedBucketCount(estimator), "Loaded count must reflect evictable LRU residents");
+			assertEquals(1, evictResidentSketchBatch(estimator, 1),
+					"Rebuild-created sketches must be evictable before rebuild publish");
+			assertTrue(estimator.debugResidentSketches().isEmpty(), "Eviction should remove the resident sketch");
+			assertFalse(estimator.debugPersistedSketches().isEmpty(), "Dirty rebuild sketch should be persisted");
+
+			applyRebuildGlobalComponentSketch(estimator, activeState, SketchBasedJoinEstimator.Component.S, 2L);
+
+			assertEquals(1, estimator.debugResidentSketches().size(),
+					"Rebuild updates should reload persisted partial sketches and track them again");
+			assertTrue(globalComponentSketch(activeState, SketchBasedJoinEstimator.Component.S).hasMemorySegment(),
+					"Reloaded rebuild partial sketches should remain mapped");
+			assertEquals(1, activeLoadedBucketCount(estimator), "Reloaded rebuild sketches must remain evictable");
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void rebuildSketchUpdatesSkipSynchronousBudgetEnforcement(@TempDir Path tempDir) throws Exception {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), config());
+		try {
+			closeMemoryMonitor(estimator);
+			estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
+			setSketchBudgetBytes(estimator, 0L, 0L);
+			Object activeState = activeState(estimator);
+
+			applyRebuildGlobalComponentSketch(estimator, activeState, SketchBasedJoinEstimator.Component.S, 1L);
+
+			assertEquals(1, activeLoadedBucketCount(estimator),
+					"Rebuild ingestion should leave eviction cadence to the memory monitor");
+			assertEquals(1, evictResidentSketchBatch(estimator, 1),
+					"Memory-monitor eviction path should still be able to unload rebuild sketches");
+		} finally {
+			estimator.close();
+		}
 	}
 
 	private static Statement st(Resource s, IRI p, Value o) {
@@ -169,6 +224,39 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.get(target);
+	}
+
+	private static void applyRebuildGlobalComponentSketch(SketchBasedJoinEstimator estimator, Object state,
+			SketchBasedJoinEstimator.Component component, long thetaHash) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("applyRebuildGlobalComponentSketch",
+				state.getClass(), boolean.class, SketchBasedJoinEstimator.Component.class, long.class);
+		method.setAccessible(true);
+		method.invoke(estimator, state, false, component, thetaHash);
+	}
+
+	private static ArrayOfDoublesUpdatableSketch globalComponentSketch(Object state,
+			SketchBasedJoinEstimator.Component component) throws Exception {
+		Object globalComponents = field(state, "globalComponents");
+		AtomicReferenceArray<?> sketches = (AtomicReferenceArray<?>) field(globalComponents, component.name());
+		return (ArrayOfDoublesUpdatableSketch) sketches.get(0);
+	}
+
+	private static int activeLoadedBucketCount(SketchBasedJoinEstimator estimator) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("activeLoadedBucketCount");
+		method.setAccessible(true);
+		return (int) method.invoke(estimator);
+	}
+
+	private static int evictResidentSketchBatch(SketchBasedJoinEstimator estimator, int batchSize) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("evictResidentSketchBatch", int.class);
+		method.setAccessible(true);
+		return (int) method.invoke(estimator, batchSize);
+	}
+
+	private static void closeMemoryMonitor(SketchBasedJoinEstimator estimator) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("closeMemoryMonitor");
+		method.setAccessible(true);
+		method.invoke(estimator);
 	}
 
 	private static void clearSketchArray(AtomicReferenceArray<?> sketches) {

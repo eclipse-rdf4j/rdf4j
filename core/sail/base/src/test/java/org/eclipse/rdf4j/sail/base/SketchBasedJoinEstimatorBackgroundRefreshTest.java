@@ -152,7 +152,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		}
 
 		@Override
-		public synchronized long rebuildOnceSlow() {
+		public synchronized long rebuild() {
 			rebuildAttempts.incrementAndGet();
 			throw new OutOfMemoryError("simulated");
 		}

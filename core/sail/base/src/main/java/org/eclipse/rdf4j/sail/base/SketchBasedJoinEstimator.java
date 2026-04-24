@@ -12,11 +12,8 @@
 
 package org.eclipse.rdf4j.sail.base;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
@@ -2191,7 +2188,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 				if (rebuildRequired.get()) {
 					try {
-						rebuildOnceSlow();
+						rebuild();
 					} catch (Throwable t) {
 						logger.error("Error while rebuilding join estimator", t);
 					}
@@ -2228,7 +2225,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 //				System.out.println(staleness.toString());
 
 				try {
-					rebuildOnceSlow();
+					rebuild();
 				} catch (Throwable t) {
 
 					logger.error("Error while rebuilding join estimator", t);
@@ -2344,7 +2341,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 *
 	 * @return number of statements scanned.
 	 */
-	public synchronized long rebuildOnceSlow() {
+	public synchronized long rebuild() {
 		flushPendingIncremental();
 		clearEstimateCacheIfPopulated();
 
@@ -2383,9 +2380,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 						rebuildBatch[rebuildBatchSize] = event;
 						rebuildBatchSize++;
 						if (rebuildBatchSize == rebuildBatch.length) {
-							synchronized (tgt) {
-								ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
-							}
+							ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
 							rebuildBatchSize = 0;
 							if (logger.isDebugEnabled()) {
 								long seenMillion = seen / 1_000_000;
@@ -2421,9 +2416,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 				if (seen > 0) {
 					if (rebuildBatchSize > 0) {
-						synchronized (tgt) {
-							ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
-						}
+						ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
 					}
 				}
 			}
@@ -2976,57 +2969,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			long comp2) {
 		int x = (int) (key >>> 32);
 		int y = (int) key;
-		PairBuild build = state.pairs.get(pair);
-		PairBuild.Row row = build.getOrCreateRow(x);
-		double delta = signedDelta(isDelete);
-		tupleUpdateRaw(sketchForRebuildMap(row.triples, y, state.k), triple, delta);
-		tupleUpdateRaw(sketchForRebuildMap(row.comp1, y, state.k), comp1, delta);
-		tupleUpdateRaw(sketchForRebuildMap(row.comp2, y, state.k), comp2, delta);
+		applyRebuildSketchUpdate(state, pairAddress(REC_PAIR_TRIPLE, false, pair, x, y), isDelete, triple);
+		applyRebuildSketchUpdate(state, pairAddress(REC_PAIR_COMP1, false, pair, x, y), isDelete, comp1);
+		applyRebuildSketchUpdate(state, pairAddress(REC_PAIR_COMP2, false, pair, x, y), isDelete, comp2);
 	}
 
 	private void applyRebuildSingleSketch(State state, boolean isDelete, Component component, int idx, long thetaHash) {
-		AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches = state.singleTriples.get(component);
-		ArrayOfDoublesUpdatableSketch sketch = sketches.get(idx);
-		if (sketch == null) {
-			sketch = newSk(state.k);
-			sketches.set(idx, sketch);
-		}
-		tupleUpdateRaw(sketch, thetaHash, signedDelta(isDelete));
+		applyRebuildSketchUpdate(state, singleTripleAddress(false, component, idx), isDelete, thetaHash);
 	}
 
 	private void applyRebuildGlobalComponentSketch(State state, boolean isDelete, Component component, long thetaHash) {
-		AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches = state.globalComponents.get(component);
-		ArrayOfDoublesUpdatableSketch sketch = sketches.get(0);
-		if (sketch == null) {
-			sketch = newSk(state.k);
-			sketches.set(0, sketch);
-		}
-		tupleUpdateRaw(sketch, thetaHash, signedDelta(isDelete));
+		applyRebuildSketchUpdate(state, globalComponentAddress(component), isDelete, thetaHash);
 	}
 
 	private void applyRebuildComplementSketch(State state, boolean isDelete, Component fixed, Component other, int idx,
 			long thetaHash) {
-		SingleBuild build = state.singles.get(fixed);
-		AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches = build.cmpl.get(other);
-		if (sketches == null) {
-			return;
-		}
-		ArrayOfDoublesUpdatableSketch sketch = sketches.get(idx);
-		if (sketch == null) {
-			sketch = newSk(state.k);
-			sketches.set(idx, sketch);
-		}
-		tupleUpdateRaw(sketch, thetaHash, signedDelta(isDelete));
+		applyRebuildSketchUpdate(state, singleComplementAddress(false, fixed, other, idx), isDelete, thetaHash);
 	}
 
-	private static ArrayOfDoublesUpdatableSketch sketchForRebuildMap(
-			Map<Integer, ArrayOfDoublesUpdatableSketch> sketches, int idx, int k) {
-		ArrayOfDoublesUpdatableSketch sketch = sketches.get(idx);
-		if (sketch == null) {
-			sketch = newSk(k);
-			sketches.put(idx, sketch);
+	private void applyRebuildSketchUpdate(State state, SketchAddress address, boolean isDelete, long thetaHash) {
+		synchronized (state) {
+			byte slot = slotByte(slotOf(state));
+			int entryId;
+			synchronized (sketchCacheLock) {
+				entryId = cacheDirectory.findOrAdd(address);
+			}
+			ArrayOfDoublesUpdatableSketch sketch = getSketchForWrite(state, address, entryId, false);
+			tupleUpdateRaw(sketch, thetaHash, signedDelta(isDelete));
+			markDirtyAndTouchResidentSketch(slot, entryId, sketch, -1L);
 		}
-		return sketch;
 	}
 
 	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event, IngestPartition partition) {
@@ -3868,6 +3839,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		final StateComponents<SingleBuild> singles;
 		final EnumMap<Pair, PairBuild> pairs = new EnumMap<>(Pair.class);
 		final long initialSketchBytes;
+		final int maxSketchBytes;
 
 		/* tomb‑stone (delete) sketches */
 		final StateComponents<AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> delSingleTriples;
@@ -3877,7 +3849,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		State(int k, int buckets) {
 			this.k = k;
 			this.buckets = buckets;
-			this.initialSketchBytes = estimatedSketchBytes(newSk(k));
+			ArrayOfDoublesUpdatableSketch emptySketch = newSk(k);
+			this.initialSketchBytes = estimatedSketchBytes(emptySketch);
+			this.maxSketchBytes = emptySketch.getMaxBytes();
 
 			globalComponents = new StateComponents<>(
 					new AtomicReferenceArray<>(1),
@@ -4057,6 +4031,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static ArrayOfDoublesUpdatableSketch newSk(int k) {
 		return TupleSketchOps.newSketch(k);
+	}
+
+	private static ArrayOfDoublesUpdatableSketch newSk(int k, MemorySegment payload) {
+		return TupleSketchOps.newSketch(k, payload);
 	}
 
 	private static void tupleUpdateRaw(ArrayOfDoublesUpdatableSketch sketch, long hash, double delta) {
@@ -8698,6 +8676,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new SketchAddress(REC_SINGLE_TRIPLE, isDelete, (byte) component.ordinal(), (byte) 0, idx, 0);
 	}
 
+	private static SketchAddress globalComponentAddress(Component component) {
+		return new SketchAddress(REC_GLOBAL_COMPONENT, false, (byte) component.ordinal(), (byte) 0, 0, 0);
+	}
+
 	private static SketchAddress singleComplementAddress(boolean isDelete, Component fixed, Component other, int idx) {
 		return new SketchAddress(REC_SINGLE_CPL, isDelete, (byte) fixed.ordinal(), (byte) other.ordinal(), idx, 0);
 	}
@@ -8723,19 +8705,37 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, SketchAddress address, int entryId) {
+		return getSketchForWrite(state, address, entryId, true);
+	}
+
+	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, SketchAddress address, int entryId,
+			boolean enforceLoadBudget) {
 		return getSketchForWrite(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
-				address.y, entryId);
+				address.y, entryId, enforceLoadBudget);
 	}
 
 	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
 			byte axisB, int x,
 			int y, int entryId) {
+		return getSketchForWrite(state, recType, isDelete, axisA, axisB, x, y, entryId, true);
+	}
+
+	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
+			byte axisB, int x,
+			int y, int entryId, boolean enforceLoadBudget) {
 		ArrayOfDoublesUpdatableSketch sketch = getResidentSketch(state, recType, isDelete, axisA, axisB, x, y);
 		if (sketch == null) {
 			SketchAddress address = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
-			sketch = entryId >= 0 ? loadPersistedSketch(state, address, entryId) : loadPersistedSketch(state, address);
+			sketch = entryId >= 0 ? loadPersistedSketch(state, address, entryId, enforceLoadBudget)
+					: loadPersistedSketch(state, address, enforceLoadBudget);
 			if (sketch != null) {
 				setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
+			}
+			if (sketch == null) {
+				sketch = allocatePersistentSketchForWrite(state, address, entryId);
+				if (sketch != null) {
+					setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
+				}
 			}
 		}
 		if (sketch == null) {
@@ -8761,6 +8761,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address) {
+		return loadPersistedSketch(state, address, true);
+	}
+
+	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address,
+			boolean enforceBudget) {
 		int entryId;
 		synchronized (sketchCacheLock) {
 			entryId = cacheDirectory.find(address);
@@ -8768,10 +8773,54 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (entryId < 0) {
 			return null;
 		}
-		return loadPersistedSketch(state, address, entryId);
+		return loadPersistedSketch(state, address, entryId, enforceBudget);
+	}
+
+	private ArrayOfDoublesUpdatableSketch allocatePersistentSketchForWrite(State state, SketchAddress address,
+			int knownEntryId) {
+		if (!persistenceEnabled) {
+			return null;
+		}
+		SketchEstimatorPersistenceStore store = persistenceStore;
+		if (store == null) {
+			return null;
+		}
+		int entryId = knownEntryId;
+		if (entryId < 0) {
+			synchronized (sketchCacheLock) {
+				entryId = cacheDirectory.findOrAdd(address);
+			}
+		}
+		byte slot = slotByte(slotOf(state));
+		synchronized (persistLock) {
+			store = persistenceStore;
+			if (store == null) {
+				return null;
+			}
+			try {
+				SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
+						fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, state.maxSketchBytes,
+						slotGenerations[slot]);
+				ArrayOfDoublesUpdatableSketch sketch = newSk(state.k, allocation.payload);
+				synchronized (sketchCacheLock) {
+					cacheDirectory.setPersistedRef(entryId, slot, allocation.ref.fileKind, allocation.ref.offset,
+							allocation.ref.length, allocation.ref.generation);
+					indexDirty.set(true);
+				}
+				return sketch;
+			} catch (IOException e) {
+				logger.warn("Failed to allocate persisted sketch {}; falling back to heap sketch", address, e);
+				return null;
+			}
+		}
 	}
 
 	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address, int entryId) {
+		return loadPersistedSketch(state, address, entryId, true);
+	}
+
+	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address, int entryId,
+			boolean enforceBudget) {
 		try {
 			ArrayOfDoublesUpdatableSketch loaded;
 			byte slot = slotByte(slotOf(state));
@@ -8787,9 +8836,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				if (store == null) {
 					return null;
 				}
-				loaded = readSketchFromStore(store, persistedSketchRef, state.k, slot);
+				loaded = readSketchFromStore(store, persistedSketchRef, slot);
 			}
-			putResidentSketch(state, address, loaded);
+			putResidentSketch(state, address, loaded, enforceBudget);
 			return loaded;
 		} catch (IOException e) {
 			logger.warn("Failed to load persisted sketch {}", address, e);
@@ -8798,11 +8847,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch) {
+		putResidentSketch(state, address, sketch, true);
+	}
+
+	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch,
+			boolean enforceBudget) {
 		setResidentSketch(state, address, sketch);
 		if (sketch == null) {
 			removeResidentSketchTracking(state, address);
 		} else {
-			touchResidentSketch(state, address, sketch, true);
+			touchResidentSketch(state, address, sketch, enforceBudget);
 		}
 	}
 
@@ -8931,7 +8985,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		dirty.set(true);
 		refreshCacheMetadataAccounting();
-		enforceSketchBudget();
 	}
 
 	private void trackRebuiltSingles(byte slot, StateComponents<SingleBuild> singles, boolean isDelete) {
@@ -9082,7 +9135,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				candidateSlot = residentLru.slot(headNode);
 			}
 			EvictionResult result = evictResidentSketch(candidateEntryId, candidateSlot);
-			if (result != EvictionResult.EVICTED) {
+			if (result == EvictionResult.NEEDS_UNLOAD) {
+				unloadInternal(true);
+				return evicted;
+			}
+			if (result == EvictionResult.FAILED) {
 				return evicted;
 			}
 			evicted++;
@@ -9091,6 +9148,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private int activeLoadedBucketCount() {
+		return residentLruCount();
+	}
+
+	private int residentLruCount() {
 		synchronized (sketchCacheLock) {
 			int count = 0;
 			for (int node = residentLru.headNode(); node != -1; node = residentLru.nextNode(node)) {
@@ -9131,7 +9192,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 		refreshCacheMetadataAccounting();
+		boolean mappedSketch = sketch.hasMemorySegment();
 		if (!dirtySketch) {
+			return EvictionResult.EVICTED;
+		}
+		if (mappedSketch) {
+			clearDirtyMappedSketch(entryId, slotByte);
 			return EvictionResult.EVICTED;
 		}
 		synchronized (persistLock) {
@@ -9290,11 +9356,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (sketch == null) {
 				return false;
 			}
-			TrackedByteArray payload = serializeTrackedSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
+			byte currentSlot = slotByte(slotOf(state));
+			if (sketch.hasMemorySegment()) {
+				clearDirtyMappedSketch(entryId, currentSlot);
+				return true;
+			}
+			TrackedByteArray payload = serializeTrackedNativeSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
 					transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch);
 			try {
 				synchronized (persistLock) {
-					appendSketchPayload(state, entryId, address, payload.bytes);
+					appendNativeSketchPayload(state, entryId, address, payload.bytes);
 				}
 			} finally {
 				releaseTrackedBuffer(payload);
@@ -9309,10 +9380,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		synchronized (sketchCacheLock) {
 			entryId = cacheDirectory.findOrAdd(address);
 		}
-		TrackedByteArray payload = serializeTrackedSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
+		if (sketch.hasMemorySegment()) {
+			clearDirtyMappedSketch(entryId, slotByte(slotOf(state)));
+			return;
+		}
+		TrackedByteArray payload = serializeTrackedNativeSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
 				transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch);
 		try {
-			appendSketchPayload(state, entryId, address, payload.bytes);
+			appendNativeSketchPayload(state, entryId, address, payload.bytes);
 		} finally {
 			releaseTrackedBuffer(payload);
 		}
@@ -9321,22 +9396,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private void appendSketchPayload(State state, int entryId, SketchAddress address,
 			ArrayOfDoublesUpdatableSketch sketch)
 			throws IOException {
-		TrackedByteArray payload = serializeTrackedSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
+		if (sketch.hasMemorySegment()) {
+			clearDirtyMappedSketch(entryId, slotByte(slotOf(state)));
+			return;
+		}
+		TrackedByteArray payload = serializeTrackedNativeSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
 				transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch, false);
 		try {
-			appendSketchPayload(state, entryId, address, payload.bytes);
+			appendNativeSketchPayload(state, entryId, address, payload.bytes);
 		} finally {
 			releaseTrackedBuffer(payload);
 		}
 	}
 
-	private void appendSketchPayload(State state, int entryId, SketchAddress address, byte[] payload)
+	private void appendNativeSketchPayload(State state, int entryId, SketchAddress address, byte[] payload)
 			throws IOException {
 		SketchEstimatorPersistenceStore store = persistenceStore;
 		if (store != null) {
 			byte slot = slotByte(slotOf(state));
-			SketchEstimatorPersistenceStore.Ref persistedRef = store.append(slot, fileKindFor(address), payload,
-					slotGenerations[slot]);
+			SketchEstimatorPersistenceStore.Ref persistedRef = store.appendFramedPayload(slot, fileKindFor(address),
+					SKETCH_PAYLOAD_FORMAT_NATIVE, payload, slotGenerations[slot]);
 			synchronized (sketchCacheLock) {
 				cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind, persistedRef.offset,
 						persistedRef.length, persistedRef.generation);
@@ -9346,6 +9425,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return;
 		}
 		throw new IOException("No directory-backed sketch store configured");
+	}
+
+	private void clearDirtyMappedSketch(int entryId, byte slot) {
+		synchronized (sketchCacheLock) {
+			cacheDirectory.clearDirty(entryId, slot);
+		}
 	}
 
 	private static byte fileKindFor(SketchAddress address) {
@@ -9364,13 +9449,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private TrackedByteArray serializeTrackedSketchPayload(MemoryCategory category, long ownerId,
+	private TrackedByteArray serializeTrackedNativeSketchPayload(MemoryCategory category, long ownerId,
 			ArrayOfDoublesUpdatableSketch sketch)
 			throws IOException {
-		return serializeTrackedSketchPayload(category, ownerId, sketch, true);
+		return serializeTrackedNativeSketchPayload(category, ownerId, sketch, true);
 	}
 
-	private TrackedByteArray serializeTrackedSketchPayload(MemoryCategory category, long ownerId,
+	private TrackedByteArray serializeTrackedNativeSketchPayload(MemoryCategory category, long ownerId,
 			ArrayOfDoublesUpdatableSketch sketch,
 			boolean enforceCapacity)
 			throws IOException {
@@ -9379,28 +9464,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			ensureEstimatorCapacity(predictedBytes, true);
 		}
 		reserveTrackedMemory(category, ownerId, predictedBytes);
-		try (ByteArrayOutputStream bos = new ByteArrayOutputStream(128);
-				DataOutputStream out = new DataOutputStream(bos)) {
-			writeSketch(out, sketch);
-			out.flush();
-			byte[] payload = bos.toByteArray();
+		try {
+			byte[] payload = TupleSketchOps.toByteArray(sketch);
 			replaceTrackedMemory(category, ownerId, estimateByteArrayBytes(payload.length));
 			return new TrackedByteArray(payload, category, ownerId);
-		} catch (IOException | RuntimeException e) {
+		} catch (RuntimeException e) {
 			releaseTrackedMemory(category, ownerId);
 			throw e;
 		}
 	}
 
 	private ArrayOfDoublesUpdatableSketch readSketchFromStore(SketchEstimatorPersistenceStore store,
-			PersistedSketchRef persistedSketchRef, int k, byte slot) throws IOException {
-		byte[] bytes = store.read(persistedSketchRef.storeRef(slot));
-		long ownerId = transientOwner(MEMORY_OWNER_DESERIALIZATION_BUFFER, persistedSketchRef.offset);
-		reserveTrackedMemory(MemoryCategory.DESERIALIZATION_BUFFERS, ownerId, estimateByteArrayBytes(bytes.length));
-		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes))) {
-			return readSketchPayload(input, k);
-		} finally {
-			releaseTrackedMemory(MemoryCategory.DESERIALIZATION_BUFFERS, ownerId);
+			PersistedSketchRef persistedSketchRef, byte slot) throws IOException {
+		SketchEstimatorPersistenceStore.Ref storeRef = persistedSketchRef.storeRef(slot);
+		try {
+			return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::wrapUpdatable);
+		} catch (RuntimeException e) {
+			return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::heapify);
 		}
 	}
 
@@ -9443,31 +9523,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	void debugFlushPendingIncremental() {
 		flushPendingIncremental();
-	}
-
-	private static void writeSketch(DataOutputStream out, ArrayOfDoublesUpdatableSketch sketch) throws IOException {
-		out.writeInt(SKETCH_PAYLOAD_FORMAT_NATIVE);
-		byte[] payload = TupleSketchOps.toByteArray(sketch);
-		out.writeInt(payload.length);
-		out.write(payload);
-	}
-
-	private static ArrayOfDoublesUpdatableSketch readSketchPayload(DataInputStream in, int k) throws IOException {
-		int formatMarker = in.readInt();
-		if (formatMarker != SKETCH_PAYLOAD_FORMAT_NATIVE) {
-			throw new IOException("Unsupported legacy theta sketch payload; rebuild required for tuple sketches");
-		}
-		int payloadLength = in.readInt();
-		if (payloadLength < 0) {
-			throw new IOException("Invalid tuple sketch payload length: " + payloadLength);
-		}
-		byte[] payload = new byte[payloadLength];
-		in.readFully(payload);
-		ArrayOfDoublesUpdatableSketch sketch = TupleSketchOps.heapify(payload);
-		if (in.available() > 0) {
-			throw new IOException("Trailing bytes in sketch payload: " + in.available());
-		}
-		return sketch;
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -9655,7 +9710,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double highMemoryPressurePercent = 0.80;
 		double loadedBucketFloorPercent = 0.05;
 		long memoryMonitorIntervalMillis = 500L;
-		int memoryPressureUnloadBatchSize = 64;
+		int memoryPressureUnloadBatchSize = 1024;
 		double minSketchMemoryPercent = residentSketchMemoryTargetPercent;
 		double maxSketchMemoryPercent = residentSketchMemoryCeilingPercent;
 

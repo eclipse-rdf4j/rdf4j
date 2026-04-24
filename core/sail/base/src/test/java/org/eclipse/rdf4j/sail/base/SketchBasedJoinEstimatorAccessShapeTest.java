@@ -106,7 +106,7 @@ class SketchBasedJoinEstimatorAccessShapeTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.rebuildOnceSlow();
+		estimator.rebuild();
 		return estimator;
 	}
 

@@ -75,6 +75,9 @@ final class SketchEstimatorMemoryMonitor implements AutoCloseable {
 
 	void checkMemory() {
 		double heapPressure = (double) memoryProbe.usedHeapBytes() / Math.max(1L, memoryProbe.maxMemoryBytes());
+//		if (heapPressure > 0.5) {
+//		System.out.println("Heap pressure: " + (int) (heapPressure * 100) + "%");
+//		}
 		if (heapPressure < memoryPolicy.highMemoryPressurePercent) {
 			evictionController.enforceResidentCeiling();
 			return;
@@ -83,6 +86,11 @@ final class SketchEstimatorMemoryMonitor implements AutoCloseable {
 		while (!closed && heapPressure >= memoryPolicy.highMemoryPressurePercent
 				&& evictionController.activeLoadedBucketCount() > floor) {
 			int evicted = evictionController.evictLruBatch(memoryPolicy.memoryPressureUnloadBatchSize);
+			System.gc();
+			logger.warn(
+					"High memory pressure detected ({}% used), evicted {} loaded buckets, active loaded buckets: {}, heap pressure after eviction: {}%",
+					(int) (heapPressure * 100), evicted, evictionController.activeLoadedBucketCount(),
+					(int) (heapPressure * 100));
 			if (evicted <= 0) {
 				return;
 			}

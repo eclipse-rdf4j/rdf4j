@@ -592,7 +592,7 @@ final class SketchJoinOrderPlanner {
 		}
 
 		logicalFinalFrontierWidth = beam.size();
-		recordDebug("greedy beam: seedWidth=" + beam.size() + " limit=" + GREEDY_BEAM_WIDTH);
+		recordDebug("greedy seed: width=" + beam.size() + " limit=" + GREEDY_BEAM_WIDTH);
 		for (int depth = 1; depth < factors.size(); depth++) {
 			StateFrontier nextBeam = new StateFrontier(GREEDY_BEAM_WIDTH);
 			for (StatePlan prefix : beam.plans()) {
@@ -618,7 +618,7 @@ final class SketchJoinOrderPlanner {
 			}
 			beam = nextBeam;
 			logicalFinalFrontierWidth = beam.size();
-			recordDebug("greedy beam: depth=" + depth + " width=" + beam.size() + " bestOrder="
+			recordDebug("greedy choose: depth=" + depth + " width=" + beam.size() + " bestOrder="
 					+ describeFactorOrder(beam.best().order()) + " bestWorkRows=" + beam.best().totalWork());
 		}
 
@@ -836,6 +836,9 @@ final class SketchJoinOrderPlanner {
 		long candidateVars = bindingVarMasks[candidateIndex];
 		long combinedVars = prefixVars | candidateVars;
 		for (int i = 0; i < deferredFilters.size(); i++) {
+			if (deferredFilterOrderingWeight(deferredFilters.get(i)) <= 0.0d) {
+				continue;
+			}
 			long requiredVars = deferredFilterRequiredVarMasks[i];
 			if ((prefixVars & requiredVars) == requiredVars || (combinedVars & requiredVars) != requiredVars
 					|| (requiredVars & prefixVars) == 0L || (requiredVars & candidateVars) == 0L) {
@@ -1653,7 +1656,7 @@ final class SketchJoinOrderPlanner {
 				return boundGuardComparison < 0;
 			}
 		}
-		if (candidate.mask() == incumbent.mask()) {
+		if (structurallyComparableWork && candidate.mask() == incumbent.mask()) {
 			int bridgeUnlockComparison = compareBridgeUnlockOrder(candidate, incumbent);
 			if (bridgeUnlockComparison != 0) {
 				return bridgeUnlockComparison < 0;

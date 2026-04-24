@@ -47,8 +47,24 @@ final class TupleSketchOps {
 				.build();
 	}
 
+	static ArrayOfDoublesUpdatableSketch newSketch(int k, MemorySegment payload) {
+		return new ArrayOfDoublesUpdatableSketchBuilder()
+				.setNominalEntries(k)
+				.setResizeFactor(ResizeFactor.X8)
+				.setNumberOfValues(NUMBER_OF_VALUES)
+				.build(payload);
+	}
+
 	static ArrayOfDoublesUpdatableSketch heapify(byte[] payload) {
 		return ArrayOfDoublesUpdatableSketch.heapify(MemorySegment.ofArray(payload));
+	}
+
+	static ArrayOfDoublesUpdatableSketch heapify(MemorySegment payload) {
+		return ArrayOfDoublesUpdatableSketch.heapify(payload);
+	}
+
+	static ArrayOfDoublesUpdatableSketch wrapUpdatable(MemorySegment payload) {
+		return ArrayOfDoublesUpdatableSketch.wrap(payload);
 	}
 
 	static byte[] toByteArray(ArrayOfDoublesSketch sketch) {

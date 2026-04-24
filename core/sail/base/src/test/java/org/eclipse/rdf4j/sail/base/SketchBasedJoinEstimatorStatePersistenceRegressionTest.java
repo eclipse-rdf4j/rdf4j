@@ -48,7 +48,7 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
-		writer.rebuildOnceSlow();
+		writer.rebuild();
 		writer.configurePersistence(snapshot, false);
 		assertTrue(writer.persistIfDirty(), "Expected snapshot persist");
 

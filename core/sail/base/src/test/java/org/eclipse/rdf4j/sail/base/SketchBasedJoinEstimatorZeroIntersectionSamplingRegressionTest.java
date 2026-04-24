@@ -75,7 +75,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 			populateRareOverlapData(store, locatedAt, hasName, overlapBranches, copiesPerBranch, noiseSubjects);
 
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-			estimator.rebuildOnceSlow();
+			estimator.rebuild();
 
 			return new RareOverlapFixture(estimator, joinNode(locatedAt, hasName),
 					(double) overlapBranches * copiesPerBranch);

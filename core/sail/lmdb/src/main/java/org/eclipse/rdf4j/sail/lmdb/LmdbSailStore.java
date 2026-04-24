@@ -317,7 +317,7 @@ class LmdbSailStore implements SailStore {
 			sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
 			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 			if (!snapshotExists) {
-				sketchBasedJoinEstimator.rebuildOnceSlow();
+				sketchBasedJoinEstimator.rebuild();
 			}
 			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {

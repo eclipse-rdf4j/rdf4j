@@ -63,14 +63,14 @@ public class SketchEstimatorIngestionBenchmark {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final SketchBasedJoinEstimator.Config CONFIG = SketchBasedJoinEstimator.Config.defaults()
-			.withNominalEntries(128)
-			.withThrottleEveryN(1)
-			.withThrottleMillis(0)
+//			.withNominalEntries(128)
+//			.withThrottleEveryN(0)
+//			.withThrottleMillis(0)
 			.withRefreshSleepMillis(5);
 
 	@State(Scope.Thread)
 	public static class Fixture {
-		@Param({ "32768" })
+		@Param({ "1000000" })
 		public int statementCount;
 
 		List<Statement> statements;
@@ -163,12 +163,12 @@ public class SketchEstimatorIngestionBenchmark {
 
 	@Benchmark
 	public long rebuildOnceSlow(RebuildState state) {
-		return state.estimator.rebuildOnceSlow();
+		return state.estimator.rebuild();
 	}
 
 	@Benchmark
 	public long persistentRebuildOnceSlow(PersistentRebuildState state) {
-		return state.estimator.rebuildOnceSlow();
+		return state.estimator.rebuild();
 	}
 
 	private static final class BenchmarkSailStore implements SailStore {
