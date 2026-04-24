@@ -102,8 +102,8 @@ public class FilterOptimizer implements QueryOptimizer {
 		this(statistics, mergeAdjacentFilters, true);
 	}
 
-	FilterOptimizer(EvaluationStatistics statistics, boolean mergeAdjacentFilters,
-			boolean considerJoinPlacementCost) {
+	public FilterOptimizer(EvaluationStatistics statistics, boolean mergeAdjacentFilters,
+	                       boolean considerJoinPlacementCost) {
 		this.statistics = statistics;
 		this.mergeAdjacentFilters = mergeAdjacentFilters;
 		this.considerJoinPlacementCost = considerJoinPlacementCost;

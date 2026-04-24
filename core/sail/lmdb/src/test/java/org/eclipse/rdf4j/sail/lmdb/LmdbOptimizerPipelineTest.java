@@ -59,15 +59,22 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineDoesNotUseLegacyFilterOrJoinOptimizer() {
+	void lmdbPipelineRunsPushdownBeforeSketchAndDoesNotOverrideSketchPlacement() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 
+		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
+		int sketchIndex = indexOf(optimizers, LmdbSketchJoinOptimizer.class);
+
+		assertTrue(filterIndex >= 0);
+		assertTrue(sketchIndex >= 0);
+		assertTrue(filterIndex < sketchIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
-		assertTrue(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
-		assertFalse(optimizers.stream().anyMatch(FilterOptimizer.class::isInstance));
+		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
+				.stream()
+				.anyMatch(FilterOptimizer.class::isInstance));
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 	}
 
@@ -85,6 +92,15 @@ class LmdbOptimizerPipelineTest {
 	private static List<QueryOptimizer> optimizers(Iterable<QueryOptimizer> optimizers) {
 		return StreamSupport.stream(optimizers.spliterator(), false)
 				.collect(Collectors.toList());
+	}
+
+	private static int indexOf(List<QueryOptimizer> optimizers, Class<? extends QueryOptimizer> optimizerType) {
+		for (int i = 0; i < optimizers.size(); i++) {
+			if (optimizerType.isInstance(optimizers.get(i))) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private static final class EmptyTripleSource implements TripleSource {

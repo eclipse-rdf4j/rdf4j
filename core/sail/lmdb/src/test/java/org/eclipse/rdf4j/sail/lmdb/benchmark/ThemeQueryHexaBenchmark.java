@@ -114,7 +114,6 @@ public class ThemeQueryHexaBenchmark {
 	private SailRepository repository;
 	private LmdbStore store;
 	private LmdbStoreConfig storeConfig;
-	private QueryJoinOptimizer.JoinOrderStrategy previousJoinOrderStrategy;
 	private Theme theme;
 	private String query;
 	private long expected;
@@ -352,31 +351,17 @@ public class ThemeQueryHexaBenchmark {
 		System.out.println("Query:\n" + query);
 		System.out.println();
 
-		try {
-			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = false;
-			try (var connection = repository.getConnection()) {
-				System.out.println("=== Explanation with join reordering disabled ===");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				System.out.println(explain);
-				System.out.println();
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println("=== Rendered optimized TupleExpr with join reordering disabled ===");
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-				System.out.println();
-			}
-			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
-			try (var connection = repository.getConnection()) {
-				System.out.println("=== Explanation with join reordering enabled ===");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				System.out.println(explain);
-				System.out.println();
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println("=== Rendered optimized TupleExpr with join reordering enabled ===");
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-				System.out.println();
-			}
+		try (var connection = repository.getConnection()) {
+			System.out.println("=== Explanation with join reordering enabled ===");
+			Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			System.out.println(explain);
+			System.out.println();
+			TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+			System.out.println("=== Rendered optimized TupleExpr with join reordering enabled ===");
+			System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+			System.out.println();
+			System.out.println();
+		}
 //			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
 //			try (var connection = repository.getConnection()) {
 //				System.out.println("=== Explanation with join reordering enabled and telemetry ===");
@@ -386,9 +371,6 @@ public class ThemeQueryHexaBenchmark {
 //				System.out.println(explain);
 //				System.out.println();
 //			}
-		} finally {
-			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
-		}
 
 	}
 

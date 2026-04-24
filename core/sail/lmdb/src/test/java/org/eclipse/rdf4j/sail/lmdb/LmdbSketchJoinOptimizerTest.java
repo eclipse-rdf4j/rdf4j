@@ -21,16 +21,23 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbSketchJoinOptimizerTest {
@@ -82,9 +89,116 @@ class LmdbSketchJoinOptimizerTest {
 		assertEquals(List.of(first, second), joinArgs(movedFilter.getArg()));
 	}
 
+	@Test
+	void duplicatesValuesAndFilterIntoUnionBranches() {
+		BindingSetAssignment values = values("target", "DX-200", "DX-201");
+		StatementPattern conditionType = statementPattern("entity", "type", "condition");
+		StatementPattern conditionCode = statementPattern("entity", "code", "code");
+		StatementPattern medicationType = statementPattern("entity", "type", "medication");
+		StatementPattern medicationCode = statementPattern("entity", "code", "code");
+		Union union = new Union(new Join(conditionType, conditionCode), new Join(medicationType, medicationCode));
+		Filter filter = new Filter(new Join(values, union),
+				new Or(new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
+						new Compare(new Var("code"), new ValueConstant(VF.createLiteral("DX-202")),
+								Compare.CompareOp.EQ)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Union distributed = assertInstanceOf(Union.class, root.getArg());
+		assertTrue(containsFilter(distributed.getLeftArg()));
+		assertTrue(containsFilter(distributed.getRightArg()));
+		assertTrue(containsBindingSetAssignment(distributed.getLeftArg(), "target"));
+		assertTrue(containsBindingSetAssignment(distributed.getRightArg(), "target"));
+	}
+
+	@Test
+	void duplicatesValuesAndFilterAcrossParserScopedUnion() {
+		BindingSetAssignment values = values("target", "DX-200", "DX-201");
+		Union union = new Union(new Join(statementPattern("entity", "type", "condition"),
+				statementPattern("entity", "code", "code")),
+				new Join(statementPattern("entity", "type", "medication"),
+						statementPattern("entity", "code", "code")));
+		union.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(new Filter(new Join(values, union),
+				new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Union distributed = assertInstanceOf(Union.class, root.getArg());
+		assertTrue(distributed.isVariableScopeChange());
+		assertTrue(containsFilter(distributed.getLeftArg()));
+		assertTrue(containsFilter(distributed.getRightArg()));
+		assertTrue(containsBindingSetAssignment(distributed.getLeftArg(), "target"));
+		assertTrue(containsBindingSetAssignment(distributed.getRightArg(), "target"));
+	}
+
+	@Test
+	void duplicatesValuesAndFilterBeforeOptionalAcrossParserScopedUnion() {
+		BindingSetAssignment values = values("target", "DX-200", "DX-201");
+		Join conditionBranch = new Join(statementPattern("entity", "type", "condition"),
+				statementPattern("entity", "code", "code"));
+		Join medicationBranch = new Join(statementPattern("entity", "type", "medication"),
+				statementPattern("entity", "code", "code"));
+		conditionBranch.setVariableScopeChange(true);
+		medicationBranch.setVariableScopeChange(true);
+		Union union = new Union(conditionBranch, medicationBranch);
+		union.setVariableScopeChange(true);
+		LeftJoin optional = new LeftJoin(new Join(values, union), statementPattern("entity", "code", "alt"));
+		QueryRoot root = new QueryRoot(new Filter(optional,
+				new Or(new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
+						new Compare(new Var("code"), new ValueConstant(VF.createLiteral("DX-202")),
+								Compare.CompareOp.EQ))));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		LeftJoin optimizedOptional = assertInstanceOf(LeftJoin.class, root.getArg());
+		Union distributed = assertInstanceOf(Union.class, optimizedOptional.getLeftArg());
+		assertTrue(distributed.isVariableScopeChange());
+		assertTrue(containsFilter(distributed.getLeftArg()));
+		assertTrue(containsFilter(distributed.getRightArg()));
+		assertTrue(containsBindingSetAssignment(distributed.getLeftArg(), "target"));
+		assertTrue(containsBindingSetAssignment(distributed.getRightArg(), "target"));
+	}
+
+	@Test
+	void placesDuplicatedValuesAfterScopedUnionBranchGraph() {
+		Join conditionBranch = new Join(statementPattern("entity", "type", "condition"),
+				statementPattern("entity", "code", "code"));
+		Join medicationBranch = new Join(statementPattern("entity", "type", "medication"),
+				statementPattern("entity", "code", "code"));
+		conditionBranch.setVariableScopeChange(true);
+		medicationBranch.setVariableScopeChange(true);
+		Union union = new Union(
+				new Filter(new Join(values("target", "DX-200", "DX-201"), conditionBranch),
+						new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ)),
+				new Filter(new Join(values("target", "DX-200", "DX-201"), medicationBranch),
+						new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ)));
+		QueryRoot root = new QueryRoot(union);
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Union optimized = assertInstanceOf(Union.class, root.getArg());
+		assertScopedBranchBeforeValues(optimized.getLeftArg());
+		assertScopedBranchBeforeValues(optimized.getRightArg());
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
+	}
+
+	private static BindingSetAssignment values(String bindingName, String... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		List<BindingSet> bindingSets = new ArrayList<>(values.length);
+		for (String value : values) {
+			MapBindingSet bindingSet = new MapBindingSet(1);
+			bindingSet.addBinding(bindingName, VF.createLiteral(value));
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
 	}
 
 	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
@@ -112,6 +226,29 @@ class LmdbSketchJoinOptimizerTest {
 			return containsFilter(join.getLeftArg()) || containsFilter(join.getRightArg());
 		}
 		return false;
+	}
+
+	private static boolean containsBindingSetAssignment(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof BindingSetAssignment
+				&& tupleExpr.getBindingNames().contains(bindingName)) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter) {
+			return containsBindingSetAssignment(((Filter) tupleExpr).getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return containsBindingSetAssignment(join.getLeftArg(), bindingName)
+					|| containsBindingSetAssignment(join.getRightArg(), bindingName);
+		}
+		return false;
+	}
+
+	private static void assertScopedBranchBeforeValues(TupleExpr tupleExpr) {
+		Join join = assertInstanceOf(Join.class, tupleExpr);
+		assertTrue(assertInstanceOf(VariableScopeChange.class, join.getLeftArg()).isVariableScopeChange());
+		assertTrue(containsBindingSetAssignment(join.getRightArg(), "target"));
+		assertTrue(containsFilter(join.getRightArg()));
 	}
 
 	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner {

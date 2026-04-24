@@ -12,10 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -30,14 +33,29 @@ final class DeferredFilter {
 
 	final ValueExpr condition;
 	final Set<String> requiredVars;
+	final int conditionCost;
+	final int originalIndex;
+	final StatementPattern patternLocalBase;
+	final Set<StatementPattern> originPatterns;
 	final EvaluationStatistics.FilterPassEstimate passEstimate;
 	boolean applied;
 
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars,
-			EvaluationStatistics.FilterPassEstimate passEstimate) {
+			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
+			Set<StatementPattern> originPatterns, EvaluationStatistics.FilterPassEstimate passEstimate) {
 		this.condition = condition;
 		this.requiredVars = Set.copyOf(requiredVars);
+		this.conditionCost = conditionCost;
+		this.originalIndex = originalIndex;
+		this.patternLocalBase = patternLocalBase;
+		this.originPatterns = identityCopy(originPatterns);
 		this.passEstimate = passEstimate;
+	}
+
+	static Set<StatementPattern> identityCopy(Set<StatementPattern> patterns) {
+		Set<StatementPattern> copy = Collections.newSetFromMap(new IdentityHashMap<>());
+		copy.addAll(patterns);
+		return copy;
 	}
 }
 
@@ -45,9 +63,11 @@ final class SegmentFactor {
 
 	final TupleExpr tupleExpr;
 	final Set<String> bindingNames;
+	final Set<StatementPattern> containedPatterns;
 
-	SegmentFactor(TupleExpr tupleExpr) {
+	SegmentFactor(TupleExpr tupleExpr, Set<StatementPattern> containedPatterns) {
 		this.tupleExpr = tupleExpr;
 		this.bindingNames = Set.copyOf(tupleExpr.getBindingNames());
+		this.containedPatterns = DeferredFilter.identityCopy(containedPatterns);
 	}
 }
