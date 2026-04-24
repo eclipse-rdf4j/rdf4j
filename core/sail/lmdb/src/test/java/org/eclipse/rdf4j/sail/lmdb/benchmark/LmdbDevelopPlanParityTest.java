@@ -41,7 +41,7 @@ class LmdbDevelopPlanParityTest {
 	private static final Pattern BENCHMARK_PARAMETERS = Pattern.compile(
 			"# Parameters: \\(themeName = ([A-Z_]+), z_queryIndex = ([0-9]+)\\)");
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.developPlanParity.queryKeys";
-	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
+	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results";
 	private static final String DEVELOP_RESULTS_FILE = "results-develop.md";
 	private static final List<TargetQuery> TARGET_QUERIES = List.of(
 			target(Theme.PHARMA, 0),

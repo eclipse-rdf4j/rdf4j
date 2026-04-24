@@ -15,35 +15,35 @@ Important: details below are taken only from the fastest winning run. If the win
 
 | Theme | Query | Score ms/op | Source |
 | --- | ---: | ---: | --- |
-| `ELECTRICAL_GRID` | 2 | 3.429 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:71) |
-| `ELECTRICAL_GRID` | 4 | 3.371 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:73) |
-| `ELECTRICAL_GRID` | 8 | 12.329 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:85) |
-| `ELECTRICAL_GRID` | 9 | 4.255 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:78) |
-| `ENGINEERING` | 0 | 209.646 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:44) |
-| `ENGINEERING` | 4 | 47.834 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:40) |
-| `ENGINEERING` | 6 | 200.862 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:42) |
-| `ENGINEERING` | 10 | 1.578 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:54) |
-| `HIGHLY_CONNECTED` | 0 | 323.587 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:47) |
-| `HIGHLY_CONNECTED` | 5 | 110.966 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:52) |
-| `HIGHLY_CONNECTED` | 6 | 1234.693 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:53) |
-| `HIGHLY_CONNECTED` | 9 | 1202.971 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:56) |
-| `MEDICAL_RECORDS` | 4 | 103.994 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:7) |
-| `MEDICAL_RECORDS` | 9 | 177.495 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:12) |
-| `SOCIAL_MEDIA` | 0 | 0.040 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:14) |
-| `SOCIAL_MEDIA` | 1 | 4.785 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:15) |
-| `SOCIAL_MEDIA` | 2 | 0.049 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:16) |
-| `SOCIAL_MEDIA` | 3 | 0.049 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:17) |
-| `SOCIAL_MEDIA` | 4 | 0.056 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:18) |
-| `SOCIAL_MEDIA` | 7 | 4.841 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:21) |
-| `TRAIN` | 0 | 31.827 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:58) |
+| `ELECTRICAL_GRID` | 2 | 3.429 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:71) |
+| `ELECTRICAL_GRID` | 4 | 3.371 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:73) |
+| `ELECTRICAL_GRID` | 8 | 12.329 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:85) |
+| `ELECTRICAL_GRID` | 9 | 4.255 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:78) |
+| `ENGINEERING` | 0 | 209.646 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:44) |
+| `ENGINEERING` | 4 | 47.834 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:40) |
+| `ENGINEERING` | 6 | 200.862 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:42) |
+| `ENGINEERING` | 10 | 1.578 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:54) |
+| `HIGHLY_CONNECTED` | 0 | 323.587 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:47) |
+| `HIGHLY_CONNECTED` | 5 | 110.966 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:52) |
+| `HIGHLY_CONNECTED` | 6 | 1234.693 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:53) |
+| `HIGHLY_CONNECTED` | 9 | 1202.971 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:56) |
+| `MEDICAL_RECORDS` | 4 | 103.994 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:7) |
+| `MEDICAL_RECORDS` | 9 | 177.495 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:12) |
+| `SOCIAL_MEDIA` | 0 | 0.040 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:14) |
+| `SOCIAL_MEDIA` | 1 | 4.785 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:15) |
+| `SOCIAL_MEDIA` | 2 | 0.049 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:16) |
+| `SOCIAL_MEDIA` | 3 | 0.049 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:17) |
+| `SOCIAL_MEDIA` | 4 | 0.056 | [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:18) |
+| `SOCIAL_MEDIA` | 7 | 4.841 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:21) |
+| `TRAIN` | 0 | 31.827 | [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:58) |
 
 ## ELECTRICAL_GRID
 
 ### Query 0
 
 - Fastest observed: `37.214 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:69)
-- Optimized block: [7678](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:7678)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:69)
+- Optimized block: [7678](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:7678)
 
 Optimized query:
 
@@ -107,8 +107,8 @@ Var (name=substation)
 ### Query 1
 
 - Fastest observed: `25.945 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:70)
-- Optimized block: [4408](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:4408)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:70)
+- Optimized block: [4408](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:4408)
 
 Optimized query:
 
@@ -141,7 +141,7 @@ _Not present in fastest-run source file._
 ### Query 2
 
 - Fastest observed: `3.429 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:71)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:71)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -155,8 +155,8 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `275.005 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:72)
-- Optimized block: [4529](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:4529)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:72)
+- Optimized block: [4529](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:4529)
 
 Optimized query:
 
@@ -188,7 +188,7 @@ _Not present in fastest-run source file._
 ### Query 4
 
 - Fastest observed: `3.371 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:73)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:73)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -202,8 +202,8 @@ _Not present in fastest-run source file._
 ### ELECTRICAL_GRID Query 5
 
 - Fastest observed: `4.475 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:74)
-- Optimized block: [4648](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:4648)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:74)
+- Optimized block: [4648](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:4648)
 
 Optimized query:
 
@@ -227,8 +227,8 @@ _Not present in fastest-run source file._
 ### Query 6
 
 - Fastest observed: `80.051 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:75)
-- Optimized block: [4704](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:4704)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:75)
+- Optimized block: [4704](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:4704)
 
 Optimized query:
 
@@ -260,8 +260,8 @@ _Not present in fastest-run source file._
 ### Query 7
 
 - Fastest observed: `13.643 ms/op`
-- Source: [results-develop.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-develop.md:88)
-- Optimized block: [9474](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-develop.md:9474)
+- Source: [results-develop.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-develop.md:88)
+- Optimized block: [9474](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-develop.md:9474)
 
 Optimized query:
 
@@ -337,7 +337,7 @@ Projection
 ### Query 8
 
 - Fastest observed: `12.329 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:85)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:85)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -351,7 +351,7 @@ _Not present in fastest-run source file._
 ### Query 9
 
 - Fastest observed: `4.255 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:78)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:78)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -365,8 +365,8 @@ _Not present in fastest-run source file._
 ### Query 10
 
 - Fastest observed: `360.390 ms/op`
-- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:94)
-- Optimized block: [10117](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:10117)
+- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:94)
+- Optimized block: [10117](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:10117)
 
 Optimized query:
 
@@ -452,8 +452,8 @@ Projection
 ### Query 12
 
 - Fastest observed: `1607.592 ms/op`
-- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:96)
-- Optimized block: [10350](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:10350)
+- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:96)
+- Optimized block: [10350](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:10350)
 
 Optimized query:
 
@@ -604,7 +604,7 @@ Projection
 ### Query 0
 
 - Fastest observed: `209.646 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:44)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:44)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -618,8 +618,8 @@ _Not present in fastest-run source file._
 ### Query 1
 
 - Fastest observed: `138.312 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:37)
-- Optimized block: [4333](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:4333)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:37)
+- Optimized block: [4333](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:4333)
 
 Optimized query:
 
@@ -715,8 +715,8 @@ Var (name=entity)
 ### ENGINEERING Query 2
 
 - Fastest observed: `1.069 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:38)
-- Optimized block: [2541](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:2541)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:38)
+- Optimized block: [2541](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:2541)
 
 Optimized query:
 
@@ -740,8 +740,8 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `115.909 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:39)
-- Optimized block: [2594](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:2594)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:39)
+- Optimized block: [2594](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:2594)
 
 Optimized query:
 
@@ -768,7 +768,7 @@ _Not present in fastest-run source file._
 ### Query 4
 
 - Fastest observed: `47.834 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:40)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:40)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -782,8 +782,8 @@ _Not present in fastest-run source file._
 ### Query 5
 
 - Fastest observed: `1.041 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:41)
-- Optimized block: [2706](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:2706)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:41)
+- Optimized block: [2706](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:2706)
 
 Optimized query:
 
@@ -807,7 +807,7 @@ _Not present in fastest-run source file._
 ### Query 6
 
 - Fastest observed: `200.862 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:42)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:42)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -821,8 +821,8 @@ _Not present in fastest-run source file._
 ### Query 7
 
 - Fastest observed: `3.597 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:43)
-- Optimized block: [2825](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:2825)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:43)
+- Optimized block: [2825](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:2825)
 
 Optimized query:
 
@@ -848,8 +848,8 @@ _Not present in fastest-run source file._
 ### Query 8
 
 - Fastest observed: `2.043 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:44)
-- Optimized block: [2883](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:2883)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:44)
+- Optimized block: [2883](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:2883)
 
 Optimized query:
 
@@ -876,8 +876,8 @@ _Not present in fastest-run source file._
 ### Query 9
 
 - Fastest observed: `1.279 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:45)
-- Optimized block: [2943](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:2943)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:45)
+- Optimized block: [2943](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:2943)
 
 Optimized query:
 
@@ -903,7 +903,7 @@ _Not present in fastest-run source file._
 ### Query 10
 
 - Fastest observed: `1.578 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:54)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:54)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -917,8 +917,8 @@ _Not present in fastest-run source file._
 ### Query 12
 
 - Fastest observed: `36044.036 ms/op`
-- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:55)
-- Optimized block: [6140](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:6140)
+- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:55)
+- Optimized block: [6140](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:6140)
 
 Optimized query:
 
@@ -1060,7 +1060,7 @@ Distinct
 ### Query 0
 
 - Fastest observed: `323.587 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:47)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:47)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -1074,8 +1074,8 @@ _Not present in fastest-run source file._
 ### Query 1
 
 - Fastest observed: `1013.433 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:48)
-- Optimized block: [3114](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:3114)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:48)
+- Optimized block: [3114](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:3114)
 
 Optimized query:
 
@@ -1107,8 +1107,8 @@ _Not present in fastest-run source file._
 ### Query 2
 
 - Fastest observed: `494.208 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:49)
-- Optimized block: [3178](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:3178)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:49)
+- Optimized block: [3178](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:3178)
 
 Optimized query:
 
@@ -1133,8 +1133,8 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `100.170 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:50)
-- Optimized block: [5689](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:5689)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:50)
+- Optimized block: [5689](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:5689)
 
 Optimized query:
 
@@ -1197,8 +1197,8 @@ Var (name=node)
 ### Query 4
 
 - Fastest observed: `213.867 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:51)
-- Optimized block: [3290](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:3290)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:51)
+- Optimized block: [3290](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:3290)
 
 Optimized query:
 
@@ -1223,7 +1223,7 @@ _Not present in fastest-run source file._
 ### Query 5
 
 - Fastest observed: `110.966 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:52)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:52)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -1237,7 +1237,7 @@ _Not present in fastest-run source file._
 ### Query 6
 
 - Fastest observed: `1234.693 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:53)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:53)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -1251,8 +1251,8 @@ _Not present in fastest-run source file._
 ### Query 7
 
 - Fastest observed: `113.267 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:54)
-- Optimized block: [6085](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:6085)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:54)
+- Optimized block: [6085](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:6085)
 
 Optimized query:
 
@@ -1322,8 +1322,8 @@ Var (name=node)
 ### Query 8
 
 - Fastest observed: `1034.976 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:55)
-- Optimized block: [6186](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:6186)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:55)
+- Optimized block: [6186](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:6186)
 
 Optimized query:
 
@@ -1392,7 +1392,7 @@ Var (name=node)
 ### Query 9
 
 - Fastest observed: `1202.971 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:56)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:56)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -1406,8 +1406,8 @@ _Not present in fastest-run source file._
 ### Query 10
 
 - Fastest observed: `236.960 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:57)
-- Optimized block: [3635](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:3635)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:57)
+- Optimized block: [3635](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:3635)
 
 Optimized query:
 
@@ -1438,8 +1438,8 @@ _Not present in fastest-run source file._
 ### Query 0
 
 - Fastest observed: `634.970 ms/op`
-- Source: [results-2026-04-16-2.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-2.md:25)
-- Optimized block: [1749](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-2.md:1749)
+- Source: [results-2026-04-16-2.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-2.md:25)
+- Optimized block: [1749](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-2.md:1749)
 
 Optimized query:
 
@@ -1465,8 +1465,8 @@ _Not present in fastest-run source file._
 ### Query 1
 
 - Fastest observed: `143.142 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:26)
-- Optimized block: [3105](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:3105)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:26)
+- Optimized block: [3105](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:3105)
 
 Optimized query:
 
@@ -1562,8 +1562,8 @@ Var (name=entity)
 ### Query 2
 
 - Fastest observed: `17.068 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:27)
-- Optimized block: [1871](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:1871)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:27)
+- Optimized block: [1871](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:1871)
 
 Optimized query:
 
@@ -1587,8 +1587,8 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `40.574 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:28)
-- Optimized block: [3335](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:3335)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:28)
+- Optimized block: [3335](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:3335)
 
 Optimized query:
 
@@ -1659,8 +1659,8 @@ Var (name=loan)
 ### Query 4
 
 - Fastest observed: `45.475 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:29)
-- Optimized block: [1987](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:1987)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:29)
+- Optimized block: [1987](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:1987)
 
 Optimized query:
 
@@ -1685,8 +1685,8 @@ _Not present in fastest-run source file._
 ### Query 5
 
 - Fastest observed: `4.758 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:30)
-- Optimized block: [2043](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:2043)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:30)
+- Optimized block: [2043](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:2043)
 
 Optimized query:
 
@@ -1710,8 +1710,8 @@ _Not present in fastest-run source file._
 ### Query 6
 
 - Fastest observed: `24599.399 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:31)
-- Optimized block: [3633](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:3633)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:31)
+- Optimized block: [3633](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:3633)
 
 Optimized query:
 
@@ -1792,8 +1792,8 @@ Var (name=loan)
 ### Library Query 7
 
 - Fastest observed: `408.237 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:32)
-- Optimized block: [2166](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:2166)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:32)
+- Optimized block: [2166](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:2166)
 
 Optimized query:
 
@@ -1820,8 +1820,8 @@ _Not present in fastest-run source file._
 ### Query 8
 
 - Fastest observed: `64.859 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:33)
-- Optimized block: [2228](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:2228)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:33)
+- Optimized block: [2228](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:2228)
 
 Optimized query:
 
@@ -1850,8 +1850,8 @@ _Not present in fastest-run source file._
 ### Query 9
 
 - Fastest observed: `67.634 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:34)
-- Optimized block: [2294](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:2294)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:34)
+- Optimized block: [2294](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:2294)
 
 Optimized query:
 
@@ -1880,8 +1880,8 @@ _Not present in fastest-run source file._
 ### Query 10
 
 - Fastest observed: `178.230 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:35)
-- Optimized block: [2358](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:2358)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:35)
+- Optimized block: [2358](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:2358)
 
 Optimized query:
 
@@ -1916,8 +1916,8 @@ _Not present in fastest-run source file._
 ### Query 0
 
 - Fastest observed: `44.359 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:3)
-- Optimized block: [134](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:134)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:3)
+- Optimized block: [134](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:134)
 
 Optimized query:
 
@@ -1943,8 +1943,8 @@ _Not present in fastest-run source file._
 ### Query 1
 
 - Fastest observed: `99.712 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:4)
-- Optimized block: [355](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:355)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:4)
+- Optimized block: [355](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:355)
 
 Optimized query:
 
@@ -2040,8 +2040,8 @@ Var (name=entity)
 ### Query 2
 
 - Fastest observed: `14.487 ms/op`
-- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:5648)
-- Optimized block: [188](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:188)
+- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:5648)
+- Optimized block: [188](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:188)
 
 Optimized query:
 
@@ -2066,8 +2066,8 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `76.840 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:6)
-- Optimized block: [317](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:317)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:6)
+- Optimized block: [317](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:317)
 
 Optimized query:
 
@@ -2094,7 +2094,7 @@ _Not present in fastest-run source file._
 ### Query 4
 
 - Fastest observed: `103.994 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:7)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:7)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -2108,8 +2108,8 @@ _Not present in fastest-run source file._
 ### Query 5
 
 - Fastest observed: `22.715 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:8)
-- Optimized block: [803](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:803)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:8)
+- Optimized block: [803](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:803)
 
 Optimized query:
 
@@ -2180,8 +2180,8 @@ Var (name=patient)
 ### Query 6
 
 - Fastest observed: `53.192 ms/op`
-- Source: [results-2026-04-16-6.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-6.md:9)
-- Optimized block: [780](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-6.md:780)
+- Source: [results-2026-04-16-6.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-6.md:9)
+- Optimized block: [780](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-6.md:780)
 
 Optimized query:
 
@@ -2256,8 +2256,8 @@ Projection
 ### Query 7
 
 - Fastest observed: `41.131 ms/op`
-- Source: [results-2026-04-16-5.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-5.md:10)
-- Optimized block: [886](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-5.md:886)
+- Source: [results-2026-04-16-5.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-5.md:10)
+- Optimized block: [886](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-5.md:886)
 
 Optimized query:
 
@@ -2329,8 +2329,8 @@ Projection
 ### Query 8
 
 - Fastest observed: `51.735 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:11)
-- Optimized block: [1126](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:1126)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:11)
+- Optimized block: [1126](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:1126)
 
 Optimized query:
 
@@ -2406,7 +2406,7 @@ Var (name=enc)
 ### Query 9
 
 - Fastest observed: `177.495 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:12)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:12)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -2420,8 +2420,8 @@ _Not present in fastest-run source file._
 ### Query 10
 
 - Fastest observed: `194.412 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:13)
-- Optimized block: [1355](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:1355)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:13)
+- Optimized block: [1355](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:1355)
 
 Optimized query:
 
@@ -2512,8 +2512,8 @@ Var (name=patient)
 ### Query 11
 
 - Fastest observed: `1483.784 ms/op`
-- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:14)
-- Optimized block: [1402](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:1402)
+- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:14)
+- Optimized block: [1402](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:1402)
 
 Optimized query:
 
@@ -2675,8 +2675,8 @@ Reduced
 ### Query 12
 
 - Fastest observed: `643.729 ms/op`
-- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:15)
-- Optimized block: [1613](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:1613)
+- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:15)
+- Optimized block: [1613](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:1613)
 
 Optimized query:
 
@@ -2805,8 +2805,8 @@ Distinct
 ### Query 0
 
 - Fastest observed: `0.157 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:80)
-- Optimized block: [5006](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:5006)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:80)
+- Optimized block: [5006](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:5006)
 
 Optimized query:
 
@@ -2836,8 +2836,8 @@ _Not present in fastest-run source file._
 ### Query 1
 
 - Fastest observed: `1.314 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:81)
-- Optimized block: [5072](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:5072)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:81)
+- Optimized block: [5072](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:5072)
 
 Optimized query:
 
@@ -2865,8 +2865,8 @@ _Not present in fastest-run source file._
 ### Query 2
 
 - Fastest observed: `25.231 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:82)
-- Optimized block: [5135](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:5135)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:82)
+- Optimized block: [5135](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:5135)
 
 Optimized query:
 
@@ -2893,8 +2893,8 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `8.314 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:83)
-- Optimized block: [5196](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:5196)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:83)
+- Optimized block: [5196](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:5196)
 
 Optimized query:
 
@@ -2925,8 +2925,8 @@ _Not present in fastest-run source file._
 ### Query 4
 
 - Fastest observed: `26.885 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:84)
-- Optimized block: [5264](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:5264)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:84)
+- Optimized block: [5264](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:5264)
 
 Optimized query:
 
@@ -2963,8 +2963,8 @@ _Not present in fastest-run source file._
 ### Query 5
 
 - Fastest observed: `0.330 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:85)
-- Optimized block: [5338](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:5338)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:85)
+- Optimized block: [5338](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:5338)
 
 Optimized query:
 
@@ -2992,8 +2992,8 @@ _Not present in fastest-run source file._
 ### Query 6
 
 - Fastest observed: `3.024 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:86)
-- Optimized block: [5400](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:5400)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:86)
+- Optimized block: [5400](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:5400)
 
 Optimized query:
 
@@ -3022,8 +3022,8 @@ _Not present in fastest-run source file._
 ### Query 7
 
 - Fastest observed: `18.945 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:87)
-- Optimized block: [5464](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:5464)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:87)
+- Optimized block: [5464](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:5464)
 
 Optimized query:
 
@@ -3047,8 +3047,8 @@ _Not present in fastest-run source file._
 ### Query 8
 
 - Fastest observed: `24.760 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:88)
-- Optimized block: [5523](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:5523)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:88)
+- Optimized block: [5523](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:5523)
 
 Optimized query:
 
@@ -3084,8 +3084,8 @@ _Not present in fastest-run source file._
 ### Query 9
 
 - Fastest observed: `13.204 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:89)
-- Optimized block: [5601](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:5601)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:89)
+- Optimized block: [5601](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:5601)
 
 Optimized query:
 
@@ -3122,8 +3122,8 @@ _Not present in fastest-run source file._
 ### Query 10
 
 - Fastest observed: `226.964 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:90)
-- Optimized block: [5677](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:5677)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:90)
+- Optimized block: [5677](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:5677)
 
 Optimized query:
 
@@ -3150,8 +3150,8 @@ _Not present in fastest-run source file._
 ### Query 12
 
 - Fastest observed: `146.343 ms/op`
-- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:110)
-- Optimized block: [12126](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:12126)
+- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:110)
+- Optimized block: [12126](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:12126)
 
 Optimized query:
 
@@ -3311,7 +3311,7 @@ Projection
 ### Query 0
 
 - Fastest observed: `0.040 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:14)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:14)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -3325,7 +3325,7 @@ _Not present in fastest-run source file._
 ### Query 1
 
 - Fastest observed: `4.785 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:15)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:15)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -3339,7 +3339,7 @@ _Not present in fastest-run source file._
 ### Query 2
 
 - Fastest observed: `0.049 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:16)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:16)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -3353,7 +3353,7 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `0.049 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:17)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:17)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -3367,7 +3367,7 @@ _Not present in fastest-run source file._
 ### Query 4
 
 - Fastest observed: `0.056 ms/op`
-- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-15.md:18)
+- Source: [results-2026-04-15.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-15.md:18)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -3381,8 +3381,8 @@ _Not present in fastest-run source file._
 ### Query 5
 
 - Fastest observed: `642.956 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:19)
-- Optimized block: [2142](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:2142)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:19)
+- Optimized block: [2142](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:2142)
 
 Optimized query:
 
@@ -3460,8 +3460,8 @@ Var (name=activity)
 ### Query 6
 
 - Fastest observed: `0.069 ms/op`
-- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:5663)
-- Optimized block: [1228](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:1228)
+- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:5663)
+- Optimized block: [1228](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:1228)
 
 Optimized query:
 
@@ -3523,7 +3523,7 @@ _Not present in fastest-run source file._
 ### Query 7
 
 - Fastest observed: `4.841 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:21)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:21)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -3537,8 +3537,8 @@ _Not present in fastest-run source file._
 ### Query 8
 
 - Fastest observed: `667.115 ms/op`
-- Source: [results-2026-04-16-5.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-5.md:22)
-- Optimized block: [2442](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-5.md:2442)
+- Source: [results-2026-04-16-5.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-5.md:22)
+- Optimized block: [2442](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-5.md:2442)
 
 Optimized query:
 
@@ -3602,8 +3602,8 @@ Projection
 ### Query 9
 
 - Fastest observed: `5.792 ms/op`
-- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:5666)
-- Optimized block: [1494](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:1494)
+- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:5666)
+- Optimized block: [1494](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:1494)
 
 Optimized query:
 
@@ -3633,8 +3633,8 @@ _Not present in fastest-run source file._
 ### Query 10
 
 - Fastest observed: `0.243 ms/op`
-- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:5667)
-- Optimized block: [1586](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-09-2-full.md:1586)
+- Source: [results-2026-04-09-2-full.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:5667)
+- Optimized block: [1586](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-09-2-full.md:1586)
 
 Optimized query:
 
@@ -3695,7 +3695,7 @@ _Not present in fastest-run source file._
 ### Query 0
 
 - Fastest observed: `31.827 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-main-branch.md:58)
+- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:58)
 - Optimized block: not present in fastest-run source file
 
 Optimized query:
@@ -3709,8 +3709,8 @@ _Not present in fastest-run source file._
 ### Query 1
 
 - Fastest observed: `39.073 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:59)
-- Optimized block: [6597](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:6597)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:59)
+- Optimized block: [6597](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:6597)
 
 Optimized query:
 
@@ -3806,8 +3806,8 @@ Var (name=entity)
 ### Query 2
 
 - Fastest observed: `7.426 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:60)
-- Optimized block: [3818](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:3818)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:60)
+- Optimized block: [3818](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:3818)
 
 Optimized query:
 
@@ -3831,8 +3831,8 @@ _Not present in fastest-run source file._
 ### Query 3
 
 - Fastest observed: `143.416 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:61)
-- Optimized block: [6824](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:6824)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:61)
+- Optimized block: [6824](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:6824)
 
 Optimized query:
 
@@ -3902,8 +3902,8 @@ Var (name=section)
 ### Query 4
 
 - Fastest observed: `130.920 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:62)
-- Optimized block: [6925](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:6925)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:62)
+- Optimized block: [6925](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:6925)
 
 Optimized query:
 
@@ -3968,8 +3968,8 @@ Var (name=line)
 ### Query 5
 
 - Fastest observed: `13.063 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:63)
-- Optimized block: [3988](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:3988)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:63)
+- Optimized block: [3988](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:3988)
 
 Optimized query:
 
@@ -3993,8 +3993,8 @@ _Not present in fastest-run source file._
 ### Query 6
 
 - Fastest observed: `81.059 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:64)
-- Optimized block: [4046](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-3.md:4046)
+- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:64)
+- Optimized block: [4046](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:4046)
 
 Optimized query:
 
@@ -4025,8 +4025,8 @@ _Not present in fastest-run source file._
 ### Query 7
 
 - Fastest observed: `36.313 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:65)
-- Optimized block: [4109](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-4.md:4109)
+- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:65)
+- Optimized block: [4109](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:4109)
 
 Optimized query:
 
@@ -4052,8 +4052,8 @@ _Not present in fastest-run source file._
 ### Query 8
 
 - Fastest observed: `127.294 ms/op`
-- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:66)
-- Optimized block: [7339](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-17.md:7339)
+- Source: [results-2026-04-17.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:66)
+- Optimized block: [7339](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-17.md:7339)
 
 Optimized query:
 
@@ -4135,8 +4135,8 @@ Var (name=service)
 ### Query 9
 
 - Fastest observed: `223.739 ms/op`
-- Source: [results-2026-04-16-5.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-5.md:67)
-- Optimized block: [7311](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16-5.md:7311)
+- Source: [results-2026-04-16-5.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-5.md:67)
+- Optimized block: [7311](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-5.md:7311)
 
 Optimized query:
 
@@ -4215,8 +4215,8 @@ Projection
 ### Query 10
 
 - Fastest observed: `176.286 ms/op`
-- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:68)
-- Optimized block: [4289](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-16.md:4289)
+- Source: [results-2026-04-16.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:68)
+- Optimized block: [4289](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16.md:4289)
 
 Optimized query:
 
@@ -4249,8 +4249,8 @@ _Not present in fastest-run source file._
 ### Query 12
 
 - Fastest observed: `1935.462 ms/op`
-- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:82)
-- Optimized block: [8883](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-04-18.md:8883)
+- Source: [results-2026-04-18.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:82)
+- Optimized block: [8883](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-18.md:8883)
 
 Optimized query:
 

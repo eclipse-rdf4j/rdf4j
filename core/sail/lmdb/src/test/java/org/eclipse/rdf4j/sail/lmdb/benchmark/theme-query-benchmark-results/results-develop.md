@@ -25,7 +25,6 @@ ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               8  avgt        
 ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               9  avgt           6.813          ms/op
 ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA              10  avgt           2.688          ms/op
 
-
 ThemeQueryBenchmark.executeQuery           LIBRARY               0  avgt         686.809          ms/op
 ThemeQueryBenchmark.executeQuery           LIBRARY               1  avgt         307.734          ms/op
 ThemeQueryBenchmark.executeQuery           LIBRARY               2  avgt          41.203          ms/op
@@ -37,7 +36,6 @@ ThemeQueryBenchmark.executeQuery           LIBRARY               7  avgt        
 ThemeQueryBenchmark.executeQuery           LIBRARY               8  avgt          68.500          ms/op
 ThemeQueryBenchmark.executeQuery           LIBRARY               9  avgt         162.905          ms/op
 ThemeQueryBenchmark.executeQuery           LIBRARY              10  avgt         214.924          ms/op
-
 
 ThemeQueryBenchmark.executeQuery       ENGINEERING               0  avgt         240.589          ms/op
 ThemeQueryBenchmark.executeQuery       ENGINEERING               1  avgt         334.864          ms/op
@@ -51,7 +49,6 @@ ThemeQueryBenchmark.executeQuery       ENGINEERING               8  avgt        
 ThemeQueryBenchmark.executeQuery       ENGINEERING               9  avgt           3.543          ms/op
 ThemeQueryBenchmark.executeQuery       ENGINEERING              10  avgt           1.838          ms/op
 
-
 ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               0  avgt         386.619          ms/op
 ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               1  avgt        1164.451          ms/op
 ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               2  avgt         613.459          ms/op
@@ -62,8 +59,6 @@ ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               6  avgt        
 ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               7  avgt         125.972          ms/op
 ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               8  avgt        1315.680          ms/op
 ThemeQueryBenchmark.executeQuery  HIGHLY_CONNECTED               9  avgt        1526.742          ms/op
-
-
 
 ThemeQueryBenchmark.executeQuery             TRAIN               0  avgt          39.629          ms/op
 ThemeQueryBenchmark.executeQuery             TRAIN               1  avgt          88.189          ms/op
@@ -122,10 +117,6 @@ ThemeQueryBenchmark.executeQuery            PHARMA              12  avgt        
 
 # Run progress: 0.00% complete, ETA 00:13:52
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -140,11 +131,6 @@ SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
   FILTER(?optDate >= "2024-06-01"^^xsd:date)
   OPTIONAL { ?patient med:hasMedication ?med . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001fc001113b00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 54.609 ms/op
 Iteration   1: ### Optimized Query ###
@@ -201,10 +187,8 @@ SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
 
 49.017 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   49.017 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -221,10 +205,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 0.96% complete, ETA 00:14:26
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -237,11 +217,6 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
   FILTER(?code = ?target || ?code = "DX-202")
   OPTIONAL { ?entity med:code ?alt . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000100001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 191.905 ms/op
 Iteration   1: ### Optimized Query ###
@@ -310,10 +285,8 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
 
 179.672 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   179.672 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -330,10 +303,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 1.92% complete, ETA 00:14:26
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -345,11 +314,6 @@ SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
 }
 GROUP BY ?practitioner
 HAVING(COUNT(?enc) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003fff01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 50.356 ms/op
 Iteration   1: ### Optimized Query ###
@@ -415,10 +379,8 @@ HAVING (COUNT(?enc) > 0)
 
 44.546 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   44.546 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -435,10 +397,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 2.88% complete, ETA 00:14:14
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -453,11 +411,6 @@ SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
   FILTER(?optValue > 60)
   MINUS { ?patient med:name ?name . FILTER(CONTAINS(LCASE(STR(?name)), "test")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00007ffc01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 96.505 ms/op
 Iteration   1: ### Optimized Query ###
@@ -526,10 +479,8 @@ SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
 
 86.459 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   86.459 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -546,10 +497,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 3.85% complete, ETA 00:14:04
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -561,11 +508,6 @@ SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
   FILTER EXISTS { ?enc med:hasObservation ?obs . }
   OPTIONAL { ?enc med:handledBy ?practitioner . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000001ff01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 115.776 ms/op
 Iteration   1: ### Optimized Query ###
@@ -629,10 +571,8 @@ SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
 
 109.599 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   109.599 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -649,10 +589,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 4.81% complete, ETA 00:13:57
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -665,11 +601,6 @@ SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
   FILTER(?value IN (50, 60, 70))
   FILTER NOT EXISTS { ?enc med:hasCondition ?cond . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001ff8011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 67.686 ms/op
 Iteration   1: ### Optimized Query ###
@@ -733,10 +664,8 @@ SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
 
 62.100 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   62.100 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -753,10 +682,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 5.77% complete, ETA 00:13:47
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -773,11 +698,6 @@ SELECT ?patient (COUNT(DISTINCT ?med) AS ?medCount) WHERE {
 }
 GROUP BY ?patient
 HAVING(COUNT(?med) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003fc0011128a8 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 74.948 ms/op
 Iteration   1: ### Optimized Query ###
@@ -845,10 +765,8 @@ HAVING (COUNT(?med) > 0)
 
 63.834 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   63.834 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -865,10 +783,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 6.73% complete, ETA 00:13:39
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -879,11 +793,6 @@ SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {
   FILTER EXISTS { ?patient med:hasMedication ?med . }
   MINUS { ?med med:dosage ?dose . FILTER(CONTAINS(LCASE(STR(?dose)), "x")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000e001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 61.331 ms/op
 Iteration   1: ### Optimized Query ###
@@ -948,10 +857,8 @@ SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {
 
 54.918 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   54.918 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -968,10 +875,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 7.69% complete, ETA 00:13:30
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -988,11 +891,6 @@ SELECT ?patient (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
 }
 GROUP BY ?patient
 HAVING(COUNT(?enc) >= 2)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000ff001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 62.996 ms/op
 Iteration   1: ### Optimized Query ###
@@ -1061,10 +959,8 @@ HAVING (COUNT(?enc) >= 2)
 
 56.461 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   56.461 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -1081,10 +977,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 8.65% complete, ETA 00:13:21
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -1097,11 +989,6 @@ SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
   OPTIONAL { ?enc med:handledBy ?practitioner . }
   MINUS { ?enc med:hasObservation ?obs . ?obs med:value ?value . FILTER(?value < 60) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003fc001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 282.165 ms/op
 Iteration   1: ### Optimized Query ###
@@ -1180,10 +1067,8 @@ SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
 
 258.075 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   258.075 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -1200,10 +1085,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 9.62% complete, ETA 00:13:13
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -1217,11 +1098,6 @@ SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
   FILTER NOT EXISTS { ?patient med:hasMedication ?m2 . ?m2 med:code ?c .
                       FILTER(?c = "MED-1005") }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000007ff01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 <failure>
 
@@ -1252,9 +1128,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -1270,10 +1143,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 10.58% complete, ETA 00:16:11
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -1313,11 +1182,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 ORDER BY ?root ?encounter ?observation
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000600001112af0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1730.972 ms/op
 Iteration   1: ### Optimized Query ###
@@ -1472,10 +1336,8 @@ ORDER BY ?root ?encounter ?observation
 
 1505.789 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1505.789 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -1492,10 +1354,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 11.54% complete, ETA 00:15:46
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
@@ -1524,11 +1382,6 @@ SELECT DISTINCT ?root ?optName ?optConditionCode ?optEncounter2 ?optLabel ?optEn
     OPTIONAL { ?optCondition med:code ?optConditionCode . }
   }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000ffc01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 745.214 ms/op
 Iteration   1: ### Optimized Query ###
@@ -1648,10 +1501,8 @@ SELECT DISTINCT ?root ?optName ?optConditionCode ?optEncounter2 ?optLabel ?optEn
 
 667.950 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   667.950 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -1668,10 +1519,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 12.50% complete, ETA 00:15:26
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -1689,11 +1536,6 @@ SELECT (COUNT(DISTINCT ?pair) AS ?count) WHERE {
   FILTER(?optName IN ("user0", "user1", "user2"))
   BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000ff01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 0.076 ms/op
 Iteration   1: ### Optimized Query ###
@@ -1762,10 +1604,8 @@ SELECT (COUNT(DISTINCT ?pair) AS ?count) WHERE {
 
 0.064 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   0.064 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -1782,10 +1622,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 13.46% complete, ETA 00:15:04
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -1811,11 +1647,6 @@ SELECT (COUNT(DISTINCT ?u1) AS ?count) WHERE {
                   FILTER(?name = "user0" || ?name = "user1") }
   MINUS { ?u1 social:follows ?u1 . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001000011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 8.758 ms/op
 Iteration   1: ### Optimized Query ###
@@ -1934,10 +1765,8 @@ SELECT (COUNT(DISTINCT ?u1) AS ?count) WHERE {
 
 7.910 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   7.910 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -1954,10 +1783,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 14.42% complete, ETA 00:14:44
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -1977,11 +1802,6 @@ SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {
   FILTER(?optName != "")
   FILTER EXISTS { ?v social:follows ?u . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00007e0001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 0.101 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2053,10 +1873,8 @@ SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {
 
 0.082 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   0.082 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2073,10 +1891,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 15.38% complete, ETA 00:14:26
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -2097,11 +1911,6 @@ SELECT ?u (COUNT(DISTINCT ?v) AS ?degree) WHERE {
 }
 GROUP BY ?u
 HAVING(COUNT(DISTINCT ?v) >= 3)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000001f001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 0.087 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2188,10 +1997,8 @@ HAVING (COUNT(DISTINCT ?v) >= 3)
 
 0.071 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   0.071 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2208,10 +2015,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 16.35% complete, ETA 00:14:08
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -2233,11 +2036,6 @@ SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {
   OPTIONAL { ?v social:name ?optName . }
   FILTER(?optName != "")
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000001fc01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 0.108 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2301,10 +2099,8 @@ SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {
 
 0.093 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   0.093 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2321,10 +2117,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 17.31% complete, ETA 00:13:52
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -2348,11 +2140,6 @@ SELECT (COUNT(DISTINCT ?activity) AS ?count) WHERE {
   OPTIONAL { ?u social:name ?optName . }
   FILTER(?optName IN ("user7", "user8", "user9", "user10", "user11"))
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000e0001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1077.073 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2430,10 +2217,8 @@ SELECT (COUNT(DISTINCT ?activity) AS ?count) WHERE {
 
 1036.339 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1036.339 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2450,10 +2235,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 18.27% complete, ETA 00:13:38
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -2478,11 +2259,6 @@ SELECT ?u (COUNT(DISTINCT ?v) AS ?connections) WHERE {
 }
 GROUP BY ?u
 HAVING(COUNT(DISTINCT ?v) >= 5)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001ffe011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 0.113 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2582,10 +2358,8 @@ HAVING (COUNT(DISTINCT ?v) >= 5)
 
 0.096 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   0.096 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2602,10 +2376,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 19.23% complete, ETA 00:13:24
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -2630,11 +2400,6 @@ SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {
   OPTIONAL { ?v social:name ?optName . }
   FILTER(?optName IN ("user12", "user13", "user14", "user15", "user16", "user17"))
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003ff801113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 9.324 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2743,10 +2508,8 @@ SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {
 
 8.319 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   8.319 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2763,10 +2526,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 20.19% complete, ETA 00:13:09
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -2779,11 +2538,6 @@ SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
   OPTIONAL { ?a social:name ?optName . }
   FILTER(?optName IN ("user0", "user1", "user2"))
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001e0001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 931.051 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2840,10 +2594,8 @@ SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
 
 851.356 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   851.356 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2860,10 +2612,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 21.15% complete, ETA 00:12:59
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -2881,11 +2629,6 @@ SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
   OPTIONAL { ?b social:name ?optName . BIND(?optName AS ?optAlias) }
   FILTER(?optAlias != "")
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000c001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 7.607 ms/op
 Iteration   1: ### Optimized Query ###
@@ -2969,10 +2712,8 @@ SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
 
 6.813 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   6.813 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -2989,10 +2730,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 22.12% complete, ETA 00:12:46
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -3034,11 +2771,6 @@ SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
   OPTIONAL { ?e social:name ?optName . }
   FILTER(?optName IN ("user7", "user8", "user9", "user10", "user11"))
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00007f8001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 3.051 ms/op
 Iteration   1: ### Optimized Query ###
@@ -3209,10 +2941,8 @@ SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
 
 2.688 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   2.688 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -3229,10 +2959,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 23.08% complete, ETA 00:12:32
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -3257,11 +2983,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 ORDER BY ?root ?followed ?post
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001c0001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 <failure>
 
@@ -3292,9 +3013,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -3310,10 +3028,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 24.04% complete, ETA 00:13:30
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
@@ -3342,11 +3056,6 @@ SELECT DISTINCT * WHERE {
     OPTIONAL { ?optFollower social:name ?optFollowerName . }
   }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001f8001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 <failure>
 
@@ -3377,9 +3086,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -3395,10 +3101,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 25.00% complete, ETA 00:14:21
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -3413,11 +3115,6 @@ SELECT (COUNT(DISTINCT ?book) AS ?count) WHERE {
   FILTER(?optBranch != ?book)
   OPTIONAL { ?book lib:writtenBy ?author . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003ffe01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 763.173 ms/op
 Iteration   1: ### Optimized Query ###
@@ -3474,10 +3171,8 @@ SELECT (COUNT(DISTINCT ?book) AS ?count) WHERE {
 
 686.809 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   686.809 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -3494,10 +3189,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 25.96% complete, ETA 00:14:04
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -3510,11 +3201,6 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
   FILTER(?name = ?target || ?name = "Member 3")
   OPTIONAL { ?entity lib:hasCopy ?copy . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000f80011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 335.374 ms/op
 Iteration   1: ### Optimized Query ###
@@ -3583,10 +3269,8 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
 
 307.734 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   307.734 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -3603,10 +3287,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 26.92% complete, ETA 00:13:46
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -3618,11 +3298,6 @@ SELECT ?author (COUNT(DISTINCT ?book) AS ?bookCount) WHERE {
 }
 GROUP BY ?author
 HAVING(COUNT(?book) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000060001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 48.299 ms/op
 Iteration   1: ### Optimized Query ###
@@ -3683,10 +3358,8 @@ HAVING (COUNT(?book) > 0)
 
 41.203 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   41.203 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -3703,10 +3376,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 27.88% complete, ETA 00:13:29
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -3720,11 +3389,6 @@ SELECT (COUNT(DISTINCT ?loan) AS ?count) WHERE {
   FILTER(?optDue > "2024-01-10"^^xsd:date)
   MINUS { ?member lib:name ?name . FILTER(CONTAINS(LCASE(STR(?name)), "member 1")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000007ff01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 50.805 ms/op
 Iteration   1: ### Optimized Query ###
@@ -3788,10 +3452,8 @@ SELECT (COUNT(DISTINCT ?loan) AS ?count) WHERE {
 
 45.520 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   45.520 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -3808,10 +3470,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 28.85% complete, ETA 00:13:12
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -3822,11 +3480,6 @@ SELECT (COUNT(DISTINCT ?book) AS ?count) WHERE {
   FILTER EXISTS { ?book lib:hasCopy ?copy . }
   OPTIONAL { ?book lib:writtenBy ?author . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001800011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 166.156 ms/op
 Iteration   1: ### Optimized Query ###
@@ -3884,10 +3537,8 @@ SELECT (COUNT(DISTINCT ?book) AS ?count) WHERE {
 
 150.699 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   150.699 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -3904,10 +3555,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 29.81% complete, ETA 00:12:56
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -3918,11 +3565,6 @@ SELECT (COUNT(DISTINCT ?loan) AS ?count) WHERE {
   FILTER(?loanDate IN ("2024-01-01"^^xsd:date, "2024-01-02"^^xsd:date))
   FILTER NOT EXISTS { ?loan lib:dueDate ?due . FILTER(?due < ?threshold) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001000011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 12.239 ms/op
 Iteration   1: ### Optimized Query ###
@@ -3988,10 +3630,8 @@ SELECT (COUNT(DISTINCT ?loan) AS ?count) WHERE {
 
 10.806 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   10.806 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -4008,10 +3648,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 30.77% complete, ETA 00:12:41
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -4028,11 +3664,6 @@ SELECT ?member (COUNT(DISTINCT ?loan) AS ?loanCount) WHERE {
 }
 GROUP BY ?member
 HAVING(COUNT(?loan) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000007f001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 <failure>
 
@@ -4063,9 +3694,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -4081,10 +3709,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 31.73% complete, ETA 00:13:13
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -4096,11 +3720,6 @@ SELECT (COUNT(DISTINCT ?copy) AS ?count) WHERE {
   FILTER EXISTS { ?copy a lib:Copy . }
   MINUS { ?copy lib:locatedAt ?branch . FILTER(CONTAINS(STR(?branch), "branch/0")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000ff0011128a8 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1106.235 ms/op
 Iteration   1: ### Optimized Query ###
@@ -4170,10 +3789,8 @@ SELECT (COUNT(DISTINCT ?copy) AS ?count) WHERE {
 
 1002.313 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1002.313 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -4190,10 +3807,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 32.69% complete, ETA 00:12:59
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -4207,11 +3820,6 @@ SELECT ?author (COUNT(DISTINCT ?loan) AS ?loanCount) WHERE {
 }
 GROUP BY ?author
 HAVING(COUNT(?loan) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000020001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 77.953 ms/op
 Iteration   1: ### Optimized Query ###
@@ -4302,10 +3910,8 @@ HAVING (COUNT(?loan) > 0)
 
 68.500 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   68.500 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -4322,10 +3928,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 33.65% complete, ETA 00:12:43
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -4342,11 +3944,6 @@ SELECT (COUNT(DISTINCT ?member) AS ?count) WHERE {
   OPTIONAL { ?book lib:title ?optTitle . }
   FILTER(?optTitle != "")
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000080001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 186.229 ms/op
 Iteration   1: ### Optimized Query ###
@@ -4444,10 +4041,8 @@ SELECT (COUNT(DISTINCT ?member) AS ?count) WHERE {
 
 162.905 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   162.905 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -4464,10 +4059,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 34.62% complete, ETA 00:12:27
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -4481,11 +4072,6 @@ SELECT (COUNT(DISTINCT ?branch) AS ?count) WHERE {
   MINUS { ?branch lib:name ?name2 .
           FILTER(CONTAINS(LCASE(STR(?name2)), "branch 0")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000000e011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 238.625 ms/op
 Iteration   1: ### Optimized Query ###
@@ -4560,10 +4146,8 @@ SELECT (COUNT(DISTINCT ?branch) AS ?count) WHERE {
 
 214.924 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   214.924 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -4580,10 +4164,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 35.58% complete, ETA 00:12:11
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -4619,11 +4199,6 @@ SELECT DISTINCT * WHERE {
 }
 ORDER BY ?root ?member ?copy
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000780011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -4653,9 +4228,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -4671,10 +4243,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 36.54% complete, ETA 00:12:34
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
@@ -4705,11 +4273,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000001ff01113640 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -4739,9 +4302,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -4757,10 +4317,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 37.50% complete, ETA 00:12:55
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -4770,11 +4326,6 @@ SELECT (COUNT(DISTINCT ?component) AS ?count) WHERE {
   FILTER(?optAssembly != ?component)
   OPTIONAL { ?component eng:dependsOn ?dep . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000ff8011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 268.832 ms/op
 Iteration   1: ### Optimized Query ###
@@ -4825,10 +4376,8 @@ SELECT (COUNT(DISTINCT ?component) AS ?count) WHERE {
 
 240.589 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   240.589 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -4845,10 +4394,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 38.46% complete, ETA 00:12:38
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -4860,11 +4405,6 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
   FILTER(?name = ?target || ?name = "REQ-1002")
   OPTIONAL { ?entity eng:partOf ?assembly . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000100001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 353.061 ms/op
 Iteration   1: ### Optimized Query ###
@@ -4933,10 +4473,8 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
 
 334.864 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   334.864 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -4953,10 +4491,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 39.42% complete, ETA 00:12:21
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -4967,11 +4501,6 @@ SELECT ?assembly (COUNT(DISTINCT ?component) AS ?componentCount) WHERE {
 }
 GROUP BY ?assembly
 HAVING(COUNT(?component) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000c00011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1.634 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5032,10 +4561,8 @@ HAVING (COUNT(?component) > 0)
 
 1.375 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1.375 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5052,10 +4579,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 40.38% complete, ETA 00:12:04
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5065,11 +4588,6 @@ SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
   FILTER(?optTest != ?requirement)
   MINUS { ?component eng:name ?name . FILTER(CONTAINS(STR(?name), "Component 1")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000003c0011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 151.910 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5132,10 +4650,8 @@ SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
 
 137.681 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   137.681 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5152,10 +4668,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 41.35% complete, ETA 00:11:48
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5165,11 +4677,6 @@ SELECT (COUNT(DISTINCT ?component) AS ?count) WHERE {
   FILTER EXISTS { ?component eng:dependsOn ?dep . }
   OPTIONAL { ?component eng:partOf ?assembly . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000010001113b00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 73.073 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5227,10 +4734,8 @@ SELECT (COUNT(DISTINCT ?component) AS ?count) WHERE {
 
 68.308 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   68.308 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5247,10 +4752,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 42.31% complete, ETA 00:11:32
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5260,11 +4761,6 @@ SELECT (COUNT(DISTINCT ?measurement) AS ?count) WHERE {
   FILTER(?value IN (0.9, 0.95))
   FILTER NOT EXISTS { ?measurement eng:measuredValue ?value2 . FILTER(?value2 < ?threshold) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001ffe01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 2.386 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5320,10 +4816,8 @@ SELECT (COUNT(DISTINCT ?measurement) AS ?count) WHERE {
 
 2.112 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   2.112 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5340,10 +4834,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 43.27% complete, ETA 00:11:16
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5356,11 +4846,6 @@ SELECT ?component (COUNT(DISTINCT ?requirement) AS ?reqCount) WHERE {
 }
 GROUP BY ?component
 HAVING(COUNT(?requirement) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000000f01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 273.614 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5434,10 +4919,8 @@ HAVING (COUNT(?requirement) > 0)
 
 245.058 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   245.058 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5454,10 +4937,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 44.23% complete, ETA 00:11:01
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5467,11 +4946,6 @@ SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
   FILTER EXISTS { ?requirement eng:satisfies ?component . }
   MINUS { ?requirement eng:verifiedBy ?test . ?test eng:verifiedBy ?measurement . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00007e00011128a8 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 4.923 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5535,10 +5009,8 @@ SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
 
 4.361 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   4.361 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5555,10 +5027,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 45.19% complete, ETA 00:10:46
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5570,11 +5038,6 @@ SELECT ?component (COUNT(DISTINCT ?requirement) AS ?reqCount) WHERE {
 }
 GROUP BY ?component
 HAVING(COUNT(?requirement) >= 1)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000fc001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 2.436 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5649,10 +5112,8 @@ HAVING (COUNT(?requirement) >= 1)
 
 2.106 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   2.106 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5669,10 +5130,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 46.15% complete, ETA 00:10:31
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5686,11 +5143,6 @@ SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
   OPTIONAL { ?component eng:name ?optName . }
   FILTER(?optName != "")
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000080001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 4.026 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5763,10 +5215,8 @@ SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
 
 3.543 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   3.543 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5783,10 +5233,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 47.12% complete, ETA 00:10:17
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5797,11 +5243,6 @@ SELECT (COUNT(DISTINCT ?assembly) AS ?count) WHERE {
   FILTER(?optComponent != ?assembly)
   MINUS { ?requirement eng:satisfies ?component . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000007f001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 2.128 ms/op
 Iteration   1: ### Optimized Query ###
@@ -5867,10 +5308,8 @@ SELECT (COUNT(DISTINCT ?assembly) AS ?count) WHERE {
 
 1.838 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1.838 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -5887,10 +5326,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 48.08% complete, ETA 00:10:02
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -5924,11 +5359,6 @@ SELECT DISTINCT * WHERE {
 }
 ORDER BY ?root ?component ?test
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000fff01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -5958,9 +5388,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -5976,10 +5403,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 49.04% complete, ETA 00:10:11
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
@@ -6011,11 +5434,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000fe0011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -6045,9 +5463,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -6063,10 +5478,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 50.00% complete, ETA 00:10:18
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6076,11 +5487,6 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
   FILTER(?optNeighbor != ?node)
   OPTIONAL { ?node conn:weight ?w . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000007e01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 415.190 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6131,10 +5537,8 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
 
 386.619 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   386.619 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6151,10 +5555,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 50.96% complete, ETA 00:10:04
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6166,11 +5566,6 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
   OPTIONAL { ?entity conn:weight ?w . }
   FILTER(?w = ?target || ?w = 3)
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000ff01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1292.821 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6233,10 +5628,8 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
 
 1164.451 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1164.451 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6253,10 +5646,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 51.92% complete, ETA 00:09:49
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6268,11 +5657,6 @@ SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?neighborCount) WHERE {
 }
 GROUP BY ?node
 HAVING(COUNT(?neighbor) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000000f011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 662.715 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6339,10 +5723,8 @@ HAVING (COUNT(?neighbor) > 0)
 
 613.459 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   613.459 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6359,10 +5741,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 52.88% complete, ETA 00:09:35
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6372,11 +5750,6 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
   FILTER(?optWeight > 5)
   MINUS { ?node conn:connectsTo ?neighbor . FILTER(?neighbor = ?node) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000060001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 131.909 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6432,10 +5805,8 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
 
 117.619 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   117.619 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6452,10 +5823,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 53.85% complete, ETA 00:09:20
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6465,11 +5832,6 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
   FILTER EXISTS { ?node conn:connectsTo ?neighbor . }
   OPTIONAL { ?neighbor conn:connectsTo ?node . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000070001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 235.086 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6527,10 +5889,8 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
 
 219.282 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   219.282 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6547,10 +5907,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 54.81% complete, ETA 00:09:06
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6560,11 +5916,6 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
   FILTER(?w IN (4, 5, 6))
   FILTER NOT EXISTS { ?node conn:weight ?w2 . FILTER(?w2 < ?threshold) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000003ff01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 131.806 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6621,10 +5972,8 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
 
 117.771 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   117.771 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6641,10 +5990,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 55.77% complete, ETA 00:08:52
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6657,11 +6002,6 @@ SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?neighborCount) WHERE {
 }
 GROUP BY ?node
 HAVING(COUNT(?neighbor) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001fff01112660 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1582.615 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6735,10 +6075,8 @@ HAVING (COUNT(?neighbor) > 0)
 
 1387.033 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1387.033 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6755,10 +6093,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 56.73% complete, ETA 00:08:39
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6768,11 +6102,6 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
   FILTER EXISTS { ?node conn:connectsTo ?neighbor . }
   MINUS { ?neighbor conn:connectsTo ?node . FILTER(?neighbor = ?node) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000fe001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 139.447 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6835,10 +6164,8 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
 
 125.972 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   125.972 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6855,10 +6182,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 57.69% complete, ETA 00:08:26
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6869,11 +6192,6 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
   FILTER(?optWeight IN (7, 8, 9))
   FILTER EXISTS { ?end conn:connectsTo ?node . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000200001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1442.768 ms/op
 Iteration   1: ### Optimized Query ###
@@ -6935,10 +6253,8 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
 
 1315.680 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1315.680 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -6955,10 +6271,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 58.65% complete, ETA 00:08:13
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -6971,11 +6283,6 @@ SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?degree) WHERE {
 }
 GROUP BY ?node
 HAVING(COUNT(?neighbor) > 1)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001f8001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1611.011 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7037,10 +6344,8 @@ HAVING (COUNT(?neighbor) > 1)
 
 1526.742 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1526.742 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -7057,10 +6362,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 59.62% complete, ETA 00:08:02
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -7072,11 +6373,6 @@ SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
                       ?n2 conn:weight ?w2 . FILTER(?w2 < ?threshold) }
   MINUS { ?node conn:connectsTo ?node . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000018001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 <failure>
 
@@ -7107,9 +6403,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -7125,10 +6418,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 60.58% complete, ETA 00:08:02
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -7159,11 +6448,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000fe0011128a8 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -7193,9 +6477,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -7211,10 +6492,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 61.54% complete, ETA 00:08:02
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
@@ -7239,11 +6516,6 @@ SELECT * WHERE {
   FILTER(?optNodeWeight != 0 || !BOUND(?optNodeWeight))
 }
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000f8001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -7273,9 +6545,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -7291,10 +6560,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 62.50% complete, ETA 00:08:01
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -7308,11 +6573,6 @@ SELECT (COUNT(DISTINCT ?service) AS ?count) WHERE {
   FILTER(?optTime > "08:00:00"^^xsd:time)
   OPTIONAL { ?service train:name ?name . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000fc011128a8 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 43.316 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7363,10 +6623,8 @@ SELECT (COUNT(DISTINCT ?service) AS ?count) WHERE {
 
 39.629 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   39.629 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -7383,10 +6641,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 63.46% complete, ETA 00:07:47
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -7399,11 +6653,6 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
   FILTER(?name = ?target || ?name = "OP 3")
   OPTIONAL { ?entity train:connectsOperationalPoint ?op . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000003fe01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 96.296 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7472,10 +6721,8 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
 
 88.189 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   88.189 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -7492,10 +6739,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 64.42% complete, ETA 00:07:32
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -7507,11 +6750,6 @@ SELECT ?line (COUNT(DISTINCT ?section) AS ?sectionCount) WHERE {
 }
 GROUP BY ?line
 HAVING(COUNT(?section) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001f8001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 10.032 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7572,10 +6810,8 @@ HAVING (COUNT(?section) > 0)
 
 8.787 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   8.787 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -7592,10 +6828,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 65.38% complete, ETA 00:07:18
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -7606,11 +6838,6 @@ SELECT (COUNT(DISTINCT ?section) AS ?count) WHERE {
   FILTER(?optTrack != ?section)
   MINUS { ?line train:name ?name . FILTER(CONTAINS(STR(?name), "Line 0")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003fc001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 171.282 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7673,10 +6900,8 @@ SELECT (COUNT(DISTINCT ?section) AS ?count) WHERE {
 
 154.093 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   154.093 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -7693,10 +6918,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 66.35% complete, ETA 00:07:04
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -7707,11 +6928,6 @@ SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
   FILTER EXISTS { ?section train:partOfLine ?line . }
   OPTIONAL { ?section train:connectsOperationalPoint ?op . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000007fc011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 161.841 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7769,10 +6985,8 @@ SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
 
 149.508 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   149.508 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -7789,10 +7003,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 67.31% complete, ETA 00:06:50
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -7803,11 +7013,6 @@ SELECT (COUNT(DISTINCT ?service) AS ?count) WHERE {
   FILTER(?time IN ("08:00:00"^^xsd:time, "09:00:00"^^xsd:time))
   FILTER NOT EXISTS { ?service train:scheduledTime ?late . FILTER(?late > ?threshold) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001fc001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 23.009 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7863,10 +7068,8 @@ SELECT (COUNT(DISTINCT ?service) AS ?count) WHERE {
 
 20.687 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   20.687 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -7883,10 +7086,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 68.27% complete, ETA 00:06:36
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -7901,11 +7100,6 @@ SELECT ?line (COUNT(DISTINCT ?service) AS ?serviceCount) WHERE {
 }
 GROUP BY ?line
 HAVING(COUNT(?service) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003000011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 122.707 ms/op
 Iteration   1: ### Optimized Query ###
@@ -7981,10 +7175,8 @@ HAVING (COUNT(?service) > 0)
 
 112.275 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   112.275 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8001,10 +7193,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 69.23% complete, ETA 00:06:23
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -8015,11 +7203,6 @@ SELECT (COUNT(DISTINCT ?op) AS ?count) WHERE {
   FILTER EXISTS { ?service train:passesThrough ?op . }
   MINUS { ?op train:name ?name2 . FILTER(CONTAINS(LCASE(STR(?name2)), "op 0")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001fe001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 57.204 ms/op
 Iteration   1: ### Optimized Query ###
@@ -8084,10 +7267,8 @@ SELECT (COUNT(DISTINCT ?op) AS ?count) WHERE {
 
 53.507 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   53.507 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8104,10 +7285,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 70.19% complete, ETA 00:06:09
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -8121,11 +7298,6 @@ SELECT (COUNT(DISTINCT ?service) AS ?count) WHERE {
   FILTER EXISTS { ?s1 train:connectsOperationalPoint ?op .
                   ?s2 train:connectsOperationalPoint ?op . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001e00011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 255.003 ms/op
 Iteration   1: ### Optimized Query ###
@@ -8200,10 +7372,8 @@ SELECT (COUNT(DISTINCT ?service) AS ?count) WHERE {
 
 234.390 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   234.390 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8220,10 +7390,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 71.15% complete, ETA 00:05:56
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -8236,11 +7402,6 @@ SELECT ?section (COUNT(DISTINCT ?track) AS ?trackCount) WHERE {
 }
 GROUP BY ?section
 HAVING(COUNT(?track) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000003c001116660 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 273.740 ms/op
 Iteration   1: ### Optimized Query ###
@@ -8312,10 +7473,8 @@ HAVING (COUNT(?track) > 0)
 
 248.271 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   248.271 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8332,10 +7491,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 72.12% complete, ETA 00:05:43
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -8348,11 +7503,6 @@ SELECT (COUNT(DISTINCT ?op) AS ?count) WHERE {
   FILTER(?optSection != ?op)
   MINUS { ?op train:name ?name2 . FILTER(CONTAINS(LCASE(STR(?name2)), "op 1")) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001f0001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 235.516 ms/op
 Iteration   1: ### Optimized Query ###
@@ -8427,10 +7577,8 @@ SELECT (COUNT(DISTINCT ?op) AS ?count) WHERE {
 
 207.139 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   207.139 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8447,10 +7595,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 73.08% complete, ETA 00:05:30
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -8488,11 +7632,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000000c011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -8522,9 +7661,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -8540,10 +7676,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 74.04% complete, ETA 00:05:25
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
@@ -8573,11 +7705,6 @@ SELECT * WHERE {
   }
   OPTIONAL { ?root train:hasTrackSection ?optTrackSection . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000007f8011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 2163.969 ms/op
 Iteration   1: ### Optimized Query ###
@@ -8701,10 +7828,8 @@ SELECT ?root ?optName ?optLabel ?optLine ?optLineName ?optOperationalPoint ?optO
 
 1982.307 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1982.307 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8721,10 +7846,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 75.00% complete, ETA 00:05:12
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -8734,11 +7855,6 @@ SELECT (COUNT(DISTINCT ?substation) AS ?count) WHERE {
   FILTER(?optCap > 600)
   OPTIONAL { ?substation grid:name ?name . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001ffe01113b00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 55.203 ms/op
 Iteration   1: ### Optimized Query ###
@@ -8795,10 +7911,8 @@ SELECT (COUNT(DISTINCT ?substation) AS ?count) WHERE {
 
 49.504 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   49.504 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8815,10 +7929,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 75.96% complete, ETA 00:04:59
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -8830,11 +7940,6 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
   FILTER(?name = ?target || ?name = "Substation 3")
   OPTIONAL { ?entity grid:feeds ?substation2 . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001e0001113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 114.525 ms/op
 Iteration   1: ### Optimized Query ###
@@ -8909,10 +8014,8 @@ SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
 
 102.032 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   102.032 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -8929,10 +8032,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 76.92% complete, ETA 00:04:46
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -8944,11 +8043,6 @@ SELECT ?transformer (COUNT(DISTINCT ?meter) AS ?meterCount) WHERE {
 }
 GROUP BY ?transformer
 HAVING(COUNT(?meter) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000e0001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 5.443 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9015,10 +8109,8 @@ HAVING (COUNT(?meter) > 0)
 
 4.836 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   4.836 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9035,10 +8127,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 77.88% complete, ETA 00:04:33
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9048,11 +8136,6 @@ SELECT (COUNT(DISTINCT ?meter) AS ?count) WHERE {
   FILTER(?optValue > 100)
   MINUS { ?meter grid:measures ?load2 . ?load2 grid:loadValue ?value2 . FILTER(?value2 > 180) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000fe0011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 433.788 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9124,10 +8207,8 @@ SELECT (COUNT(DISTINCT ?meter) AS ?count) WHERE {
 
 395.556 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   395.556 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9144,10 +8225,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 78.85% complete, ETA 00:04:20
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9158,11 +8235,6 @@ SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
   FILTER EXISTS { ?line grid:connectsTo ?other . }
   OPTIONAL { ?line grid:connectsTo ?other2 . }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000fe0011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 6.400 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9226,10 +8298,8 @@ SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
 
 5.664 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   5.664 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9246,10 +8316,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 79.81% complete, ETA 00:04:08
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9259,11 +8325,6 @@ SELECT (COUNT(DISTINCT ?generator) AS ?count) WHERE {
   FILTER(?capacity IN (700, 800, 900))
   FILTER NOT EXISTS { ?generator grid:capacity ?cap2 . FILTER(?cap2 < ?threshold) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00007ffe01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 16.629 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9320,10 +8381,8 @@ SELECT (COUNT(DISTINCT ?generator) AS ?count) WHERE {
 
 13.844 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   13.844 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9340,10 +8399,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 80.77% complete, ETA 00:03:55
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9356,11 +8411,6 @@ SELECT ?substation (COUNT(DISTINCT ?asset) AS ?assetCount) WHERE {
 }
 GROUP BY ?substation
 HAVING(COUNT(?asset) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001c0001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 103.752 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9440,10 +8490,8 @@ HAVING (COUNT(?asset) > 0)
 
 90.314 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   90.314 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9460,10 +8508,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 81.73% complete, ETA 00:03:43
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9474,11 +8518,6 @@ SELECT (COUNT(DISTINCT ?transformer) AS ?count) WHERE {
   FILTER EXISTS { ?transformer grid:hasMeter ?meter . }
   MINUS { ?meter grid:measures ?load . FILTER(?load = ?substation) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003fc001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 14.923 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9547,10 +8586,8 @@ SELECT (COUNT(DISTINCT ?transformer) AS ?count) WHERE {
 
 13.643 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   13.643 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9567,10 +8604,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 82.69% complete, ETA 00:03:30
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9582,11 +8615,6 @@ SELECT ?substation (COUNT(DISTINCT ?transformer) AS ?transformerCount) WHERE {
 }
 GROUP BY ?substation
 HAVING(COUNT(?transformer) > 0)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003ffc01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 15.405 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9655,10 +8683,8 @@ HAVING (COUNT(?transformer) > 0)
 
 13.930 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   13.930 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9675,10 +8701,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 83.65% complete, ETA 00:03:18
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9688,11 +8710,6 @@ SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
   OPTIONAL { ?line grid:connectsTo ?substation . }
   MINUS { ?line grid:capacity ?cap2 . FILTER(?cap2 < 500) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000f001113b00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 5.520 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9752,10 +8769,8 @@ SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
 
 5.201 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   5.201 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9772,10 +8787,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 84.62% complete, ETA 00:03:06
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9787,11 +8798,6 @@ SELECT (COUNT(DISTINCT ?meter) AS ?count) WHERE {
   FILTER(?optValue > 200)
   FILTER NOT EXISTS { ?load grid:loadValue ?low . FILTER(?low < 50) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000007f801113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 575.039 ms/op
 Iteration   1: ### Optimized Query ###
@@ -9870,10 +8876,8 @@ SELECT (COUNT(DISTINCT ?meter) AS ?count) WHERE {
 
 518.380 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   518.380 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -9890,10 +8894,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 85.58% complete, ETA 00:02:53
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -9933,11 +8933,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000180001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -9967,9 +8962,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -9985,10 +8977,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 86.54% complete, ETA 00:02:45
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
@@ -10020,11 +9008,6 @@ SELECT * WHERE {
     OPTIONAL { ?line grid:capacity ?optLineCapacity . }
   }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00007ff801113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 1777.509 ms/op
 Iteration   1: ### Optimized Query ###
@@ -10166,10 +9149,8 @@ SELECT ?root ?optName ?optLabel ?optFed ?optFedName ?generator ?substation ?optG
 
 1638.738 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1638.738 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -10186,10 +9167,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 87.50% complete, ETA 00:02:33
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -10204,11 +9181,6 @@ SELECT (COUNT(DISTINCT ?drug) AS ?count) WHERE {
   FILTER(?optMarker != <http://example.com/theme/pharma/biomarker/999>)
   FILTER(?p < 0.05 || ?effect > 0.7)
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00001f8001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 0.299 ms/op
 Iteration   1: ### Optimized Query ###
@@ -10299,10 +9271,8 @@ SELECT (COUNT(DISTINCT ?drug) AS ?count) WHERE {
 
 0.250 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   0.250 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -10319,10 +9289,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 88.46% complete, ETA 00:02:20
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -10339,11 +9305,6 @@ SELECT ?combo (COUNT(DISTINCT ?drug) AS ?drugCount) WHERE {
 }
 GROUP BY ?combo
 HAVING(COUNT(DISTINCT ?drug) >= 2)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000f801112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 2.048 ms/op
 Iteration   1: ### Optimized Query ###
@@ -10424,10 +9385,8 @@ HAVING (COUNT(DISTINCT ?drug) >= 2)
 
 1.746 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   1.746 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -10444,10 +9403,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 89.42% complete, ETA 00:02:08
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -10462,11 +9417,6 @@ SELECT ?target (COUNT(DISTINCT ?drug) AS ?drugCount) WHERE {
 }
 GROUP BY ?target
 HAVING(COUNT(DISTINCT ?drug) > 2)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000003e0011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 49.716 ms/op
 Iteration   1: ### Optimized Query ###
@@ -10553,10 +9503,8 @@ HAVING (COUNT(DISTINCT ?drug) > 2)
 
 44.187 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   44.187 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -10573,10 +9521,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 90.38% complete, ETA 00:01:56
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -10590,11 +9534,6 @@ SELECT ?drug ?disease WHERE {
   OPTIONAL { ?drug pharma:targets ?target . BIND(?target AS ?optTarget) }
   FILTER(?optTarget != <http://example.com/theme/pharma/target/0>)
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000600001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 17.525 ms/op
 Iteration   1: ### Optimized Query ###
@@ -10675,10 +9614,8 @@ SELECT ?drug ?disease WHERE {
 
 15.385 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   15.385 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -10695,10 +9632,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 91.35% complete, ETA 00:01:44
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -10715,11 +9648,6 @@ SELECT (COUNT(DISTINCT ?drug) AS ?count) WHERE {
           FILTER(?disease IN (<http://example.com/theme/pharma/disease/4>,
                               <http://example.com/theme/pharma/disease/5>)) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000ffc01112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 38.967 ms/op
 Iteration   1: ### Optimized Query ###
@@ -10817,10 +9745,8 @@ SELECT (COUNT(DISTINCT ?drug) AS ?count) WHERE {
 
 34.718 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   34.718 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -10837,10 +9763,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 92.31% complete, ETA 00:01:32
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -10856,11 +9778,6 @@ SELECT (COUNT(DISTINCT ?trial) AS ?count) WHERE {
   FILTER(?optEffect > 0.3)
   FILTER(?p < 0.05 || ?p = 0.05)
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00007fe0011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 0.490 ms/op
 Iteration   1: ### Optimized Query ###
@@ -10939,10 +9856,8 @@ SELECT (COUNT(DISTINCT ?trial) AS ?count) WHERE {
 
 0.399 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   0.399 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -10959,10 +9874,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 93.27% complete, ETA 00:01:20
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -10978,11 +9889,6 @@ SELECT ?combo (COUNT(DISTINCT ?target) AS ?sharedTargets) WHERE {
 }
 GROUP BY ?combo
 HAVING(COUNT(DISTINCT ?target) > 1)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003c0001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 5.814 ms/op
 Iteration   1: ### Optimized Query ###
@@ -11074,10 +9980,8 @@ HAVING (COUNT(DISTINCT ?target) > 1)
 
 5.384 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   5.384 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -11094,10 +9998,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 94.23% complete, ETA 00:01:09
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -11112,11 +10012,6 @@ SELECT (COUNT(DISTINCT ?arm) AS ?count) WHERE {
   FILTER NOT EXISTS { ?arm pharma:hasResult ?r . ?r pharma:pValue ?p .
                       FILTER(?p IN (0.08, 0.09)) }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003000011133e0 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 28.353 ms/op
 Iteration   1: ### Optimized Query ###
@@ -11193,10 +10088,8 @@ SELECT (COUNT(DISTINCT ?arm) AS ?count) WHERE {
 
 24.115 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   24.115 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -11213,10 +10106,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 95.19% complete, ETA 00:00:57
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -11231,11 +10120,6 @@ SELECT ?drug (COUNT(DISTINCT ?target) AS ?targetCount) WHERE {
 }
 GROUP BY ?drug
 HAVING(COUNT(DISTINCT ?target) >= 3)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x0000060001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 41.145 ms/op
 Iteration   1: ### Optimized Query ###
@@ -11327,10 +10211,8 @@ HAVING (COUNT(DISTINCT ?target) >= 3)
 
 31.440 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   31.440 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -11347,10 +10229,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 96.15% complete, ETA 00:00:45
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -11372,11 +10250,6 @@ SELECT (COUNT(DISTINCT ?drug) AS ?count) WHERE {
   FILTER(?optDisease IN (<http://example.com/theme/pharma/disease/8>,
                          <http://example.com/theme/pharma/disease/9>))
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000001f001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 21.232 ms/op
 Iteration   1: ### Optimized Query ###
@@ -11496,10 +10369,8 @@ SELECT (COUNT(DISTINCT ?drug) AS ?count) WHERE {
 
 18.325 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   18.325 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -11516,10 +10387,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 97.12% complete, ETA 00:00:34
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -11536,11 +10403,6 @@ SELECT ?pathway (COUNT(DISTINCT ?drug) AS ?drugCount) WHERE {
 }
 GROUP BY ?pathway
 HAVING(COUNT(DISTINCT ?drug) > 1)
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00003f0001112660 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 20104.209 ms/op
 Iteration   1: ### Optimized Query ###
@@ -11628,10 +10490,8 @@ HAVING (COUNT(DISTINCT ?drug) > 1)
 
 20108.719 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   20108.719 ms/op
-
 
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
@@ -11648,10 +10508,6 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 98.08% complete, ETA 00:00:23
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -11699,11 +10555,6 @@ SELECT DISTINCT * WHERE {
   }
 }
 
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000f0001112f80 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
 <failure>
 
 org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too long
@@ -11733,9 +10584,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
 	at java.base/java.lang.Thread.run(Thread.java:1474)
 
-
-
-
 # JMH version: 1.37
 # VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
 # VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
@@ -11751,10 +10599,6 @@ org.eclipse.rdf4j.query.QueryInterruptedException: Query evaluation took too lon
 
 # Run progress: 99.04% complete, ETA 00:00:11
 # Fork: 1 of 1
-WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
-WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/.m2/repository/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
-WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
-WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 # Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
@@ -11788,11 +10632,6 @@ SELECT * WHERE {
     OPTIONAL { ?combo pharma:synergyScore ?optSynergy . }
   }
 }
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000ff01113c00 in an unnamed module (file:/Users/havardottestad/.m2/repository/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 170.050 ms/op
 Iteration   1: ### Optimized Query ###
@@ -11943,10 +10782,8 @@ SELECT ?root ?optName ?optLabel ?optTarget ?optPathway ?optIndication ?optContra
 
 156.595 ms/op
 
-
 Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
   156.595 ms/op
-
 
 # Run complete. Total time: 00:20:35
 ```
