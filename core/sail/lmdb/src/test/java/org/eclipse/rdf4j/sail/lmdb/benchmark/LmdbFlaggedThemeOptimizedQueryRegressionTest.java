@@ -294,6 +294,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 			mismatches.add(key + " should keep clique/pair inequality filters on binding windows, not a "
 					+ "binding-prefix ladder\n" + snapshot.plan);
 		}
+		if (expectation.theme == Theme.SOCIAL_MEDIA && expectation.queryIndex == 10
+				&& !snapshot.renderedQuery.contains("VALUES (?a ?b)")) {
+			mismatches.add(key + " should bind the first follows edge as a value pair before expanding the cycle\n"
+					+ snapshot.renderedQuery);
+		}
 		if (expectation.theme == Theme.LIBRARY && expectation.queryIndex == 7
 				&& scansUnboundLocatedAt(snapshot.plan)) {
 			mismatches.add(key + " should not evaluate the branch exclusion as a broad unbound locatedAt scan\n"

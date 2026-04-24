@@ -155,15 +155,15 @@ final class LmdbDeferredFilterPlacer {
 	private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter filter,
 			Set<String> boundBeforeSegment) {
 		int[] window = null;
+		if (!LmdbJoinPlanSupport.containsExists(filter.condition)
+				&& groupDeferredFilterOnBindingAssignments(factors, filter, boundBeforeSegment)) {
+			return true;
+		}
 		if (filter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP) {
 			window = smallestSinglePatternBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
 			if (window != null) {
 				return groupDeferredFilterOnWindow(factors, filter, window);
 			}
-		}
-		if (!LmdbJoinPlanSupport.containsExists(filter.condition)
-				&& groupDeferredFilterOnBindingAssignments(factors, filter, boundBeforeSegment)) {
-			return true;
 		}
 		if (filter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP) {
 			window = smallestBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
