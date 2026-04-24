@@ -45,10 +45,11 @@ class LmdbThemeQueryRegressionTest {
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 
 	private static final Map<Theme, List<Integer>> HIGH_VALUE_QUERY_INDEXES = Map.of(
-			Theme.SOCIAL_MEDIA, List.of(0, 1, 4, 6, 8, 9, 10),
+			Theme.SOCIAL_MEDIA, List.of(0, 1, 2, 3, 4, 6, 8, 9, 10),
 			Theme.PHARMA, List.of(0, 5, 10),
 			Theme.LIBRARY, List.of(7),
-			Theme.MEDICAL_RECORDS, List.of(2, 5),
+			Theme.MEDICAL_RECORDS, List.of(2, 4, 5, 7),
+			Theme.HIGHLY_CONNECTED, List.of(5),
 			Theme.ENGINEERING, List.of(5, 9),
 			Theme.ELECTRICAL_GRID, List.of(2, 4, 5),
 			Theme.TRAIN, List.of(2, 7, 8));
@@ -57,7 +58,7 @@ class LmdbThemeQueryRegressionTest {
 	private static final Map<Theme, List<Integer>> LEARNED_FILTER_PRIME_QUERY_INDEXES = Map.of(
 			Theme.PHARMA, List.of(0, 5, 10),
 			Theme.LIBRARY, List.of(7),
-			Theme.MEDICAL_RECORDS, List.of(2, 5),
+			Theme.MEDICAL_RECORDS, List.of(2, 4, 5, 7),
 			Theme.ENGINEERING, List.of(5, 9),
 			Theme.ELECTRICAL_GRID, List.of(2, 4, 5),
 			Theme.TRAIN, List.of(2, 7, 8));
@@ -380,7 +381,7 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	private static Stream<Theme> highValueThemes() {
-		return Stream.of(Theme.PHARMA, Theme.LIBRARY, Theme.MEDICAL_RECORDS, Theme.ENGINEERING,
+		return Stream.of(Theme.PHARMA, Theme.LIBRARY, Theme.MEDICAL_RECORDS, Theme.HIGHLY_CONNECTED, Theme.ENGINEERING,
 				Theme.ELECTRICAL_GRID, Theme.TRAIN, Theme.SOCIAL_MEDIA);
 	}
 

@@ -433,6 +433,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (plannerOrderedArgs.contains(factor)) {
 				return true;
 			}
+			if (factor instanceof Join) {
+				Join join = (Join) factor;
+				return isPlannerOrderedFactor(join.getLeftArg()) && isPlannerOrderedFactor(join.getRightArg());
+			}
 			if (factor instanceof UnaryTupleOperator) {
 				return isPlannerOrderedFactor(((UnaryTupleOperator) factor).getArg());
 			}
@@ -636,6 +640,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return;
 			}
 			for (DeferredFilter deferredFilter : deferredFilters) {
+				if (deferredFilter.patternLocalBase != null) {
+					continue;
+				}
 				BindingSetAssignment anchor = smallLiteralFilterAnchor(deferredFilter.condition);
 				if (anchor == null) {
 					continue;
@@ -800,6 +807,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void addFilterSemijoinAnchor(Filter filter) {
+			if (patternLocalBaseForFilterCondition(filter, filter.getCondition()) != null) {
+				return;
+			}
 			BindingSetAssignment anchor = smallLiteralFilterAnchor(filter.getCondition());
 			if (anchor == null) {
 				return;
@@ -1170,7 +1180,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter deferredFilter,
 				Set<String> boundBeforeSegment) {
 			int[] window = null;
-			if (groupDeferredFilterOnBindingAssignments(factors, deferredFilter, boundBeforeSegment)) {
+			if (deferredFilter.conditionCost == 0) {
+				window = smallestSinglePatternBindingCoveringWindow(factors, deferredFilter.requiredVars,
+						boundBeforeSegment);
+				if (window != null) {
+					return groupDeferredFilterOnWindow(factors, deferredFilter, boundBeforeSegment, window);
+				}
+			}
+			if (!containsExists(deferredFilter.condition)
+					&& groupDeferredFilterOnBindingAssignments(factors, deferredFilter, boundBeforeSegment)) {
 				return true;
 			}
 
@@ -1189,6 +1207,26 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return groupDeferredFilterOnWindow(factors, deferredFilter, boundBeforeSegment, window);
+		}
+
+		private int[] smallestSinglePatternBindingCoveringWindow(List<SegmentFactor> factors, Set<String> requiredVars,
+				Set<String> boundBeforeSegment) {
+			if (requiredVars.isEmpty()) {
+				return null;
+			}
+
+			for (int i = 0; i < factors.size(); i++) {
+				SegmentFactor factor = factors.get(i);
+				if (factor.containedPatterns.size() != 1) {
+					continue;
+				}
+				Set<String> availableVars = new HashSet<>(boundBeforeSegment);
+				availableVars.addAll(factor.bindingNames);
+				if (availableVars.containsAll(requiredVars)) {
+					return new int[] { i, i };
+				}
+			}
+			return null;
 		}
 
 		private boolean groupDeferredFilterOnBindingAssignments(List<SegmentFactor> factors,
@@ -1354,6 +1392,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			Deque<TupleExpr> remaining = new ArrayDeque<>(orderedJoinArgs);
 			Map<TupleExpr, Double> plannedPrefixRowsForArgs = plannedPrefixRowsForArgs(orderedJoinArgs);
 			boolean plannerProvidedSegment = plannerProvidedSegment(orderedJoinArgs);
+			if (plannerProvidedSegment) {
+				return buildPlannerProvidedJoinRoot(remaining);
+			}
 
 			if (remaining.size() > 1) {
 				double cardinality = 0;
@@ -1409,12 +1450,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return root;
 		}
 
+		private TupleExpr buildPlannerProvidedJoinRoot(Deque<TupleExpr> orderedJoinArgs) {
+			TupleExpr root = orderedJoinArgs.removeLast();
+			while (!orderedJoinArgs.isEmpty()) {
+				TupleExpr left = orderedJoinArgs.removeLast();
+				root = createJoinWithEstimatedResultSize(left, root, null, true);
+			}
+			return root;
+		}
+
 		private boolean plannerProvidedSegment(Deque<TupleExpr> orderedJoinArgs) {
 			if (plannerOrderedArgs.isEmpty()) {
 				return false;
 			}
 			for (TupleExpr orderedJoinArg : orderedJoinArgs) {
-				if (!plannerOrderedArgs.contains(orderedJoinArg)) {
+				if (!isPlannerOrderedFactor(orderedJoinArg)) {
 					return false;
 				}
 			}

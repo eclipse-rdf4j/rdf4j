@@ -48,6 +48,7 @@ final class SketchJoinOrderPlanner {
 	private static final int ARRAY_MEMO_MAX_FACTORS = 16;
 	private static final int FRONTIER_LIMIT = 4;
 	private static final int GREEDY_BEAM_WIDTH = 4;
+	private static final double STRUCTURAL_WORK_EQUIVALENCE_ROWS = 4.0d;
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
 	static final double SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS = 64.0d;
 	private static final Logger logger = LoggerFactory.getLogger(SketchJoinOrderPlanner.class);
@@ -518,9 +519,7 @@ final class SketchJoinOrderPlanner {
 		SketchBasedJoinEstimator.TuplePlanEstimate seedEstimate = applyUnlockedFilters(0L, seedMask,
 				factor.estimate());
 		return new StatePlan(seedMask, List.of(factorIndex), seedEstimate, stepWorkRows,
-				physicalEstimate.physicalComparable(), physicalEstimate.missingLookupComponents(),
-				physicalEstimate.directLookup() ? 1 : 0,
-				physicalEstimate.directLookup() ? physicalEstimate.accessRowsBeforeFilter() : 0.0d);
+				List.of(physicalStepRank(physicalEstimate)));
 	}
 
 	private StatePlan extendPlan(StatePlan prefix, int candidate) {
@@ -538,12 +537,18 @@ final class SketchJoinOrderPlanner {
 		List<Integer> nextOrder = new ArrayList<>(prefix.order().size() + 1);
 		nextOrder.addAll(prefix.order());
 		nextOrder.add(candidate);
+		List<PhysicalStepRank> nextPhysicalStepRanks = new ArrayList<>(prefix.physicalStepRanks().size() + 1);
+		nextPhysicalStepRanks.addAll(prefix.physicalStepRanks());
+		nextPhysicalStepRanks.add(physicalStepRank(physicalEstimate));
 		return new StatePlan(nextMask, List.copyOf(nextOrder), nextEstimate, prefix.totalWork() + stepWorkRows,
-				prefix.physicalExactnessComparable() && physicalEstimate.physicalComparable(),
-				prefix.missingLookupComponents() + physicalEstimate.missingLookupComponents(),
-				prefix.directLookupSteps() + (physicalEstimate.directLookup() ? 1 : 0),
-				prefix.directLookupAccessRows()
-						+ (physicalEstimate.directLookup() ? physicalEstimate.accessRowsBeforeFilter() : 0.0d));
+				List.copyOf(nextPhysicalStepRanks));
+	}
+
+	private PhysicalStepRank physicalStepRank(FactorPhysicalEstimate physicalEstimate) {
+		return new PhysicalStepRank(physicalEstimate.physicalComparable(),
+				physicalEstimate.missingLookupComponents(), physicalEstimate.directLookup(),
+				physicalEstimate.factorOutputRows(), physicalEstimate.workRows(),
+				physicalEstimate.lookupComponents(), physicalEstimate.accessRowsBeforeFilter());
 	}
 
 	private StatePlan optimizeGreedy() {
@@ -1012,6 +1017,7 @@ final class SketchJoinOrderPlanner {
 		double accessWorkRows = Double.NaN;
 		boolean physicalComparable = false;
 		int missingLookupComponents = 0;
+		int lookupComponents = 0;
 		boolean directLookup = false;
 		double accessRowsBeforeFilter = Double.NaN;
 		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = factorCostEstimate(factorIndex, mask,
@@ -1031,6 +1037,9 @@ final class SketchJoinOrderPlanner {
 				missingLookupComponents = componentCount(
 						factorCostEstimate.getStringMetrics()
 								.get(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS));
+				lookupComponents = componentCount(
+						factorCostEstimate.getStringMetrics()
+								.get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS));
 				accessRowsBeforeFilter = factorCostEstimate.getDoubleMetrics()
 						.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
 			}
@@ -1045,7 +1054,7 @@ final class SketchJoinOrderPlanner {
 			factorRows = defaultFactorRows;
 		}
 		return new FactorPhysicalEstimate(accessWorkRows, factorRows, physicalComparable, missingLookupComponents,
-				directLookup, accessRowsBeforeFilter, factorCostEstimate);
+				lookupComponents, directLookup, accessRowsBeforeFilter, factorCostEstimate);
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate factorCostEstimate(int factorIndex, long mask,
@@ -1234,7 +1243,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private String describeUnlockedFilter(JoinOrderPlanner.FilterConstraint filter) {
-		String label = filter.getDebugLabel();
+		String label = singleLineMetricValue(filter.getDebugLabel());
 		double passRatio = filter.getEstimatedPassRatio();
 		if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
 			label += " passRatio=" + passRatio;
@@ -1246,6 +1255,31 @@ final class SketchJoinOrderPlanner {
 			label += " evidence=" + filter.getEvidenceCount();
 		}
 		return label;
+	}
+
+	private String singleLineMetricValue(String value) {
+		if (value == null || value.isEmpty()) {
+			return "";
+		}
+		StringBuilder builder = new StringBuilder(value.length());
+		boolean previousWhitespace = false;
+		for (int i = 0; i < value.length(); i++) {
+			char c = value.charAt(i);
+			if (Character.isWhitespace(c)) {
+				if (!previousWhitespace && builder.length() > 0) {
+					builder.append(' ');
+				}
+				previousWhitespace = true;
+			} else {
+				builder.append(c);
+				previousWhitespace = false;
+			}
+		}
+		int length = builder.length();
+		if (length > 0 && builder.charAt(length - 1) == ' ') {
+			builder.setLength(length - 1);
+		}
+		return builder.toString();
 	}
 
 	private List<JoinOrderPlanner.PlanStep> buildPlanSteps(List<Integer> order) {
@@ -1473,6 +1507,10 @@ final class SketchJoinOrderPlanner {
 		if (incumbent == null) {
 			return true;
 		}
+		int connectivityComparison = compareOrderConnectivity(candidate.order(), incumbent.order());
+		if (connectivityComparison != 0 && structurallyComparableWork(candidate.totalWork(), incumbent.totalWork())) {
+			return connectivityComparison < 0;
+		}
 		int workComparison = Double.compare(candidate.totalWork(), incumbent.totalWork());
 		if (workComparison != 0) {
 			return workComparison < 0;
@@ -1481,30 +1519,77 @@ final class SketchJoinOrderPlanner {
 		if (rowsComparison != 0) {
 			return rowsComparison < 0;
 		}
-		if (factorCostModel != null
-				&& candidate.physicalExactnessComparable()
-				&& incumbent.physicalExactnessComparable()) {
-			int exactnessComparison = Integer.compare(candidate.missingLookupComponents(),
-					incumbent.missingLookupComponents());
-			if (exactnessComparison != 0) {
-				return exactnessComparison < 0;
-			}
-			int directLookupComparison = Integer.compare(incumbent.directLookupSteps(),
-					candidate.directLookupSteps());
-			if (directLookupComparison != 0) {
-				return directLookupComparison > 0;
-			}
-			int accessRowsComparison = Double.compare(candidate.directLookupAccessRows(),
-					incumbent.directLookupAccessRows());
-			if (accessRowsComparison != 0) {
-				return accessRowsComparison < 0;
-			}
+		int physicalOrderComparison = comparePhysicalStepOrder(candidate, incumbent);
+		if (physicalOrderComparison != 0) {
+			return physicalOrderComparison < 0;
 		}
-		int connectivityComparison = compareOrderConnectivity(candidate.order(), incumbent.order());
 		if (connectivityComparison != 0) {
 			return connectivityComparison < 0;
 		}
 		return compareOrder(candidate.order(), incumbent.order()) < 0;
+	}
+
+	private boolean structurallyComparableWork(double leftWorkRows, double rightWorkRows) {
+		if (!isFiniteNonNegative(leftWorkRows) || !isFiniteNonNegative(rightWorkRows)) {
+			return false;
+		}
+		return Math.abs(leftWorkRows - rightWorkRows) <= STRUCTURAL_WORK_EQUIVALENCE_ROWS;
+	}
+
+	private int comparePhysicalStepOrder(StatePlan left, StatePlan right) {
+		if (factorCostModel == null) {
+			return 0;
+		}
+		int size = Math.min(left.order().size(), right.order().size());
+		for (int i = 0; i < size; i++) {
+			if (left.order().get(i).equals(right.order().get(i))) {
+				continue;
+			}
+			int comparison = comparePhysicalStep(left.physicalStepRanks().get(i), right.physicalStepRanks().get(i));
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return 0;
+	}
+
+	private int comparePhysicalStep(PhysicalStepRank left, PhysicalStepRank right) {
+		if (!left.comparable() || !right.comparable()) {
+			return 0;
+		}
+		int missingComparison = Integer.compare(left.missingLookupComponents(), right.missingLookupComponents());
+		if (missingComparison != 0) {
+			return missingComparison;
+		}
+		int directLookupComparison = Boolean.compare(right.directLookup(), left.directLookup());
+		if (directLookupComparison != 0) {
+			return directLookupComparison;
+		}
+		int rowsComparison = compareFiniteAscending(left.factorOutputRows(), right.factorOutputRows());
+		if (rowsComparison != 0) {
+			return rowsComparison;
+		}
+		int workComparison = compareFiniteAscending(left.workRows(), right.workRows());
+		if (workComparison != 0) {
+			return workComparison;
+		}
+		int lookupComparison = Integer.compare(right.lookupComponents(), left.lookupComponents());
+		if (lookupComparison != 0) {
+			return lookupComparison;
+		}
+		return compareFiniteAscending(left.accessRowsBeforeFilter(), right.accessRowsBeforeFilter());
+	}
+
+	private static int compareFiniteAscending(double left, double right) {
+		boolean leftFinite = isFiniteNonNegative(left);
+		boolean rightFinite = isFiniteNonNegative(right);
+		if (leftFinite && rightFinite) {
+			return Double.compare(left, right);
+		}
+		if (leftFinite != rightFinite) {
+			return leftFinite ? -1 : 1;
+		}
+		return 0;
 	}
 
 	private int componentCount(String componentMask) {
@@ -1528,8 +1613,8 @@ final class SketchJoinOrderPlanner {
 			int leftIndex = left.get(i);
 			int rightIndex = right.get(i);
 			if (leftIndex != rightIndex) {
-				int leftConnections = futureJoinConnectionCount(leftIndex, leftMask | bit(leftIndex), leftMask);
-				int rightConnections = futureJoinConnectionCount(rightIndex, rightMask | bit(rightIndex), rightMask);
+				int leftConnections = futureConnectionCount(leftIndex, leftMask | bit(leftIndex), leftMask);
+				int rightConnections = futureConnectionCount(rightIndex, rightMask | bit(rightIndex), rightMask);
 				int comparison = Integer.compare(rightConnections, leftConnections);
 				if (comparison != 0) {
 					return comparison;
@@ -1539,6 +1624,11 @@ final class SketchJoinOrderPlanner {
 			rightMask |= bit(rightIndex);
 		}
 		return 0;
+	}
+
+	private int futureConnectionCount(int factorIndex, long nextMask, long previousMask) {
+		return futureJoinConnectionCount(factorIndex, nextMask, previousMask)
+				+ futureDeferredFilterConnectionCount(factorIndex, nextMask, previousMask);
 	}
 
 	private int futureJoinConnectionCount(int factorIndex, long nextMask, long previousMask) {
@@ -1552,6 +1642,35 @@ final class SketchJoinOrderPlanner {
 		for (int i = 0; i < factors.size(); i++) {
 			if (!contains(nextMask, i) && (joinVarMasks[i] & introducedVars) != 0L) {
 				futureConnections++;
+			}
+		}
+		return futureConnections;
+	}
+
+	private int futureDeferredFilterConnectionCount(int factorIndex, long nextMask, long previousMask) {
+		if (deferredFilters.isEmpty()) {
+			return 0;
+		}
+		long previousBound = boundVariableMask(previousMask);
+		long introducedVars = bindingVarMasks[factorIndex] & ~previousBound;
+		if (introducedVars == 0L) {
+			return 0;
+		}
+
+		long nextBound = boundVariableMask(nextMask);
+		int futureConnections = 0;
+		for (int i = 0; i < deferredFilters.size(); i++) {
+			long requiredVars = deferredFilterRequiredVarMasks[i];
+			if ((previousBound & requiredVars) == requiredVars
+					|| (requiredVars & introducedVars) == 0L
+					|| (nextBound & requiredVars) == requiredVars) {
+				continue;
+			}
+			long missingVars = requiredVars & ~nextBound;
+			for (int j = 0; j < factors.size(); j++) {
+				if (!contains(nextMask, j) && (bindingVarMasks[j] & missingVars) != 0L) {
+					futureConnections++;
+				}
 			}
 		}
 		return futureConnections;
@@ -1712,17 +1831,21 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private record StatePlan(long mask, List<Integer> order, SketchBasedJoinEstimator.TuplePlanEstimate estimate,
-			double totalWork, boolean physicalExactnessComparable, int missingLookupComponents, int directLookupSteps,
-			double directLookupAccessRows) {
+			double totalWork, List<PhysicalStepRank> physicalStepRanks) {
 		private StatePlan {
 			Objects.requireNonNull(order, "order");
 			Objects.requireNonNull(estimate, "estimate");
+			Objects.requireNonNull(physicalStepRanks, "physicalStepRanks");
 		}
 	}
 
 	private record FactorPhysicalEstimate(double workRows, double factorOutputRows, boolean physicalComparable,
-			int missingLookupComponents, boolean directLookup, double accessRowsBeforeFilter,
+			int missingLookupComponents, int lookupComponents, boolean directLookup, double accessRowsBeforeFilter,
 			JoinFactorCostModel.FactorCostEstimate factorCostEstimate) {
+	}
+
+	private record PhysicalStepRank(boolean comparable, int missingLookupComponents, boolean directLookup,
+			double factorOutputRows, double workRows, int lookupComponents, double accessRowsBeforeFilter) {
 	}
 
 	private record FactorBuildResult(List<PlanFactor> factors,

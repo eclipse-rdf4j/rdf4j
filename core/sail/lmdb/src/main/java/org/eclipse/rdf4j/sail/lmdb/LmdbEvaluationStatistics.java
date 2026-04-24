@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.AbstractSet;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -217,11 +216,11 @@ class LmdbEvaluationStatistics
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH, (double) prefixLength);
 		}
 		stringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
-				componentMaskString(accessPathEstimate == null ? accessShape.physicalLookupComponentMask()
+				componentMaskString(accessPathEstimate == null ? accessShape.lookupBoundComponentMask()
 						: accessPathEstimate.lookupComponentMask()));
 		stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
 				accessMode(accessPathEstimate));
-		int missingLookupComponentMask = accessPathEstimate == null ? accessShape.physicalLookupComponentMask()
+		int missingLookupComponentMask = accessPathEstimate == null ? accessShape.lookupBoundComponentMask()
 				: accessPathEstimate.missingLookupComponentMask();
 		if (missingLookupComponentMask != 0) {
 			stringMetrics.put(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS,
@@ -363,13 +362,19 @@ class LmdbEvaluationStatistics
 		return getCardinality(factor);
 	}
 
+	private int accessLookupComponentMask(SketchBasedJoinEstimator.AccessShape accessShape) {
+		return accessShape.lookupBoundComponentMask() & ~accessShape.filterLookupComponentMask();
+	}
+
 	private boolean canApplyFilterAtAccess(SketchBasedJoinEstimator.AccessShape accessShape,
 			int prefixComponentMask) {
 		int filterLookupComponentMask = accessShape.filterLookupComponentMask();
 		if (filterLookupComponentMask == 0) {
 			return false;
 		}
-		return (prefixComponentMask & filterLookupComponentMask) == filterLookupComponentMask;
+		int accessLookupComponentMask = accessLookupComponentMask(accessShape);
+		return (prefixComponentMask & accessLookupComponentMask) == accessLookupComponentMask
+				&& (prefixComponentMask & filterLookupComponentMask) == filterLookupComponentMask;
 	}
 
 	private String componentMaskString(int componentMask) {
@@ -398,35 +403,34 @@ class LmdbEvaluationStatistics
 	private AccessPathEstimate chooseAccessPath(SketchBasedJoinEstimator.AccessShape accessShape,
 			double factorRows) {
 		AccessPathEstimate bestEstimate = null;
-		List<AccessPathCandidate> candidates = accessPathCandidates(accessShape);
+		List<TripleStore.IndexAccessPath> candidates = tripleStore
+				.indexAccessPaths(accessShape.lookupBoundComponentMask());
 		int candidateCount = candidates.size();
-		int desiredLookupComponentMask = desiredLookupComponentMask(accessShape);
-		for (AccessPathCandidate candidate : candidates) {
+		for (TripleStore.IndexAccessPath candidate : candidates) {
 			double rowsBefore = accessShape.estimateAccessRows(candidate.prefixComponentMask());
 			if (!isFiniteNonNegative(rowsBefore)) {
 				continue;
 			}
-			double rowsAfter = rowsBefore;
-			if (canApplyFilterAtAccess(accessShape, candidate.prefixComponentMask())
+			boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, candidate.prefixComponentMask())
 					&& isFiniteNonNegative(accessShape.filterMultiplier())
-					&& accessShape.filterMultiplier() < 1.0d) {
-				rowsAfter = rowsBefore * accessShape.filterMultiplier();
-			}
-			if (isFiniteNonNegative(factorRows)) {
-				rowsAfter = Math.min(rowsAfter, factorRows);
-			}
+					&& accessShape.filterMultiplier() < 1.0d;
+			double rowsAfter = filterAppliedAtAccess ? rowsBefore * accessShape.filterMultiplier() : rowsBefore;
 			if (!isFiniteNonNegative(rowsAfter)) {
 				continue;
 			}
-			boolean directLookup = candidate.missingLookupComponentMask() == 0;
-			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, rowsBefore) : rowsBefore;
+			boolean directLookup = accessShape.isDirectLookup(candidate.prefixComponentMask());
+			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, rowsAfter)
+					: filterAppliedAtAccess ? rowsAfter : rowsBefore;
+			if (isFiniteNonNegative(factorRows)) {
+				workRows = Math.max(workRows, factorRows);
+			}
 			if (!isFiniteNonNegative(workRows)) {
 				continue;
 			}
 			AccessPathEstimate estimate = new AccessPathEstimate(workRows, rowsBefore, rowsAfter,
 					candidate.indexFieldSequence(), candidate.prefixLength(), candidate.prefixComponentMask(),
-					directLookup, candidate.lookupComponentMask(), candidate.missingLookupComponentMask(),
-					candidateCount);
+					directLookup, accessShape.lookupBoundComponentMask(),
+					accessShape.lookupBoundComponentMask() & ~candidate.prefixComponentMask(), candidateCount);
 			if (bestEstimate == null || compareAccessPathEstimate(estimate, bestEstimate) < 0) {
 				bestEstimate = estimate;
 			}
@@ -436,46 +440,9 @@ class LmdbEvaluationStatistics
 		}
 		return isFiniteNonNegative(factorRows)
 				? new AccessPathEstimate(factorRows, factorRows, factorRows, "", 0, 0, false,
-						desiredLookupComponentMask, desiredLookupComponentMask,
+						accessShape.lookupBoundComponentMask(), accessShape.lookupBoundComponentMask(),
 						candidateCount)
 				: null;
-	}
-
-	private List<AccessPathCandidate> accessPathCandidates(SketchBasedJoinEstimator.AccessShape accessShape) {
-		int patternConstantComponentMask = accessShape.patternConstantComponentMask();
-		int variableLookupComponentMask = desiredLookupComponentMask(accessShape) & ~patternConstantComponentMask;
-		Map<String, AccessPathCandidate> dedupedCandidates = new LinkedHashMap<>();
-		for (int variableLookupMask : effectiveLookupVariableMasks(variableLookupComponentMask)) {
-			int effectiveLookupMask = patternConstantComponentMask | variableLookupMask;
-			for (TripleStore.IndexAccessPath candidate : tripleStore.indexAccessPaths(effectiveLookupMask)) {
-				String candidateKey = candidate.indexFieldSequence() + '#' + candidate.prefixComponentMask();
-				AccessPathCandidate accessPathCandidate = new AccessPathCandidate(candidate.indexFieldSequence(),
-						candidate.prefixLength(), candidate.prefixComponentMask(), effectiveLookupMask,
-						effectiveLookupMask & ~candidate.prefixComponentMask());
-				AccessPathCandidate existingCandidate = dedupedCandidates.get(candidateKey);
-				if (existingCandidate == null || Integer.bitCount(accessPathCandidate.lookupComponentMask()) > Integer
-						.bitCount(existingCandidate.lookupComponentMask())) {
-					dedupedCandidates.put(candidateKey, accessPathCandidate);
-				}
-			}
-		}
-		return List.copyOf(dedupedCandidates.values());
-	}
-
-	private int desiredLookupComponentMask(SketchBasedJoinEstimator.AccessShape accessShape) {
-		return accessShape.physicalLookupComponentMask();
-	}
-
-	private List<Integer> effectiveLookupVariableMasks(int variableLookupComponentMask) {
-		List<Integer> masks = new ArrayList<>();
-		for (int mask = variableLookupComponentMask;; mask = (mask - 1) & variableLookupComponentMask) {
-			masks.add(mask);
-			if (mask == 0) {
-				break;
-			}
-		}
-		masks.sort(Collections.reverseOrder(Integer::compare));
-		return masks;
 	}
 
 	private int compareAccessPathEstimate(AccessPathEstimate left, AccessPathEstimate right) {
@@ -562,43 +529,6 @@ class LmdbEvaluationStatistics
 
 		int candidateCount() {
 			return candidateCount;
-		}
-	}
-
-	private static final class AccessPathCandidate {
-		private final String indexFieldSequence;
-		private final int prefixLength;
-		private final int prefixComponentMask;
-		private final int lookupComponentMask;
-		private final int missingLookupComponentMask;
-
-		private AccessPathCandidate(String indexFieldSequence, int prefixLength, int prefixComponentMask,
-				int lookupComponentMask, int missingLookupComponentMask) {
-			this.indexFieldSequence = indexFieldSequence;
-			this.prefixLength = prefixLength;
-			this.prefixComponentMask = prefixComponentMask;
-			this.lookupComponentMask = lookupComponentMask;
-			this.missingLookupComponentMask = missingLookupComponentMask;
-		}
-
-		String indexFieldSequence() {
-			return indexFieldSequence;
-		}
-
-		int prefixLength() {
-			return prefixLength;
-		}
-
-		int prefixComponentMask() {
-			return prefixComponentMask;
-		}
-
-		int lookupComponentMask() {
-			return lookupComponentMask;
-		}
-
-		int missingLookupComponentMask() {
-			return missingLookupComponentMask;
 		}
 	}
 
