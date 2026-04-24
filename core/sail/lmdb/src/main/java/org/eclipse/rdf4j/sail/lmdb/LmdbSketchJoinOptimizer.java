@@ -22,15 +22,28 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -108,8 +121,111 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Difference difference) {
+			TupleExpr replacement = rewriteRedundantPatternMinusFilter(difference);
+			if (replacement != null) {
+				replacement.visit(this);
+				return;
+			}
+
+			difference.getLeftArg().visit(this);
+			difference.getRightArg().visit(this);
+		}
+
+		@Override
 		public void meet(Join join) {
 			optimizeJoinReplacement(join, join, List.of());
+		}
+
+		private TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {
+			if (!(difference.getRightArg() instanceof Filter)) {
+				return null;
+			}
+
+			Filter rightFilter = (Filter) difference.getRightArg();
+			if (!(rightFilter.getArg() instanceof StatementPattern)) {
+				return null;
+			}
+
+			StatementPattern rightPattern = (StatementPattern) rightFilter.getArg();
+			Set<String> conditionVars = VarNameCollector.process(rightFilter.getCondition());
+			if (!rightPattern.getBindingNames().containsAll(conditionVars)
+					|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
+					|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
+					|| !containsEquivalentRequiredPattern(difference.getLeftArg(), rightPattern)) {
+				return null;
+			}
+
+			Filter replacement = new Filter(difference.getLeftArg().clone(),
+					new Not(rightFilter.getCondition().clone()));
+			difference.replaceWith(replacement);
+			return replacement;
+		}
+
+		private boolean containsEquivalentRequiredPattern(TupleExpr tupleExpr, StatementPattern expectedPattern) {
+			if (tupleExpr instanceof StatementPattern) {
+				return sameStatementPattern((StatementPattern) tupleExpr, expectedPattern);
+			}
+			if (tupleExpr instanceof Join) {
+				Join join = (Join) tupleExpr;
+				return containsEquivalentRequiredPattern(join.getLeftArg(), expectedPattern)
+						|| containsEquivalentRequiredPattern(join.getRightArg(), expectedPattern);
+			}
+			if (tupleExpr instanceof LeftJoin) {
+				return containsEquivalentRequiredPattern(((LeftJoin) tupleExpr).getLeftArg(), expectedPattern);
+			}
+			if (tupleExpr instanceof Difference) {
+				return containsEquivalentRequiredPattern(((Difference) tupleExpr).getLeftArg(), expectedPattern);
+			}
+			if (tupleExpr instanceof UnaryTupleOperator) {
+				return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
+			}
+			return false;
+		}
+
+		private boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
+			return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
+					&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
+					&& samePatternVar(left.getObjectVar(), right.getObjectVar())
+					&& samePatternVar(left.getContextVar(), right.getContextVar());
+		}
+
+		private boolean samePatternVar(Var left, Var right) {
+			if (left == null || right == null) {
+				return left == right;
+			}
+			if (left.hasValue() || right.hasValue()) {
+				return left.hasValue() && right.hasValue() && left.getValue().equals(right.getValue());
+			}
+			return left.getName() != null && left.getName().equals(right.getName());
+		}
+
+		private boolean isSafeTotalMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {
+			if (condition instanceof And) {
+				And and = (And) condition;
+				return isSafeTotalMinusLocalCondition(and.getLeftArg(), assuredConditionVars)
+						&& isSafeTotalMinusLocalCondition(and.getRightArg(), assuredConditionVars);
+			}
+			if (condition instanceof FunctionCall) {
+				FunctionCall functionCall = (FunctionCall) condition;
+				return FN.CONTAINS.stringValue().equals(functionCall.getURI()) && functionCall.getArgs().size() == 2
+						&& isSafeStringExpression(functionCall.getArgs().get(0), assuredConditionVars)
+						&& isSafeStringExpression(functionCall.getArgs().get(1), assuredConditionVars);
+			}
+			return false;
+		}
+
+		private boolean isSafeStringExpression(ValueExpr expression, Set<String> assuredConditionVars) {
+			if (expression instanceof Str) {
+				ValueExpr arg = ((Str) expression).getArg();
+				return arg instanceof Var && assuredConditionVars.contains(((Var) arg).getName());
+			}
+			if (expression instanceof ValueConstant) {
+				Value value = ((ValueConstant) expression).getValue();
+				return value instanceof Literal && !((Literal) value).getLanguage().isPresent()
+						&& XMLSchema.STRING.equals(((Literal) value).getDatatype());
+			}
+			return false;
 		}
 
 		private void optimizeJoinReplacement(TupleExpr replaceTarget, Join join, List<Filter> additionalFilters) {
@@ -148,12 +264,20 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				if (filterArg instanceof Join) {
 					collectJoinArgs(filterArg, collected);
 					collected.deferredFilters.addAll(filters);
+				} else if (canDeferSinglePatternFilter(filterArg)) {
+					collected.joinArgs.add(filterArg);
+					collected.deferredFilters.addAll(filters);
 				} else {
 					collected.joinArgs.add(tupleExpr);
 				}
 			} else {
 				collected.joinArgs.add(tupleExpr);
 			}
+		}
+
+		private boolean canDeferSinglePatternFilter(TupleExpr filterArg) {
+			return !LmdbJoinPlanSupport.isJoinOrderSeparator(filterArg)
+					&& LmdbJoinPlanSupport.collectPatternIdentities(filterArg).size() == 1;
 		}
 
 		private TupleExpr unwrapJoinFilterChain(Filter filter, List<Filter> filters) {
@@ -353,6 +477,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (LmdbJoinPlanSupport.isValidPassRatio(passRatio)) {
 				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
 			}
+			filter.setStringMetricPlanned(TelemetryMetricNames.DEFERRED_FILTER_SCOPE, placement);
 			filter.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_STRATEGY, "lmdb-sketch-filter-" + placement);
 			filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE,
 					deferredFilter.passEstimate.getSource().name().toLowerCase());

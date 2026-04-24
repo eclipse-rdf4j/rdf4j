@@ -29,9 +29,6 @@ final class LmdbSmallLiteralFilterAnchors {
 			return;
 		}
 		for (DeferredFilter filter : filters) {
-			if (filter.patternLocalBase != null) {
-				continue;
-			}
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.condition);
 			if (anchor == null) {
 				continue;

@@ -51,6 +51,7 @@ final class LmdbDeferredFilterPlacer {
 		Set<String> prefixBindingNames = new HashSet<>(boundBeforeSegment);
 		for (int i = 0; i < orderedJoinArgs.size(); i++) {
 			TupleExpr optimized = factorOptimizer.optimize(orderedJoinArgs.get(i), prefixBindingNames);
+			optimized = applyCompatibleLocalDeferredFilters(optimized, pendingFilters);
 			Set<StatementPattern> currentPatterns = LmdbJoinPlanSupport.collectPatternIdentities(optimized);
 			optimized = applyPrefixBindingDeferredFilters(optimized, pendingFilters, prefixBindingNames,
 					currentPatterns, remainingPatternsAfterFactor.get(i));
@@ -109,6 +110,29 @@ final class LmdbDeferredFilterPlacer {
 		}
 		return prefixFilters.isEmpty() ? tupleExpr
 				: filterWrapper.wrap(tupleExpr, prefixFilters, "bindingPrefix");
+	}
+
+	private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {
+		if (deferredFilters.isEmpty()) {
+			return tupleExpr;
+		}
+		List<DeferredFilter> localFilters = new ArrayList<>();
+		for (int i = 0; i < deferredFilters.size();) {
+			DeferredFilter deferredFilter = deferredFilters.get(i);
+			if (!canApplyDeferredFilterToTupleExpr(deferredFilter, tupleExpr)) {
+				i++;
+				continue;
+			}
+			localFilters.add(deferredFilter);
+			deferredFilters.remove(i);
+		}
+		return localFilters.isEmpty() ? tupleExpr : filterWrapper.wrap(tupleExpr, localFilters, "localPattern");
+	}
+
+	private boolean canApplyDeferredFilterToTupleExpr(DeferredFilter deferredFilter, TupleExpr tupleExpr) {
+		return tupleExpr instanceof StatementPattern
+				&& deferredFilter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP
+				&& deferredFilter.patternLocalBase == tupleExpr;
 	}
 
 	private boolean hasPendingSplitExistsFilter(List<DeferredFilter> deferredFilters, DeferredFilter candidate,

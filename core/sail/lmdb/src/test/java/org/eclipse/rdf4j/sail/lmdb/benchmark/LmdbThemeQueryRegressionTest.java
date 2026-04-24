@@ -380,9 +380,54 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("finiteLiteralFilterQueries")
+	void finiteLiteralFiltersUseValuesAnchors(FiniteLiteralFilterQuery target, @TempDir Path dataDir)
+			throws Exception {
+		Path themeDir = prepareThemeStore(dataDir, target.theme(), target.queryIndex());
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, target.theme(), target.queryIndex());
+				assertPlannerDiagnosticsPresent(target.theme(), target.queryIndex(), snapshot.plan());
+				assertContains(snapshot.renderedQuery(), target.valuesClause());
+				assertBefore(snapshot.renderedQuery(), target.valuesClause(), target.lookupPattern(),
+						target + " should bind the finite literal set before the selective lookup\n"
+								+ snapshot.plan());
+				assertBefore(snapshot.renderedQuery(), target.lookupPattern(), target.broadPattern(),
+						target + " should use the bound literal lookup before the broad type scan\n"
+								+ snapshot.plan());
+				assertBefore(snapshot.plan(),
+						"BindingSetAssignment ([[" + target.bindingName() + "=" + target.firstLiteral(),
+						"value=" + target.predicateIri(),
+						target + " should anchor the finite literal set before the predicate access");
+				assertBoundObjectLookup(snapshot.plan(), target);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
 	private static Stream<Theme> highValueThemes() {
 		return Stream.of(Theme.PHARMA, Theme.LIBRARY, Theme.MEDICAL_RECORDS, Theme.HIGHLY_CONNECTED, Theme.ENGINEERING,
 				Theme.ELECTRICAL_GRID, Theme.TRAIN, Theme.SOCIAL_MEDIA);
+	}
+
+	private static Stream<FiniteLiteralFilterQuery> finiteLiteralFilterQueries() {
+		return Stream.of(
+				new FiniteLiteralFilterQuery(Theme.ENGINEERING, 4,
+						"VALUES ?name { \"Component 1\" \"Component 2\" }",
+						"?component <http://example.com/theme/engineering/name> ?name .",
+						"?component a <http://example.com/theme/engineering/Component> .",
+						"http://example.com/theme/engineering/name", "name", "\"Component 1\""),
+				new FiniteLiteralFilterQuery(Theme.LIBRARY, 4,
+						"VALUES ?title { \"Book 1\" \"Book 2\" }",
+						"?book <http://example.com/theme/library/title> ?title .",
+						"?book a <http://example.com/theme/library/Book> .",
+						"http://example.com/theme/library/title", "title", "\"Book 1\""));
 	}
 
 	private static Path prepareThemeStore(Path dataDir, Theme theme, int... primeIndexes) throws Exception {
@@ -552,6 +597,29 @@ class LmdbThemeQueryRegressionTest {
 								+ " to retain the selective anchor before the broad scan");
 			}
 		}
+	}
+
+	private static void assertBoundObjectLookup(String plan, FiniteLiteralFilterQuery target) {
+		int predicateIndex = plan.indexOf("value=" + target.predicateIri());
+		if (predicateIndex < 0) {
+			throw new AssertionError(target + " plan should include predicate " + target.predicateIri() + ":\n"
+					+ plan);
+		}
+		String pattern = statementPatternWindow(plan, predicateIndex);
+		assertContains(pattern, "o: Var (name=" + target.bindingName() + ") (bindingState=bound)");
+	}
+
+	private static String statementPatternWindow(String plan, int predicateIndex) {
+		int start = plan.lastIndexOf("StatementPattern", predicateIndex);
+		int end = plan.indexOf("StatementPattern", predicateIndex);
+		if (start < 0) {
+			throw new AssertionError("Unable to isolate statement pattern around offset " + predicateIndex + ":\n"
+					+ plan);
+		}
+		if (end < 0) {
+			end = Math.min(plan.length(), predicateIndex + 1200);
+		}
+		return plan.substring(start, end);
 	}
 
 	private static void assertPlannerDiagnosticsPresent(Theme theme, int queryIndex, String plan) {
@@ -752,5 +820,16 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	private record ShapeAnchor(Theme theme, int queryIndex, String first, String second) {
+	}
+
+	private record FiniteLiteralFilterQuery(
+			Theme theme,
+			int queryIndex,
+			String valuesClause,
+			String lookupPattern,
+			String broadPattern,
+			String predicateIri,
+			String bindingName,
+			String firstLiteral) {
 	}
 }

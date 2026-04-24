@@ -42,6 +42,7 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 
 	private static final String THEMES_PROPERTY = "rdf4j.lmdb.flaggedThemeRegression.themes";
+	private static final String QUERY_INDEXES_PROPERTY = "rdf4j.lmdb.flaggedThemeRegression.queryIndexes";
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final List<Expectation> EXPECTATIONS = List.of(
@@ -165,14 +166,31 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 	}
 
 	private static List<Expectation> expectationsForTheme(Theme theme) {
+		List<Integer> queryIndexes = selectedQueryIndexes();
 		return EXPECTATIONS.stream()
 				.filter(expectation -> expectation.theme == theme)
+				.filter(expectation -> queryIndexes.isEmpty() || queryIndexes.contains(expectation.queryIndex))
 				.collect(Collectors.toList());
 	}
 
 	private static List<Expectation> expectationsForThemes(List<Theme> themes) {
+		List<Integer> queryIndexes = selectedQueryIndexes();
 		return EXPECTATIONS.stream()
 				.filter(expectation -> themes.contains(expectation.theme))
+				.filter(expectation -> queryIndexes.isEmpty() || queryIndexes.contains(expectation.queryIndex))
+				.collect(Collectors.toList());
+	}
+
+	private static List<Integer> selectedQueryIndexes() {
+		String selectedQueryIndexes = System.getProperty(QUERY_INDEXES_PROPERTY, "").trim();
+		if (selectedQueryIndexes.isEmpty()) {
+			return List.of();
+		}
+		return Pattern.compile(",")
+				.splitAsStream(selectedQueryIndexes)
+				.map(String::trim)
+				.filter(queryIndex -> !queryIndex.isEmpty())
+				.map(Integer::parseInt)
 				.collect(Collectors.toList());
 	}
 

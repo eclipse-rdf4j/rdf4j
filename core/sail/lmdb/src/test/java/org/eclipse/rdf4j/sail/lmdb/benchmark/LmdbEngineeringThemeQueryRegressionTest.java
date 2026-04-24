@@ -110,6 +110,36 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		}
 	}
 
+	@Test
+	void componentNameFilterUsesFiniteValuesAnchor(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ENGINEERING;
+		Path themeDir = dataDir.resolve(theme.name());
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+				loadData(repository, theme);
+				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+				primeLearnedFilterStats(repository, theme, 4);
+				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+
+			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 4);
+				assertEngineeringQ4FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -160,18 +190,26 @@ class LmdbEngineeringThemeQueryRegressionTest {
 	private static void assertEngineeringQ7DevelopPlanShape(String renderedQuery, String plan) {
 		assertContains(renderedQuery, "VALUES ?name { \"REQ-1000\" \"REQ-1001\" }");
 		assertBefore(renderedQuery,
-				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"VALUES ?name { \"REQ-1000\" \"REQ-1001\" }",
 				"?requirement <http://example.com/theme/engineering/name> ?name .",
-				"Engineering q7 should keep the Requirement rdf:type anchor before the bound name filter\n" + plan);
+				"Engineering q7 should bind the finite requirement-name set before the name lookup\n" + plan);
+		assertBefore(renderedQuery,
+				"?requirement <http://example.com/theme/engineering/name> ?name .",
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"Engineering q7 should use the bound name lookup before the rdf:type direct lookup\n" + plan);
 		assertBefore(renderedQuery,
 				"?requirement <http://example.com/theme/engineering/name> ?name .",
 				"FILTER EXISTS",
 				"Engineering q7 should apply the name filter before evaluating EXISTS\n" + plan);
 		assertBefore(plan,
-				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"BindingSetAssignment ([[name=\"REQ-1000\"], [name=\"REQ-1001\"]])",
 				"value=http://example.com/theme/engineering/name",
-				"Engineering q7 plan should keep the Requirement rdf:type anchor before the name filter");
-		assertNamePatternUsesBoundSubject(plan, "Engineering q7", "requirement");
+				"Engineering q7 should anchor the finite name set before the name access");
+		assertBefore(plan,
+				"value=http://example.com/theme/engineering/name",
+				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"Engineering q7 plan should use the bound name lookup before the rdf:type direct lookup");
+		assertNamePatternUsesBoundValue(plan, "Engineering q7", false);
 		assertContains(plan, "ValueConstant (value=\"REQ-1000\")");
 	}
 
@@ -189,6 +227,23 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		assertMinusSatisfiesStaysNewScope(plan);
 	}
 
+	private static void assertEngineeringQ4FastPlanShape(String renderedQuery, String plan) {
+		assertContains(renderedQuery, "VALUES ?name { \"Component 1\" \"Component 2\" }");
+		assertBefore(renderedQuery,
+				"VALUES ?name { \"Component 1\" \"Component 2\" }",
+				"?component <http://example.com/theme/engineering/name> ?name .",
+				"Engineering q4 should bind the finite component-name set before the name lookup\n" + plan);
+		assertBefore(renderedQuery,
+				"?component <http://example.com/theme/engineering/name> ?name .",
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"Engineering q4 should use the bound name lookup before broad rdf:type scan\n" + plan);
+		assertBefore(plan,
+				"BindingSetAssignment ([[name=\"Component 1\"], [name=\"Component 2\"]])",
+				"value=http://example.com/theme/engineering/name",
+				"Engineering q4 should anchor the finite name set before the name access");
+		assertNamePatternUsesBoundValue(plan, "Engineering q4", false);
+	}
+
 	private static void assertDevelopOperatorSkeleton(String plan) {
 		assertOrdered(plan,
 				"Projection",
@@ -203,7 +258,7 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"LeftJoin",
 				"Join (JoinIterator)",
 				"BindingSetAssignment ([[name=\"Assembly 1\"], [name=\"Assembly 2\"]])",
-				"deferredFilterScope=localPattern) [right]",
+				"deferredFilterScope=localPattern)",
 				"Or",
 				"ValueConstant (value=\"Assembly 1\")",
 				"ValueConstant (value=\"Assembly 2\")",
@@ -221,6 +276,10 @@ class LmdbEngineeringThemeQueryRegressionTest {
 	}
 
 	private static void assertNamePatternUsesBoundValue(String plan, String label) {
+		assertNamePatternUsesBoundValue(plan, label, true);
+	}
+
+	private static void assertNamePatternUsesBoundValue(String plan, String label, boolean requirePlannerMetrics) {
 		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
 		if (predicateIndex < 0) {
 			throw new AssertionError(label + " plan should include the name pattern:\n" + plan);
@@ -228,8 +287,10 @@ class LmdbEngineeringThemeQueryRegressionTest {
 
 		String pattern = statementPatternWindow(plan, predicateIndex, "StatementPattern");
 		assertContains(pattern, "o: Var (name=name) (bindingState=bound)");
-		assertContains(pattern, "plannedBoundVars=[name]");
-		assertContains(pattern, "plannedLookupComponents=[P, O]");
+		if (requirePlannerMetrics) {
+			assertContainsAny(pattern, "plannedBoundVars=[name]", "plannedBoundVars=name");
+			assertContains(pattern, "plannedLookupComponents=[P, O]");
+		}
 	}
 
 	private static void assertNamePatternUsesBoundSubject(String plan, String label, String subjectName) {
@@ -282,6 +343,16 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		if (!value.contains(expected)) {
 			throw new AssertionError("Expected to find `" + expected + "` in:\n" + value);
 		}
+	}
+
+	private static void assertContainsAny(String value, String... expectedTokens) {
+		for (String expected : expectedTokens) {
+			if (value.contains(expected)) {
+				return;
+			}
+		}
+		throw new AssertionError("Expected to find one of `" + String.join("`, `", expectedTokens) + "` in:\n"
+				+ value);
 	}
 
 	private static void assertBefore(String value, String first, String second, String message) {
