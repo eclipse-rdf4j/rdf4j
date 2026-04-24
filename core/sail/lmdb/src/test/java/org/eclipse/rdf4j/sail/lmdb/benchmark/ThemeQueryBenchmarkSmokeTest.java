@@ -73,8 +73,9 @@ class ThemeQueryBenchmarkSmokeTest {
 
 	@Test
 	void secondBenchmarkTrialReusesPersistedJoinEstimatorSnapshot() throws Exception {
-		Path snapshot = Path.of("target", "lmdb-theme-query-benchmark", "complete", "join-estimator.rjes");
-		Path sketches = Path.of("target", "lmdb-theme-query-benchmark", "complete", "join-estimator.rjes.sketches");
+		Path store = Path.of("target", "lmdb-theme-query-benchmark", "complete", "join-estimator.rjes");
+		Path metadata = store.resolve("metadata.bin");
+		Path globalSketches = store.resolve("a").resolve("global.sketches");
 
 		ThemeQueryBenchmark first = new ThemeQueryBenchmark();
 		first.themeName = Theme.MEDICAL_RECORDS.name();
@@ -86,10 +87,13 @@ class ThemeQueryBenchmarkSmokeTest {
 			first.tearDown();
 		}
 
-		assertTrue(Files.exists(snapshot), "Expected persisted join-estimator snapshot after first benchmark trial");
-		assertTrue(Files.exists(sketches), "Expected persisted join-estimator sketches after first benchmark trial");
-		long snapshotLastModified = Files.getLastModifiedTime(snapshot).toMillis();
-		long sketchesLastModified = Files.getLastModifiedTime(sketches).toMillis();
+		assertTrue(Files.isDirectory(store),
+				"Expected persisted join-estimator store directory after first benchmark trial");
+		assertTrue(Files.exists(metadata), "Expected persisted join-estimator metadata after first benchmark trial");
+		assertTrue(Files.exists(globalSketches),
+				"Expected persisted join-estimator sketch category file after first benchmark trial");
+		long metadataLastModified = Files.getLastModifiedTime(metadata).toMillis();
+		long globalSketchesLastModified = Files.getLastModifiedTime(globalSketches).toMillis();
 
 		ThemeQueryBenchmark second = new ThemeQueryBenchmark();
 		second.themeName = Theme.MEDICAL_RECORDS.name();
@@ -101,9 +105,9 @@ class ThemeQueryBenchmarkSmokeTest {
 			second.tearDown();
 		}
 
-		assertEquals(snapshotLastModified, Files.getLastModifiedTime(snapshot).toMillis(),
-				"Second benchmark trial should reuse the persisted join-estimator snapshot instead of rewriting it");
-		assertEquals(sketchesLastModified, Files.getLastModifiedTime(sketches).toMillis(),
+		assertEquals(metadataLastModified, Files.getLastModifiedTime(metadata).toMillis(),
+				"Second benchmark trial should reuse the persisted join-estimator metadata instead of rewriting it");
+		assertEquals(globalSketchesLastModified, Files.getLastModifiedTime(globalSketches).toMillis(),
 				"Second benchmark trial should reuse the persisted join-estimator sketches instead of rebuilding them");
 	}
 

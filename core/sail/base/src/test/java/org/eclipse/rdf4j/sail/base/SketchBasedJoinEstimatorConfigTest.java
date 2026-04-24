@@ -12,12 +12,16 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,6 +48,10 @@ class SketchBasedJoinEstimatorConfigTest {
 	private static final String SKEW_RATIO_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionSkewRatio";
 	private static final String ROW_BUDGET_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionRowBudget";
 	private static final String SAMPLE_SIZE_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionSampleSize";
+	private static final String NOMINAL_ENTRIES_PROPERTY = PROPERTY_PREFIX + "nominalEntries";
+	private static final String SKETCH_K_PROPERTY = PROPERTY_PREFIX + "sketchK";
+	private static final String ESTIMATOR_MEMORY_BUDGET_PERCENT_PROPERTY = PROPERTY_PREFIX
+			+ "estimatorMemoryBudgetPercent";
 
 	private StubSailStore store;
 	private Resource s1;
@@ -157,14 +165,13 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void defaultsUseFixedBucketsAndSketchDefaultAccuracy() throws Exception {
+	void defaultsUseRuntimeMemoryPolicyWithoutGrowingPastHistoricalDefaults() throws Exception {
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, SketchBasedJoinEstimator.Config.defaults());
 
 		var bucketsField = est.getClass().getDeclaredField("nominalEntries");
 		bucketsField.setAccessible(true);
 		var defaultBucketsField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_BUCKET_COUNT");
 		defaultBucketsField.setAccessible(true);
-		assertEquals(defaultBucketsField.getInt(null), bucketsField.getInt(est));
 
 		var bufField = est.getClass().getDeclaredField("bufA");
 		bufField.setAccessible(true);
@@ -174,7 +181,115 @@ class SketchBasedJoinEstimatorConfigTest {
 
 		var defaultKField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_SKETCH_NOMINAL_ENTRIES");
 		defaultKField.setAccessible(true);
-		assertEquals(defaultKField.getInt(null), kField.getInt(bufA));
+
+		var policyField = est.getClass().getDeclaredField("memoryPolicy");
+		policyField.setAccessible(true);
+		Object memoryPolicy = policyField.get(est);
+
+		assertEquals(intField(memoryPolicy, "bucketCount"), bucketsField.getInt(est));
+		assertEquals(intField(memoryPolicy, "sketchNominalEntries"), kField.getInt(bufA));
+		assertTrue(bucketsField.getInt(est) <= defaultBucketsField.getInt(null));
+		assertTrue(kField.getInt(bufA) <= defaultKField.getInt(null));
+	}
+
+	@Test
+	void configAliasesAndMemoryPolicyDefaultsAreExposed() throws Exception {
+		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults();
+
+		assertSame(cfg, invokeConfig(cfg, "withBucketCount", int.class, 64));
+		assertEquals(64, cfg.nominalEntries);
+		assertSame(cfg, invokeConfig(cfg, "withSketchNominalEntries", int.class, 256));
+		assertEquals(256, cfg.sketchK);
+
+		assertSame(cfg, invokeConfig(cfg, "withEstimatorMemoryBudgetPercent", double.class, 0.55d));
+		assertSame(cfg, invokeConfig(cfg, "withResidentSketchMemoryTargetPercent", double.class, 0.20d));
+		assertSame(cfg, invokeConfig(cfg, "withResidentSketchMemoryCeilingPercent", double.class, 0.35d));
+		assertSame(cfg, invokeConfig(cfg, "withHighMemoryPressurePercent", double.class, 0.75d));
+		assertSame(cfg, invokeConfig(cfg, "withLoadedBucketFloorPercent", double.class, 0.10d));
+		assertSame(cfg, invokeConfig(cfg, "withMemoryMonitorIntervalMillis", long.class, 250L));
+		assertSame(cfg, invokeConfig(cfg, "withMemoryPressureUnloadBatchSize", int.class, 17));
+
+		assertEquals(0.55d, doubleField(cfg, "estimatorMemoryBudgetPercent"), 0.0d);
+		assertEquals(0.20d, doubleField(cfg, "residentSketchMemoryTargetPercent"), 0.0d);
+		assertEquals(0.35d, doubleField(cfg, "residentSketchMemoryCeilingPercent"), 0.0d);
+		assertEquals(0.75d, doubleField(cfg, "highMemoryPressurePercent"), 0.0d);
+		assertEquals(0.10d, doubleField(cfg, "loadedBucketFloorPercent"), 0.0d);
+		assertEquals(250L, longField(cfg, "memoryMonitorIntervalMillis"));
+		assertEquals(17, intField(cfg, "memoryPressureUnloadBatchSize"));
+
+		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
+		assertEquals(0.50d, doubleField(defaults, "estimatorMemoryBudgetPercent"), 0.0d);
+		assertEquals(0.25d, doubleField(defaults, "residentSketchMemoryTargetPercent"), 0.0d);
+		assertEquals(0.30d, doubleField(defaults, "residentSketchMemoryCeilingPercent"), 0.0d);
+		assertEquals(0.80d, doubleField(defaults, "highMemoryPressurePercent"), 0.0d);
+		assertEquals(0.05d, doubleField(defaults, "loadedBucketFloorPercent"), 0.0d);
+		assertEquals(500L, longField(defaults, "memoryMonitorIntervalMillis"));
+		assertEquals(64, intField(defaults, "memoryPressureUnloadBatchSize"));
+	}
+
+	@Test
+	void blobSpecificConfigApiIsRemoved() {
+		assertThrows(NoSuchMethodException.class,
+				() -> SketchBasedJoinEstimator.Config.class.getMethod("withMaxPersistenceBlobBytes", long.class));
+	}
+
+	@Test
+	void memoryPolicyShrinksImplicitDefaultsButExplicitSettingsWin() throws Exception {
+		Class<?> probeType = Class
+				.forName("org.eclipse.rdf4j.sail.base.SketchEstimatorMemoryProbe");
+		Class<?> policyType = Class
+				.forName("org.eclipse.rdf4j.sail.base.SketchEstimatorMemoryPolicy");
+		Method resolve = policyType.getDeclaredMethod("resolve", SketchBasedJoinEstimator.Config.class, probeType);
+		resolve.setAccessible(true);
+
+		Object lowMemoryProbe = Proxy.newProxyInstance(probeType.getClassLoader(), new Class<?>[] { probeType },
+				(proxy, method, args) -> switch (method.getName()) {
+				case "maxMemoryBytes" -> 2L * 1024L * 1024L;
+				case "usedHeapBytes" -> 0L;
+				case "requestGc" -> null;
+				default -> throw new UnsupportedOperationException(method.toString());
+				});
+
+		Object implicitPolicy = resolve.invoke(null, SketchBasedJoinEstimator.Config.defaults(), lowMemoryProbe);
+		int implicitBuckets = intField(implicitPolicy, "bucketCount");
+		int implicitK = intField(implicitPolicy, "sketchNominalEntries");
+		assertTrue(implicitBuckets <= 1024);
+		assertTrue(implicitK <= 4096);
+		assertTrue(implicitBuckets < 1024 || implicitK < 4096,
+				"Implicit defaults should shrink when A+B rebuild memory does not fit 50% Xmx");
+		assertTrue(booleanField(implicitPolicy, "autoDerivedBucketCount"));
+		assertTrue(booleanField(implicitPolicy, "autoDerivedSketchNominalEntries"));
+
+		Object fourGigProbe = Proxy.newProxyInstance(probeType.getClassLoader(), new Class<?>[] { probeType },
+				(proxy, method, args) -> switch (method.getName()) {
+				case "maxMemoryBytes" -> 4L * 1024L * 1024L * 1024L;
+				case "usedHeapBytes" -> 0L;
+				case "requestGc" -> null;
+				default -> throw new UnsupportedOperationException(method.toString());
+				});
+		Object fourGigPolicy = resolve.invoke(null, SketchBasedJoinEstimator.Config.defaults(), fourGigProbe);
+		assertEquals(1024, intField(fourGigPolicy, "bucketCount"));
+		assertEquals(4096, intField(fourGigPolicy, "sketchNominalEntries"));
+
+		SketchBasedJoinEstimator.Config explicit = SketchBasedJoinEstimator.Config.defaults()
+				.withNominalEntries(1024)
+				.withSketchK(4096);
+		Object explicitPolicy = resolve.invoke(null, explicit, lowMemoryProbe);
+		assertEquals(1024, intField(explicitPolicy, "bucketCount"));
+		assertEquals(4096, intField(explicitPolicy, "sketchNominalEntries"));
+		assertFalse(booleanField(explicitPolicy, "autoDerivedBucketCount"));
+		assertFalse(booleanField(explicitPolicy, "autoDerivedSketchNominalEntries"));
+
+		Object highMemoryProbe = Proxy.newProxyInstance(probeType.getClassLoader(), new Class<?>[] { probeType },
+				(proxy, method, args) -> switch (method.getName()) {
+				case "maxMemoryBytes" -> 64L * 1024L * 1024L * 1024L;
+				case "usedHeapBytes" -> 0L;
+				case "requestGc" -> null;
+				default -> throw new UnsupportedOperationException(method.toString());
+				});
+		Object highMemoryPolicy = resolve.invoke(null, SketchBasedJoinEstimator.Config.defaults(), highMemoryProbe);
+		assertEquals(1024, intField(highMemoryPolicy, "bucketCount"));
+		assertEquals(4096, intField(highMemoryPolicy, "sketchNominalEntries"));
 	}
 
 	@Test
@@ -195,9 +310,9 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void defaultsExposeMin1Max2Percent() {
+	void defaultsExposeResidentTargetAndCeilingPercent() {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults();
-		assertEquals(0.10d, cfg.minSketchMemoryPercent, 0.0d);
+		assertEquals(0.25d, cfg.minSketchMemoryPercent, 0.0d);
 		assertEquals(0.30d, cfg.maxSketchMemoryPercent, 0.0d);
 	}
 
@@ -244,6 +359,25 @@ class SketchBasedJoinEstimatorConfigTest {
 			} else {
 				System.setProperty(maxKey, prevMax);
 			}
+		}
+	}
+
+	@Test
+	void systemPropertyBucketAndSketchOverridesAreExplicitForMemoryPolicy() throws Exception {
+		PropertyState properties = PropertyState.capture(NOMINAL_ENTRIES_PROPERTY, SKETCH_K_PROPERTY,
+				ESTIMATOR_MEMORY_BUDGET_PERCENT_PROPERTY);
+		try {
+			System.setProperty(NOMINAL_ENTRIES_PROPERTY, "1024");
+			System.setProperty(SKETCH_K_PROPERTY, "4096");
+			System.setProperty(ESTIMATOR_MEMORY_BUDGET_PERCENT_PROPERTY, "0.000001");
+
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+					SketchBasedJoinEstimator.Config.defaults());
+
+			assertEquals(1024, intField(estimator, "nominalEntries"));
+			assertEquals(4096, sketchK(estimator));
+		} finally {
+			properties.restore();
 		}
 	}
 
@@ -385,6 +519,27 @@ class SketchBasedJoinEstimatorConfigTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.getDouble(target);
+	}
+
+	private static boolean booleanField(Object target, String name) throws Exception {
+		Field field = target.getClass().getDeclaredField(name);
+		field.setAccessible(true);
+		return field.getBoolean(target);
+	}
+
+	private static int sketchK(SketchBasedJoinEstimator estimator) throws Exception {
+		Field bufField = SketchBasedJoinEstimator.class.getDeclaredField("bufA");
+		bufField.setAccessible(true);
+		Object bufA = bufField.get(estimator);
+		Field kField = bufA.getClass().getDeclaredField("k");
+		kField.setAccessible(true);
+		return kField.getInt(bufA);
+	}
+
+	private static Object invokeConfig(SketchBasedJoinEstimator.Config config, String methodName,
+			Class<?> parameterType, Object value) throws Exception {
+		Method method = SketchBasedJoinEstimator.Config.class.getMethod(methodName, parameterType);
+		return assertDoesNotThrow(() -> method.invoke(config, value));
 	}
 
 	private record RareOverlapFixture(SketchBasedJoinEstimator estimator, Join join, int actualJoinRows) {

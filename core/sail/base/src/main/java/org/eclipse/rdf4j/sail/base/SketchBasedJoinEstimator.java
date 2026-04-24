@@ -12,22 +12,13 @@
 
 package org.eclipse.rdf4j.sail.base;
 
-import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.ArrayList;
@@ -37,7 +28,6 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -427,8 +417,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private volatile JoinStatsProvider learnedStatsProvider;
 	private volatile PatternFilterSamplingEstimator patternFilterSamplingEstimator;
 	private volatile PatternCardinalityProvider patternCardinalityProvider;
-	private volatile boolean robustSynopsisFresh;
-	private volatile int lastRobustSynopsisSpillSegmentCount;
 	private volatile SketchPlannerPath lastJoinOrderPlannerPath = SketchPlannerPath.ROBUST_NOT_READY;
 	private volatile SketchPlannerPath lastRobustCardinalityPath = SketchPlannerPath.ROBUST_NOT_READY;
 
@@ -440,21 +428,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/* Persistence & runtime memory behavior */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private static final byte[] PERSIST_MAGIC = new byte[] { 'R', 'J', 'E', 'S' };
-	private static final int PERSIST_VERSION = 4;
 	private static final int SKETCH_PAYLOAD_FORMAT_NATIVE = -1;
 	private static final int DEFAULT_BUCKET_COUNT = 1024;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 4096;
-	private static final long DEFAULT_MAX_PERSISTENCE_BLOB_BYTES = 1L << 30; // 1 GiB
-	private static final int MAX_STRING_BYTES = 16 * 1024 * 1024;
-	private static final int MIN_MAPPED_GROWTH_BYTES = 32 * 1024 * 1024;
-	private static final long MIN_ROBUST_REBUILD_HEADROOM_BYTES = 256L * 1024L * 1024L;
-	private static final long ROBUST_REBUILD_DISABLE_HEADROOM_PERCENT = 2L;
-	private static final long ROBUST_REBUILD_ENABLE_HEADROOM_PERCENT = 10L;
-	private static final byte[] FILE_GROWTH_MARKER = new byte[] { 0 };
 	private static final String MIN_SKETCH_MEMORY_PERCENT_PROPERTY = "minSketchMemoryPercent";
 	private static final String MAX_SKETCH_MEMORY_PERCENT_PROPERTY = "maxSketchMemoryPercent";
-	private static final String MAX_PERSISTENCE_BLOB_BYTES_PROPERTY = "maxPersistenceBlobBytes";
+	private static final String ESTIMATOR_MEMORY_BUDGET_PERCENT_PROPERTY = "estimatorMemoryBudgetPercent";
+	private static final String RESIDENT_SKETCH_MEMORY_TARGET_PERCENT_PROPERTY = "residentSketchMemoryTargetPercent";
+	private static final String RESIDENT_SKETCH_MEMORY_CEILING_PERCENT_PROPERTY = "residentSketchMemoryCeilingPercent";
+	private static final String HIGH_MEMORY_PRESSURE_PERCENT_PROPERTY = "highMemoryPressurePercent";
+	private static final String LOADED_BUCKET_FLOOR_PERCENT_PROPERTY = "loadedBucketFloorPercent";
+	private static final String MEMORY_MONITOR_INTERVAL_MILLIS_PROPERTY = "memoryMonitorIntervalMillis";
+	private static final String MEMORY_PRESSURE_UNLOAD_BATCH_SIZE_PROPERTY = "memoryPressureUnloadBatchSize";
 	private static final String ESTIMATE_CACHE_SECONDS_PROPERTY = "estimateCacheSeconds";
 	private static final String ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT_PROPERTY = "zeroIntersectionExactDistinctLimit";
 	private static final String ZERO_INTERSECTION_SKEW_RATIO_PROPERTY = "zeroIntersectionSkewRatio";
@@ -462,7 +447,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final String ZERO_INTERSECTION_SAMPLE_SIZE_PROPERTY = "zeroIntersectionSampleSize";
 	private static final long DEFAULT_ESTIMATE_CACHE_SECONDS = 60L;
 	private static final int MAX_ESTIMATE_CACHE_ENTRIES = 4096;
-	private static final long DEBUG_NO_HEADROOM_OVERRIDE = -1L;
 	private static final long OBJECT_HEADER_BYTES = 16L;
 	private static final long ARRAY_HEADER_BYTES = 16L;
 	private static final long REFERENCE_BYTES = 8L;
@@ -470,14 +454,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long INT_BYTES = 4L;
 	private static final long LONG_BYTES = 8L;
 	private static final long BOOLEAN_BYTES = 1L;
-	private static final long MEMORY_OWNER_ROBUST_BUILDER = -1L;
-	private static final long MEMORY_OWNER_ROBUST_SYNOPSIS = -2L;
 	private static final long MEMORY_OWNER_SERIALIZATION_BUFFER = -3L;
 	private static final long MEMORY_OWNER_DESERIALIZATION_BUFFER = -4L;
-	private static final long MEMORY_OWNER_PERSISTENCE_REWRITE_BUFFER = -5L;
 	private static final long MEMORY_OWNER_CACHE_METADATA = -6L;
-	private static final long MEMORY_OWNER_PERSISTENCE_REWRITE_WORKSPACE = -7L;
-	private static final long MEMORY_OWNER_PERSISTENCE_REWRITE_IO_BUFFER = -8L;
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -591,67 +570,36 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private static final class PersistedSketchRef {
-		private final int blobId;
+		private final byte slot;
+		private final byte fileKind;
 		private final long offset;
 		private final int length;
+		private final long generation;
 
-		private PersistedSketchRef(int blobId, long offset, int length) {
-			this.blobId = blobId;
+		private PersistedSketchRef(byte slot, byte fileKind, long offset, int length, long generation) {
+			this.slot = slot;
+			this.fileKind = fileKind;
 			this.offset = offset;
 			this.length = length;
+			this.generation = generation;
+		}
+
+		private PersistedSketchRef(SketchEstimatorPersistenceStore.Ref ref) {
+			this(ref.slot, ref.fileKind, ref.offset, ref.length, ref.generation);
+		}
+
+		private SketchEstimatorPersistenceStore.Ref storeRef(byte fallbackSlot) {
+			byte refSlot = slot >= 0 ? slot : fallbackSlot;
+			return new SketchEstimatorPersistenceStore.Ref(refSlot, fileKind, offset, length, generation);
 		}
 	}
 
-	private static final class MappedChannelEntry {
-		private final FileChannel channel;
-		private final boolean writeAccess;
-		private MappedByteBuffer mappedBuffer;
-		private int mappedLength;
-		private long cachedFileSize;
-		private long writePosition;
-
-		private MappedChannelEntry(FileChannel channel, boolean writeAccess) throws IOException {
-			this.channel = channel;
-			this.writeAccess = writeAccess;
-			this.cachedFileSize = channel.size();
-			this.writePosition = cachedFileSize;
-		}
-	}
-
-	private static final class BlobStorage {
-		private final List<MappedChannelEntry> readEntries = new ArrayList<>();
-		private final List<MappedChannelEntry> writeEntries = new ArrayList<>();
-		private int activeWriteBlobId;
-	}
-
-	private static final class ManifestSketchEntry {
+	private static final class PersistedSketchEntry {
 		private final SketchAddress address;
 		private final PersistedSketchRef persistedSketchRef;
 
-		private ManifestSketchEntry(SketchAddress address, PersistedSketchRef persistedSketchRef) {
+		private PersistedSketchEntry(SketchAddress address, PersistedSketchRef persistedSketchRef) {
 			this.address = address;
-			this.persistedSketchRef = persistedSketchRef;
-		}
-	}
-
-	private static final class PersistedEntrySnapshot {
-		private final int entryId;
-		private final PersistedSketchRef persistedSketchRef;
-
-		private PersistedEntrySnapshot(int entryId, PersistedSketchRef persistedSketchRef) {
-			this.entryId = entryId;
-			this.persistedSketchRef = persistedSketchRef;
-		}
-	}
-
-	private static final class RewriteSlotEntry {
-		private final int entryId;
-		private final TrackedByteArray residentPayload;
-		private final PersistedSketchRef persistedSketchRef;
-
-		private RewriteSlotEntry(int entryId, TrackedByteArray residentPayload, PersistedSketchRef persistedSketchRef) {
-			this.entryId = entryId;
-			this.residentPayload = residentPayload;
 			this.persistedSketchRef = persistedSketchRef;
 		}
 	}
@@ -673,7 +621,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private static final byte FLAG_DIRTY_B = 1 << 1;
 		private static final long EMPTY_BUCKET = 0L;
 		private static final int NO_NODE = -1;
-		private static final int NO_BLOB = -1;
+		private static final int NO_FILE_KIND = -1;
 
 		private int size;
 		private long[] buckets;
@@ -684,12 +632,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private int[] xs;
 		private int[] ys;
 
-		private int[] persistedBlobIdsA;
+		private int[] persistedFileKindsA;
 		private long[] persistedOffsetsA;
 		private int[] persistedLengthsA;
-		private int[] persistedBlobIdsB;
+		private long[] persistedGenerationsA;
+		private int[] persistedFileKindsB;
 		private long[] persistedOffsetsB;
 		private int[] persistedLengthsB;
+		private long[] persistedGenerationsB;
 
 		private int[] residentNodeA;
 		private int[] residentNodeB;
@@ -711,20 +661,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			keyPrefixes = new int[256];
 			xs = new int[256];
 			ys = new int[256];
-			persistedBlobIdsA = new int[256];
+			persistedFileKindsA = new int[256];
 			persistedOffsetsA = new long[256];
 			persistedLengthsA = new int[256];
-			persistedBlobIdsB = new int[256];
+			persistedGenerationsA = new long[256];
+			persistedFileKindsB = new int[256];
 			persistedOffsetsB = new long[256];
 			persistedLengthsB = new int[256];
+			persistedGenerationsB = new long[256];
 			residentNodeA = new int[256];
 			residentNodeB = new int[256];
 			dirtyPrevA = new int[256];
 			dirtyNextA = new int[256];
 			dirtyPrevB = new int[256];
 			dirtyNextB = new int[256];
-			Arrays.fill(persistedBlobIdsA, NO_BLOB);
-			Arrays.fill(persistedBlobIdsB, NO_BLOB);
+			Arrays.fill(persistedFileKindsA, NO_FILE_KIND);
+			Arrays.fill(persistedFileKindsB, NO_FILE_KIND);
 			Arrays.fill(residentNodeA, NO_NODE);
 			Arrays.fill(residentNodeB, NO_NODE);
 			Arrays.fill(dirtyPrevA, NO_NODE);
@@ -804,12 +756,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					keyPrefixes[entryId] = keyPrefix;
 					xs[entryId] = x;
 					ys[entryId] = y;
-					persistedBlobIdsA[entryId] = NO_BLOB;
+					persistedFileKindsA[entryId] = NO_FILE_KIND;
 					persistedOffsetsA[entryId] = 0L;
 					persistedLengthsA[entryId] = 0;
-					persistedBlobIdsB[entryId] = NO_BLOB;
+					persistedGenerationsA[entryId] = 0L;
+					persistedFileKindsB[entryId] = NO_FILE_KIND;
 					persistedOffsetsB[entryId] = 0L;
 					persistedLengthsB[entryId] = 0;
+					persistedGenerationsB[entryId] = 0L;
 					residentNodeA[entryId] = NO_NODE;
 					residentNodeB[entryId] = NO_NODE;
 					dirtyPrevA[entryId] = NO_NODE;
@@ -853,15 +807,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			keyPrefixes = Arrays.copyOf(keyPrefixes, next);
 			xs = Arrays.copyOf(xs, next);
 			ys = Arrays.copyOf(ys, next);
-			int previousLength = persistedBlobIdsA.length;
-			persistedBlobIdsA = Arrays.copyOf(persistedBlobIdsA, next);
-			Arrays.fill(persistedBlobIdsA, previousLength, next, NO_BLOB);
+			int previousLength = persistedFileKindsA.length;
+			persistedFileKindsA = Arrays.copyOf(persistedFileKindsA, next);
+			Arrays.fill(persistedFileKindsA, previousLength, next, NO_FILE_KIND);
 			persistedOffsetsA = Arrays.copyOf(persistedOffsetsA, next);
 			persistedLengthsA = Arrays.copyOf(persistedLengthsA, next);
-			persistedBlobIdsB = Arrays.copyOf(persistedBlobIdsB, next);
-			Arrays.fill(persistedBlobIdsB, previousLength, next, NO_BLOB);
+			persistedGenerationsA = Arrays.copyOf(persistedGenerationsA, next);
+			persistedFileKindsB = Arrays.copyOf(persistedFileKindsB, next);
+			Arrays.fill(persistedFileKindsB, previousLength, next, NO_FILE_KIND);
 			persistedOffsetsB = Arrays.copyOf(persistedOffsetsB, next);
 			persistedLengthsB = Arrays.copyOf(persistedLengthsB, next);
+			persistedGenerationsB = Arrays.copyOf(persistedGenerationsB, next);
 			residentNodeA = Arrays.copyOf(residentNodeA, next);
 			Arrays.fill(residentNodeA, previousLength, next, NO_NODE);
 			residentNodeB = Arrays.copyOf(residentNodeB, next);
@@ -909,8 +865,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return (byte) (keyPrefix >>> 24);
 		}
 
-		private int[] persistedBlobIds(byte slot) {
-			return slot == 0 ? persistedBlobIdsA : persistedBlobIdsB;
+		private int[] persistedFileKinds(byte slot) {
+			return slot == 0 ? persistedFileKindsA : persistedFileKindsB;
 		}
 
 		private long[] persistedOffsets(byte slot) {
@@ -921,81 +877,66 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return slot == 0 ? persistedLengthsA : persistedLengthsB;
 		}
 
-		private void setPersistedRef(int entryId, byte slot, int blobId, long offset, int length) {
-			int[] blobIds = persistedBlobIds(slot);
+		private long[] persistedGenerations(byte slot) {
+			return slot == 0 ? persistedGenerationsA : persistedGenerationsB;
+		}
+
+		private void setPersistedRef(int entryId, byte slot, int fileKind, long offset, int length) {
+			setPersistedRef(entryId, slot, fileKind, offset, length, 0L);
+		}
+
+		private void setPersistedRef(int entryId, byte slot, int fileKind, long offset, int length, long generation) {
+			int[] fileKinds = persistedFileKinds(slot);
 			long[] offsets = persistedOffsets(slot);
 			int[] lengths = persistedLengths(slot);
-			blobIds[entryId] = blobId;
+			long[] generations = persistedGenerations(slot);
+			fileKinds[entryId] = fileKind;
 			offsets[entryId] = offset;
 			lengths[entryId] = length;
+			generations[entryId] = generation;
 		}
 
 		private void clearPersistedRefsForSlot(byte slot) {
-			int[] blobIds = persistedBlobIds(slot);
+			int[] fileKinds = persistedFileKinds(slot);
 			long[] offsets = persistedOffsets(slot);
 			int[] lengths = persistedLengths(slot);
+			long[] generations = persistedGenerations(slot);
 			for (int entryId = 0; entryId < size; entryId++) {
-				blobIds[entryId] = NO_BLOB;
+				fileKinds[entryId] = NO_FILE_KIND;
 				offsets[entryId] = 0L;
 				lengths[entryId] = 0;
+				generations[entryId] = 0L;
 			}
 		}
 
 		private PersistedSketchRef persistedRef(int entryId, byte slot) {
-			int[] blobIds = persistedBlobIds(slot);
+			int[] fileKinds = persistedFileKinds(slot);
 			long[] offsets = persistedOffsets(slot);
 			int[] lengths = persistedLengths(slot);
-			int blobId = blobIds[entryId];
-			if (blobId < 0 || lengths[entryId] <= 0) {
+			long[] generations = persistedGenerations(slot);
+			int fileKind = fileKinds[entryId];
+			if (fileKind < 0 || lengths[entryId] <= 0) {
 				return null;
 			}
-			return new PersistedSketchRef(blobId, offsets[entryId], lengths[entryId]);
+			return new PersistedSketchRef(slot, (byte) fileKind, offsets[entryId], lengths[entryId],
+					generations[entryId]);
 		}
 
 		private boolean hasResidentOrPersistedRef(int entryId, byte slot) {
 			if (residentNode(entryId, slot) != NO_NODE) {
 				return true;
 			}
-			return persistedBlobIds(slot)[entryId] >= 0 && persistedLengths(slot)[entryId] > 0;
+			return persistedFileKinds(slot)[entryId] >= 0 && persistedLengths(slot)[entryId] > 0;
 		}
 
-		private List<ManifestSketchEntry> snapshotPersistedEntries(byte slot) {
-			List<ManifestSketchEntry> entries = new ArrayList<>();
+		private List<PersistedSketchEntry> snapshotPersistedEntries(byte slot) {
+			List<PersistedSketchEntry> entries = new ArrayList<>();
 			for (int entryId = 0; entryId < size; entryId++) {
 				PersistedSketchRef persisted = persistedRef(entryId, slot);
 				if (persisted == null) {
 					continue;
 				}
-				entries.add(new ManifestSketchEntry(toSketchAddress(entryId), persisted));
-			}
-			return entries;
-		}
-
-		private List<PersistedEntrySnapshot> snapshotPersistedEntryRefs(byte slot) {
-			List<PersistedEntrySnapshot> entries = new ArrayList<>();
-			for (int entryId = 0; entryId < size; entryId++) {
-				PersistedSketchRef persisted = persistedRef(entryId, slot);
-				if (persisted == null) {
-					continue;
-				}
-				entries.add(new PersistedEntrySnapshot(entryId, persisted));
-			}
-			return entries;
-		}
-
-		private int[] snapshotEntriesForSlot(byte slot) {
-			int count = 0;
-			for (int entryId = 0; entryId < size; entryId++) {
-				if (residentNode(entryId, slot) != NO_NODE || persistedRef(entryId, slot) != null) {
-					count++;
-				}
-			}
-			int[] entries = new int[count];
-			int next = 0;
-			for (int entryId = 0; entryId < size; entryId++) {
-				if (residentNode(entryId, slot) != NO_NODE || persistedRef(entryId, slot) != null) {
-					entries[next++] = entryId;
-				}
+				entries.add(new PersistedSketchEntry(toSketchAddress(entryId), persisted));
 			}
 			return entries;
 		}
@@ -1182,10 +1123,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					+ estimateIntArrayBytes(keyPrefixes.length)
 					+ estimateIntArrayBytes(xs.length)
 					+ estimateIntArrayBytes(ys.length)
-					+ estimateIntArrayBytes(persistedBlobIdsA.length)
+					+ estimateIntArrayBytes(persistedFileKindsA.length)
 					+ estimateLongArrayBytes(persistedOffsetsA.length)
 					+ estimateIntArrayBytes(persistedLengthsA.length)
-					+ estimateIntArrayBytes(persistedBlobIdsB.length)
+					+ estimateIntArrayBytes(persistedFileKindsB.length)
 					+ estimateLongArrayBytes(persistedOffsetsB.length)
 					+ estimateIntArrayBytes(persistedLengthsB.length)
 					+ estimateIntArrayBytes(residentNodeA.length)
@@ -1415,50 +1356,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	static final class DebugMappedChannelView {
-		private final Path basePath;
-		private final int blobId;
-		private final boolean writeAccess;
-		private final FileChannel channel;
-		private final MappedByteBuffer mappedBuffer;
-
-		private DebugMappedChannelView(Path basePath, int blobId, boolean writeAccess, FileChannel channel,
-				MappedByteBuffer mappedBuffer) {
-			this.basePath = basePath;
-			this.blobId = blobId;
-			this.writeAccess = writeAccess;
-			this.channel = channel;
-			this.mappedBuffer = mappedBuffer;
-		}
-
-		Path basePath() {
-			return basePath;
-		}
-
-		int blobId() {
-			return blobId;
-		}
-
-		boolean writeAccess() {
-			return writeAccess;
-		}
-
-		FileChannel channel() {
-			return channel;
-		}
-
-		MappedByteBuffer mappedBuffer() {
-			return mappedBuffer;
-		}
-	}
-
 	enum MemoryCategory {
 		RESIDENT_SKETCHES,
-		ROBUST_BUILDER,
-		ROBUST_SYNOPSIS,
 		SERIALIZATION_BUFFERS,
 		DESERIALIZATION_BUFFERS,
-		PERSISTENCE_REWRITE_BUFFERS,
 		CACHE_METADATA
 	}
 
@@ -1522,11 +1423,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				totals.put(category, 0L);
 			}
 			labels.put(MemoryCategory.RESIDENT_SKETCHES, SketchBasedJoinEstimator::residentOwnerLabel);
-			labels.put(MemoryCategory.ROBUST_BUILDER, ownerId -> "ROBUST_BUILDER");
-			labels.put(MemoryCategory.ROBUST_SYNOPSIS, ownerId -> "ROBUST_SYNOPSIS");
 			labels.put(MemoryCategory.SERIALIZATION_BUFFERS, SketchBasedJoinEstimator::transientOwnerLabel);
 			labels.put(MemoryCategory.DESERIALIZATION_BUFFERS, SketchBasedJoinEstimator::transientOwnerLabel);
-			labels.put(MemoryCategory.PERSISTENCE_REWRITE_BUFFERS, SketchBasedJoinEstimator::transientOwnerLabel);
 			labels.put(MemoryCategory.CACHE_METADATA, ownerId -> "CACHE_METADATA");
 		}
 
@@ -1577,7 +1475,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private synchronized void clearTransientCategories() {
 			clearCategory(MemoryCategory.SERIALIZATION_BUFFERS);
 			clearCategory(MemoryCategory.DESERIALIZATION_BUFFERS);
-			clearCategory(MemoryCategory.PERSISTENCE_REWRITE_BUFFERS);
 		}
 
 		private synchronized DebugMemorySnapshot snapshot() {
@@ -1815,11 +1712,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private volatile Path persistenceFile;
-	private volatile Path persistenceBlobBaseFile;
+	private volatile SketchEstimatorPersistenceStore persistenceStore;
 	private volatile boolean persistenceEnabled;
 	private volatile boolean lazyLoadEnabled;
 	private volatile boolean sketchesLoaded = true;
-	private final long maxPersistenceBlobBytes;
+	private final SketchEstimatorMemoryProbe memoryProbe;
+	private final SketchEstimatorMemoryPolicy memoryPolicy;
+	private volatile SketchEstimatorMemoryMonitor memoryMonitor;
+	private final long[] slotGenerations = new long[] { 1L, 1L };
 
 	/**
 	 * True when writes happened while sketches were unloaded. In this state, the estimator must not claim readiness
@@ -1833,35 +1733,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	/** True when in-memory state changed and should be snapshotted at the next scheduled persist point. */
 	private final AtomicBoolean dirty = new AtomicBoolean(false);
-	/** True when persisted index metadata changed and manifest rewrite is pending. */
-	private final AtomicBoolean manifestDirty = new AtomicBoolean(false);
+	/** True when persisted index metadata changed and index rewrite is pending. */
+	private final AtomicBoolean indexDirty = new AtomicBoolean(false);
 	private final Map<EstimateCacheKey, EstimateCacheEntry> estimateCache = new ConcurrentHashMap<>();
 
 	private volatile BooleanSupplier rebuildAllowedSupplier;
 	private final Object persistLock = new Object();
 	private final Object loadLock = new Object();
 	private final Object sketchCacheLock = new Object();
-	private final Object mappedChannelLock = new Object();
 	private final CacheDirectory cacheDirectory = new CacheDirectory();
 	private final ResidentLru residentLru = new ResidentLru();
 	private final ThreadLocal<OptimizationScopeState> optimizationScope = new ThreadLocal<>();
 	private int cacheDirectoryMetadataVersion = -1;
 	private int residentLruMetadataVersion = -1;
 	private final MemoryRegistry memoryRegistry;
-	private final Map<Path, BlobStorage> blobStorages = new HashMap<>();
-	private final Path[] slotBlobBaseFiles = new Path[BufferSlot.values().length];
-	private final Path[] slotTempBlobDirectories = new Path[BufferSlot.values().length];
 	private volatile long minSketchMemoryBytes;
 	private volatile long maxSketchMemoryBytes;
 	private final long baselineCacheMetadataBytes;
 	private final long trackedMemorySoftLimitBytes;
-	private final long trackedMemoryHardLimitBytes;
-	private final long robustRebuildDisableHeadroomBytes;
-	private final long robustRebuildEnableHeadroomBytes;
-	private final long robustRebuildGcProbeFloorBytes;
-	private volatile long robustRebuildRetryAfterNanos;
-	private volatile long lastRobustHeadroomGcNanos;
-	private volatile long debugAvailableHeapHeadroomOverrideBytes = DEBUG_NO_HEADROOM_OVERRIDE;
 	private long residentSketchBytes;
 
 	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
@@ -1870,8 +1759,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final int PARALLEL_INGEST_MIN_BATCH_SIZE = INCREMENTAL_BATCH_SIZE;
 	private static final int PARALLEL_INGEST_MAX_BATCH_SIZE = INCREMENTAL_BATCH_SIZE * 2;
 	private static final int REBUILD_BATCH_SIZE = PARALLEL_INGEST_MAX_BATCH_SIZE;
-	private static final int BOUNDED_REBUILD_BUDGET_CHECK_INTERVAL = 1024;
-	private static final long BOUNDED_REBUILD_WITH_PERSISTENCE_MIN_HEADROOM_BYTES = 1L * 1024L * 1024L * 1024L;
 	private final Object incrementalBufferLock = new Object();
 	private final Object asyncIncrementalDrainLock = new Object();
 	private final BlockingQueue<IngestEvent[]> asyncIncrementalBatches = new ArrayBlockingQueue<>(
@@ -1936,9 +1823,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int zeroIntersectionSampleSize = cfg.zeroIntersectionSampleSize;
 		int kCfg = cfg.sketchK;
 		int kMult = cfg.sketchKMultiplier;
-		double minSketchMemoryPercent = cfg.minSketchMemoryPercent;
-		double maxSketchMemoryPercent = cfg.maxSketchMemoryPercent;
-		long maxBlobBytes = cfg.maxPersistenceBlobBytes;
+		double estimatorMemoryBudgetPercent = cfg.estimatorMemoryBudgetPercent;
+		double residentSketchMemoryTargetPercent = cfg.residentSketchMemoryTargetPercent;
+		double residentSketchMemoryCeilingPercent = cfg.residentSketchMemoryCeilingPercent;
+		double highMemoryPressurePercent = cfg.highMemoryPressurePercent;
+		double loadedBucketFloorPercent = cfg.loadedBucketFloorPercent;
+		long memoryMonitorIntervalMillis = cfg.memoryMonitorIntervalMillis;
+		int memoryPressureUnloadBatchSize = cfg.memoryPressureUnloadBatchSize;
+
+		boolean nominalEntriesPropertySet = propPresent("nominalEntries");
+		boolean sketchKPropertySet = propPresent("sketchK");
 
 		// Overlay from system properties (take precedence)
 		nEntries = propInt("nominalEntries", nEntries);
@@ -1959,15 +1853,40 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		zeroIntersectionSkew = propDouble(ZERO_INTERSECTION_SKEW_RATIO_PROPERTY, zeroIntersectionSkew);
 		zeroIntersectionBudget = propLong(ZERO_INTERSECTION_ROW_BUDGET_PROPERTY, zeroIntersectionBudget);
 		zeroIntersectionSampleSize = propInt(ZERO_INTERSECTION_SAMPLE_SIZE_PROPERTY, zeroIntersectionSampleSize);
-		int kProp = propIntOrNegOne("sketchK", kCfg);
+		int kProp = propIntOrNegOne("sketchK", -1);
 		kMult = propInt("sketchKMultiplier", kMult);
 		kMult = Math.max(0, kMult);
-		minSketchMemoryPercent = propDouble(MIN_SKETCH_MEMORY_PERCENT_PROPERTY, minSketchMemoryPercent);
-		maxSketchMemoryPercent = propDouble(MAX_SKETCH_MEMORY_PERCENT_PROPERTY, maxSketchMemoryPercent);
-		maxBlobBytes = propLong(MAX_PERSISTENCE_BLOB_BYTES_PROPERTY, maxBlobBytes);
+		estimatorMemoryBudgetPercent = propDouble(ESTIMATOR_MEMORY_BUDGET_PERCENT_PROPERTY,
+				estimatorMemoryBudgetPercent);
+		residentSketchMemoryTargetPercent = propDouble(RESIDENT_SKETCH_MEMORY_TARGET_PERCENT_PROPERTY,
+				propDouble(MIN_SKETCH_MEMORY_PERCENT_PROPERTY, residentSketchMemoryTargetPercent));
+		residentSketchMemoryCeilingPercent = propDouble(RESIDENT_SKETCH_MEMORY_CEILING_PERCENT_PROPERTY,
+				propDouble(MAX_SKETCH_MEMORY_PERCENT_PROPERTY, residentSketchMemoryCeilingPercent));
+		highMemoryPressurePercent = propDouble(HIGH_MEMORY_PRESSURE_PERCENT_PROPERTY, highMemoryPressurePercent);
+		loadedBucketFloorPercent = propDouble(LOADED_BUCKET_FLOOR_PERCENT_PROPERTY, loadedBucketFloorPercent);
+		memoryMonitorIntervalMillis = propLong(MEMORY_MONITOR_INTERVAL_MILLIS_PROPERTY, memoryMonitorIntervalMillis);
+		memoryPressureUnloadBatchSize = propInt(MEMORY_PRESSURE_UNLOAD_BATCH_SIZE_PROPERTY,
+				memoryPressureUnloadBatchSize);
 
-		int buckets = dbl ? (nEntries * 2) : nEntries;
-		int k = resolveSketchK(kProp, kCfg, buckets, kMult);
+		Config memoryConfig = Config.defaults();
+		memoryConfig.nominalEntries = Math.max(4, dbl ? (nEntries * 2) : nEntries);
+		memoryConfig.sketchK = kProp > 0 ? kProp : kCfg;
+		memoryConfig.sketchKMultiplier = kMult;
+		memoryConfig.bucketCountExplicit = cfg.bucketCountExplicit || nominalEntriesPropertySet;
+		memoryConfig.sketchNominalEntriesExplicit = cfg.sketchNominalEntriesExplicit
+				|| sketchKPropertySet && kProp > 0;
+		memoryConfig.estimatorMemoryBudgetPercent = estimatorMemoryBudgetPercent;
+		memoryConfig.residentSketchMemoryTargetPercent = residentSketchMemoryTargetPercent;
+		memoryConfig.residentSketchMemoryCeilingPercent = residentSketchMemoryCeilingPercent;
+		memoryConfig.highMemoryPressurePercent = highMemoryPressurePercent;
+		memoryConfig.loadedBucketFloorPercent = loadedBucketFloorPercent;
+		memoryConfig.memoryMonitorIntervalMillis = memoryMonitorIntervalMillis;
+		memoryConfig.memoryPressureUnloadBatchSize = memoryPressureUnloadBatchSize;
+		SketchEstimatorMemoryProbe resolvedMemoryProbe = SketchEstimatorMemoryProbe.runtime();
+		SketchEstimatorMemoryPolicy resolvedMemoryPolicy = SketchEstimatorMemoryPolicy.resolve(memoryConfig,
+				resolvedMemoryProbe);
+		int buckets = resolvedMemoryPolicy.bucketCount;
+		int k = resolvedMemoryPolicy.sketchNominalEntries;
 
 		samplePct = clamp(samplePct, 0.0, 1.0);
 		sampleMin = Math.max(0, sampleMin);
@@ -1979,10 +1898,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		zeroIntersectionSkew = Math.max(0.0d, zeroIntersectionSkew);
 		zeroIntersectionBudget = Math.max(0L, zeroIntersectionBudget);
 		zeroIntersectionSampleSize = Math.max(0, zeroIntersectionSampleSize);
-		minSketchMemoryPercent = clamp(minSketchMemoryPercent, 0.0, 1.0);
-		maxSketchMemoryPercent = clamp(maxSketchMemoryPercent, minSketchMemoryPercent, 1.0);
-		maxBlobBytes = Math.max(1L, maxBlobBytes);
-		maxBlobBytes = Math.min(maxBlobBytes, Integer.MAX_VALUE);
 
 		this.sailStore = sailStore;
 		this.nominalEntries = buckets;
@@ -2009,25 +1924,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
 		this.lazyLoadEnabled = false;
-		this.maxPersistenceBlobBytes = maxBlobBytes;
+		this.memoryProbe = resolvedMemoryProbe;
+		this.memoryPolicy = resolvedMemoryPolicy;
 		this.memoryRegistry = new MemoryRegistry();
 		this.baselineCacheMetadataBytes = cacheDirectory.estimatedHeapBytes() + residentLru.estimatedHeapBytes();
-		long heapMax = Runtime.getRuntime().maxMemory();
-		this.minSketchMemoryBytes = percentToBytes(minSketchMemoryPercent, heapMax);
-		this.maxSketchMemoryBytes = percentToBytes(maxSketchMemoryPercent, heapMax);
-		long disableHeadroom = Math.max(
-				MIN_ROBUST_REBUILD_HEADROOM_BYTES,
-				Math.min(percentToBytes(ROBUST_REBUILD_DISABLE_HEADROOM_PERCENT / 100.0d, heapMax),
-						Math.max(MIN_ROBUST_REBUILD_HEADROOM_BYTES, this.maxSketchMemoryBytes / 4)));
-		long enableHeadroom = Math.max(
-				MIN_ROBUST_REBUILD_HEADROOM_BYTES,
-				Math.max(disableHeadroom * 2,
-						percentToBytes(ROBUST_REBUILD_ENABLE_HEADROOM_PERCENT / 100.0d, heapMax)));
-		this.trackedMemoryHardLimitBytes = Math.max(0L, heapMax - disableHeadroom);
-		this.trackedMemorySoftLimitBytes = Math.max(0L, heapMax - enableHeadroom);
-		this.robustRebuildDisableHeadroomBytes = disableHeadroom;
-		this.robustRebuildEnableHeadroomBytes = enableHeadroom;
-		this.robustRebuildGcProbeFloorBytes = Math.max(MIN_ROBUST_REBUILD_HEADROOM_BYTES / 2, disableHeadroom / 2);
+		this.minSketchMemoryBytes = resolvedMemoryPolicy.residentSketchMemoryTargetBytes;
+		this.maxSketchMemoryBytes = resolvedMemoryPolicy.residentSketchMemoryCeilingBytes;
+		this.trackedMemorySoftLimitBytes = resolvedMemoryPolicy.estimatorMemoryBudgetBytes;
 		refreshCacheMetadataAccounting();
 		this.asyncIncrementalExecutor = Executors
 				.newThreadPerTaskExecutor(Thread.ofVirtual().name("RdfJoinEstimator-Ingest-", 0).factory());
@@ -2188,34 +2091,31 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 */
 	public void configurePersistence(Path file, boolean lazyLoad) {
 		Path previousPersistenceFile = this.persistenceFile;
-		Path previousBlobFile = this.persistenceBlobBaseFile;
 		Path normalizedFile = file == null ? null : file.toAbsolutePath().normalize();
 		this.persistenceFile = normalizedFile;
-		this.persistenceBlobBaseFile = normalizedFile == null ? null : sidecarPath(normalizedFile);
 		this.persistenceEnabled = (file != null);
 		this.lazyLoadEnabled = lazyLoad;
 
-		if (this.persistenceBlobBaseFile != null) {
-			try {
-				ensureParentDirectoryExists(this.persistenceBlobBaseFile);
-			} catch (IOException e) {
-				logger.debug("Failed to pre-create persistence sidecar directory {}", this.persistenceBlobBaseFile, e);
+		if (!Objects.equals(previousPersistenceFile, this.persistenceFile)) {
+			closePersistenceStore();
+		}
+
+		if (normalizedFile == null) {
+			closeMemoryMonitor();
+			return;
+		}
+
+		try {
+			SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(normalizedFile, logger);
+			this.persistenceStore = store;
+			if (store.hasMetadata()) {
+				loadDirectoryStore(!lazyLoad);
 			}
-		}
-
-		if (!Objects.equals(previousPersistenceFile, this.persistenceFile)
-				|| !Objects.equals(previousBlobFile, this.persistenceBlobBaseFile)) {
-			closeMappedChannels();
-			deleteTemporaryBlobBaseForSlot((byte) 0);
-			deleteTemporaryBlobBaseForSlot((byte) 1);
-			Arrays.fill(slotBlobBaseFiles, null);
-		}
-
-		assignPrimaryBlobBaseToCurrentSlot();
-
-		if (lazyLoad && file != null && hasSnapshotAvailable(file)) {
-			unloadInternal(false);
-			this.sketchesLoaded = false;
+			startMemoryMonitor();
+		} catch (Throwable t) {
+			logger.warn("Failed to configure join estimator persistence at {}", normalizedFile, t);
+			this.persistenceStore = null;
+			this.persistenceEnabled = false;
 		}
 	}
 
@@ -2375,11 +2275,49 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		try {
 			persistIfDirty();
 		} finally {
+			closeMemoryMonitor();
 			shutdownAsyncIncrementalIngest();
 			clearEstimateCache();
-			closeMappedChannels();
-			deleteTemporaryBlobBaseForSlot((byte) 0);
-			deleteTemporaryBlobBaseForSlot((byte) 1);
+			closePersistenceStore();
+		}
+	}
+
+	private void startMemoryMonitor() {
+		closeMemoryMonitor();
+		SketchEstimatorMemoryMonitor monitor = new SketchEstimatorMemoryMonitor(memoryProbe, memoryPolicy,
+				new SketchEstimatorMemoryMonitor.EvictionController() {
+					@Override
+					public void enforceResidentCeiling() {
+						enforceSketchBudget();
+					}
+
+					@Override
+					public int evictLruBatch(int batchSize) {
+						return evictResidentSketchBatch(batchSize);
+					}
+
+					@Override
+					public int activeLoadedBucketCount() {
+						return SketchBasedJoinEstimator.this.activeLoadedBucketCount();
+					}
+				}, logger);
+		memoryMonitor = monitor;
+		monitor.start();
+	}
+
+	private void closeMemoryMonitor() {
+		SketchEstimatorMemoryMonitor monitor = memoryMonitor;
+		memoryMonitor = null;
+		if (monitor != null) {
+			monitor.close();
+		}
+	}
+
+	private void closePersistenceStore() {
+		SketchEstimatorPersistenceStore store = persistenceStore;
+		persistenceStore = null;
+		if (store != null) {
+			store.close();
 		}
 	}
 
@@ -2409,15 +2347,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public synchronized long rebuildOnceSlow() {
 		flushPendingIncremental();
 		clearEstimateCacheIfPopulated();
-		closeMappedChannels(persistenceBlobBaseFile);
-
-//		try {
-//			Thread.sleep(r.nextInt(10));
-//		} catch (InterruptedException e) {
-//			throw new RuntimeException(e);
-//		}
-
-//		long currentMemoryUsage = currentMemoryUsage();
 
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
@@ -2426,21 +2355,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		byte targetSlot = slotByte(slotOf(tgt));
 		clearResidentTrackingForSlot(slotOf(tgt));
 		clearSlotPersistence(targetSlot);
-		if (persistenceBlobBaseFile != null) {
-			ensureTemporaryBlobBaseForSlot(targetSlot);
-		}
+		slotGenerations[targetSlot]++;
 		tgt.clear(); // wipe everything (add + del)
 		rebuildEpoch.incrementAndGet(); // mark rebuild in progress (odd epoch)
 		long seen = 0L;
 		long l = System.currentTimeMillis();
 		long lastLoggedRebuildMillion = -1L;
-		lastRobustSynopsisSpillSegmentCount = 0;
 		try {
 			try (
 					SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
 					CloseableIteration<? extends Statement> it = ds.getStatements(null, null, null)) {
 				IngestEvent[] rebuildBatch = new IngestEvent[REBUILD_BATCH_SIZE];
-				// long[] robustQuadBatch = new long[REBUILD_BATCH_SIZE << 2];
 				int rebuildBatchSize = 0;
 
 				while (it.hasNext()) {
@@ -2456,18 +2381,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 							continue;
 						}
 						rebuildBatch[rebuildBatchSize] = event;
-						int quadOffset = rebuildBatchSize << 2;
-						// robustQuadBatch[quadOffset] = event.hs;
-						// robustQuadBatch[quadOffset + 1] = event.hp;
-						// robustQuadBatch[quadOffset + 2] = event.ho;
-						// robustQuadBatch[quadOffset + 3] = event.hc;
 						rebuildBatchSize++;
 						if (rebuildBatchSize == rebuildBatch.length) {
 							synchronized (tgt) {
 								ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
 							}
-							// robustSpillBuffer.addStatements(robustQuadBatch, rebuildBatchSize);
-							// Arrays.fill(rebuildBatch, 0, rebuildBatchSize, null);
 							rebuildBatchSize = 0;
 							if (logger.isDebugEnabled()) {
 								long seenMillion = seen / 1_000_000;
@@ -2482,19 +2400,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 							}
 
 						}
-//						if (seen > 0 && seen % ROBUST_HEADROOM_CHECK_INTERVAL == 0
-//								&& shouldShedRobustSynopsisBuilder()) {
-//							if (rebuildBatchSize > 0) {
-//								synchronized (tgt) {
-//									ingestBatch(tgt, rebuildBatch, rebuildBatchSize);
-//								}
-//								// robustSpillBuffer.addStatements(robustQuadBatch, rebuildBatchSize);
-//								// Arrays.fill(rebuildBatch, 0, rebuildBatchSize, null);
-//								rebuildBatchSize = 0;
-//							}
-//							// shedResidentSketchMemoryForRobustSynopsis();
-//							// robustSpillBuffer.spillForHeadroom();
-//						}
 					} catch (MemoryPressureAbort | OutOfMemoryError pressureFailure) {
 
 						return seen;
@@ -2523,9 +2428,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 			}
 
-			if (blobBaseForSlot(targetSlot) == null && persistenceBlobBaseFile != null) {
-				setBlobBaseForSlot(targetSlot, persistenceBlobBaseFile);
-			}
 			synchronized (tgt) {
 				rebuildResidentTrackingForSlot(tgt);
 			}
@@ -2535,7 +2437,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			sketchesLoaded = true;
 			rebuildRequired.set(false);
 			dirty.set(true);
-			manifestDirty.set(true);
+			indexDirty.set(true);
 			usingA = !usingA;
 			synchronized (sketchCacheLock) {
 				cacheDirectory.clearDirtyForSlot(previousCurrentSlot);
@@ -2550,52 +2452,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 			return seen;
 		} finally {
-//			releaseRobustBuilderTracking();
 			if ((rebuildEpoch.get() & 1L) != 0L) {
 				rebuildEpoch.incrementAndGet(); // mark rebuild complete (even epoch)
 			}
 		}
-	}
-
-	private long currentMemoryUsage() {
-//		System.gc();
-		try {
-			Thread.sleep(10);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException(e);
-		}
-//		System.gc();
-		try {
-			Thread.sleep(10);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException(e);
-		}
-//		System.gc();
-		try {
-			Thread.sleep(10);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException(e);
-		}
-
-		Runtime runtime = Runtime.getRuntime();
-		return runtime.totalMemory() - runtime.freeMemory();
-	}
-
-	private long availableHeapHeadroomBytes() {
-		long overrideBytes = debugAvailableHeapHeadroomOverrideBytes;
-		if (overrideBytes != DEBUG_NO_HEADROOM_OVERRIDE) {
-			return Math.max(0L, overrideBytes);
-		}
-		Runtime runtime = Runtime.getRuntime();
-		long usedBytes = runtime.totalMemory() - runtime.freeMemory();
-		return Math.max(0L, runtime.maxMemory() - usedBytes);
-	}
-
-	private void clearRobustRebuildBackoff() {
-		robustRebuildRetryAfterNanos = 0L;
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -2904,10 +2764,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (batchSize == 0) {
 			return;
 		}
-		if (shouldUseBoundedPersistenceRebuild()) {
-			ingestBoundedRebuildBatch(state, batch, batchSize);
-			return;
-		}
 		if (batchSize < PARALLEL_INGEST_MIN_BATCH_SIZE) {
 			for (int i = 0; i < batchSize; i++) {
 				IngestEvent event = batch[i];
@@ -2933,26 +2789,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		} catch (ExecutionException e) {
 			throw new RuntimeException("Failed to rebuild join-estimator sketches", e.getCause());
 		}
-	}
-
-	private boolean shouldUseBoundedPersistenceRebuild() {
-		if (persistenceBlobBaseFile == null) {
-			return false;
-		}
-		return availableHeapHeadroomBytes() < BOUNDED_REBUILD_WITH_PERSISTENCE_MIN_HEADROOM_BYTES;
-	}
-
-	private void ingestBoundedRebuildBatch(State state, IngestEvent[] batch, int batchSize) {
-		for (int i = 0; i < batchSize; i++) {
-			IngestEvent event = batch[i];
-			if (event != null) {
-				applyBoundedRebuildIngestEvent(state, event);
-			}
-			if ((i + 1) % BOUNDED_REBUILD_BUDGET_CHECK_INTERVAL == 0) {
-				enforceSketchBudget();
-			}
-		}
-		enforceSketchBudget();
 	}
 
 	private void applyRebuildPartition(State state, IngestEvent[] batch, int batchSize, IngestPartition partition) {
@@ -3095,68 +2931,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					event.thetaHp);
 			break;
 		}
-	}
-
-	private void applyBoundedRebuildIngestEvent(State state, IngestEvent event) {
-		applyBoundedRebuildSingleUpdates(state, event);
-		applyBoundedRebuildPair(state, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
-				event.thetaHc);
-		applyBoundedRebuildPair(state, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
-				event.thetaHc);
-		applyBoundedRebuildPair(state, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
-				event.thetaHo);
-		applyBoundedRebuildPair(state, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
-				event.thetaHc);
-		applyBoundedRebuildPair(state, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
-				event.thetaHo);
-		applyBoundedRebuildPair(state, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
-				event.thetaHp);
-	}
-
-	private void applyBoundedRebuildSingleUpdates(State state, IngestEvent event) {
-		boolean isDelete = event.isDelete;
-		int si = event.si;
-		int pi = event.pi;
-		int oi = event.oi;
-		int ci = event.ci;
-		long thetaHs = event.thetaHs;
-		long thetaHp = event.thetaHp;
-		long thetaHo = event.thetaHo;
-		long thetaHc = event.thetaHc;
-		long thetaSig = event.thetaSig;
-
-		updateSingleSketchRaw(state, isDelete, Component.S, si, thetaSig);
-		updateSingleSketchRaw(state, isDelete, Component.P, pi, thetaSig);
-		updateSingleSketchRaw(state, isDelete, Component.O, oi, thetaSig);
-		updateSingleSketchRaw(state, isDelete, Component.C, ci, thetaSig);
-
-		updateGlobalComponentSketchRaw(state, isDelete, Component.S, thetaHs);
-		updateGlobalComponentSketchRaw(state, isDelete, Component.P, thetaHp);
-		updateGlobalComponentSketchRaw(state, isDelete, Component.O, thetaHo);
-		updateGlobalComponentSketchRaw(state, isDelete, Component.C, thetaHc);
-
-		updateComplementSketchRaw(state, isDelete, Component.S, Component.P, si, thetaHp);
-		updateComplementSketchRaw(state, isDelete, Component.S, Component.O, si, thetaHo);
-		updateComplementSketchRaw(state, isDelete, Component.S, Component.C, si, thetaHc);
-
-		updateComplementSketchRaw(state, isDelete, Component.P, Component.S, pi, thetaHs);
-		updateComplementSketchRaw(state, isDelete, Component.P, Component.O, pi, thetaHo);
-		updateComplementSketchRaw(state, isDelete, Component.P, Component.C, pi, thetaHc);
-
-		updateComplementSketchRaw(state, isDelete, Component.O, Component.S, oi, thetaHs);
-		updateComplementSketchRaw(state, isDelete, Component.O, Component.P, oi, thetaHp);
-		updateComplementSketchRaw(state, isDelete, Component.O, Component.C, oi, thetaHc);
-
-		updateComplementSketchRaw(state, isDelete, Component.C, Component.S, ci, thetaHs);
-		updateComplementSketchRaw(state, isDelete, Component.C, Component.P, ci, thetaHp);
-		updateComplementSketchRaw(state, isDelete, Component.C, Component.O, ci, thetaHo);
-	}
-
-	private void applyBoundedRebuildPair(State state, Pair pair, boolean isDelete, long key, long triple, long comp1,
-			long comp2) {
-		updatePairSketchRaw(state, isDelete, pair, REC_PAIR_TRIPLE, key, triple);
-		updatePairSketchRaw(state, isDelete, pair, REC_PAIR_COMP1, key, comp1);
-		updatePairSketchRaw(state, isDelete, pair, REC_PAIR_COMP2, key, comp2);
 	}
 
 	private void applyRebuildSingleUpdates(State state, IngestEvent event) {
@@ -8509,59 +8283,33 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 */
 	public boolean persistIfDirty() {
 		flushPendingIncremental();
-		if (!persistenceEnabled || persistenceFile == null || persistenceBlobBaseFile == null) {
+		SketchEstimatorPersistenceStore store = persistenceStore;
+		if (!persistenceEnabled || persistenceFile == null || store == null) {
 			return false;
 		}
 		if ((rebuildEpoch.get() & 1L) != 0L) {
 			return false;
 		}
-		byte currentSlot = slotByte(slotOf(current));
-		Path currentBlobBase = blobBaseForSlot(currentSlot);
-		boolean needsPrimarySnapshotRewrite = currentBlobBase != null
-				&& !currentBlobBase.equals(persistenceBlobBaseFile);
-		boolean rewrotePrimarySnapshot = false;
-		if (!dirty.get() && !manifestDirty.get() && !needsPrimarySnapshotRewrite) {
+		if (!dirty.get() && !indexDirty.get()) {
 			return false;
 		}
-		// Lock order rule: never block on State monitors while holding persistLock.
-		// flushDirtySketches() touches bufA/bufB, so run it outside persistLock.
-		if (needsPrimarySnapshotRewrite) {
-			try {
-				persistCurrentSlotSnapshotToPrimaryBlobBase(current, currentSlot);
-				rewrotePrimarySnapshot = true;
-			} catch (Throwable t) {
-				logger.warn("Failed to rewrite join estimator primary snapshot to {}", persistenceFile, t);
-				return false;
-			}
-		}
-		boolean hadDirty = dirty.get();
-		if (hadDirty && !needsPrimarySnapshotRewrite) {
-			try {
-				flushDirtySketches();
-			} catch (Throwable t) {
-				logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
-				return false;
-			}
+		try {
+			flushDirtySketches();
+		} catch (Throwable t) {
+			logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
+			return false;
 		}
 		synchronized (persistLock) {
-			if (!dirty.get() && !manifestDirty.get() && !rewrotePrimarySnapshot) {
+			if (!dirty.get() && !indexDirty.get()) {
 				return false;
 			}
 			try {
-				boolean persisted = false;
-				if (rewrotePrimarySnapshot) {
-					persisted = true;
-				} else if (hadDirty) {
-					compactPersistedBlobShards(currentSlot, persistenceBlobBaseFile);
-					persisted = true;
-				}
-				if (manifestDirty.get()) {
-					writeManifest(persistenceFile);
-					manifestDirty.set(false);
-					persisted = true;
-				}
+				store.flush();
+				writeDirectoryIndexes(store);
+				store.writeMetadata(newDirectoryMetadata(store));
+				indexDirty.set(false);
 				refreshDirtyFlagFromCacheDirectory();
-				return persisted;
+				return true;
 			} catch (Throwable t) {
 				logger.warn("Failed to persist join estimator state to {}", persistenceFile, t);
 				return false;
@@ -8584,12 +8332,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		clearSlotPersistence((byte) 0);
 		clearSlotPersistence((byte) 1);
 		dirty.set(false);
-		manifestDirty.set(false);
+		indexDirty.set(false);
 	}
 
 	private void unloadInternal(boolean markRebuildRequired) {
 		clearEstimateCache();
-		discardPendingIncremental();
+		if (persistenceEnabled && persistenceStore != null) {
+			if ((dirty.get() || indexDirty.get()) && !persistIfDirty()) {
+				return;
+			}
+		} else {
+			discardPendingIncremental();
+		}
 		synchronized (bufA) {
 			bufA.clear();
 		}
@@ -8602,11 +8356,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			residentSketchBytes = 0L;
 		}
 		memoryRegistry.clearCategory(MemoryCategory.RESIDENT_SKETCHES);
-		memoryRegistry.clearCategory(MemoryCategory.ROBUST_BUILDER);
-		memoryRegistry.clearCategory(MemoryCategory.ROBUST_SYNOPSIS);
 		memoryRegistry.clearTransientCategories();
 		refreshCacheMetadataAccounting();
-		seenTriples = 0L;
+		if (!persistenceEnabled || persistenceStore == null) {
+			seenTriples = 0L;
+		}
 		sketchesLoaded = false;
 		if (markRebuildRequired) {
 			rebuildRequired.set(true);
@@ -8657,143 +8411,120 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return false;
 			}
 			try {
-				readManifest(persistenceFile);
+				loadDirectoryStore(true);
 				sketchesLoaded = true;
 				rebuildRequired.set(false);
 				dirty.set(false);
-				manifestDirty.set(false);
+				indexDirty.set(false);
 				return true;
 			} catch (Throwable t) {
 				discardAndMarkForRebuild();
-				String unsupportedSnapshotVersionMessage = unsupportedSnapshotVersionMessage(t);
-				if (unsupportedSnapshotVersionMessage != null) {
-					throw new IllegalStateException(unsupportedSnapshotVersionMessage, t);
-				}
 				logger.warn("Failed to load join estimator state from {}", persistenceFile, t);
 				return false;
 			}
 		}
 	}
 
-	private static String unsupportedSnapshotVersionMessage(Throwable t) {
-		Throwable cursor = t;
-		while (cursor != null) {
-			String message = cursor.getMessage();
-			if (message != null && message.startsWith("Unsupported join estimator snapshot version")) {
-				return message;
-			}
-			if (message != null && message.startsWith("Unsupported theta join estimator snapshot version")) {
-				return message;
-			}
-			cursor = cursor.getCause();
-		}
-		return null;
-	}
-
 	private static boolean hasSnapshotAvailable(Path file) {
-		return file != null && Files.isReadable(file);
+		return file != null && Files.isRegularFile(file.toAbsolutePath().normalize().resolve("metadata.bin"));
 	}
 
-	private static Path sidecarPath(Path manifest) {
-		return manifest.resolveSibling(manifest.getFileName().toString() + ".sketches");
-	}
-
-	private static void deleteRobustSynopsisSpillDirectory(Path spillDirectory) throws IOException {
-		if (spillDirectory == null || !Files.exists(spillDirectory)) {
+	private void loadDirectoryStore(boolean markLoaded) throws IOException {
+		SketchEstimatorPersistenceStore store = persistenceStore;
+		if (store == null || !store.hasMetadata()) {
 			return;
 		}
-		try (DirectoryStream<Path> entries = Files.newDirectoryStream(spillDirectory)) {
-			for (Path entry : entries) {
-				if (Files.isDirectory(entry)) {
-					deleteRobustSynopsisSpillDirectory(entry);
-				} else {
-					Files.deleteIfExists(entry);
-				}
+		SketchEstimatorMetadata metadata = store.readMetadata();
+		if (metadata.bucketCount != nominalEntries) {
+			throw new IOException("Snapshot buckets mismatch: snapshot=" + metadata.bucketCount + " current="
+					+ nominalEntries);
+		}
+		if (metadata.sketchNominalEntries != bufA.k) {
+			throw new IOException("Snapshot sketchK mismatch: snapshot=" + metadata.sketchNominalEntries
+					+ " current=" + bufA.k);
+		}
+		if (!Objects.equals(metadata.defaultContext, defaultContextString)) {
+			throw new IOException("Snapshot defaultContextString mismatch");
+		}
+		if (metadata.persistedMaxMemoryBytes > memoryPolicy.maxMemoryBytes) {
+			logger.warn("Join estimator store {} was persisted with larger Xmx ({} bytes) than current Xmx ({} bytes)",
+					store.directory(), metadata.persistedMaxMemoryBytes, memoryPolicy.maxMemoryBytes);
+		}
+
+		List<SketchEstimatorPersistenceStore.IndexEntry> slotAEntries = store.readIndex((byte) 0);
+		List<SketchEstimatorPersistenceStore.IndexEntry> slotBEntries = store.readIndex((byte) 1);
+		synchronized (bufA) {
+			bufA.clear();
+		}
+		synchronized (bufB) {
+			bufB.clear();
+		}
+		synchronized (sketchCacheLock) {
+			cacheDirectory.clear();
+			loadDirectoryIndexEntries(slotAEntries);
+			loadDirectoryIndexEntries(slotBEntries);
+			residentLru.clear();
+			cacheDirectory.clearAllResidentNodes();
+			residentSketchBytes = 0L;
+			indexDirty.set(false);
+		}
+		memoryRegistry.clearCategory(MemoryCategory.RESIDENT_SKETCHES);
+		refreshCacheMetadataAccounting();
+		slotGenerations[0] = Math.max(1L, metadata.slotGenerationA);
+		slotGenerations[1] = Math.max(1L, metadata.slotGenerationB);
+		current = metadata.activeSlot == 0 ? bufA : bufB;
+		usingA = metadata.activeSlot == 0;
+		seenTriples = metadata.seenCount;
+		approxStoreSize.set(metadata.approxStoreSize);
+		lastRebuildPublishMs = metadata.lastPublishTime;
+		churnSampler.reset();
+		sketchesLoaded = markLoaded;
+		rebuildRequired.set(false);
+		dirty.set(false);
+		indexDirty.set(false);
+	}
+
+	private void loadDirectoryIndexEntries(List<SketchEstimatorPersistenceStore.IndexEntry> entries) {
+		for (SketchEstimatorPersistenceStore.IndexEntry entry : entries) {
+			SketchAddress address = new SketchAddress(entry.recType, entry.delete, entry.axisA, entry.axisB, entry.x,
+					entry.y);
+			int entryId = cacheDirectory.findOrAdd(address);
+			cacheDirectory.setPersistedRef(entryId, entry.ref.slot, entry.ref.fileKind, entry.ref.offset,
+					entry.ref.length, entry.ref.generation);
+		}
+	}
+
+	private void writeDirectoryIndexes(SketchEstimatorPersistenceStore store) throws IOException {
+		store.writeIndex((byte) 0, directoryIndexEntries((byte) 0));
+		store.writeIndex((byte) 1, directoryIndexEntries((byte) 1));
+	}
+
+	private List<SketchEstimatorPersistenceStore.IndexEntry> directoryIndexEntries(byte slot) {
+		List<SketchEstimatorPersistenceStore.IndexEntry> entries = new ArrayList<>();
+		synchronized (sketchCacheLock) {
+			for (PersistedSketchEntry entry : cacheDirectory.snapshotPersistedEntries(slot)) {
+				SketchAddress address = entry.address;
+				PersistedSketchRef ref = entry.persistedSketchRef;
+				entries.add(new SketchEstimatorPersistenceStore.IndexEntry(address.recType, address.isDelete,
+						address.axisA, address.axisB, address.x, address.y,
+						new SketchEstimatorPersistenceStore.Ref(slot, ref.fileKind, ref.offset, ref.length,
+								ref.generation)));
 			}
 		}
-		Files.deleteIfExists(spillDirectory);
+		return entries;
 	}
 
-	private void deleteRobustSynopsisSpillDirectoryQuietly(Path spillDirectory) {
-		try {
-			deleteRobustSynopsisSpillDirectory(spillDirectory);
-		} catch (IOException e) {
-			logger.debug("Failed to delete robust synopsis spill directory {}", spillDirectory, e);
-		}
-	}
-
-	private static Path sidecarPath(Path baseBlob, int blobId) {
-		if (blobId <= 0) {
-			return baseBlob;
-		}
-		return baseBlob.resolveSibling(baseBlob.getFileName().toString() + "." + blobId);
-	}
-
-	private Path blobBaseForSlot(byte slot) {
-		return slotBlobBaseFiles[slot];
-	}
-
-	private void setBlobBaseForSlot(byte slot, Path blobBase) {
-		slotBlobBaseFiles[slot] = blobBase == null ? null : blobBase.toAbsolutePath().normalize();
-	}
-
-	private void assignPrimaryBlobBaseToCurrentSlot() {
-		if (persistenceBlobBaseFile == null) {
-			return;
-		}
-		setBlobBaseForSlot(slotByte(slotOf(current)), persistenceBlobBaseFile);
+	private SketchEstimatorMetadata newDirectoryMetadata(SketchEstimatorPersistenceStore store) throws IOException {
+		byte activeSlot = slotByte(slotOf(current));
+		long approxSize = store.approximateSize();
+		return new SketchEstimatorMetadata(nominalEntries, bufA.k, defaultContextString, activeSlot, seenTriples,
+				approxSize, lastRebuildPublishMs, memoryPolicy, slotGenerations[0], slotGenerations[1]);
 	}
 
 	private void clearSlotPersistence(byte slot) {
 		synchronized (sketchCacheLock) {
 			cacheDirectory.clearPersistedRefsForSlot(slot);
 			cacheDirectory.clearDirtyForSlot(slot);
-		}
-		setBlobBaseForSlot(slot, null);
-		deleteTemporaryBlobBaseForSlot(slot);
-	}
-
-	private Path ensureTemporaryBlobBaseForSlot(byte slot) {
-		Path existing = blobBaseForSlot(slot);
-		if (existing != null && !existing.equals(persistenceBlobBaseFile)) {
-			return existing;
-		}
-		Path tempDir = slotTempBlobDirectories[slot];
-		try {
-			if (tempDir == null || !Files.isDirectory(tempDir)) {
-				Path parent = persistenceFile != null ? persistenceFile.toAbsolutePath().normalize().getParent() : null;
-				String prefix = "join-estimator-rebuild-" + (slot == 0 ? "a" : "b") + "-";
-				tempDir = parent != null && Files.isDirectory(parent)
-						? Files.createTempDirectory(parent, prefix)
-						: Files.createTempDirectory(prefix);
-				slotTempBlobDirectories[slot] = tempDir;
-			}
-			Path tempBlobBase = tempDir.resolve("spill.sketches").toAbsolutePath().normalize();
-			setBlobBaseForSlot(slot, tempBlobBase);
-			return tempBlobBase;
-		} catch (IOException e) {
-			throw new RuntimeException("Failed to prepare temporary sketch spill directory for slot "
-					+ (slot == 0 ? "A" : "B"), e);
-		}
-	}
-
-	private void deleteTemporaryBlobBaseForSlot(byte slot) {
-		Path tempDir = slotTempBlobDirectories[slot];
-		if (tempDir == null) {
-			return;
-		}
-		Path slotBlobBase = blobBaseForSlot(slot);
-		if (slotBlobBase != null && slotBlobBase.startsWith(tempDir)) {
-			setBlobBaseForSlot(slot, null);
-		}
-		try {
-			closeMappedChannels(tempDir.resolve("spill.sketches").toAbsolutePath().normalize());
-			deleteAllBlobShards(tempDir.resolve("spill.sketches"));
-			Files.deleteIfExists(tempDir);
-		} catch (IOException e) {
-			logger.debug("Failed to delete temporary sketch spill directory {}", tempDir, e);
-		} finally {
-			slotTempBlobDirectories[slot] = null;
 		}
 	}
 
@@ -8807,10 +8538,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 		return true;
-	}
-
-	private static long percentToBytes(double fraction, long heapMaxBytes) {
-		return Math.max(0L, Math.round(fraction * heapMaxBytes));
 	}
 
 	private void refreshCacheMetadataAccounting() {
@@ -8857,12 +8584,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (hasRecoveredHeadroom(additionalBytes)) {
 			return;
 		}
-		if (hasRecoveredHeadroom(additionalBytes)) {
-			return;
-		}
-		if (hasRecoveredHeadroom(additionalBytes)) {
-			return;
-		}
 
 		while (true) {
 			int candidateEntryId;
@@ -8890,14 +8611,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (allowUnload) {
 			unloadInternal(true);
 		}
-		throw new MemoryPressureAbort("Insufficient heap headroom for estimator allocation of " + additionalBytes
-				+ " bytes (tracked=" + trackedEstimatorBytes() + ", availableHeadroom=" + availableHeapHeadroomBytes()
+		throw new MemoryPressureAbort("Insufficient estimator memory budget for allocation of " + additionalBytes
+				+ " bytes (tracked=" + trackedEstimatorBytes() + ", budget=" + trackedMemorySoftLimitBytes
 				+ ")");
 	}
 
 	private boolean hasRecoveredHeadroom(long additionalBytes) {
 		long trackedBytes = saturatingAdd(trackedEstimatorBytes(), additionalBytes);
-		return trackedBytes <= trackedMemorySoftLimitBytes && availableHeapHeadroomBytes() >= additionalBytes;
+		return trackedBytes <= trackedMemorySoftLimitBytes;
 	}
 
 	private static long saturatingAdd(long left, long right) {
@@ -9059,11 +8780,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				synchronized (sketchCacheLock) {
 					persistedSketchRef = cacheDirectory.persistedRef(entryId, slot);
 				}
-				Path blobBase = blobBaseForSlot(slot);
-				if (persistedSketchRef == null || blobBase == null) {
+				if (persistedSketchRef == null) {
 					return null;
 				}
-				loaded = readSketchFromBlob(blobBase, persistedSketchRef, state.k);
+				SketchEstimatorPersistenceStore store = persistenceStore;
+				if (store == null) {
+					return null;
+				}
+				loaded = readSketchFromStore(store, persistedSketchRef, state.k, slot);
 			}
 			putResidentSketch(state, address, loaded);
 			return loaded;
@@ -9303,9 +9027,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private boolean refreshDirtyFlagFromCacheDirectory() {
-		byte currentSlot = slotByte(slotOf(current));
 		synchronized (sketchCacheLock) {
-			boolean hasDirtyEntries = cacheDirectory.hasDirtyEntries(currentSlot);
+			boolean hasDirtyEntries = cacheDirectory.hasDirtyEntries((byte) 0)
+					|| cacheDirectory.hasDirtyEntries((byte) 1);
 			dirty.set(hasDirtyEntries);
 			return hasDirtyEntries;
 		}
@@ -9314,17 +9038,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private void enforceSketchBudget() {
 		long targetBytes;
 		synchronized (sketchCacheLock) {
-			if ((residentSketchBytes <= maxSketchMemoryBytes && hasRecoveredHeadroom(0L)) || residentLru.isEmpty()) {
+			if (residentSketchBytes <= maxSketchMemoryBytes || residentLru.isEmpty()) {
 				return;
 			}
-			targetBytes = residentSketchBytes > maxSketchMemoryBytes ? minSketchMemoryBytes : 0L;
+			targetBytes = minSketchMemoryBytes;
 		}
 
 		while (true) {
 			int candidateEntryId;
 			byte candidateSlot;
 			synchronized (sketchCacheLock) {
-				if (((residentSketchBytes <= targetBytes) && hasRecoveredHeadroom(0L)) || residentLru.isEmpty()) {
+				if (residentSketchBytes <= targetBytes || residentLru.isEmpty()) {
 					return;
 				}
 				int headNode = residentLru.headNode();
@@ -9342,6 +9066,38 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 
+	}
+
+	private int evictResidentSketchBatch(int batchSize) {
+		int evicted = 0;
+		for (int i = 0; i < batchSize; i++) {
+			int candidateEntryId;
+			byte candidateSlot;
+			synchronized (sketchCacheLock) {
+				if (residentLru.isEmpty()) {
+					return evicted;
+				}
+				int headNode = residentLru.headNode();
+				candidateEntryId = residentLru.entryId(headNode);
+				candidateSlot = residentLru.slot(headNode);
+			}
+			EvictionResult result = evictResidentSketch(candidateEntryId, candidateSlot);
+			if (result != EvictionResult.EVICTED) {
+				return evicted;
+			}
+			evicted++;
+		}
+		return evicted;
+	}
+
+	private int activeLoadedBucketCount() {
+		synchronized (sketchCacheLock) {
+			int count = 0;
+			for (int node = residentLru.headNode(); node != -1; node = residentLru.nextNode(node)) {
+				count++;
+			}
+			return count;
+		}
 	}
 
 	private EvictionResult evictResidentSketch(int entryId, byte slotByte) {
@@ -9366,11 +9122,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return EvictionResult.EVICTED;
 			}
 			dirtySketch = isDirty(entryId, slotByte);
-			if (dirtySketch && blobBaseForSlot(slotByte) == null) {
-				if (state == current) {
-					return EvictionResult.NEEDS_UNLOAD;
-				}
-				ensureTemporaryBlobBaseForSlot(slotByte);
+			if (dirtySketch && persistenceStore == null) {
+				return EvictionResult.NEEDS_UNLOAD;
 			}
 			setResidentSketch(state, sketchAddress, null);
 			synchronized (sketchCacheLock) {
@@ -9508,7 +9261,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private void flushDirtySketches() throws IOException {
-		State currentState = current;
+		flushDirtySketches(bufA);
+		flushDirtySketches(bufB);
+	}
+
+	private void flushDirtySketches(State currentState) throws IOException {
 		byte currentSlot = slotByte(slotOf(currentState));
 		int[] pending;
 		synchronized (sketchCacheLock) {
@@ -9575,515 +9332,36 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void appendSketchPayload(State state, int entryId, SketchAddress address, byte[] payload)
 			throws IOException {
-		byte slot = slotByte(slotOf(state));
-		Path blobBase = blobBaseForSlot(slot);
-		if (blobBase == null) {
-			throw new IOException("No sketch blob base configured for slot " + slot);
-		}
-		int blobId = selectWriteBlobId(blobBase, payload.length);
-		long offset;
-		MappedChannelEntry entry = getMappedChannelEntry(blobBase, blobId, true);
-		synchronized (entry) {
-			offset = entry.writePosition;
-			ensureMappedBufferRange(entry, offset, payload.length);
-			MappedByteBuffer mapped = entry.mappedBuffer.duplicate();
-			mapped.position((int) offset);
-			mapped.put(payload);
-			entry.writePosition = offset + payload.length;
-		}
-		synchronized (sketchCacheLock) {
-			cacheDirectory.setPersistedRef(entryId, slot, blobId, offset, payload.length);
-			cacheDirectory.clearDirty(entryId, slot);
-			manifestDirty.set(true);
-		}
-	}
-
-	private void compactPersistedBlobShards(byte slot, Path blobBase) throws IOException {
-		if (blobBase == null) {
-			return;
-		}
-
-		List<PersistedEntrySnapshot> persistedEntries;
-		synchronized (sketchCacheLock) {
-			persistedEntries = cacheDirectory.snapshotPersistedEntryRefs(slot);
-		}
-		if (persistedEntries.isEmpty()) {
-			closeMappedChannels(blobBase);
-			deleteStaleBlobShards(blobBase, -1);
+		SketchEstimatorPersistenceStore store = persistenceStore;
+		if (store != null) {
+			byte slot = slotByte(slotOf(state));
+			SketchEstimatorPersistenceStore.Ref persistedRef = store.append(slot, fileKindFor(address), payload,
+					slotGenerations[slot]);
 			synchronized (sketchCacheLock) {
-				cacheDirectory.clearPersistedRefsForSlot(slot);
-				manifestDirty.set(true);
+				cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind, persistedRef.offset,
+						persistedRef.length, persistedRef.generation);
+				cacheDirectory.clearDirty(entryId, slot);
+				indexDirty.set(true);
 			}
 			return;
 		}
-
-		Path compactBase = blobBase.resolveSibling(blobBase.getFileName().toString() + ".compact.tmp");
-		deleteAllBlobShards(compactBase);
-
-		int entryCount = persistedEntries.size();
-		long workspaceOwnerId = transientOwner(MEMORY_OWNER_PERSISTENCE_REWRITE_WORKSPACE, slot & 0xffL);
-		long workspaceBytes = estimateIntArrayBytes(entryCount)
-				+ estimateIntArrayBytes(entryCount)
-				+ estimateLongArrayBytes(entryCount)
-				+ estimateIntArrayBytes(entryCount);
-		ensureEstimatorCapacity(workspaceBytes, true);
-		reserveTrackedMemory(MemoryCategory.PERSISTENCE_REWRITE_BUFFERS, workspaceOwnerId, workspaceBytes);
-		int[] entryIds = new int[entryCount];
-		int[] blobIds = new int[entryCount];
-		long[] offsets = new long[entryCount];
-		int[] lengths = new int[entryCount];
-		List<FileChannel> compactChannels = new ArrayList<>();
-		List<Path> compactChannelPaths = new ArrayList<>();
-		int maxBlobId = 0;
-		int writeBlobId = 0;
-		long writeOffset = 0L;
-
-		try {
-			for (int i = 0; i < entryCount; i++) {
-				PersistedEntrySnapshot persistedEntry = persistedEntries.get(i);
-				TrackedByteArray payload = readTrackedPersistedPayloadBytes(
-						MemoryCategory.PERSISTENCE_REWRITE_BUFFERS,
-						transientOwner(MEMORY_OWNER_PERSISTENCE_REWRITE_IO_BUFFER, i),
-						blobBase,
-						persistedEntry.persistedSketchRef);
-				try {
-					if (writeOffset > 0L && writeOffset + payload.bytes.length > maxPersistenceBlobBytes) {
-						writeBlobId++;
-						writeOffset = 0L;
-					}
-
-					Path compactBlobPath = sidecarPath(compactBase, writeBlobId);
-					FileChannel compactChannel = openCompactionBlobChannel(compactChannels, compactChannelPaths,
-							compactBlobPath,
-							writeBlobId);
-					writePayload(compactChannel, writeOffset, payload.bytes);
-					entryIds[i] = persistedEntry.entryId;
-					blobIds[i] = writeBlobId;
-					offsets[i] = writeOffset;
-					lengths[i] = payload.bytes.length;
-					writeOffset += payload.bytes.length;
-					maxBlobId = Math.max(maxBlobId, writeBlobId);
-				} finally {
-					releaseTrackedBuffer(payload);
-				}
-			}
-
-			closeChannelsQuietly(compactChannels);
-			closeMappedChannels(blobBase);
-			moveCompactedBlobShards(compactBase, blobBase, maxBlobId);
-			deleteStaleBlobShards(blobBase, maxBlobId);
-			setActiveWriteBlobId(blobBase, maxBlobId);
-
-			synchronized (sketchCacheLock) {
-				cacheDirectory.clearPersistedRefsForSlot(slot);
-				cacheDirectory.clearDirtyForSlot(slot);
-				for (int i = 0; i < entryCount; i++) {
-					cacheDirectory.setPersistedRef(entryIds[i], slot, blobIds[i], offsets[i], lengths[i]);
-				}
-				manifestDirty.set(true);
-			}
-		} catch (IOException | RuntimeException e) {
-			closeChannelsQuietly(compactChannels);
-			deleteBlobPathsQuietly(compactChannelPaths);
-			throw e;
-		} finally {
-			releaseTrackedMemory(MemoryCategory.PERSISTENCE_REWRITE_BUFFERS, workspaceOwnerId);
-		}
+		throw new IOException("No directory-backed sketch store configured");
 	}
 
-	private void persistCurrentSlotSnapshotToPrimaryBlobBase(State state, byte slot) throws IOException {
-		Path targetBlobBase = persistenceBlobBaseFile;
-		if (targetBlobBase == null) {
-			return;
+	private static byte fileKindFor(SketchAddress address) {
+		switch (address.recType) {
+		case REC_GLOBAL_COMPONENT:
+			return SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL;
+		case REC_SINGLE_TRIPLE:
+		case REC_SINGLE_CPL:
+			return SketchEstimatorPersistenceStore.FILE_KIND_SINGLES;
+		case REC_PAIR_TRIPLE:
+		case REC_PAIR_COMP1:
+		case REC_PAIR_COMP2:
+			return SketchEstimatorPersistenceStore.FILE_KIND_PAIRS;
+		default:
+			throw new IllegalStateException("Unknown sketch record type: " + address.recType);
 		}
-
-		Path sourceBlobBase = blobBaseForSlot(slot);
-		int[] slotEntries;
-		synchronized (sketchCacheLock) {
-			slotEntries = cacheDirectory.snapshotEntriesForSlot(slot);
-		}
-		if (slotEntries.length == 0) {
-			synchronized (persistLock) {
-				closeMappedChannels(targetBlobBase);
-				deleteStaleBlobShards(targetBlobBase, -1);
-				synchronized (sketchCacheLock) {
-					cacheDirectory.clearPersistedRefsForSlot(slot);
-					cacheDirectory.clearDirtyForSlot(slot);
-					manifestDirty.set(true);
-				}
-				setBlobBaseForSlot(slot, targetBlobBase);
-				setActiveWriteBlobId(targetBlobBase, 0);
-			}
-			if (sourceBlobBase != null && !sourceBlobBase.equals(targetBlobBase)) {
-				deleteTemporaryBlobBaseForSlot(slot);
-			}
-			return;
-		}
-
-		List<RewriteSlotEntry> rewriteEntries = new ArrayList<>(slotEntries.length);
-		synchronized (state) {
-			for (int entryId : slotEntries) {
-				SketchAddress address;
-				PersistedSketchRef persistedRef;
-				synchronized (sketchCacheLock) {
-					address = cacheDirectory.toSketchAddress(entryId);
-					persistedRef = cacheDirectory.persistedRef(entryId, slot);
-				}
-				ArrayOfDoublesUpdatableSketch resident = getResidentSketch(state, address);
-				TrackedByteArray residentPayload = resident == null ? null
-						: serializeTrackedSketchPayload(MemoryCategory.PERSISTENCE_REWRITE_BUFFERS,
-								transientOwner(MEMORY_OWNER_PERSISTENCE_REWRITE_BUFFER, entryId), resident);
-				if (residentPayload != null || persistedRef != null) {
-					rewriteEntries.add(new RewriteSlotEntry(entryId, residentPayload, persistedRef));
-				}
-			}
-		}
-
-		Path compactBase = targetBlobBase.resolveSibling(targetBlobBase.getFileName().toString() + ".rewrite.tmp");
-		long workspaceOwnerId = transientOwner(MEMORY_OWNER_PERSISTENCE_REWRITE_WORKSPACE, 0x10000L | (slot & 0xffL));
-		long workspaceBytes = estimateIntArrayBytes(rewriteEntries.size())
-				+ estimateIntArrayBytes(rewriteEntries.size())
-				+ estimateLongArrayBytes(rewriteEntries.size())
-				+ estimateIntArrayBytes(rewriteEntries.size());
-		ensureEstimatorCapacity(workspaceBytes, true);
-		reserveTrackedMemory(MemoryCategory.PERSISTENCE_REWRITE_BUFFERS, workspaceOwnerId, workspaceBytes);
-		synchronized (persistLock) {
-			try {
-				deleteAllBlobShards(compactBase);
-
-				int[] entryIds = new int[rewriteEntries.size()];
-				int[] blobIds = new int[rewriteEntries.size()];
-				long[] offsets = new long[rewriteEntries.size()];
-				int[] lengths = new int[rewriteEntries.size()];
-				List<FileChannel> compactChannels = new ArrayList<>();
-				List<Path> compactChannelPaths = new ArrayList<>();
-				int writtenCount = 0;
-				int maxBlobId = 0;
-				int writeBlobId = 0;
-				long writeOffset = 0L;
-
-				try {
-					for (RewriteSlotEntry rewriteEntry : rewriteEntries) {
-						TrackedByteArray trackedPayload = rewriteEntry.residentPayload;
-						boolean transientPayload = false;
-						if (trackedPayload == null) {
-							if (rewriteEntry.persistedSketchRef == null || sourceBlobBase == null) {
-								continue;
-							}
-							trackedPayload = readTrackedPersistedPayloadBytes(
-									MemoryCategory.PERSISTENCE_REWRITE_BUFFERS,
-									transientOwner(MEMORY_OWNER_PERSISTENCE_REWRITE_IO_BUFFER, rewriteEntry.entryId),
-									sourceBlobBase,
-									rewriteEntry.persistedSketchRef);
-							transientPayload = true;
-						}
-
-						try {
-							if (writeOffset > 0L
-									&& writeOffset + trackedPayload.bytes.length > maxPersistenceBlobBytes) {
-								writeBlobId++;
-								writeOffset = 0L;
-							}
-
-							Path compactBlobPath = sidecarPath(compactBase, writeBlobId);
-							FileChannel compactChannel = openCompactionBlobChannel(compactChannels, compactChannelPaths,
-									compactBlobPath,
-									writeBlobId);
-							writePayload(compactChannel, writeOffset, trackedPayload.bytes);
-							entryIds[writtenCount] = rewriteEntry.entryId;
-							blobIds[writtenCount] = writeBlobId;
-							offsets[writtenCount] = writeOffset;
-							lengths[writtenCount] = trackedPayload.bytes.length;
-							writeOffset += trackedPayload.bytes.length;
-							maxBlobId = Math.max(maxBlobId, writeBlobId);
-							writtenCount++;
-						} finally {
-							if (transientPayload) {
-								releaseTrackedBuffer(trackedPayload);
-							}
-						}
-					}
-
-					closeChannelsQuietly(compactChannels);
-					closeMappedChannels(targetBlobBase);
-					if (sourceBlobBase != null && !sourceBlobBase.equals(targetBlobBase)) {
-						closeMappedChannels(sourceBlobBase);
-					}
-					moveCompactedBlobShards(compactBase, targetBlobBase, maxBlobId);
-					deleteStaleBlobShards(targetBlobBase, maxBlobId);
-					setActiveWriteBlobId(targetBlobBase, maxBlobId);
-
-					synchronized (sketchCacheLock) {
-						cacheDirectory.clearPersistedRefsForSlot(slot);
-						cacheDirectory.clearDirtyForSlot(slot);
-						for (int i = 0; i < writtenCount; i++) {
-							cacheDirectory.setPersistedRef(entryIds[i], slot, blobIds[i], offsets[i], lengths[i]);
-						}
-						manifestDirty.set(true);
-					}
-
-					setBlobBaseForSlot(slot, targetBlobBase);
-				} catch (IOException | RuntimeException e) {
-					closeChannelsQuietly(compactChannels);
-					deleteBlobPathsQuietly(compactChannelPaths);
-					throw e;
-				}
-			} finally {
-				releaseTrackedMemory(MemoryCategory.PERSISTENCE_REWRITE_BUFFERS, workspaceOwnerId);
-				for (RewriteSlotEntry rewriteEntry : rewriteEntries) {
-					releaseTrackedBuffer(rewriteEntry.residentPayload);
-				}
-			}
-		}
-
-		if (sourceBlobBase != null && !sourceBlobBase.equals(targetBlobBase)) {
-			deleteTemporaryBlobBaseForSlot(slot);
-		}
-	}
-
-	private static FileChannel openCompactionBlobChannel(List<FileChannel> channels, List<Path> channelPaths, Path path,
-			int blobId) throws IOException {
-		while (channels.size() <= blobId) {
-			channels.add(null);
-		}
-		FileChannel existing = channels.get(blobId);
-		if (existing != null && existing.isOpen()) {
-			return existing;
-		}
-		ensureParentDirectoryExists(path);
-		FileChannel opened = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-				StandardOpenOption.WRITE);
-		channels.set(blobId, opened);
-		channelPaths.add(path);
-		return opened;
-	}
-
-	private static void writePayload(FileChannel channel, long offset, byte[] payload) throws IOException {
-		ByteBuffer buffer = ByteBuffer.wrap(payload);
-		long position = offset;
-		while (buffer.hasRemaining()) {
-			position += channel.write(buffer, position);
-		}
-	}
-
-	private static void closeChannelsQuietly(List<FileChannel> channels) {
-		for (FileChannel channel : channels) {
-			if (channel != null) {
-				closeChannelQuietly(channel);
-			}
-		}
-	}
-
-	private static void moveCompactedBlobShards(Path compactBase, Path blobBase, int maxBlobId) throws IOException {
-		for (int blobId = 0; blobId <= maxBlobId; blobId++) {
-			Path source = sidecarPath(compactBase, blobId);
-			Path target = sidecarPath(blobBase, blobId);
-			moveReplaceExisting(source, target);
-		}
-	}
-
-	private static void moveReplaceExisting(Path source, Path target) throws IOException {
-		try {
-			Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-		} catch (IOException e) {
-			Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-		}
-	}
-
-	private static void deleteAllBlobShards(Path baseBlob) throws IOException {
-		for (Path shard : listBlobShards(baseBlob)) {
-			Files.deleteIfExists(shard);
-		}
-	}
-
-	private static void deleteStaleBlobShards(Path baseBlob, int maxBlobIdToKeep) throws IOException {
-		for (Path shard : listBlobShards(baseBlob)) {
-			int blobId = parseBlobId(baseBlob, shard);
-			if (blobId > maxBlobIdToKeep) {
-				Files.deleteIfExists(shard);
-			}
-		}
-	}
-
-	private static List<Path> listBlobShards(Path baseBlob) throws IOException {
-		Path parent = baseBlob.getParent();
-		if (parent == null || !Files.isDirectory(parent)) {
-			return Collections.emptyList();
-		}
-		String baseName = baseBlob.getFileName().toString();
-		List<Path> shards = new ArrayList<>();
-		try (var stream = Files.list(parent)) {
-			stream.filter(path -> {
-				String fileName = path.getFileName().toString();
-				return fileName.equals(baseName) || fileName.startsWith(baseName + ".");
-			}).forEach(shards::add);
-		}
-		return shards;
-	}
-
-	private static int parseBlobId(Path baseBlob, Path path) {
-		String baseName = baseBlob.getFileName().toString();
-		String fileName = path.getFileName().toString();
-		if (fileName.equals(baseName)) {
-			return 0;
-		}
-		if (!fileName.startsWith(baseName + ".")) {
-			return -1;
-		}
-		String suffix = fileName.substring(baseName.length() + 1);
-		try {
-			return Integer.parseInt(suffix);
-		} catch (NumberFormatException e) {
-			return -1;
-		}
-	}
-
-	private static void deleteBlobPathsQuietly(List<Path> paths) {
-		for (Path path : paths) {
-			try {
-				Files.deleteIfExists(path);
-			} catch (IOException e) {
-				logger.debug("Failed to delete compacted shard {}", path, e);
-			}
-		}
-	}
-
-	private void writeManifest(Path file) throws IOException {
-		Path parent = file.getParent();
-		if (parent != null) {
-			Files.createDirectories(parent);
-		}
-		Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
-		try (OutputStream raw = new BufferedOutputStream(
-				Files.newOutputStream(tmp, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING));
-				DataOutputStream out = new DataOutputStream(raw)) {
-			out.write(PERSIST_MAGIC);
-			out.writeByte(PERSIST_VERSION);
-			out.writeInt(nominalEntries);
-			out.writeInt(bufA.k);
-			writeString(out, defaultContextString);
-			out.writeLong(seenTriples);
-			out.writeLong(approxStoreSize.get());
-			out.writeLong(lastRebuildPublishMs);
-
-			List<ManifestSketchEntry> entries;
-			byte currentSlot = slotByte(slotOf(current));
-			synchronized (sketchCacheLock) {
-				entries = cacheDirectory.snapshotPersistedEntries(currentSlot);
-			}
-
-			out.writeInt(entries.size());
-			for (ManifestSketchEntry entry : entries) {
-				SketchAddress key = entry.address;
-				PersistedSketchRef persistedSketchRef = entry.persistedSketchRef;
-				out.writeByte(key.recType);
-				out.writeBoolean(key.isDelete);
-				out.writeByte(key.axisA);
-				out.writeByte(key.axisB);
-				out.writeInt(key.x);
-				out.writeInt(key.y);
-				out.writeInt(persistedSketchRef.blobId);
-				out.writeLong(persistedSketchRef.offset);
-				out.writeInt(persistedSketchRef.length);
-			}
-		}
-
-		try {
-			Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-		} catch (IOException e) {
-			Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-		}
-	}
-
-	private void readManifest(Path file) throws IOException {
-		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(Files.readAllBytes(file)))) {
-			int version = validateManifestHeader(in);
-			int buckets = in.readInt();
-			int k = in.readInt();
-			String defCtx = readString(in);
-			long seen = in.readLong();
-			long approx = in.readLong();
-			long lastPublish = in.readLong();
-
-			if (buckets != nominalEntries) {
-				throw new IOException("Snapshot buckets mismatch: snapshot=" + buckets + " current=" + nominalEntries);
-			}
-			if (k != bufA.k) {
-				throw new IOException("Snapshot sketchK mismatch: snapshot=" + k + " current=" + bufA.k);
-			}
-			if (!Objects.equals(defCtx, defaultContextString)) {
-				throw new IOException("Snapshot defaultContextString mismatch");
-			}
-
-			int count = in.readInt();
-			List<ManifestSketchEntry> loadedEntries = new ArrayList<>(count);
-			int maxLoadedBlobId = 0;
-			for (int i = 0; i < count; i++) {
-				byte recType = in.readByte();
-				boolean isDelete = in.readBoolean();
-				byte axisA = in.readByte();
-				byte axisB = in.readByte();
-				int x = in.readInt();
-				int y = in.readInt();
-				int blobId = version >= 3 ? in.readInt() : 0;
-				long offset = in.readLong();
-				int length = in.readInt();
-				SketchAddress key = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
-				loadedEntries.add(new ManifestSketchEntry(key, new PersistedSketchRef(blobId, offset, length)));
-				maxLoadedBlobId = Math.max(maxLoadedBlobId, blobId);
-			}
-
-			synchronized (bufA) {
-				bufA.clear();
-			}
-			synchronized (bufB) {
-				bufB.clear();
-			}
-			synchronized (sketchCacheLock) {
-				cacheDirectory.clear();
-				for (ManifestSketchEntry loadedEntry : loadedEntries) {
-					int entryId = cacheDirectory.findOrAdd(loadedEntry.address);
-					PersistedSketchRef persistedSketchRef = loadedEntry.persistedSketchRef;
-					cacheDirectory.setPersistedRef(entryId, (byte) 0, persistedSketchRef.blobId,
-							persistedSketchRef.offset,
-							persistedSketchRef.length);
-				}
-				residentLru.clear();
-				cacheDirectory.clearAllResidentNodes();
-				residentSketchBytes = 0L;
-				manifestDirty.set(false);
-			}
-			memoryRegistry.clearCategory(MemoryCategory.RESIDENT_SKETCHES);
-			refreshCacheMetadataAccounting();
-			setActiveWriteBlobId(persistenceBlobBaseFile, maxLoadedBlobId);
-			setBlobBaseForSlot((byte) 0, persistenceBlobBaseFile);
-			clearSlotPersistence((byte) 1);
-			current = bufA;
-			usingA = true;
-			seenTriples = seen;
-			approxStoreSize.set(approx);
-			lastRebuildPublishMs = lastPublish;
-			churnSampler.reset();
-		}
-	}
-
-	private static int validateManifestHeader(DataInputStream in) throws IOException {
-		for (byte expected : PERSIST_MAGIC) {
-			byte actual = in.readByte();
-			if (expected != actual) {
-				throw new IOException("Not a join estimator snapshot file");
-			}
-		}
-		int version = in.readUnsignedByte();
-		if (version == 2 || version == 3) {
-			throw new IOException("Unsupported theta join estimator snapshot version: " + version
-					+ "; rebuild required for tuple sketches");
-		}
-		if (version != PERSIST_VERSION) {
-			throw new IOException("Unsupported join estimator snapshot version: " + version + " (expected "
-					+ PERSIST_VERSION + ")");
-		}
-		return version;
 	}
 
 	private TrackedByteArray serializeTrackedSketchPayload(MemoryCategory category, long ownerId,
@@ -10114,263 +9392,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private TrackedByteArray readTrackedPersistedPayloadBytes(MemoryCategory category, long ownerId, Path blob,
-			PersistedSketchRef persistedSketchRef) throws IOException {
-		long trackedBytes = estimateByteArrayBytes(persistedSketchRef.length);
-		ensureEstimatorCapacity(trackedBytes, true);
-		reserveTrackedMemory(category, ownerId, trackedBytes);
-		byte[] payload = new byte[persistedSketchRef.length];
-		MappedChannelEntry entry = getMappedChannelEntry(blob, persistedSketchRef.blobId, false);
-		try {
-			synchronized (entry) {
-				long endOffset = persistedSketchRef.offset + persistedSketchRef.length;
-				if (endOffset > entry.cachedFileSize) {
-					refreshCachedFileSizeIfIncreased(entry);
-				}
-				if (persistedSketchRef.offset < 0 || persistedSketchRef.length < 0
-						|| endOffset < persistedSketchRef.offset || endOffset > entry.cachedFileSize) {
-					throw new IOException(
-							"Persisted sketch ref exceeds sidecar bounds: blobId=" + persistedSketchRef.blobId
-									+ " offset=" + persistedSketchRef.offset + " length=" + persistedSketchRef.length
-									+ " fileSize=" + entry.cachedFileSize);
-				}
-
-				ensureMappedBufferRange(entry, persistedSketchRef.offset, persistedSketchRef.length);
-				MappedByteBuffer mapped = entry.mappedBuffer.duplicate();
-				mapped.position((int) persistedSketchRef.offset);
-				mapped.get(payload);
-			}
-			replaceTrackedMemory(category, ownerId, estimateByteArrayBytes(payload.length));
-			return new TrackedByteArray(payload, category, ownerId);
-		} catch (IOException | RuntimeException e) {
-			releaseTrackedMemory(category, ownerId);
-			throw e;
-		}
-	}
-
-	private ArrayOfDoublesUpdatableSketch readSketchFromBlob(Path blob, PersistedSketchRef persistedSketchRef, int k)
-			throws IOException {
-		TrackedByteArray payload = readTrackedPersistedPayloadBytes(MemoryCategory.DESERIALIZATION_BUFFERS,
-				transientOwner(MEMORY_OWNER_DESERIALIZATION_BUFFER, persistedSketchRef.blobId),
-				blob,
-				persistedSketchRef);
-		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload.bytes))) {
+	private ArrayOfDoublesUpdatableSketch readSketchFromStore(SketchEstimatorPersistenceStore store,
+			PersistedSketchRef persistedSketchRef, int k, byte slot) throws IOException {
+		byte[] bytes = store.read(persistedSketchRef.storeRef(slot));
+		long ownerId = transientOwner(MEMORY_OWNER_DESERIALIZATION_BUFFER, persistedSketchRef.offset);
+		reserveTrackedMemory(MemoryCategory.DESERIALIZATION_BUFFERS, ownerId, estimateByteArrayBytes(bytes.length));
+		try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes))) {
 			return readSketchPayload(input, k);
 		} finally {
-			releaseTrackedBuffer(payload);
+			releaseTrackedMemory(MemoryCategory.DESERIALIZATION_BUFFERS, ownerId);
 		}
 	}
 
 	private void releaseTrackedBuffer(TrackedByteArray trackedByteArray) {
 		if (trackedByteArray != null) {
 			releaseTrackedMemory(trackedByteArray.category, trackedByteArray.ownerId);
-		}
-	}
-
-	private MappedChannelEntry getMappedChannelEntry(Path baseBlobPath, int blobId, boolean writeAccess)
-			throws IOException {
-		synchronized (mappedChannelLock) {
-			return getMappedChannelEntryLocked(baseBlobPath, blobId, writeAccess);
-		}
-	}
-
-	private MappedChannelEntry getMappedChannelEntryLocked(Path baseBlobPath, int blobId, boolean writeAccess)
-			throws IOException {
-		if (blobId < 0) {
-			throw new IOException("Invalid blob id: " + blobId);
-		}
-		Path normalizedBase = baseBlobPath.toAbsolutePath().normalize();
-		BlobStorage storage = blobStorages.computeIfAbsent(normalizedBase, ignored -> new BlobStorage());
-		ensureBlobEntryCapacity(storage, blobId);
-		if (writeAccess) {
-			MappedChannelEntry entry = storage.writeEntries.get(blobId);
-			if (!isOpenEntry(entry)) {
-				closeMappedChannelEntry(entry);
-				entry = openMappedChannelEntry(sidecarPath(normalizedBase, blobId), true);
-				storage.writeEntries.set(blobId, entry);
-			}
-			return entry;
-		}
-		MappedChannelEntry writeEntry = storage.writeEntries.get(blobId);
-		if (isOpenEntry(writeEntry)) {
-			return writeEntry;
-		}
-		MappedChannelEntry readEntry = storage.readEntries.get(blobId);
-		if (!isOpenEntry(readEntry)) {
-			closeMappedChannelEntry(readEntry);
-			readEntry = openMappedChannelEntry(sidecarPath(normalizedBase, blobId), false);
-			storage.readEntries.set(blobId, readEntry);
-		}
-		return readEntry;
-	}
-
-	private void ensureBlobEntryCapacity(BlobStorage storage, int blobId) {
-		while (storage.readEntries.size() <= blobId) {
-			storage.readEntries.add(null);
-		}
-		while (storage.writeEntries.size() <= blobId) {
-			storage.writeEntries.add(null);
-		}
-	}
-
-	private static boolean isOpenEntry(MappedChannelEntry entry) {
-		return entry != null && entry.channel.isOpen();
-	}
-
-	private int selectWriteBlobId(Path baseBlobPath, int payloadLength) throws IOException {
-		synchronized (mappedChannelLock) {
-			Path normalizedBase = baseBlobPath.toAbsolutePath().normalize();
-			BlobStorage storage = blobStorages.computeIfAbsent(normalizedBase, ignored -> new BlobStorage());
-			int blobId = Math.max(0, storage.activeWriteBlobId);
-			while (true) {
-				MappedChannelEntry entry = getMappedChannelEntryLocked(normalizedBase, blobId, true);
-				long writePosition;
-				long projectedWritePosition;
-				synchronized (entry) {
-					writePosition = entry.writePosition;
-					projectedWritePosition = writePosition + payloadLength;
-				}
-				if (writePosition > 0 && projectedWritePosition > maxPersistenceBlobBytes) {
-					blobId++;
-					continue;
-				}
-				storage.activeWriteBlobId = blobId;
-				return blobId;
-			}
-		}
-	}
-
-	private void setActiveWriteBlobId(Path baseBlobPath, int blobId) {
-		if (baseBlobPath == null) {
-			return;
-		}
-		synchronized (mappedChannelLock) {
-			BlobStorage storage = blobStorages.computeIfAbsent(baseBlobPath.toAbsolutePath().normalize(),
-					ignored -> new BlobStorage());
-			storage.activeWriteBlobId = Math.max(0, blobId);
-		}
-	}
-
-	private static MappedChannelEntry openMappedChannelEntry(Path normalizedPath, boolean writeAccess)
-			throws IOException {
-		FileChannel opened;
-		if (writeAccess) {
-			ensureParentDirectoryExists(normalizedPath);
-			opened = FileChannel.open(normalizedPath, StandardOpenOption.CREATE, StandardOpenOption.READ,
-					StandardOpenOption.WRITE);
-		} else {
-			opened = FileChannel.open(normalizedPath, StandardOpenOption.READ);
-		}
-		return new MappedChannelEntry(opened, writeAccess);
-	}
-
-	private static void ensureParentDirectoryExists(Path filePath) throws IOException {
-		Path parent = filePath.getParent();
-		if (parent != null) {
-			Files.createDirectories(parent);
-		}
-	}
-
-	private void ensureMappedBufferRange(MappedChannelEntry entry, long offset, int length) throws IOException {
-		long endOffset = offset + length;
-		if (offset < 0 || length <= 0 || endOffset < offset) {
-			throw new IOException("Invalid mapped range: offset=" + offset + " length=" + length);
-		}
-
-		if (entry.writeAccess) {
-			ensureChannelSize(entry, endOffset);
-		}
-		if (endOffset > entry.cachedFileSize) {
-			refreshCachedFileSizeIfIncreased(entry);
-		}
-		if (endOffset > entry.cachedFileSize) {
-			throw new IOException(
-					"Mapped range exceeds sidecar bounds: end=" + endOffset + " fileSize=" + entry.cachedFileSize);
-		}
-
-		if (entry.cachedFileSize > Integer.MAX_VALUE) {
-			throw new IOException(
-					"Mapped sidecar file exceeds maximum mappable size: " + entry.cachedFileSize + " bytes");
-		}
-
-		if (entry.mappedBuffer != null && entry.mappedLength == (int) entry.cachedFileSize) {
-			return;
-		}
-
-		int mappedLength = (int) entry.cachedFileSize;
-		FileChannel.MapMode mapMode = entry.writeAccess ? FileChannel.MapMode.READ_WRITE
-				: FileChannel.MapMode.READ_ONLY;
-		entry.mappedBuffer = entry.channel.map(mapMode, 0L, mappedLength);
-		entry.mappedLength = mappedLength;
-	}
-
-	private static void ensureChannelSize(MappedChannelEntry entry, long requiredSize) throws IOException {
-		if (requiredSize <= entry.cachedFileSize) {
-			return;
-		}
-		long growthBy = Math.max(requiredSize - entry.cachedFileSize, (long) MIN_MAPPED_GROWTH_BYTES);
-		long targetSize;
-		try {
-			targetSize = Math.addExact(entry.cachedFileSize, growthBy);
-		} catch (ArithmeticException e) {
-			targetSize = Long.MAX_VALUE;
-		}
-		if (targetSize < requiredSize) {
-			targetSize = requiredSize;
-		}
-		if (targetSize > Integer.MAX_VALUE) {
-			throw new IOException("Mapped sidecar file exceeds maximum mappable size: " + targetSize + " bytes");
-		}
-		entry.channel.write(ByteBuffer.wrap(FILE_GROWTH_MARKER), targetSize - 1L);
-		entry.cachedFileSize = targetSize;
-	}
-
-	private static void refreshCachedFileSizeIfIncreased(MappedChannelEntry entry) throws IOException {
-		long actualSize = entry.channel.size();
-		if (actualSize > entry.cachedFileSize) {
-			entry.cachedFileSize = actualSize;
-		}
-	}
-
-	private void closeMappedChannels() {
-		Set<MappedChannelEntry> entriesToClose = Collections.newSetFromMap(new IdentityHashMap<>());
-		synchronized (mappedChannelLock) {
-			collectMappedChannels(entriesToClose, blobStorages.values());
-			blobStorages.clear();
-		}
-		for (MappedChannelEntry entry : entriesToClose) {
-			closeMappedChannelEntry(entry);
-		}
-	}
-
-	private void closeMappedChannels(Path baseBlobPath) {
-		if (baseBlobPath == null) {
-			return;
-		}
-		Set<MappedChannelEntry> entriesToClose = Collections.newSetFromMap(new IdentityHashMap<>());
-		synchronized (mappedChannelLock) {
-			BlobStorage storage = blobStorages.remove(baseBlobPath.toAbsolutePath().normalize());
-			if (storage != null) {
-				collectMappedChannels(entriesToClose, Collections.singleton(storage));
-			}
-		}
-		for (MappedChannelEntry entry : entriesToClose) {
-			closeMappedChannelEntry(entry);
-		}
-	}
-
-	private static void collectMappedChannels(Set<MappedChannelEntry> entriesToClose, Iterable<BlobStorage> storages) {
-		for (BlobStorage storage : storages) {
-			for (MappedChannelEntry entry : storage.readEntries) {
-				if (entry != null) {
-					entriesToClose.add(entry);
-				}
-			}
-			for (MappedChannelEntry entry : storage.writeEntries) {
-				if (entry != null) {
-					entriesToClose.add(entry);
-				}
-			}
 		}
 	}
 
@@ -10391,37 +9427,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		synchronized (sketchCacheLock) {
 			for (byte slot = 0; slot < 2; slot++) {
 				BufferSlot bufferSlot = slot == 0 ? BufferSlot.A : BufferSlot.B;
-				for (ManifestSketchEntry entry : cacheDirectory.snapshotPersistedEntries(slot)) {
+				for (PersistedSketchEntry entry : cacheDirectory.snapshotPersistedEntries(slot)) {
 					persisted.add(new DebugSketchAddress(bufferSlot, entry.address));
 				}
 			}
 		}
 		return persisted;
-	}
-
-	List<DebugMappedChannelView> debugMappedChannels() {
-		List<DebugMappedChannelView> channels = new ArrayList<>();
-		synchronized (mappedChannelLock) {
-			for (Map.Entry<Path, BlobStorage> storageEntry : blobStorages.entrySet()) {
-				Path basePath = storageEntry.getKey();
-				BlobStorage storage = storageEntry.getValue();
-				for (int blobId = 0; blobId < storage.readEntries.size(); blobId++) {
-					MappedChannelEntry entry = storage.readEntries.get(blobId);
-					if (entry != null) {
-						channels.add(
-								new DebugMappedChannelView(basePath, blobId, false, entry.channel, entry.mappedBuffer));
-					}
-				}
-				for (int blobId = 0; blobId < storage.writeEntries.size(); blobId++) {
-					MappedChannelEntry entry = storage.writeEntries.get(blobId);
-					if (entry != null) {
-						channels.add(
-								new DebugMappedChannelView(basePath, blobId, true, entry.channel, entry.mappedBuffer));
-					}
-				}
-			}
-		}
-		return channels;
 	}
 
 	int debugPendingIncrementalCount() {
@@ -10432,51 +9443,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	void debugFlushPendingIncremental() {
 		flushPendingIncremental();
-	}
-
-	private static void closeMappedChannelEntry(MappedChannelEntry entry) {
-		if (entry == null) {
-			return;
-		}
-		synchronized (entry) {
-			entry.mappedBuffer = null;
-			entry.mappedLength = 0;
-			if (entry.writeAccess) {
-				try {
-					if (entry.cachedFileSize > entry.writePosition) {
-						entry.channel.truncate(entry.writePosition);
-						entry.cachedFileSize = entry.writePosition;
-					}
-				} catch (IOException e) {
-					logger.debug("Failed to trim mapped sidecar channel", e);
-				}
-			}
-			closeChannelQuietly(entry.channel);
-		}
-	}
-
-	private static void closeChannelQuietly(FileChannel channel) {
-		try {
-			channel.close();
-		} catch (IOException e) {
-			logger.debug("Failed to close mapped channel", e);
-		}
-	}
-
-	private static void writeString(DataOutputStream out, String value) throws IOException {
-		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-		out.writeInt(bytes.length);
-		out.write(bytes);
-	}
-
-	private static String readString(DataInputStream in) throws IOException {
-		int len = in.readInt();
-		if (len < 0 || len > MAX_STRING_BYTES) {
-			throw new IOException("Invalid string length: " + len);
-		}
-		byte[] bytes = new byte[len];
-		in.readFully(bytes);
-		return new String(bytes, StandardCharsets.UTF_8);
 	}
 
 	private static void writeSketch(DataOutputStream out, ArrayOfDoublesUpdatableSketch sketch) throws IOException {
@@ -10581,6 +9547,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return v != null ? v : def;
 	}
 
+	private static boolean propPresent(String name) {
+		return System.getProperty(PROP_PREFIX + name) != null;
+	}
+
 	private static int propInt(String name, int def) {
 		String v = System.getProperty(PROP_PREFIX + name);
 		if (v == null) {
@@ -10652,8 +9622,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public static final class Config {
 		// capacity & layout
 		int nominalEntries = DEFAULT_BUCKET_COUNT;
+		boolean bucketCountExplicit;
 		boolean doubleArrayBuckets = false;
 		int sketchK = DEFAULT_SKETCH_NOMINAL_ENTRIES; // <= 0 -> use DataSketches default unless multiplier is set
+		boolean sketchNominalEntriesExplicit;
 		int sketchKMultiplier = 0;
 
 		// rebuild throttling
@@ -10677,9 +9649,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double churnSamplePercent = 0.01;
 		double churnReaddThreshold = 0.20;
 		double churnRemovalRatioThreshold = 0.50;
-		double minSketchMemoryPercent = 0.10;
-		double maxSketchMemoryPercent = 0.30;
-		long maxPersistenceBlobBytes = DEFAULT_MAX_PERSISTENCE_BLOB_BYTES;
+		double estimatorMemoryBudgetPercent = 0.50;
+		double residentSketchMemoryTargetPercent = 0.25;
+		double residentSketchMemoryCeilingPercent = 0.30;
+		double highMemoryPressurePercent = 0.80;
+		double loadedBucketFloorPercent = 0.05;
+		long memoryMonitorIntervalMillis = 500L;
+		int memoryPressureUnloadBatchSize = 64;
+		double minSketchMemoryPercent = residentSketchMemoryTargetPercent;
+		double maxSketchMemoryPercent = residentSketchMemoryCeilingPercent;
 
 		/** Return a new config with all defaults. */
 		public static Config defaults() {
@@ -10689,7 +9667,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		/** Base array bucket count (must be ≥ 4). */
 		public Config withNominalEntries(int n) {
 			this.nominalEntries = Math.max(4, n);
+			this.bucketCountExplicit = true;
 			return this;
+		}
+
+		/** Base array bucket count (must be ≥ 4). */
+		public Config withBucketCount(int n) {
+			return withNominalEntries(n);
 		}
 
 		/** Disable default bucket doubling for array indexes. */
@@ -10701,7 +9685,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		/** Explicit sketch K. If omitted (≤0), the library default is used unless a multiplier is configured. */
 		public Config withSketchK(int k) {
 			this.sketchK = k;
+			this.sketchNominalEntriesExplicit = true;
 			return this;
+		}
+
+		/** Explicit sketch nominal entries. */
+		public Config withSketchNominalEntries(int k) {
+			return withSketchK(k);
 		}
 
 		/**
@@ -10810,8 +9800,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		public Config withMinSketchMemoryPercent(double fraction) {
 			double normalized = Double.isFinite(fraction) ? fraction : 0.0d;
 			this.minSketchMemoryPercent = SketchBasedJoinEstimator.clamp(normalized, 0.0d, 1.0d);
+			this.residentSketchMemoryTargetPercent = this.minSketchMemoryPercent;
 			if (this.maxSketchMemoryPercent < this.minSketchMemoryPercent) {
 				this.maxSketchMemoryPercent = this.minSketchMemoryPercent;
+			}
+			if (this.residentSketchMemoryCeilingPercent < this.residentSketchMemoryTargetPercent) {
+				this.residentSketchMemoryCeilingPercent = this.residentSketchMemoryTargetPercent;
 			}
 			return this;
 		}
@@ -10820,12 +9814,54 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		public Config withMaxSketchMemoryPercent(double fraction) {
 			double normalized = Double.isFinite(fraction) ? fraction : this.maxSketchMemoryPercent;
 			this.maxSketchMemoryPercent = SketchBasedJoinEstimator.clamp(normalized, this.minSketchMemoryPercent, 1.0d);
+			this.residentSketchMemoryCeilingPercent = this.maxSketchMemoryPercent;
 			return this;
 		}
 
-		/** Maximum bytes per persistence blob shard before rolling over to the next sidecar shard. */
-		public Config withMaxPersistenceBlobBytes(long bytes) {
-			this.maxPersistenceBlobBytes = Math.max(1L, bytes);
+		public Config withEstimatorMemoryBudgetPercent(double fraction) {
+			this.estimatorMemoryBudgetPercent = SketchBasedJoinEstimator.clamp(
+					Double.isFinite(fraction) ? fraction : this.estimatorMemoryBudgetPercent, 0.0d, 1.0d);
+			return this;
+		}
+
+		public Config withResidentSketchMemoryTargetPercent(double fraction) {
+			this.residentSketchMemoryTargetPercent = SketchBasedJoinEstimator.clamp(
+					Double.isFinite(fraction) ? fraction : this.residentSketchMemoryTargetPercent, 0.0d, 1.0d);
+			this.minSketchMemoryPercent = this.residentSketchMemoryTargetPercent;
+			if (this.residentSketchMemoryCeilingPercent < this.residentSketchMemoryTargetPercent) {
+				this.residentSketchMemoryCeilingPercent = this.residentSketchMemoryTargetPercent;
+				this.maxSketchMemoryPercent = this.residentSketchMemoryCeilingPercent;
+			}
+			return this;
+		}
+
+		public Config withResidentSketchMemoryCeilingPercent(double fraction) {
+			this.residentSketchMemoryCeilingPercent = SketchBasedJoinEstimator.clamp(
+					Double.isFinite(fraction) ? fraction : this.residentSketchMemoryCeilingPercent,
+					this.residentSketchMemoryTargetPercent, 1.0d);
+			this.maxSketchMemoryPercent = this.residentSketchMemoryCeilingPercent;
+			return this;
+		}
+
+		public Config withHighMemoryPressurePercent(double fraction) {
+			this.highMemoryPressurePercent = SketchBasedJoinEstimator.clamp(
+					Double.isFinite(fraction) ? fraction : this.highMemoryPressurePercent, 0.0d, 1.0d);
+			return this;
+		}
+
+		public Config withLoadedBucketFloorPercent(double fraction) {
+			this.loadedBucketFloorPercent = SketchBasedJoinEstimator.clamp(
+					Double.isFinite(fraction) ? fraction : this.loadedBucketFloorPercent, 0.0d, 1.0d);
+			return this;
+		}
+
+		public Config withMemoryMonitorIntervalMillis(long millis) {
+			this.memoryMonitorIntervalMillis = Math.max(1L, millis);
+			return this;
+		}
+
+		public Config withMemoryPressureUnloadBatchSize(int batchSize) {
+			this.memoryPressureUnloadBatchSize = Math.max(1, batchSize);
 			return this;
 		}
 	}

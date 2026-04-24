@@ -411,7 +411,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
-		                                         BiFunction<TupleExpr, TupleExpr, Double> getCard) {
+				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
 			List<TupleExpr> candidates = new ArrayList<>();
 			for (TupleExpr tupleExpr : tupleExprs) {
 				if (statementPatternWithMinimumOneConstant(tupleExpr)) {
@@ -734,7 +734,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * bound in other tuple expressions over variables with a fixed value.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
-		                                        Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 			if (expressions.size() == 1) {
 				TupleExpr tupleExpr = expressions.get(0);
 				if (tupleExpr.getCostEstimate() < 0) {
@@ -767,7 +767,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-		                                  Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 
 			// BindingSetAssignment has a typical constant cost. This cost is not based on statistics so is much more
 			// reliable. If the BindingSetAssignment binds to any of the other variables in the other tuple expressions
@@ -895,7 +895,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void mergeJoinForCrossJoin(Deque<TupleExpr> orderedJoinArgs, Set<Var> supportedOrders, TupleExpr left,
-		                                   TupleExpr right, Join join) {
+				TupleExpr right, Join join) {
 			if (!orderedJoinArgs.isEmpty()
 					&& !supportedOrders.isEmpty() && !joinOnMultipleVars(left, right)
 					&& !joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())
@@ -972,11 +972,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		return cand instanceof StatementPattern && ((((StatementPattern) cand).getSubjectVar() != null
 				&& ((StatementPattern) cand).getSubjectVar().hasValue())
 				|| (((StatementPattern) cand).getPredicateVar() != null
-				&& ((StatementPattern) cand).getPredicateVar().hasValue())
+						&& ((StatementPattern) cand).getPredicateVar().hasValue())
 				|| (((StatementPattern) cand).getObjectVar() != null
-				&& ((StatementPattern) cand).getObjectVar().hasValue())
+						&& ((StatementPattern) cand).getObjectVar().hasValue())
 				|| (((StatementPattern) cand).getContextVar() != null
-				&& ((StatementPattern) cand).getContextVar().hasValue()));
+						&& ((StatementPattern) cand).getContextVar().hasValue()));
 	}
 
 	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {
@@ -1008,7 +1008,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-		                                                             Resource... contexts) throws QueryEvaluationException {
+				Resource... contexts) throws QueryEvaluationException {
 			return TripleSource.EMPTY_ITERATION;
 		}
 

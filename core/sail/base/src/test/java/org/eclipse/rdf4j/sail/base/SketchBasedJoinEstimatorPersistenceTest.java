@@ -20,14 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.DataOutputStream;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MonitorInfo;
 import java.lang.management.ThreadInfo;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -59,8 +56,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import sun.misc.Unsafe;
-
 class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -79,6 +74,97 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	@Test
+	void persistCreatesDirectoryStoreLayoutAndMetadata(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:layout:s");
+		IRI p = VF.createIRI("urn:layout:p");
+		Value o = VF.createIRI("urn:layout:o");
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(storeDirectory, false);
+		estimator.addStatement(st(s, p, o));
+
+		assertTrue(estimator.persistIfDirty(), "Expected dirty estimator state to persist");
+
+		assertDirectoryStoreLayout(storeDirectory);
+		assertTrue(Files.size(storeDirectory.resolve("metadata.bin")) > 0L, "Expected binary metadata contents");
+		assertTrue(Files.size(storeDirectory.resolve("a/index.bin")) > 0L
+				|| Files.size(storeDirectory.resolve("b/index.bin")) > 0L,
+				"Expected at least one slot index to contain persisted sketch refs");
+		assertFalse(Files.exists(storeDirectory.resolveSibling("join-estimator.rjes.sketches")),
+				"Directory store must not create legacy sidecar blobs");
+	}
+
+	@Test
+	void regularFilePersistencePathIsIgnoredAndRebuiltAsDirectory(@TempDir Path tempDir) throws Exception {
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		Files.write(storeDirectory, new byte[] { 'R', 'J', 'E', 'S', 4 });
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(storeDirectory, false);
+		estimator.addStatement(st(VF.createIRI("urn:file:s"), VF.createIRI("urn:file:p"), VF.createIRI("urn:file:o")));
+
+		assertTrue(estimator.persistIfDirty(), "Expected estimator to rebuild into a directory store");
+		assertDirectoryStoreLayout(storeDirectory);
+		assertFalse(Files.isRegularFile(storeDirectory), "Legacy regular-file snapshots must not remain active");
+	}
+
+	@Test
+	void lazyStartupReadsIndexesOnlyAndLoadsSketchesOnDemand(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:lazy:s");
+		IRI p = VF.createIRI("urn:lazy:p");
+		Value o = VF.createIRI("urn:lazy:o");
+
+		StubSailStore sourceStore = new StubSailStore();
+		sourceStore.add(st(s, p, o));
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
+		writer.rebuildOnceSlow();
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(storeDirectory, true);
+
+		assertFalse(sketchesLoaded(reader), "Lazy startup should not heap-load sketch payloads");
+		assertEquals(0L, residentSketchBytes(reader), "Lazy startup should keep resident payload bytes at zero");
+		assertFalse(reader.debugPersistedSketches().isEmpty(), "Startup should read persisted slot indexes");
+
+		assertTrue(reader.isReady(), "Index-only lazy startup should still be ready");
+		assertEquals(0L, residentSketchBytes(reader), "Readiness should not load sketch payload bytes");
+		assertEquals(1.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 1.0);
+		assertTrue(residentSketchBytes(reader) > 0L, "Cardinality read should load only demanded sketches");
+	}
+
+	@Test
+	void dirtyEvictionWritesDirectoryPayloadAndReloadsOnDemand(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:dirty:s");
+		IRI p = VF.createIRI("urn:dirty:p");
+		Value o = VF.createIRI("urn:dirty:o");
+
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		writer.configurePersistence(storeDirectory, false);
+		setSketchBudgetBytes(writer, 0L, 0L);
+
+		writer.addStatement(st(s, p, o));
+		flushIncrementalBuffer(writer);
+
+		assertDirectoryPayloadLayout(storeDirectory);
+		assertTrue(hasAnyPayloadBytes(storeDirectory),
+				"Dirty eviction should write a category payload before metadata");
+		assertFalse(residentSinglePredicateHashes(writer).contains(hash(writer, p.stringValue())),
+				"Expected predicate sketch to be evicted from resident cache");
+
+		assertTrue(writer.persistIfDirty(), "Expected explicit persist to flush metadata and indexes");
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		reader.configurePersistence(storeDirectory, true);
+		assertTrue(reader.isReady());
+		assertEquals(1.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 1.0);
 	}
 
 	@Test
@@ -250,148 +336,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(residentPredicateHashes.contains(hash(reader, p1.stringValue())));
 		assertTrue(residentPredicateHashes.contains(hash(reader, p3.stringValue())));
 		assertFalse(residentPredicateHashes.contains(hash(reader, p2.stringValue())));
-	}
-
-	@Test
-	void dirtyEvictionDefersManifestWriteUntilPersist(@TempDir Path tempDir) throws Exception {
-		Resource s = VF.createIRI("urn:s");
-		IRI p = VF.createIRI("urn:p");
-		Value o = VF.createIRI("urn:o");
-
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		Path sidecar = snapshot.resolveSibling("join-estimator.rjes.sketches");
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		writer.configurePersistence(snapshot, false);
-		setSketchBudgetBytes(writer, 0L, 0L);
-
-		writer.addStatement(st(s, p, o));
-		flushIncrementalBuffer(writer);
-
-		assertTrue(Files.exists(sidecar), "Expected payload sidecar to be written by dirty eviction");
-		assertFalse(Files.exists(snapshot), "Manifest writes should be deferred until explicit persist");
-		assertTrue(hasPersistedSinglePredicateSketch(writer, p.stringValue()),
-				"Expected persisted index to be updated in memory for lazy reload");
-
-		assertTrue(writer.persistIfDirty(), "Expected persistIfDirty to flush deferred manifest");
-		assertTrue(Files.exists(snapshot), "Expected manifest written by explicit persist");
-	}
-
-	@Test
-	void dirtyEvictionPersistsSketchAndReloadsOnDemand(@TempDir Path tempDir) throws Exception {
-		Resource s = VF.createIRI("urn:s");
-		IRI p = VF.createIRI("urn:p");
-		Value o = VF.createIRI("urn:o");
-
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		writer.configurePersistence(snapshot, false);
-		setSketchBudgetBytes(writer, 0L, 0L);
-
-		writer.addStatement(st(s, p, o));
-		flushIncrementalBuffer(writer);
-
-		assertFalse(residentSinglePredicateHashes(writer).contains(hash(writer, p.stringValue())),
-				"Expected predicate sketch to be evicted from resident cache");
-		assertTrue(writer.persistIfDirty(), "Expected explicit persist to flush manifest/index");
-		assertTrue(Files.exists(snapshot), "Expected manifest written after persistence flush");
-		assertTrue(Files.exists(snapshot.resolveSibling("join-estimator.rjes.sketches")),
-				"Expected sidecar blob file written by dirty eviction");
-
-		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		reader.configurePersistence(snapshot, true);
-		assertTrue(reader.isReady());
-		assertEquals(1.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 1.0);
-	}
-
-	@Test
-	void closeClosesMappedChannelCache(@TempDir Path tempDir) throws Exception {
-		Resource s = VF.createIRI("urn:s");
-		IRI p = VF.createIRI("urn:p");
-		Value o = VF.createIRI("urn:o");
-
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		estimator.configurePersistence(snapshot, false);
-		estimator.addStatement(st(s, p, o));
-		assertTrue(estimator.persistIfDirty());
-
-		List<FileChannel> openedChannels = mappedChannels(estimator);
-		for (FileChannel channel : openedChannels) {
-			assertTrue(channel.isOpen(), "Expected cached channel to be open before estimator close");
-		}
-
-		estimator.close();
-
-		assertTrue(mappedChannels(estimator).isEmpty(), "Expected mmap channel cache empty after estimator close");
-		for (FileChannel channel : openedChannels) {
-			assertFalse(channel.isOpen(), "Expected cached channels to be closed on estimator close");
-		}
-	}
-
-	@Test
-	void repeatedLazyLoadsReuseMappedBufferWindow(@TempDir Path tempDir) throws Exception {
-		Resource s = VF.createIRI("urn:s");
-		IRI p = VF.createIRI("urn:p");
-		Value o = VF.createIRI("urn:o");
-
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		writer.configurePersistence(snapshot, false);
-		setSketchBudgetBytes(writer, 0L, 0L);
-		writer.addStatement(st(s, p, o));
-		assertTrue(writer.persistIfDirty());
-
-		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		reader.configurePersistence(snapshot, true);
-		setSketchBudgetBytes(reader, 0L, 0L);
-		assertTrue(reader.isReady());
-
-		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue());
-		assertFalse(residentSinglePredicateHashes(reader).contains(hash(reader, p.stringValue())),
-				"Expected zero-budget lazy read to evict predicate sketch");
-		MappedByteBuffer firstBuffer = mappedBuffer(reader, false);
-		assertNotNull(firstBuffer, "Expected read-side mapped buffer to be cached");
-
-		reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue());
-		assertFalse(residentSinglePredicateHashes(reader).contains(hash(reader, p.stringValue())),
-				"Expected repeated zero-budget lazy read to evict predicate sketch");
-		MappedByteBuffer secondBuffer = mappedBuffer(reader, false);
-		assertSame(firstBuffer, secondBuffer, "Expected repeated reads to reuse mapped buffer window");
-	}
-
-	@Test
-	void persistRolloverCreatesAdditionalBlobShardAndLazyLoads(@TempDir Path tempDir) throws Exception {
-		String property = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.maxPersistenceBlobBytes";
-		String previous = System.getProperty(property);
-		System.setProperty(property, "512");
-		try {
-			Resource sBase = VF.createIRI("urn:s");
-			IRI p = VF.createIRI("urn:p");
-			Value oBase = VF.createIRI("urn:o");
-
-			Path snapshot = tempDir.resolve("join-estimator.rjes");
-			SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-			writer.configurePersistence(snapshot, false);
-			for (int i = 0; i < 400; i++) {
-				writer.addStatement(st(VF.createIRI(sBase.stringValue() + i), p,
-						VF.createIRI(oBase.stringValue() + i)));
-			}
-			assertTrue(writer.persistIfDirty(), "Expected persisted snapshot after ingest");
-			assertTrue(Files.exists(snapshot.resolveSibling("join-estimator.rjes.sketches.1")),
-					"Expected rollover sidecar shard when blob size cap is tiny");
-
-			SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-			reader.configurePersistence(snapshot, true);
-			assertTrue(reader.isReady(), "Expected lazy load from persisted shards");
-			assertTrue(reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()) > 0.0,
-					"Expected predicate cardinality to be readable after lazy load");
-		} finally {
-			if (previous == null) {
-				System.clearProperty(property);
-			} else {
-				System.setProperty(property, previous);
-			}
-		}
 	}
 
 	@Test
@@ -587,66 +531,27 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
-	void repeatedPersistCompactsStaleBlobShards(@TempDir Path tempDir) throws Exception {
-		String property = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.maxPersistenceBlobBytes";
-		String previous = System.getProperty(property);
-		System.setProperty(property, "384");
-		try {
-			Path snapshot = tempDir.resolve("join-estimator.rjes");
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-			estimator.configurePersistence(snapshot, false);
+	void repeatedPersistKeepsFixedDirectoryStoreFiles(@TempDir Path tempDir) throws Exception {
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		estimator.configurePersistence(snapshot, false);
 
-			IRI predicate = VF.createIRI("urn:compact:p");
-			for (int i = 0; i < 320; i++) {
-				estimator.addStatement(
-						st(VF.createIRI("urn:compact:s" + i), predicate, VF.createIRI("urn:compact:o" + i)));
-			}
-			assertTrue(estimator.persistIfDirty(), "Expected first persist to write blob shards");
-			int shardsAfterFirstPersist = countSidecarShards(snapshot);
-			assertTrue(shardsAfterFirstPersist > 1, "Expected first persist to span multiple shards under tiny limit");
-
-			for (int i = 0; i < 320; i++) {
-				estimator.addStatement(
-						st(VF.createIRI("urn:compact:s" + i), predicate, VF.createIRI("urn:compact:o" + i)));
-			}
-			assertTrue(estimator.persistIfDirty(), "Expected second persist to write updated sketches");
-			int shardsAfterSecondPersist = countSidecarShards(snapshot);
-
-			assertTrue(shardsAfterSecondPersist <= shardsAfterFirstPersist + 1,
-					"Expected compaction to prevent repeated persists from growing stale shard count: first="
-							+ shardsAfterFirstPersist + ", second=" + shardsAfterSecondPersist);
-		} finally {
-			if (previous == null) {
-				System.clearProperty(property);
-			} else {
-				System.setProperty(property, previous);
-			}
+		IRI predicate = VF.createIRI("urn:fixed:p");
+		for (int i = 0; i < 320; i++) {
+			estimator.addStatement(st(VF.createIRI("urn:fixed:s" + i), predicate, VF.createIRI("urn:fixed:o" + i)));
 		}
-	}
+		assertTrue(estimator.persistIfDirty(), "Expected first persist to write fixed store files");
+		assertEquals(9, countStoreFiles(snapshot), "Expected metadata plus two fixed slot file sets");
 
-	@Test
-	void legacyThetaManifestsAreRejected(@TempDir Path tempDir) throws Exception {
-		for (int legacyVersion : List.of(2, 3)) {
-			Resource s = VF.createIRI("urn:s" + legacyVersion);
-			IRI p = VF.createIRI("urn:p" + legacyVersion);
-			Value o = VF.createIRI("urn:o" + legacyVersion);
-
-			Path snapshot = tempDir.resolve("join-estimator-v" + legacyVersion + ".rjes");
-			SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-			writer.configurePersistence(snapshot, false);
-			writer.addStatement(st(s, p, o));
-			assertTrue(writer.persistIfDirty(), "Expected persisted snapshot");
-
-			rewriteManifestVersion(snapshot, legacyVersion);
-
-			SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-			reader.configurePersistence(snapshot, true);
-			IllegalStateException exception = assertThrows(IllegalStateException.class, reader::isReady);
-			assertNotNull(exception.getMessage());
-			assertTrue(exception.getMessage()
-					.contains("Unsupported theta join estimator snapshot version: " + legacyVersion));
-			assertTrue(exception.getMessage().contains("rebuild required for tuple sketches"));
+		for (int i = 0; i < 320; i++) {
+			estimator.addStatement(st(VF.createIRI("urn:fixed:s2-" + i), predicate,
+					VF.createIRI("urn:fixed:o2-" + i)));
 		}
+		assertTrue(estimator.persistIfDirty(), "Expected second persist to update fixed store files");
+
+		assertEquals(9, countStoreFiles(snapshot), "Repeated persists must not create sidecar shards");
+		assertFalse(Files.exists(snapshot.resolveSibling("join-estimator.rjes.sketches")),
+				"Directory store must not create legacy sidecar blobs");
 	}
 
 	@Test
@@ -700,16 +605,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				"Expected eviction to drain resident cache down to min budget");
 	}
 
-	@Test
-	void persistentRebuildUsesFastPathWhenHeapHeadroomIsHealthy(@TempDir Path tempDir) throws Exception {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
-		forceAvailableHeapHeadroom(estimator, Long.MAX_VALUE);
-
-		assertFalse(shouldUseBoundedPersistenceRebuild(estimator),
-				"Persistence should not force bounded rebuild when heap headroom is healthy");
-	}
-
 	private static void flushIncrementalBuffer(SketchBasedJoinEstimator estimator) {
 		estimator.debugFlushPendingIncremental();
 	}
@@ -718,49 +613,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Field field = SketchBasedJoinEstimator.class.getDeclaredField("INCREMENTAL_BATCH_SIZE");
 		field.setAccessible(true);
 		return field.getInt(null);
-	}
-
-	@Test
-	void backgroundRefreshRebuildsAfterLazySnapshotLoadFailure(@TempDir Path tempDir) throws Exception {
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		Files.write(snapshot, new byte[] { 1, 2, 3, 4, 5, 6 });
-
-		StubSailStore store = new StubSailStore();
-		store.add(st(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o")));
-
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
-				smallConfig().withRefreshSleepMillis(10));
-		estimator.configurePersistence(snapshot, true);
-		estimator.startBackgroundRefresh(0);
-		try {
-			boolean ready = false;
-			long deadline = System.currentTimeMillis() + 2000;
-			while (System.currentTimeMillis() < deadline) {
-				if (estimator.isReady()) {
-					ready = true;
-					break;
-				}
-				Thread.sleep(20);
-			}
-			assertTrue(ready, "Expected background refresh to rebuild after lazy snapshot load failure");
-		} finally {
-			estimator.stop();
-		}
-	}
-
-	@Test
-	void legacySnapshotVersionIsRejected(@TempDir Path tempDir) throws Exception {
-		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(snapshot))) {
-			out.write(new byte[] { 'R', 'J', 'E', 'S' });
-			out.writeByte(1);
-		}
-
-		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
-		reader.configurePersistence(snapshot, true);
-		IllegalStateException exception = assertThrows(IllegalStateException.class, reader::isReady);
-		assertNotNull(exception.getMessage());
-		assertTrue(exception.getMessage().contains("Unsupported join estimator snapshot version"));
 	}
 
 	@Test
@@ -855,17 +707,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertNull(persistFailure.get(), "Persist thread should not fail");
 	}
 
-	private static void rewriteManifestVersion(Path snapshot, int version) throws Exception {
-		byte[] bytes = Files.readAllBytes(snapshot);
-		assertEquals('R', bytes[0], "Expected join estimator manifest magic");
-		assertEquals('J', bytes[1], "Expected join estimator manifest magic");
-		assertEquals('E', bytes[2], "Expected join estimator manifest magic");
-		assertEquals('S', bytes[3], "Expected join estimator manifest magic");
-		assertEquals(4, bytes[4] & 0xff, "Expected v4 manifest before downgrade");
-		bytes[4] = (byte) version;
-		Files.write(snapshot, bytes);
-	}
-
 	private static int hash(SketchBasedJoinEstimator estimator, String value) throws Exception {
 		Method hashMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("hash", String.class);
 		hashMethod.setAccessible(true);
@@ -934,19 +775,36 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		return residentBytesField.getLong(estimator);
 	}
 
-	private static void forceAvailableHeapHeadroom(SketchBasedJoinEstimator estimator, long headroomBytes)
-			throws Exception {
-		putLongField(estimator, "debugAvailableHeapHeadroomOverrideBytes", headroomBytes);
+	private static boolean sketchesLoaded(SketchBasedJoinEstimator estimator) throws Exception {
+		Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
+		loadedField.setAccessible(true);
+		return loadedField.getBoolean(estimator);
 	}
 
-	private static void invokeEnsureEstimatorCapacity(SketchBasedJoinEstimator estimator, long predictedBytes,
-			boolean allowUnload) throws Exception {
-		invokePrivate(estimator, "ensureEstimatorCapacity", new Class<?>[] { long.class, boolean.class },
-				predictedBytes, allowUnload);
+	private static void assertDirectoryStoreLayout(Path storeDirectory) throws Exception {
+		assertDirectoryPayloadLayout(storeDirectory);
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("metadata.bin")), "Expected metadata.bin");
 	}
 
-	private static boolean shouldUseBoundedPersistenceRebuild(SketchBasedJoinEstimator estimator) throws Exception {
-		return (boolean) invokePrivate(estimator, "shouldUseBoundedPersistenceRebuild", new Class<?>[0]);
+	private static void assertDirectoryPayloadLayout(Path storeDirectory) throws Exception {
+		assertTrue(Files.isDirectory(storeDirectory), "Expected estimator persistence path to be a directory");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/index.bin")), "Expected a/index.bin");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/global.sketches")), "Expected a/global.sketches");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/singles.sketches")), "Expected a/singles.sketches");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("a/pairs.sketches")), "Expected a/pairs.sketches");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/index.bin")), "Expected b/index.bin");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/global.sketches")), "Expected b/global.sketches");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/singles.sketches")), "Expected b/singles.sketches");
+		assertTrue(Files.isRegularFile(storeDirectory.resolve("b/pairs.sketches")), "Expected b/pairs.sketches");
+	}
+
+	private static boolean hasAnyPayloadBytes(Path storeDirectory) throws Exception {
+		return Files.size(storeDirectory.resolve("a/global.sketches")) > 0L
+				|| Files.size(storeDirectory.resolve("a/singles.sketches")) > 0L
+				|| Files.size(storeDirectory.resolve("a/pairs.sketches")) > 0L
+				|| Files.size(storeDirectory.resolve("b/global.sketches")) > 0L
+				|| Files.size(storeDirectory.resolve("b/singles.sketches")) > 0L
+				|| Files.size(storeDirectory.resolve("b/pairs.sketches")) > 0L;
 	}
 
 	private static Object invokePrivate(Object target, String methodName, Class<?>[] parameterTypes, Object... args)
@@ -954,36 +812,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		Method method = target.getClass().getDeclaredMethod(methodName, parameterTypes);
 		method.setAccessible(true);
 		return method.invoke(target, args);
-	}
-
-	private static long robustRebuildRetryAfterNanos(SketchBasedJoinEstimator estimator) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField("robustRebuildRetryAfterNanos");
-		field.setAccessible(true);
-		return field.getLong(estimator);
-	}
-
-	private static void putLongField(Object target, String fieldName, long value) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField(fieldName);
-		field.setAccessible(true);
-		unsafe().putLong(target, unsafe().objectFieldOffset(field), value);
-	}
-
-	private static void setBooleanField(Object target, String fieldName, boolean value) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField(fieldName);
-		field.setAccessible(true);
-		unsafe().putBoolean(target, unsafe().objectFieldOffset(field), value);
-	}
-
-	private static void setObjectField(Object target, String fieldName, Object value) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField(fieldName);
-		field.setAccessible(true);
-		unsafe().putObject(target, unsafe().objectFieldOffset(field), value);
-	}
-
-	private static Unsafe unsafe() throws Exception {
-		Field field = Unsafe.class.getDeclaredField("theUnsafe");
-		field.setAccessible(true);
-		return (Unsafe) field.get(null);
 	}
 
 	private static Set<Integer> residentSinglePredicateHashes(SketchBasedJoinEstimator estimator) throws Exception {
@@ -1033,50 +861,10 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		return false;
 	}
 
-	private static List<FileChannel> mappedChannels(SketchBasedJoinEstimator estimator) throws Exception {
-		List<FileChannel> channels = new ArrayList<>();
-		for (SketchBasedJoinEstimator.DebugMappedChannelView channelView : estimator.debugMappedChannels()) {
-			channels.add(channelView.channel());
+	private static int countStoreFiles(Path snapshot) throws Exception {
+		try (var paths = Files.walk(snapshot)) {
+			return (int) paths.filter(Files::isRegularFile).count();
 		}
-		return channels;
-	}
-
-	private static MappedByteBuffer mappedBuffer(SketchBasedJoinEstimator estimator, boolean writeAccess)
-			throws Exception {
-		for (SketchBasedJoinEstimator.DebugMappedChannelView channelView : estimator.debugMappedChannels()) {
-			if (channelView.writeAccess() == writeAccess && channelView.blobId() == 0) {
-				return channelView.mappedBuffer();
-			}
-		}
-		return null;
-	}
-
-	private static int countSidecarShards(Path snapshot) throws Exception {
-		String baseName = snapshot.getFileName().toString() + ".sketches";
-		Path parent = snapshot.getParent();
-		if (parent == null || !Files.isDirectory(parent)) {
-			return 0;
-		}
-		try (var stream = Files.list(parent)) {
-			return (int) stream
-					.filter(path -> {
-						String fileName = path.getFileName().toString();
-						return fileName.equals(baseName) || fileName.startsWith(baseName + ".");
-					})
-					.count();
-		}
-	}
-
-	private static boolean robustSynopsisFresh(SketchBasedJoinEstimator estimator) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField("robustSynopsisFresh");
-		field.setAccessible(true);
-		return field.getBoolean(estimator);
-	}
-
-	private static int lastRobustSynopsisSpillSegmentCount(SketchBasedJoinEstimator estimator) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField("lastRobustSynopsisSpillSegmentCount");
-		field.setAccessible(true);
-		return field.getInt(estimator);
 	}
 
 	@SuppressWarnings("unchecked")

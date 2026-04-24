@@ -23,7 +23,6 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -42,11 +41,10 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import sun.misc.Unsafe;
-
 class LmdbSailStoreEstimatorPersistenceTest {
 
 	private static final String SNAPSHOT_FILE = "join-estimator.rjes";
+	private static final String SNAPSHOT_METADATA_FILE = "metadata.bin";
 	private static final String FILTER_SNAPSHOT_FILE = SNAPSHOT_FILE + ".filters";
 	private static final String LEARNED_FILTER_QUERY = "SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } "
 			+ "?s <urn:test:name> ?name . FILTER(?name = ?target) }";
@@ -70,7 +68,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			store.shutDown();
 		}
 
-		assertTrue(new File(dataDir, SNAPSHOT_FILE).isFile(), "Expected estimator snapshot file after shutdown");
+		assertTrue(estimatorStore(dataDir).isDirectory(), "Expected estimator directory after shutdown");
+		assertTrue(estimatorMetadata(dataDir).isFile(), "Expected estimator metadata after shutdown");
 
 		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		reopened.init();
@@ -97,7 +96,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		double learnedPassRatioBeforeShutdown;
 		try {
 			loadNameData(repository);
-			learnFilterPassRatio(repository);
+			recordLearnedFilterPassRatio(store, learnedFilter);
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			learnedPassRatioBeforeShutdown = statistics.estimateFilterPassRatio(learnedFilter);
@@ -130,14 +129,14 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		repository.init();
 		try {
 			loadNameData(repository);
-			learnFilterPassRatio(repository);
+			recordLearnedFilterPassRatio(store, learnedFilter);
 		} finally {
 			repository.shutDown();
 		}
 
-		Path snapshot = dataDir.toPath().resolve(SNAPSHOT_FILE);
-		FileTime originalTimestamp = Files.getLastModifiedTime(snapshot);
-		Files.setLastModifiedTime(snapshot, FileTime.fromMillis(originalTimestamp.toMillis() + 5_000L));
+		Path metadata = dataDir.toPath().resolve(SNAPSHOT_FILE).resolve(SNAPSHOT_METADATA_FILE);
+		FileTime originalTimestamp = Files.getLastModifiedTime(metadata);
+		Files.setLastModifiedTime(metadata, FileTime.fromMillis(originalTimestamp.toMillis() + 5_000L));
 
 		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		reopened.init();
@@ -178,13 +177,10 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			store.shutDown();
 		}
 
-		assertTrue(new File(dataDir, SNAPSHOT_FILE).isFile(), "Expected estimator manifest after shutdown");
-		assertTrue(new File(dataDir, SNAPSHOT_FILE + ".sketches").isFile(),
-				"Expected estimator sidecar after shutdown");
-		File[] sidecarShards = dataDir.listFiles((dir, name) -> name.equals(SNAPSHOT_FILE + ".sketches")
-				|| name.startsWith(SNAPSHOT_FILE + ".sketches."));
-		assertTrue(sidecarShards != null && sidecarShards.length >= 1,
-				"Expected at least one estimator sidecar shard after shutdown");
+		assertTrue(estimatorStore(dataDir).isDirectory(), "Expected estimator directory after shutdown");
+		assertTrue(estimatorMetadata(dataDir).isFile(), "Expected estimator metadata after shutdown");
+		assertFalse(new File(dataDir, SNAPSHOT_FILE + ".sketches").exists(),
+				"Directory store must not write legacy sketch sidecars");
 
 		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		reopened.init();
@@ -370,7 +366,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
-	void commitSucceedsWhenLazyEstimatorSnapshotIsUnsupported(@TempDir File dataDir) throws Exception {
+	void commitSucceedsWhenLegacyEstimatorFileIsIgnored(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s = vf.createIRI("urn:s");
 		var p = vf.createIRI("urn:p");
@@ -413,6 +409,14 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		maxField.setLong(estimator, maxBytes);
 	}
 
+	private static File estimatorStore(File dataDir) {
+		return new File(dataDir, SNAPSHOT_FILE);
+	}
+
+	private static File estimatorMetadata(File dataDir) {
+		return new File(estimatorStore(dataDir), SNAPSHOT_METADATA_FILE);
+	}
+
 	private static void loadNameData(SailRepository repository) {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI name = vf.createIRI("urn:test:name");
@@ -425,14 +429,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		}
 	}
 
-	private static void learnFilterPassRatio(SailRepository repository) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, LEARNED_FILTER_QUERY).evaluate()) {
-				while (result.hasNext()) {
-					result.next();
-				}
-			}
-		}
+	private static void recordLearnedFilterPassRatio(LmdbStore store, Filter filter) {
+		store.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter, 2L, 6L);
 	}
 
 	private static Filter firstFilter(String query) {
@@ -475,36 +473,4 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		}
 	}
 
-	private static void forceRobustRebuildHeadroom(SketchBasedJoinEstimator estimator, long disableBytes,
-			long enableBytes)
-			throws Exception {
-		putLongField(estimator, "robustRebuildDisableHeadroomBytes", disableBytes);
-		putLongField(estimator, "robustRebuildEnableHeadroomBytes", enableBytes);
-		putLongField(estimator, "robustRebuildGcProbeFloorBytes", enableBytes);
-		putLongField(estimator, "robustRebuildRetryAfterNanos", 0L);
-		putLongField(estimator, "lastRobustHeadroomGcNanos", 0L);
-	}
-
-	private static void forceAvailableHeapHeadroom(SketchBasedJoinEstimator estimator, long headroomBytes)
-			throws Exception {
-		putLongField(estimator, "debugAvailableHeapHeadroomOverrideBytes", headroomBytes);
-	}
-
-	private static long rebuildEpoch(SketchBasedJoinEstimator estimator) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField("rebuildEpoch");
-		field.setAccessible(true);
-		return ((AtomicLong) field.get(estimator)).get();
-	}
-
-	private static void putLongField(Object target, String fieldName, long value) throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField(fieldName);
-		field.setAccessible(true);
-		unsafe().putLong(target, unsafe().objectFieldOffset(field), value);
-	}
-
-	private static Unsafe unsafe() throws Exception {
-		Field field = Unsafe.class.getDeclaredField("theUnsafe");
-		field.setAccessible(true);
-		return (Unsafe) field.get(null);
-	}
 }

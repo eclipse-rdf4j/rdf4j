@@ -110,7 +110,7 @@ public final class BenchmarkJoinEstimatorSupport {
 		writeExpectedDbFileSizes(storeDirectory);
 	}
 
-	private static SketchBasedJoinEstimator resolveEstimator(LmdbStore store) throws IOException {
+	static SketchBasedJoinEstimator resolveEstimator(LmdbStore store) throws IOException {
 		Object backingStore = invoke(GET_BACKING_STORE, store);
 		Method getSketchBasedJoinEstimator = reflectMethod(backingStore.getClass(), "getSketchBasedJoinEstimator");
 		return (SketchBasedJoinEstimator) invoke(getSketchBasedJoinEstimator, backingStore);

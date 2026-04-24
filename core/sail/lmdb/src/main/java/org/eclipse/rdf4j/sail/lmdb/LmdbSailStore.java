@@ -309,7 +309,7 @@ class LmdbSailStore implements SailStore {
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
 			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
-			boolean snapshotExists = Files.exists(estimatorPath);
+			boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
 			filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore);
 			sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 			sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);

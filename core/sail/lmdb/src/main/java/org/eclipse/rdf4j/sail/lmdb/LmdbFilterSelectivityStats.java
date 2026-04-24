@@ -564,10 +564,11 @@ class LmdbFilterSelectivityStats
 
 	private SnapshotRevision currentEstimatorRevision() {
 		try {
-			if (!Files.isRegularFile(estimatorPath)) {
+			Path metadataPath = estimatorPath.resolve("metadata.bin");
+			if (!Files.isRegularFile(metadataPath)) {
 				return null;
 			}
-			BasicFileAttributes attributes = Files.readAttributes(estimatorPath, BasicFileAttributes.class);
+			BasicFileAttributes attributes = Files.readAttributes(metadataPath, BasicFileAttributes.class);
 			return new SnapshotRevision(attributes.size(), attributes.lastModifiedTime().toMillis());
 		} catch (IOException e) {
 			return null;
