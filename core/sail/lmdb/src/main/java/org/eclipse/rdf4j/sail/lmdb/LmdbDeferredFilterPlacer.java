@@ -59,7 +59,10 @@ final class LmdbDeferredFilterPlacer {
 			prefixBindingNames.addAll(optimized.getBindingNames());
 		}
 		List<DeferredFilter> unresolvedFilters = new ArrayList<>();
-		for (DeferredFilter filter : LmdbJoinPlanSupport.sortDeferredFilters(pendingFilters)) {
+		List<DeferredFilter> sortedFilters = LmdbJoinPlanSupport.sortDeferredFilters(pendingFilters);
+		while (!sortedFilters.isEmpty()) {
+			int filterIndex = nextDeferredFilterIndex(factors, sortedFilters, boundBeforeSegment);
+			DeferredFilter filter = sortedFilters.remove(filterIndex);
 			if (!groupDeferredFilterOnSmallestWindow(factors, filter, boundBeforeSegment)) {
 				unresolvedFilters.add(filter);
 			}
@@ -74,6 +77,45 @@ final class LmdbDeferredFilterPlacer {
 			root = filterWrapper.wrap(root, List.of(filter), "root");
 		}
 		return root;
+	}
+
+	private int nextDeferredFilterIndex(List<SegmentFactor> factors, List<DeferredFilter> sortedFilters,
+			Set<String> boundBeforeSegment) {
+		int bestIndex = -1;
+		BindingAssignmentWindow bestWindow = null;
+		for (int i = 0; i < sortedFilters.size(); i++) {
+			DeferredFilter filter = sortedFilters.get(i);
+			if (LmdbJoinPlanSupport.containsExists(filter.condition)) {
+				continue;
+			}
+			BindingAssignmentWindow window = bindingAssignmentCoveringWindow(factors, filter, boundBeforeSegment);
+			if (window == null) {
+				continue;
+			}
+			if (bestWindow == null || compareBindingAssignmentWindow(window, filter, bestWindow,
+					sortedFilters.get(bestIndex)) < 0) {
+				bestIndex = i;
+				bestWindow = window;
+			}
+		}
+		return bestIndex < 0 ? 0 : bestIndex;
+	}
+
+	private int compareBindingAssignmentWindow(BindingAssignmentWindow left, DeferredFilter leftFilter,
+			BindingAssignmentWindow right, DeferredFilter rightFilter) {
+		int endComparison = Integer.compare(left.endIndex, right.endIndex);
+		if (endComparison != 0) {
+			return endComparison;
+		}
+		int spanComparison = Integer.compare(left.endIndex - left.startIndex, right.endIndex - right.startIndex);
+		if (spanComparison != 0) {
+			return spanComparison;
+		}
+		int costComparison = Integer.compare(leftFilter.conditionCost, rightFilter.conditionCost);
+		if (costComparison != 0) {
+			return costComparison;
+		}
+		return Integer.compare(leftFilter.originalIndex, rightFilter.originalIndex);
 	}
 
 	private TupleExpr applyPrefixBindingDeferredFilters(TupleExpr tupleExpr,
@@ -201,10 +243,35 @@ final class LmdbDeferredFilterPlacer {
 
 	private boolean groupDeferredFilterOnBindingAssignments(List<SegmentFactor> factors,
 			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
+		BindingAssignmentWindow window = bindingAssignmentCoveringWindow(factors, deferredFilter, boundBeforeSegment);
+		if (window == null) {
+			return false;
+		}
+
+		Deque<TupleExpr> selectedRoots = new ArrayDeque<>(window.selectedIndexes.size());
+		Set<StatementPattern> containedPatterns = LmdbJoinPlanSupport.identityPatternSet();
+		for (Integer selectedIndex : window.selectedIndexes) {
+			SegmentFactor factor = factors.get(selectedIndex);
+			selectedRoots.addLast(factor.tupleExpr);
+			containedPatterns.addAll(factor.containedPatterns);
+		}
+		TupleExpr filteredRoot = filterWrapper.wrap(buildJoinRoot(selectedRoots), List.of(deferredFilter),
+				"bindingAssignments");
+		SegmentFactor groupedFactor = new SegmentFactor(filteredRoot, containedPatterns);
+		int insertionIndex = window.startIndex;
+		for (int i = window.selectedIndexes.size() - 1; i >= 0; i--) {
+			factors.remove((int) window.selectedIndexes.get(i));
+		}
+		factors.add(insertionIndex, groupedFactor);
+		return true;
+	}
+
+	private BindingAssignmentWindow bindingAssignmentCoveringWindow(List<SegmentFactor> factors,
+			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
 		Set<String> missingVars = new HashSet<>(deferredFilter.requiredVars);
 		missingVars.removeAll(boundBeforeSegment);
 		if (missingVars.isEmpty()) {
-			return false;
+			return null;
 		}
 
 		List<Integer> selectedIndexes = new ArrayList<>();
@@ -217,29 +284,10 @@ final class LmdbDeferredFilterPlacer {
 			selectedIndexes.add(i);
 			missingVars.removeAll(factor.bindingNames);
 			if (missingVars.isEmpty()) {
-				break;
+				return new BindingAssignmentWindow(selectedIndexes);
 			}
 		}
-		if (!missingVars.isEmpty() || selectedIndexes.isEmpty()) {
-			return false;
-		}
-
-		Deque<TupleExpr> selectedRoots = new ArrayDeque<>(selectedIndexes.size());
-		Set<StatementPattern> containedPatterns = LmdbJoinPlanSupport.identityPatternSet();
-		for (Integer selectedIndex : selectedIndexes) {
-			SegmentFactor factor = factors.get(selectedIndex);
-			selectedRoots.addLast(factor.tupleExpr);
-			containedPatterns.addAll(factor.containedPatterns);
-		}
-		TupleExpr filteredRoot = filterWrapper.wrap(buildJoinRoot(selectedRoots), List.of(deferredFilter),
-				"bindingAssignments");
-		SegmentFactor groupedFactor = new SegmentFactor(filteredRoot, containedPatterns);
-		int insertionIndex = selectedIndexes.get(0);
-		for (int i = selectedIndexes.size() - 1; i >= 0; i--) {
-			factors.remove((int) selectedIndexes.get(i));
-		}
-		factors.add(insertionIndex, groupedFactor);
-		return true;
+		return null;
 	}
 
 	private boolean groupDeferredFilterOnWindow(List<SegmentFactor> factors, DeferredFilter filter, int[] window) {
@@ -321,5 +369,17 @@ final class LmdbDeferredFilterPlacer {
 			root = joinFactory.create(orderedArgs.removeLast(), root);
 		}
 		return root;
+	}
+
+	private static final class BindingAssignmentWindow {
+		private final List<Integer> selectedIndexes;
+		private final int startIndex;
+		private final int endIndex;
+
+		private BindingAssignmentWindow(List<Integer> selectedIndexes) {
+			this.selectedIndexes = selectedIndexes;
+			this.startIndex = selectedIndexes.get(0);
+			this.endIndex = selectedIndexes.get(selectedIndexes.size() - 1);
+		}
 	}
 }

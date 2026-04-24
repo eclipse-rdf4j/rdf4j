@@ -179,6 +179,28 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void socialMediaFiveCycleKeepsFastestKnownValuesCascade(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 10);
+				assertContains(snapshot.renderedQuery(), "VALUES (?a ?b)");
+				assertDoesNotContain(snapshot.renderedQuery(), "VALUES (?d ?e)",
+						"Social media q10 should not pair d/e before the c/d inequality can prune d");
+				assertBefore(snapshot.renderedQuery(), "FILTER (?c != ?d)", "VALUES ?e",
+						"Social media q10 should prune d from the c binding before expanding e\n" + snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void libraryAuthorsByNameDoesNotReuseConditionedLearnedPatternStats(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
