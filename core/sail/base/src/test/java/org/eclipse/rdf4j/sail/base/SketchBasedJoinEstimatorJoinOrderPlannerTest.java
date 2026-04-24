@@ -950,7 +950,384 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Small VALUES anchors should seed long chains before broad graph scans");
 		assertTrue(orderedArgs.indexOf(markerValues) < orderedArgs.indexOf(trialArmPattern),
 				"Small VALUES filters should be applied before the broad hasArm bridge scan");
+		assertTrue(orderedArgs.indexOf(armResultPattern) < orderedArgs.indexOf(pValueFilter),
+				"Structural result-to-arm bridge should stay ahead of local value filters: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(pValueFilter) < orderedArgs.indexOf(trialArmPattern),
+				"Selective local filters should be applied before broad bridge scans once their input is bound");
 		assertPlanWorkMatchesStepSum(plan.get());
+	}
+
+	@Test
+	void planJoinOrderPromotesSmallConnectedValuesBeforeBroadGraphChain() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI clinicalTrial = VF.createIRI("urn:ClinicalTrial");
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI biomarker = VF.createIRI("urn:biomarker");
+		IRI pValue = VF.createIRI("urn:pValue");
+		List<Resource> markers = new ArrayList<>();
+		for (int i = 0; i < 12; i++) {
+			markers.add(VF.createIRI("urn:marker:" + i));
+		}
+		for (int trialIndex = 0; trialIndex < 96; trialIndex++) {
+			Resource trial = VF.createIRI("urn:trial:" + trialIndex);
+			store.add(VF.createStatement(trial, rdfType, clinicalTrial));
+			for (int armIndex = 0; armIndex < 3; armIndex++) {
+				Resource arm = VF.createIRI("urn:arm:" + trialIndex + ':' + armIndex);
+				Resource result = VF.createIRI("urn:result:" + trialIndex + ':' + armIndex);
+				store.add(VF.createStatement(trial, hasArm, arm));
+				store.add(VF.createStatement(arm, hasResult, result));
+				store.add(VF.createStatement(result, biomarker, markers.get((trialIndex + armIndex) % markers.size())));
+				store.add(VF.createStatement(result, pValue, VF.createLiteral(armIndex == 0 ? 0.04d : 0.08d)));
+			}
+		}
+
+		BindingSetAssignment markerValues = new BindingSetAssignment();
+		List<BindingSet> markerRows = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("marker", markers.get(i));
+			markerRows.add(row);
+		}
+		markerValues.setBindingSets(markerRows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
+				Var.of("clinicalTrial", clinicalTrial));
+		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
+		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
+		StatementPattern biomarkerPattern = pattern("result", biomarker, "marker");
+		StatementPattern pValuePattern = pattern("result", pValue, "p");
+		List<TupleExpr> args = List.of(trialTypePattern, trialArmPattern, armResultPattern, biomarkerPattern,
+				markerValues, pValuePattern);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == markerValues) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(3.0d, 3.0d));
+			}
+			if (factor == biomarkerPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("marker") ? 66.0d : 2885.0d,
+						boundVars.contains("marker") ? 79.0d : 2885.0d));
+			}
+			if (factor == pValuePattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("result") ? 79.0d : 2885.0d,
+						boundVars.contains("result") ? 1606.8354430379745d : 2885.0d));
+			}
+			if (factor == armResultPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("result") ? 237.0d : 2885.0d,
+						boundVars.contains("result") ? 2885.0d : 2885.0d));
+			}
+			if (factor == trialArmPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("trial") ? 2865.0d : 2885.0d,
+						2885.0d));
+			}
+			if (factor == trialTypePattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(955.0d, 955.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a small-values prefix plan");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertEquals(markerValues, orderedArgs.get(0),
+				"Small connected VALUES should bind first when it unlocks a selective graph lookup");
+		assertTrue(orderedArgs.indexOf(biomarkerPattern) < orderedArgs.indexOf(trialArmPattern),
+				"The marker lookup should stay ahead of the broad trial-arm bridge");
+		assertTrue(plan.getDiagnostics()
+				.stream()
+				.anyMatch(diagnostic -> diagnostic.contains("prefix promotion")),
+				"Expected reusable prefix promotion, not a late DP rescue: " + plan.getDiagnostics());
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void planJoinOrderKeepsUnknownDeferredFilterBehindBridgeAcrossPhysicalTies() {
+		StubSailStore store = new StubSailStore();
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI bridge = VF.createIRI("urn:bridge");
+		IRI bridgeTail = VF.createIRI("urn:bridgeTail");
+		IRI pValue = VF.createIRI("urn:pValue");
+		IRI effectSize = VF.createIRI("urn:effectSize");
+		for (int anchorIndex = 0; anchorIndex < 16; anchorIndex++) {
+			Resource anchor = VF.createIRI("urn:anchor:" + anchorIndex);
+			Resource result = VF.createIRI("urn:result:" + anchorIndex);
+			Resource mid = VF.createIRI("urn:mid:" + anchorIndex);
+			store.add(VF.createStatement(anchor, hasResult, result));
+			store.add(VF.createStatement(result, pValue, VF.createLiteral(anchorIndex == 0 ? 0.04d : 0.08d)));
+			store.add(VF.createStatement(result, effectSize, VF.createLiteral(anchorIndex == 0 ? 0.8d : 0.2d)));
+			store.add(VF.createStatement(result, bridge, mid));
+			store.add(VF.createStatement(mid, bridgeTail, VF.createIRI("urn:tail:" + anchorIndex)));
+		}
+
+		BindingSetAssignment anchorValues = new BindingSetAssignment();
+		List<BindingSet> anchorRows = new ArrayList<>();
+		for (int i = 0; i < 2; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("anchor", VF.createIRI("urn:anchor:" + i));
+			anchorRows.add(row);
+		}
+		anchorValues.setBindingSets(anchorRows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern anchorResultPattern = pattern("anchor", hasResult, "result");
+		StatementPattern pValuePattern = pattern("result", pValue, "pValueLiteral");
+		StatementPattern effectSizePattern = pattern("result", effectSize, "effect");
+		StatementPattern bridgePattern = pattern("result", bridge, "mid");
+		StatementPattern bridgeTailPattern = pattern("mid", bridgeTail, "tail");
+		List<TupleExpr> args = List.of(anchorValues, anchorResultPattern, pValuePattern, effectSizePattern,
+				bridgePattern, bridgeTailPattern);
+		List<JoinOrderPlanner.FilterConstraint> deferredFilters = List.of(
+				new JoinOrderPlanner.FilterConstraint(Set.of("pValueLiteral", "effect"), Double.NaN,
+						JoinOrderPlanner.FILTER_COST_CHEAP, "?pValueLiteral < 0.05 || ?effect > 0.7", "unknown",
+						-1L));
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == anchorValues) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 2.0d));
+			}
+			if (factor == anchorResultPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("anchor") ? 2.0d : 32.0d, 16.0d));
+			}
+			if (factor == bridgeTailPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("mid") ? 2.0d : 64.0d, 16.0d));
+			}
+			if (factor == pValuePattern || factor == effectSizePattern || factor == bridgePattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("result") ? 2.0d : 64.0d, 16.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 16.0d));
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, deferredFilters);
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a filter-window plan");
+		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
+		int bridgeIndex = orderedArgs.indexOf(bridgePattern);
+		assertTrue(
+				bridgeIndex < orderedArgs.indexOf(pValuePattern)
+						&& bridgeIndex < orderedArgs.indexOf(effectSizePattern),
+				"Unknown deferred filters should not outrank connected bridge scans across close physical-cost ties: "
+						+ orderedArgs);
+		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+	}
+
+	@Test
+	void planJoinOrderKeepsWeakDeferredFilterBehindStructuralBridge() {
+		StubSailStore store = new StubSailStore();
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI bridge = VF.createIRI("urn:bridge");
+		IRI bridgeTail = VF.createIRI("urn:bridgeTail");
+		IRI pValue = VF.createIRI("urn:pValue");
+		IRI effectSize = VF.createIRI("urn:effectSize");
+		for (int anchorIndex = 0; anchorIndex < 16; anchorIndex++) {
+			Resource anchor = VF.createIRI("urn:anchor:" + anchorIndex);
+			Resource result = VF.createIRI("urn:result:" + anchorIndex);
+			Resource mid = VF.createIRI("urn:mid:" + anchorIndex);
+			store.add(VF.createStatement(anchor, hasResult, result));
+			store.add(VF.createStatement(result, pValue, VF.createLiteral(anchorIndex == 0 ? 0.04d : 0.08d)));
+			store.add(VF.createStatement(result, effectSize, VF.createLiteral(anchorIndex == 0 ? 0.8d : 0.2d)));
+			store.add(VF.createStatement(result, bridge, mid));
+			store.add(VF.createStatement(mid, bridgeTail, VF.createIRI("urn:tail:" + anchorIndex)));
+		}
+
+		BindingSetAssignment anchorValues = new BindingSetAssignment();
+		List<BindingSet> anchorRows = new ArrayList<>();
+		for (int i = 0; i < 2; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("anchor", VF.createIRI("urn:anchor:" + i));
+			anchorRows.add(row);
+		}
+		anchorValues.setBindingSets(anchorRows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern anchorResultPattern = pattern("anchor", hasResult, "result");
+		StatementPattern pValuePattern = pattern("result", pValue, "pValueLiteral");
+		StatementPattern effectSizePattern = pattern("result", effectSize, "effect");
+		StatementPattern bridgePattern = pattern("result", bridge, "mid");
+		StatementPattern bridgeTailPattern = pattern("mid", bridgeTail, "tail");
+		List<TupleExpr> args = List.of(anchorValues, anchorResultPattern, pValuePattern, effectSizePattern,
+				bridgePattern, bridgeTailPattern);
+		List<JoinOrderPlanner.FilterConstraint> deferredFilters = List.of(
+				new JoinOrderPlanner.FilterConstraint(Set.of("pValueLiteral", "effect"), 0.75d,
+						JoinOrderPlanner.FILTER_COST_CHEAP, "?pValueLiteral < 0.05 || ?effect > 0.7",
+						"weak-learned", 100L));
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == anchorValues) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 2.0d));
+			}
+			if (factor == anchorResultPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("anchor") ? 2.0d : 32.0d, 16.0d));
+			}
+			if (factor == bridgeTailPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("mid") ? 2.0d : 64.0d, 16.0d));
+			}
+			if (factor == pValuePattern || factor == effectSizePattern || factor == bridgePattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("result") ? 2.0d : 64.0d, 16.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 16.0d));
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, deferredFilters);
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a weak-filter plan");
+		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
+		int bridgeIndex = orderedArgs.indexOf(bridgePattern);
+		assertTrue(
+				bridgeIndex < orderedArgs.indexOf(pValuePattern)
+						&& bridgeIndex < orderedArgs.indexOf(effectSizePattern),
+				"Weak deferred filters should not shrink DP rows enough to outrank connected bridge scans: "
+						+ orderedArgs);
+		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+	}
+
+	@Test
+	void planJoinOrderAppliesBoundConstantGuardBeforeExpansion() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI clinicalTrial = VF.createIRI("urn:ClinicalTrial");
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		for (int trialIndex = 0; trialIndex < 8; trialIndex++) {
+			Resource trial = VF.createIRI("urn:trial:" + trialIndex);
+			store.add(VF.createStatement(trial, rdfType, clinicalTrial));
+			for (int armIndex = 0; armIndex < 2; armIndex++) {
+				Resource arm = VF.createIRI("urn:arm:" + trialIndex + ':' + armIndex);
+				store.add(VF.createStatement(trial, hasArm, arm));
+				store.add(VF.createStatement(arm, hasResult, VF.createIRI("urn:result:" + trialIndex + ':'
+						+ armIndex)));
+			}
+		}
+
+		BindingSetAssignment trialValues = new BindingSetAssignment();
+		List<BindingSet> trialRows = new ArrayList<>();
+		for (int i = 0; i < 2; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("trial", VF.createIRI("urn:trial:" + i));
+			trialRows.add(row);
+		}
+		trialValues.setBindingSets(trialRows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern typeGuardPattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
+				Var.of("clinicalTrial", clinicalTrial));
+		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
+		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
+		List<TupleExpr> args = List.of(trialValues, typeGuardPattern, trialArmPattern, armResultPattern);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == trialValues) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 2.0d));
+			}
+			if (factor == typeGuardPattern || factor == trialArmPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("trial") ? 2.0d : 16.0d, 2.0d));
+			}
+			if (factor == armResultPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+						boundVars.contains("arm") ? 2.0d : 16.0d, 2.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a bound-guard plan");
+		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
+		assertEquals(trialValues, orderedArgs.get(0), "Small VALUES should bind the trial before local guards");
+		assertTrue(orderedArgs.indexOf(typeGuardPattern) < orderedArgs.indexOf(trialArmPattern),
+				"Bound constant guards should run before expanding from the same binding: " + orderedArgs);
+		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+	}
+
+	@Test
+	void planJoinOrderDoesNotExpandOnlyToUnlockGuardBeforeLocalLeaf() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI clinicalTrial = VF.createIRI("urn:ClinicalTrial");
+		IRI hasArm = VF.createIRI("urn:hasArm");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI biomarker = VF.createIRI("urn:biomarker");
+		IRI pValue = VF.createIRI("urn:pValue");
+		List<Resource> markers = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			markers.add(VF.createIRI("urn:marker:" + i));
+		}
+		for (int trialIndex = 0; trialIndex < 24; trialIndex++) {
+			Resource trial = VF.createIRI("urn:trial:" + trialIndex);
+			store.add(VF.createStatement(trial, rdfType, clinicalTrial));
+			for (int armIndex = 0; armIndex < 2; armIndex++) {
+				Resource arm = VF.createIRI("urn:arm:" + trialIndex + ':' + armIndex);
+				Resource result = VF.createIRI("urn:result:" + trialIndex + ':' + armIndex);
+				store.add(VF.createStatement(trial, hasArm, arm));
+				store.add(VF.createStatement(arm, hasResult, result));
+				store.add(VF.createStatement(result, biomarker, markers.get((trialIndex + armIndex) % markers.size())));
+				store.add(VF.createStatement(result, pValue, VF.createLiteral(0.04d)));
+			}
+		}
+
+		BindingSetAssignment markerValues = new BindingSetAssignment();
+		List<BindingSet> markerRows = new ArrayList<>();
+		for (Resource marker : markers) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("marker", marker);
+			markerRows.add(row);
+		}
+		markerValues.setBindingSets(markerRows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuildOnceSlow();
+
+		StatementPattern trialTypePattern = new StatementPattern(Var.of("trial"), Var.of("rdfType", rdfType),
+				Var.of("clinicalTrial", clinicalTrial));
+		StatementPattern trialArmPattern = pattern("trial", hasArm, "arm");
+		StatementPattern armResultPattern = pattern("arm", hasResult, "result");
+		StatementPattern biomarkerPattern = pattern("result", biomarker, "marker");
+		StatementPattern pValuePattern = pattern("result", pValue, "p");
+		List<TupleExpr> args = List.of(markerValues, trialTypePattern, trialArmPattern, armResultPattern,
+				biomarkerPattern, pValuePattern);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == markerValues || factor == biomarkerPattern || factor == armResultPattern
+					|| factor == trialArmPattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(3.0d, 48.0d));
+			}
+			if (factor == pValuePattern || factor == trialTypePattern) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 48.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a guard-unlock plan");
+		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
+		assertTrue(orderedArgs.indexOf(armResultPattern) < orderedArgs.indexOf(pValuePattern),
+				"The bridge that unlocks another expansion should stay ahead of a local leaf: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(pValuePattern) < orderedArgs.indexOf(trialArmPattern),
+				"A local leaf should not be delayed by expanding only to unlock a bound guard: " + orderedArgs);
+		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
 	}
 
 	@Test

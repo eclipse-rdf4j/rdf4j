@@ -451,9 +451,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long MIN_ROBUST_REBUILD_HEADROOM_BYTES = 256L * 1024L * 1024L;
 	private static final long ROBUST_REBUILD_DISABLE_HEADROOM_PERCENT = 2L;
 	private static final long ROBUST_REBUILD_ENABLE_HEADROOM_PERCENT = 10L;
-	private static final long ROBUST_REBUILD_FAILURE_BACKOFF_MILLIS = 1000L;
-	private static final long ROBUST_HEADROOM_GC_INTERVAL_MILLIS = 5000L;
-	private static final long ROBUST_HEADROOM_CHECK_INTERVAL = 4096L;
 	private static final byte[] FILE_GROWTH_MARKER = new byte[] { 0 };
 	private static final String MIN_SKETCH_MEMORY_PERCENT_PROPERTY = "minSketchMemoryPercent";
 	private static final String MAX_SKETCH_MEMORY_PERCENT_PROPERTY = "maxSketchMemoryPercent";

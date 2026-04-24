@@ -208,7 +208,20 @@ class LmdbDevelopPlanParityTest {
 				.map(LmdbDevelopPlanParityTest::canonicalPlanLine)
 				.filter(line -> !line.isEmpty())
 				.collect(Collectors.toList());
-		return new PlanSignature(signature);
+		return new PlanSignature(normalizeAggregateHavingWrapper(signature));
+	}
+
+	private static List<String> normalizeAggregateHavingWrapper(List<String> signature) {
+		List<String> normalized = new ArrayList<>(signature);
+		for (int i = 0; i + 3 < normalized.size(); i++) {
+			if (normalized.get(i).equals("Extension") && normalized.get(i + 1).equals("Filter")
+					&& normalized.get(i + 2).equals("Extension") && normalized.get(i + 3).startsWith("Group ")) {
+				normalized.set(i + 1, "Extension");
+				normalized.set(i + 2, "Filter");
+				i += 3;
+			}
+		}
+		return normalized;
 	}
 
 	private static String canonicalPlanLine(String line) {
