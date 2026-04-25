@@ -45,7 +45,7 @@ public class ProxyTest {
 	String serverURL = "http://rdf4j.invalid/rdf4j-server";
 	String repositoryID = "test";
 
-	String proxyUser  = "proxyUser" ;
+	String proxyUser = "proxyUser";
 
 	String proxyPassword = "proxyPassword";
 
