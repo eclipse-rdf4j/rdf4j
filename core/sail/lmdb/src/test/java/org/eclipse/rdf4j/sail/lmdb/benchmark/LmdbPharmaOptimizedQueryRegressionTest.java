@@ -42,31 +42,43 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 	private static final Theme THEME = Theme.PHARMA;
 	private static final int MAX_QUERY_INDEX = 10;
 	private static final String QUERY_INDEXES_PROPERTY = "rdf4j.lmdb.pharmaRegression.queryIndexes";
+	private static final String PERSISTENT_STORE_KEY = "pharma-regression/all-themes";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 
 	@Test
 	void pharmaQueriesUsePlannerCostInvariants(@TempDir Path dataDir) throws Exception {
-		Path themeDir = dataDir.resolve(THEME.name());
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve(THEME.name()),
+						PERSISTENT_STORE_KEY,
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		Path themeDir = preparedStore.storeDirectory();
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + themeDir + " for PHARMA regression. "
+					+ PERSISTENT_STORE_HINT);
+		}
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-				loadData(repository);
-				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-				primeLearnedFilterStats(repository);
-				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-
-			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			repository = new SailRepository(store);
-			try {
 				for (int queryIndex : queryIndexes()) {
-					OptimizerSnapshot snapshot = explainOptimized(repository, queryIndex);
-					assertPlannerCostInvariants(queryIndex, snapshot);
+					assertQueryRegressionPasses(repository, queryIndex);
 					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 				}
 			} finally {
@@ -132,6 +144,14 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 					explanation.toString(),
 					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));
 		}
+	}
+
+	private static void assertQueryRegressionPasses(SailRepository repository, int queryIndex) throws Exception {
+		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(THEME.name() + ":" + queryIndex,
+				() -> {
+					OptimizerSnapshot snapshot = explainOptimized(repository, queryIndex);
+					assertPlannerCostInvariants(queryIndex, snapshot);
+				});
 	}
 
 	private static void assertPlannerCostInvariants(int queryIndex, OptimizerSnapshot snapshot) {

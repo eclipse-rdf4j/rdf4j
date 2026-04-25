@@ -53,6 +53,10 @@ class LmdbThemeFastestRunSnapshotTest {
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.fastestRunSnapshot.queryKeys";
+	private static final String PERSISTENT_STORE_KEY_PREFIX = "fastest-run-snapshot";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
 	@Test
 	void fastestRunSnapshotDocumentsAvailableAndMissingPhysicalPlans() throws Exception {
@@ -86,13 +90,8 @@ class LmdbThemeFastestRunSnapshotTest {
 
 		Map<Theme, List<ExpectedSnapshot>> snapshotsByTheme = planSnapshots.stream()
 				.collect(Collectors.groupingBy(ExpectedSnapshot::theme, LinkedHashMap::new, Collectors.toList()));
-		List<String> mismatches = new ArrayList<>();
 		for (Map.Entry<Theme, List<ExpectedSnapshot>> entry : snapshotsByTheme.entrySet()) {
-			mismatches.addAll(verifyTheme(dataDir, entry.getKey(), entry.getValue()));
-		}
-		if (!mismatches.isEmpty()) {
-			fail("LMDB optimized query plans drifted from " + SNAPSHOT_FILE + ":\n\n"
-					+ String.join("\n\n", mismatches));
+			verifyTheme(dataDir, entry.getKey(), entry.getValue());
 		}
 	}
 
@@ -103,9 +102,11 @@ class LmdbThemeFastestRunSnapshotTest {
 			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot actual = explainOptimized(repository, Theme.PHARMA, 10);
-				assertTrue(actual.plan().contains("plannerPath=ROBUST_USED"), actual.plan());
-				assertFalse(actual.plan().contains("plannerPath=UNSUPPORTED_SHAPE"), actual.plan());
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:10", () -> {
+					OptimizerSnapshot actual = explainOptimized(repository, Theme.PHARMA, 10);
+					assertTrue(actual.plan().contains("plannerPath=ROBUST_USED"), actual.plan());
+					assertFalse(actual.plan().contains("plannerPath=UNSUPPORTED_SHAPE"), actual.plan());
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -121,41 +122,45 @@ class LmdbThemeFastestRunSnapshotTest {
 			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
-				assertPlannerCostInvariants(query0.plan(), "PHARMA:0", 10_000.0d);
-				assertPlanContains(query0.plan(), "PHARMA:0",
-						"BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
-						"value=http://example.com/theme/pharma/studiesDisease",
-						"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-						"value=http://example.com/theme/pharma/hasArm",
-						"value=http://example.com/theme/pharma/pValue",
-						"value=http://example.com/theme/pharma/effectSize",
-						"value=http://example.com/theme/pharma/biomarker, anonymous");
-				assertPlanBefore(query0.plan(), "PHARMA:0",
-						"value=http://example.com/theme/pharma/hasArm",
-						"value=http://example.com/theme/pharma/armDrug");
-				assertPlanBefore(query0.plan(), "PHARMA:0",
-						"value=http://example.com/theme/pharma/hasArm",
-						"value=http://example.com/theme/pharma/hasResult");
-				assertPlanBefore(query0.plan(), "PHARMA:0",
-						"value=http://example.com/theme/pharma/armDrug",
-						"value=http://example.com/theme/pharma/pValue");
-				assertPlanBefore(query0.plan(), "PHARMA:0",
-						"value=http://example.com/theme/pharma/hasResult",
-						"value=http://example.com/theme/pharma/pValue");
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:0", () -> {
+					OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
+					assertPlannerCostInvariants(query0.plan(), "PHARMA:0", 10_000.0d);
+					assertPlanContains(query0.plan(), "PHARMA:0",
+							"BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
+							"value=http://example.com/theme/pharma/studiesDisease",
+							"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+							"value=http://example.com/theme/pharma/hasArm",
+							"value=http://example.com/theme/pharma/pValue",
+							"value=http://example.com/theme/pharma/effectSize",
+							"value=http://example.com/theme/pharma/biomarker, anonymous");
+					assertPlanBefore(query0.plan(), "PHARMA:0",
+							"value=http://example.com/theme/pharma/hasArm",
+							"value=http://example.com/theme/pharma/armDrug");
+					assertPlanBefore(query0.plan(), "PHARMA:0",
+							"value=http://example.com/theme/pharma/hasArm",
+							"value=http://example.com/theme/pharma/hasResult");
+					assertPlanBefore(query0.plan(), "PHARMA:0",
+							"value=http://example.com/theme/pharma/armDrug",
+							"value=http://example.com/theme/pharma/pValue");
+					assertPlanBefore(query0.plan(), "PHARMA:0",
+							"value=http://example.com/theme/pharma/hasResult",
+							"value=http://example.com/theme/pharma/pValue");
+				});
 
 				BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 
-				OptimizerSnapshot query1 = explainOptimized(repository, Theme.PHARMA, 1);
-				assertPlannerCostInvariants(query1.plan(), "PHARMA:1", 10_000.0d);
-				assertPlanContains(query1.plan(), "PHARMA:1",
-						"value=http://example.com/theme/pharma/synergyScore",
-						"value=http://example.com/theme/pharma/combinationOf",
-						"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-						"value=http://example.com/theme/pharma/hasSideEffect",
-						"value=http://example.com/theme/pharma/severity");
-				assertSelectiveFilterPlan(query1.plan(), "PHARMA:1",
-						"value=http://example.com/theme/pharma/synergyScore", 0.20, 0.35);
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:1", () -> {
+					OptimizerSnapshot query1 = explainOptimized(repository, Theme.PHARMA, 1);
+					assertPlannerCostInvariants(query1.plan(), "PHARMA:1", 10_000.0d);
+					assertPlanContains(query1.plan(), "PHARMA:1",
+							"value=http://example.com/theme/pharma/synergyScore",
+							"value=http://example.com/theme/pharma/combinationOf",
+							"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+							"value=http://example.com/theme/pharma/hasSideEffect",
+							"value=http://example.com/theme/pharma/severity");
+					assertSelectiveFilterPlan(query1.plan(), "PHARMA:1",
+							"value=http://example.com/theme/pharma/synergyScore", 0.20, 0.35);
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -172,24 +177,27 @@ class LmdbThemeFastestRunSnapshotTest {
 		assertDirectLookupWorkRowsBelow(plan, key, maxDirectLookupWorkRows);
 	}
 
-	private static List<String> verifyTheme(Path dataDir, Theme theme, List<ExpectedSnapshot> planSnapshots)
+	private static void verifyTheme(Path dataDir, Theme theme, List<ExpectedSnapshot> planSnapshots)
 			throws Exception {
 		Path storeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				List<String> mismatches = new ArrayList<>();
 				for (ExpectedSnapshot expected : planSnapshots) {
-					OptimizerSnapshot actual = explainOptimized(repository, expected.theme(), expected.queryIndex());
-					List<String> expectedSignature = planSignature(expected.queryPlan());
-					List<String> actualSignature = planSignature(actual.plan());
-					if (!expectedSignature.equals(actualSignature)) {
-						mismatches.add(mismatch(expected, expectedSignature, actualSignature, actual.plan()));
-					}
+					BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(expected.key(), () -> {
+						OptimizerSnapshot actual = explainOptimized(repository, expected.theme(),
+								expected.queryIndex());
+						List<String> expectedSignature = planSignature(expected.queryPlan());
+						List<String> actualSignature = planSignature(actual.plan());
+						if (!expectedSignature.equals(actualSignature)) {
+							throw new AssertionError(
+									"LMDB optimized query plans drifted from " + SNAPSHOT_FILE + ":\n\n"
+											+ mismatch(expected, expectedSignature, actualSignature, actual.plan()));
+						}
+					});
 					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 				}
-				return mismatches;
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -199,23 +207,27 @@ class LmdbThemeFastestRunSnapshotTest {
 	}
 
 	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
-		Path storeDir = dataDir.resolve("fastest-run-snapshot-" + theme.name());
-		LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		boolean prepared = false;
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			prepared = true;
-			return storeDir;
-		} finally {
-			shutdownAndRelease(repository, store);
-			if (!prepared) {
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDir);
-			}
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("fastest-run-snapshot-" + theme.name()),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name(),
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository, theme);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for fastest-run snapshot " + theme.name() + ". " + PERSISTENT_STORE_HINT);
 		}
+		return preparedStore.storeDirectory();
 	}
 
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {

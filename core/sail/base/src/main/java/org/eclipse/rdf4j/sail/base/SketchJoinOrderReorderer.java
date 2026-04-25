@@ -37,8 +37,7 @@ import org.slf4j.LoggerFactory;
 final class SketchJoinOrderReorderer {
 
 	private static final Logger logger = LoggerFactory.getLogger(SketchJoinOrderReorderer.class);
-	private static final double CONNECTED_BINDING_PREFIX_REDUCTION_RATIO = 0.75d;
-	private static final double CONNECTED_BINDING_PREFIX_MIN_ROWS_SAVED = 8.0d;
+	private static final double BINDING_PREFIX_MAX_COMBINED_ROWS = SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS;
 
 	private final SketchBasedJoinEstimator estimator;
 	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster;
@@ -130,7 +129,10 @@ final class SketchJoinOrderReorderer {
 		LinkedHashSet<Integer> prefixIndices = new LinkedHashSet<>();
 		List<Integer> smallBindingAssignments = smallBindingAssignmentIndices(expressions);
 		Set<String> smallBindingVars = bindingVars(expressions, smallBindingAssignments);
-		if (smallBindingAssignments.size() > 1 && allGraphExpressionsTouchBindingVars(expressions, smallBindingVars)) {
+		double combinedBindingRows = combinedBindingRows(expressions, smallBindingAssignments);
+		if (smallBindingAssignments.size() > 1
+				&& combinedBindingRows <= BINDING_PREFIX_MAX_COMBINED_ROWS
+				&& allGraphExpressionsTouchBindingVars(expressions, smallBindingVars)) {
 			prefixIndices.addAll(smallBindingAssignments);
 		}
 
@@ -145,15 +147,6 @@ final class SketchJoinOrderReorderer {
 				prefixIndices.add(index);
 			}
 		}
-		for (Integer index : smallBindingAssignments) {
-			if (prefixIndices.contains(index)) {
-				continue;
-			}
-			if (promotesConnectedGraphLookup(expressions, index.intValue(), initiallyBoundVars, graphBindingVars)) {
-				prefixIndices.add(index);
-			}
-		}
-
 		if (prefixIndices.isEmpty()) {
 			return new PlanningInputs(List.copyOf(expressions), Set.copyOf(initiallyBoundVars), List.of());
 		}
@@ -184,6 +177,28 @@ final class SketchJoinOrderReorderer {
 			}
 		}
 		return indices;
+	}
+
+	private double combinedBindingRows(List<TupleExpr> expressions, List<Integer> bindingAssignmentIndices) {
+		if (bindingAssignmentIndices.isEmpty()) {
+			return 0.0d;
+		}
+		double combinedRows = 1.0d;
+		for (Integer index : bindingAssignmentIndices) {
+			TupleExpr expression = expressions.get(index.intValue());
+			if (!(expression instanceof BindingSetAssignment assignment)) {
+				continue;
+			}
+			double rows = bindingRows(assignment);
+			if (rows <= 0.0d) {
+				return 0.0d;
+			}
+			combinedRows *= rows;
+			if (!Double.isFinite(combinedRows) || combinedRows > BINDING_PREFIX_MAX_COMBINED_ROWS) {
+				return BINDING_PREFIX_MAX_COMBINED_ROWS + 1.0d;
+			}
+		}
+		return combinedRows;
 	}
 
 	private Set<String> bindingVars(List<TupleExpr> expressions, List<Integer> indices) {
@@ -224,68 +239,6 @@ final class SketchJoinOrderReorderer {
 			addFilterConditionVars(expression, conditionVars);
 		}
 		return Set.copyOf(conditionVars);
-	}
-
-	private boolean promotesConnectedGraphLookup(List<TupleExpr> expressions, int bindingIndex,
-			Set<String> initiallyBoundVars, Set<String> graphBindingVars) {
-		if (factorCostModel == null) {
-			return false;
-		}
-		TupleExpr bindingExpression = expressions.get(bindingIndex);
-		if (!(bindingExpression instanceof BindingSetAssignment bindingSetAssignment)) {
-			return false;
-		}
-		Set<String> assignmentVars = bindingExpression.getBindingNames();
-		if (!intersects(assignmentVars, graphBindingVars)) {
-			return false;
-		}
-
-		LinkedHashSet<String> boundWithAssignment = new LinkedHashSet<>(initiallyBoundVars);
-		boundWithAssignment.addAll(assignmentVars);
-		double assignmentRows = bindingRows(bindingSetAssignment);
-		for (int i = 0; i < expressions.size(); i++) {
-			if (i == bindingIndex) {
-				continue;
-			}
-			TupleExpr expression = expressions.get(i);
-			if (expression instanceof BindingSetAssignment
-					|| !intersects(assignmentVars, expression.getBindingNames())) {
-				continue;
-			}
-			if (materiallyReducesAccessWork(expression, initiallyBoundVars, boundWithAssignment, assignmentRows)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private boolean materiallyReducesAccessWork(TupleExpr expression, Set<String> initiallyBoundVars,
-			Set<String> boundWithAssignment, double assignmentRows) {
-		double unboundRows = estimatedAccessRows(expression, initiallyBoundVars);
-		double boundRows = estimatedAccessRows(expression, boundWithAssignment);
-		if (!(Double.isFinite(unboundRows) && Double.isFinite(boundRows)) || boundRows >= unboundRows) {
-			return false;
-		}
-		return boundRows <= unboundRows * CONNECTED_BINDING_PREFIX_REDUCTION_RATIO
-				|| unboundRows - boundRows >= Math.max(CONNECTED_BINDING_PREFIX_MIN_ROWS_SAVED, assignmentRows);
-	}
-
-	private double estimatedAccessRows(TupleExpr expression, Set<String> boundVars) {
-		if (factorCostModel == null) {
-			return Double.NaN;
-		}
-		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostModel.estimateFactorCost(expression,
-				boundVars);
-		if (estimate.isEmpty()) {
-			return Double.NaN;
-		}
-		JoinFactorCostModel.FactorCostEstimate factorCost = estimate.get();
-		double workRows = factorCost.getWorkRows();
-		if (Double.isFinite(workRows) && workRows >= 0.0d) {
-			return workRows;
-		}
-		double outputRows = factorCost.getOutputRows();
-		return Double.isFinite(outputRows) && outputRows >= 0.0d ? outputRows : Double.NaN;
 	}
 
 	private void addFilterConditionVars(TupleExpr expression, Set<String> conditionVars) {

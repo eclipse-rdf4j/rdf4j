@@ -47,6 +47,10 @@ class LmdbThemeTopRegressionSnapshotTest {
 	private static final String ENABLED_PROPERTY = "rdf4j.lmdb.topRegressionSnapshot.enabled";
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
+	private static final String PERSISTENT_STORE_KEY_PREFIX = "top-regression-snapshot";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final List<TargetQuery> TOP_REGRESSIONS = List.of(
 			target(Theme.PHARMA, 0),
 			target(Theme.SOCIAL_MEDIA, 10),
@@ -62,7 +66,6 @@ class LmdbThemeTopRegressionSnapshotTest {
 	@Test
 	void topRegressionOptimizedQueriesMatchFastestKnownSnapshots(@TempDir Path dataDir) throws Exception {
 		Map<String, String> fastestQueries = parseFastestOptimizedQueries();
-		List<String> mismatches = new ArrayList<>();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {
 			System.out.println("Preparing theme " + entry.getKey());
 			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
@@ -74,10 +77,7 @@ class LmdbThemeTopRegressionSnapshotTest {
 					System.out.println("Checking optimized query for " + targetQuery.key());
 					String expected = fastestQueries.get(targetQuery.key());
 					assertTrue(expected != null, "Missing fastest optimized query snapshot for " + targetQuery.key());
-					String actual = explainOptimized(repository, targetQuery);
-					if (!normalize(expected).equals(normalize(actual))) {
-						mismatches.add(mismatch(targetQuery, expected, actual));
-					}
+					assertSnapshotMatchesWithinThirtySeconds(repository, targetQuery, expected);
 					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 				}
 			} finally {
@@ -85,7 +85,6 @@ class LmdbThemeTopRegressionSnapshotTest {
 				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
 			}
 		}
-		assertTrue(mismatches.isEmpty(), String.join("\n\n", mismatches));
 	}
 
 	private static Map<Theme, List<TargetQuery>> targetsByTheme() {
@@ -160,23 +159,27 @@ class LmdbThemeTopRegressionSnapshotTest {
 	}
 
 	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
-		Path storeDirectory = dataDir.resolve("top-regression-" + theme.name());
-		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		boolean prepared = false;
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			prepared = true;
-			return storeDirectory;
-		} finally {
-			shutdownAndRelease(repository, store);
-			if (!prepared) {
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
-			}
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("top-regression-" + theme.name()),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name(),
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository, theme);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for top-regression snapshot " + theme.name() + ". " + PERSISTENT_STORE_HINT);
 		}
+		return preparedStore.storeDirectory();
 	}
 
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
@@ -196,6 +199,16 @@ class LmdbThemeTopRegressionSnapshotTest {
 					.explain(Explanation.Level.Optimized);
 			return new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr());
 		}
+	}
+
+	private static void assertSnapshotMatchesWithinThirtySeconds(SailRepository repository, TargetQuery targetQuery,
+			String expected) throws Exception {
+		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(targetQuery.key(), () -> {
+			String actual = explainOptimized(repository, targetQuery);
+			if (!normalize(expected).equals(normalize(actual))) {
+				throw new AssertionError(mismatch(targetQuery, expected, actual));
+			}
+		});
 	}
 
 	private static String normalize(String query) {

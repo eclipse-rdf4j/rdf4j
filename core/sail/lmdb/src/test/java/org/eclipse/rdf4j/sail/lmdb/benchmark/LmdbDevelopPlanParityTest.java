@@ -43,6 +43,10 @@ class LmdbDevelopPlanParityTest {
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.developPlanParity.queryKeys";
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results";
 	private static final String DEVELOP_RESULTS_FILE = "results-develop.md";
+	private static final String PERSISTENT_STORE_KEY_PREFIX = "develop-plan-parity";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final List<TargetQuery> TARGET_QUERIES = List.of(
 			target(Theme.PHARMA, 0),
 			target(Theme.PHARMA, 5),
@@ -62,7 +66,6 @@ class LmdbDevelopPlanParityTest {
 	@Test
 	void optimizedPlansMatchDevelopSignaturesForKnownRegressions(@TempDir Path dataDir) throws Exception {
 		Map<String, List<String>> expectedDevelopSignatures = parseDevelopPlanSignatures();
-		List<String> mismatches = new ArrayList<>();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme(selectedTargetQueries()).entrySet()) {
 			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
 			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
@@ -73,10 +76,7 @@ class LmdbDevelopPlanParityTest {
 					assertTrue(expectedSignature != null,
 							"Missing develop optimized plan in " + DEVELOP_RESULTS_FILE + " for "
 									+ targetQuery.key());
-					PlanSignature signature = planSignature(explainOptimized(repository, targetQuery));
-					if (!expectedSignature.equals(signature.lines())) {
-						mismatches.add(mismatch(targetQuery, expectedSignature, signature));
-					}
+					assertPlanParityPassesWithinThirtySeconds(repository, targetQuery, expectedSignature);
 					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 				}
 			} finally {
@@ -84,8 +84,6 @@ class LmdbDevelopPlanParityTest {
 				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
 			}
 		}
-
-		assertTrue(mismatches.isEmpty(), String.join("\n\n", mismatches));
 	}
 
 	private static List<TargetQuery> selectedTargetQueries() {
@@ -158,23 +156,27 @@ class LmdbDevelopPlanParityTest {
 	}
 
 	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
-		Path storeDirectory = dataDir.resolve("develop-plan-parity-" + theme.name());
-		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		boolean prepared = false;
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			prepared = true;
-			return storeDirectory;
-		} finally {
-			shutdownAndRelease(repository, store);
-			if (!prepared) {
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
-			}
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("develop-plan-parity-" + theme.name()),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name(),
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository, theme);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for develop-plan parity " + theme.name() + ". " + PERSISTENT_STORE_HINT);
 		}
+		return preparedStore.storeDirectory();
 	}
 
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
@@ -193,6 +195,16 @@ class LmdbDevelopPlanParityTest {
 					.explain(Explanation.Level.Optimized)
 					.toString();
 		}
+	}
+
+	private static void assertPlanParityPassesWithinThirtySeconds(SailRepository repository, TargetQuery targetQuery,
+			List<String> expectedSignature) throws Exception {
+		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(targetQuery.key(), () -> {
+			PlanSignature signature = planSignature(explainOptimized(repository, targetQuery));
+			if (!expectedSignature.equals(signature.lines())) {
+				throw new AssertionError(mismatch(targetQuery, expectedSignature, signature));
+			}
+		});
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {

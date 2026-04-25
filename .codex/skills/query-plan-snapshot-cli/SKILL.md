@@ -57,6 +57,26 @@ Interpretation:
 
 Use this path when the goal is optimizer-loop work: find the fastest known plan/query for a theme/query, then compare new runs back to that history before touching production logic.
 
+## Fast regression test loop (persistent LMDB theme stores)
+
+Theme regression/snapshot tests in `core/sail/lmdb` now support reusing a prepared LMDB store across runs.
+
+- Enable persistent reuse:
+  - `-Drdf4j.lmdb.themeRegression.persistentStore.enabled=true`
+- Optional custom root directory:
+  - `-Drdf4j.lmdb.themeRegression.persistentStore.root=persistent-lmdb-theme-store`
+- Default root directory:
+  - `persistent-lmdb-theme-store`
+
+Behavior:
+
+- If the store has expected `triples/data.mdb` and `values/data.mdb` sizes (from `expected-db-file-sizes.properties`), tests reuse it and skip rebuild/ingest.
+- If sizes mismatch or the marker file is missing/invalid, tests rebuild the store, then refresh the expected-size file.
+
+Example focused run:
+
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbThemeQueryRegressionTest#socialMediaFiveCycleInterleavesValuesWithFollowsEdges -Drdf4j.lmdb.themeRegression.persistentStore.enabled=true test`
+
 ## Snapshot diff workflow
 
 Use this when you need semantic plan diffs between two controlled captures of the same query.

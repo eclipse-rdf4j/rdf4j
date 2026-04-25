@@ -100,16 +100,16 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-//			"0",
-//			"1",
-//			"2",
-//			"3",
-//			"4",
-//			"5",
-//			"6",
-//			"7",
-//			"8",
-//			"9",
+			"0",
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
+			"9",
 			"10",
 //			"11",
 //			"12"
@@ -138,9 +138,9 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
-				.include(ThemeQueryBenchmark.class.getName() + ".explainQuery")
+				.include(ThemeQueryBenchmark.class.getName() + ".executeQuery")
 				.forks(0)
-				.measurementIterations(1)
+				.measurementIterations(10)
 				.measurementBatchSize(1)
 				.measurementTime(TimeValue.milliseconds(1))
 				.warmupIterations(0)
@@ -226,11 +226,12 @@ public class ThemeQueryBenchmark {
 		}
 
 		storeConfig = ConfigUtil.createConfig();
+		storeConfig.setIterationCacheSyncThreshold(0);
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
-		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+//		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 
 		repository.shutDown();
 		repository = null;

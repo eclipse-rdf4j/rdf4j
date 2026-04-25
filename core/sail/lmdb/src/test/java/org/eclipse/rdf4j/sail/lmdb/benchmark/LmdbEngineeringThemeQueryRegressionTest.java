@@ -32,6 +32,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbEngineeringThemeQueryRegressionTest {
 
+	private static final String PERSISTENT_STORE_KEY_PREFIX = "engineering-regression";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
+
 	private static final String ENGINEERING_Q10_DEVELOP_RENDERED_QUERY = """
 			SELECT (COUNT(DISTINCT ?assembly) AS ?count) WHERE {
 			  VALUES ?name { "Assembly 1" "Assembly 2" }
@@ -51,25 +56,14 @@ class LmdbEngineeringThemeQueryRegressionTest {
 	@Test
 	void requirementExistsMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = dataDir.resolve(theme.name());
+		Path themeDir = prepareThemeStore(dataDir, theme, 7);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-				loadData(repository, theme);
-				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-				primeLearnedFilterStats(repository, theme, 7);
-				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-
-			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			repository = new SailRepository(store);
-			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
-				assertEngineeringQ7DevelopPlanShape(snapshot.renderedQuery().trim(), snapshot.plan());
+				assertQueryRegressionPasses(repository, theme, 7,
+						snapshot -> assertEngineeringQ7DevelopPlanShape(snapshot.renderedQuery().trim(),
+								snapshot.plan()));
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -81,27 +75,16 @@ class LmdbEngineeringThemeQueryRegressionTest {
 	@Test
 	void assemblyOptionalMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = dataDir.resolve(theme.name());
+		Path themeDir = prepareThemeStore(dataDir, theme, 10);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-				loadData(repository, theme);
-				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-				primeLearnedFilterStats(repository, theme, 10);
-				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-
-			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			repository = new SailRepository(store);
-			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 10);
-				assertEquals(ENGINEERING_Q10_DEVELOP_RENDERED_QUERY, snapshot.renderedQuery().trim(),
-						() -> "Optimized plan:\n" + snapshot.plan());
-				assertEngineeringQ10DevelopPlanShape(snapshot.plan());
+				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
+					assertEquals(ENGINEERING_Q10_DEVELOP_RENDERED_QUERY, snapshot.renderedQuery().trim(),
+							() -> "Optimized plan:\n" + snapshot.plan());
+					assertEngineeringQ10DevelopPlanShape(snapshot.plan());
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -113,31 +96,44 @@ class LmdbEngineeringThemeQueryRegressionTest {
 	@Test
 	void componentNameFilterUsesFiniteValuesAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = dataDir.resolve(theme.name());
+		Path themeDir = prepareThemeStore(dataDir, theme, 4);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-				loadData(repository, theme);
-				BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-				primeLearnedFilterStats(repository, theme, 4);
-				BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-
-			store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			repository = new SailRepository(store);
-			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 4);
-				assertEngineeringQ4FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan());
+				assertQueryRegressionPasses(repository, theme, 4,
+						snapshot -> assertEngineeringQ4FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan()));
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
 		} finally {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
+	}
+
+	private static Path prepareThemeStore(Path dataDir, Theme theme, int queryIndexToPrime) throws Exception {
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve(theme.name()),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "-q" + queryIndexToPrime,
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository, theme);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository, theme, queryIndexToPrime);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for engineering regression. " + PERSISTENT_STORE_HINT);
+		}
+		return preparedStore.storeDirectory();
 	}
 
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
@@ -177,6 +173,12 @@ class LmdbEngineeringThemeQueryRegressionTest {
 					explanation.toString(),
 					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));
 		}
+	}
+
+	private static void assertQueryRegressionPasses(SailRepository repository, Theme theme, int queryIndex,
+			SnapshotAssertion assertion) throws Exception {
+		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(theme.name() + ":" + queryIndex,
+				() -> assertion.assertSnapshot(explainOptimized(repository, theme, queryIndex)));
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {
@@ -343,6 +345,11 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		if (!value.contains(expected)) {
 			throw new AssertionError("Expected to find `" + expected + "` in:\n" + value);
 		}
+	}
+
+	@FunctionalInterface
+	private interface SnapshotAssertion {
+		void assertSnapshot(OptimizerSnapshot snapshot) throws Exception;
 	}
 
 	private static void assertContainsAny(String value, String... expectedTokens) {

@@ -29,12 +29,15 @@ import java.util.TreeSet;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.slf4j.Logger;
@@ -50,6 +53,9 @@ final class SketchJoinOrderPlanner {
 	private static final int GREEDY_BEAM_WIDTH = 4;
 	private static final double STRUCTURAL_WORK_EQUIVALENCE_ROWS = 4.0d;
 	private static final double BRIDGE_UNLOCK_MAX_STEP_WORK_RATIO = 2.0d;
+	private static final double BOUND_GUARD_MAX_STEP_WORK_RATIO = 3.0d;
+	private static final double ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO = 3.0d;
+	private static final double BRIDGE_CONTINUATION_MAX_STEP_WORK_RATIO = 3.0d;
 	private static final int COMPLETED_DEFERRED_FILTER_CONNECTIONS = 2;
 	private static final double DEFERRED_FILTER_ORDERING_MAX_PASS_RATIO = 0.5d;
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
@@ -795,9 +801,15 @@ final class SketchJoinOrderPlanner {
 
 	private SketchBasedJoinEstimator.JoinStepEstimate estimateTransitionUncached(long mask,
 			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate, int candidate) {
-		return estimator.estimateJoinStepForJoinOrdering(prefixEstimate,
-				factors.get(candidate).estimate(),
-				sketchIntersectionCache);
+		long currentBoundVarMask = boundVariableMask(mask);
+		SketchBasedJoinEstimator.TuplePlanEstimate candidateEstimate = factors.get(candidate).estimate();
+		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(candidate,
+				currentBoundVarMask);
+		double conditionedRows = conditionedEstimate.outputRows();
+		if (Double.isFinite(conditionedRows) && conditionedRows >= 0.0d) {
+			candidateEstimate = estimator.withOutputRowsForJoinOrdering(candidateEstimate, conditionedRows);
+		}
+		return estimator.estimateJoinStepForJoinOrdering(prefixEstimate, candidateEstimate, sketchIntersectionCache);
 	}
 
 	private String connectionReason(long mask, int candidateIndex) {
@@ -1270,6 +1282,88 @@ final class SketchJoinOrderPlanner {
 		return 0;
 	}
 
+	private int compareGuardedBindingAssignmentOrder(StatePlan left, StatePlan right) {
+		int size = Math.min(left.order().size(), right.order().size());
+		for (int i = 0; i < size; i++) {
+			int leftIndex = left.order().get(i).intValue();
+			int rightIndex = right.order().get(i).intValue();
+			if (leftIndex != rightIndex) {
+				boolean leftGuardedBindingAssignment = isGuardedBindingAssignmentFactor(leftIndex);
+				boolean rightGuardedBindingAssignment = isGuardedBindingAssignmentFactor(rightIndex);
+				if (leftGuardedBindingAssignment == rightGuardedBindingAssignment) {
+					return 0;
+				}
+				if (leftGuardedBindingAssignment && isBindingSetAssignment(rightIndex)) {
+					return -1;
+				}
+				if (rightGuardedBindingAssignment && isBindingSetAssignment(leftIndex)) {
+					return 1;
+				}
+				return 0;
+			}
+		}
+		return 0;
+	}
+
+	private boolean isGuardedBindingAssignmentFactor(int factorIndex) {
+		TupleExpr tupleExpr = factors.get(factorIndex).tupleExpr();
+		if (!(tupleExpr instanceof Filter filter)) {
+			return false;
+		}
+		return isFilterOverBindingAssignmentWithExists(filter);
+	}
+
+	private static boolean isFilterOverBindingAssignmentWithExists(Filter filter) {
+		boolean containsExists = false;
+		TupleExpr current = filter;
+		while (current instanceof Filter currentFilter) {
+			if (containsExistsCondition(currentFilter.getCondition())) {
+				containsExists = true;
+			}
+			current = currentFilter.getArg();
+		}
+		return containsExists && current instanceof BindingSetAssignment;
+	}
+
+	private static boolean containsExistsCondition(ValueExpr condition) {
+		if (condition == null) {
+			return false;
+		}
+		ExistsConditionVisitor visitor = new ExistsConditionVisitor();
+		condition.visit(visitor);
+		return visitor.hasExists();
+	}
+
+	private int compareBoundGuardExpansionOrder(StatePlan left, StatePlan right) {
+		int size = Math.min(left.order().size(), right.order().size());
+		long leftMask = 0L;
+		long rightMask = 0L;
+		for (int i = 0; i < size; i++) {
+			int leftIndex = left.order().get(i).intValue();
+			int rightIndex = right.order().get(i).intValue();
+			if (leftIndex != rightIndex) {
+				boolean leftGuard = isBoundGuardFactor(leftIndex, leftMask);
+				boolean rightGuard = isBoundGuardFactor(rightIndex, rightMask);
+				if (leftGuard != rightGuard) {
+					PhysicalStepRank leftStep = left.physicalStepRanks().get(i);
+					PhysicalStepRank rightStep = right.physicalStepRanks().get(i);
+					if (leftGuard && stepWorkComparable(leftStep.workRows(), rightStep.workRows(),
+							BOUND_GUARD_MAX_STEP_WORK_RATIO)) {
+						return -1;
+					}
+					if (rightGuard && stepWorkComparable(rightStep.workRows(), leftStep.workRows(),
+							BOUND_GUARD_MAX_STEP_WORK_RATIO)) {
+						return 1;
+					}
+				}
+				return 0;
+			}
+			leftMask |= bit(leftIndex);
+			rightMask |= bit(rightIndex);
+		}
+		return 0;
+	}
+
 	private boolean isBoundGuardFactor(int factorIndex, long previousMask) {
 		if (isBindingSetAssignment(factorIndex)) {
 			return false;
@@ -1323,6 +1417,97 @@ final class SketchJoinOrderPlanner {
 		long nextMask = previousMask | bit(factorIndex);
 		return futureRuntimeJoinConnectionCount(factorIndex, nextMask, previousMask) == 0
 				&& futureDeferredFilterConnectionCount(factorIndex, nextMask, previousMask) == 0;
+	}
+
+	private int compareAnchorBridgeOrder(StatePlan left, StatePlan right) {
+		return compareSpecializedJoinOrder(left, right, true);
+	}
+
+	private int compareBridgeContinuationOrder(StatePlan left, StatePlan right) {
+		return compareSpecializedJoinOrder(left, right, false);
+	}
+
+	private int compareSpecializedJoinOrder(StatePlan left, StatePlan right, boolean anchorBridgePhase) {
+		int size = Math.min(left.order().size(), right.order().size());
+		if (size <= 1) {
+			return 0;
+		}
+		long maskBeforeStep = 0L;
+		long maskBeforePreviousStep = 0L;
+		long lastIntroducedVars = 0L;
+		for (int i = 0; i < size; i++) {
+			int leftIndex = left.order().get(i).intValue();
+			int rightIndex = right.order().get(i).intValue();
+			if (leftIndex != rightIndex) {
+				if (i == 0 || lastIntroducedVars == 0L) {
+					return 0;
+				}
+				JoinStepRole leftRole = joinStepRole(leftIndex, maskBeforeStep, lastIntroducedVars);
+				JoinStepRole rightRole = joinStepRole(rightIndex, maskBeforeStep, lastIntroducedVars);
+				PhysicalStepRank leftStep = left.physicalStepRanks().get(i);
+				PhysicalStepRank rightStep = right.physicalStepRanks().get(i);
+				if (anchorBridgePhase) {
+					if (leftRole == JoinStepRole.ANCHOR_BRIDGE && rightRole == JoinStepRole.ANCHOR_LEAF
+							&& stepWorkComparable(leftStep.workRows(), rightStep.workRows(),
+									ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO)) {
+						return -1;
+					}
+					if (rightRole == JoinStepRole.ANCHOR_BRIDGE && leftRole == JoinStepRole.ANCHOR_LEAF
+							&& stepWorkComparable(rightStep.workRows(), leftStep.workRows(),
+									ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO)) {
+						return 1;
+					}
+					return 0;
+				}
+				if (leftRole == JoinStepRole.CONTINUE_LATEST_BRIDGE && rightRole == JoinStepRole.OLDER_BOUND_JOIN
+						&& stepWorkComparable(rightStep.workRows(), leftStep.workRows(),
+								BRIDGE_CONTINUATION_MAX_STEP_WORK_RATIO)) {
+					return 1;
+				}
+				if (rightRole == JoinStepRole.CONTINUE_LATEST_BRIDGE && leftRole == JoinStepRole.OLDER_BOUND_JOIN
+						&& stepWorkComparable(leftStep.workRows(), rightStep.workRows(),
+								BRIDGE_CONTINUATION_MAX_STEP_WORK_RATIO)) {
+					return -1;
+				}
+				return 0;
+			}
+			long boundBeforeStep = boundVariableMask(maskBeforeStep);
+			maskBeforePreviousStep = maskBeforeStep;
+			maskBeforeStep |= bit(leftIndex);
+			lastIntroducedVars = bindingVarMasks[leftIndex] & ~boundBeforeStep;
+		}
+		return 0;
+	}
+
+	private JoinStepRole joinStepRole(int factorIndex, long previousMask, long lastIntroducedVars) {
+		long boundBefore = boundVariableMask(previousMask);
+		long introducedByFactor = bindingVarMasks[factorIndex] & ~boundBefore;
+		long olderBoundVars = boundBefore & ~lastIntroducedVars;
+		boolean joinsLatest = (joinVarMasks[factorIndex] & lastIntroducedVars) != 0L;
+		boolean joinsOlder = (joinVarMasks[factorIndex] & olderBoundVars) != 0L;
+		boolean introducesNew = introducedByFactor != 0L;
+		int futureConnections = futureConnectionCount(factorIndex, previousMask | bit(factorIndex), previousMask);
+		if (joinsLatest && introducesNew && !joinsOlder && futureConnections > 0) {
+			return JoinStepRole.ANCHOR_BRIDGE;
+		}
+		if (joinsLatest && futureConnections == 0) {
+			return JoinStepRole.ANCHOR_LEAF;
+		}
+		if (joinsLatest && introducesNew && !joinsOlder) {
+			return JoinStepRole.CONTINUE_LATEST_BRIDGE;
+		}
+		if (joinsOlder && !joinsLatest) {
+			return JoinStepRole.OLDER_BOUND_JOIN;
+		}
+		return JoinStepRole.OTHER;
+	}
+
+	private boolean stepWorkComparable(double preferredWorkRows, double alternativeWorkRows, double maxRatio) {
+		if (!isFiniteNonNegative(preferredWorkRows) || !isFiniteNonNegative(alternativeWorkRows)
+				|| !Double.isFinite(maxRatio) || maxRatio <= 0.0d) {
+			return false;
+		}
+		return preferredWorkRows <= alternativeWorkRows * maxRatio + STRUCTURAL_WORK_EQUIVALENCE_ROWS;
 	}
 
 	private int futureRuntimeJoinConnectionCount(int factorIndex, long nextMask, long previousMask) {
@@ -1655,6 +1840,10 @@ final class SketchJoinOrderPlanner {
 			if (boundGuardComparison != 0) {
 				return boundGuardComparison < 0;
 			}
+			int guardedBindingComparison = compareGuardedBindingAssignmentOrder(candidate, incumbent);
+			if (guardedBindingComparison != 0) {
+				return guardedBindingComparison < 0;
+			}
 		}
 		if (structurallyComparableWork && candidate.mask() == incumbent.mask()) {
 			int bridgeUnlockComparison = compareBridgeUnlockOrder(candidate, incumbent);
@@ -1665,6 +1854,18 @@ final class SketchJoinOrderPlanner {
 		int connectivityComparison = compareOrderConnectivity(candidate.order(), incumbent.order());
 		if (connectivityComparison != 0 && structurallyComparableWork) {
 			return connectivityComparison < 0;
+		}
+		int guardExpansionComparison = compareBoundGuardExpansionOrder(candidate, incumbent);
+		if (guardExpansionComparison != 0) {
+			return guardExpansionComparison < 0;
+		}
+		int anchorBridgeComparison = compareAnchorBridgeOrder(candidate, incumbent);
+		if (anchorBridgeComparison != 0) {
+			return anchorBridgeComparison < 0;
+		}
+		int continuationComparison = compareBridgeContinuationOrder(candidate, incumbent);
+		if (continuationComparison != 0) {
+			return continuationComparison < 0;
 		}
 		int workComparison = Double.compare(candidate.totalWork(), incumbent.totalWork());
 		if (workComparison != 0) {
@@ -1922,6 +2123,27 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		return Integer.compare(left.size(), right.size());
+	}
+
+	private enum JoinStepRole {
+		ANCHOR_BRIDGE,
+		ANCHOR_LEAF,
+		CONTINUE_LATEST_BRIDGE,
+		OLDER_BOUND_JOIN,
+		OTHER
+	}
+
+	private static final class ExistsConditionVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private boolean hasExists;
+
+		@Override
+		public void meet(Exists node) {
+			hasExists = true;
+		}
+
+		private boolean hasExists() {
+			return hasExists;
+		}
 	}
 
 	private static SketchBasedJoinEstimator.SketchPlannerPath unsupportedPath(TupleExpr tupleExpr) {

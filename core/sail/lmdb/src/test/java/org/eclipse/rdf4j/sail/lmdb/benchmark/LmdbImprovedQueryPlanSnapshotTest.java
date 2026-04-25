@@ -46,6 +46,10 @@ class LmdbImprovedQueryPlanSnapshotTest {
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.improvedPlanSnapshot.queryKeys";
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results";
 	private static final String RECORDED_RESULTS_FILE = "results-2026-04-24-2.md";
+	private static final String PERSISTENT_STORE_KEY_PREFIX = "improved-plan-snapshot";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final List<TargetQuery> TARGET_QUERIES = List.of(
 			target(Theme.ENGINEERING, 1, "results-2026-04-17.md", 138.312d, 99.772d),
 			target(Theme.LIBRARY, 1, "results-2026-04-17.md", 143.142d, 105.387d),
@@ -69,7 +73,6 @@ class LmdbImprovedQueryPlanSnapshotTest {
 	void optimizedPlansMatchRecordedImprovementSnapshots(@TempDir Path dataDir) throws Exception {
 		Map<String, RecordedPlanSnapshot> expectedPlans = parseRecordedPlanSignatures(
 				resultsFile(RECORDED_RESULTS_FILE));
-		List<String> mismatches = new ArrayList<>();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme(selectedTargetQueries()).entrySet()) {
 			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
 			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
@@ -79,15 +82,7 @@ class LmdbImprovedQueryPlanSnapshotTest {
 					RecordedPlanSnapshot expectedPlan = expectedPlans.get(targetQuery.key());
 					assertTrue(expectedPlan != null,
 							"Missing optimized plan in " + RECORDED_RESULTS_FILE + " for " + targetQuery.key());
-
-					primeLearnedFilterStats(repository, targetQuery);
-					String actualPlan = explainOptimized(repository, targetQuery);
-					assertPlanUsesRobustPlanner(targetQuery, actualPlan);
-
-					PlanSignature actualSignature = planSignature(actualPlan);
-					if (!expectedPlan.signature().equals(actualSignature.lines())) {
-						mismatches.add(mismatch(targetQuery, expectedPlan, actualSignature, actualPlan));
-					}
+					assertPlanSnapshotPassesWithinThirtySeconds(repository, targetQuery, expectedPlan);
 					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 				}
 			} finally {
@@ -95,8 +90,6 @@ class LmdbImprovedQueryPlanSnapshotTest {
 				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
 			}
 		}
-
-		assertTrue(mismatches.isEmpty(), String.join("\n\n", mismatches));
 	}
 
 	private static void assertScore(Map<String, Double> scores, String key, double expectedScore, String source) {
@@ -192,23 +185,27 @@ class LmdbImprovedQueryPlanSnapshotTest {
 	}
 
 	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
-		Path storeDirectory = dataDir.resolve("improved-plan-snapshot-" + theme.name());
-		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		boolean prepared = false;
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			prepared = true;
-			return storeDirectory;
-		} finally {
-			shutdownAndRelease(repository, store);
-			if (!prepared) {
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
-			}
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("improved-plan-snapshot-" + theme.name()),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name(),
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository, theme);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for improved-plan snapshot " + theme.name() + ". " + PERSISTENT_STORE_HINT);
 		}
+		return preparedStore.storeDirectory();
 	}
 
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
@@ -237,6 +234,19 @@ class LmdbImprovedQueryPlanSnapshotTest {
 					.explain(Explanation.Level.Optimized)
 					.toString();
 		}
+	}
+
+	private static void assertPlanSnapshotPassesWithinThirtySeconds(SailRepository repository, TargetQuery targetQuery,
+			RecordedPlanSnapshot expectedPlan) throws Exception {
+		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(targetQuery.key(), () -> {
+			primeLearnedFilterStats(repository, targetQuery);
+			String actualPlan = explainOptimized(repository, targetQuery);
+			assertPlanUsesRobustPlanner(targetQuery, actualPlan);
+			PlanSignature actualSignature = planSignature(actualPlan);
+			if (!expectedPlan.signature().equals(actualSignature.lines())) {
+				throw new AssertionError(mismatch(targetQuery, expectedPlan, actualSignature, actualPlan));
+			}
+		});
 	}
 
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {

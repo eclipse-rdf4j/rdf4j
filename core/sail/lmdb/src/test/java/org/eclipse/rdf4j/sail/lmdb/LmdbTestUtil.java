@@ -13,11 +13,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
 import java.nio.file.Path;
-
-import org.eclipse.rdf4j.common.io.FileUtil;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 
 public final class LmdbTestUtil {
+	private static final int DELETE_RETRY_ATTEMPTS = 5;
 
 	private LmdbTestUtil() {
 	}
@@ -27,18 +30,56 @@ public final class LmdbTestUtil {
 			return;
 		}
 
-		try {
-			FileUtil.deleteDir(dataDir);
-		} catch (IOException e) {
-			throw new RuntimeException("Failed to delete LMDB data dir " + dataDir, e);
+		RuntimeException lastFailure = null;
+		for (int attempt = 1; attempt <= DELETE_RETRY_ATTEMPTS; attempt++) {
+			try {
+				deleteRecursively(dataDir.toPath());
+			} catch (IOException e) {
+				lastFailure = new RuntimeException(
+						"Failed to delete LMDB data dir " + dataDir + " on attempt " + attempt, e);
+			}
+			if (!dataDir.exists()) {
+				return;
+			}
+			lastFailure = new RuntimeException("Expected LMDB data dir to be deleted: " + dataDir);
+			if (attempt < DELETE_RETRY_ATTEMPTS) {
+				try {
+					Thread.sleep(100L * attempt);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new RuntimeException("Interrupted while deleting LMDB data dir " + dataDir, e);
+				}
+			}
 		}
 
-		if (dataDir.exists()) {
-			throw new AssertionError("Expected LMDB data dir to be deleted: " + dataDir);
+		if (lastFailure != null) {
+			throw lastFailure;
 		}
 	}
 
 	public static void deleteDir(Path dataDir) {
 		deleteDir(dataDir == null ? null : dataDir.toFile());
+	}
+
+	private static void deleteRecursively(Path root) throws IOException {
+		if (root == null || !Files.exists(root)) {
+			return;
+		}
+		Files.walkFileTree(root, new SimpleFileVisitor<>() {
+			@Override
+			public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+				Files.deleteIfExists(file);
+				return FileVisitResult.CONTINUE;
+			}
+
+			@Override
+			public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+				if (exc != null) {
+					throw exc;
+				}
+				Files.deleteIfExists(dir);
+				return FileVisitResult.CONTINUE;
+			}
+		});
 	}
 }

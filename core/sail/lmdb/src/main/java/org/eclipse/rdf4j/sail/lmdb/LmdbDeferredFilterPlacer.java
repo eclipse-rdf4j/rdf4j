@@ -243,8 +243,17 @@ final class LmdbDeferredFilterPlacer {
 
 	private boolean groupDeferredFilterOnBindingAssignments(List<SegmentFactor> factors,
 			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
+		// Keep pattern-originated filters attached to graph factors; detaching them onto pure VALUES joins
+		// can hide selective graph work from the placement window and drift known-fast plan shapes.
+		if (!deferredFilter.originPatterns.isEmpty()) {
+			return false;
+		}
 		BindingAssignmentWindow window = bindingAssignmentCoveringWindow(factors, deferredFilter, boundBeforeSegment);
 		if (window == null) {
+			return false;
+		}
+		if (!isBindingOnlySpan(factors, window.startIndex, window.endIndex)
+				&& !canGroupAcrossGraphSpan(factors, window, deferredFilter)) {
 			return false;
 		}
 
@@ -264,6 +273,31 @@ final class LmdbDeferredFilterPlacer {
 		}
 		factors.add(insertionIndex, groupedFactor);
 		return true;
+	}
+
+	private boolean isBindingOnlySpan(List<SegmentFactor> factors, int startIndex, int endIndex) {
+		for (int i = startIndex; i <= endIndex; i++) {
+			if (!LmdbJoinPlanSupport.isBindingOnlyFactor(factors.get(i))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean canGroupAcrossGraphSpan(List<SegmentFactor> factors, BindingAssignmentWindow window,
+			DeferredFilter deferredFilter) {
+		if (window.selectedIndexes.size() != 2 || deferredFilter.requiredVars.size() != 2) {
+			return false;
+		}
+		Set<String> coveredVars = new HashSet<>();
+		for (Integer selectedIndex : window.selectedIndexes) {
+			SegmentFactor factor = factors.get(selectedIndex.intValue());
+			if (factor.bindingNames.size() != 1 || !LmdbJoinPlanSupport.isBindingOnlyFactor(factor)) {
+				return false;
+			}
+			coveredVars.addAll(factor.bindingNames);
+		}
+		return coveredVars.containsAll(deferredFilter.requiredVars);
 	}
 
 	private BindingAssignmentWindow bindingAssignmentCoveringWindow(List<SegmentFactor> factors,

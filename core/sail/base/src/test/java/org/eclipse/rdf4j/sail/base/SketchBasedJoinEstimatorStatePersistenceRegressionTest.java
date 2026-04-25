@@ -15,7 +15,6 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.reflect.Field;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -75,7 +74,7 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 	}
 
 	@Test
-	void dirtyEvictedSketchFamiliesLazyLoadFromSnapshot(@TempDir Path tempDir) throws Exception {
+	void incrementallyUpdatedSketchFamiliesLazyLoadFromSnapshot(@TempDir Path tempDir) throws Exception {
 		Resource s1 = VF.createIRI("urn:evict:s1");
 		Resource s2 = VF.createIRI("urn:evict:s2");
 		IRI p1 = VF.createIRI("urn:evict:p1");
@@ -87,34 +86,33 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		writer.configurePersistence(snapshot, false);
-		setSketchBudgetBytes(writer, 0L, 0L);
 
 		writer.addStatement(st(s1, p1, o1, c1));
 		writer.addStatement(st(s2, p1, o1, c1));
 		writer.addStatement(st(s1, p2, o2, c1));
 		writer.debugFlushPendingIncremental();
-		assertTrue(writer.persistIfDirty(), "Expected dirty-evicted snapshot persist");
+		assertTrue(writer.persistIfDirty(), "Expected incremental snapshot persist");
 
 		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		reader.configurePersistence(snapshot, true);
-		assertTrue(reader.isReady(), "Expected lazy load after dirty-evicted persist");
+		assertTrue(reader.isReady(), "Expected lazy load after incremental persist");
 
 		assertEquals(2.0d, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0d,
-				"Dirty-evicted single-cardinality sketch should survive snapshot reload");
+				"Incremental single-cardinality sketch should survive snapshot reload");
 		assertEquals(2.0d,
 				reader.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(), o1.stringValue()),
 				0.0d,
-				"Dirty-evicted pair-cardinality sketch should survive snapshot reload");
+				"Incremental pair-cardinality sketch should survive snapshot reload");
 		assertEquals(2.0d,
 				reader.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(), o1.stringValue(),
 						c1.stringValue()),
 				0.0d,
-				"Dirty-evicted complement sketches should survive snapshot reload");
+				"Incremental complement sketches should survive snapshot reload");
 		assertEquals(1.0d,
 				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
 						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
 				0.0d,
-				"Dirty-evicted join-binding sketches should survive snapshot reload");
+				"Incremental join-binding sketches should survive snapshot reload");
 	}
 
 	private static Statement st(Resource s, IRI p, Value o, Resource c) {
@@ -129,13 +127,4 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 				.withRefreshSleepMillis(5);
 	}
 
-	private static void setSketchBudgetBytes(SketchBasedJoinEstimator estimator, long minBytes, long maxBytes)
-			throws Exception {
-		Field minField = SketchBasedJoinEstimator.class.getDeclaredField("minSketchMemoryBytes");
-		Field maxField = SketchBasedJoinEstimator.class.getDeclaredField("maxSketchMemoryBytes");
-		minField.setAccessible(true);
-		maxField.setAccessible(true);
-		minField.setLong(estimator, minBytes);
-		maxField.setLong(estimator, maxBytes);
-	}
 }

@@ -20,9 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -48,6 +50,30 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	private static final String FILTER_SNAPSHOT_FILE = SNAPSHOT_FILE + ".filters";
 	private static final String LEARNED_FILTER_QUERY = "SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } "
 			+ "?s <urn:test:name> ?name . FILTER(?name = ?target) }";
+
+	@Test
+	void storeConfigIsPassedToSketchEstimator(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
+		invokeConfig(config, "setSketchEstimatorSubjectBucketCount", int.class, 64);
+		invokeConfig(config, "setSketchEstimatorPredicateBucketCount", int.class, 16);
+		invokeConfig(config, "setSketchEstimatorObjectBucketCount", int.class, 32);
+		invokeConfig(config, "setSketchEstimatorContextBucketCount", int.class, 8);
+		invokeConfig(config, "setSketchEstimatorContextPairSketchesEnabled", boolean.class, false);
+
+		LmdbStore store = new LmdbStore(dataDir, config);
+		store.init();
+		try {
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			Object singleTriples = objectField(objectField(estimator, "bufA"), "singleTriples");
+
+			assertEquals(64, componentArrayLength(singleTriples, "S"));
+			assertEquals(16, componentArrayLength(singleTriples, "P"));
+			assertEquals(32, componentArrayLength(singleTriples, "O"));
+			assertEquals(8, componentArrayLength(singleTriples, "C"));
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	@Test
 	void closeWritesEstimatorSnapshotAndReopensLazy(@TempDir File dataDir) throws Exception {
@@ -150,7 +176,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
-	void commitPersistsWithLruEvictionsAndRemainsReadyAfterRestart(@TempDir File dataDir) throws Exception {
+	void commitPersistsEstimatorAndRemainsReadyAfterRestart(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s = vf.createIRI("urn:s");
 		var p = vf.createIRI("urn:p");
@@ -161,7 +187,6 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
-			setSketchBudgetBytes(estimator, 0L, 0L);
 
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				conn.begin(IsolationLevels.NONE);
@@ -171,7 +196,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
 			loadedField.setAccessible(true);
-			assertTrue(loadedField.getBoolean(estimator), "LRU evictions must not unload estimator state");
+			assertTrue(loadedField.getBoolean(estimator), "Commit must keep estimator state available");
 			assertTrue(estimator.isReady());
 		} finally {
 			store.shutDown();
@@ -186,14 +211,14 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		reopened.init();
 		try {
 			SketchBasedJoinEstimator estimator = reopened.getBackingStore().getSketchBasedJoinEstimator();
-			assertTrue(estimator.isReady(), "Expected estimator to recover from persisted LRU snapshots");
+			assertTrue(estimator.isReady(), "Expected estimator to recover from persisted snapshots");
 		} finally {
 			reopened.shutDown();
 		}
 	}
 
 	@Test
-	void reopenRestoresPersistedSketchFamiliesAfterLruEviction(@TempDir File dataDir) throws Exception {
+	void reopenRestoresPersistedSketchFamilies(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s1 = vf.createIRI("urn:restart:s1");
 		var s2 = vf.createIRI("urn:restart:s2");
@@ -206,9 +231,6 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		store.init();
 		try {
-			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			setSketchBudgetBytes(estimator, 0L, 0L);
-
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				conn.begin(IsolationLevels.NONE);
 				conn.addStatement(s1, p1, o1, c1);
@@ -264,8 +286,6 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 		repository.init();
 		try {
-			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			setSketchBudgetBytes(estimator, 0L, 0L);
 			try (var connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
 				connection.add(s1, p1, o1, c1);
@@ -399,14 +419,26 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		}
 	}
 
-	private static void setSketchBudgetBytes(SketchBasedJoinEstimator estimator, long minBytes, long maxBytes)
+	private static Object invokeConfig(LmdbStoreConfig config, String methodName, Class<?> parameterType, Object value)
 			throws Exception {
-		Field minField = SketchBasedJoinEstimator.class.getDeclaredField("minSketchMemoryBytes");
-		Field maxField = SketchBasedJoinEstimator.class.getDeclaredField("maxSketchMemoryBytes");
-		minField.setAccessible(true);
-		maxField.setAccessible(true);
-		minField.setLong(estimator, minBytes);
-		maxField.setLong(estimator, maxBytes);
+		Method method = LmdbStoreConfig.class.getMethod(methodName, parameterType);
+		return assertDoesNotThrow(() -> method.invoke(config, value));
+	}
+
+	private static Object objectField(Object target, String name) throws Exception {
+		Field field = target.getClass().getDeclaredField(name);
+		field.setAccessible(true);
+		return field.get(target);
+	}
+
+	private static Object component(Object stateComponents, String component) throws Exception {
+		Field field = stateComponents.getClass().getDeclaredField(component);
+		field.setAccessible(true);
+		return field.get(stateComponents);
+	}
+
+	private static int componentArrayLength(Object stateComponents, String component) throws Exception {
+		return ((AtomicReferenceArray<?>) component(stateComponents, component)).length();
 	}
 
 	private static File estimatorStore(File dataDir) {

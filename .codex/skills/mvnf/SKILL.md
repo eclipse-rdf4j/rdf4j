@@ -30,3 +30,14 @@ If the test run fails, it prints the list of Surefire/Failsafe report files unde
 - `--module <path>`: Force the module when the test class name exists in multiple modules.
 - `--it`: Treat the selector as an integration test and pass it via `-Dit.test=...`.
 - `--no-offline`: Run Maven commands without `-o` (useful if offline resolution fails).
+
+## LMDB regression speedup note
+
+For LMDB theme regression/snapshot tests, enable persistent prepared stores to skip repeated dataset rebuilds:
+
+- `-Drdf4j.lmdb.themeRegression.persistentStore.enabled=true`
+- Optional root override: `-Drdf4j.lmdb.themeRegression.persistentStore.root=persistent-lmdb-theme-store`
+
+`mvnf.py` does not forward arbitrary `-D` flags today, so use direct Maven for this mode, for example:
+
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbThemeQueryRegressionTest#socialMediaFiveCycleInterleavesValuesWithFollowsEdges -Drdf4j.lmdb.themeRegression.persistentStore.enabled=true test`

@@ -97,6 +97,16 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI VALUE_HASH_CACHE_ENABLED;
 
+	public final static IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT;
+
+	public final static IRI SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT;
+
+	public final static IRI SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT;
+
+	public final static IRI SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT;
+
+	public final static IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#inlineLiterals</tt>
 	 */
@@ -118,6 +128,12 @@ public class LmdbStoreSchema {
 		PAGE_CARDINALITY_ESTIMATOR = factory.createIRI(NAMESPACE, "pageCardinalityEstimator");
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
 		VALUE_HASH_CACHE_ENABLED = factory.createIRI(NAMESPACE, "valueHashCacheEnabled");
+		SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorSubjectBucketCount");
+		SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorPredicateBucketCount");
+		SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorObjectBucketCount");
+		SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorContextBucketCount");
+		SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = factory.createIRI(NAMESPACE,
+				"sketchEstimatorContextPairSketchesEnabled");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}
 }

@@ -47,7 +47,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
-import java.util.function.LongFunction;
 
 import org.apache.datasketches.hash.MurmurHash3;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesSketch;
@@ -124,6 +123,11 @@ import org.slf4j.LoggerFactory;
  * </p>
  * <ul>
  * <li>{@code nominalEntries} (int ≥ 4)</li>
+ * <li>{@code subjectBucketCount} (int ≥ 4)</li>
+ * <li>{@code predicateBucketCount} (int ≥ 4)</li>
+ * <li>{@code objectBucketCount} (int ≥ 4)</li>
+ * <li>{@code contextBucketCount} (int ≥ 4)</li>
+ * <li>{@code contextPairSketchesEnabled} (boolean)</li>
  * <li>{@code doubleArrayBuckets} (boolean)</li>
  * <li>{@code sketchK} (int &gt; 0 ⇒ explicit K; otherwise DataSketches default unless multiplier is set)</li>
  * <li>{@code sketchKMultiplier} (int ≥ 1, used when {@code sketchK <= 0})</li>
@@ -173,7 +177,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long BOUND_VAR_MASK_OVERFLOW = Long.MIN_VALUE;
 	private static final Pair[] PAIR_VALUES = Pair.values();
 	private static final Set<Component>[] COMPONENT_SETS_BY_MASK = buildComponentSetsByMask();
-	private static final MemoryCategory[] MEMORY_CATEGORY_VALUES = MemoryCategory.values();
 	private static final double MIN_FILTER_MULTIPLIER = 0.05d;
 	private static final double DISCONNECTED_JOIN_WORK_PENALTY = 16.0d;
 	private static final int DEFAULT_ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT = 64;
@@ -222,7 +225,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private final StatementPattern pattern;
 		private final double filterMultiplier;
 		private final int patternConstantComponentMask;
-		private final String[] joinBoundVarNamesByComponent;
 		private final int joinBoundComponentMask;
 		private final int filterLookupComponentMask;
 		private final int lookupBoundComponentMask;
@@ -235,7 +237,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			this.pattern = Objects.requireNonNull(pattern, "pattern");
 			this.filterMultiplier = filterMultiplier;
 			this.patternConstantComponentMask = patternConstantComponentMask;
-			this.joinBoundVarNamesByComponent = joinBoundVarNamesByComponent.clone();
 			this.joinBoundComponentMask = componentMask(joinBoundVarNamesByComponent);
 			this.filterLookupComponentMask = filterLookupComponentMask;
 			this.lookupBoundComponentMask = patternConstantComponentMask | joinBoundComponentMask
@@ -252,35 +253,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return filterMultiplier;
 		}
 
-		public Set<Component> patternConstantComponents() {
-			return componentSet(patternConstantComponentMask);
-		}
-
-		public int patternConstantComponentMask() {
-			return patternConstantComponentMask;
-		}
-
-		public Map<Component, String> joinBoundVarNamesByComponent() {
-			EnumMap<Component, String> components = new EnumMap<>(Component.class);
-			for (Component component : COMPONENT_VALUES) {
-				String varName = joinBoundVarNamesByComponent[component.ordinal()];
-				if (varName != null) {
-					components.put(component, varName);
-				}
-			}
-			return Collections.unmodifiableMap(components);
-		}
-
 		public int joinBoundComponentMask() {
 			return joinBoundComponentMask;
-		}
-
-		public Set<Component> physicalLookupComponents() {
-			return componentSet(physicalLookupComponentMask());
-		}
-
-		public int physicalLookupComponentMask() {
-			return patternConstantComponentMask | joinBoundComponentMask;
 		}
 
 		public Set<Component> filterLookupComponents() {
@@ -387,6 +361,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private final SailStore sailStore;
 	private final int nominalEntries; // ← bucket count for array indices
+	private final int subjectBucketCount;
+	private final int predicateBucketCount;
+	private final int objectBucketCount;
+	private final int contextBucketCount;
+	private final boolean contextPairSketchesEnabled;
 	private final long throttleEveryN;
 	private final long throttleMillis;
 	private final long refreshSleepMillis;
@@ -426,21 +405,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final ArrayOfDoublesSketch EMPTY = TupleSketchOps.newSketch(4096).compact();
 
 	/* ────────────────────────────────────────────────────────────── */
-	/* Persistence & runtime memory behavior */
+	/* Persistence */
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static final int SKETCH_PAYLOAD_FORMAT_NATIVE = -1;
+	private static final int SKETCH_PAYLOAD_FRAME_HEADER_BYTES = Integer.BYTES + Integer.BYTES;
+	private static final int TARGET_SKETCH_PART_FILES = 128;
 	private static final int DEFAULT_BUCKET_COUNT = 1024;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 4096;
-	private static final String MIN_SKETCH_MEMORY_PERCENT_PROPERTY = "minSketchMemoryPercent";
-	private static final String MAX_SKETCH_MEMORY_PERCENT_PROPERTY = "maxSketchMemoryPercent";
-	private static final String ESTIMATOR_MEMORY_BUDGET_PERCENT_PROPERTY = "estimatorMemoryBudgetPercent";
-	private static final String RESIDENT_SKETCH_MEMORY_TARGET_PERCENT_PROPERTY = "residentSketchMemoryTargetPercent";
-	private static final String RESIDENT_SKETCH_MEMORY_CEILING_PERCENT_PROPERTY = "residentSketchMemoryCeilingPercent";
-	private static final String HIGH_MEMORY_PRESSURE_PERCENT_PROPERTY = "highMemoryPressurePercent";
-	private static final String LOADED_BUCKET_FLOOR_PERCENT_PROPERTY = "loadedBucketFloorPercent";
-	private static final String MEMORY_MONITOR_INTERVAL_MILLIS_PROPERTY = "memoryMonitorIntervalMillis";
-	private static final String MEMORY_PRESSURE_UNLOAD_BATCH_SIZE_PROPERTY = "memoryPressureUnloadBatchSize";
 	private static final String ESTIMATE_CACHE_SECONDS_PROPERTY = "estimateCacheSeconds";
 	private static final String ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT_PROPERTY = "zeroIntersectionExactDistinctLimit";
 	private static final String ZERO_INTERSECTION_SKEW_RATIO_PROPERTY = "zeroIntersectionSkewRatio";
@@ -454,10 +426,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long BYTE_BYTES = 1L;
 	private static final long INT_BYTES = 4L;
 	private static final long LONG_BYTES = 8L;
-	private static final long BOOLEAN_BYTES = 1L;
-	private static final long MEMORY_OWNER_SERIALIZATION_BUFFER = -3L;
-	private static final long MEMORY_OWNER_DESERIALIZATION_BUFFER = -4L;
-	private static final long MEMORY_OWNER_CACHE_METADATA = -6L;
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -585,10 +553,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			this.generation = generation;
 		}
 
-		private PersistedSketchRef(SketchEstimatorPersistenceStore.Ref ref) {
-			this(ref.slot, ref.fileKind, ref.offset, ref.length, ref.generation);
-		}
-
 		private SketchEstimatorPersistenceStore.Ref storeRef(byte fallbackSlot) {
 			byte refSlot = slot >= 0 ? slot : fallbackSlot;
 			return new SketchEstimatorPersistenceStore.Ref(refSlot, fileKind, offset, length, generation);
@@ -605,23 +569,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private static final class TrackedByteArray {
-		private final byte[] bytes;
-		private final MemoryCategory category;
-		private final long ownerId;
-
-		private TrackedByteArray(byte[] bytes, MemoryCategory category, long ownerId) {
-			this.bytes = bytes;
-			this.category = category;
-			this.ownerId = ownerId;
-		}
-	}
-
 	private static final class CacheDirectory {
 		private static final byte FLAG_DIRTY_A = 1;
 		private static final byte FLAG_DIRTY_B = 1 << 1;
 		private static final long EMPTY_BUCKET = 0L;
-		private static final int NO_NODE = -1;
 		private static final int NO_FILE_KIND = -1;
 
 		private int size;
@@ -641,9 +592,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private long[] persistedOffsetsB;
 		private int[] persistedLengthsB;
 		private long[] persistedGenerationsB;
-
-		private int[] residentNodeA;
-		private int[] residentNodeB;
 
 		private int[] dirtyPrevA;
 		private int[] dirtyNextA;
@@ -670,24 +618,20 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			persistedOffsetsB = new long[256];
 			persistedLengthsB = new int[256];
 			persistedGenerationsB = new long[256];
-			residentNodeA = new int[256];
-			residentNodeB = new int[256];
 			dirtyPrevA = new int[256];
 			dirtyNextA = new int[256];
 			dirtyPrevB = new int[256];
 			dirtyNextB = new int[256];
 			Arrays.fill(persistedFileKindsA, NO_FILE_KIND);
 			Arrays.fill(persistedFileKindsB, NO_FILE_KIND);
-			Arrays.fill(residentNodeA, NO_NODE);
-			Arrays.fill(residentNodeB, NO_NODE);
-			Arrays.fill(dirtyPrevA, NO_NODE);
-			Arrays.fill(dirtyNextA, NO_NODE);
-			Arrays.fill(dirtyPrevB, NO_NODE);
-			Arrays.fill(dirtyNextB, NO_NODE);
-			dirtyHeadA = NO_NODE;
-			dirtyTailA = NO_NODE;
-			dirtyHeadB = NO_NODE;
-			dirtyTailB = NO_NODE;
+			Arrays.fill(dirtyPrevA, -1);
+			Arrays.fill(dirtyNextA, -1);
+			Arrays.fill(dirtyPrevB, -1);
+			Arrays.fill(dirtyNextB, -1);
+			dirtyHeadA = -1;
+			dirtyTailA = -1;
+			dirtyHeadB = -1;
+			dirtyTailB = -1;
 			refreshEstimatedHeapBytes();
 		}
 
@@ -699,10 +643,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private void clear() {
 			size = 0;
 			Arrays.fill(buckets, EMPTY_BUCKET);
-			dirtyHeadA = NO_NODE;
-			dirtyTailA = NO_NODE;
-			dirtyHeadB = NO_NODE;
-			dirtyTailB = NO_NODE;
+			dirtyHeadA = -1;
+			dirtyTailA = -1;
+			dirtyHeadB = -1;
+			dirtyTailB = -1;
 		}
 
 		private int size() {
@@ -765,12 +709,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					persistedOffsetsB[entryId] = 0L;
 					persistedLengthsB[entryId] = 0;
 					persistedGenerationsB[entryId] = 0L;
-					residentNodeA[entryId] = NO_NODE;
-					residentNodeB[entryId] = NO_NODE;
-					dirtyPrevA[entryId] = NO_NODE;
-					dirtyNextA[entryId] = NO_NODE;
-					dirtyPrevB[entryId] = NO_NODE;
-					dirtyNextB[entryId] = NO_NODE;
+					dirtyPrevA[entryId] = -1;
+					dirtyNextA[entryId] = -1;
+					dirtyPrevB[entryId] = -1;
+					dirtyNextB[entryId] = -1;
 					return entryId;
 				}
 				if (bucketHash(bucket) == keyHash) {
@@ -819,18 +761,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			persistedOffsetsB = Arrays.copyOf(persistedOffsetsB, next);
 			persistedLengthsB = Arrays.copyOf(persistedLengthsB, next);
 			persistedGenerationsB = Arrays.copyOf(persistedGenerationsB, next);
-			residentNodeA = Arrays.copyOf(residentNodeA, next);
-			Arrays.fill(residentNodeA, previousLength, next, NO_NODE);
-			residentNodeB = Arrays.copyOf(residentNodeB, next);
-			Arrays.fill(residentNodeB, previousLength, next, NO_NODE);
 			dirtyPrevA = Arrays.copyOf(dirtyPrevA, next);
-			Arrays.fill(dirtyPrevA, previousLength, next, NO_NODE);
+			Arrays.fill(dirtyPrevA, previousLength, next, -1);
 			dirtyNextA = Arrays.copyOf(dirtyNextA, next);
-			Arrays.fill(dirtyNextA, previousLength, next, NO_NODE);
+			Arrays.fill(dirtyNextA, previousLength, next, -1);
 			dirtyPrevB = Arrays.copyOf(dirtyPrevB, next);
-			Arrays.fill(dirtyPrevB, previousLength, next, NO_NODE);
+			Arrays.fill(dirtyPrevB, previousLength, next, -1);
 			dirtyNextB = Arrays.copyOf(dirtyNextB, next);
-			Arrays.fill(dirtyNextB, previousLength, next, NO_NODE);
+			Arrays.fill(dirtyNextB, previousLength, next, -1);
 			refreshEstimatedHeapBytes();
 		}
 
@@ -882,10 +820,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return slot == 0 ? persistedGenerationsA : persistedGenerationsB;
 		}
 
-		private void setPersistedRef(int entryId, byte slot, int fileKind, long offset, int length) {
-			setPersistedRef(entryId, slot, fileKind, offset, length, 0L);
-		}
-
 		private void setPersistedRef(int entryId, byte slot, int fileKind, long offset, int length, long generation) {
 			int[] fileKinds = persistedFileKinds(slot);
 			long[] offsets = persistedOffsets(slot);
@@ -923,13 +857,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					generations[entryId]);
 		}
 
-		private boolean hasResidentOrPersistedRef(int entryId, byte slot) {
-			if (residentNode(entryId, slot) != NO_NODE) {
-				return true;
-			}
-			return persistedFileKinds(slot)[entryId] >= 0 && persistedLengths(slot)[entryId] > 0;
-		}
-
 		private List<PersistedSketchEntry> snapshotPersistedEntries(byte slot) {
 			List<PersistedSketchEntry> entries = new ArrayList<>();
 			for (int entryId = 0; entryId < size; entryId++) {
@@ -959,12 +886,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			int dirtyTail = dirtyTail(slot);
 			flags[entryId] = (byte) (flags[entryId] | dirtyFlag);
 			dirtyPrev[entryId] = dirtyTail;
-			dirtyNext[entryId] = NO_NODE;
-			if (dirtyTail != NO_NODE) {
+			dirtyNext[entryId] = -1;
+			if (dirtyTail != -1) {
 				dirtyNext[dirtyTail] = entryId;
 			}
 			setDirtyTail(slot, entryId);
-			if (dirtyHead(slot) == NO_NODE) {
+			if (dirtyHead(slot) == -1) {
 				setDirtyHead(slot, entryId);
 			}
 			return true;
@@ -980,18 +907,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			flags[entryId] = (byte) (flags[entryId] & ~dirtyFlag);
 			int prev = dirtyPrev[entryId];
 			int next = dirtyNext[entryId];
-			if (prev != NO_NODE) {
+			if (prev != -1) {
 				dirtyNext[prev] = next;
 			} else {
 				setDirtyHead(slot, next);
 			}
-			if (next != NO_NODE) {
+			if (next != -1) {
 				dirtyPrev[next] = prev;
 			} else {
 				setDirtyTail(slot, prev);
 			}
-			dirtyPrev[entryId] = NO_NODE;
-			dirtyNext[entryId] = NO_NODE;
+			dirtyPrev[entryId] = -1;
+			dirtyNext[entryId] = -1;
 		}
 
 		private void clearDirtyForSlot(byte slot) {
@@ -1003,23 +930,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private int[] snapshotDirtyEntries(byte slot) {
 			int dirtyHead = dirtyHead(slot);
 			int[] dirtyNext = dirtyNext(slot);
-			if (dirtyHead == NO_NODE) {
+			if (dirtyHead == -1) {
 				return new int[0];
 			}
 			int count = 0;
-			for (int cursor = dirtyHead; cursor != NO_NODE; cursor = dirtyNext[cursor]) {
+			for (int cursor = dirtyHead; cursor != -1; cursor = dirtyNext[cursor]) {
 				count++;
 			}
 			int[] snapshot = new int[count];
 			int i = 0;
-			for (int cursor = dirtyHead; cursor != NO_NODE; cursor = dirtyNext[cursor]) {
+			for (int cursor = dirtyHead; cursor != -1; cursor = dirtyNext[cursor]) {
 				snapshot[i++] = cursor;
 			}
 			return snapshot;
 		}
 
 		private boolean hasDirtyEntries(byte slot) {
-			return dirtyHead(slot) != NO_NODE;
+			return dirtyHead(slot) != -1;
 		}
 
 		private boolean isDirty(int entryId, byte slot) {
@@ -1062,54 +989,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 
-		private int residentNode(int entryId, byte slot) {
-			return slot == 0 ? residentNodeA[entryId] : residentNodeB[entryId];
-		}
-
-		private void setResidentNode(int entryId, byte slot, int nodeId) {
-			if (slot == 0) {
-				residentNodeA[entryId] = nodeId;
-			} else {
-				residentNodeB[entryId] = nodeId;
-			}
-		}
-
-		private void clearResidentNodesForSlot(byte slot) {
-			int[] nodes = slot == 0 ? residentNodeA : residentNodeB;
-			for (int i = 0; i < size; i++) {
-				nodes[i] = NO_NODE;
-			}
-		}
-
-		private void clearAllResidentNodes() {
-			for (int i = 0; i < size; i++) {
-				residentNodeA[i] = NO_NODE;
-				residentNodeB[i] = NO_NODE;
-			}
-		}
-
-		private byte recType(int entryId) {
-			return recTypeFromPrefix(keyPrefixes[entryId]);
-		}
-
 		private boolean isDelete(int entryId) {
 			return isDeleteFromPrefix(keyPrefixes[entryId]);
-		}
-
-		private byte axisA(int entryId) {
-			return axisAFromPrefix(keyPrefixes[entryId]);
-		}
-
-		private int x(int entryId) {
-			return xs[entryId];
-		}
-
-		private int heapBytesVersion() {
-			return heapBytesVersion;
-		}
-
-		private long estimatedHeapBytes() {
-			return estimatedHeapBytesCache;
 		}
 
 		private void refreshEstimatedHeapBytes() {
@@ -1130,190 +1011,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					+ estimateIntArrayBytes(persistedFileKindsB.length)
 					+ estimateLongArrayBytes(persistedOffsetsB.length)
 					+ estimateIntArrayBytes(persistedLengthsB.length)
-					+ estimateIntArrayBytes(residentNodeA.length)
-					+ estimateIntArrayBytes(residentNodeB.length)
 					+ estimateIntArrayBytes(dirtyPrevA.length)
 					+ estimateIntArrayBytes(dirtyNextA.length)
 					+ estimateIntArrayBytes(dirtyPrevB.length)
 					+ estimateIntArrayBytes(dirtyNextB.length);
-		}
-	}
-
-	private static final class ResidentLru {
-		private static final int NO_NODE = -1;
-
-		private int[] prev = new int[256];
-		private int[] next = new int[256];
-		private int[] entryIds = new int[256];
-		private byte[] slots = new byte[256];
-		private long[] bytes = new long[256];
-		private boolean[] used = new boolean[256];
-		private long estimatedHeapBytesCache;
-		private int heapBytesVersion;
-
-		private int head = NO_NODE;
-		private int tail = NO_NODE;
-		private int freeHead = NO_NODE;
-		private int nextNodeId;
-
-		private ResidentLru() {
-			Arrays.fill(prev, NO_NODE);
-			Arrays.fill(next, NO_NODE);
-			refreshEstimatedHeapBytes();
-		}
-
-		private void clear() {
-			Arrays.fill(used, false);
-			Arrays.fill(prev, NO_NODE);
-			Arrays.fill(next, NO_NODE);
-			head = NO_NODE;
-			tail = NO_NODE;
-			freeHead = NO_NODE;
-			nextNodeId = 0;
-		}
-
-		private boolean isEmpty() {
-			return head == NO_NODE;
-		}
-
-		private int headNode() {
-			return head;
-		}
-
-		private int nextNode(int nodeId) {
-			return next[nodeId];
-		}
-
-		private int entryId(int nodeId) {
-			return entryIds[nodeId];
-		}
-
-		private byte slot(int nodeId) {
-			return slots[nodeId];
-		}
-
-		private long bytes(int nodeId) {
-			return bytes[nodeId];
-		}
-
-		private int add(int entryId, byte slot, long nodeBytes) {
-			int nodeId = allocNode();
-			entryIds[nodeId] = entryId;
-			slots[nodeId] = slot;
-			bytes[nodeId] = nodeBytes;
-			used[nodeId] = true;
-			appendTail(nodeId);
-			return nodeId;
-		}
-
-		private void touch(int nodeId, long nodeBytes) {
-			if (!used[nodeId]) {
-				return;
-			}
-			bytes[nodeId] = nodeBytes;
-			if (tail == nodeId) {
-				return;
-			}
-			unlink(nodeId);
-			appendTail(nodeId);
-		}
-
-		private long remove(int nodeId) {
-			if (nodeId == NO_NODE || nodeId >= used.length || !used[nodeId]) {
-				return 0L;
-			}
-			long removedBytes = bytes[nodeId];
-			unlink(nodeId);
-			used[nodeId] = false;
-			next[nodeId] = freeHead;
-			prev[nodeId] = NO_NODE;
-			freeHead = nodeId;
-			bytes[nodeId] = 0L;
-			return removedBytes;
-		}
-
-		private void unlink(int nodeId) {
-			int nodePrev = prev[nodeId];
-			int nodeNext = next[nodeId];
-			if (nodePrev != NO_NODE) {
-				next[nodePrev] = nodeNext;
-			} else {
-				head = nodeNext;
-			}
-			if (nodeNext != NO_NODE) {
-				prev[nodeNext] = nodePrev;
-			} else {
-				tail = nodePrev;
-			}
-			prev[nodeId] = NO_NODE;
-			next[nodeId] = NO_NODE;
-		}
-
-		private void appendTail(int nodeId) {
-			prev[nodeId] = tail;
-			next[nodeId] = NO_NODE;
-			if (tail != NO_NODE) {
-				next[tail] = nodeId;
-			}
-			tail = nodeId;
-			if (head == NO_NODE) {
-				head = nodeId;
-			}
-		}
-
-		private int allocNode() {
-			if (freeHead != NO_NODE) {
-				int node = freeHead;
-				freeHead = next[node];
-				next[node] = NO_NODE;
-				return node;
-			}
-			int node = nextNodeId++;
-			ensureNodeCapacity(node + 1);
-			return node;
-		}
-
-		private void ensureNodeCapacity(int minCapacity) {
-			int current = prev.length;
-			if (minCapacity <= current) {
-				return;
-			}
-			int nextCapacity = current;
-			while (nextCapacity < minCapacity) {
-				nextCapacity <<= 1;
-			}
-			prev = Arrays.copyOf(prev, nextCapacity);
-			Arrays.fill(prev, current, nextCapacity, NO_NODE);
-			next = Arrays.copyOf(next, nextCapacity);
-			Arrays.fill(next, current, nextCapacity, NO_NODE);
-			entryIds = Arrays.copyOf(entryIds, nextCapacity);
-			slots = Arrays.copyOf(slots, nextCapacity);
-			bytes = Arrays.copyOf(bytes, nextCapacity);
-			used = Arrays.copyOf(used, nextCapacity);
-			refreshEstimatedHeapBytes();
-		}
-
-		private int heapBytesVersion() {
-			return heapBytesVersion;
-		}
-
-		private long estimatedHeapBytes() {
-			return estimatedHeapBytesCache;
-		}
-
-		private void refreshEstimatedHeapBytes() {
-			estimatedHeapBytesCache = computeEstimatedHeapBytes();
-			heapBytesVersion++;
-		}
-
-		private long computeEstimatedHeapBytes() {
-			return align(OBJECT_HEADER_BYTES + 5L * INT_BYTES + 6L * REFERENCE_BYTES)
-					+ estimateIntArrayBytes(prev.length)
-					+ estimateIntArrayBytes(next.length)
-					+ estimateIntArrayBytes(entryIds.length)
-					+ estimateByteArrayBytes(slots.length)
-					+ estimateLongArrayBytes(bytes.length)
-					+ estimateBooleanArrayBytes(used.length);
 		}
 	}
 
@@ -1354,156 +1055,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		int x() {
 			return x;
-		}
-	}
-
-	enum MemoryCategory {
-		RESIDENT_SKETCHES,
-		SERIALIZATION_BUFFERS,
-		DESERIALIZATION_BUFFERS,
-		CACHE_METADATA
-	}
-
-	static final class DebugMemoryOwnerView {
-		private final long ownerId;
-		private final String ownerLabel;
-		private final long bytes;
-
-		private DebugMemoryOwnerView(long ownerId, String ownerLabel, long bytes) {
-			this.ownerId = ownerId;
-			this.ownerLabel = ownerLabel;
-			this.bytes = bytes;
-		}
-
-		long ownerId() {
-			return ownerId;
-		}
-
-		String ownerLabel() {
-			return ownerLabel;
-		}
-
-		long bytes() {
-			return bytes;
-		}
-	}
-
-	static final class DebugMemorySnapshot {
-		private final EnumMap<MemoryCategory, Long> totals;
-		private final EnumMap<MemoryCategory, List<DebugMemoryOwnerView>> owners;
-		private final long totalBytes;
-
-		private DebugMemorySnapshot(EnumMap<MemoryCategory, Long> totals,
-				EnumMap<MemoryCategory, List<DebugMemoryOwnerView>> owners, long totalBytes) {
-			this.totals = totals;
-			this.owners = owners;
-			this.totalBytes = totalBytes;
-		}
-
-		long totalBytes() {
-			return totalBytes;
-		}
-
-		long bytes(MemoryCategory category) {
-			return totals.getOrDefault(category, 0L);
-		}
-
-		List<DebugMemoryOwnerView> owners(MemoryCategory category) {
-			return owners.getOrDefault(category, List.of());
-		}
-	}
-
-	private final class MemoryRegistry {
-		private final EnumMap<MemoryCategory, Map<Long, Long>> ownerBytes = new EnumMap<>(MemoryCategory.class);
-		private final EnumMap<MemoryCategory, Long> totals = new EnumMap<>(MemoryCategory.class);
-		private final EnumMap<MemoryCategory, LongFunction<String>> labels = new EnumMap<>(MemoryCategory.class);
-
-		private MemoryRegistry() {
-			for (MemoryCategory category : MEMORY_CATEGORY_VALUES) {
-				ownerBytes.put(category, new LinkedHashMap<>());
-				totals.put(category, 0L);
-			}
-			labels.put(MemoryCategory.RESIDENT_SKETCHES, SketchBasedJoinEstimator::residentOwnerLabel);
-			labels.put(MemoryCategory.SERIALIZATION_BUFFERS, SketchBasedJoinEstimator::transientOwnerLabel);
-			labels.put(MemoryCategory.DESERIALIZATION_BUFFERS, SketchBasedJoinEstimator::transientOwnerLabel);
-			labels.put(MemoryCategory.CACHE_METADATA, ownerId -> "CACHE_METADATA");
-		}
-
-		private synchronized long totalBytes() {
-			long total = 0L;
-			for (long bytes : totals.values()) {
-				total = saturatingAdd(total, bytes);
-			}
-			return total;
-		}
-
-		private synchronized long bytes(MemoryCategory category, long ownerId) {
-			return ownerBytes.get(category).getOrDefault(ownerId, 0L);
-		}
-
-		private synchronized void reserve(MemoryCategory category, long ownerId, long bytes) {
-			if (bytes <= 0L) {
-				return;
-			}
-			if (bytes > bytes(category, ownerId)) {
-				replace(category, ownerId, bytes);
-			}
-		}
-
-		private synchronized void replace(MemoryCategory category, long ownerId, long bytes) {
-			Map<Long, Long> categoryOwners = ownerBytes.get(category);
-			long previous = categoryOwners.getOrDefault(ownerId, 0L);
-			if (bytes <= 0L) {
-				if (previous != 0L) {
-					categoryOwners.remove(ownerId);
-					totals.put(category, Math.max(0L, totals.get(category) - previous));
-				}
-				return;
-			}
-			categoryOwners.put(ownerId, bytes);
-			totals.put(category, Math.max(0L, saturatingAdd(totals.get(category) - previous, bytes)));
-		}
-
-		private synchronized void release(MemoryCategory category, long ownerId) {
-			replace(category, ownerId, 0L);
-		}
-
-		private synchronized void clearCategory(MemoryCategory category) {
-			ownerBytes.get(category).clear();
-			totals.put(category, 0L);
-		}
-
-		private synchronized void clearTransientCategories() {
-			clearCategory(MemoryCategory.SERIALIZATION_BUFFERS);
-			clearCategory(MemoryCategory.DESERIALIZATION_BUFFERS);
-		}
-
-		private synchronized DebugMemorySnapshot snapshot() {
-			EnumMap<MemoryCategory, Long> totalsSnapshot = new EnumMap<>(MemoryCategory.class);
-			EnumMap<MemoryCategory, List<DebugMemoryOwnerView>> ownerSnapshot = new EnumMap<>(MemoryCategory.class);
-			long total = 0L;
-			for (MemoryCategory category : MEMORY_CATEGORY_VALUES) {
-				long categoryTotal = totals.getOrDefault(category, 0L);
-				totalsSnapshot.put(category, categoryTotal);
-				total = saturatingAdd(total, categoryTotal);
-				List<DebugMemoryOwnerView> views = new ArrayList<>();
-				LongFunction<String> label = labels.get(category);
-				for (Map.Entry<Long, Long> entry : ownerBytes.get(category).entrySet()) {
-					views.add(new DebugMemoryOwnerView(entry.getKey(),
-							label == null ? Long.toString(entry.getKey()) : label.apply(entry.getKey()),
-							entry.getValue()));
-				}
-				ownerSnapshot.put(category, Collections.unmodifiableList(views));
-			}
-			return new DebugMemorySnapshot(totalsSnapshot, ownerSnapshot, total);
-		}
-	}
-
-	private static final class MemoryPressureAbort extends RuntimeException {
-		private static final long serialVersionUID = 1L;
-
-		private MemoryPressureAbort(String message) {
-			super(message);
 		}
 	}
 
@@ -1597,10 +1148,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private void initBuckets(int capacity) {
 			buckets = new long[capacity];
 			bucketMask = capacity - 1;
-		}
-
-		private void add(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y, long value) {
-			add(packKeyPrefix(recType, isDelete, axisA, axisB), x, y, value);
 		}
 
 		private void add(int keyPrefix, int x, int y, long value) {
@@ -1704,7 +1251,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private void applyTo(SketchBasedJoinEstimator estimator, State state, byte slot) {
 			long[][] allOverflowValues = overflowValues;
 			for (int i = 0; i < size; i++) {
-				estimator.applyGroupedUpdate(state, slot, keyPrefixes[i], keyHashes[i], xs[i], ys[i],
+				estimator.applyGroupedUpdate(state, slot, keyPrefixes[i], xs[i], ys[i],
 						firstValues[i],
 						allOverflowValues == null ? null : allOverflowValues[i],
 						valueCounts[i]);
@@ -1717,9 +1264,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private volatile boolean persistenceEnabled;
 	private volatile boolean lazyLoadEnabled;
 	private volatile boolean sketchesLoaded = true;
-	private final SketchEstimatorMemoryProbe memoryProbe;
-	private final SketchEstimatorMemoryPolicy memoryPolicy;
-	private volatile SketchEstimatorMemoryMonitor memoryMonitor;
 	private final long[] slotGenerations = new long[] { 1L, 1L };
 
 	/**
@@ -1743,16 +1287,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final Object loadLock = new Object();
 	private final Object sketchCacheLock = new Object();
 	private final CacheDirectory cacheDirectory = new CacheDirectory();
-	private final ResidentLru residentLru = new ResidentLru();
 	private final ThreadLocal<OptimizationScopeState> optimizationScope = new ThreadLocal<>();
 	private int cacheDirectoryMetadataVersion = -1;
-	private int residentLruMetadataVersion = -1;
-	private final MemoryRegistry memoryRegistry;
-	private volatile long minSketchMemoryBytes;
-	private volatile long maxSketchMemoryBytes;
-	private final long baselineCacheMetadataBytes;
-	private final long trackedMemorySoftLimitBytes;
-	private long residentSketchBytes;
 
 	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
 	private static final int ASYNC_INCREMENTAL_QUEUE_CAPACITY = 8;
@@ -1806,7 +1342,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		// Base from provided config
 		int nEntries = cfg.nominalEntries;
+		int sBuckets = cfg.subjectBucketCount;
+		int pBuckets = cfg.predicateBucketCount;
+		int oBuckets = cfg.objectBucketCount;
+		int cBuckets = cfg.contextBucketCount;
 		boolean dbl = cfg.doubleArrayBuckets;
+		boolean contextPairSketches = cfg.contextPairSketchesEnabled;
 		long thrEvery = cfg.throttleEveryN;
 		long thrMs = cfg.throttleMillis;
 		long refreshMs = cfg.refreshSleepMillis;
@@ -1824,20 +1365,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int zeroIntersectionSampleSize = cfg.zeroIntersectionSampleSize;
 		int kCfg = cfg.sketchK;
 		int kMult = cfg.sketchKMultiplier;
-		double estimatorMemoryBudgetPercent = cfg.estimatorMemoryBudgetPercent;
-		double residentSketchMemoryTargetPercent = cfg.residentSketchMemoryTargetPercent;
-		double residentSketchMemoryCeilingPercent = cfg.residentSketchMemoryCeilingPercent;
-		double highMemoryPressurePercent = cfg.highMemoryPressurePercent;
-		double loadedBucketFloorPercent = cfg.loadedBucketFloorPercent;
-		long memoryMonitorIntervalMillis = cfg.memoryMonitorIntervalMillis;
-		int memoryPressureUnloadBatchSize = cfg.memoryPressureUnloadBatchSize;
 
-		boolean nominalEntriesPropertySet = propPresent("nominalEntries");
 		boolean sketchKPropertySet = propPresent("sketchK");
 
 		// Overlay from system properties (take precedence)
 		nEntries = propInt("nominalEntries", nEntries);
+		sBuckets = propInt("subjectBucketCount", sBuckets);
+		pBuckets = propInt("predicateBucketCount", pBuckets);
+		oBuckets = propInt("objectBucketCount", oBuckets);
+		cBuckets = propInt("contextBucketCount", cBuckets);
 		dbl = propBool("doubleArrayBuckets", dbl);
+		contextPairSketches = propBool("contextPairSketchesEnabled", contextPairSketches);
 		thrEvery = propLong("throttleEveryN", thrEvery);
 		thrMs = propLong("throttleMillis", thrMs);
 		refreshMs = propLong("refreshSleepMillis", refreshMs);
@@ -1857,37 +1395,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int kProp = propIntOrNegOne("sketchK", -1);
 		kMult = propInt("sketchKMultiplier", kMult);
 		kMult = Math.max(0, kMult);
-		estimatorMemoryBudgetPercent = propDouble(ESTIMATOR_MEMORY_BUDGET_PERCENT_PROPERTY,
-				estimatorMemoryBudgetPercent);
-		residentSketchMemoryTargetPercent = propDouble(RESIDENT_SKETCH_MEMORY_TARGET_PERCENT_PROPERTY,
-				propDouble(MIN_SKETCH_MEMORY_PERCENT_PROPERTY, residentSketchMemoryTargetPercent));
-		residentSketchMemoryCeilingPercent = propDouble(RESIDENT_SKETCH_MEMORY_CEILING_PERCENT_PROPERTY,
-				propDouble(MAX_SKETCH_MEMORY_PERCENT_PROPERTY, residentSketchMemoryCeilingPercent));
-		highMemoryPressurePercent = propDouble(HIGH_MEMORY_PRESSURE_PERCENT_PROPERTY, highMemoryPressurePercent);
-		loadedBucketFloorPercent = propDouble(LOADED_BUCKET_FLOOR_PERCENT_PROPERTY, loadedBucketFloorPercent);
-		memoryMonitorIntervalMillis = propLong(MEMORY_MONITOR_INTERVAL_MILLIS_PROPERTY, memoryMonitorIntervalMillis);
-		memoryPressureUnloadBatchSize = propInt(MEMORY_PRESSURE_UNLOAD_BATCH_SIZE_PROPERTY,
-				memoryPressureUnloadBatchSize);
 
-		Config memoryConfig = Config.defaults();
-		memoryConfig.nominalEntries = Math.max(4, dbl ? (nEntries * 2) : nEntries);
-		memoryConfig.sketchK = kProp > 0 ? kProp : kCfg;
-		memoryConfig.sketchKMultiplier = kMult;
-		memoryConfig.bucketCountExplicit = cfg.bucketCountExplicit || nominalEntriesPropertySet;
-		memoryConfig.sketchNominalEntriesExplicit = cfg.sketchNominalEntriesExplicit
-				|| sketchKPropertySet && kProp > 0;
-		memoryConfig.estimatorMemoryBudgetPercent = estimatorMemoryBudgetPercent;
-		memoryConfig.residentSketchMemoryTargetPercent = residentSketchMemoryTargetPercent;
-		memoryConfig.residentSketchMemoryCeilingPercent = residentSketchMemoryCeilingPercent;
-		memoryConfig.highMemoryPressurePercent = highMemoryPressurePercent;
-		memoryConfig.loadedBucketFloorPercent = loadedBucketFloorPercent;
-		memoryConfig.memoryMonitorIntervalMillis = memoryMonitorIntervalMillis;
-		memoryConfig.memoryPressureUnloadBatchSize = memoryPressureUnloadBatchSize;
-		SketchEstimatorMemoryProbe resolvedMemoryProbe = SketchEstimatorMemoryProbe.runtime();
-		SketchEstimatorMemoryPolicy resolvedMemoryPolicy = SketchEstimatorMemoryPolicy.resolve(memoryConfig,
-				resolvedMemoryProbe);
-		int buckets = resolvedMemoryPolicy.bucketCount;
-		int k = resolvedMemoryPolicy.sketchNominalEntries;
+		int k = sketchKPropertySet ? kProp : kCfg;
+		if (k <= 0) {
+			k = kMult > 0 ? Math.max(16, maxBucketCount(sBuckets, pBuckets, oBuckets, cBuckets) * kMult)
+					: DEFAULT_SKETCH_NOMINAL_ENTRIES;
+		}
 
 		samplePct = clamp(samplePct, 0.0, 1.0);
 		sampleMin = Math.max(0, sampleMin);
@@ -1901,7 +1414,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		zeroIntersectionSampleSize = Math.max(0, zeroIntersectionSampleSize);
 
 		this.sailStore = sailStore;
-		this.nominalEntries = buckets;
+		this.nominalEntries = maxBucketCount(sBuckets, pBuckets, oBuckets, cBuckets);
+		this.subjectBucketCount = sBuckets;
+		this.predicateBucketCount = pBuckets;
+		this.objectBucketCount = oBuckets;
+		this.contextBucketCount = cBuckets;
+		this.contextPairSketchesEnabled = contextPairSketches;
 		this.throttleEveryN = thrEvery;
 		this.throttleMillis = thrMs;
 		this.refreshSleepMillis = refreshMs;
@@ -1918,23 +1436,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.zeroIntersectionRowBudget = zeroIntersectionBudget;
 		this.zeroIntersectionSampleSize = zeroIntersectionSampleSize;
 		this.churnSampler = new ChurnSampler();
-		System.out.println("k: "+k);
-		System.out.println("buckets: "+buckets);
-		System.out.println("nominalEntries: "+nominalEntries);
-		this.bufA = new State(k, this.nominalEntries);
-		this.bufB = new State(k, this.nominalEntries);
+		this.bufA = new State(k, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled);
+		this.bufB = new State(k, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
+				contextPairSketchesEnabled);
 		this.current = usingA ? bufA : bufB;
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
 		this.lazyLoadEnabled = false;
-		this.memoryProbe = resolvedMemoryProbe;
-		this.memoryPolicy = resolvedMemoryPolicy;
-		this.memoryRegistry = new MemoryRegistry();
-		this.baselineCacheMetadataBytes = cacheDirectory.estimatedHeapBytes() + residentLru.estimatedHeapBytes();
-		this.minSketchMemoryBytes = resolvedMemoryPolicy.residentSketchMemoryTargetBytes;
-		this.maxSketchMemoryBytes = resolvedMemoryPolicy.residentSketchMemoryCeilingBytes;
-		this.trackedMemorySoftLimitBytes = resolvedMemoryPolicy.estimatorMemoryBudgetBytes;
-		refreshCacheMetadataAccounting();
 		this.asyncIncrementalExecutor = Executors
 				.newThreadPerTaskExecutor(Thread.ofVirtual().name("RdfJoinEstimator-Ingest-", 0).factory());
 		this.ingestPartitionExecutor = Executors
@@ -2104,22 +1613,65 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		if (normalizedFile == null) {
-			closeMemoryMonitor();
 			return;
 		}
 
 		try {
-			SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(normalizedFile, logger);
+			SketchEstimatorPersistenceStore store = SketchEstimatorPersistenceStore.open(normalizedFile, logger,
+					sketchFileChunks());
 			this.persistenceStore = store;
 			if (store.hasMetadata()) {
-				loadDirectoryStore(!lazyLoad);
+				try {
+					loadDirectoryStore(!lazyLoad);
+				} catch (IOException | RuntimeException e) {
+					logger.warn("Ignoring incompatible join estimator snapshot at {}; rebuilding greenfield store",
+							normalizedFile, e);
+					store.reset();
+					clearPersistedSketchDirectory();
+				}
 			}
-			startMemoryMonitor();
 		} catch (Throwable t) {
 			logger.warn("Failed to configure join estimator persistence at {}", normalizedFile, t);
 			this.persistenceStore = null;
 			this.persistenceEnabled = false;
 		}
+	}
+
+	private SketchEstimatorPersistenceStore.SketchFileChunks sketchFileChunks() {
+		long frameBytes = (long) bufA.maxSketchBytes + SKETCH_PAYLOAD_FRAME_HEADER_BYTES;
+		long globalBytes = saturatingMultiply(4L, frameBytes);
+		long singlesBytes = saturatingMultiply(estimatedSingleSketchSlots(), frameBytes);
+		long pairsBytes = saturatingMultiply(estimatedPairSketchSlots(), frameBytes);
+		int largeKindTargetFiles = TARGET_SKETCH_PART_FILES / 2;
+		return SketchEstimatorPersistenceStore.SketchFileChunks.of(
+				sketchPartChunkBytes(globalBytes, 1, frameBytes),
+				sketchPartChunkBytes(singlesBytes, largeKindTargetFiles, frameBytes),
+				sketchPartChunkBytes(pairsBytes, largeKindTargetFiles, frameBytes));
+	}
+
+	private long estimatedSingleSketchSlots() {
+		long totalBuckets = saturatingAdd(saturatingAdd(subjectBucketCount, predicateBucketCount),
+				saturatingAdd(objectBucketCount, contextBucketCount));
+		return saturatingMultiply(8L, totalBuckets);
+	}
+
+	private long estimatedPairSketchSlots() {
+		long cells = 0L;
+		for (Pair pair : PAIR_VALUES) {
+			if (pairEnabled(pair)) {
+				cells = saturatingAdd(cells,
+						saturatingMultiply(componentBucketCount(pair.x), componentBucketCount(pair.y)));
+			}
+		}
+		return saturatingMultiply(6L, cells);
+	}
+
+	private static long sketchPartChunkBytes(long maximumKindBytes, int targetFiles, long minimumFrameBytes) {
+		if (targetFiles <= 0 || maximumKindBytes <= 0L) {
+			return minimumFrameBytes;
+		}
+		long chunkBytes = ceilDiv(maximumKindBytes, targetFiles);
+		return Math.max(minimumFrameBytes, chunkBytes);
 	}
 
 	public void setLearnedStatsProvider(JoinStatsProvider learnedStatsProvider) {
@@ -2278,41 +1830,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		try {
 			persistIfDirty();
 		} finally {
-			closeMemoryMonitor();
 			shutdownAsyncIncrementalIngest();
 			clearEstimateCache();
 			closePersistenceStore();
-		}
-	}
-
-	private void startMemoryMonitor() {
-		closeMemoryMonitor();
-		SketchEstimatorMemoryMonitor monitor = new SketchEstimatorMemoryMonitor(memoryProbe, memoryPolicy,
-				new SketchEstimatorMemoryMonitor.EvictionController() {
-					@Override
-					public void enforceResidentCeiling() {
-						enforceSketchBudget();
-					}
-
-					@Override
-					public int evictLruBatch(int batchSize) {
-						return evictResidentSketchBatch(batchSize);
-					}
-
-					@Override
-					public int activeLoadedBucketCount() {
-						return SketchBasedJoinEstimator.this.activeLoadedBucketCount();
-					}
-				}, logger);
-		memoryMonitor = monitor;
-		monitor.start();
-	}
-
-	private void closeMemoryMonitor() {
-		SketchEstimatorMemoryMonitor monitor = memoryMonitor;
-		memoryMonitor = null;
-		if (monitor != null) {
-			monitor.close();
 		}
 	}
 
@@ -2356,7 +1876,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		State tgt = rebuildIntoA ? bufA : bufB;
 		byte previousCurrentSlot = slotByte(slotOf(current));
 		byte targetSlot = slotByte(slotOf(tgt));
-		clearResidentTrackingForSlot(slotOf(tgt));
 		clearSlotPersistence(targetSlot);
 		slotGenerations[targetSlot]++;
 		tgt.clear(); // wipe everything (add + del)
@@ -2401,7 +1920,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 							}
 
 						}
-					} catch (MemoryPressureAbort | OutOfMemoryError pressureFailure) {
+					} catch (OutOfMemoryError pressureFailure) {
 
 						return seen;
 					} catch (Throwable e) {
@@ -2428,7 +1947,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 
 			synchronized (tgt) {
-				rebuildResidentTrackingForSlot(tgt);
+				markRebuiltSketchesDirty(tgt);
 			}
 			current = tgt; // single volatile write → visible to all readers
 			seenTriples = seen;
@@ -2447,7 +1966,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			churnSampler.reset();
 
 			return seen;
-		} catch (MemoryPressureAbort | OutOfMemoryError pressureFailure) {
+		} catch (OutOfMemoryError pressureFailure) {
 
 			return seen;
 		} finally {
@@ -2484,7 +2003,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		try {
 			ingestIncremental(s, p, o, c, false);
 
-		} catch (MemoryPressureAbort | OutOfMemoryError oom) {
+		} catch (OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator update; unloading sketches", oom);
 			unloadInternal(true);
 			return;
@@ -2522,20 +2041,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		try {
 			ingestIncremental(s, p, o, c, true);
-		} catch (MemoryPressureAbort | OutOfMemoryError oom) {
+		} catch (OutOfMemoryError oom) {
 			logger.warn("Out of memory while applying incremental estimator delete; unloading sketches", oom);
 			unloadInternal(true);
 			return;
 		}
 		dirty.set(true);
-	}
-
-	public void deleteStatement(Resource s, IRI p, Value o, Resource c) {
-		deleteStatement(sailStore.getValueFactory().createStatement(s, p, o, c));
-	}
-
-	public void deleteStatement(Resource s, IRI p, Value o) {
-		deleteStatement(s, p, o, null);
 	}
 
 	private IngestEvent ingestIncremental(String s, String p, String o, String c, boolean isDelete) {
@@ -2564,10 +2075,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private IngestEvent toIngestEvent(String s, String p, String o, String c, boolean isDelete) {
 		try {
-			int si = hash(s);
-			int pi = hash(p);
-			int oi = hash(o);
-			int ci = hash(c);
+			int si = hash(Component.S, s);
+			int pi = hash(Component.P, p);
+			int oi = hash(Component.O, o);
+			int ci = hash(Component.C, c);
 
 			long hs = valueFingerprint(s);
 			long hp = valueFingerprint(p);
@@ -2774,7 +2285,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		for (BatchUpdateAccumulator updates : batchUpdates) {
 			updates.applyTo(this, state, slot);
 		}
-		enforceSketchBudget();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -2830,7 +2340,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return (int) Math.min(Integer.MAX_VALUE, Math.min(batchEstimate, Math.max(64L, addressBound)));
 	}
 
-	private void applyGroupedUpdate(State state, byte slot, int keyPrefix, int keyHash, int x, int y, long firstValue,
+	private void applyGroupedUpdate(State state, byte slot, int keyPrefix, int x, int y, long firstValue,
 			long[] overflowValues, int valueCount) {
 		if (valueCount == 0) {
 			return;
@@ -2861,14 +2371,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					event.thetaHc);
 			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
 					event.thetaHc);
-			accumulatePair(updates, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
-					event.thetaHo);
+			if (contextPairSketchesEnabled) {
+				accumulatePair(updates, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
+						event.thetaHo);
+			}
 			accumulatePair(updates, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
 					event.thetaHc);
-			accumulatePair(updates, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
-					event.thetaHo);
-			accumulatePair(updates, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
-					event.thetaHp);
+			if (contextPairSketchesEnabled) {
+				accumulatePair(updates, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
+						event.thetaHo);
+				accumulatePair(updates, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
+						event.thetaHp);
+			}
 			return;
 		}
 		switch (partition) {
@@ -2884,6 +2398,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					event.thetaHc);
 			break;
 		case SC:
+			if (!contextPairSketchesEnabled) {
+				break;
+			}
 			accumulatePair(updates, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
 					event.thetaHo);
 			break;
@@ -2892,10 +2409,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					event.thetaHc);
 			break;
 		case PC:
+			if (!contextPairSketchesEnabled) {
+				break;
+			}
 			accumulatePair(updates, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
 					event.thetaHo);
 			break;
 		case OC:
+			if (!contextPairSketchesEnabled) {
+				break;
+			}
 			accumulatePair(updates, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
 					event.thetaHp);
 			break;
@@ -2955,84 +2478,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	/* ------------------------------------------------------------------ */
 
-	private void ingest(State t, IngestEvent event) {
-		try {
-			boolean isDelete = event.isDelete;
-			int si = event.si;
-			int pi = event.pi;
-			int oi = event.oi;
-			int ci = event.ci;
-			long thetaHs = event.thetaHs;
-			long thetaHp = event.thetaHp;
-			long thetaHo = event.thetaHo;
-			long thetaHc = event.thetaHc;
-			long thetaSig = event.thetaSig;
-			long spKey = event.spKey;
-			long soKey = event.soKey;
-			long scKey = event.scKey;
-			long poKey = event.poKey;
-			long pcKey = event.pcKey;
-			long ocKey = event.ocKey;
-
-			/* single‑component cardinalities */
-			updateSingleSketchRaw(t, isDelete, Component.S, si, thetaSig);
-			updateSingleSketchRaw(t, isDelete, Component.P, pi, thetaSig);
-			updateSingleSketchRaw(t, isDelete, Component.O, oi, thetaSig);
-			updateSingleSketchRaw(t, isDelete, Component.C, ci, thetaSig);
-
-			updateGlobalComponentSketchRaw(t, isDelete, Component.S, thetaHs);
-			updateGlobalComponentSketchRaw(t, isDelete, Component.P, thetaHp);
-			updateGlobalComponentSketchRaw(t, isDelete, Component.O, thetaHo);
-			updateGlobalComponentSketchRaw(t, isDelete, Component.C, thetaHc);
-
-			/* complement sets for singles */
-			updateComplementSketchRaw(t, isDelete, Component.S, Component.P, si, thetaHp);
-			updateComplementSketchRaw(t, isDelete, Component.S, Component.O, si, thetaHo);
-			updateComplementSketchRaw(t, isDelete, Component.S, Component.C, si, thetaHc);
-
-			updateComplementSketchRaw(t, isDelete, Component.P, Component.S, pi, thetaHs);
-			updateComplementSketchRaw(t, isDelete, Component.P, Component.O, pi, thetaHo);
-			updateComplementSketchRaw(t, isDelete, Component.P, Component.C, pi, thetaHc);
-
-			updateComplementSketchRaw(t, isDelete, Component.O, Component.S, oi, thetaHs);
-			updateComplementSketchRaw(t, isDelete, Component.O, Component.P, oi, thetaHp);
-			updateComplementSketchRaw(t, isDelete, Component.O, Component.C, oi, thetaHc);
-
-			updateComplementSketchRaw(t, isDelete, Component.C, Component.S, ci, thetaHs);
-			updateComplementSketchRaw(t, isDelete, Component.C, Component.P, ci, thetaHp);
-			updateComplementSketchRaw(t, isDelete, Component.C, Component.O, ci, thetaHo);
-
-			/* pairs (triples + complements) */
-			updatePairSketchRaw(t, isDelete, Pair.SP, REC_PAIR_TRIPLE, spKey, thetaSig);
-			updatePairSketchRaw(t, isDelete, Pair.SP, REC_PAIR_COMP1, spKey, thetaHo);
-			updatePairSketchRaw(t, isDelete, Pair.SP, REC_PAIR_COMP2, spKey, thetaHc);
-
-			updatePairSketchRaw(t, isDelete, Pair.SO, REC_PAIR_TRIPLE, soKey, thetaSig);
-			updatePairSketchRaw(t, isDelete, Pair.SO, REC_PAIR_COMP1, soKey, thetaHp);
-			updatePairSketchRaw(t, isDelete, Pair.SO, REC_PAIR_COMP2, soKey, thetaHc);
-
-			updatePairSketchRaw(t, isDelete, Pair.SC, REC_PAIR_TRIPLE, scKey, thetaSig);
-			updatePairSketchRaw(t, isDelete, Pair.SC, REC_PAIR_COMP1, scKey, thetaHp);
-			updatePairSketchRaw(t, isDelete, Pair.SC, REC_PAIR_COMP2, scKey, thetaHo);
-
-			updatePairSketchRaw(t, isDelete, Pair.PO, REC_PAIR_TRIPLE, poKey, thetaSig);
-			updatePairSketchRaw(t, isDelete, Pair.PO, REC_PAIR_COMP1, poKey, thetaHs);
-			updatePairSketchRaw(t, isDelete, Pair.PO, REC_PAIR_COMP2, poKey, thetaHc);
-
-			updatePairSketchRaw(t, isDelete, Pair.PC, REC_PAIR_TRIPLE, pcKey, thetaSig);
-			updatePairSketchRaw(t, isDelete, Pair.PC, REC_PAIR_COMP1, pcKey, thetaHs);
-			updatePairSketchRaw(t, isDelete, Pair.PC, REC_PAIR_COMP2, pcKey, thetaHo);
-
-			updatePairSketchRaw(t, isDelete, Pair.OC, REC_PAIR_TRIPLE, ocKey, thetaSig);
-			updatePairSketchRaw(t, isDelete, Pair.OC, REC_PAIR_COMP1, ocKey, thetaHs);
-			updatePairSketchRaw(t, isDelete, Pair.OC, REC_PAIR_COMP2, ocKey, thetaHp);
-		} catch (NullPointerException npe) {
-			// ignore NPEs from null values (e.g. missing context)
-		} finally {
-			enforceSketchBudget();
-		}
-	}
-
 	/* ────────────────────────────────────────────────────────────── */
 	/* Quick cardinalities (public) */
 	/* ────────────────────────────────────────────────────────────── */
@@ -3041,7 +2486,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		flushPendingIncremental();
 		State snap = current;
 		synchronized (snap) {
-			int idx = hash(v);
+			int idx = hash(c, v);
 			return estimateSignedRows(getSketchForRead(snap, singleTripleAddress(false, c, idx)));
 		}
 	}
@@ -3050,7 +2495,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		flushPendingIncremental();
 		State snap = current;
 		synchronized (snap) {
-			long key = pairKey(hash(x), hash(y));
+			if (!pairEnabled(p)) {
+				return 0.0d;
+			}
+			long key = pairKey(hash(p.x, x), hash(p.y, y));
 			int row = (int) (key >>> 32);
 			int col = (int) key;
 			return estimateSignedRows(getSketchForRead(snap, pairAddress(REC_PAIR_TRIPLE, false, p, row, col)));
@@ -3248,9 +2696,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return new BindingSketchResult(sketch, EnumSet.of(pair));
 		}
 
-		static BindingSketchResult of(ArrayOfDoublesSketch sketch, Pair first, Pair second) {
-			return new BindingSketchResult(sketch, EnumSet.of(first, second));
-		}
 	}
 
 	private static final class PairSketchCandidate {
@@ -3309,7 +2754,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		case 2: {
 			Component[] cmp = fixed.keySet().toArray(new Component[0]);
 			Pair pr = findPair(cmp[0], cmp[1]);
-			if (pr != null) {
+			if (pr != null && pairEnabled(pr)) {
 				card = cardPair(st, pr, fixed.get(pr.x), fixed.get(pr.y));
 			} else { // components not a known pair – conservative min
 				double a = cardSingle(st, cmp[0], fixed.get(cmp[0]));
@@ -3443,12 +2888,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/* ────────────────────────────────────────────────────────────── */
 
 	private double cardSingle(State st, Component c, String val) {
-		int idx = hash(val);
+		int idx = hash(c, val);
 		return estimateSignedRows(getSketchForRead(st, singleTripleAddress(false, c, idx)));
 	}
 
 	private double cardPair(State st, Pair p, String x, String y) {
-		long key = pairKey(hash(x), hash(y));
+		if (!pairEnabled(p)) {
+			return 0.0d;
+		}
+		long key = pairKey(hash(p.x, x), hash(p.y, y));
 		int row = (int) (key >>> 32);
 		int col = (int) key;
 		return estimateSignedRows(getSketchForRead(st, pairAddress(REC_PAIR_TRIPLE, false, p, row, col)));
@@ -3467,16 +2915,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		/* 1 constant → single complement */
 		if (f.size() == 1) {
 			Map.Entry<Component, String> e = f.entrySet().iterator().next();
-			return BindingSketchResult.of(singleWrapper(st, e.getKey()).getComplementSketch(j, hash(e.getValue())));
+			return BindingSketchResult
+					.of(singleWrapper(st, e.getKey()).getComplementSketch(j, hash(e.getKey(), e.getValue())));
 		}
 
 		/* 2 constants: pair fast path */
 		Component[] cs = f.keySet().toArray(new Component[0]);
 		if (f.size() == 2) {
 			Pair pr = findPair(cs[0], cs[1]);
-			if (pr != null && (j == pr.comp1 || j == pr.comp2)) {
-				int idxX = hash(f.get(pr.x));
-				int idxY = hash(f.get(pr.y));
+			if (pr != null && pairEnabled(pr) && (j == pr.comp1 || j == pr.comp2)) {
+				int idxX = hash(pr.x, f.get(pr.x));
+				int idxY = hash(pr.y, f.get(pr.y));
 				ArrayOfDoublesSketch pairSketch = pairWrapper(st, pr).getComplementSketch(j, pairKey(idxX, idxY));
 				return BindingSketchResult.of(pairSketch, pr);
 			}
@@ -3487,11 +2936,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			for (int i = 0; i < cs.length; i++) {
 				for (int k = i + 1; k < cs.length; k++) {
 					Pair pr = findPair(cs[i], cs[k]);
-					if (pr == null || (j != pr.comp1 && j != pr.comp2)) {
+					if (pr == null || !pairEnabled(pr) || (j != pr.comp1 && j != pr.comp2)) {
 						continue;
 					}
-					int idxX = hash(f.get(pr.x));
-					int idxY = hash(f.get(pr.y));
+					int idxX = hash(pr.x, f.get(pr.x));
+					int idxY = hash(pr.y, f.get(pr.y));
 					ArrayOfDoublesSketch candidate = pairWrapper(st, pr).getComplementSketch(j, pairKey(idxX, idxY));
 					if (candidate == null) {
 						continue;
@@ -3542,7 +2991,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		ArrayOfDoublesSketch acc = null;
 		for (Map.Entry<Component, String> e : f.entrySet()) {
 			ArrayOfDoublesSketch sk = singleWrapper(st, e.getKey())
-					.getComplementSketch(j, hash(e.getValue()));
+					.getComplementSketch(j, hash(e.getKey(), e.getValue()));
 			if (sk == null) {
 				continue;
 			}
@@ -3614,8 +3063,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			Pair a, String ax, String ay,
 			Pair b, String bx, String by) {
 
-		long keyA = pairKey(hash(ax), hash(ay));
-		long keyB = pairKey(hash(bx), hash(by));
+		if (!pairEnabled(a) || !pairEnabled(b)) {
+			return 0.0d;
+		}
+		long keyA = pairKey(hash(a.x, ax), hash(a.y, ay));
+		long keyB = pairKey(hash(b.x, bx), hash(b.y, by));
 
 		ArrayOfDoublesSketch sa = pairWrapper(st, a).getComplementSketch(j, keyA);
 		ArrayOfDoublesSketch sb = pairWrapper(st, b).getComplementSketch(j, keyB);
@@ -3631,7 +3083,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			Component a, String av,
 			Component b, String bv) {
 
-		int idxA = hash(av), idxB = hash(bv);
+		int idxA = hash(a, av), idxB = hash(b, bv);
 
 		ArrayOfDoublesSketch sa = singleWrapper(st, a).getComplementSketch(j, idxA);
 		ArrayOfDoublesSketch sb = singleWrapper(st, b).getComplementSketch(j, idxB);
@@ -3686,6 +3138,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final class State {
 		final int k; // sketch nominal entries
 		final int buckets; // array bucket count (outer.nominalEntries)
+		final int subjectBuckets;
+		final int predicateBuckets;
+		final int objectBuckets;
+		final int contextBuckets;
 
 		/* live (add) sketches */
 		final StateComponents<AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> globalComponents;
@@ -3700,9 +3156,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		final StateComponents<SingleBuild> delSingles;
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
 
-		State(int k, int buckets) {
+		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
+				boolean contextPairSketchesEnabled) {
 			this.k = k;
-			this.buckets = buckets;
+			this.subjectBuckets = subjectBuckets;
+			this.predicateBuckets = predicateBuckets;
+			this.objectBuckets = objectBuckets;
+			this.contextBuckets = contextBuckets;
+			this.buckets = maxBucketCount(subjectBuckets, predicateBuckets, objectBuckets, contextBuckets);
 			ArrayOfDoublesUpdatableSketch emptySketch = newSk(k);
 			this.initialSketchBytes = estimatedSketchBytes(emptySketch);
 			this.maxSketchBytes = emptySketch.getMaxBytes();
@@ -3714,32 +3175,34 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					new AtomicReferenceArray<>(1));
 
 			singleTriples = new StateComponents<>(
-					new AtomicReferenceArray<>(buckets),
-					new AtomicReferenceArray<>(buckets),
-					new AtomicReferenceArray<>(buckets),
-					new AtomicReferenceArray<>(buckets));
+					new AtomicReferenceArray<>(subjectBuckets),
+					new AtomicReferenceArray<>(predicateBuckets),
+					new AtomicReferenceArray<>(objectBuckets),
+					new AtomicReferenceArray<>(contextBuckets));
 
 			delSingleTriples = new StateComponents<>(
-					new AtomicReferenceArray<>(buckets),
-					new AtomicReferenceArray<>(buckets),
-					new AtomicReferenceArray<>(buckets),
-					new AtomicReferenceArray<>(buckets));
+					new AtomicReferenceArray<>(subjectBuckets),
+					new AtomicReferenceArray<>(predicateBuckets),
+					new AtomicReferenceArray<>(objectBuckets),
+					new AtomicReferenceArray<>(contextBuckets));
 
 			singles = new StateComponents<>(
-					new SingleBuild(k, Component.S, buckets),
-					new SingleBuild(k, Component.P, buckets),
-					new SingleBuild(k, Component.O, buckets),
-					new SingleBuild(k, Component.C, buckets));
+					new SingleBuild(k, Component.S, subjectBuckets),
+					new SingleBuild(k, Component.P, predicateBuckets),
+					new SingleBuild(k, Component.O, objectBuckets),
+					new SingleBuild(k, Component.C, contextBuckets));
 
 			delSingles = new StateComponents<>(
-					new SingleBuild(k, Component.S, buckets),
-					new SingleBuild(k, Component.P, buckets),
-					new SingleBuild(k, Component.O, buckets),
-					new SingleBuild(k, Component.C, buckets));
+					new SingleBuild(k, Component.S, subjectBuckets),
+					new SingleBuild(k, Component.P, predicateBuckets),
+					new SingleBuild(k, Component.O, objectBuckets),
+					new SingleBuild(k, Component.C, contextBuckets));
 
 			for (Pair p : PAIR_VALUES) {
-				pairs.put(p, new PairBuild(k, buckets));
-				delPairs.put(p, new PairBuild(k, buckets));
+				if (contextPairSketchesEnabled || !isContextPair(p)) {
+					pairs.put(p, new PairBuild(k, buckets));
+					delPairs.put(p, new PairBuild(k, buckets));
+				}
 			}
 		}
 
@@ -3782,18 +3245,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 
-		void upd(Component c, int idx, long v) {
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr = cmpl.get(c);
-			if (arr == null) {
-				return;
-			}
-			ArrayOfDoublesUpdatableSketch sk = arr.get(idx);
-			if (sk == null) {
-				sk = newSk(k);
-				arr.set(idx, sk);
-			}
-			tupleUpdateRaw(sk, v, 1.0d);
-		}
 	}
 
 	private static final class PairBuild {
@@ -3811,48 +3262,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		void clear() {
 			rows.clear();
-		}
-
-		void upT(long key, long sig) {
-			int x = (int) (key >>> 32);
-			int y = (int) key;
-			Row r = getOrCreateRow(x);
-			updateSketchMap(r.triples, y, sig, k);
-		}
-
-		void up1(long key, long v) {
-			int x = (int) (key >>> 32);
-			int y = (int) key;
-			Row r = getOrCreateRow(x);
-			updateSketchMap(r.comp1, y, v, k);
-		}
-
-		void up2(long key, long v) {
-			int x = (int) (key >>> 32);
-			int y = (int) key;
-			Row r = getOrCreateRow(x);
-			updateSketchMap(r.comp2, y, v, k);
-		}
-
-		ArrayOfDoublesUpdatableSketch getTriple(long key) {
-			int x = (int) (key >>> 32);
-			int y = (int) key;
-			Row r = rows.get(x);
-			return (r == null) ? null : r.triples.get(y);
-		}
-
-		ArrayOfDoublesUpdatableSketch getComp1(long key) {
-			int x = (int) (key >>> 32);
-			int y = (int) key;
-			Row r = rows.get(x);
-			return (r == null) ? null : r.comp1.get(y);
-		}
-
-		ArrayOfDoublesUpdatableSketch getComp2(long key) {
-			int x = (int) (key >>> 32);
-			int y = (int) key;
-			Row r = rows.get(x);
-			return (r == null) ? null : r.comp2.get(y);
 		}
 
 		private Row getOrCreateRow(int x) {
@@ -3887,10 +3296,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return TupleSketchOps.newSketch(k);
 	}
 
-	private static ArrayOfDoublesUpdatableSketch newSk(int k, MemorySegment payload) {
-		return TupleSketchOps.newSketch(k, payload);
-	}
-
 	private static void tupleUpdateRaw(ArrayOfDoublesUpdatableSketch sketch, long hash, double delta) {
 		TupleSketchOps.update(sketch, hash, delta);
 	}
@@ -3899,10 +3304,31 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return (bytes + 7L) & ~7L;
 	}
 
-	private int hash(String v) {
-		// Ensure non-negative index in [0, nominalEntries)
+	private int hash(Component component, String v) {
 		int h = Objects.hashCode(v);
-		return (h & 0x7fffffff) % nominalEntries;
+		return (h & 0x7fffffff) % componentBucketCount(component);
+	}
+
+	private int componentBucketCount(Component component) {
+		return switch (component) {
+			case S -> subjectBucketCount;
+			case P -> predicateBucketCount;
+			case O -> objectBucketCount;
+			case C -> contextBucketCount;
+			default -> throw new IllegalStateException("Unsupported component: " + component);
+		};
+	}
+
+	private static int maxBucketCount(int sBuckets, int pBuckets, int oBuckets, int cBuckets) {
+		return Math.max(Math.max(sBuckets, pBuckets), Math.max(oBuckets, cBuckets));
+	}
+
+	private boolean pairEnabled(Pair pair) {
+		return contextPairSketchesEnabled || !isContextPair(pair);
+	}
+
+	private static boolean isContextPair(Pair pair) {
+		return pair.x == Component.C || pair.y == Component.C;
 	}
 
 	private static long valueFingerprint(String value) {
@@ -4030,10 +3456,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void recordRobustCardinalityPath(SketchPlannerPath plannerPath) {
 		lastRobustCardinalityPath = Objects.requireNonNull(plannerPath, "plannerPath");
-	}
-
-	double filterMultiplierForSketchOptimizer(Filter filter, StatementPattern pattern) {
-		return resolveFilterMultiplier(filter, pattern);
 	}
 
 	public double estimateFilterPassRatio(Filter filter) {
@@ -4165,29 +3587,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return estimateTupleExprPlan(tupleExpr, externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
 		}
 		return estimateTupleExprPlan(tupleExpr, scope, boundVarMask);
-	}
-
-	private boolean isSupportedJoinOrderingFactor(TupleExpr tupleExpr) {
-		TupleExpr current = tupleExpr;
-		while (current instanceof Filter || current instanceof Distinct || current instanceof Reduced
-				|| current instanceof Slice) {
-			current = ((UnaryTupleOperator) current).getArg();
-		}
-		if (current instanceof StatementPattern || current instanceof BindingSetAssignment) {
-			return true;
-		}
-		if (current instanceof Join) {
-			Join join = (Join) current;
-			return isSmallBindingSetAssignmentLookupJoin(join.getLeftArg(), join.getRightArg())
-					|| isSmallBindingSetAssignmentLookupJoin(join.getRightArg(), join.getLeftArg());
-		}
-		return false;
-	}
-
-	private boolean isSmallBindingSetAssignmentLookupJoin(TupleExpr assignmentArg, TupleExpr lookupArg) {
-		return assignmentArg instanceof BindingSetAssignment
-				&& lookupArg instanceof StatementPattern
-				&& isSmallBindingSetAssignment((BindingSetAssignment) assignmentArg);
 	}
 
 	private boolean isSmallBindingSetAssignment(BindingSetAssignment assignment) {
@@ -4566,6 +3965,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
 		Map<String, SharedVarEstimate> sharedVars = new HashMap<>();
 		double rawRows = Double.POSITIVE_INFINITY;
+		boolean conditionedWithoutSketch = false;
 		for (Map.Entry<String, VarPlanStats> entry : left.varStats.entrySet()) {
 			VarPlanStats rightStats = right.varStats.get(entry.getKey());
 			if (rightStats == null) {
@@ -4585,6 +3985,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 			}
 			sharedVars.put(entry.getKey(), shared);
+			if (useSketches && shared.sketch == null) {
+				conditionedWithoutSketch = true;
+			}
 			rawRows = Math.min(rawRows, shared.rows);
 		}
 
@@ -4607,8 +4010,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (shared != null) {
 				mergedStats.put(varName, new VarPlanStats(clampDistinct(shared.distinct, outputRows), shared.sketch));
 			} else {
-				ArrayOfDoublesSketch sketch = useSketches ? entry.getValue().sketch : null;
-				StatementPattern pattern = useSketches ? entry.getValue().pattern : null;
+				ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? entry.getValue().sketch
+						: null;
+				StatementPattern pattern = useSketches && !conditionedWithoutSketch ? entry.getValue().pattern : null;
 				mergedStats.put(varName, new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows),
 						sketch, pattern));
 			}
@@ -4617,8 +4021,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (mergedStats.containsKey(entry.getKey())) {
 				continue;
 			}
-			ArrayOfDoublesSketch sketch = useSketches ? entry.getValue().sketch : null;
-			StatementPattern pattern = useSketches ? entry.getValue().pattern : null;
+			ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? entry.getValue().sketch
+					: null;
+			StatementPattern pattern = useSketches && !conditionedWithoutSketch ? entry.getValue().pattern : null;
 			mergedStats.put(entry.getKey(),
 					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), sketch, pattern));
 		}
@@ -4633,6 +4038,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double[] sharedDistinctByLeftIndex = null;
 		ArrayOfDoublesSketch[] sharedSketchByLeftIndex = null;
 		boolean hasSharedVars = false;
+		boolean conditionedWithoutSketch = false;
 
 		if ((leftStatsMap.variableMask() & rightStatsMap.variableMask()) != 0L) {
 			for (int i = 0; i < leftStatsMap.size(); i++) {
@@ -4665,6 +4071,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 				sharedDistinctByLeftIndex[i] = shared.distinct;
 				sharedSketchByLeftIndex[i] = shared.sketch;
+				if (useSketches && shared.sketch == null) {
+					conditionedWithoutSketch = true;
+				}
 				rawRows = Math.min(rawRows, shared.rows);
 				hasSharedVars = true;
 			}
@@ -4690,8 +4099,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 						new VarPlanStats(clampDistinct(sharedDistinctByLeftIndex[i], outputRows),
 								sharedSketchByLeftIndex[i]));
 			} else {
-				ArrayOfDoublesSketch sketch = useSketches ? stats.sketch : null;
-				StatementPattern pattern = useSketches ? stats.pattern : null;
+				ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? stats.sketch : null;
+				StatementPattern pattern = useSketches && !conditionedWithoutSketch ? stats.pattern : null;
 				mergedStats.put(leftStatsMap.keyAt(i),
 						new VarPlanStats(clampDistinct(stats.distinct, outputRows), sketch, pattern));
 			}
@@ -4702,8 +4111,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				continue;
 			}
 			VarPlanStats stats = rightStatsMap.valueAt(i);
-			ArrayOfDoublesSketch sketch = useSketches ? stats.sketch : null;
-			StatementPattern pattern = useSketches ? stats.pattern : null;
+			ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? stats.sketch : null;
+			StatementPattern pattern = useSketches && !conditionedWithoutSketch ? stats.pattern : null;
 			mergedStats.put(key, new VarPlanStats(clampDistinct(stats.distinct, outputRows), sketch, pattern));
 		}
 		return new JoinStepEstimate(outputRows, workRows, mergedStats);
@@ -4718,47 +4127,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return estimateJoinStep(left, right, sketchIntersectionCache);
 	}
 
-	JoinStepEstimate exactJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right,
-			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
-		return estimateJoinStep(left, right, sketchIntersectionCache);
-	}
-
-	JoinStepEstimate boundLookupJoinStepForJoinOrdering(TuplePlanEstimate prefix, TuplePlanEstimate right,
-			double workRows) {
-		double outputRows = normalizeRows(prefix.outputRows);
-		Map<String, VarPlanStats> mergedStats = copyVarStats(prefix.varStats);
-		for (Map.Entry<String, VarPlanStats> entry : right.varStats.entrySet()) {
-			mergedStats.putIfAbsent(entry.getKey(),
-					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), null,
-							entry.getValue().pattern));
-		}
-		return new JoinStepEstimate(outputRows, normalizeRows(workRows), mergedStats);
-	}
-
-	JoinStepEstimate joinStepWithOutputRowsForJoinOrdering(TuplePlanEstimate prefix, TuplePlanEstimate right,
-			double outputRows, double workRows) {
-		double rows = normalizeRows(outputRows);
-		Map<String, VarPlanStats> mergedStats = newVarStatsMap();
-		for (Map.Entry<String, VarPlanStats> entry : prefix.varStats.entrySet()) {
-			VarPlanStats stats = entry.getValue();
-			mergedStats.put(entry.getKey(), new VarPlanStats(clampDistinct(stats.distinct, rows), null,
-					stats.pattern));
-		}
-		for (Map.Entry<String, VarPlanStats> entry : right.varStats.entrySet()) {
-			if (mergedStats.containsKey(entry.getKey())) {
-				continue;
-			}
-			VarPlanStats stats = entry.getValue();
-			mergedStats.put(entry.getKey(), new VarPlanStats(clampDistinct(stats.distinct, rows), null,
-					stats.pattern));
-		}
-		return new JoinStepEstimate(rows, normalizeRows(workRows), mergedStats);
-	}
-
-	JoinStepEstimate distinctCountJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
-		return estimateJoinStep(left, right, null, false);
-	}
-
 	TuplePlanEstimate joinedPlanEstimate(JoinStepEstimate step) {
 		return new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
 	}
@@ -4767,27 +4135,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double rows = Math.max(0.0d, outputRows);
 		return new TuplePlanEstimate(rows, rows, estimate.localFilterMultiplier,
 				clampVarStatsToRows(estimate.varStats, rows, true));
-	}
-
-	boolean hasSharedJoinVariable(TuplePlanEstimate left, TuplePlanEstimate right) {
-		SmallVarStatsMap leftSmall = asSmallVarStats(left.varStats);
-		SmallVarStatsMap rightSmall = asSmallVarStats(right.varStats);
-		if (leftSmall != null && leftSmall.sameDictionary(rightSmall)) {
-			return (leftSmall.variableMask() & rightSmall.variableMask()) != 0L;
-		}
-		for (String varName : left.varStats.keySet()) {
-			if (right.varStats.containsKey(varName)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
-			VarPlanStats rightStats, double disconnectedRows,
-			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
-		return estimateSharedVarJoin(leftRows, rightRows, leftStats, rightStats, disconnectedRows,
-				sketchIntersectionCache, true);
 	}
 
 	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
@@ -4876,23 +4223,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		double outputRows() {
 			return outputRows;
-		}
-
-		double baseRows() {
-			return baseRows;
-		}
-
-		double localFilterMultiplier() {
-			return localFilterMultiplier;
-		}
-
-		Set<String> joinVars() {
-			return joinVars;
-		}
-
-		double distinct(String varName) {
-			VarPlanStats stats = varStats.get(varName);
-			return stats == null ? 0.0d : stats.distinct;
 		}
 
 		String summary() {
@@ -5504,14 +4834,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return outputRows;
 		}
 
-		double workRows() {
-			return workRows;
-		}
-
-		String summary() {
-			return "outputRows=" + outputRows + ", workRows=" + workRows + ", joinVars="
-					+ summarizeVarStats(varStats);
-		}
 	}
 
 	private static Map<String, VarPlanStats> freezeVarStats(Map<String, VarPlanStats> varStats) {
@@ -6194,47 +5516,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				distinctValues.computeIfAbsent(var.getName(), ignored -> new HashSet<>()).add(value);
 			}
 		}
-	}
-
-	private Double exactBoundStatementPatternRows(StatementPattern pattern) {
-		Var subjectVar = pattern.getSubjectVar();
-		Var predicateVar = pattern.getPredicateVar();
-		Var objectVar = pattern.getObjectVar();
-		if (subjectVar == null || predicateVar == null || objectVar == null
-				|| !subjectVar.hasValue() || !predicateVar.hasValue() || !objectVar.hasValue()) {
-			return null;
-		}
-		if (!(subjectVar.getValue() instanceof Resource) || !(predicateVar.getValue() instanceof IRI)) {
-			return 0.0d;
-		}
-
-		Var contextVar = pattern.getContextVar();
-		if (contextVar != null && !contextVar.hasValue()) {
-			return null;
-		}
-		if (contextVar != null && contextVar.getValue() != null && !(contextVar.getValue() instanceof Resource)) {
-			return 0.0d;
-		}
-
-		Resource[] contexts = contextVar == null
-				? new Resource[0]
-				: new Resource[] { (Resource) contextVar.getValue() };
-		double rows = 0.0d;
-		try (SailDataset dataset = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
-				CloseableIteration<? extends Statement> statements = dataset.getStatements(
-						(Resource) subjectVar.getValue(),
-						(IRI) predicateVar.getValue(),
-						objectVar.getValue(),
-						contexts)) {
-			while (statements.hasNext()) {
-				statements.next();
-				rows++;
-			}
-		} catch (SailException e) {
-			logger.debug("Falling back from exact bound pattern lookup for {}", pattern, e);
-			return null;
-		}
-		return normalizeRows(rows);
 	}
 
 	private Double zeroIntersectionFallbackJoinRows(StatementPattern left, StatementPattern right, String sharedVarName,
@@ -8343,14 +7624,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		synchronized (bufB) {
 			bufB.clear();
 		}
-		synchronized (sketchCacheLock) {
-			residentLru.clear();
-			cacheDirectory.clearAllResidentNodes();
-			residentSketchBytes = 0L;
-		}
-		memoryRegistry.clearCategory(MemoryCategory.RESIDENT_SKETCHES);
-		memoryRegistry.clearTransientCategories();
-		refreshCacheMetadataAccounting();
 		if (!persistenceEnabled || persistenceStore == null) {
 			seenTriples = 0L;
 		}
@@ -8428,9 +7701,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return;
 		}
 		SketchEstimatorMetadata metadata = store.readMetadata();
-		if (metadata.bucketCount != nominalEntries) {
-			throw new IOException("Snapshot buckets mismatch: snapshot=" + metadata.bucketCount + " current="
-					+ nominalEntries);
+		if (metadata.subjectBucketCount != subjectBucketCount || metadata.predicateBucketCount != predicateBucketCount
+				|| metadata.objectBucketCount != objectBucketCount
+				|| metadata.contextBucketCount != contextBucketCount) {
+			throw new IOException("Snapshot buckets mismatch: snapshot S/P/O/C=" + metadata.subjectBucketCount + "/"
+					+ metadata.predicateBucketCount + "/" + metadata.objectBucketCount + "/"
+					+ metadata.contextBucketCount + " current=" + subjectBucketCount + "/" + predicateBucketCount
+					+ "/" + objectBucketCount + "/" + contextBucketCount);
+		}
+		if (metadata.contextPairSketchesEnabled != contextPairSketchesEnabled) {
+			throw new IOException("Snapshot contextPairSketchesEnabled mismatch: snapshot="
+					+ metadata.contextPairSketchesEnabled + " current=" + contextPairSketchesEnabled);
 		}
 		if (metadata.sketchNominalEntries != bufA.k) {
 			throw new IOException("Snapshot sketchK mismatch: snapshot=" + metadata.sketchNominalEntries
@@ -8438,10 +7719,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		if (!Objects.equals(metadata.defaultContext, defaultContextString)) {
 			throw new IOException("Snapshot defaultContextString mismatch");
-		}
-		if (metadata.persistedMaxMemoryBytes > memoryPolicy.maxMemoryBytes) {
-			logger.warn("Join estimator store {} was persisted with larger Xmx ({} bytes) than current Xmx ({} bytes)",
-					store.directory(), metadata.persistedMaxMemoryBytes, memoryPolicy.maxMemoryBytes);
 		}
 
 		List<SketchEstimatorPersistenceStore.IndexEntry> slotAEntries = store.readIndex((byte) 0);
@@ -8456,13 +7733,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			cacheDirectory.clear();
 			loadDirectoryIndexEntries(slotAEntries);
 			loadDirectoryIndexEntries(slotBEntries);
-			residentLru.clear();
-			cacheDirectory.clearAllResidentNodes();
-			residentSketchBytes = 0L;
 			indexDirty.set(false);
 		}
-		memoryRegistry.clearCategory(MemoryCategory.RESIDENT_SKETCHES);
-		refreshCacheMetadataAccounting();
 		slotGenerations[0] = Math.max(1L, metadata.slotGenerationA);
 		slotGenerations[1] = Math.max(1L, metadata.slotGenerationB);
 		current = metadata.activeSlot == 0 ? bufA : bufB;
@@ -8510,14 +7782,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private SketchEstimatorMetadata newDirectoryMetadata(SketchEstimatorPersistenceStore store) throws IOException {
 		byte activeSlot = slotByte(slotOf(current));
 		long approxSize = store.approximateSize();
-		return new SketchEstimatorMetadata(nominalEntries, bufA.k, defaultContextString, activeSlot, seenTriples,
-				approxSize, lastRebuildPublishMs, memoryPolicy, slotGenerations[0], slotGenerations[1]);
+		return new SketchEstimatorMetadata(subjectBucketCount, predicateBucketCount, objectBucketCount,
+				contextBucketCount, contextPairSketchesEnabled, bufA.k, defaultContextString, activeSlot, seenTriples,
+				approxSize, lastRebuildPublishMs, slotGenerations[0], slotGenerations[1]);
 	}
 
 	private void clearSlotPersistence(byte slot) {
 		synchronized (sketchCacheLock) {
 			cacheDirectory.clearPersistedRefsForSlot(slot);
 			cacheDirectory.clearDirtyForSlot(slot);
+		}
+	}
+
+	private void clearPersistedSketchDirectory() {
+		synchronized (sketchCacheLock) {
+			cacheDirectory.clear();
+
+			indexDirty.set(false);
 		}
 	}
 
@@ -8533,87 +7814,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return true;
 	}
 
-	private void refreshCacheMetadataAccounting() {
-		synchronized (sketchCacheLock) {
-			refreshCacheMetadataAccountingLocked();
-		}
-	}
-
-	private void refreshCacheMetadataAccountingLocked() {
-		int cacheVersion = cacheDirectory.heapBytesVersion();
-		int residentVersion = residentLru.heapBytesVersion();
-		if (cacheVersion == cacheDirectoryMetadataVersion && residentVersion == residentLruMetadataVersion) {
-			return;
-		}
-		long actualBytes = cacheDirectory.estimatedHeapBytes() + residentLru.estimatedHeapBytes();
-		long trackedBytes = Math.max(0L, actualBytes - baselineCacheMetadataBytes);
-		cacheDirectoryMetadataVersion = cacheVersion;
-		residentLruMetadataVersion = residentVersion;
-		memoryRegistry.replace(MemoryCategory.CACHE_METADATA, MEMORY_OWNER_CACHE_METADATA, trackedBytes);
-	}
-
-	DebugMemorySnapshot debugMemorySnapshot() {
-		return memoryRegistry.snapshot();
-	}
-
-	private void replaceTrackedMemory(MemoryCategory category, long ownerId, long bytes) {
-		memoryRegistry.replace(category, ownerId, bytes);
-	}
-
-	private void releaseTrackedMemory(MemoryCategory category, long ownerId) {
-		memoryRegistry.release(category, ownerId);
-	}
-
-	private void reserveTrackedMemory(MemoryCategory category, long ownerId, long bytes) {
-		memoryRegistry.reserve(category, ownerId, bytes);
-	}
-
-	private long trackedEstimatorBytes() {
-		return memoryRegistry.totalBytes();
-	}
-
-	private void ensureEstimatorCapacity(long predictedBytes, boolean allowUnload) {
-		long additionalBytes = Math.max(0L, predictedBytes);
-		if (hasRecoveredHeadroom(additionalBytes)) {
-			return;
-		}
-
-		while (true) {
-			int candidateEntryId;
-			byte candidateSlot;
-			synchronized (sketchCacheLock) {
-				if (residentLru.isEmpty()) {
-					break;
-				}
-				int headNode = residentLru.headNode();
-				candidateEntryId = residentLru.entryId(headNode);
-				candidateSlot = residentLru.slot(headNode);
-			}
-			EvictionResult evictionResult = evictResidentSketch(candidateEntryId, candidateSlot);
-			if (evictionResult != EvictionResult.EVICTED) {
-				break;
-			}
-			if (hasRecoveredHeadroom(additionalBytes)) {
-				return;
-			}
-		}
-
-		if (hasRecoveredHeadroom(additionalBytes)) {
-			return;
-		}
-		if (allowUnload) {
-			unloadInternal(true);
-		}
-		throw new MemoryPressureAbort("Insufficient estimator memory budget for allocation of " + additionalBytes
-				+ " bytes (tracked=" + trackedEstimatorBytes() + ", budget=" + trackedMemorySoftLimitBytes
-				+ ")");
-	}
-
-	private boolean hasRecoveredHeadroom(long additionalBytes) {
-		long trackedBytes = saturatingAdd(trackedEstimatorBytes(), additionalBytes);
-		return trackedBytes <= trackedMemorySoftLimitBytes;
-	}
-
 	private static long saturatingAdd(long left, long right) {
 		if (right <= 0L) {
 			return left;
@@ -8624,38 +7824,28 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return left + right;
 	}
 
-	private static long residentOwner(byte slot, int entryId) {
-		return (((long) slot) << 32) | (entryId & 0xffffffffL);
+	private static long saturatingMultiply(long left, long right) {
+		if (left <= 0L || right <= 0L) {
+			return 0L;
+		}
+		if (left > Long.MAX_VALUE / right) {
+			return Long.MAX_VALUE;
+		}
+		return left * right;
 	}
 
-	private static String residentOwnerLabel(long ownerId) {
-		byte slot = (byte) (ownerId >>> 32);
-		int entryId = (int) ownerId;
-		return "resident:" + (slot == 0 ? "A" : "B") + ":" + entryId;
-	}
-
-	private static long transientOwner(long ownerBase) {
-		return transientOwner(ownerBase, 0L);
-	}
-
-	private static long transientOwner(long ownerBase, long discriminator) {
-		long threadId = Thread.currentThread().getId() & 0xffffL;
-		return (threadId << 48) | ((discriminator & 0xffffffffL) << 16) | (ownerBase & 0xffffL);
-	}
-
-	private static String transientOwnerLabel(long ownerId) {
-		long threadId = (ownerId >>> 48) & 0xffffL;
-		long discriminator = (ownerId >>> 16) & 0xffffffffL;
-		long ownerBase = (short) ownerId;
-		return "transient:" + ownerBase + ":" + discriminator + ":thread-" + threadId;
+	private static long ceilDiv(long dividend, long divisor) {
+		if (divisor <= 0L) {
+			return Long.MAX_VALUE;
+		}
+		if (dividend <= 0L) {
+			return 0L;
+		}
+		return 1L + (dividend - 1L) / divisor;
 	}
 
 	private static long estimateByteArrayBytes(int length) {
 		return align(ARRAY_HEADER_BYTES + Math.max(0L, length) * BYTE_BYTES);
-	}
-
-	private static long estimateBooleanArrayBytes(int length) {
-		return align(ARRAY_HEADER_BYTES + Math.max(0L, length) * BOOLEAN_BYTES);
 	}
 
 	private static long estimateIntArrayBytes(int length) {
@@ -8691,10 +7881,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new SketchAddress(REC_SINGLE_TRIPLE, isDelete, (byte) component.ordinal(), (byte) 0, idx, 0);
 	}
 
-	private static SketchAddress globalComponentAddress(Component component) {
-		return new SketchAddress(REC_GLOBAL_COMPONENT, false, (byte) component.ordinal(), (byte) 0, 0, 0);
-	}
-
 	private static SketchAddress singleComplementAddress(boolean isDelete, Component fixed, Component other, int idx) {
 		return new SketchAddress(REC_SINGLE_CPL, isDelete, (byte) fixed.ordinal(), (byte) other.ordinal(), idx, 0);
 	}
@@ -8714,21 +7900,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return loadPersistedSketch(state, address);
 	}
 
-	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, SketchAddress address) {
-		return getSketchForWrite(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
-				address.y, -1);
-	}
-
-	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, SketchAddress address, int entryId) {
-		return getSketchForWrite(state, address, entryId, true);
-	}
-
-	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, SketchAddress address, int entryId,
-			boolean enforceLoadBudget) {
-		return getSketchForWrite(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
-				address.y, entryId, enforceLoadBudget);
-	}
-
 	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
 			byte axisB, int x,
 			int y, int entryId) {
@@ -8746,15 +7917,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (sketch != null) {
 				setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
 			}
-			if (sketch == null) {
-				sketch = allocatePersistentSketchForWrite(state, address, entryId);
-				if (sketch != null) {
-					setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
-				}
-			}
 		}
 		if (sketch == null) {
-			ensureEstimatorCapacity(256L, true);
 			sketch = newSk(state.k);
 			setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
 		}
@@ -8791,49 +7955,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return loadPersistedSketch(state, address, entryId, enforceBudget);
 	}
 
-	private ArrayOfDoublesUpdatableSketch allocatePersistentSketchForWrite(State state, SketchAddress address,
-			int knownEntryId) {
-		if (!persistenceEnabled) {
-			return null;
-		}
-		SketchEstimatorPersistenceStore store = persistenceStore;
-		if (store == null) {
-			return null;
-		}
-		int entryId = knownEntryId;
-		if (entryId < 0) {
-			synchronized (sketchCacheLock) {
-				entryId = cacheDirectory.findOrAdd(address);
-			}
-		}
-		byte slot = slotByte(slotOf(state));
-		synchronized (persistLock) {
-			store = persistenceStore;
-			if (store == null) {
-				return null;
-			}
-			try {
-				SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
-						fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, state.maxSketchBytes,
-						slotGenerations[slot]);
-				ArrayOfDoublesUpdatableSketch sketch = newSk(state.k, allocation.payload);
-				synchronized (sketchCacheLock) {
-					cacheDirectory.setPersistedRef(entryId, slot, allocation.ref.fileKind, allocation.ref.offset,
-							allocation.ref.length, allocation.ref.generation);
-					indexDirty.set(true);
-				}
-				return sketch;
-			} catch (IOException e) {
-				logger.warn("Failed to allocate persisted sketch {}; falling back to heap sketch", address, e);
-				return null;
-			}
-		}
-	}
-
-	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address, int entryId) {
-		return loadPersistedSketch(state, address, entryId, true);
-	}
-
 	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address, int entryId,
 			boolean enforceBudget) {
 		try {
@@ -8851,7 +7972,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				if (store == null) {
 					return null;
 				}
-				loaded = readSketchFromStore(store, persistedSketchRef, slot);
+				loaded = readSketchFromStore(state, store, persistedSketchRef, address, slot);
 			}
 			putResidentSketch(state, address, loaded, enforceBudget);
 			return loaded;
@@ -8861,54 +7982,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch) {
-		putResidentSketch(state, address, sketch, true);
-	}
-
 	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch,
 			boolean enforceBudget) {
 		setResidentSketch(state, address, sketch);
-		if (sketch == null) {
-			removeResidentSketchTracking(state, address);
-		} else {
-			touchResidentSketch(state, address, sketch, enforceBudget);
-		}
 	}
 
 	private void touchResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch,
 			boolean enforceBudget) {
-		int entryId;
-		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.findOrAdd(address);
-		}
-		touchResidentSketch(state, entryId, sketch, enforceBudget);
 	}
 
 	private void touchResidentSketch(State state, int entryId, ArrayOfDoublesUpdatableSketch sketch,
 			boolean enforceBudget) {
-		byte slot = slotByte(slotOf(state));
-		long bytes = estimatedSketchBytes(sketch);
-		boolean residentBytesChanged = true;
-		synchronized (sketchCacheLock) {
-			int nodeId = cacheDirectory.residentNode(entryId, slot);
-			if (nodeId == -1) {
-				int createdNodeId = residentLru.add(entryId, slot, bytes);
-				cacheDirectory.setResidentNode(entryId, slot, createdNodeId);
-				residentSketchBytes += bytes;
-				refreshCacheMetadataAccountingLocked();
-			} else {
-				long previousBytes = residentLru.bytes(nodeId);
-				residentLru.touch(nodeId, bytes);
-				residentSketchBytes += (bytes - previousBytes);
-				residentBytesChanged = bytes != previousBytes;
-			}
-		}
-		if (residentBytesChanged) {
-			replaceTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId), bytes);
-		}
-		if (enforceBudget) {
-			enforceSketchBudget();
-		}
 	}
 
 	private long initialSingletonSketchBytesHint(State state, ArrayOfDoublesUpdatableSketch sketch, int valueCount) {
@@ -8920,71 +8004,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void markDirtyAndTouchResidentSketch(byte slot, int entryId, ArrayOfDoublesUpdatableSketch sketch,
 			long knownBytes) {
-		boolean hasInitialSingletonBytes = knownBytes >= 0L;
-		long bytes = hasInitialSingletonBytes ? knownBytes : estimatedSketchBytes(sketch);
-		boolean residentBytesChanged = true;
 		synchronized (sketchCacheLock) {
 			cacheDirectory.markDirty(entryId, slot);
 			dirty.set(true);
-			int nodeId = cacheDirectory.residentNode(entryId, slot);
-			if (nodeId == -1) {
-				if (hasInitialSingletonBytes && cacheDirectory.persistedRef(entryId, slot) != null) {
-					bytes = estimatedSketchBytes(sketch);
-				}
-				int createdNodeId = residentLru.add(entryId, slot, bytes);
-				cacheDirectory.setResidentNode(entryId, slot, createdNodeId);
-				residentSketchBytes += bytes;
-				refreshCacheMetadataAccountingLocked();
-			} else {
-				if (hasInitialSingletonBytes) {
-					bytes = estimatedSketchBytes(sketch);
-				}
-				long previousBytes = residentLru.bytes(nodeId);
-				residentLru.touch(nodeId, bytes);
-				residentSketchBytes += (bytes - previousBytes);
-				residentBytesChanged = bytes != previousBytes;
-			}
-		}
-		if (residentBytesChanged) {
-			replaceTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId), bytes);
 		}
 	}
 
-	private void removeResidentSketchTracking(State state, SketchAddress address) {
+	private void markRebuiltSketchesDirty(State state) {
 		byte slot = slotByte(slotOf(state));
-		int entryId;
-		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.find(address);
-			if (entryId < 0) {
-				return;
-			}
-			removeResidentSketchTracking(entryId, slot);
-		}
-		refreshCacheMetadataAccounting();
-	}
-
-	private void clearResidentTrackingForSlot(BufferSlot slot) {
-		byte targetSlot = slotByte(slot);
-		synchronized (sketchCacheLock) {
-			for (int node = residentLru.headNode(); node != -1;) {
-				int nextNode = residentLru.nextNode(node);
-				if (residentLru.slot(node) == targetSlot) {
-					int entryId = residentLru.entryId(node);
-					residentSketchBytes -= residentLru.remove(node);
-					cacheDirectory.setResidentNode(entryId, targetSlot, -1);
-					releaseTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(targetSlot, entryId));
-				}
-				node = nextNode;
-			}
-			cacheDirectory.clearResidentNodesForSlot(targetSlot);
-		}
-		refreshCacheMetadataAccounting();
-	}
-
-	private void rebuildResidentTrackingForSlot(State state) {
-		BufferSlot bufferSlot = slotOf(state);
-		byte slot = slotByte(bufferSlot);
-		clearResidentTrackingForSlot(bufferSlot);
 		synchronized (sketchCacheLock) {
 			cacheDirectory.clearDirtyForSlot(slot);
 		}
@@ -8999,7 +8026,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		trackRebuiltPairs(slot, state.pairs, false);
 
 		dirty.set(true);
-		refreshCacheMetadataAccounting();
 	}
 
 	private void trackRebuiltSingles(byte slot, StateComponents<SingleBuild> singles, boolean isDelete) {
@@ -9018,6 +8044,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int deleteMask = isDelete ? DELETE_KEY_PREFIX_MASK : 0;
 		for (Pair pair : PAIR_VALUES) {
 			PairBuild build = pairs.get(pair);
+			if (build == null) {
+				continue;
+			}
 			int pairIndex = pair.ordinal();
 			int triplePrefix = PAIR_TRIPLE_KEY_PREFIXES[pairIndex] | deleteMask;
 			int comp1Prefix = PAIR_COMP1_KEY_PREFIXES[pairIndex] | deleteMask;
@@ -9050,34 +8079,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (sketch == null) {
 			return;
 		}
-		long bytes = estimatedSketchBytes(sketch);
 		int keyHash = mixAddressHash(keyPrefix, x, y);
-		int entryId;
 		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.findOrAdd(keyPrefix, keyHash, x, y);
+			int entryId = cacheDirectory.findOrAdd(keyPrefix, keyHash, x, y);
 			cacheDirectory.markDirty(entryId, slot);
-			int nodeId = cacheDirectory.residentNode(entryId, slot);
-			if (nodeId == -1) {
-				int createdNodeId = residentLru.add(entryId, slot, bytes);
-				cacheDirectory.setResidentNode(entryId, slot, createdNodeId);
-				residentSketchBytes += bytes;
-			} else {
-				long previousBytes = residentLru.bytes(nodeId);
-				residentLru.touch(nodeId, bytes);
-				residentSketchBytes += bytes - previousBytes;
-			}
 		}
-		replaceTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId), bytes);
-	}
-
-	private void removeResidentSketchTracking(int entryId, byte slot) {
-		int nodeId = cacheDirectory.residentNode(entryId, slot);
-		if (nodeId == -1) {
-			return;
-		}
-		residentSketchBytes -= residentLru.remove(nodeId);
-		cacheDirectory.setResidentNode(entryId, slot, -1);
-		releaseTrackedMemory(MemoryCategory.RESIDENT_SKETCHES, residentOwner(slot, entryId));
 	}
 
 	private void markDirty(State state, int entryId) {
@@ -9088,147 +8094,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		dirty.set(true);
 	}
 
-	private boolean isDirty(int entryId, byte slot) {
-		synchronized (sketchCacheLock) {
-			return cacheDirectory.isDirty(entryId, slot);
-		}
-	}
-
 	private boolean refreshDirtyFlagFromCacheDirectory() {
 		synchronized (sketchCacheLock) {
 			boolean hasDirtyEntries = cacheDirectory.hasDirtyEntries((byte) 0)
 					|| cacheDirectory.hasDirtyEntries((byte) 1);
 			dirty.set(hasDirtyEntries);
 			return hasDirtyEntries;
-		}
-	}
-
-	private void enforceSketchBudget() {
-		long targetBytes;
-		synchronized (sketchCacheLock) {
-			if (residentSketchBytes <= maxSketchMemoryBytes || residentLru.isEmpty()) {
-				return;
-			}
-			targetBytes = minSketchMemoryBytes;
-		}
-
-		while (true) {
-			int candidateEntryId;
-			byte candidateSlot;
-			synchronized (sketchCacheLock) {
-				if (residentSketchBytes <= targetBytes || residentLru.isEmpty()) {
-					return;
-				}
-				int headNode = residentLru.headNode();
-				candidateEntryId = residentLru.entryId(headNode);
-				candidateSlot = residentLru.slot(headNode);
-			}
-
-			EvictionResult evictionResult = evictResidentSketch(candidateEntryId, candidateSlot);
-			if (evictionResult == EvictionResult.NEEDS_UNLOAD) {
-				unloadInternal(true);
-				return;
-			}
-			if (evictionResult == EvictionResult.FAILED) {
-				return;
-			}
-		}
-
-	}
-
-	private int evictResidentSketchBatch(int batchSize) {
-		int evicted = 0;
-		for (int i = 0; i < batchSize; i++) {
-			int candidateEntryId;
-			byte candidateSlot;
-			synchronized (sketchCacheLock) {
-				if (residentLru.isEmpty()) {
-					return evicted;
-				}
-				int headNode = residentLru.headNode();
-				candidateEntryId = residentLru.entryId(headNode);
-				candidateSlot = residentLru.slot(headNode);
-			}
-			EvictionResult result = evictResidentSketch(candidateEntryId, candidateSlot);
-			if (result == EvictionResult.NEEDS_UNLOAD) {
-				unloadInternal(true);
-				return evicted;
-			}
-			if (result == EvictionResult.FAILED) {
-				return evicted;
-			}
-			evicted++;
-		}
-		return evicted;
-	}
-
-	private int activeLoadedBucketCount() {
-		return residentLruCount();
-	}
-
-	private int residentLruCount() {
-		synchronized (sketchCacheLock) {
-			int count = 0;
-			for (int node = residentLru.headNode(); node != -1; node = residentLru.nextNode(node)) {
-				count++;
-			}
-			return count;
-		}
-	}
-
-	private EvictionResult evictResidentSketch(int entryId, byte slotByte) {
-		BufferSlot slot = slotByte == 0 ? BufferSlot.A : BufferSlot.B;
-		State state = stateOf(slot);
-		SketchAddress sketchAddress;
-		synchronized (sketchCacheLock) {
-			if (entryId < 0 || entryId >= cacheDirectory.size()) {
-				return EvictionResult.EVICTED;
-			}
-			sketchAddress = cacheDirectory.toSketchAddress(entryId);
-		}
-		ArrayOfDoublesUpdatableSketch sketch;
-		boolean dirtySketch;
-		synchronized (state) {
-			sketch = getResidentSketch(state, sketchAddress);
-			if (sketch == null) {
-				synchronized (sketchCacheLock) {
-					removeResidentSketchTracking(entryId, slotByte);
-				}
-				refreshCacheMetadataAccounting();
-				return EvictionResult.EVICTED;
-			}
-			dirtySketch = isDirty(entryId, slotByte);
-			if (dirtySketch && persistenceStore == null) {
-				return EvictionResult.NEEDS_UNLOAD;
-			}
-			setResidentSketch(state, sketchAddress, null);
-			synchronized (sketchCacheLock) {
-				removeResidentSketchTracking(entryId, slotByte);
-			}
-		}
-		refreshCacheMetadataAccounting();
-		boolean mappedSketch = sketch.hasMemorySegment();
-		if (!dirtySketch) {
-			return EvictionResult.EVICTED;
-		}
-		if (mappedSketch) {
-			clearDirtyMappedSketch(entryId, slotByte);
-			return EvictionResult.EVICTED;
-		}
-		synchronized (persistLock) {
-			try {
-				appendSketchPayload(state, entryId, sketchAddress, sketch);
-				return EvictionResult.EVICTED;
-			} catch (IOException e) {
-				logger.warn("Failed to persist dirty sketch during eviction", e);
-				synchronized (state) {
-					if (getResidentSketch(state, sketchAddress) == null) {
-						setResidentSketch(state, sketchAddress, sketch);
-						touchResidentSketch(state, sketchAddress, sketch, false);
-					}
-				}
-				return EvictionResult.FAILED;
-			}
 		}
 	}
 
@@ -9264,6 +8135,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		case REC_PAIR_COMP2: {
 			Pair pair = PAIR_VALUES[axisA];
 			PairBuild build = isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
+			if (build == null) {
+				return null;
+			}
 			PairBuild.Row row = build.rows.get(x);
 			if (row == null) {
 				return null;
@@ -9317,6 +8191,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		case REC_PAIR_COMP2: {
 			Pair pair = PAIR_VALUES[axisA];
 			PairBuild build = isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
+			if (build == null) {
+				return;
+			}
 			PairBuild.Row row = build.getOrCreateRow(x);
 			Map<Integer, ArrayOfDoublesUpdatableSketch> target;
 			if (recType == REC_PAIR_TRIPLE) {
@@ -9376,51 +8253,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				clearDirtyMappedSketch(entryId, currentSlot);
 				return true;
 			}
-			TrackedByteArray payload = serializeTrackedNativeSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
-					transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch);
-			try {
-				synchronized (persistLock) {
-					appendNativeSketchPayload(state, entryId, address, payload.bytes);
-				}
-			} finally {
-				releaseTrackedBuffer(payload);
+			byte[] payload = serializeNativeSketchPayload(sketch);
+			synchronized (persistLock) {
+				appendNativeSketchPayload(state, entryId, address, payload);
 			}
 			return true;
-		}
-	}
-
-	private void appendSketchPayload(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch)
-			throws IOException {
-		int entryId;
-		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.findOrAdd(address);
-		}
-		if (sketch.hasMemorySegment()) {
-			clearDirtyMappedSketch(entryId, slotByte(slotOf(state)));
-			return;
-		}
-		TrackedByteArray payload = serializeTrackedNativeSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
-				transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch);
-		try {
-			appendNativeSketchPayload(state, entryId, address, payload.bytes);
-		} finally {
-			releaseTrackedBuffer(payload);
-		}
-	}
-
-	private void appendSketchPayload(State state, int entryId, SketchAddress address,
-			ArrayOfDoublesUpdatableSketch sketch)
-			throws IOException {
-		if (sketch.hasMemorySegment()) {
-			clearDirtyMappedSketch(entryId, slotByte(slotOf(state)));
-			return;
-		}
-		TrackedByteArray payload = serializeTrackedNativeSketchPayload(MemoryCategory.SERIALIZATION_BUFFERS,
-				transientOwner(MEMORY_OWNER_SERIALIZATION_BUFFER, entryId), sketch, false);
-		try {
-			appendNativeSketchPayload(state, entryId, address, payload.bytes);
-		} finally {
-			releaseTrackedBuffer(payload);
 		}
 	}
 
@@ -9429,8 +8266,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		SketchEstimatorPersistenceStore store = persistenceStore;
 		if (store != null) {
 			byte slot = slotByte(slotOf(state));
-			SketchEstimatorPersistenceStore.Ref persistedRef = store.appendFramedPayload(slot, fileKindFor(address),
-					SKETCH_PAYLOAD_FORMAT_NATIVE, payload, slotGenerations[slot]);
+			int slotBytes = shouldPersistCompactly(address) ? payload.length : state.maxSketchBytes;
+			if (payload.length > slotBytes) {
+				throw new IOException("Serialized sketch exceeds mapped slot: payload=" + payload.length + " slot="
+						+ slotBytes);
+			}
+			SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
+					fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, slotBytes, slotGenerations[slot]);
+			if (payload.length > 0) {
+				MemorySegment.copy(MemorySegment.ofArray(payload), 0L, allocation.payload, 0L, payload.length);
+			}
+			SketchEstimatorPersistenceStore.Ref persistedRef = allocation.ref;
 			synchronized (sketchCacheLock) {
 				cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind, persistedRef.offset,
 						persistedRef.length, persistedRef.generation);
@@ -9464,57 +8310,107 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private TrackedByteArray serializeTrackedNativeSketchPayload(MemoryCategory category, long ownerId,
-			ArrayOfDoublesUpdatableSketch sketch)
-			throws IOException {
-		return serializeTrackedNativeSketchPayload(category, ownerId, sketch, true);
-	}
-
-	private TrackedByteArray serializeTrackedNativeSketchPayload(MemoryCategory category, long ownerId,
-			ArrayOfDoublesUpdatableSketch sketch,
-			boolean enforceCapacity)
-			throws IOException {
-		long predictedBytes = estimateByteArrayBytes(Math.max(128, sketch.getCurrentBytes()));
-		if (enforceCapacity) {
-			ensureEstimatorCapacity(predictedBytes, true);
-		}
-		reserveTrackedMemory(category, ownerId, predictedBytes);
+	private byte[] serializeNativeSketchPayload(ArrayOfDoublesUpdatableSketch sketch) throws IOException {
 		try {
-			byte[] payload = TupleSketchOps.toByteArray(sketch);
-			replaceTrackedMemory(category, ownerId, estimateByteArrayBytes(payload.length));
-			return new TrackedByteArray(payload, category, ownerId);
+			return TupleSketchOps.toByteArray(sketch);
 		} catch (RuntimeException e) {
-			releaseTrackedMemory(category, ownerId);
-			throw e;
+			throw new IOException("Failed to serialize sketch payload", e);
 		}
 	}
 
-	private ArrayOfDoublesUpdatableSketch readSketchFromStore(SketchEstimatorPersistenceStore store,
-			PersistedSketchRef persistedSketchRef, byte slot) throws IOException {
+	private ArrayOfDoublesUpdatableSketch readSketchFromStore(State state, SketchEstimatorPersistenceStore store,
+			PersistedSketchRef persistedSketchRef, SketchAddress address, byte slot) throws IOException {
 		SketchEstimatorPersistenceStore.Ref storeRef = persistedSketchRef.storeRef(slot);
-		try {
-			return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::wrapUpdatable);
-		} catch (RuntimeException e) {
+		if (shouldPersistCompactly(address)
+				&& storeRef.length < state.maxSketchBytes + SKETCH_PAYLOAD_FRAME_HEADER_BYTES) {
 			return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::heapify);
 		}
+		return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::wrapUpdatable);
 	}
 
-	private void releaseTrackedBuffer(TrackedByteArray trackedByteArray) {
-		if (trackedByteArray != null) {
-			releaseTrackedMemory(trackedByteArray.category, trackedByteArray.ownerId);
-		}
+	private static boolean shouldPersistCompactly(SketchAddress address) {
+		return fileKindFor(address) == SketchEstimatorPersistenceStore.FILE_KIND_PAIRS;
 	}
 
 	List<DebugSketchAddress> debugResidentSketches() {
 		List<DebugSketchAddress> resident = new ArrayList<>();
-		synchronized (sketchCacheLock) {
-			for (int node = residentLru.headNode(); node != -1; node = residentLru.nextNode(node)) {
-				int entryId = residentLru.entryId(node);
-				BufferSlot slot = residentLru.slot(node) == 0 ? BufferSlot.A : BufferSlot.B;
-				resident.add(new DebugSketchAddress(slot, cacheDirectory.toSketchAddress(entryId)));
-			}
+		synchronized (bufA) {
+			collectResidentSketches(resident, BufferSlot.A, bufA);
+		}
+		synchronized (bufB) {
+			collectResidentSketches(resident, BufferSlot.B, bufB);
 		}
 		return resident;
+	}
+
+	private void collectResidentSketches(List<DebugSketchAddress> resident, BufferSlot slot, State state) {
+		for (Component component : COMPONENT_VALUES) {
+			collectResidentArray(resident, slot, state.globalComponents.get(component),
+					new SketchAddress(REC_GLOBAL_COMPONENT, false, (byte) component.ordinal(), (byte) 0, 0, 0));
+			collectResidentArray(resident, slot, state.singleTriples.get(component), component, false);
+			collectResidentArray(resident, slot, state.delSingleTriples.get(component), component, true);
+		}
+		collectResidentSingles(resident, slot, state.singles, false);
+		collectResidentSingles(resident, slot, state.delSingles, true);
+		collectResidentPairs(resident, slot, state.pairs, false);
+		collectResidentPairs(resident, slot, state.delPairs, true);
+	}
+
+	private void collectResidentArray(List<DebugSketchAddress> resident, BufferSlot slot,
+			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches, SketchAddress address) {
+		if (sketches.get(0) != null) {
+			resident.add(new DebugSketchAddress(slot, address));
+		}
+	}
+
+	private void collectResidentArray(List<DebugSketchAddress> resident, BufferSlot slot,
+			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches, Component component, boolean isDelete) {
+		for (int i = 0; i < sketches.length(); i++) {
+			if (sketches.get(i) != null) {
+				resident.add(new DebugSketchAddress(slot, singleTripleAddress(isDelete, component, i)));
+			}
+		}
+	}
+
+	private void collectResidentSingles(List<DebugSketchAddress> resident, BufferSlot slot,
+			StateComponents<SingleBuild> singles, boolean isDelete) {
+		for (Component fixed : COMPONENT_VALUES) {
+			SingleBuild build = singles.get(fixed);
+			for (Map.Entry<Component, AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> entry : build.cmpl
+					.entrySet()) {
+				Component other = entry.getKey();
+				AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches = entry.getValue();
+				for (int i = 0; i < sketches.length(); i++) {
+					if (sketches.get(i) != null) {
+						resident.add(new DebugSketchAddress(slot, singleComplementAddress(isDelete, fixed, other, i)));
+					}
+				}
+			}
+		}
+	}
+
+	private void collectResidentPairs(List<DebugSketchAddress> resident, BufferSlot slot,
+			EnumMap<Pair, PairBuild> pairs,
+			boolean isDelete) {
+		for (Map.Entry<Pair, PairBuild> pairEntry : pairs.entrySet()) {
+			Pair pair = pairEntry.getKey();
+			for (Map.Entry<Integer, PairBuild.Row> rowEntry : pairEntry.getValue().rows.entrySet()) {
+				int x = rowEntry.getKey();
+				PairBuild.Row row = rowEntry.getValue();
+				collectResidentPairMap(resident, slot, pair, REC_PAIR_TRIPLE, isDelete, x, row.triples);
+				collectResidentPairMap(resident, slot, pair, REC_PAIR_COMP1, isDelete, x, row.comp1);
+				collectResidentPairMap(resident, slot, pair, REC_PAIR_COMP2, isDelete, x, row.comp2);
+			}
+		}
+	}
+
+	private void collectResidentPairMap(List<DebugSketchAddress> resident, BufferSlot slot, Pair pair, byte recType,
+			boolean isDelete, int x, Map<Integer, ArrayOfDoublesUpdatableSketch> sketches) {
+		for (Map.Entry<Integer, ArrayOfDoublesUpdatableSketch> entry : sketches.entrySet()) {
+			if (entry.getValue() != null) {
+				resident.add(new DebugSketchAddress(slot, pairAddress(recType, isDelete, pair, x, entry.getKey())));
+			}
+		}
 	}
 
 	List<DebugSketchAddress> debugPersistedSketches() {
@@ -9693,6 +8589,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		// capacity & layout
 		int nominalEntries = DEFAULT_BUCKET_COUNT;
 		boolean bucketCountExplicit;
+		int subjectBucketCount = DEFAULT_BUCKET_COUNT;
+		int predicateBucketCount = DEFAULT_BUCKET_COUNT;
+		int objectBucketCount = DEFAULT_BUCKET_COUNT;
+		int contextBucketCount = DEFAULT_BUCKET_COUNT;
+		boolean subjectBucketCountExplicit;
+		boolean predicateBucketCountExplicit;
+		boolean objectBucketCountExplicit;
+		boolean contextBucketCountExplicit;
 		boolean doubleArrayBuckets = false;
 		int sketchK = DEFAULT_SKETCH_NOMINAL_ENTRIES; // <= 0 -> use DataSketches default unless multiplier is set
 		boolean sketchNominalEntriesExplicit;
@@ -9713,21 +8617,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		// semantics
 		String defaultContextString = "urn:default-context";
 		boolean roundJoinEstimates = true;
+		boolean contextPairSketchesEnabled = true;
 
 		int churnSampleMin = 128;
 		int churnSampleMax = 4096;
 		double churnSamplePercent = 0.01;
 		double churnReaddThreshold = 0.20;
 		double churnRemovalRatioThreshold = 0.50;
-		double estimatorMemoryBudgetPercent = 0.50;
-		double residentSketchMemoryTargetPercent = 0.25;
-		double residentSketchMemoryCeilingPercent = 0.30;
-		double highMemoryPressurePercent = 0.80;
-		double loadedBucketFloorPercent = 0.05;
-		long memoryMonitorIntervalMillis = 500L;
-		int memoryPressureUnloadBatchSize = 1024;
-		double minSketchMemoryPercent = residentSketchMemoryTargetPercent;
-		double maxSketchMemoryPercent = residentSketchMemoryCeilingPercent;
 
 		/** Return a new config with all defaults. */
 		public static Config defaults() {
@@ -9738,12 +8634,57 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		public Config withNominalEntries(int n) {
 			this.nominalEntries = Math.max(4, n);
 			this.bucketCountExplicit = true;
+			if (!subjectBucketCountExplicit) {
+				this.subjectBucketCount = this.nominalEntries;
+			}
+			if (!predicateBucketCountExplicit) {
+				this.predicateBucketCount = this.nominalEntries;
+			}
+			if (!objectBucketCountExplicit) {
+				this.objectBucketCount = this.nominalEntries;
+			}
+			if (!contextBucketCountExplicit) {
+				this.contextBucketCount = this.nominalEntries;
+			}
 			return this;
 		}
 
-		/** Base array bucket count (must be ≥ 4). */
+		/** Backward-compatible alias for {@link #withNominalEntries(int)}. */
 		public Config withBucketCount(int n) {
 			return withNominalEntries(n);
+		}
+
+		public Config withSubjectBucketCount(int n) {
+			this.subjectBucketCount = Math.max(4, n);
+			this.subjectBucketCountExplicit = true;
+			return this;
+		}
+
+		public Config withPredicateBucketCount(int n) {
+			this.predicateBucketCount = Math.max(4, n);
+			this.predicateBucketCountExplicit = true;
+			return this;
+		}
+
+		public Config withObjectBucketCount(int n) {
+			this.objectBucketCount = Math.max(4, n);
+			this.objectBucketCountExplicit = true;
+			return this;
+		}
+
+		public Config withContextBucketCount(int n) {
+			this.contextBucketCount = Math.max(4, n);
+			this.contextBucketCountExplicit = true;
+			return this;
+		}
+
+		public Config withContextPairSketchesEnabled(boolean enabled) {
+			this.contextPairSketchesEnabled = enabled;
+			return this;
+		}
+
+		public Config withoutContextPairSketches() {
+			return withContextPairSketchesEnabled(false);
 		}
 
 		/** Disable default bucket doubling for array indexes. */
@@ -9866,73 +8807,5 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return this;
 		}
 
-		/** Minimum heap fraction reserved as eviction floor for resident sketches (0..1). */
-		public Config withMinSketchMemoryPercent(double fraction) {
-			double normalized = Double.isFinite(fraction) ? fraction : 0.0d;
-			this.minSketchMemoryPercent = SketchBasedJoinEstimator.clamp(normalized, 0.0d, 1.0d);
-			this.residentSketchMemoryTargetPercent = this.minSketchMemoryPercent;
-			if (this.maxSketchMemoryPercent < this.minSketchMemoryPercent) {
-				this.maxSketchMemoryPercent = this.minSketchMemoryPercent;
-			}
-			if (this.residentSketchMemoryCeilingPercent < this.residentSketchMemoryTargetPercent) {
-				this.residentSketchMemoryCeilingPercent = this.residentSketchMemoryTargetPercent;
-			}
-			return this;
-		}
-
-		/** Maximum heap fraction used as resident sketch eviction ceiling (0..1, and >= min). */
-		public Config withMaxSketchMemoryPercent(double fraction) {
-			double normalized = Double.isFinite(fraction) ? fraction : this.maxSketchMemoryPercent;
-			this.maxSketchMemoryPercent = SketchBasedJoinEstimator.clamp(normalized, this.minSketchMemoryPercent, 1.0d);
-			this.residentSketchMemoryCeilingPercent = this.maxSketchMemoryPercent;
-			return this;
-		}
-
-		public Config withEstimatorMemoryBudgetPercent(double fraction) {
-			this.estimatorMemoryBudgetPercent = SketchBasedJoinEstimator.clamp(
-					Double.isFinite(fraction) ? fraction : this.estimatorMemoryBudgetPercent, 0.0d, 1.0d);
-			return this;
-		}
-
-		public Config withResidentSketchMemoryTargetPercent(double fraction) {
-			this.residentSketchMemoryTargetPercent = SketchBasedJoinEstimator.clamp(
-					Double.isFinite(fraction) ? fraction : this.residentSketchMemoryTargetPercent, 0.0d, 1.0d);
-			this.minSketchMemoryPercent = this.residentSketchMemoryTargetPercent;
-			if (this.residentSketchMemoryCeilingPercent < this.residentSketchMemoryTargetPercent) {
-				this.residentSketchMemoryCeilingPercent = this.residentSketchMemoryTargetPercent;
-				this.maxSketchMemoryPercent = this.residentSketchMemoryCeilingPercent;
-			}
-			return this;
-		}
-
-		public Config withResidentSketchMemoryCeilingPercent(double fraction) {
-			this.residentSketchMemoryCeilingPercent = SketchBasedJoinEstimator.clamp(
-					Double.isFinite(fraction) ? fraction : this.residentSketchMemoryCeilingPercent,
-					this.residentSketchMemoryTargetPercent, 1.0d);
-			this.maxSketchMemoryPercent = this.residentSketchMemoryCeilingPercent;
-			return this;
-		}
-
-		public Config withHighMemoryPressurePercent(double fraction) {
-			this.highMemoryPressurePercent = SketchBasedJoinEstimator.clamp(
-					Double.isFinite(fraction) ? fraction : this.highMemoryPressurePercent, 0.0d, 1.0d);
-			return this;
-		}
-
-		public Config withLoadedBucketFloorPercent(double fraction) {
-			this.loadedBucketFloorPercent = SketchBasedJoinEstimator.clamp(
-					Double.isFinite(fraction) ? fraction : this.loadedBucketFloorPercent, 0.0d, 1.0d);
-			return this;
-		}
-
-		public Config withMemoryMonitorIntervalMillis(long millis) {
-			this.memoryMonitorIntervalMillis = Math.max(1L, millis);
-			return this;
-		}
-
-		public Config withMemoryPressureUnloadBatchSize(int batchSize) {
-			this.memoryPressureUnloadBatchSize = Math.max(1, batchSize);
-			return this;
-		}
 	}
 }

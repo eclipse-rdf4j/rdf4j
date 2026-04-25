@@ -43,6 +43,10 @@ class LmdbThemeQueryRegressionTest {
 
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+	private static final String PERSISTENT_STORE_KEY_PREFIX = "theme-query-regression";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached theme stores under persistent-lmdb-theme-store.";
 
 	private static final Map<Theme, List<Integer>> HIGH_VALUE_QUERY_INDEXES = Map.of(
 			Theme.SOCIAL_MEDIA, List.of(0, 1, 2, 3, 4, 6, 8, 9, 10),
@@ -139,12 +143,13 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				for (int queryIndex : HIGH_VALUE_QUERY_INDEXES.get(theme)) {
-					OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
-					assertPlannerDiagnosticsPresent(theme, queryIndex, snapshot.plan());
-					assertContainsAny(snapshot.plan(), "plannedAccessRows", "optimizer.decisionTrace",
-							"plannedFilterEvidenceCount");
-					assertReportedSocialCliqueUsesRobustPlanner(theme, queryIndex, snapshot.plan());
-					assertHighValueAnchors(theme, queryIndex, snapshot.renderedQuery());
+					assertQueryRegressionPasses(repository, theme, queryIndex, snapshot -> {
+						assertPlannerDiagnosticsPresent(theme, queryIndex, snapshot.plan());
+						assertContainsAny(snapshot.plan(), "plannedAccessRows", "optimizer.decisionTrace",
+								"plannedFilterEvidenceCount");
+						assertReportedSocialCliqueUsesRobustPlanner(theme, queryIndex, snapshot.plan());
+						assertHighValueAnchors(theme, queryIndex, snapshot.renderedQuery());
+					});
 					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
 				}
 				assertCountRegressionQueries(repository, theme);
@@ -165,11 +170,12 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
-				assertContains(snapshot.plan(), "plannerPath=ROBUST_USED");
-				assertBefore(snapshot.renderedQuery(), "VALUES (?u1 ?u2)", "VALUES ?u3",
-						"Composite VALUES should unlock pair filters before the unary VALUES expansion");
-				assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d);
+				assertQueryRegressionPasses(repository, theme, 1, snapshot -> {
+					assertContains(snapshot.plan(), "plannerPath=ROBUST_USED");
+					assertBefore(snapshot.renderedQuery(), "VALUES (?u1 ?u2)", "VALUES ?u3",
+							"Composite VALUES should unlock pair filters before the unary VALUES expansion");
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d);
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -186,12 +192,39 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 10);
-				assertContains(snapshot.renderedQuery(), "VALUES (?a ?b)");
-				assertDoesNotContain(snapshot.renderedQuery(), "VALUES (?d ?e)",
-						"Social media q10 should not pair d/e before the c/d inequality can prune d");
-				assertBefore(snapshot.renderedQuery(), "FILTER (?c != ?d)", "VALUES ?e",
-						"Social media q10 should prune d from the c binding before expanding e\n" + snapshot.plan());
+				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
+					assertContains(snapshot.renderedQuery(), "VALUES (?a ?b)");
+					assertDoesNotContain(snapshot.renderedQuery(), "VALUES (?d ?e)",
+							"Social media q10 should not pair d/e before the c/d inequality can prune d");
+					assertBefore(snapshot.renderedQuery(), "FILTER (?c != ?d)", "VALUES ?e",
+							"Social media q10 should prune d from the c binding before expanding e\n"
+									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void socialMediaFiveCycleInterleavesValuesWithFollowsEdges(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertBefore(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .", "VALUES ?c",
+							"Social media q10 should probe (a,b) follow edges before expanding c bindings");
+					assertBefore(renderedQuery, "?b <http://example.com/theme/social/follows> ?c .", "VALUES ?d",
+							"Social media q10 should probe (b,c) follow edges before expanding d bindings");
+					assertBefore(renderedQuery, "?c <http://example.com/theme/social/follows> ?d .", "VALUES ?e",
+							"Social media q10 should prune d via follow edge before expanding e bindings");
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -208,14 +241,16 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-				assertDoesNotContain(snapshot.plan(), "sources={learned_pattern=1}",
-						"Library q2 should not reuse prefix-conditioned feedback as unconditional learned pattern stats");
-				assertDoesNotContain(snapshot.plan(), "filterSelectivitySource=learned_pattern",
-						"Library q2 should not reuse prefix-conditioned feedback as a learned-pattern source\n"
-								+ snapshot.plan());
-				assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name", 12.0d);
+				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "sources={learned_pattern=1}",
+							"Library q2 should not reuse prefix-conditioned feedback as unconditional learned pattern stats");
+					assertDoesNotContain(snapshot.plan(), "filterSelectivitySource=learned_pattern",
+							"Library q2 should not reuse prefix-conditioned feedback as a learned-pattern source\n"
+									+ snapshot.plan());
+					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
+							12.0d);
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -232,12 +267,13 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
-				assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
-				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/library/name> ?branchName",
-						"<http://example.com/theme/library/locatedAt> ?branch",
-						"Library q7 should keep the selective branch-name anchor before copy location expansion");
-				assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
+				assertQueryRegressionPasses(repository, theme, 7, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/library/name> ?branchName",
+							"<http://example.com/theme/library/locatedAt> ?branch",
+							"Library q7 should keep the selective branch-name anchor before copy location expansion");
+					assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -254,13 +290,14 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/grid/name> ?name",
-						"<http://example.com/theme/grid/feeds> ?substation",
-						"Electrical grid q2 should keep the selective substation-name anchor before feeds\n"
-								+ snapshot.plan());
-				assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/grid/name", 10.0d);
+				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/grid/name> ?name",
+							"<http://example.com/theme/grid/feeds> ?substation",
+							"Electrical grid q2 should keep the selective substation-name anchor before feeds\n"
+									+ snapshot.plan());
+					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/grid/name", 10.0d);
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -277,13 +314,14 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/engineering/name> ?assemblyName",
-						"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
-						"Engineering q2 should keep the assembly-name filter directly after the name pattern\n"
-								+ snapshot.plan());
-				assertEngineeringAssemblyNameFilterDoesNotScanAllNames(snapshot.plan());
+				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/engineering/name> ?assemblyName",
+							"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
+							"Engineering q2 should keep the assembly-name filter directly after the name pattern\n"
+									+ snapshot.plan());
+					assertEngineeringAssemblyNameFilterDoesNotScanAllNames(snapshot.plan());
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -300,13 +338,14 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 2);
-				assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/name> ?lineName",
-						"<http://example.com/theme/train/partOfLine> ?line",
-						"Train q2 should keep the selective line-name anchor before the broad line-membership edge\n"
-								+ snapshot.plan());
-				assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/train/name", 10.0d);
+				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/name> ?lineName",
+							"<http://example.com/theme/train/partOfLine> ?line",
+							"Train q2 should keep the selective line-name anchor before the broad line-membership edge\n"
+									+ snapshot.plan());
+					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/train/name", 10.0d);
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -323,12 +362,13 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
-				assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
-				assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/scheduledTime> ?time",
-						"?service a <http://example.com/theme/train/TrainService>",
-						"Train q5 should keep the selective scheduledTime seed ahead of the broad rdf:type anchor\n"
-								+ snapshot.plan());
+				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/train/scheduledTime> ?time",
+							"?service a <http://example.com/theme/train/TrainService>",
+							"Train q5 should keep the selective scheduledTime seed ahead of the broad rdf:type anchor\n"
+									+ snapshot.plan());
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -345,9 +385,10 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
-				assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
-				assertElectricalGridGeneratorCapacityThresholdShape(snapshot);
+				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
+					assertElectricalGridGeneratorCapacityThresholdShape(snapshot);
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -364,13 +405,15 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 1);
-				assertPlannerDiagnosticsPresent(theme, 1, snapshot.plan());
-				if (!MEDICAL_Q1_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
-					throw new AssertionError("Medical q1 should match the fastest branch-local VALUES/filter shape\n"
-							+ "Expected:\n" + MEDICAL_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
-							+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
-				}
+				assertQueryRegressionPasses(repository, theme, 1, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 1, snapshot.plan());
+					if (!MEDICAL_Q1_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
+						throw new AssertionError(
+								"Medical q1 should match the fastest branch-local VALUES/filter shape\n"
+										+ "Expected:\n" + MEDICAL_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
+										+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+					}
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -387,13 +430,14 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 9);
-				assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
-				if (!LIBRARY_Q9_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
-					throw new AssertionError("Library q9 should match the fastest author/book/loan shape\n"
-							+ "Expected:\n" + LIBRARY_Q9_FASTEST_RENDERED_QUERY + "\nActual:\n"
-							+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
-				}
+				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
+					if (!LIBRARY_Q9_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
+						throw new AssertionError("Library q9 should match the fastest author/book/loan shape\n"
+								+ "Expected:\n" + LIBRARY_Q9_FASTEST_RENDERED_QUERY + "\nActual:\n"
+								+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+					}
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -411,20 +455,21 @@ class LmdbThemeQueryRegressionTest {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
-				OptimizerSnapshot snapshot = explainOptimized(repository, target.theme(), target.queryIndex());
-				assertPlannerDiagnosticsPresent(target.theme(), target.queryIndex(), snapshot.plan());
-				assertContains(snapshot.renderedQuery(), target.valuesClause());
-				assertBefore(snapshot.renderedQuery(), target.valuesClause(), target.lookupPattern(),
-						target + " should bind the finite literal set before the selective lookup\n"
-								+ snapshot.plan());
-				assertBefore(snapshot.renderedQuery(), target.lookupPattern(), target.broadPattern(),
-						target + " should use the bound literal lookup before the broad type scan\n"
-								+ snapshot.plan());
-				assertBefore(snapshot.plan(),
-						"BindingSetAssignment ([[" + target.bindingName() + "=" + target.firstLiteral(),
-						"value=" + target.predicateIri(),
-						target + " should anchor the finite literal set before the predicate access");
-				assertBoundObjectLookup(snapshot.plan(), target);
+				assertQueryRegressionPasses(repository, target.theme(), target.queryIndex(), snapshot -> {
+					assertPlannerDiagnosticsPresent(target.theme(), target.queryIndex(), snapshot.plan());
+					assertContains(snapshot.renderedQuery(), target.valuesClause());
+					assertBefore(snapshot.renderedQuery(), target.valuesClause(), target.lookupPattern(),
+							target + " should bind the finite literal set before the selective lookup\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), target.lookupPattern(), target.broadPattern(),
+							target + " should use the bound literal lookup before the broad type scan\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.plan(),
+							"BindingSetAssignment ([[" + target.bindingName() + "=" + target.firstLiteral(),
+							"value=" + target.predicateIri(),
+							target + " should anchor the finite literal set before the predicate access");
+					assertBoundObjectLookup(snapshot.plan(), target);
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -459,24 +504,38 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	private static Path prepareThemeStore(Path dataDir, Theme theme, List<Integer> primeIndexes) throws Exception {
-		Path themeDir = dataDir.resolve(theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		boolean prepared = false;
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, primeIndexes);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			prepared = true;
-			return themeDir;
-		} finally {
-			shutdownAndRelease(repository, store);
-			if (!prepared) {
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
-			}
+		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primeIndexes);
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve(theme.name()),
+						storeKey,
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository, theme);
+								persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository, theme, primeIndexes);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory() + " for " + theme.name()
+					+ ". " + PERSISTENT_STORE_HINT);
 		}
+		return preparedStore.storeDirectory();
+	}
+
+	private static String primeIndexKey(List<Integer> primeIndexes) {
+		String key = primeIndexes.stream()
+				.distinct()
+				.sorted()
+				.map(String::valueOf)
+				.collect(Collectors.joining("-"));
+		return key.isEmpty() ? "no-prime" : key;
 	}
 
 	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, List<Integer> queryIndexes) {
@@ -549,6 +608,12 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
+	private static void assertQueryRegressionPasses(SailRepository repository, Theme theme, int queryIndex,
+			SnapshotAssertion assertion) throws Exception {
+		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(theme.name() + ":" + queryIndex,
+				() -> assertion.assertSnapshot(explainOptimized(repository, theme, queryIndex)));
+	}
+
 	private static long executeQuery(SailRepository repository, String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.prepareTupleQuery(query)
@@ -558,16 +623,20 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
-	private static void assertCountRegressionQueries(SailRepository repository, Theme theme) {
+	private static void assertCountRegressionQueries(SailRepository repository, Theme theme) throws Exception {
 		for (int queryIndex : COUNT_REGRESSION_QUERY_INDEXES.getOrDefault(theme, List.of())) {
 			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
 			long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
-			long actual = executeQuery(repository, query);
-			if (actual != expected) {
-				throw new AssertionError("LMDB theme query mismatch: theme=" + theme + ", queryIndex=" + queryIndex
-						+ ", expected=" + expected + ", actual=" + actual + "\n" + explainBestEffort(repository,
-								query));
-			}
+			BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(
+					theme.name() + ":" + queryIndex,
+					() -> {
+						long actual = executeQuery(repository, query);
+						if (actual != expected) {
+							throw new AssertionError("LMDB theme query mismatch: theme=" + theme + ", queryIndex="
+									+ queryIndex + ", expected=" + expected + ", actual=" + actual + "\n"
+									+ explainBestEffort(repository, query));
+						}
+					});
 		}
 	}
 
@@ -836,6 +905,11 @@ class LmdbThemeQueryRegressionTest {
 
 	private static ShapeAnchor anchor(Theme theme, int queryIndex, String first, String second) {
 		return new ShapeAnchor(theme, queryIndex, first, second);
+	}
+
+	@FunctionalInterface
+	private interface SnapshotAssertion {
+		void assertSnapshot(OptimizerSnapshot snapshot) throws Exception;
 	}
 
 	private record OptimizerSnapshot(String plan, String renderedQuery) {

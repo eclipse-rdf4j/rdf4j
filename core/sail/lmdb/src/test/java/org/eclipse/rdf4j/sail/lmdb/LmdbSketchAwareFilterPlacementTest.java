@@ -492,7 +492,7 @@ class LmdbSketchAwareFilterPlacementTest {
 
 	private static void loadThemeData(SailRepository repository, Theme theme) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			ThemeDataSetGenerator.generate(theme, new RDFInserter(connection));
 			connection.commit();
 		}

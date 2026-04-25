@@ -96,11 +96,7 @@ class LmdbSailStore implements SailStore {
 	private PersistentSetFactory<Long> setFactory;
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
 
-	private final SketchBasedJoinEstimator sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this,
-			SketchBasedJoinEstimator.Config.defaults()
-					.withThrottleEveryN(1024 * 1024)
-					.withThrottleMillis(2)
-					.withEstimateCacheSeconds(60));
+	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
 	private LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -296,6 +292,7 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
+		this.sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this, sketchEstimatorConfig(config));
 		Function<Long, byte[]> encode = element -> {
 			ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
 			bb.putLong(element);
@@ -339,6 +336,27 @@ class LmdbSailStore implements SailStore {
 
 	SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
 		return sketchBasedJoinEstimator;
+	}
+
+	private static SketchBasedJoinEstimator.Config sketchEstimatorConfig(LmdbStoreConfig config) {
+		SketchBasedJoinEstimator.Config estimatorConfig = SketchBasedJoinEstimator.Config.defaults()
+				.withThrottleEveryN(1024 * 1024)
+				.withThrottleMillis(2)
+				.withEstimateCacheSeconds(60);
+		if (config.getSketchEstimatorSubjectBucketCount() >= 0) {
+			estimatorConfig.withSubjectBucketCount(config.getSketchEstimatorSubjectBucketCount());
+		}
+		if (config.getSketchEstimatorPredicateBucketCount() >= 0) {
+			estimatorConfig.withPredicateBucketCount(config.getSketchEstimatorPredicateBucketCount());
+		}
+		if (config.getSketchEstimatorObjectBucketCount() >= 0) {
+			estimatorConfig.withObjectBucketCount(config.getSketchEstimatorObjectBucketCount());
+		}
+		if (config.getSketchEstimatorContextBucketCount() >= 0) {
+			estimatorConfig.withContextBucketCount(config.getSketchEstimatorContextBucketCount());
+		}
+		estimatorConfig.withContextPairSketchesEnabled(config.getSketchEstimatorContextPairSketchesEnabled());
+		return estimatorConfig;
 	}
 
 	void rollback() throws SailException {
@@ -1228,8 +1246,8 @@ class LmdbSailStore implements SailStore {
 							}
 						}
 						for (long id : quad) {
-						if (id != 0L && !ValueIds.isInlined(id)) {
-							// only add references, exclude inlined values
+							if (id != 0L && !ValueIds.isInlined(id)) {
+								// only add references, exclude inlined values
 								unusedIds.add(id);
 							}
 						}

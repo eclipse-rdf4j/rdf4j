@@ -40,6 +40,10 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 final class LmdbRegressionAnalysisSupport {
 
 	private static final Path DEFAULT_OUTPUT_DIRECTORY = Path.of("target", "lmdb-regression-plan-capture");
+	private static final String PERSISTENT_STORE_KEY_PREFIX = "regression-analysis-support";
+	private static final String PERSISTENT_STORE_HINT = "Set -D"
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
+			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
 	private static final Map<Theme, int[]> LEARNED_FILTER_PRIMES = Map.of(
 			Theme.ELECTRICAL_GRID, ints(2, 4, 5),
@@ -196,25 +200,35 @@ final class LmdbRegressionAnalysisSupport {
 	}
 
 	private static PreparedThemeStore prepareThemeStore(Path dataDir, Theme theme) throws Exception {
-		Path storeDirectory = dataDir.resolve(theme.name());
 		LmdbStoreConfig storeConfig = ConfigUtil.createConfig();
-		LmdbStore store = new LmdbStore(storeDirectory.toFile(), storeConfig);
-		SailRepository repository = new SailRepository(store);
-		boolean prepared = false;
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadThemeData(repository, theme);
-			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-			prepared = true;
-		} finally {
-			shutdownAndRelease(repository, store);
-			if (!prepared) {
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
-			}
+		int[] primeIndexes = LEARNED_FILTER_PRIMES.getOrDefault(theme, ints());
+		String primeKey = IntStream.of(primeIndexes)
+				.mapToObj(String::valueOf)
+				.collect(java.util.stream.Collectors.joining("-"));
+		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/"
+				+ (primeKey.isEmpty() ? "no-prime" : primeKey);
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve(theme.name()),
+						storeKey,
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), storeConfig);
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadThemeData(repository, theme);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository, theme);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for regression analysis " + theme.name() + ". " + PERSISTENT_STORE_HINT);
 		}
-		return new PreparedThemeStore(storeDirectory, storeConfig);
+		return new PreparedThemeStore(preparedStore.storeDirectory(), storeConfig);
 	}
 
 	private static void loadThemeData(SailRepository repository, Theme theme) throws IOException {

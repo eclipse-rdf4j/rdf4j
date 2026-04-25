@@ -239,10 +239,6 @@ public class SketchEstimatorThemeMemoryBenchmark {
 			Map<String, String> properties = new LinkedHashMap<>();
 			properties.put("nominalEntries", Integer.toString(precision.bucketCount()));
 			properties.put("sketchK", Integer.toString(precision.sketchNominalEntries()));
-			properties.put("residentSketchMemoryTargetPercent", "0.05");
-			properties.put("residentSketchMemoryCeilingPercent", "0.08");
-			properties.put("memoryMonitorIntervalMillis", "50");
-			properties.put("memoryPressureUnloadBatchSize", "32");
 
 			Map<String, String> previousValues = new LinkedHashMap<>();
 			for (Map.Entry<String, String> entry : properties.entrySet()) {

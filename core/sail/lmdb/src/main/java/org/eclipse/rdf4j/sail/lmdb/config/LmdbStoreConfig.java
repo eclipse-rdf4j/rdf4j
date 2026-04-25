@@ -91,6 +91,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean inlineLiterals = true;
 
+	private int sketchEstimatorSubjectBucketCount = -1;
+
+	private int sketchEstimatorPredicateBucketCount = -1;
+
+	private int sketchEstimatorObjectBucketCount = -1;
+
+	private int sketchEstimatorContextBucketCount = -1;
+
+	private boolean sketchEstimatorContextPairSketchesEnabled = false;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -251,6 +261,52 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getSketchEstimatorSubjectBucketCount() {
+		return sketchEstimatorSubjectBucketCount;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorSubjectBucketCount(int sketchEstimatorSubjectBucketCount) {
+		this.sketchEstimatorSubjectBucketCount = Math.max(4, sketchEstimatorSubjectBucketCount);
+		return this;
+	}
+
+	public int getSketchEstimatorPredicateBucketCount() {
+		return sketchEstimatorPredicateBucketCount;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorPredicateBucketCount(int sketchEstimatorPredicateBucketCount) {
+		this.sketchEstimatorPredicateBucketCount = Math.max(4, sketchEstimatorPredicateBucketCount);
+		return this;
+	}
+
+	public int getSketchEstimatorObjectBucketCount() {
+		return sketchEstimatorObjectBucketCount;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorObjectBucketCount(int sketchEstimatorObjectBucketCount) {
+		this.sketchEstimatorObjectBucketCount = Math.max(4, sketchEstimatorObjectBucketCount);
+		return this;
+	}
+
+	public int getSketchEstimatorContextBucketCount() {
+		return sketchEstimatorContextBucketCount;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorContextBucketCount(int sketchEstimatorContextBucketCount) {
+		this.sketchEstimatorContextBucketCount = Math.max(4, sketchEstimatorContextBucketCount);
+		return this;
+	}
+
+	public boolean getSketchEstimatorContextPairSketchesEnabled() {
+		return sketchEstimatorContextPairSketchesEnabled;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorContextPairSketchesEnabled(
+			boolean sketchEstimatorContextPairSketchesEnabled) {
+		this.sketchEstimatorContextPairSketchesEnabled = sketchEstimatorContextPairSketchesEnabled;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -301,6 +357,26 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (!inlineLiterals) {
 			m.add(implNode, LmdbStoreSchema.INLINE_LITERALS, vf.createLiteral(false));
+		}
+		if (sketchEstimatorSubjectBucketCount >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT,
+					vf.createLiteral(sketchEstimatorSubjectBucketCount));
+		}
+		if (sketchEstimatorPredicateBucketCount >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT,
+					vf.createLiteral(sketchEstimatorPredicateBucketCount));
+		}
+		if (sketchEstimatorObjectBucketCount >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT,
+					vf.createLiteral(sketchEstimatorObjectBucketCount));
+		}
+		if (sketchEstimatorContextBucketCount >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT,
+					vf.createLiteral(sketchEstimatorContextBucketCount));
+		}
+		if (!sketchEstimatorContextPairSketchesEnabled) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
+					vf.createLiteral(false));
 		}
 		return implNode;
 	}
@@ -459,8 +535,46 @@ public class LmdbStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT, null))
+					.ifPresent(lit -> setSketchEstimatorSubjectBucketCount(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT,
+					null))
+					.ifPresent(lit -> setSketchEstimatorPredicateBucketCount(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT, null))
+					.ifPresent(lit -> setSketchEstimatorObjectBucketCount(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT, null))
+					.ifPresent(lit -> setSketchEstimatorContextBucketCount(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED, null))
+					.ifPresent(lit -> {
+						try {
+							setSketchEstimatorContextPairSketchesEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for "
+											+ LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED
+											+ " property, found " + lit);
+						}
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
+		}
+	}
+
+	private static int parseInt(org.eclipse.rdf4j.model.Literal lit, org.eclipse.rdf4j.model.IRI property) {
+		try {
+			return lit.intValue();
+		} catch (NumberFormatException e) {
+			throw new SailConfigException("Integer value required for " + property + " property, found " + lit);
 		}
 	}
 }

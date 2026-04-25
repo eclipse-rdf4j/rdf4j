@@ -40,6 +40,21 @@ class LmdbStoreConfigTest {
 
 	private static final IRI INLINE_LITERALS = Values.iri(LmdbStoreSchema.NAMESPACE + "inlineLiterals");
 
+	private static final IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorSubjectBucketCount");
+
+	private static final IRI SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorPredicateBucketCount");
+
+	private static final IRI SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorObjectBucketCount");
+
+	private static final IRI SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorContextBucketCount");
+
+	private static final IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorContextPairSketchesEnabled");
+
 	@Test
 	void pageCardinalityEstimatorDefaultsToEnabled() {
 		assertThat(new LmdbStoreConfig().getPageCardinalityEstimator()).isTrue();
@@ -158,6 +173,66 @@ class LmdbStoreConfigTest {
 				"getBulkOperationSize",
 				bulkOperationSize,
 				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 4, 17, 1024 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorSubjectBucketCount(final int bucketCount) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT,
+				Values.literal(bucketCount),
+				"getSketchEstimatorSubjectBucketCount",
+				bucketCount,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 4, 17, 1024 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorPredicateBucketCount(final int bucketCount) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT,
+				Values.literal(bucketCount),
+				"getSketchEstimatorPredicateBucketCount",
+				bucketCount,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 4, 17, 1024 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorObjectBucketCount(final int bucketCount) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT,
+				Values.literal(bucketCount),
+				"getSketchEstimatorObjectBucketCount",
+				bucketCount,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 4, 17, 1024 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorContextBucketCount(final int bucketCount) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT,
+				Values.literal(bucketCount),
+				"getSketchEstimatorContextBucketCount",
+				bucketCount,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorContextPairSketchesEnabled(final boolean enabled) {
+		testParseAndExportReflective(
+				SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
+				Values.literal(enabled),
+				"getSketchEstimatorContextPairSketchesEnabled",
+				enabled,
+				!enabled
 		);
 	}
 

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -34,12 +35,17 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final int BENCHMARK_STALENESS_THRESHOLD = 3;
 	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(1);
 	private static final long ROBUST_READY_POLL_MILLIS = 1000L;
+	private static final long QUERY_REGRESSION_PASS_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
+	private static final long QUERY_REGRESSION_PASS_POLL_MILLIS = 100L;
 	private static final long NO_HEADROOM_OVERRIDE = -1L;
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
+	private static final String PERSISTENT_THEME_REGRESSION_STORE_ENABLED = "rdf4j.lmdb.themeRegression.persistentStore.enabled";
+	private static final String PERSISTENT_THEME_REGRESSION_STORE_ROOT = "rdf4j.lmdb.themeRegression.persistentStore.root";
+	private static final String DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT = "persistent-lmdb-theme-store";
 	private static final Method GET_BACKING_STORE = reflectMethod(LmdbStore.class, "getBackingStore");
 
 	private static final Method LAST_JOIN_ORDER_PLANNER_PATH = reflectMethod(
@@ -75,7 +81,87 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	public static void deleteStoreDirectory(Path storeDirectory) {
-		LmdbTestUtil.deleteDir(storeDirectory);
+		if (isPersistentThemeRegressionStorePath(storeDirectory)) {
+			return;
+		}
+		forceDeleteStoreDirectory(storeDirectory);
+	}
+
+	public static ThemeRegressionStore prepareThemeRegressionStore(Path temporaryStoreDirectory,
+			String persistentStoreKey, ThemeRegressionStoreBuilder builder) throws Exception {
+		boolean persistent = isPersistentThemeRegressionStoreEnabled();
+		Path storeDirectory = resolveThemeRegressionStoreDirectory(temporaryStoreDirectory, persistentStoreKey,
+				persistent);
+		boolean reused = persistent && hasExpectedDbFileSizes(storeDirectory.toFile());
+		if (reused) {
+			return new ThemeRegressionStore(storeDirectory, true, true);
+		}
+
+		forceDeleteStoreDirectory(storeDirectory);
+		Files.createDirectories(storeDirectory);
+		boolean prepared = false;
+		try {
+			builder.prepare(storeDirectory);
+			writeExpectedDbFileSizes(storeDirectory.toFile());
+			prepared = true;
+			return new ThemeRegressionStore(storeDirectory, persistent, false);
+		} finally {
+			if (!prepared) {
+				forceDeleteStoreDirectory(storeDirectory);
+			}
+		}
+	}
+
+	public static void cleanupThemeRegressionStore(ThemeRegressionStore preparedStore) {
+		if (preparedStore == null || preparedStore.persistent()) {
+			return;
+		}
+		forceDeleteStoreDirectory(preparedStore.storeDirectory());
+	}
+
+	public static void assertQueryRegressionPassesWithinThirtySeconds(String queryKey,
+			QueryRegressionAssertion assertion) throws Exception {
+		// Tight retry loop for plan-regression checks: return immediately on pass, hard-timeout on persistent drift.
+		long deadlineNanos = System.nanoTime() + QUERY_REGRESSION_PASS_TIMEOUT_NANOS;
+		AssertionError lastAssertionError = null;
+		int attempts = 0;
+		while (true) {
+			attempts++;
+			try {
+				assertion.assertPasses();
+				return;
+			} catch (AssertionError assertionError) {
+				lastAssertionError = assertionError;
+			}
+			if (System.nanoTime() >= deadlineNanos) {
+				AssertionError timeoutError = new AssertionError(
+						"Query regression " + queryKey + " did not pass within 30 seconds after " + attempts
+								+ " attempts");
+				if (lastAssertionError != null) {
+					timeoutError.initCause(lastAssertionError);
+				}
+				throw timeoutError;
+			}
+			try {
+				Thread.sleep(QUERY_REGRESSION_PASS_POLL_MILLIS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while waiting for query regression " + queryKey
+						+ " to pass within 30 seconds", e);
+			}
+		}
+	}
+
+	public static boolean isPersistentThemeRegressionStoreEnabled() {
+		return Boolean.parseBoolean(System.getProperty(PERSISTENT_THEME_REGRESSION_STORE_ENABLED, "false"));
+	}
+
+	public static String persistentThemeRegressionStoreEnabledPropertyName() {
+		return PERSISTENT_THEME_REGRESSION_STORE_ENABLED;
+	}
+
+	public static String persistentThemeRegressionStoreRootPropertyName() {
+		return PERSISTENT_THEME_REGRESSION_STORE_ROOT;
 	}
 
 	public static void prepareFixedMedicalRecordsExplanationStore(File storeDirectory) throws IOException {
@@ -149,6 +235,86 @@ public final class BenchmarkJoinEstimatorSupport {
 		}
 	}
 
+	private static Path resolveThemeRegressionStoreDirectory(Path temporaryStoreDirectory, String persistentStoreKey,
+			boolean persistent) {
+		if (!persistent) {
+			return temporaryStoreDirectory.toAbsolutePath().normalize();
+		}
+		if (persistentStoreKey == null || persistentStoreKey.isBlank()) {
+			throw new IllegalArgumentException(
+					"persistentStoreKey is required when persistent regression stores are enabled");
+		}
+		Path root = Path.of(System.getProperty(PERSISTENT_THEME_REGRESSION_STORE_ROOT,
+				DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT))
+				.toAbsolutePath()
+				.normalize();
+		Path resolved = root.resolve(persistentStoreKey).normalize();
+		if (!resolved.startsWith(root)) {
+			throw new IllegalArgumentException("Persistent regression store key must stay under "
+					+ root + ": " + persistentStoreKey);
+		}
+		return resolved;
+	}
+
+	private static boolean isPersistentThemeRegressionStorePath(Path storeDirectory) {
+		if (!isPersistentThemeRegressionStoreEnabled() || storeDirectory == null) {
+			return false;
+		}
+		Path root = Path.of(System.getProperty(PERSISTENT_THEME_REGRESSION_STORE_ROOT,
+				DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT))
+				.toAbsolutePath()
+				.normalize();
+		Path candidate = storeDirectory.toAbsolutePath().normalize();
+		return candidate.startsWith(root);
+	}
+
+	private static void forceDeleteStoreDirectory(Path storeDirectory) {
+		LmdbTestUtil.deleteDir(storeDirectory);
+	}
+
+	private static boolean hasExpectedDbFileSizes(File storeDirectory) throws IOException {
+		DbFileSizes expected = readExpectedDbFileSizes(storeDirectory);
+		if (expected == null) {
+			return false;
+		}
+		File triples = new File(storeDirectory, TRIPLES_DATA_FILE);
+		File values = new File(storeDirectory, VALUES_DATA_FILE);
+		if (!triples.isFile() || !values.isFile()) {
+			return false;
+		}
+		return triples.length() == expected.triplesDataSizeBytes && values.length() == expected.valuesDataSizeBytes;
+	}
+
+	private static DbFileSizes readExpectedDbFileSizes(File storeDirectory) throws IOException {
+		File expectedSizeFile = new File(storeDirectory, EXPECTED_DB_FILE_SIZES_FILE);
+		if (!expectedSizeFile.isFile()) {
+			return null;
+		}
+		Properties properties = new Properties();
+		try (var inputStream = new FileInputStream(expectedSizeFile)) {
+			properties.load(inputStream);
+		}
+		try {
+			return new DbFileSizes(
+					parseSizeProperty(properties, TRIPLES_DATA_SIZE_PROPERTY),
+					parseSizeProperty(properties, VALUES_DATA_SIZE_PROPERTY));
+		} catch (IllegalStateException e) {
+			return null;
+		}
+	}
+
+	private static long parseSizeProperty(Properties properties, String propertyName) {
+		String value = properties.getProperty(propertyName);
+		if (value == null) {
+			throw new IllegalStateException("Missing property " + propertyName);
+		}
+		try {
+			return Long.parseLong(value);
+		} catch (NumberFormatException e) {
+			throw new IllegalStateException("Invalid long value for property " + propertyName + ": " + value, e);
+		}
+	}
+
 	private static Method reflectMethod(Class<?> owner, String methodName, Class<?>... parameterTypes) {
 		try {
 			Method method = owner.getDeclaredMethod(methodName, parameterTypes);
@@ -177,5 +343,21 @@ public final class BenchmarkJoinEstimatorSupport {
 			}
 			throw new IOException("Benchmark join-estimator helper failed: " + method.getName(), cause);
 		}
+	}
+
+	@FunctionalInterface
+	public interface ThemeRegressionStoreBuilder {
+		void prepare(Path storeDirectory) throws Exception;
+	}
+
+	@FunctionalInterface
+	public interface QueryRegressionAssertion {
+		void assertPasses() throws Exception;
+	}
+
+	public record ThemeRegressionStore(Path storeDirectory, boolean persistent, boolean reused) {
+	}
+
+	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {
 	}
 }
