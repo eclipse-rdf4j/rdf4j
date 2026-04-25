@@ -74,7 +74,7 @@ class PersistentSetFactory<T extends Serializable> {
 
 			dbDir = Files.createTempDirectory(cacheDir.toPath(), "set");
 			E(mdb_env_open(env, dbDir.toAbsolutePath().toString(), flags, 0664));
-			this.defaultDbi = openDatabase(env, null, MDB_CREATE, null);
+			this.defaultDbi = openDatabase(env, null, MDB_CREATE);
 
 			MDBStat stat = MDBStat.malloc(stack);
 			readTransaction(env, (stack2, txn) -> {
@@ -132,7 +132,7 @@ class PersistentSetFactory<T extends Serializable> {
 
 	PersistentSet<T> createSet(String name, Function<T, byte[]> writeFunc, Function<ByteBuffer, T> readFunc)
 			throws IOException {
-		int dbi = openDatabase(env, name, MDB_CREATE, null);
+		int dbi = openDatabase(env, name, MDB_CREATE);
 		return new PersistentSet<>(this, dbi) {
 			@Override
 			protected byte[] write(T element) throws IOException {

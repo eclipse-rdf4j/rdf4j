@@ -35,8 +35,8 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
 
 /**
  * Parser for SPARQL-1.1 JSON Results Format documents.
@@ -95,34 +95,34 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 		Value subject = null, predicate = null, object = null;
 
 		while (jp.nextToken() != JsonToken.END_OBJECT) {
-			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
+			if (jp.currentToken() != JsonToken.PROPERTY_NAME) {
 				throw new QueryResultParseException("Did not find triple attribute in triple value",
-						jp.getCurrentLocation().getLineNr(),
-						jp.getCurrentLocation().getColumnNr());
+						jp.currentLocation().getLineNr(),
+						jp.currentLocation().getColumnNr());
 			}
-			String posName = jp.getCurrentName();
+			String posName = jp.currentName();
 			if (SUBJECT.equals(posName) || SUBJECT_JENA.equals(posName)) {
 				if (subject != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
-							jp.getCurrentLocation().getLineNr(),
-							jp.getCurrentLocation().getColumnNr());
+							jp.currentLocation().getLineNr(),
+							jp.currentLocation().getColumnNr());
 				}
 				subject = parseValue(jp, fieldName + ":" + posName);
 			} else if (PREDICATE.equals(posName) || PREDICATE_JENA.equals(posName)) {
 				if (predicate != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
-							jp.getCurrentLocation().getLineNr(),
-							jp.getCurrentLocation().getColumnNr());
+							jp.currentLocation().getLineNr(),
+							jp.currentLocation().getColumnNr());
 				}
 				predicate = parseValue(jp, fieldName + ":" + posName);
 			} else if (OBJECT.equals(posName) || OBJECT_JENA.equals(posName)) {
 				if (object != null) {
 					throw new QueryResultParseException(
 							posName + " field encountered twice in triple value: ",
-							jp.getCurrentLocation().getLineNr(),
-							jp.getCurrentLocation().getColumnNr());
+							jp.currentLocation().getLineNr(),
+							jp.currentLocation().getColumnNr());
 				}
 				object = parseValue(jp, fieldName + ":" + posName);
 			} else if ("g".equals(posName)) {
@@ -130,8 +130,8 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 				parseValue(jp, fieldName + ":" + posName);
 			} else {
 				throw new QueryResultParseException("Unexpected field name in triple value: " + posName,
-						jp.getCurrentLocation().getLineNr(),
-						jp.getCurrentLocation().getColumnNr());
+						jp.currentLocation().getLineNr(),
+						jp.currentLocation().getColumnNr());
 			}
 		}
 
@@ -139,8 +139,8 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 			return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
 		} else {
 			throw new QueryResultParseException("Incomplete or invalid triple value",
-					jp.getCurrentLocation().getLineNr(),
-					jp.getCurrentLocation().getColumnNr());
+					jp.currentLocation().getLineNr(),
+					jp.currentLocation().getColumnNr());
 		}
 	}
 
@@ -148,8 +148,8 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 	protected boolean checkTripleType(JsonParser jp, String type) {
 		if (!TRIPLE.equals(type) && !TRIPLE_STARDOG.equals(type)) {
 			throw new QueryResultParseException("Found a triple value but unexpected type: " + type,
-					jp.getCurrentLocation().getLineNr(),
-					jp.getCurrentLocation().getColumnNr());
+					jp.currentLocation().getLineNr(),
+					jp.currentLocation().getColumnNr());
 		}
 
 		return true;

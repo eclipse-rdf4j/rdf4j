@@ -84,7 +84,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * A {@link SPARQLProtocolSession} subclass which extends the standard SPARQL 1.1 Protocol with additional

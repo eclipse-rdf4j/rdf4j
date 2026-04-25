@@ -11,12 +11,15 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.NoSuchElementException;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -55,8 +58,23 @@ class ConnectionHelper {
 		try (CloseableIteration<? extends Statement> statements = from
 				.getStatements(null, null, null, false)) {
 
-			while (statements.hasNext()) {
-				Statement next = statements.next();
+			while (true) {
+				throwIfInterrupted();
+				boolean hasNext = statements.hasNext();
+				throwIfInterrupted();
+				if (!hasNext) {
+					break;
+				}
+
+				Statement next;
+				try {
+					next = statements.next();
+				} catch (NoSuchElementException e) {
+					if (Thread.currentThread().isInterrupted()) {
+						throw new InterruptedSailException("Thread was interrupted while transferring statements.", e);
+					}
+					throw e;
+				}
 
 				transfer.transfer(next.getSubject(), next.getPredicate(),
 						next.getObject(), next.getContext());
@@ -64,6 +82,12 @@ class ConnectionHelper {
 			}
 		}
 
+	}
+
+	private static void throwIfInterrupted() {
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedSailException("Thread was interrupted while transferring statements.");
+		}
 	}
 
 	static boolean isEmpty(SailConnection connection) {
