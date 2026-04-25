@@ -319,6 +319,54 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	@Test
+	void directLookupChainFromFiniteUserTuplesDoesNotExpandEstimate(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticSocialMediaChainData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			BindingSetAssignment tuples = socialChainTupleBindings();
+			StatementPattern followsAB = followsPattern("a", "b");
+			StatementPattern followsBC = followsPattern("b", "c");
+			StatementPattern followsCD = followsPattern("c", "d");
+			StatementPattern followsDE = followsPattern("d", "e");
+			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
+			JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(
+					List.of(tuples, followsAB, followsBC, followsCD, followsDE),
+					Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+					List.of());
+			Optional<JoinOrderPlanner.JoinOrderPlan> plan = attempt.getPlan();
+
+			assertTrue(plan.isPresent(), "Expected LMDB planner to produce a finite social-chain plan: "
+					+ attempt.getDiagnostics());
+			assertEstimatedWorkMatchesStepSum(plan.get());
+			List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+			assertEquals(tuples, orderedArgs.get(0),
+					"Finite tuple domain should seed the social-chain plan before direct lookups");
+
+			double finiteTupleRows = bindingSetRows(tuples);
+			for (int i = 1; i < plan.get().getSteps().size(); i++) {
+				JoinOrderPlanner.PlanStep step = plan.get().getSteps().get(i);
+				assertEquals("directLookup",
+						step.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+						"Expected follows step " + i + " to be a bound direct lookup: "
+								+ step.getStringMetrics() + step.getDoubleMetrics());
+				assertTrue(step.getPrefixOutputRows() <= finiteTupleRows,
+						"Bound follows direct lookup should not expand beyond finite tuple rows. finiteRows="
+								+ finiteTupleRows + ", step=" + i + ", metrics="
+								+ step.getStringMetrics() + step.getDoubleMetrics());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static PlannedBranch planGeneratorBranch(File dataDir, String indexes) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig(indexes);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -434,6 +482,28 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	private static void loadSyntheticSocialMediaChainData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (BindingSet bindingSet : socialChainTupleBindings().getBindingSets()) {
+				connection.add((Resource) bindingSet.getValue("a"), SOCIAL_FOLLOWS,
+						bindingSet.getValue("b"));
+				connection.add((Resource) bindingSet.getValue("b"), SOCIAL_FOLLOWS,
+						bindingSet.getValue("c"));
+				connection.add((Resource) bindingSet.getValue("c"), SOCIAL_FOLLOWS,
+						bindingSet.getValue("d"));
+				connection.add((Resource) bindingSet.getValue("d"), SOCIAL_FOLLOWS,
+						bindingSet.getValue("e"));
+			}
+			for (int i = 0; i < 4_000; i++) {
+				Resource follower = socialUser(10_000 + i);
+				Resource target = socialUser(20_000 + (i % 1_000));
+				connection.add(follower, SOCIAL_FOLLOWS, target);
+			}
+			connection.commit();
+		}
+	}
+
 	private static void loadSyntheticTransformerData(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -453,6 +523,11 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	private static Resource socialUser(int index) {
 		return VF.createIRI("http://example.com/theme/social/user/" + index);
+	}
+
+	private static StatementPattern followsPattern(String subjectName, String objectName) {
+		return new StatementPattern(Var.of(subjectName), Var.of("followsPredicate", SOCIAL_FOLLOWS),
+				Var.of(objectName));
 	}
 
 	private static StatementPattern generatorTypePattern() {
@@ -503,6 +578,30 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		second.addBinding("target", VF.createLiteral("Substation 2"));
 		bindingSetAssignment.setBindingSets(List.<BindingSet>of(first, second));
 		return bindingSetAssignment;
+	}
+
+	private static BindingSetAssignment socialChainTupleBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new ArrayList<>();
+		for (int i = 0; i < 25; i++) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding("a", socialUser(i % 5));
+			bindingSet.addBinding("b", socialUser(100 + (i / 5)));
+			bindingSet.addBinding("c", socialUser(200 + (i % 5)));
+			bindingSet.addBinding("d", socialUser(300 + (i / 5)));
+			bindingSet.addBinding("e", socialUser(400 + (i % 5)));
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static double bindingSetRows(BindingSetAssignment assignment) {
+		double rows = 0.0d;
+		for (BindingSet ignored : assignment.getBindingSets()) {
+			rows += 1.0d;
+		}
+		return rows;
 	}
 
 	private static String electricalGridQuery() {

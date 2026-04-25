@@ -79,6 +79,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -86,6 +87,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.SailException;
@@ -178,6 +180,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final double DEFAULT_ZERO_INTERSECTION_SKEW_RATIO = 128.0d;
 	private static final long DEFAULT_ZERO_INTERSECTION_ROW_BUDGET = 1_000_000L;
 	private static final int DEFAULT_ZERO_INTERSECTION_SAMPLE_SIZE = 128;
+	private static final Object FINITE_FILTER_UNSUPPORTED = new Object();
+	private static final Object FINITE_FILTER_UNBOUND = new Object();
 	/* ────────────────────────────────────────────────────────────── */
 	/* Public enums */
 	/* ────────────────────────────────────────────────────────────── */
@@ -1914,7 +1918,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.zeroIntersectionRowBudget = zeroIntersectionBudget;
 		this.zeroIntersectionSampleSize = zeroIntersectionSampleSize;
 		this.churnSampler = new ChurnSampler();
-
+		System.out.println("k: "+k);
+		System.out.println("buckets: "+buckets);
+		System.out.println("nominalEntries: "+nominalEntries);
 		this.bufA = new State(k, this.nominalEntries);
 		this.bufB = new State(k, this.nominalEntries);
 		this.current = usingA ? bufA : bufB;
@@ -2750,47 +2756,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private void ingestBatch(State state, IngestEvent[] batch, int batchSize) {
-		applyBatchUpdates(state, buildBatchUpdates(batch, batchSize));
+		BatchUpdateAccumulator[] updates = buildBatchUpdates(batch, batchSize);
+		synchronized (state) {
+			applyBatchUpdates(state, updates);
+		}
 	}
 
 	private void ingestRebuildBatch(State state, IngestEvent[] batch, int batchSize) {
 		if (batchSize == 0) {
 			return;
 		}
-		if (batchSize < PARALLEL_INGEST_MIN_BATCH_SIZE) {
-			for (int i = 0; i < batchSize; i++) {
-				IngestEvent event = batch[i];
-				if (event != null) {
-					applyRebuildIngestEvent(state, event, null);
-				}
-			}
-			return;
-		}
-
-		Future<?>[] futures = new Future<?>[INGEST_PARTITIONS.length];
-		try {
-			for (IngestPartition partition : INGEST_PARTITIONS) {
-				futures[partition.ordinal()] = ingestPartitionExecutor.submit(() -> applyRebuildPartition(state, batch,
-						batchSize, partition));
-			}
-			for (Future<?> future : futures) {
-				future.get();
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException("Interrupted while rebuilding join-estimator sketches", e);
-		} catch (ExecutionException e) {
-			throw new RuntimeException("Failed to rebuild join-estimator sketches", e.getCause());
-		}
-	}
-
-	private void applyRebuildPartition(State state, IngestEvent[] batch, int batchSize, IngestPartition partition) {
-		for (int i = 0; i < batchSize; i++) {
-			IngestEvent event = batch[i];
-			if (event != null) {
-				applyRebuildIngestEvent(state, event, partition);
-			}
-		}
+		ingestBatch(state, batch, batchSize);
 	}
 
 	private void applyBatchUpdates(State state, BatchUpdateAccumulator[] batchUpdates) {
@@ -2819,9 +2795,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return updates;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new RuntimeException("Interrupted while preparing incremental join-estimator batch", e);
+			throw new RuntimeException("Interrupted while preparing join-estimator batch", e);
 		} catch (ExecutionException e) {
-			throw new RuntimeException("Failed to prepare incremental join-estimator batch", e.getCause());
+			throw new RuntimeException("Failed to prepare join-estimator batch", e.getCause());
 		}
 	}
 
@@ -2876,128 +2852,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		markDirtyAndTouchResidentSketch(slot, entryId, sketch,
 				initialSingletonSketchBytesHint(state, sketch, valueCount));
-	}
-
-	private void applyRebuildIngestEvent(State state, IngestEvent event, IngestPartition partition) {
-		if (partition == null) {
-			applyRebuildSingleUpdates(state, event);
-			applyRebuildPair(state, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
-					event.thetaHc);
-			applyRebuildPair(state, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
-					event.thetaHc);
-			applyRebuildPair(state, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
-					event.thetaHo);
-			applyRebuildPair(state, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
-					event.thetaHc);
-			applyRebuildPair(state, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
-					event.thetaHo);
-			applyRebuildPair(state, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
-					event.thetaHp);
-			return;
-		}
-		switch (partition) {
-		case SINGLES:
-			applyRebuildSingleUpdates(state, event);
-			break;
-		case SP:
-			applyRebuildPair(state, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
-					event.thetaHc);
-			break;
-		case SO:
-			applyRebuildPair(state, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
-					event.thetaHc);
-			break;
-		case SC:
-			applyRebuildPair(state, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
-					event.thetaHo);
-			break;
-		case PO:
-			applyRebuildPair(state, Pair.PO, event.isDelete, event.poKey, event.thetaSig, event.thetaHs,
-					event.thetaHc);
-			break;
-		case PC:
-			applyRebuildPair(state, Pair.PC, event.isDelete, event.pcKey, event.thetaSig, event.thetaHs,
-					event.thetaHo);
-			break;
-		case OC:
-			applyRebuildPair(state, Pair.OC, event.isDelete, event.ocKey, event.thetaSig, event.thetaHs,
-					event.thetaHp);
-			break;
-		}
-	}
-
-	private void applyRebuildSingleUpdates(State state, IngestEvent event) {
-		boolean isDelete = event.isDelete;
-		int si = event.si;
-		int pi = event.pi;
-		int oi = event.oi;
-		int ci = event.ci;
-		long thetaHs = event.thetaHs;
-		long thetaHp = event.thetaHp;
-		long thetaHo = event.thetaHo;
-		long thetaHc = event.thetaHc;
-		long thetaSig = event.thetaSig;
-
-		applyRebuildSingleSketch(state, isDelete, Component.S, si, thetaSig);
-		applyRebuildSingleSketch(state, isDelete, Component.P, pi, thetaSig);
-		applyRebuildSingleSketch(state, isDelete, Component.O, oi, thetaSig);
-		applyRebuildSingleSketch(state, isDelete, Component.C, ci, thetaSig);
-
-		applyRebuildGlobalComponentSketch(state, isDelete, Component.S, thetaHs);
-		applyRebuildGlobalComponentSketch(state, isDelete, Component.P, thetaHp);
-		applyRebuildGlobalComponentSketch(state, isDelete, Component.O, thetaHo);
-		applyRebuildGlobalComponentSketch(state, isDelete, Component.C, thetaHc);
-
-		applyRebuildComplementSketch(state, isDelete, Component.S, Component.P, si, thetaHp);
-		applyRebuildComplementSketch(state, isDelete, Component.S, Component.O, si, thetaHo);
-		applyRebuildComplementSketch(state, isDelete, Component.S, Component.C, si, thetaHc);
-
-		applyRebuildComplementSketch(state, isDelete, Component.P, Component.S, pi, thetaHs);
-		applyRebuildComplementSketch(state, isDelete, Component.P, Component.O, pi, thetaHo);
-		applyRebuildComplementSketch(state, isDelete, Component.P, Component.C, pi, thetaHc);
-
-		applyRebuildComplementSketch(state, isDelete, Component.O, Component.S, oi, thetaHs);
-		applyRebuildComplementSketch(state, isDelete, Component.O, Component.P, oi, thetaHp);
-		applyRebuildComplementSketch(state, isDelete, Component.O, Component.C, oi, thetaHc);
-
-		applyRebuildComplementSketch(state, isDelete, Component.C, Component.S, ci, thetaHs);
-		applyRebuildComplementSketch(state, isDelete, Component.C, Component.P, ci, thetaHp);
-		applyRebuildComplementSketch(state, isDelete, Component.C, Component.O, ci, thetaHo);
-	}
-
-	private void applyRebuildPair(State state, Pair pair, boolean isDelete, long key, long triple, long comp1,
-			long comp2) {
-		int x = (int) (key >>> 32);
-		int y = (int) key;
-		applyRebuildSketchUpdate(state, pairAddress(REC_PAIR_TRIPLE, false, pair, x, y), isDelete, triple);
-		applyRebuildSketchUpdate(state, pairAddress(REC_PAIR_COMP1, false, pair, x, y), isDelete, comp1);
-		applyRebuildSketchUpdate(state, pairAddress(REC_PAIR_COMP2, false, pair, x, y), isDelete, comp2);
-	}
-
-	private void applyRebuildSingleSketch(State state, boolean isDelete, Component component, int idx, long thetaHash) {
-		applyRebuildSketchUpdate(state, singleTripleAddress(false, component, idx), isDelete, thetaHash);
-	}
-
-	private void applyRebuildGlobalComponentSketch(State state, boolean isDelete, Component component, long thetaHash) {
-		applyRebuildSketchUpdate(state, globalComponentAddress(component), isDelete, thetaHash);
-	}
-
-	private void applyRebuildComplementSketch(State state, boolean isDelete, Component fixed, Component other, int idx,
-			long thetaHash) {
-		applyRebuildSketchUpdate(state, singleComplementAddress(false, fixed, other, idx), isDelete, thetaHash);
-	}
-
-	private void applyRebuildSketchUpdate(State state, SketchAddress address, boolean isDelete, long thetaHash) {
-		synchronized (state) {
-			byte slot = slotByte(slotOf(state));
-			int entryId;
-			synchronized (sketchCacheLock) {
-				entryId = cacheDirectory.findOrAdd(address);
-			}
-			ArrayOfDoublesUpdatableSketch sketch = getSketchForWrite(state, address, entryId, false);
-			tupleUpdateRaw(sketch, thetaHash, signedDelta(isDelete));
-			markDirtyAndTouchResidentSketch(slot, entryId, sketch, -1L);
-		}
 	}
 
 	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event, IngestPartition partition) {
@@ -4444,6 +4298,159 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
 	}
 
+	private TuplePlanEstimate exactFiniteBindingSetFilterPlan(Filter filter) {
+		if (!(filter.getArg() instanceof BindingSetAssignment)) {
+			return null;
+		}
+		BindingSetAssignment assignment = (BindingSetAssignment) filter.getArg();
+		ValueExpr condition = filter.getCondition();
+		if (condition == null) {
+			return null;
+		}
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets == null) {
+			return null;
+		}
+		Set<String> bindingNames = assignment.getBindingNames();
+		if (!bindingNames.containsAll(VarNameCollector.process(condition))) {
+			return null;
+		}
+
+		double rows = 0.0d;
+		List<BindingSet> filteredRows = new ArrayList<>();
+		for (BindingSet bindingSet : bindingSets) {
+			rows++;
+			if (rows > SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS) {
+				return null;
+			}
+			Boolean result = evaluateFiniteFilter(condition, bindingSet);
+			if (result == null) {
+				return null;
+			}
+			if (result) {
+				filteredRows.add(bindingSet);
+			}
+		}
+
+		BindingSetAssignment filteredAssignment = new BindingSetAssignment();
+		filteredAssignment.setBindingNames(bindingNames);
+		filteredAssignment.setBindingSets(filteredRows);
+		return estimateBindingSetAssignment(filteredAssignment);
+	}
+
+	private Boolean evaluateFiniteFilter(ValueExpr condition, BindingSet bindingSet) {
+		if (condition instanceof And) {
+			And and = (And) condition;
+			Boolean left = evaluateFiniteFilter(and.getLeftArg(), bindingSet);
+			if (Boolean.FALSE.equals(left)) {
+				return Boolean.FALSE;
+			}
+			if (left == null) {
+				return null;
+			}
+			return evaluateFiniteFilter(and.getRightArg(), bindingSet);
+		}
+		if (condition instanceof Or) {
+			Or or = (Or) condition;
+			Boolean left = evaluateFiniteFilter(or.getLeftArg(), bindingSet);
+			if (Boolean.TRUE.equals(left)) {
+				return Boolean.TRUE;
+			}
+			if (left == null) {
+				return null;
+			}
+			return evaluateFiniteFilter(or.getRightArg(), bindingSet);
+		}
+		if (condition instanceof Compare) {
+			return evaluateFiniteCompare((Compare) condition, bindingSet);
+		}
+		if (condition instanceof SameTerm) {
+			return evaluateFiniteSameTerm((SameTerm) condition, bindingSet);
+		}
+		if (condition instanceof ListMemberOperator) {
+			return evaluateFiniteListMember((ListMemberOperator) condition, bindingSet);
+		}
+		return null;
+	}
+
+	private Boolean evaluateFiniteCompare(Compare compare, BindingSet bindingSet) {
+		Object left = finiteFilterValue(compare.getLeftArg(), bindingSet);
+		Object right = finiteFilterValue(compare.getRightArg(), bindingSet);
+		if (left == FINITE_FILTER_UNSUPPORTED || right == FINITE_FILTER_UNSUPPORTED) {
+			return null;
+		}
+		if (left == FINITE_FILTER_UNBOUND || right == FINITE_FILTER_UNBOUND) {
+			return Boolean.FALSE;
+		}
+		try {
+			return QueryEvaluationUtil.compare((Value) left, (Value) right, compare.getOperator(), false);
+		} catch (ValueExprEvaluationException ignored) {
+			return Boolean.FALSE;
+		}
+	}
+
+	private Boolean evaluateFiniteSameTerm(SameTerm sameTerm, BindingSet bindingSet) {
+		Object left = finiteFilterValue(sameTerm.getLeftArg(), bindingSet);
+		Object right = finiteFilterValue(sameTerm.getRightArg(), bindingSet);
+		if (left == FINITE_FILTER_UNSUPPORTED || right == FINITE_FILTER_UNSUPPORTED) {
+			return null;
+		}
+		if (left == FINITE_FILTER_UNBOUND || right == FINITE_FILTER_UNBOUND) {
+			return Boolean.FALSE;
+		}
+		return left.equals(right);
+	}
+
+	private Boolean evaluateFiniteListMember(ListMemberOperator operator, BindingSet bindingSet) {
+		List<ValueExpr> arguments = operator.getArguments();
+		if (arguments == null || arguments.size() < 2) {
+			return null;
+		}
+		Object left = finiteFilterValue(arguments.get(0), bindingSet);
+		if (left == FINITE_FILTER_UNSUPPORTED) {
+			return null;
+		}
+		if (left == FINITE_FILTER_UNBOUND) {
+			return Boolean.FALSE;
+		}
+		for (int i = 1; i < arguments.size(); i++) {
+			Object right = finiteFilterValue(arguments.get(i), bindingSet);
+			if (right == FINITE_FILTER_UNSUPPORTED) {
+				return null;
+			}
+			if (right == FINITE_FILTER_UNBOUND) {
+				continue;
+			}
+			try {
+				if (QueryEvaluationUtil.compare((Value) left, (Value) right, Compare.CompareOp.EQ, false)) {
+					return Boolean.TRUE;
+				}
+			} catch (ValueExprEvaluationException ignored) {
+				// try the next list value
+			}
+		}
+		return Boolean.FALSE;
+	}
+
+	private Object finiteFilterValue(ValueExpr valueExpr, BindingSet bindingSet) {
+		if (valueExpr instanceof Var) {
+			Var var = (Var) valueExpr;
+			if (var.hasValue()) {
+				return var.getValue();
+			}
+			if (var.getName() == null) {
+				return FINITE_FILTER_UNBOUND;
+			}
+			Value value = bindingSet.getValue(var.getName());
+			return value == null ? FINITE_FILTER_UNBOUND : value;
+		}
+		if (valueExpr instanceof ValueConstant) {
+			Value value = ((ValueConstant) valueExpr).getValue();
+			return value == null ? FINITE_FILTER_UNBOUND : value;
+		}
+		return FINITE_FILTER_UNSUPPORTED;
+	}
+
 	private TuplePlanEstimate applyInitiallyBoundVars(TuplePlanEstimate estimate, Set<String> initiallyBoundVars) {
 		if (estimate == null || initiallyBoundVars == null || initiallyBoundVars.isEmpty()
 				|| estimate.varStats.isEmpty()) {
@@ -5815,6 +5822,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private TuplePlanEstimate estimateFilteredTupleExprPlan(Filter filter, Set<String> initiallyBoundVars) {
+		TuplePlanEstimate exactFiniteEstimate = exactFiniteBindingSetFilterPlan(filter);
+		if (exactFiniteEstimate != null) {
+			return exactFiniteEstimate;
+		}
 		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), initiallyBoundVars);
 		if (argEstimate == null) {
 			return null;
@@ -5835,6 +5846,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private TuplePlanEstimate estimateFilteredTupleExprPlan(Filter filter, OptimizationScopeState scope,
 			long initiallyBoundVarMask) {
+		TuplePlanEstimate exactFiniteEstimate = exactFiniteBindingSetFilterPlan(filter);
+		if (exactFiniteEstimate != null) {
+			return exactFiniteEstimate;
+		}
 		TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg(), scope, initiallyBoundVarMask);
 		if (argEstimate == null) {
 			return null;

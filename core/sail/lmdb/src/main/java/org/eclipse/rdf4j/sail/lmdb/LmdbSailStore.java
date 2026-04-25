@@ -78,7 +78,7 @@ class LmdbSailStore implements SailStore {
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
 
-	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
+	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
 	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
 	private volatile Throwable tripleStoreException;
 	private final AtomicBoolean running = new AtomicBoolean(false);
@@ -88,6 +88,10 @@ class LmdbSailStore implements SailStore {
 	private volatile boolean mayHaveInferred;
 
 	boolean enableMultiThreading = true;
+
+	static ExecutorService createTripleStoreExecutor() {
+		return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("LmdbTripleStore-Ingest-", 0).factory());
+	}
 
 	private PersistentSetFactory<Long> setFactory;
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
