@@ -411,7 +411,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final int SKETCH_PAYLOAD_FORMAT_NATIVE = -1;
 	private static final int SKETCH_PAYLOAD_FRAME_HEADER_BYTES = Integer.BYTES + Integer.BYTES;
 	private static final int TARGET_SKETCH_PART_FILES = 128;
-	private static final int DEFAULT_BUCKET_COUNT = 4*1024;
+	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 64;
 	private static final String ESTIMATE_CACHE_SECONDS_PROPERTY = "estimateCacheSeconds";
 	private static final String ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT_PROPERTY = "zeroIntersectionExactDistinctLimit";
@@ -3158,7 +3158,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
 				boolean contextPairSketchesEnabled) {
-			System.out.println("Initializing state: k=" + k + ", subjectBuckets=" + subjectBuckets + ", predicateBuckets="
+			System.out.println("Initializing state: k=" + k + ", subjectBuckets=" + subjectBuckets
+					+ ", predicateBuckets="
 					+ predicateBuckets + ", objectBuckets=" + objectBuckets + ", contextBuckets=" + contextBuckets
 					+ ", contextPairSketchesEnabled=" + contextPairSketchesEnabled);
 			this.k = k;
