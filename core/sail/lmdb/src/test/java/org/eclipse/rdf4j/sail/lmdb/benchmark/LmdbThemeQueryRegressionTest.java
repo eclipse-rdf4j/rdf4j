@@ -378,6 +378,65 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void medicalEncounterDateFilterStaysAheadOfBroadTypeAnchor(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/medical/recordedOn> ?date",
+							"FILTER (?date IN (\"2024-01-01\"^^<http://www.w3.org/2001/XMLSchema#date>, "
+									+ "\"2024-02-01\"^^<http://www.w3.org/2001/XMLSchema#date>))",
+							"Medical q2 should keep the date filter attached to the recordedOn lookup\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(),
+							"FILTER (?date IN (\"2024-01-01\"^^<http://www.w3.org/2001/XMLSchema#date>, "
+									+ "\"2024-02-01\"^^<http://www.w3.org/2001/XMLSchema#date>))",
+							"?enc a <http://example.com/theme/medical/Encounter>",
+							"Medical q2 should apply the selective date filter before the broad Encounter type scan\n"
+									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalOptionalNotExistsQueryCompletes(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		int queryIndex = 10;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+				long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(
+						theme.name() + ":" + queryIndex,
+						() -> {
+							long actual = executeQuery(repository, query);
+							if (actual != expected) {
+								throw new AssertionError("LMDB theme query mismatch: theme=" + theme
+										+ ", queryIndex=" + queryIndex + ", expected=" + expected + ", actual="
+										+ actual + "\n" + explainBestEffort(repository, query));
+							}
+						});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void electricalGridGeneratorCapacityThresholdUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
 		Path themeDir = prepareThemeStore(dataDir, theme, 5);
