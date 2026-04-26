@@ -20,7 +20,7 @@ class ParseFileRegressionTest(unittest.TestCase):
         repo_root = SCRIPT_DIR.parents[3]
         result_file = (
             repo_root
-            / "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-03-01.md"
+            / "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-03-01.md"
         )
 
         parsed = core.parse_file(result_file, "results-2026-03-01", None, "mtime")
@@ -33,7 +33,7 @@ class ParseFileRegressionTest(unittest.TestCase):
         repo_root = SCRIPT_DIR.parents[3]
         result_file = (
             repo_root
-            / "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/results-2026-03-04.md"
+            / "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-03-04.md"
         )
 
         parsed = core.parse_file(result_file, "results-2026-03-04", None, "mtime")
@@ -73,6 +73,58 @@ class ParseFileRegressionTest(unittest.TestCase):
             self.assertAlmostEqual(row["Score [left]"], 10.0, places=3)
             self.assertAlmostEqual(row["Score [right]"], 20.0, places=3)
             self.assertAlmostEqual(row["Diff % [right - left]"], 100.0, places=3)
+
+    def test_blank_lines_between_jmh_rows_do_not_end_table(self) -> None:
+        results = "\n".join(
+            [
+                "Benchmark  (themeName)  (z_queryIndex)  Mode  Score  Units",
+                "ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS  0  avgt  10.0  ms/op",
+                "",
+                "ThemeQueryBenchmark.executeQuery  SOCIAL_MEDIA  8  avgt  20.0  ms/op",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_file = Path(tmpdir) / "results.txt"
+            result_file.write_text(results, encoding="utf-8")
+
+            parsed = core.parse_file(result_file, "results", None, "mtime")
+
+            self.assertEqual(len(parsed.rows), 2)
+            key = ("ThemeQueryBenchmark.executeQuery", "SOCIAL_MEDIA", "8", "avgt", "ms/op")
+            self.assertIn(key, parsed.score_by_key)
+            self.assertAlmostEqual(parsed.score_by_key[key], 20.0, places=3)
+
+    def test_non_jmh_text_after_blank_does_not_parse_as_rows(self) -> None:
+        results = "\n".join(
+            [
+                "Benchmark                              (themeName)  (z_queryIndex)  Mode  Cnt      Score   Error  Units",
+                "ThemeQueryBenchmark.executeQuery   MEDICAL_RECORDS               0  avgt          10.0          ms/op",
+                "",
+                "ThemeQueryBenchmark.executeQuery      SOCIAL_MEDIA               8  avgt          20.0          ms/op",
+                "",
+                "Initializing state: k=64, subjectBuckets=4096, predicateBuckets=64, "
+                "objectBuckets=4096, contextBuckets=16, contextPairSketchesEnabled=false",
+                "Projection (resultSizeActual=1, hasNextCallCountActual=2)",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_file = Path(tmpdir) / "results.txt"
+            result_file.write_text(results, encoding="utf-8")
+
+            parsed = core.parse_file(result_file, "results", None, "mtime")
+
+            self.assertEqual(
+                [
+                    row["Benchmark"]
+                    for row in parsed.rows
+                ],
+                [
+                    "ThemeQueryBenchmark.executeQuery",
+                    "ThemeQueryBenchmark.executeQuery",
+                ],
+            )
 
 
 if __name__ == "__main__":

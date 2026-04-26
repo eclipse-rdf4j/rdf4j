@@ -118,14 +118,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to accept disconnected factors");
 		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
 		assertTrue(plan.getOrderedArgs().containsAll(List.of(expensive, cheap)));
-		assertEquals(101.0d, plan.getEstimatedTotalWork(), 1.0e-9d,
-				"Estimated total work should come from the physical factor-cost model");
+		assertEquals(220.0d, plan.getEstimatedTotalWork(), 1.0e-9d,
+				"Estimated total work should combine physical factor costs with output work");
 		List<Double> stepWorkRows = plan.getSteps()
 				.stream()
 				.map(JoinOrderPlanner.PlanStep::getStepWorkRows)
 				.toList();
-		assertTrue(stepWorkRows.containsAll(List.of(100.0d, 1.0d)),
-				"Step work should use the supplied physical factor costs");
+		assertTrue(stepWorkRows.stream().anyMatch(step -> step >= 100.0d),
+				"Step work should include the supplied expensive physical factor cost");
 		assertTrue(plan.getSummaryStringMetrics()
 				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION)
 				.contains("mode=dp-frontier"),
@@ -135,6 +135,154 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.contains("rejectedAlternatives="),
 				"Expected rejected-alternative diagnostics: " + plan.getSummaryStringMetrics());
 		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void fixedOrderScorerRanksKnownFastOrderCheaperThanRepeatedLookupOrder() {
+		StubSailStore store = new StubSailStore();
+		IRI broadPredicate = VF.createIRI("urn:broad");
+		IRI selectivePredicate = VF.createIRI("urn:selective");
+		for (int i = 0; i < 100; i++) {
+			Resource subject = VF.createIRI("urn:s" + i);
+			IRI bridge = VF.createIRI("urn:x" + i);
+			store.add(VF.createStatement(subject, broadPredicate, bridge));
+		}
+		store.add(VF.createStatement(VF.createIRI("urn:x0"), selectivePredicate, VF.createIRI("urn:y")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern broad = pattern("s", broadPredicate, "x");
+		StatementPattern selective = pattern("x", selectivePredicate, "y");
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == broad) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(boundVars.contains("x") ? 1.0d : 100.0d,
+						boundVars.contains("x") ? 1.0d : 100.0d));
+			}
+			if (factor == selective) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(boundVars.contains("x") ? 100.0d : 1.0d,
+						1.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.JoinOrderPlan fast = estimator
+				.estimateJoinOrder(List.of(selective, broad), Set.of(), JoinOrderPlanner.Algorithm.GREEDY,
+						costModel, List.of())
+				.orElseThrow();
+		JoinOrderPlanner.JoinOrderPlan bad = estimator
+				.estimateJoinOrder(List.of(broad, selective), Set.of(), JoinOrderPlanner.Algorithm.GREEDY,
+						costModel, List.of())
+				.orElseThrow();
+
+		assertTrue(fast.getEstimatedTotalWork() < bad.getEstimatedTotalWork(),
+				"Fixed-order scorer should prefer the selective seed over repeated lookup work: fast="
+						+ fast.getEstimatedTotalWork() + " bad=" + bad.getEstimatedTotalWork());
+	}
+
+	@Test
+	void nestedDeferredFilterWithZeroPassRatioStillPaysRepeatedWork() {
+		StubSailStore store = new StubSailStore();
+		IRI pValue = VF.createIRI("urn:pValue");
+		IRI effectSize = VF.createIRI("urn:effectSize");
+		for (int i = 0; i < 20; i++) {
+			Resource result = VF.createIRI("urn:result:" + i);
+			store.add(VF.createStatement(result, pValue, VF.createLiteral(0.04d)));
+			store.add(VF.createStatement(result, effectSize, VF.createLiteral(0.8d)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern pValuePattern = pattern("result", pValue, "p");
+		StatementPattern effectSizePattern = pattern("result", effectSize, "effect");
+		JoinFactorCostModel costModel = (factor, boundVars) -> Optional
+				.of(new JoinFactorCostModel.FactorCostEstimate(20.0d, 20.0d));
+		JoinOrderPlanner.FilterConstraint notExistsFilter = new JoinOrderPlanner.FilterConstraint(
+				Set.of("p", "effect"), 0.0d, JoinOrderPlanner.FILTER_COST_EXPENSIVE,
+				"FILTER NOT EXISTS { ?result urn:p ?p }", "learned_filter", 100L, true);
+
+		JoinOrderPlanner.JoinOrderPlan withoutFilter = estimator
+				.estimateJoinOrder(List.of(pValuePattern, effectSizePattern), Set.of(),
+						JoinOrderPlanner.Algorithm.GREEDY, costModel, List.of())
+				.orElseThrow();
+		JoinOrderPlanner.JoinOrderPlan withFilter = estimator
+				.estimateJoinOrder(List.of(pValuePattern, effectSizePattern), Set.of(),
+						JoinOrderPlanner.Algorithm.GREEDY, costModel, List.of(notExistsFilter))
+				.orElseThrow();
+
+		assertTrue(withFilter.getEstimatedTotalWork() > withoutFilter.getEstimatedTotalWork(),
+				"Nested filters must add repeated subplan work even when learned passRatio is zero");
+		assertTrue(withFilter.getEstimatedFinalRows() > 0.0d,
+				"Nested filter passRatio should not be applied as free selectivity during join ordering");
+	}
+
+	@Test
+	void repeatedPrefixRowsDriveCorrelatedLookupWorkAcrossSameBinding() {
+		StubSailStore store = new StubSailStore();
+		IRI fanoutPredicate = VF.createIRI("urn:fanout");
+		IRI probePredicate = VF.createIRI("urn:probe");
+		Resource sharedSubject = VF.createIRI("urn:shared");
+		for (int i = 0; i < 100; i++) {
+			store.add(VF.createStatement(sharedSubject, fanoutPredicate, VF.createIRI("urn:x" + i)));
+		}
+		store.add(VF.createStatement(sharedSubject, probePredicate, VF.createIRI("urn:probe-value")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern fanout = pattern("s", fanoutPredicate, "x");
+		StatementPattern probe = pattern("s", probePredicate, "probe");
+		JoinFactorCostModel costModel = (factor, boundVars) -> Optional.empty();
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.estimateJoinOrder(List.of(fanout, probe), Set.of(), JoinOrderPlanner.Algorithm.GREEDY,
+						costModel, List.of())
+				.orElseThrow();
+
+		double correlatedStepWorkRows = plan.getSteps()
+				.get(1)
+				.getStepWorkRows();
+		assertTrue(correlatedStepWorkRows >= 190.0d,
+				"Correlated lookup work should scale with repeated prefix rows, not only distinct lookup bindings: "
+						+ correlatedStepWorkRows);
+	}
+
+	@Test
+	void nestedDeferredFilterChargesPerInvocationSubplanWork() {
+		StubSailStore store = new StubSailStore();
+		IRI pValue = VF.createIRI("urn:pValue");
+		IRI effectSize = VF.createIRI("urn:effectSize");
+		for (int i = 0; i < 20; i++) {
+			Resource result = VF.createIRI("urn:result:" + i);
+			store.add(VF.createStatement(result, pValue, VF.createLiteral(0.04d)));
+			store.add(VF.createStatement(result, effectSize, VF.createLiteral(0.8d)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern pValuePattern = pattern("result", pValue, "p");
+		StatementPattern effectSizePattern = pattern("result", effectSize, "effect");
+		JoinFactorCostModel costModel = (factor, boundVars) -> Optional
+				.of(new JoinFactorCostModel.FactorCostEstimate(20.0d, 20.0d));
+		TupleExpr nestedProbe = new Filter(pattern("result", pValue, "p2"),
+				new Compare(Var.of("p2"), Var.of("p"), Compare.CompareOp.LT));
+		JoinOrderPlanner.FilterConstraint notExistsFilter = new JoinOrderPlanner.FilterConstraint(
+				Set.of("p", "effect"), 0.0d, JoinOrderPlanner.FILTER_COST_EXPENSIVE,
+				"FILTER NOT EXISTS { ?result urn:p ?p }", "learned_filter", 100L, nestedProbe, true, false);
+
+		JoinOrderPlanner.JoinOrderPlan withoutFilter = estimator
+				.estimateJoinOrder(List.of(pValuePattern, effectSizePattern), Set.of(),
+						JoinOrderPlanner.Algorithm.GREEDY, costModel, List.of())
+				.orElseThrow();
+		JoinOrderPlanner.JoinOrderPlan withFilter = estimator
+				.estimateJoinOrder(List.of(pValuePattern, effectSizePattern), Set.of(),
+						JoinOrderPlanner.Algorithm.GREEDY, costModel, List.of(notExistsFilter))
+				.orElseThrow();
+
+		assertTrue(withFilter.getEstimatedTotalWork() >= withoutFilter.getEstimatedTotalWork() + 300.0d,
+				"Nested filters should charge repeated subplan access work, not just one scalar filter pass: without="
+						+ withoutFilter.getEstimatedTotalWork() + " with=" + withFilter.getEstimatedTotalWork());
 	}
 
 	@Test

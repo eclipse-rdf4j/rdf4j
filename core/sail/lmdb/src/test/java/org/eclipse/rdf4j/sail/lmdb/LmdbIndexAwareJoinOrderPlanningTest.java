@@ -320,6 +320,36 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
+	void predicateOnlyAccessIsCostedAsPrefixScan(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticSocialMediaQ4Data(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
+			StatementPattern followsByPredicate = new StatementPattern(Var.of("u"),
+					Var.of("followsPredicate", SOCIAL_FOLLOWS), Var.of("v"));
+			JoinFactorCostModel.FactorCostEstimate predicateOnlyCost = costModel
+					.estimateFactorCost(followsByPredicate, Set.of())
+					.orElseThrow();
+
+			assertEquals("prefixScan",
+					predicateOnlyCost.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+					"Predicate-only LMDB access walks the predicate prefix and must not be treated as a direct lookup: "
+							+ predicateOnlyCost.getStringMetrics() + predicateOnlyCost.getDoubleMetrics());
+			assertTrue(predicateOnlyCost.getWorkRows() > 1.0d,
+					"Predicate-only prefix scan should pay rows walked before filters: "
+							+ predicateOnlyCost.getStringMetrics() + predicateOnlyCost.getDoubleMetrics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void directLookupChainFromFiniteUserTuplesDoesNotExpandEstimate(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -672,9 +702,9 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static List<String> collectSocialMediaQ4MandatoryLeafOrder(TupleExpr optimized) {
 		List<String> leaves = new ArrayList<>();
 		TupleExpr mandatoryRoot = optimized;
-		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
-		if (leftJoin != null) {
-			mandatoryRoot = leftJoin.getLeftArg();
+		Optional<LeftJoin> leftJoin = findOptional(optimized, LeftJoin.class);
+		if (leftJoin.isPresent()) {
+			mandatoryRoot = leftJoin.get().getLeftArg();
 		}
 		collectSocialMediaQ4MandatoryLeafOrder(mandatoryRoot, leaves);
 		return leaves;
@@ -754,6 +784,10 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	private static <T extends QueryModelNode> T findFirst(QueryModelNode root, Class<T> type) {
+		return findOptional(root, type).orElseThrow();
+	}
+
+	private static <T extends QueryModelNode> Optional<T> findOptional(QueryModelNode root, Class<T> type) {
 		List<T> matches = new ArrayList<>(1);
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -764,6 +798,6 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				super.meetNode(node);
 			}
 		});
-		return matches.get(0);
+		return matches.stream().findFirst();
 	}
 }

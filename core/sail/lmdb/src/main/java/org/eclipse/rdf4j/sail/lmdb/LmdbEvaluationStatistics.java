@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
@@ -141,6 +142,17 @@ class LmdbEvaluationStatistics
 				enrichedPlan.getDiagnostics());
 	}
 
+	@Override
+	public Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+		if (!supportsJoinEstimation()) {
+			return Optional.empty();
+		}
+		return sketchBasedJoinEstimator
+				.estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm, this, deferredFilters)
+				.map(this::enrichPlanWithAccessMetrics);
+	}
+
 	private JoinOrderPlan enrichPlanWithAccessMetrics(JoinOrderPlan plan) {
 		if (plan.getSteps().size() != plan.getOrderedArgs().size()) {
 			return plan;
@@ -244,6 +256,21 @@ class LmdbEvaluationStatistics
 	}
 
 	private Optional<FactorCostEstimate> estimateJoinFactorCost(Join join, Set<String> boundVars) {
+		List<TupleExpr> flattenedFactors = new ArrayList<>();
+		flattenJoinFactors(join, flattenedFactors);
+		if (flattenedFactors.size() > 1 && supportsJoinEstimation()) {
+			Optional<JoinOrderPlan> plan = estimateJoinOrder(flattenedFactors, boundVars, Algorithm.DYNAMIC_PROGRAMMING,
+					List.of());
+			if (plan.isPresent() && isFiniteNonNegative(plan.get().getEstimatedTotalWork())) {
+				double outputRows = plan.get().getEstimatedFinalRows();
+				if (!isFiniteNonNegative(outputRows)) {
+					outputRows = estimateFactorOutputRows(join, boundVars);
+				}
+				if (isFiniteNonNegative(outputRows)) {
+					return Optional.of(new FactorCostEstimate(plan.get().getEstimatedTotalWork(), outputRows));
+				}
+			}
+		}
 		Optional<FactorCostEstimate> leftEstimate = estimateLmdbFactorCost(join.getLeftArg(), boundVars);
 		Set<String> rightBoundVars = unionBindingNames(boundVars, join.getLeftArg().getBindingNames());
 		Optional<FactorCostEstimate> rightEstimate = estimateLmdbFactorCost(join.getRightArg(), rightBoundVars);
@@ -257,9 +284,24 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(outputRows)) {
 			outputRows = Math.max(leftEstimate.get().getOutputRows(), rightEstimate.get().getOutputRows());
 		}
-		return Optional.of(
-				new FactorCostEstimate(leftEstimate.get().getWorkRows() + rightEstimate.get().getWorkRows(),
-						outputRows));
+		double leftWorkRows = leftEstimate.get().getWorkRows();
+		double leftOutputRows = leftEstimate.get().getOutputRows();
+		double rightWorkRows = rightEstimate.get().getWorkRows();
+		double repeatedRightWorkRows = leftWorkRows + Math.max(1.0d, leftOutputRows) * rightWorkRows;
+		if (!isFiniteNonNegative(repeatedRightWorkRows)) {
+			repeatedRightWorkRows = Double.MAX_VALUE;
+		}
+		return Optional.of(new FactorCostEstimate(repeatedRightWorkRows, outputRows));
+	}
+
+	private void flattenJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof Join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
+			Join join = (Join) tupleExpr;
+			flattenJoinFactors(join.getLeftArg(), factors);
+			flattenJoinFactors(join.getRightArg(), factors);
+			return;
+		}
+		factors.add(tupleExpr);
 	}
 
 	private Set<String> unionBindingNames(Set<String> base, Set<String> additions) {
@@ -418,18 +460,17 @@ class LmdbEvaluationStatistics
 			if (!isFiniteNonNegative(rowsAfter)) {
 				continue;
 			}
-			boolean directLookup = accessShape.isDirectLookup(candidate.prefixComponentMask());
+			boolean directLookup = isExactDirectLookup(accessShape, candidate.prefixComponentMask(), rowsBefore,
+					filterAppliedAtAccess);
 			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, rowsAfter)
 					: filterAppliedAtAccess ? rowsAfter : rowsBefore;
-			if (isFiniteNonNegative(factorRows)) {
-				workRows = Math.max(workRows, factorRows);
-			}
 			if (!isFiniteNonNegative(workRows)) {
 				continue;
 			}
+			int coveredLookupComponentMask = accessShape.lookupBoundComponentMask() & candidate.prefixComponentMask();
 			AccessPathEstimate estimate = new AccessPathEstimate(workRows, rowsBefore, rowsAfter,
 					candidate.indexFieldSequence(), candidate.prefixLength(), candidate.prefixComponentMask(),
-					directLookup, accessShape.lookupBoundComponentMask(),
+					directLookup, coveredLookupComponentMask,
 					accessShape.lookupBoundComponentMask() & ~candidate.prefixComponentMask(), candidateCount);
 			if (bestEstimate == null || compareAccessPathEstimate(estimate, bestEstimate) < 0) {
 				bestEstimate = estimate;
@@ -461,6 +502,25 @@ class LmdbEvaluationStatistics
 			return prefixComparison;
 		}
 		return 0;
+	}
+
+	private boolean isExactDirectLookup(SketchBasedJoinEstimator.AccessShape accessShape, int prefixComponentMask,
+			double rowsBeforeFilter, boolean filterAppliedAtAccess) {
+		if (!accessShape.isDirectLookup(prefixComponentMask)) {
+			return false;
+		}
+		if (filterAppliedAtAccess) {
+			return true;
+		}
+		int exactStatementMask = componentBit(Component.S) | componentBit(Component.P) | componentBit(Component.O);
+		if ((prefixComponentMask & exactStatementMask) == exactStatementMask) {
+			return true;
+		}
+		return rowsBeforeFilter <= DIRECT_LOOKUP_WORK_ROW_FLOOR;
+	}
+
+	private int componentBit(Component component) {
+		return 1 << component.ordinal();
 	}
 
 	private static final class AccessPathEstimate {

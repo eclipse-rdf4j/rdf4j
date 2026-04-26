@@ -160,10 +160,12 @@ final class LmdbDeferredFilterPlacer {
 
 	private boolean canApplyDeferredFilterToBindingPrefix(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
 			Set<String> availableNames, Set<String> assignmentBindingNames) {
+		if (LmdbJoinPlanSupport.containsExists(deferredFilter.condition)) {
+			return false;
+		}
 		return !deferredFilter.requiredVars.isEmpty()
 				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
-						|| !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars)
-						|| LmdbJoinPlanSupport.containsExists(deferredFilter.condition))
+						|| !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars))
 				&& !prefixBindingNames.containsAll(deferredFilter.requiredVars)
 				&& availableNames.containsAll(deferredFilter.requiredVars)
 				&& !Collections.disjoint(assignmentBindingNames, deferredFilter.requiredVars);
@@ -257,6 +259,9 @@ final class LmdbDeferredFilterPlacer {
 
 	private boolean groupDeferredFilterOnBindingAssignments(List<SegmentFactor> factors,
 			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
+		if (LmdbJoinPlanSupport.containsExists(deferredFilter.condition)) {
+			return false;
+		}
 		BindingAssignmentWindow window = bindingAssignmentCoveringWindow(factors, deferredFilter, boundBeforeSegment);
 		if (window == null) {
 			return false;

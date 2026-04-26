@@ -225,6 +225,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private final StatementPattern pattern;
 		private final double filterMultiplier;
 		private final int patternConstantComponentMask;
+		private final String[] joinBoundVarNamesByComponent;
 		private final int joinBoundComponentMask;
 		private final int filterLookupComponentMask;
 		private final int lookupBoundComponentMask;
@@ -237,6 +238,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			this.pattern = Objects.requireNonNull(pattern, "pattern");
 			this.filterMultiplier = filterMultiplier;
 			this.patternConstantComponentMask = patternConstantComponentMask;
+			this.joinBoundVarNamesByComponent = joinBoundVarNamesByComponent.clone();
 			this.joinBoundComponentMask = componentMask(joinBoundVarNamesByComponent);
 			this.filterLookupComponentMask = filterLookupComponentMask;
 			this.lookupBoundComponentMask = patternConstantComponentMask | joinBoundComponentMask
@@ -255,6 +257,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		public int joinBoundComponentMask() {
 			return joinBoundComponentMask;
+		}
+
+		public String joinBoundVarName(Component component) {
+			return joinBoundVarNamesByComponent[component.ordinal()];
 		}
 
 		public Set<Component> filterLookupComponents() {
@@ -3424,6 +3430,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				Objects.requireNonNull(factorCostModel, "factorCostModel"), deferredFilters);
 	}
 
+	public Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
+			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm,
+			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		return estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm, JoinOrderWorkAdjuster.NO_OP,
+				Objects.requireNonNull(factorCostModel, "factorCostModel"), deferredFilters);
+	}
+
+	public Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
+			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		return estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm,
+				Objects.requireNonNull(workAdjuster, "workAdjuster"), null, deferredFilters);
+	}
+
+	private Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
+			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
+			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		if (!isReady() || orderedArgs == null || orderedArgs.isEmpty()) {
+			return Optional.empty();
+		}
+		SketchJoinOrderPlanner planner = factorCostModel == null
+				? new SketchJoinOrderPlanner(this, workAdjuster, orderedArgs, initiallyBoundVars, deferredFilters)
+				: new SketchJoinOrderPlanner(this, factorCostModel, orderedArgs, initiallyBoundVars, deferredFilters);
+		return planner.estimateFixedOrder(algorithm).plan();
+	}
+
 	private JoinOrderPlanner.PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
 			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
@@ -4137,8 +4169,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	TuplePlanEstimate withOutputRowsForJoinOrdering(TuplePlanEstimate estimate, double outputRows) {
 		double rows = Math.max(0.0d, outputRows);
+		boolean narrowed = rows < estimate.outputRows;
 		return new TuplePlanEstimate(rows, rows, estimate.localFilterMultiplier,
-				clampVarStatsToRows(estimate.varStats, rows, true));
+				clampVarStatsToRows(estimate.varStats, rows, !narrowed));
 	}
 
 	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
@@ -4227,6 +4260,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		double outputRows() {
 			return outputRows;
+		}
+
+		double distinctBindings(Set<String> varNames) {
+			if (varNames == null || varNames.isEmpty()) {
+				return 1.0d;
+			}
+			double maxDistinct = 1.0d;
+			boolean found = false;
+			for (String varName : varNames) {
+				VarPlanStats stats = varStats.get(varName);
+				if (stats == null || !Double.isFinite(stats.distinct) || stats.distinct <= 0.0d) {
+					return outputRows;
+				}
+				found = true;
+				maxDistinct = Math.max(maxDistinct, stats.distinct);
+			}
+			return found ? Math.min(maxDistinct, outputRows) : outputRows;
 		}
 
 		String summary() {

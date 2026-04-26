@@ -108,13 +108,58 @@ final class LmdbJoinPlanSupport {
 
 		List<JoinOrderPlanner.FilterConstraint> constraints = new ArrayList<>(deferredFilters.size());
 		for (DeferredFilter deferredFilter : deferredFilters) {
+			NestedTupleExpression nestedTupleExpression = nestedTupleExpression(deferredFilter.condition);
 			constraints.add(new JoinOrderPlanner.FilterConstraint(deferredFilter.requiredVars,
 					deferredFilter.passEstimate.getPassRatio(), deferredFilter.conditionCost,
 					deferredFilter.condition.toString(),
 					deferredFilter.passEstimate.getSource().name().toLowerCase(),
-					deferredFilter.passEstimate.getEvidenceCount()));
+					deferredFilter.passEstimate.getEvidenceCount(),
+					nestedTupleExpression == null ? null : nestedTupleExpression.tupleExpr().clone(),
+					nestedTupleExpression != null && nestedTupleExpression.notExists(),
+					isLookupCompatibleFilter(deferredFilter.condition)));
 		}
 		return constraints;
+	}
+
+	private static NestedTupleExpression nestedTupleExpression(ValueExpr condition) {
+		if (condition instanceof Exists) {
+			return new NestedTupleExpression(((Exists) condition).getSubQuery(), false);
+		}
+		if (condition instanceof Not && ((Not) condition).getArg() instanceof Exists) {
+			return new NestedTupleExpression(((Exists) ((Not) condition).getArg()).getSubQuery(), true);
+		}
+		return null;
+	}
+
+	private static boolean isLookupCompatibleFilter(ValueExpr condition) {
+		if (condition instanceof Or) {
+			Or or = (Or) condition;
+			return isLookupCompatibleFilter(or.getLeftArg()) && isLookupCompatibleFilter(or.getRightArg());
+		}
+		if (condition instanceof ListMemberOperator) {
+			ListMemberOperator list = (ListMemberOperator) condition;
+			return list.getArguments()
+					.stream()
+					.allMatch(argument -> argument instanceof Var || argument instanceof ValueConstant);
+		}
+		if (condition instanceof SameTerm) {
+			SameTerm sameTerm = (SameTerm) condition;
+			return isLookupCompatibleEquality(sameTerm.getLeftArg(), sameTerm.getRightArg());
+		}
+		if (condition instanceof Compare) {
+			Compare compare = (Compare) condition;
+			return compare.getOperator() == Compare.CompareOp.EQ
+					&& isLookupCompatibleEquality(compare.getLeftArg(), compare.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean isLookupCompatibleEquality(ValueExpr left, ValueExpr right) {
+		return isLookupOperand(left) && isLookupOperand(right) && (left instanceof Var || right instanceof Var);
+	}
+
+	private static boolean isLookupOperand(ValueExpr valueExpr) {
+		return valueExpr instanceof Var || valueExpr instanceof ValueConstant;
 	}
 
 	static List<DeferredFilter> sortDeferredFilters(List<DeferredFilter> deferredFilters) {
@@ -443,6 +488,24 @@ final class LmdbJoinPlanSupport {
 	private static boolean isPositionableBindingSetAssignmentWrapper(TupleExpr tupleExpr) {
 		return tupleExpr instanceof Filter || tupleExpr instanceof Distinct || tupleExpr instanceof Reduced
 				|| tupleExpr instanceof Slice;
+	}
+
+	private static final class NestedTupleExpression {
+		private final TupleExpr tupleExpr;
+		private final boolean notExists;
+
+		private NestedTupleExpression(TupleExpr tupleExpr, boolean notExists) {
+			this.tupleExpr = tupleExpr;
+			this.notExists = notExists;
+		}
+
+		private TupleExpr tupleExpr() {
+			return tupleExpr;
+		}
+
+		private boolean notExists() {
+			return notExists;
+		}
 	}
 
 	private static final class OrEqualityAnchorCollector {

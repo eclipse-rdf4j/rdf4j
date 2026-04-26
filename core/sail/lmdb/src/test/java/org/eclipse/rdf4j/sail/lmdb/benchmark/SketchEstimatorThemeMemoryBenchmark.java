@@ -63,8 +63,8 @@ public class SketchEstimatorThemeMemoryBenchmark {
 	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.";
 	private static final String LIBRARY = "http://example.com/theme/library/";
 	private static final String MEDICAL = "http://example.com/theme/medical/";
-	private static final int STANDARD_BUCKET_COUNT = 1024;
-	private static final int STANDARD_SKETCH_NOMINAL_ENTRIES = 4096;
+	private static final int STANDARD_BUCKET_COUNT = 4096;
+	private static final int STANDARD_SKETCH_NOMINAL_ENTRIES = 64;
 	private static final int HIGH_BUCKET_COUNT = 4096;
 	private static final int HIGH_SKETCH_NOMINAL_ENTRIES = 8192;
 	private static final EstimatorPrecision STANDARD_PRECISION = new EstimatorPrecision(STANDARD_BUCKET_COUNT,

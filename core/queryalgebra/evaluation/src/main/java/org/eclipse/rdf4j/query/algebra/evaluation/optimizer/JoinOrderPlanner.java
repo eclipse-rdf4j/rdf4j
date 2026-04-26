@@ -114,20 +114,54 @@ public interface JoinOrderPlanner {
 		private final String debugLabel;
 		private final String selectivitySource;
 		private final long evidenceCount;
+		private final boolean hasNestedTupleExpression;
+		private final TupleExpr nestedTupleExpression;
+		private final boolean notExists;
+		private final boolean lookupCompatible;
 
 		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
 				String debugLabel) {
-			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, null, -1L);
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, null, -1L, false);
 		}
 
 		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
 				String debugLabel, String selectivitySource, long evidenceCount) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount, false);
+		}
+
+		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, boolean nestedTupleExpression) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount,
+					nestedTupleExpression, false);
+		}
+
+		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, boolean nestedTupleExpression,
+				boolean lookupCompatible) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount,
+					nestedTupleExpression, null, false, lookupCompatible);
+		}
+
+		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, TupleExpr nestedTupleExpression,
+				boolean notExists, boolean lookupCompatible) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount,
+					nestedTupleExpression != null, nestedTupleExpression, notExists, lookupCompatible);
+		}
+
+		private FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, boolean hasNestedTupleExpression,
+				TupleExpr nestedTupleExpression, boolean notExists, boolean lookupCompatible) {
 			this.requiredVars = Set.copyOf(requiredVars);
 			this.estimatedPassRatio = estimatedPassRatio;
 			this.conditionCost = conditionCost;
 			this.debugLabel = debugLabel;
 			this.selectivitySource = selectivitySource;
 			this.evidenceCount = evidenceCount;
+			this.hasNestedTupleExpression = hasNestedTupleExpression;
+			this.nestedTupleExpression = nestedTupleExpression;
+			this.notExists = notExists;
+			this.lookupCompatible = lookupCompatible;
 		}
 
 		public Set<String> getRequiredVars() {
@@ -152,6 +186,22 @@ public interface JoinOrderPlanner {
 
 		public long getEvidenceCount() {
 			return evidenceCount;
+		}
+
+		public boolean hasNestedTupleExpression() {
+			return hasNestedTupleExpression;
+		}
+
+		public Optional<TupleExpr> getNestedTupleExpression() {
+			return Optional.ofNullable(nestedTupleExpression);
+		}
+
+		public boolean isNotExists() {
+			return notExists;
+		}
+
+		public boolean isLookupCompatible() {
+			return lookupCompatible;
 		}
 	}
 
@@ -293,5 +343,10 @@ public interface JoinOrderPlanner {
 		Optional<JoinOrderPlan> plan = planJoinOrder(args, initiallyBoundVars, algorithm, deferredFilters);
 		return new PlanningAttempt(plan, null, algorithm, null, null,
 				plan.map(JoinOrderPlan::getDiagnostics).orElse(List.of()));
+	}
+
+	default Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+		return Optional.empty();
 	}
 }

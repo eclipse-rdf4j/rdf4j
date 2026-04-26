@@ -26,6 +26,49 @@ public interface JoinFactorCostModel {
 
 	Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars);
 
+	default Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+		return estimateFactorCost(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+	}
+
+	final class CostContext {
+		private final Set<String> currentlyBoundVars;
+		private final double outerPrefixRows;
+		private final double distinctLookupBindings;
+		private final boolean nestedIteratorInvocation;
+
+		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
+				boolean nestedIteratorInvocation) {
+			this.currentlyBoundVars = currentlyBoundVars == null || currentlyBoundVars.isEmpty()
+					? Set.of()
+					: Set.copyOf(currentlyBoundVars);
+			this.outerPrefixRows = outerPrefixRows;
+			this.distinctLookupBindings = distinctLookupBindings;
+			this.nestedIteratorInvocation = nestedIteratorInvocation;
+		}
+
+		public static CostContext of(Set<String> currentlyBoundVars, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation) {
+			return new CostContext(currentlyBoundVars, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation);
+		}
+
+		public Set<String> getCurrentlyBoundVars() {
+			return currentlyBoundVars;
+		}
+
+		public double getOuterPrefixRows() {
+			return outerPrefixRows;
+		}
+
+		public double getDistinctLookupBindings() {
+			return distinctLookupBindings;
+		}
+
+		public boolean isNestedIteratorInvocation() {
+			return nestedIteratorInvocation;
+		}
+	}
+
 	final class FactorCostEstimate {
 		private final double workRows;
 		private final double outputRows;

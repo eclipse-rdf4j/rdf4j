@@ -41,6 +41,7 @@ class SketchJoinOrderPlannerLoggingTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
+	private static final String LMDB_PLAN_ALTERNATIVES_PROPERTY = "rdf4j.optimizer.lmdb.planAlternatives";
 
 	private Logger plannerLogger;
 	private Logger reordererLogger;
@@ -48,6 +49,7 @@ class SketchJoinOrderPlannerLoggingTest {
 	private Level originalReordererLevel;
 	private ListAppender<ILoggingEvent> listAppender;
 	private String originalTraceDiagnosticsProperty;
+	private String originalLmdbPlanAlternativesProperty;
 
 	@BeforeEach
 	void attachAppender() {
@@ -62,7 +64,9 @@ class SketchJoinOrderPlannerLoggingTest {
 		plannerLogger.addAppender(listAppender);
 		reordererLogger.addAppender(listAppender);
 		originalTraceDiagnosticsProperty = System.getProperty(TRACE_DIAGNOSTICS_PROPERTY);
+		originalLmdbPlanAlternativesProperty = System.getProperty(LMDB_PLAN_ALTERNATIVES_PROPERTY);
 		System.clearProperty(TRACE_DIAGNOSTICS_PROPERTY);
+		System.clearProperty(LMDB_PLAN_ALTERNATIVES_PROPERTY);
 	}
 
 	@AfterEach
@@ -75,6 +79,11 @@ class SketchJoinOrderPlannerLoggingTest {
 			System.clearProperty(TRACE_DIAGNOSTICS_PROPERTY);
 		} else {
 			System.setProperty(TRACE_DIAGNOSTICS_PROPERTY, originalTraceDiagnosticsProperty);
+		}
+		if (originalLmdbPlanAlternativesProperty == null) {
+			System.clearProperty(LMDB_PLAN_ALTERNATIVES_PROPERTY);
+		} else {
+			System.setProperty(LMDB_PLAN_ALTERNATIVES_PROPERTY, originalLmdbPlanAlternativesProperty);
 		}
 	}
 
@@ -134,6 +143,31 @@ class SketchJoinOrderPlannerLoggingTest {
 				.anySatisfy(line -> assertThat(line).contains("greedy candidate"))
 				.anySatisfy(line -> assertThat(line).contains("greedy choose"))
 				.anySatisfy(line -> assertThat(line).contains("result: order="));
+	}
+
+	@Test
+	void lmdbPlanAlternativesPropertyLogsCostedAlternatives() throws Exception {
+		System.setProperty(LMDB_PLAN_ALTERNATIVES_PROPERTY, "true");
+
+		JoinOrderPlanner.JoinOrderPlan plan = planTwoFactorGreedyJoin();
+
+		String logOutput = logOutput();
+
+		assertThat(logOutput)
+				.contains("greedy seed candidate")
+				.contains("greedy candidate")
+				.contains("prefixRows=")
+				.contains("factorWorkRows=")
+				.contains("nestedFilterWorkRows=")
+				.contains("totalWork=")
+				.contains("filterPlacement=")
+				.contains("accepted=")
+				.contains("rejectionReason=");
+
+		assertThat(diagnostics(plan))
+				.anySatisfy(line -> assertThat(line).contains("factorWorkRows="))
+				.anySatisfy(line -> assertThat(line).contains("nestedFilterWorkRows="))
+				.anySatisfy(line -> assertThat(line).contains("rejectionReason="));
 	}
 
 	private static JoinOrderPlanner.JoinOrderPlan planTwoFactorGreedyJoin() {

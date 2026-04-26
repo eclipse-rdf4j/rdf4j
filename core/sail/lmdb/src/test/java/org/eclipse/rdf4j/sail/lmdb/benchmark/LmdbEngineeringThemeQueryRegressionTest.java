@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -103,6 +104,25 @@ class LmdbEngineeringThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 4,
 						snapshot -> assertEngineeringQ4FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan()));
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void componentRequirementAggregationKeepsBoundLookupCardinality(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ENGINEERING;
+		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
+					assertEngineeringQ8FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan());
+				});
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -244,6 +264,23 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"value=http://example.com/theme/engineering/name",
 				"Engineering q4 should anchor the finite name set before the name access");
 		assertNamePatternUsesBoundValue(plan, "Engineering q4", false);
+	}
+
+	private static void assertEngineeringQ8FastPlanShape(String renderedQuery, String plan) {
+		assertBefore(renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"Engineering q8 should start from satisfies before bound component type lookup\n" + plan);
+		assertBefore(renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"Engineering q8 should start from satisfies before bound requirement type lookup\n" + plan);
+		assertContains(plan, "plannerId=lmdb-sketch");
+		assertContains(plan, "value=http://example.com/theme/engineering/satisfies");
+		assertContains(plan, "plannedWorkRows=520");
+		assertFalse(plan.contains("Join (JoinIterator) (resultSizeEstimate=1.00) [left]"),
+				"Engineering q8 must not collapse the main joined prefix to a single row after a bound lookup:\n"
+						+ plan);
 	}
 
 	private static void assertDevelopOperatorSkeleton(String plan) {

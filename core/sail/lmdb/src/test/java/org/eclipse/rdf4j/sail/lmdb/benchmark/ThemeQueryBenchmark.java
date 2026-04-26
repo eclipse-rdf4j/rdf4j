@@ -408,6 +408,14 @@ public class ThemeQueryBenchmark {
 			System.out.println(new TupleExprIRRenderer().render(tupleExpr));
 			System.out.println();
 		}
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			System.out.println("### Telemetry Query ###");
+			Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+			System.out.println(explain);
+			TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+			System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+			System.out.println();
+		}
 		if (repository != null) {
 			repository.shutDown();
 			repository = null;

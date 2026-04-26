@@ -133,6 +133,9 @@ final class SketchJoinOrderReorderer {
 
 	private PlanningInputs promoteFilterLookupBindings(List<TupleExpr> expressions, Set<String> initiallyBoundVars,
 			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		if (factorCostModel != null) {
+			return new PlanningInputs(List.copyOf(expressions), Set.copyOf(initiallyBoundVars), List.of());
+		}
 		LinkedHashSet<Integer> prefixIndices = new LinkedHashSet<>();
 		List<Integer> smallBindingAssignments = smallBindingAssignmentIndices(expressions);
 		Set<String> smallBindingVars = bindingVars(expressions, smallBindingAssignments);
@@ -206,7 +209,8 @@ final class SketchJoinOrderReorderer {
 		}
 		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
 			Set<String> requiredVars = filter.getRequiredVars();
-			if (filter.getConditionCost() <= JoinOrderPlanner.FILTER_COST_CHEAP
+			if (filter.hasNestedTupleExpression()
+					|| filter.getConditionCost() <= JoinOrderPlanner.FILTER_COST_CHEAP
 					|| requiredVars.isEmpty()
 					|| !smallBindingVars.containsAll(requiredVars)
 					|| requiredVars.containsAll(smallBindingVars)

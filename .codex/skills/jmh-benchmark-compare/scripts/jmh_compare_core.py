@@ -17,6 +17,11 @@ NUM_RE = re.compile(
     re.IGNORECASE,
 )
 METRIC_COLUMNS = {"Score", "Error", "Cnt"}
+JMH_MODES = {"thrpt", "avgt", "sample", "ss", "all"}
+STRICT_NUM_RE = re.compile(
+    r"[-+]?(?:(?:\d+(?:,\d{3})*|\d+)(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?|[-+]?(?:inf|nan)",
+    re.IGNORECASE,
+)
 DATE_PATTERNS = (
     re.compile(
         r"(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)[Tt _-]?([0-2]\d)[-_:]?([0-5]\d)(?:[-_:]?([0-5]\d))?"
@@ -123,17 +128,26 @@ def is_int_token(text: str) -> bool:
     return bool(re.fullmatch(r"[+-]?\d+", text or ""))
 
 
+def is_numeric_metric_token(text: str) -> bool:
+    value = (text or "").strip()
+    if value.endswith("±"):
+        value = value[:-1].strip()
+    return bool(STRICT_NUM_RE.fullmatch(value))
+
+
 def has_valid_metric_values(row: Dict[str, str], columns: Sequence[str]) -> bool:
+    if "Mode" in columns and row.get("Mode", "").strip().lower() not in JMH_MODES:
+        return False
     for col in columns:
         value = row.get(col, "")
         if col == "Score":
-            if extract_numeric(value) is None:
+            if not is_numeric_metric_token(value):
                 return False
         elif col == "Cnt" and value:
             if not is_int_token(value):
                 return False
         elif col == "Error" and value:
-            if extract_numeric(value) is None:
+            if not is_numeric_metric_token(value):
                 return False
     return True
 
@@ -227,8 +241,6 @@ def parse_file(path: Path, label: str, id_columns: Optional[str], timestamp_sour
     for line in lines[header_idx + 1 :]:
         stripped = line.strip()
         if not stripped:
-            if saw_data:
-                break
             continue
         if stripped.startswith("#"):
             continue
@@ -241,6 +253,10 @@ def parse_file(path: Path, label: str, id_columns: Optional[str], timestamp_sour
             if token_row is not None and has_valid_metric_values(token_row, columns):
                 row = token_row
         if not row.get("Benchmark"):
+            if saw_data:
+                break
+            continue
+        if not has_valid_metric_values(row, columns):
             if saw_data:
                 break
             continue

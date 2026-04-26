@@ -27,6 +27,7 @@ final class CollectedJoinArgs {
 
 	final List<TupleExpr> joinArgs = new ArrayList<>();
 	final List<Filter> deferredFilters = new ArrayList<>();
+	final List<Filter> costingOnlyFilters = new ArrayList<>();
 }
 
 final class DeferredFilter {
