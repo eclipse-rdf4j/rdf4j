@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -85,9 +86,6 @@ final class LmdbDeferredFilterPlacer {
 		BindingAssignmentWindow bestWindow = null;
 		for (int i = 0; i < sortedFilters.size(); i++) {
 			DeferredFilter filter = sortedFilters.get(i);
-			if (LmdbJoinPlanSupport.containsExists(filter.condition)) {
-				continue;
-			}
 			BindingAssignmentWindow window = bindingAssignmentCoveringWindow(factors, filter, boundBeforeSegment);
 			if (window == null) {
 				continue;
@@ -134,6 +132,12 @@ final class LmdbDeferredFilterPlacer {
 		List<DeferredFilter> prefixFilters = new ArrayList<>();
 		for (int i = 0; i < deferredFilters.size();) {
 			DeferredFilter deferredFilter = deferredFilters.get(i);
+			if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, availableNames,
+					assignmentBindingNames)) {
+				prefixFilters.add(deferredFilter);
+				deferredFilters.remove(i);
+				continue;
+			}
 			if (prefixBindingNames.containsAll(deferredFilter.requiredVars)
 					|| !availableNames.containsAll(deferredFilter.requiredVars)
 					|| deferredFilter.patternLocalBase != null
@@ -152,6 +156,17 @@ final class LmdbDeferredFilterPlacer {
 		}
 		return prefixFilters.isEmpty() ? tupleExpr
 				: filterWrapper.wrap(tupleExpr, prefixFilters, "bindingPrefix");
+	}
+
+	private boolean canApplyDeferredFilterToBindingPrefix(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
+			Set<String> availableNames, Set<String> assignmentBindingNames) {
+		return !deferredFilter.requiredVars.isEmpty()
+				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
+						|| !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars)
+						|| LmdbJoinPlanSupport.containsExists(deferredFilter.condition))
+				&& !prefixBindingNames.containsAll(deferredFilter.requiredVars)
+				&& availableNames.containsAll(deferredFilter.requiredVars)
+				&& !Collections.disjoint(assignmentBindingNames, deferredFilter.requiredVars);
 	}
 
 	private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {
@@ -197,8 +212,7 @@ final class LmdbDeferredFilterPlacer {
 	private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter filter,
 			Set<String> boundBeforeSegment) {
 		int[] window = null;
-		if (!LmdbJoinPlanSupport.containsExists(filter.condition)
-				&& groupDeferredFilterOnBindingAssignments(factors, filter, boundBeforeSegment)) {
+		if (groupDeferredFilterOnBindingAssignments(factors, filter, boundBeforeSegment)) {
 			return true;
 		}
 		if (filter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP) {
@@ -243,17 +257,15 @@ final class LmdbDeferredFilterPlacer {
 
 	private boolean groupDeferredFilterOnBindingAssignments(List<SegmentFactor> factors,
 			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
-		// Keep pattern-originated filters attached to graph factors; detaching them onto pure VALUES joins
-		// can hide selective graph work from the placement window and drift known-fast plan shapes.
-		if (!deferredFilter.originPatterns.isEmpty()) {
-			return false;
-		}
 		BindingAssignmentWindow window = bindingAssignmentCoveringWindow(factors, deferredFilter, boundBeforeSegment);
 		if (window == null) {
 			return false;
 		}
-		if (!isBindingOnlySpan(factors, window.startIndex, window.endIndex)
-				&& !canGroupAcrossGraphSpan(factors, window, deferredFilter)) {
+		boolean bindingOnlySpan = isBindingOnlySpan(factors, window.startIndex, window.endIndex);
+		if (!deferredFilter.originPatterns.isEmpty() && !bindingOnlySpan) {
+			return false;
+		}
+		if (!bindingOnlySpan && !canGroupAcrossGraphSpan(factors, window, deferredFilter)) {
 			return false;
 		}
 
@@ -295,9 +307,22 @@ final class LmdbDeferredFilterPlacer {
 			if (factor.bindingNames.size() != 1 || !LmdbJoinPlanSupport.isBindingOnlyFactor(factor)) {
 				return false;
 			}
+			if (containsExistsFilter(factor.tupleExpr)) {
+				return false;
+			}
 			coveredVars.addAll(factor.bindingNames);
 		}
 		return coveredVars.containsAll(deferredFilter.requiredVars);
+	}
+
+	private boolean containsExistsFilter(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof Filter filter)) {
+			return false;
+		}
+		if (LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
+			return true;
+		}
+		return containsExistsFilter(filter.getArg());
 	}
 
 	private BindingAssignmentWindow bindingAssignmentCoveringWindow(List<SegmentFactor> factors,

@@ -766,6 +766,7 @@ final class SketchJoinOrderPlanner {
 	private long computeCandidatesMask(long mask) {
 		long preferred = 0L;
 		long disconnected = 0L;
+		long disconnectedSmallBindingAssignments = 0L;
 		for (int i = 0; i < factors.size(); i++) {
 			if (contains(mask, i)) {
 				continue;
@@ -773,10 +774,14 @@ final class SketchJoinOrderPlanner {
 			if (hasConnection(mask, i)) {
 				preferred |= bit(i);
 			} else {
-				disconnected |= bit(i);
+				long bit = bit(i);
+				disconnected |= bit;
+				if (isSmallBindingSetAssignment(i)) {
+					disconnectedSmallBindingAssignments |= bit;
+				}
 			}
 		}
-		return preferred != 0L ? preferred : disconnected;
+		return preferred != 0L ? preferred | disconnectedSmallBindingAssignments : disconnected;
 	}
 
 	private SketchBasedJoinEstimator.JoinStepEstimate estimateTransition(long mask,
@@ -1380,6 +1385,7 @@ final class SketchJoinOrderPlanner {
 		int size = Math.min(left.order().size(), right.order().size());
 		long leftMask = 0L;
 		long rightMask = 0L;
+		long lastIntroducedVars = 0L;
 		for (int i = 0; i < size; i++) {
 			int leftIndex = left.order().get(i).intValue();
 			int rightIndex = right.order().get(i).intValue();
@@ -1391,20 +1397,78 @@ final class SketchJoinOrderPlanner {
 				}
 				boolean leftLeaf = isLeafUnlock(leftIndex, leftMask);
 				boolean rightLeaf = isLeafUnlock(rightIndex, rightMask);
+				boolean leftOlderBoundLeaf = isOlderBoundRuntimeJoin(leftIndex, leftMask, lastIntroducedVars);
+				boolean rightOlderBoundLeaf = isOlderBoundRuntimeJoin(rightIndex, rightMask, lastIntroducedVars);
 				if (leftBridge && rightLeaf
+						&& !rightOlderBoundLeaf
 						&& bridgeUnlockStepComparable(left.physicalStepRanks().get(i),
 								right.physicalStepRanks().get(i))) {
 					return -1;
 				}
 				if (rightBridge && leftLeaf
+						&& !leftOlderBoundLeaf
 						&& bridgeUnlockStepComparable(right.physicalStepRanks().get(i),
 								left.physicalStepRanks().get(i))) {
 					return 1;
 				}
 				return 0;
 			}
+			long boundBeforeStep = boundVariableMask(leftMask);
 			leftMask |= bit(leftIndex);
 			rightMask |= bit(rightIndex);
+			lastIntroducedVars = bindingVarMasks[leftIndex] & ~boundBeforeStep;
+		}
+		return 0;
+	}
+
+	private boolean isOlderBoundLeaf(int factorIndex, long previousMask, long lastIntroducedVars) {
+		return lastIntroducedVars != 0L
+				&& isLeafUnlock(factorIndex, previousMask)
+				&& joinStepRole(factorIndex, previousMask, lastIntroducedVars) == JoinStepRole.OLDER_BOUND_JOIN;
+	}
+
+	private boolean isOlderBoundRuntimeJoin(int factorIndex, long previousMask, long lastIntroducedVars) {
+		if (lastIntroducedVars == 0L) {
+			return false;
+		}
+		long runtimeVars = runtimeVarMasks[factorIndex];
+		if (runtimeVars == 0L || (runtimeVars & lastIntroducedVars) != 0L) {
+			return false;
+		}
+		long olderBoundVars = runtimeBoundVariableMask(previousMask) & ~lastIntroducedVars;
+		return (runtimeVars & olderBoundVars) != 0L;
+	}
+
+	private int compareOlderBoundLeafOrder(StatePlan left, StatePlan right) {
+		int size = Math.min(left.order().size(), right.order().size());
+		long leftMask = 0L;
+		long rightMask = 0L;
+		long lastIntroducedVars = 0L;
+		for (int i = 0; i < size; i++) {
+			int leftIndex = left.order().get(i).intValue();
+			int rightIndex = right.order().get(i).intValue();
+			if (leftIndex != rightIndex) {
+				boolean leftOlderBoundLeaf = isOlderBoundRuntimeJoin(leftIndex, leftMask, lastIntroducedVars);
+				boolean rightOlderBoundLeaf = isOlderBoundRuntimeJoin(rightIndex, rightMask, lastIntroducedVars);
+				if (leftOlderBoundLeaf == rightOlderBoundLeaf) {
+					return 0;
+				}
+				PhysicalStepRank leftStep = left.physicalStepRanks().get(i);
+				PhysicalStepRank rightStep = right.physicalStepRanks().get(i);
+				if (leftOlderBoundLeaf && stepWorkComparable(leftStep.workRows(), rightStep.workRows(),
+						BRIDGE_CONTINUATION_MAX_STEP_WORK_RATIO)) {
+					return -1;
+				}
+				if (rightOlderBoundLeaf && stepWorkComparable(rightStep.workRows(), leftStep.workRows(),
+						BRIDGE_CONTINUATION_MAX_STEP_WORK_RATIO)) {
+					return 1;
+				}
+				return 0;
+			}
+			long boundBeforeStep = boundVariableMask(leftMask);
+			leftMask |= bit(leftIndex);
+			rightMask |= bit(rightIndex);
+			lastIntroducedVars = bindingVarMasks[leftIndex] & ~boundBeforeStep;
 		}
 		return 0;
 	}
@@ -1830,19 +1894,25 @@ final class SketchJoinOrderPlanner {
 		if (incumbent == null) {
 			return true;
 		}
-		boolean structurallyComparableWork = structurallyComparableWork(candidate.totalWork(), incumbent.totalWork());
-		if (structurallyComparableWork && candidate.mask() == incumbent.mask()) {
+		if (candidate.mask() == incumbent.mask()) {
 			int deferredFilterComparison = compareDeferredFilterOrder(candidate.order(), incumbent.order());
 			if (deferredFilterComparison != 0) {
 				return deferredFilterComparison < 0;
 			}
+			int guardedBindingComparison = compareGuardedBindingAssignmentOrder(candidate, incumbent);
+			if (guardedBindingComparison != 0) {
+				return guardedBindingComparison < 0;
+			}
+		}
+		boolean structurallyComparableWork = structurallyComparableWork(candidate.totalWork(), incumbent.totalWork());
+		if (structurallyComparableWork && candidate.mask() == incumbent.mask()) {
 			int boundGuardComparison = compareBoundGuardOrder(candidate.order(), incumbent.order());
 			if (boundGuardComparison != 0) {
 				return boundGuardComparison < 0;
 			}
-			int guardedBindingComparison = compareGuardedBindingAssignmentOrder(candidate, incumbent);
-			if (guardedBindingComparison != 0) {
-				return guardedBindingComparison < 0;
+			int narrowAnchorComparison = compareNarrowAnchorOrder(candidate, incumbent);
+			if (narrowAnchorComparison != 0) {
+				return narrowAnchorComparison < 0;
 			}
 		}
 		if (structurallyComparableWork && candidate.mask() == incumbent.mask()) {
@@ -1851,9 +1921,15 @@ final class SketchJoinOrderPlanner {
 				return bridgeUnlockComparison < 0;
 			}
 		}
-		int connectivityComparison = compareOrderConnectivity(candidate.order(), incumbent.order());
-		if (connectivityComparison != 0 && structurallyComparableWork) {
-			return connectivityComparison < 0;
+		if (!structurallyComparableWork && candidate.mask() == incumbent.mask()) {
+			int narrowAnchorComparison = compareNarrowAnchorOrder(candidate, incumbent);
+			if (narrowAnchorComparison != 0) {
+				return narrowAnchorComparison < 0;
+			}
+		}
+		int olderBoundLeafComparison = compareOlderBoundLeafOrder(candidate, incumbent);
+		if (olderBoundLeafComparison != 0) {
+			return olderBoundLeafComparison < 0;
 		}
 		int guardExpansionComparison = compareBoundGuardExpansionOrder(candidate, incumbent);
 		if (guardExpansionComparison != 0) {
@@ -1866,6 +1942,10 @@ final class SketchJoinOrderPlanner {
 		int continuationComparison = compareBridgeContinuationOrder(candidate, incumbent);
 		if (continuationComparison != 0) {
 			return continuationComparison < 0;
+		}
+		int connectivityComparison = compareOrderConnectivity(candidate.order(), incumbent.order());
+		if (connectivityComparison != 0 && structurallyComparableWork) {
+			return connectivityComparison < 0;
 		}
 		int workComparison = Double.compare(candidate.totalWork(), incumbent.totalWork());
 		if (workComparison != 0) {
@@ -1883,6 +1963,41 @@ final class SketchJoinOrderPlanner {
 			return connectivityComparison < 0;
 		}
 		return compareOrder(candidate.order(), incumbent.order()) < 0;
+	}
+
+	private int compareNarrowAnchorOrder(StatePlan left, StatePlan right) {
+		int size = Math.min(left.order().size(), right.order().size());
+		long leftMask = 0L;
+		long rightMask = 0L;
+		for (int i = 0; i < size; i++) {
+			int leftIndex = left.order().get(i).intValue();
+			int rightIndex = right.order().get(i).intValue();
+			if (leftIndex != rightIndex) {
+				if ((runtimeVarMasks[leftIndex] & runtimeVarMasks[rightIndex]) == 0L) {
+					return 0;
+				}
+				long leftIntroduced = bindingVarMasks[leftIndex] & ~boundVariableMask(leftMask);
+				long rightIntroduced = bindingVarMasks[rightIndex] & ~boundVariableMask(rightMask);
+				if (isStrictSubset(leftIntroduced, rightIntroduced)
+						&& stepWorkComparable(left.physicalStepRanks().get(i).workRows(),
+								right.physicalStepRanks().get(i).workRows(), ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO)) {
+					return -1;
+				}
+				if (isStrictSubset(rightIntroduced, leftIntroduced)
+						&& stepWorkComparable(right.physicalStepRanks().get(i).workRows(),
+								left.physicalStepRanks().get(i).workRows(), ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO)) {
+					return 1;
+				}
+				return 0;
+			}
+			leftMask |= bit(leftIndex);
+			rightMask |= bit(rightIndex);
+		}
+		return 0;
+	}
+
+	private static boolean isStrictSubset(long subset, long superset) {
+		return subset != 0L && subset != superset && (subset & superset) == subset;
 	}
 
 	private boolean structurallyComparableWork(double leftWorkRows, double rightWorkRows) {
@@ -1957,6 +2072,9 @@ final class SketchJoinOrderPlanner {
 		if (Double.isFinite(passRatio) && passRatio >= 0.0d
 				&& passRatio <= DEFERRED_FILTER_ORDERING_MAX_PASS_RATIO) {
 			return 1.0d + (DEFERRED_FILTER_ORDERING_MAX_PASS_RATIO - passRatio);
+		}
+		if (filter.getConditionCost() > JoinOrderPlanner.FILTER_COST_CHEAP) {
+			return 1.0d;
 		}
 		return 0.0d;
 	}

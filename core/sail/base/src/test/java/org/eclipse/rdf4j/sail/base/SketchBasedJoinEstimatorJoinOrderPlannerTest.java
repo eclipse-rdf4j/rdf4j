@@ -346,6 +346,90 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void dynamicProgrammingBindsSmallCycleValuesBeforeFollowsEdges() {
+		StubSailStore store = new StubSailStore();
+		IRI follows = VF.createIRI("urn:follows");
+		List<Resource> users = new ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			users.add(VF.createIRI("urn:user:" + i));
+		}
+		for (Resource left : users) {
+			for (Resource right : users) {
+				if (!left.equals(right)) {
+					store.add(VF.createStatement(left, follows, right));
+				}
+			}
+		}
+
+		BindingSetAssignment userPairs = new BindingSetAssignment();
+		List<BindingSet> pairRows = new ArrayList<>();
+		for (Resource a : users) {
+			for (Resource b : users) {
+				if (!a.equals(b)) {
+					pairRows.add(row("a", a, "b", b));
+				}
+			}
+		}
+		userPairs.setBindingSets(pairRows);
+
+		BindingSetAssignment cValues = singleVariableValues("c", users);
+		BindingSetAssignment dValues = singleVariableValues("d", users);
+		BindingSetAssignment eValues = singleVariableValues("e", users);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern aFollowsB = pattern("a", follows, "b");
+		StatementPattern bFollowsC = pattern("b", follows, "c");
+		StatementPattern cFollowsD = pattern("c", follows, "d");
+		StatementPattern dFollowsE = pattern("d", follows, "e");
+		StatementPattern eFollowsA = pattern("e", follows, "a");
+		List<TupleExpr> args = List.of(userPairs, cValues, dValues, eValues, aFollowsB, bFollowsC, cFollowsD,
+				dFollowsE, eFollowsA);
+
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor instanceof BindingSetAssignment assignment) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(bindingSetRows(assignment),
+						bindingSetRows(assignment)));
+			}
+			if (factor instanceof StatementPattern statementPattern) {
+				boolean subjectBound = boundVars.contains(statementPattern.getSubjectVar().getName());
+				boolean objectBound = boundVars.contains(statementPattern.getObjectVar().getName());
+				if (subjectBound && objectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+				}
+				if (subjectBound || objectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(80.0d, 16.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(400.0d, 80.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce the social five-cycle plan");
+		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
+		int firstFollowsEdge = orderedArgs.stream()
+				.filter(StatementPattern.class::isInstance)
+				.mapToInt(orderedArgs::indexOf)
+				.min()
+				.orElseThrow();
+		assertTrue(orderedArgs.indexOf(userPairs) < firstFollowsEdge, "Pair VALUES should precede follows edges");
+		assertTrue(orderedArgs.indexOf(cValues) < firstFollowsEdge, "c VALUES should precede follows edges");
+		assertTrue(orderedArgs.indexOf(dValues) < firstFollowsEdge, "d VALUES should precede follows edges");
+		assertTrue(orderedArgs.indexOf(eValues) < firstFollowsEdge, "e VALUES should precede follows edges");
+		assertTrue(attempt.getPlan()
+				.get()
+				.getDiagnostics()
+				.stream()
+				.anyMatch(diagnostic -> diagnostic.contains("prefix promotion")),
+				"Expected covered lookup prefix promotion: " + attempt.getPlan().get().getDiagnostics());
+		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+	}
+
+	@Test
 	void optimizationScopeCachesReadinessScan() {
 		StubSailStore store = new StubSailStore();
 		IRI predicate = VF.createIRI("urn:p");
@@ -1811,6 +1895,27 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static StatementPattern pattern(String subjVar, IRI pred, String objVar) {
 		return new StatementPattern(Var.of(subjVar), Var.of("p", pred), Var.of(objVar));
+	}
+
+	private static BindingSetAssignment singleVariableValues(String name,
+			List<? extends org.eclipse.rdf4j.model.Value> values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> rows = new ArrayList<>();
+		for (org.eclipse.rdf4j.model.Value value : values) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding(name, value);
+			rows.add(row);
+		}
+		assignment.setBindingSets(rows);
+		return assignment;
+	}
+
+	private static int bindingSetRows(BindingSetAssignment assignment) {
+		int rows = 0;
+		for (BindingSet ignored : assignment.getBindingSets()) {
+			rows++;
+		}
+		return rows;
 	}
 
 	private static QueryBindingSet row(String name1, org.eclipse.rdf4j.model.Value value1, String name2,

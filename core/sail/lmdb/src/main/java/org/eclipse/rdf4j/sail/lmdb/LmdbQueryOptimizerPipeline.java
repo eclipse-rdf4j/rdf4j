@@ -82,9 +82,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER,
 				new FilterOptimizer(evaluationStatistics, false, true),
-				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
+				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
 				ORDER_LIMIT_OPTIMIZER);
 
 		if (assertsEnabled) {

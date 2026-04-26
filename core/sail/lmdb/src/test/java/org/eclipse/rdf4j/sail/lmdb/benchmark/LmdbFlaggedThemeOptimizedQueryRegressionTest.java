@@ -338,6 +338,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 			mismatches.add(key + " should bind the first follows edge as a value pair before expanding the cycle\n"
 					+ snapshot.renderedQuery);
 		}
+		if (expectation.theme == Theme.SOCIAL_MEDIA && expectation.queryIndex == 10
+				&& !socialCliqueBindingsAppearBeforeCycleEdges(snapshot.renderedQuery)) {
+			mismatches.add(key + " should bind clique variables c/d/e before evaluating follows edges\n"
+					+ snapshot.renderedQuery);
+		}
 		if (expectation.theme == Theme.LIBRARY && expectation.queryIndex == 7
 				&& scansUnboundLocatedAt(snapshot.plan)) {
 			mismatches.add(key + " should not evaluate the branch exclusion as a broad unbound locatedAt scan\n"
@@ -345,6 +350,14 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		}
 		mismatches.addAll(directLookupWorkMismatches(snapshot.plan, 100_000.0d, key));
 		return mismatches;
+	}
+
+	private static boolean socialCliqueBindingsAppearBeforeCycleEdges(String renderedQuery) {
+		int valuesC = renderedQuery.indexOf("VALUES ?c");
+		int valuesD = renderedQuery.indexOf("VALUES ?d");
+		int valuesE = renderedQuery.indexOf("VALUES ?e");
+		int firstCycleEdge = renderedQuery.indexOf("?a <http://example.com/theme/social/follows> ?b");
+		return valuesC >= 0 && valuesD > valuesC && valuesE > valuesD && firstCycleEdge > valuesE;
 	}
 
 	private static List<String> directLookupWorkMismatches(String plan, double maxWorkRows, String key) {

@@ -45,6 +45,7 @@ class LmdbThemeTopRegressionSnapshotTest {
 	private static final Pattern THEME_HEADER = Pattern.compile("## ([A-Z_]+)");
 	private static final Pattern QUERY_HEADER = Pattern.compile("### (?:([A-Z_]+) )?Query ([0-9]+)");
 	private static final String ENABLED_PROPERTY = "rdf4j.lmdb.topRegressionSnapshot.enabled";
+	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.topRegressionSnapshot.queryKeys";
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "top-regression-snapshot";
@@ -57,11 +58,11 @@ class LmdbThemeTopRegressionSnapshotTest {
 			target(Theme.ELECTRICAL_GRID, 2),
 			target(Theme.PHARMA, 5),
 			target(Theme.LIBRARY, 2),
-			target(Theme.PHARMA, 10),
 			target(Theme.TRAIN, 2),
 			target(Theme.SOCIAL_MEDIA, 3),
-			target(Theme.MEDICAL_RECORDS, 5),
-			target(Theme.PHARMA, 2));
+			target(Theme.SOCIAL_MEDIA, 4),
+			target(Theme.PHARMA, 10),
+			target(Theme.SOCIAL_MEDIA, 6));
 
 	@Test
 	void topRegressionOptimizedQueriesMatchFastestKnownSnapshots(@TempDir Path dataDir) throws Exception {
@@ -90,10 +91,26 @@ class LmdbThemeTopRegressionSnapshotTest {
 	private static Map<Theme, List<TargetQuery>> targetsByTheme() {
 		Map<Theme, List<TargetQuery>> grouped = new LinkedHashMap<>();
 		for (TargetQuery targetQuery : TOP_REGRESSIONS) {
+			if (!isSelected(targetQuery)) {
+				continue;
+			}
 			grouped.computeIfAbsent(targetQuery.theme, ignored -> new ArrayList<>())
 					.add(targetQuery);
 		}
 		return grouped;
+	}
+
+	private static boolean isSelected(TargetQuery targetQuery) {
+		String selectedKeys = System.getProperty(QUERY_KEYS_PROPERTY);
+		if (selectedKeys == null || selectedKeys.isBlank()) {
+			return true;
+		}
+		for (String selectedKey : selectedKeys.split(",")) {
+			if (targetQuery.key().equals(selectedKey.strip())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static Map<String, String> parseFastestOptimizedQueries() throws IOException {
@@ -206,15 +223,68 @@ class LmdbThemeTopRegressionSnapshotTest {
 		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(targetQuery.key(), () -> {
 			String actual = explainOptimized(repository, targetQuery);
 			if (!normalize(expected).equals(normalize(actual))) {
-				throw new AssertionError(mismatch(targetQuery, expected, actual));
+				throw new AssertionError(
+						mismatch(targetQuery, expected, actual) + "\nActual plan:\n"
+								+ explainOptimizedPlan(repository, targetQuery));
 			}
+			assertKnownPlanShape(repository, targetQuery);
 		});
+	}
+
+	private static void assertKnownPlanShape(SailRepository repository, TargetQuery targetQuery) {
+		if (targetQuery.theme == Theme.PHARMA && targetQuery.queryIndex == 0) {
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			assertPlanContains(plan, targetQuery.key(),
+					"BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
+					"value=http://example.com/theme/pharma/studiesDisease",
+					"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/pValue",
+					"value=http://example.com/theme/pharma/effectSize",
+					"value=http://example.com/theme/pharma/biomarker, anonymous");
+			assertPlanBefore(plan, targetQuery.key(),
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/armDrug");
+			assertPlanBefore(plan, targetQuery.key(),
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/hasResult");
+			assertPlanBefore(plan, targetQuery.key(),
+					"value=http://example.com/theme/pharma/armDrug",
+					"value=http://example.com/theme/pharma/pValue");
+			assertPlanBefore(plan, targetQuery.key(),
+					"value=http://example.com/theme/pharma/hasResult",
+					"value=http://example.com/theme/pharma/pValue");
+		}
+	}
+
+	private static String explainOptimizedPlan(SailRepository repository, TargetQuery targetQuery) {
+		String query = ThemeQueryCatalog.queryFor(targetQuery.theme, targetQuery.queryIndex);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+		}
+	}
+
+	private static void assertPlanContains(String plan, String key, String... expectedParts) {
+		for (String expectedPart : expectedParts) {
+			assertTrue(plan.contains(expectedPart), key + " plan should contain " + expectedPart + ":\n" + plan);
+		}
+	}
+
+	private static void assertPlanBefore(String plan, String key, String before, String after) {
+		int beforeIndex = plan.indexOf(before);
+		int afterIndex = plan.indexOf(after);
+		assertTrue(beforeIndex >= 0, key + " plan missing " + before + ":\n" + plan);
+		assertTrue(afterIndex >= 0, key + " plan missing " + after + ":\n" + plan);
+		assertTrue(beforeIndex < afterIndex, key + " expected " + before + " before " + after + ":\n" + plan);
 	}
 
 	private static String normalize(String query) {
 		return query.lines()
 				.map(String::strip)
 				.filter(line -> !line.isEmpty())
+				.map(line -> line.replaceAll("_anon_(path|having)_[A-Za-z0-9]+", "_anon_$1"))
 				.collect(Collectors.joining("\n"));
 	}
 

@@ -23,10 +23,15 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +43,7 @@ final class SketchJoinOrderReorderer {
 
 	private static final Logger logger = LoggerFactory.getLogger(SketchJoinOrderReorderer.class);
 	private static final double BINDING_PREFIX_MAX_COMBINED_ROWS = SketchJoinOrderPlanner.SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS;
+	private static final double COVERED_LOOKUP_BINDING_PREFIX_MAX_COMBINED_ROWS = 4096.0d;
 
 	private final SketchBasedJoinEstimator estimator;
 	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster;
@@ -81,7 +87,7 @@ final class SketchJoinOrderReorderer {
 
 		List<TupleExpr> expressions = List.copyOf(args);
 		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
-		PlanningInputs planningInputs = promoteFilterLookupBindings(expressions, bound);
+		PlanningInputs planningInputs = promoteFilterLookupBindings(expressions, bound, deferredFilters);
 		List<TupleExpr> plannedExpressions = planningInputs.expressions();
 		Set<String> plannedBound = planningInputs.boundVars();
 		List<String> inputDiagnostics = new ArrayList<>();
@@ -125,7 +131,8 @@ final class SketchJoinOrderReorderer {
 				plan.getDiagnostics());
 	}
 
-	private PlanningInputs promoteFilterLookupBindings(List<TupleExpr> expressions, Set<String> initiallyBoundVars) {
+	private PlanningInputs promoteFilterLookupBindings(List<TupleExpr> expressions, Set<String> initiallyBoundVars,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
 		LinkedHashSet<Integer> prefixIndices = new LinkedHashSet<>();
 		List<Integer> smallBindingAssignments = smallBindingAssignmentIndices(expressions);
 		Set<String> smallBindingVars = bindingVars(expressions, smallBindingAssignments);
@@ -133,7 +140,14 @@ final class SketchJoinOrderReorderer {
 		if (smallBindingAssignments.size() > 1
 				&& combinedBindingRows <= BINDING_PREFIX_MAX_COMBINED_ROWS
 				&& allGraphExpressionsTouchBindingVars(expressions, smallBindingVars)) {
-			prefixIndices.addAll(smallBindingAssignments);
+			addGuardCompatibleBindingPrefixes(expressions, smallBindingAssignments, smallBindingVars, deferredFilters,
+					prefixIndices);
+		}
+		if (smallBindingAssignments.size() > 1
+				&& combinedBindingRows <= COVERED_LOOKUP_BINDING_PREFIX_MAX_COMBINED_ROWS
+				&& allGraphExpressionsCoveredByBindingVars(expressions, smallBindingVars)) {
+			addGuardCompatibleBindingPrefixes(expressions, smallBindingAssignments, smallBindingVars, deferredFilters,
+					prefixIndices);
 		}
 
 		Set<String> graphBindingVars = graphBindingVars(expressions);
@@ -143,6 +157,13 @@ final class SketchJoinOrderReorderer {
 				continue;
 			}
 			Set<String> assignmentVars = expressions.get(index.intValue()).getBindingNames();
+			if (shouldHoldBackForGuardedFilter(assignmentVars, smallBindingVars, deferredFilters)) {
+				continue;
+			}
+			if (intersects(assignmentVars, graphBindingVars)) {
+				prefixIndices.add(index);
+				continue;
+			}
 			if (!intersects(assignmentVars, graphBindingVars) && intersects(assignmentVars, filterConditionVars)) {
 				prefixIndices.add(index);
 			}
@@ -165,6 +186,36 @@ final class SketchJoinOrderReorderer {
 		}
 		return new PlanningInputs(List.copyOf(plannedExpressions), Set.copyOf(boundVars),
 				List.copyOf(prefixExpressions));
+	}
+
+	private void addGuardCompatibleBindingPrefixes(List<TupleExpr> expressions, List<Integer> smallBindingAssignments,
+			Set<String> smallBindingVars, List<JoinOrderPlanner.FilterConstraint> deferredFilters,
+			Set<Integer> prefixIndices) {
+		for (Integer index : smallBindingAssignments) {
+			Set<String> assignmentVars = expressions.get(index.intValue()).getBindingNames();
+			if (!shouldHoldBackForGuardedFilter(assignmentVars, smallBindingVars, deferredFilters)) {
+				prefixIndices.add(index);
+			}
+		}
+	}
+
+	private boolean shouldHoldBackForGuardedFilter(Set<String> assignmentVars, Set<String> smallBindingVars,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		if (assignmentVars.isEmpty() || deferredFilters == null || deferredFilters.isEmpty()) {
+			return false;
+		}
+		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
+			Set<String> requiredVars = filter.getRequiredVars();
+			if (filter.getConditionCost() <= JoinOrderPlanner.FILTER_COST_CHEAP
+					|| requiredVars.isEmpty()
+					|| !smallBindingVars.containsAll(requiredVars)
+					|| requiredVars.containsAll(smallBindingVars)
+					|| !Collections.disjoint(assignmentVars, requiredVars)) {
+				continue;
+			}
+			return true;
+		}
+		return false;
 	}
 
 	private List<Integer> smallBindingAssignmentIndices(List<TupleExpr> expressions) {
@@ -223,6 +274,41 @@ final class SketchJoinOrderReorderer {
 		return hasGraphExpression;
 	}
 
+	private boolean allGraphExpressionsCoveredByBindingVars(List<TupleExpr> expressions, Set<String> bindingVars) {
+		boolean hasGraphExpression = false;
+		for (TupleExpr expression : expressions) {
+			if (expression instanceof BindingSetAssignment) {
+				continue;
+			}
+			hasGraphExpression = true;
+			if (!bindingVars.containsAll(graphLookupVars(expression))) {
+				return false;
+			}
+		}
+		return hasGraphExpression;
+	}
+
+	private Set<String> graphLookupVars(TupleExpr expression) {
+		if (expression instanceof Filter filter) {
+			return graphLookupVars(filter.getArg());
+		}
+		if (!(expression instanceof StatementPattern statementPattern)) {
+			return expression.getBindingNames();
+		}
+		LinkedHashSet<String> variables = new LinkedHashSet<>();
+		addLookupVar(statementPattern.getSubjectVar(), variables);
+		addLookupVar(statementPattern.getPredicateVar(), variables);
+		addLookupVar(statementPattern.getObjectVar(), variables);
+		addLookupVar(statementPattern.getContextVar(), variables);
+		return Set.copyOf(variables);
+	}
+
+	private void addLookupVar(Var var, Set<String> variables) {
+		if (var != null && !var.hasValue()) {
+			variables.add(var.getName());
+		}
+	}
+
 	private Set<String> graphBindingVars(List<TupleExpr> expressions) {
 		LinkedHashSet<String> graphVars = new LinkedHashSet<>();
 		for (TupleExpr expression : expressions) {
@@ -274,6 +360,9 @@ final class SketchJoinOrderReorderer {
 		List<TupleExpr> orderedArgs = new ArrayList<>(prefixExpressions.size() + plan.getOrderedArgs().size());
 		orderedArgs.addAll(prefixExpressions);
 		orderedArgs.addAll(plan.getOrderedArgs());
+		orderedArgs = preferBoundLookupBeforeIndependentScan(orderedArgs);
+		orderedArgs = preferOlderBoundLocalLeaves(orderedArgs);
+		orderedArgs = preferGuardedBindingAssignments(orderedArgs);
 		List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + plan.getDiagnostics().size() + 1);
 		diagnostics.addAll(inputDiagnostics);
 		diagnostics.add("prefix promotion: prefixes=" + SketchJoinOrderPlanner.describeExprOrder(prefixExpressions));
@@ -282,6 +371,121 @@ final class SketchJoinOrderReorderer {
 		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), plan.getEstimatedFinalRows(),
 				plan.getEstimatedTotalWork() + totalBindingRows(prefixExpressions), diagnostics,
 				plan.getSummaryStringMetrics(), plan.getSummaryDoubleMetrics(), steps);
+	}
+
+	private List<TupleExpr> preferBoundLookupBeforeIndependentScan(List<TupleExpr> orderedArgs) {
+		if (orderedArgs.size() < 3) {
+			return orderedArgs;
+		}
+		List<TupleExpr> reordered = new ArrayList<>(orderedArgs);
+		LinkedHashSet<String> boundVars = new LinkedHashSet<>();
+		for (int i = 0; i < reordered.size(); i++) {
+			TupleExpr current = reordered.get(i);
+			Set<String> currentVars = expressionVars(current);
+			if (!(current instanceof BindingSetAssignment) && !boundVars.isEmpty()
+					&& Collections.disjoint(currentVars, boundVars)) {
+				for (int j = i + 1; j < reordered.size(); j++) {
+					TupleExpr candidate = reordered.get(j);
+					if (candidate instanceof BindingSetAssignment) {
+						continue;
+					}
+					Set<String> candidateVars = expressionVars(candidate);
+					if (!Collections.disjoint(candidateVars, boundVars)) {
+						reordered.remove(j);
+						reordered.add(i, candidate);
+						current = candidate;
+						currentVars = candidateVars;
+						break;
+					}
+				}
+			}
+			boundVars.addAll(currentVars);
+		}
+		return List.copyOf(reordered);
+	}
+
+	private List<TupleExpr> preferOlderBoundLocalLeaves(List<TupleExpr> orderedArgs) {
+		if (orderedArgs.size() < 3) {
+			return orderedArgs;
+		}
+		List<TupleExpr> reordered = new ArrayList<>(orderedArgs);
+		LinkedHashSet<String> boundVars = new LinkedHashSet<>();
+		Set<String> lastIntroducedVars = Set.of();
+		for (int i = 0; i < reordered.size(); i++) {
+			TupleExpr current = reordered.get(i);
+			Set<String> currentVars = expressionVars(current);
+			if (!lastIntroducedVars.isEmpty() && intersects(currentVars, lastIntroducedVars)) {
+				for (int j = i + 1; j < reordered.size(); j++) {
+					TupleExpr candidate = reordered.get(j);
+					Set<String> candidateVars = expressionVars(candidate);
+					if (intersects(candidateVars, boundVars) && !intersects(candidateVars, lastIntroducedVars)) {
+						reordered.remove(j);
+						reordered.add(i, candidate);
+						current = candidate;
+						currentVars = candidateVars;
+						break;
+					}
+				}
+			}
+			LinkedHashSet<String> introducedVars = new LinkedHashSet<>(currentVars);
+			introducedVars.removeAll(boundVars);
+			boundVars.addAll(currentVars);
+			lastIntroducedVars = Set.copyOf(introducedVars);
+		}
+		return List.copyOf(reordered);
+	}
+
+	private List<TupleExpr> preferGuardedBindingAssignments(List<TupleExpr> orderedArgs) {
+		if (orderedArgs.size() < 2) {
+			return orderedArgs;
+		}
+		List<TupleExpr> reordered = new ArrayList<>(orderedArgs);
+		for (int i = 1; i < reordered.size(); i++) {
+			TupleExpr current = reordered.get(i);
+			if (!isGuardedBindingAssignment(current)) {
+				continue;
+			}
+			boolean selfContained = selfContainedGuardedBindingAssignment(current);
+			int target = selfContained ? 0 : i;
+			while (!selfContained && target > 0 && reordered.get(target - 1) instanceof BindingSetAssignment) {
+				target--;
+			}
+			if (target != i) {
+				reordered.remove(i);
+				reordered.add(target, current);
+			}
+		}
+		return List.copyOf(reordered);
+	}
+
+	private boolean isGuardedBindingAssignment(TupleExpr expression) {
+		return expression instanceof Filter filter && filter.getArg() instanceof BindingSetAssignment
+				&& containsExistsCondition(filter.getCondition());
+	}
+
+	private boolean selfContainedGuardedBindingAssignment(TupleExpr expression) {
+		if (!(expression instanceof Filter filter) || !(filter.getArg()instanceof BindingSetAssignment assignment)) {
+			return false;
+		}
+		return assignment.getBindingNames().containsAll(VarNameCollector.process(filter.getCondition()));
+	}
+
+	private boolean containsExistsCondition(ValueExpr condition) {
+		boolean[] contains = { false };
+		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists node) {
+				contains[0] = true;
+			}
+		});
+		return contains[0];
+	}
+
+	private Set<String> expressionVars(TupleExpr expression) {
+		if (expression instanceof BindingSetAssignment) {
+			return expression.getBindingNames();
+		}
+		return graphLookupVars(expression);
 	}
 
 	private List<JoinOrderPlanner.PlanStep> prependBindingPrefixSteps(List<TupleExpr> prefixExpressions,

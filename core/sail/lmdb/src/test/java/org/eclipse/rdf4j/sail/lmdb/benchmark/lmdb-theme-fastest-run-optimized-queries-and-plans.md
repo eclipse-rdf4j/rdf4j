@@ -140,17 +140,30 @@ _Not present in fastest-run source file._
 
 ### Query 2
 
-- Fastest observed: `3.429 ms/op`
-- Source: [results-main-branch.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-main-branch.md:71)
-- Optimized block: not present in fastest-run source file
+- Fastest observed: `0.151 ms/op`
+- Source: [results-2026-04-22.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-22.md)
+- Optimized block: present
 
 Optimized query:
 
-_Not present in fastest-run source file._
+```sparql
+SELECT ?transformer (COUNT(DISTINCT ?meter) AS ?meterCount) WHERE {
+  VALUES ?name { "Substation 0" "Substation 1" "Substation 2" }
+  ?substation <http://example.com/theme/grid/name> ?name .
+  FILTER (?name IN ("Substation 0", "Substation 1", "Substation 2"))
+  ?transformer <http://example.com/theme/grid/feeds> ?substation .
+  ?transformer a <http://example.com/theme/grid/Transformer> .
+  OPTIONAL {
+    ?transformer <http://example.com/theme/grid/hasMeter> ?meter .
+  }
+}
+GROUP BY ?transformer
+HAVING (COUNT(?meter) > 0)
+```
 
 Query plan:
 
-_Not present in fastest-run source file._
+_See `./analyze-theme-query-history.sh --theme ELECTRICAL_GRID --query-index 2` for all captured optimized plans._
 
 ### Query 3
 
@@ -1561,14 +1574,15 @@ Var (name=entity)
 
 ### Query 2
 
-- Fastest observed: `17.068 ms/op`
-- Source: [results-2026-04-16-4.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:27)
-- Optimized block: [1871](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-4.md:1871)
+- Fastest observed: `0.126 ms/op`
+- Source: [results-2026-04-22.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-22.md)
+- Optimized block: present
 
 Optimized query:
 
 ```sparql
 SELECT ?author (COUNT(DISTINCT ?book) AS ?bookCount) WHERE {
+  VALUES ?authorName { "Author 1" "Author 2" "Author 3" }
   ?author <http://example.com/theme/library/name> ?authorName .
   FILTER (?authorName IN ("Author 1", "Author 2", "Author 3"))
   ?author a <http://example.com/theme/library/Author> .
@@ -2970,13 +2984,13 @@ Optimized query:
 
 ```sparql
 SELECT (COUNT(DISTINCT ?trial) AS ?count) WHERE {
-?trial a <http://example.com/theme/pharma/ClinicalTrial> .
 VALUES ?marker { <http://example.com/theme/pharma/biomarker/0> <http://example.com/theme/pharma/biomarker/1> <http://example.com/theme/pharma/biomarker/2> }
 ?result <http://example.com/theme/pharma/biomarker> ?marker .
-?arm <http://example.com/theme/pharma/hasResult> ?result .
-?trial <http://example.com/theme/pharma/hasArm> ?arm .
 ?result <http://example.com/theme/pharma/pValue> ?p .
 FILTER ((?p < 0.05) || (?p = 0.05))
+?arm <http://example.com/theme/pharma/hasResult> ?result .
+?trial <http://example.com/theme/pharma/hasArm> ?arm .
+?trial a <http://example.com/theme/pharma/ClinicalTrial> .
 OPTIONAL {
 ?result <http://example.com/theme/pharma/effectSize> ?effect .
 BIND(?effect AS ?optEffect)
@@ -3137,7 +3151,7 @@ OPTIONAL {
 ?drug <http://example.com/theme/pharma/testedIn> ?trial .
 BIND(?trial AS ?optTrial)
 }
-FILTER (EXISTS { ?result <http://example.com/theme/pharma/biomarker> ?marker . ?arm <http://example.com/theme/pharma/hasResult> ?result . ?trial <http://example.com/theme/pharma/hasArm> ?arm . } && (?optTrial != <http://example.com/theme/pharma/trial/0>))
+FILTER ((?optTrial != <http://example.com/theme/pharma/trial/0>) && EXISTS { ?result <http://example.com/theme/pharma/biomarker> ?marker . ?arm <http://example.com/theme/pharma/hasResult> ?result . ?trial <http://example.com/theme/pharma/hasArm> ?arm . })
 }
 GROUP BY ?pathway
 HAVING (COUNT(DISTINCT ?drug) > 1)
@@ -3358,7 +3372,37 @@ _Not present in fastest-run source file._
 
 Optimized query:
 
-_Not present in fastest-run source file._
+```sparql
+SELECT ?u (COUNT(DISTINCT ?v) AS ?degree) WHERE {
+  VALUES (?u ?v) {
+    (<http://example.com/theme/social/user/3> <http://example.com/theme/social/user/3>)
+    (<http://example.com/theme/social/user/3> <http://example.com/theme/social/user/4>)
+    (<http://example.com/theme/social/user/3> <http://example.com/theme/social/user/5>)
+    (<http://example.com/theme/social/user/3> <http://example.com/theme/social/user/6>)
+    (<http://example.com/theme/social/user/4> <http://example.com/theme/social/user/3>)
+    (<http://example.com/theme/social/user/4> <http://example.com/theme/social/user/4>)
+    (<http://example.com/theme/social/user/4> <http://example.com/theme/social/user/5>)
+    (<http://example.com/theme/social/user/4> <http://example.com/theme/social/user/6>)
+    (<http://example.com/theme/social/user/5> <http://example.com/theme/social/user/3>)
+    (<http://example.com/theme/social/user/5> <http://example.com/theme/social/user/4>)
+    (<http://example.com/theme/social/user/5> <http://example.com/theme/social/user/5>)
+    (<http://example.com/theme/social/user/5> <http://example.com/theme/social/user/6>)
+    (<http://example.com/theme/social/user/6> <http://example.com/theme/social/user/3>)
+    (<http://example.com/theme/social/user/6> <http://example.com/theme/social/user/4>)
+    (<http://example.com/theme/social/user/6> <http://example.com/theme/social/user/5>)
+    (<http://example.com/theme/social/user/6> <http://example.com/theme/social/user/6>)
+  }
+  FILTER (?u != ?v)
+  ?u <http://example.com/theme/social/follows> ?v .
+  OPTIONAL {
+    ?u <http://example.com/theme/social/name> ?optName .
+    BIND(?optName AS ?optAlias)
+  }
+  FILTER (?optAlias IN ("user3", "user4", "user5", "user6"))
+}
+GROUP BY ?u
+HAVING (COUNT(DISTINCT ?v) >= 3)
+```
 
 Query plan:
 
@@ -3372,7 +3416,22 @@ _Not present in fastest-run source file._
 
 Optimized query:
 
-_Not present in fastest-run source file._
+```sparql
+SELECT (COUNT(DISTINCT ?u) AS ?count) WHERE {
+VALUES ?u { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
+FILTER NOT EXISTS {
+?u <http://example.com/theme/social/follows> ?u .
+BIND(?u AS ?_anon_path_3afc84691eb614a7286df1a644e93f4ae012)
+}
+VALUES ?v { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
+FILTER (?u != ?v)
+?u <http://example.com/theme/social/follows> ?v .
+OPTIONAL {
+?v <http://example.com/theme/social/name> ?optName .
+}
+FILTER (?optName != "")
+}
+```
 
 Query plan:
 
@@ -3668,15 +3727,16 @@ VALUES (?a ?b) {
 (<http://example.com/theme/social/user/11> <http://example.com/theme/social/user/11>)
 }
 FILTER (?a != ?b)
-?a <http://example.com/theme/social/follows> ?b .
 VALUES ?c { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
-FILTER ((?b != ?c) && (?a != ?c))
-?b <http://example.com/theme/social/follows> ?c .
+FILTER (?b != ?c)
+FILTER (?a != ?c)
 VALUES ?d { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
 FILTER (?c != ?d)
-?c <http://example.com/theme/social/follows> ?d .
 VALUES ?e { <http://example.com/theme/social/user/7> <http://example.com/theme/social/user/8> <http://example.com/theme/social/user/9> <http://example.com/theme/social/user/10> <http://example.com/theme/social/user/11> }
 FILTER (?d != ?e)
+?a <http://example.com/theme/social/follows> ?b .
+?b <http://example.com/theme/social/follows> ?c .
+?c <http://example.com/theme/social/follows> ?d .
 ?d <http://example.com/theme/social/follows> ?e .
 ?e <http://example.com/theme/social/follows> ?a .
 OPTIONAL {
@@ -3805,17 +3865,18 @@ Var (name=entity)
 
 ### Query 2
 
-- Fastest observed: `7.426 ms/op`
-- Source: [results-2026-04-16-3.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:60)
-- Optimized block: [3818](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-16-3.md:3818)
+- Fastest observed: `0.111 ms/op`
+- Source: [results-2026-04-22.md](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-22.md:61)
+- Optimized block: [6050](/Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-22.md:6050)
 
 Optimized query:
 
 ```sparql
 SELECT ?line (COUNT(DISTINCT ?section) AS ?sectionCount) WHERE {
-  ?line a <http://example.com/theme/train/Line> .
+  VALUES ?lineName { "Line 0" "Line 1" "Line 2" }
   ?line <http://example.com/theme/train/name> ?lineName .
   FILTER (?lineName IN ("Line 0", "Line 1", "Line 2"))
+  ?line a <http://example.com/theme/train/Line> .
   OPTIONAL {
     ?section <http://example.com/theme/train/partOfLine> ?line .
   }

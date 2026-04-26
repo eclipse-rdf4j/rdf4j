@@ -416,6 +416,37 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void persistentRebuildCreatesMappedResidentSketches(@TempDir Path tempDir) throws Exception {
+		IRI predicate = VF.createIRI("urn:mapped-rebuild:p");
+		StubSailStore sourceStore = new StubSailStore();
+		for (int i = 0; i < 16; i++) {
+			sourceStore.add(st(VF.createIRI("urn:mapped-rebuild:s" + i), predicate,
+					VF.createIRI("urn:mapped-rebuild:o" + i)));
+		}
+
+		Path snapshot = tempDir.resolve("join-estimator.rjes");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(sourceStore,
+				smallConfig().withContextPairSketchesEnabled(false));
+		estimator.configurePersistence(snapshot, false);
+		estimator.rebuild();
+
+		assertFalse(estimator.debugResidentSketches().isEmpty(), "Expected rebuild to create resident sketches");
+		ArrayOfDoublesUpdatableSketch sketch = residentSinglePredicateSketch(estimator, predicate.stringValue());
+		assertNotNull(sketch, "Expected rebuilt predicate sketch to be resident");
+		assertTrue(sketch.hasMemorySegment(), "Persistent rebuild should allocate mutable sketches in mapped storage");
+		assertTrue(estimator.persistIfDirty(), "Expected directly mapped rebuild sketches to persist");
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSailStore(),
+				smallConfig().withContextPairSketchesEnabled(false));
+		reader.configurePersistence(snapshot, true);
+		assertEquals(16.0, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
+				1.0);
+		ArrayOfDoublesUpdatableSketch reloaded = residentSinglePredicateSketch(reader, predicate.stringValue());
+		assertNotNull(reloaded, "Expected mapped rebuild sketch to reload");
+		assertTrue(reloaded.hasMemorySegment(), "Reloaded rebuild sketch should still wrap mapped storage");
+	}
+
+	@Test
 	void heapOriginPersistedSketchCanGrowAfterMappedReload(@TempDir Path tempDir) throws Exception {
 		IRI predicate = VF.createIRI("urn:mapped-grow:p");
 		StubSailStore sourceStore = new StubSailStore();
@@ -1052,9 +1083,10 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	private static int hash(SketchBasedJoinEstimator estimator, String value) throws Exception {
-		Method hashMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("hash", String.class);
+		Method hashMethod = SketchBasedJoinEstimator.class.getDeclaredMethod("hash",
+				SketchBasedJoinEstimator.Component.class, String.class);
 		hashMethod.setAccessible(true);
-		return (int) hashMethod.invoke(estimator, value);
+		return (int) hashMethod.invoke(estimator, SketchBasedJoinEstimator.Component.P, value);
 	}
 
 	private static Object privateFieldValue(Object target, String fieldName) throws Exception {

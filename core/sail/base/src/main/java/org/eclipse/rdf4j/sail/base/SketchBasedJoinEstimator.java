@@ -198,7 +198,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	public enum Pair {
 		SP(Component.S, Component.P, Component.O, Component.C),
-		SO(Component.S, Component.O, Component.P, Component.C),
+//		SO(Component.S, Component.O, Component.P, Component.C),
 		SC(Component.S, Component.C, Component.P, Component.O),
 		PO(Component.P, Component.O, Component.S, Component.C),
 		PC(Component.P, Component.C, Component.S, Component.O),
@@ -411,8 +411,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final int SKETCH_PAYLOAD_FORMAT_NATIVE = -1;
 	private static final int SKETCH_PAYLOAD_FRAME_HEADER_BYTES = Integer.BYTES + Integer.BYTES;
 	private static final int TARGET_SKETCH_PART_FILES = 128;
-	private static final int DEFAULT_BUCKET_COUNT = 1024;
-	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 4096;
+	private static final int DEFAULT_BUCKET_COUNT = 4*1024;
+	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 64;
 	private static final String ESTIMATE_CACHE_SECONDS_PROPERTY = "estimateCacheSeconds";
 	private static final String ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT_PROPERTY = "zeroIntersectionExactDistinctLimit";
 	private static final String ZERO_INTERSECTION_SKEW_RATIO_PROPERTY = "zeroIntersectionSkewRatio";
@@ -2369,8 +2369,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			accumulateSingleUpdates(updates, event);
 			accumulatePair(updates, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
 					event.thetaHc);
-			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
-					event.thetaHc);
+//			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
+//					event.thetaHc);
 			if (contextPairSketchesEnabled) {
 				accumulatePair(updates, Pair.SC, event.isDelete, event.scKey, event.thetaSig, event.thetaHp,
 						event.thetaHo);
@@ -2393,10 +2393,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			accumulatePair(updates, Pair.SP, event.isDelete, event.spKey, event.thetaSig, event.thetaHo,
 					event.thetaHc);
 			break;
-		case SO:
-			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
-					event.thetaHc);
-			break;
+//		case SO:
+//			accumulatePair(updates, Pair.SO, event.isDelete, event.soKey, event.thetaSig, event.thetaHp,
+//					event.thetaHc);
+//			break;
 		case SC:
 			if (!contextPairSketchesEnabled) {
 				break;
@@ -3158,6 +3158,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
 				boolean contextPairSketchesEnabled) {
+			System.out.println("Initializing state: k=" + k + ", subjectBuckets=" + subjectBuckets + ", predicateBuckets="
+					+ predicateBuckets + ", objectBuckets=" + objectBuckets + ", contextBuckets=" + contextBuckets
+					+ ", contextPairSketchesEnabled=" + contextPairSketchesEnabled);
 			this.k = k;
 			this.subjectBuckets = subjectBuckets;
 			this.predicateBuckets = predicateBuckets;
@@ -3311,11 +3314,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private int componentBucketCount(Component component) {
 		return switch (component) {
-			case S -> subjectBucketCount;
-			case P -> predicateBucketCount;
-			case O -> objectBucketCount;
-			case C -> contextBucketCount;
-			default -> throw new IllegalStateException("Unsupported component: " + component);
+		case S -> subjectBucketCount;
+		case P -> predicateBucketCount;
+		case O -> objectBucketCount;
+		case C -> contextBucketCount;
+		default -> throw new IllegalStateException("Unsupported component: " + component);
 		};
 	}
 
@@ -7919,10 +7922,38 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 		if (sketch == null) {
-			sketch = newSk(state.k);
+			SketchAddress address = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
+			sketch = newSketchForWrite(state, address, entryId);
 			setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
 		}
 		return sketch;
+	}
+
+	private ArrayOfDoublesUpdatableSketch newSketchForWrite(State state, SketchAddress address, int entryId) {
+		SketchEstimatorPersistenceStore store = persistenceStore;
+		if (entryId < 0 || !persistenceEnabled || persistenceFile == null || store == null
+				|| (rebuildEpoch.get() & 1L) == 0L) {
+			return newSk(state.k);
+		}
+
+		byte slot = slotByte(slotOf(state));
+		try {
+			synchronized (persistLock) {
+				SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
+						fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, state.maxSketchBytes,
+						slotGenerations[slot]);
+				ArrayOfDoublesUpdatableSketch sketch = TupleSketchOps.newSketch(state.k, allocation.payload);
+				SketchEstimatorPersistenceStore.Ref persistedRef = allocation.ref;
+				synchronized (sketchCacheLock) {
+					cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind, persistedRef.offset,
+							persistedRef.length, persistedRef.generation);
+					indexDirty.set(true);
+				}
+				return sketch;
+			}
+		} catch (IOException e) {
+			throw new IllegalStateException("Failed to allocate mapped join estimator sketch " + address, e);
+		}
 	}
 
 	private void updateSingleSketchRaw(State state, boolean isDelete, Component component, int idx, long thetaHash) {
@@ -8590,9 +8621,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int nominalEntries = DEFAULT_BUCKET_COUNT;
 		boolean bucketCountExplicit;
 		int subjectBucketCount = DEFAULT_BUCKET_COUNT;
-		int predicateBucketCount = DEFAULT_BUCKET_COUNT;
+		int predicateBucketCount = 64;
 		int objectBucketCount = DEFAULT_BUCKET_COUNT;
-		int contextBucketCount = DEFAULT_BUCKET_COUNT;
+		int contextBucketCount = 16;
 		boolean subjectBucketCountExplicit;
 		boolean predicateBucketCountExplicit;
 		boolean objectBucketCountExplicit;

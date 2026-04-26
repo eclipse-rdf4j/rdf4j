@@ -77,7 +77,10 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	public static void releaseEstimatorMemory(LmdbStore store) throws IOException {
-		resolveEstimator(store).unload();
+		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
+		if (estimator != null) {
+			estimator.unload();
+		}
 	}
 
 	public static void deleteStoreDirectory(Path storeDirectory) {
@@ -197,7 +200,18 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	static SketchBasedJoinEstimator resolveEstimator(LmdbStore store) throws IOException {
+		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
+		if (estimator == null) {
+			throw new IOException("LMDB backing store is not available");
+		}
+		return estimator;
+	}
+
+	private static SketchBasedJoinEstimator tryResolveEstimator(LmdbStore store) throws IOException {
 		Object backingStore = invoke(GET_BACKING_STORE, store);
+		if (backingStore == null) {
+			return null;
+		}
 		Method getSketchBasedJoinEstimator = reflectMethod(backingStore.getClass(), "getSketchBasedJoinEstimator");
 		return (SketchBasedJoinEstimator) invoke(getSketchBasedJoinEstimator, backingStore);
 	}

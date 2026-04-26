@@ -233,7 +233,7 @@ def historical_matches(files: Dict[str, ResultFile], latest: ResultFile, key: Qu
     return sort_matches(matches)
 
 
-def top_runs(files: Dict[str, ResultFile], key: QueryKey) -> List[HistoricalMatch]:
+def query_runs(files: Dict[str, ResultFile], key: QueryKey) -> List[HistoricalMatch]:
     rows: List[HistoricalMatch] = []
     latest = newest_dated_file(files)
     latest_score = latest.summary_rows.get(key)
@@ -255,7 +255,7 @@ def top_runs(files: Dict[str, ResultFile], key: QueryKey) -> List[HistoricalMatc
     return sorted(
         rows,
         key=lambda row: (row.score, -row.content.richness, row.file_name),
-    )[:3]
+    )
 
 
 def sort_matches(matches: List[HistoricalMatch]) -> List[HistoricalMatch]:
@@ -420,14 +420,14 @@ def render_query_mode(files: Dict[str, ResultFile], latest: ResultFile, key: Que
     if key not in latest.summary_rows:
         raise SystemExit(f"{key.label()} not present in latest run {latest.path.name}")
 
-    top = top_runs(files, key)
+    matches = query_runs(files, key)
     lines = [
         f"Latest run: {latest.path.name}",
         f"Query: {key.label()}",
         f"Latest score: {format_score(latest.summary_rows[key])} ms/op",
     ]
 
-    for index, match in enumerate(top, start=1):
+    for index, match in enumerate(matches, start=1):
         lines.extend(
             [
                 "",
