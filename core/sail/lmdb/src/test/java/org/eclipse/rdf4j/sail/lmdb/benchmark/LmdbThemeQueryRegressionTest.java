@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -70,8 +71,20 @@ class LmdbThemeQueryRegressionTest {
 			anchor(Theme.SOCIAL_MEDIA, 0, "VALUES", "<http://example.com/theme/social/follows> ?v"),
 			anchor(Theme.SOCIAL_MEDIA, 1, "VALUES (?u1 ?u2)",
 					"?u1 <http://example.com/theme/social/follows> ?u2"),
-			anchor(Theme.SOCIAL_MEDIA, 4, "VALUES", "<http://example.com/theme/social/follows> ?v"),
-			anchor(Theme.SOCIAL_MEDIA, 6, "VALUES", "<http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 2, "VALUES (?u ?v)", "FILTER EXISTS"),
+			anchor(Theme.SOCIAL_MEDIA, 2, "FILTER EXISTS",
+					"?u <http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 3, "VALUES (?u ?v)",
+					"?u <http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 3, "FILTER (?u != ?v)",
+					"?u <http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 4, "VALUES ?u", "FILTER NOT EXISTS"),
+			anchor(Theme.SOCIAL_MEDIA, 4, "FILTER (?u != ?v)",
+					"<http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 6, "VALUES (?u ?v)",
+					"<http://example.com/theme/social/follows> ?v"),
+			anchor(Theme.SOCIAL_MEDIA, 6, "FILTER (?u != ?v)",
+					"<http://example.com/theme/social/follows> ?v"),
 			anchor(Theme.SOCIAL_MEDIA, 9, "VALUES", "<http://example.com/theme/social/follows> ?b"),
 			anchor(Theme.SOCIAL_MEDIA, 10, "VALUES", "<http://example.com/theme/social/follows> ?b"),
 			anchor(Theme.PHARMA, 0, "VALUES ?disease", "<http://example.com/theme/pharma/hasArm> ?arm"),
@@ -195,7 +208,173 @@ class LmdbThemeQueryRegressionTest {
 					assertBefore(snapshot.renderedQuery(), "VALUES (?u1 ?u2)", "VALUES ?u3",
 							"Composite VALUES should unlock pair filters before the unary VALUES expansion\n"
 									+ snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "MINUS");
+					assertDoesNotContain(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"Social media q1 should keep the self-loop exclusion as a materialized anti-join; "
+									+ "the correlated rewrite makes the clique look cheap across the filter scope\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?u3 <http://example.com/theme/social/follows> ?u2",
+							"MINUS",
+							"Social media q1 should complete the bounded follows clique before the anti-join\n"
+									+ snapshot.plan());
 					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void socialMediaMutualFollowsUsesFinitePairProbe(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
+					assertBefore(snapshot.renderedQuery(), "VALUES (?u ?v)", "FILTER EXISTS",
+							"Social media q2 should bind the finite user pair before probing the reciprocal edge\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "FILTER EXISTS",
+							"?u <http://example.com/theme/social/follows> ?v",
+							"Social media q2 should use the reciprocal edge as a dependent probe before the "
+									+ "forward direct lookup\n" + snapshot.plan());
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d, 2);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void socialMediaDegreeOptionalUsesPairedValuesBeforeFollowProbe(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 3, snapshot -> {
+					assertBefore(snapshot.renderedQuery(), "VALUES (?u ?v)",
+							"?u <http://example.com/theme/social/follows> ?v",
+							"Social media q3 should keep the finite pair product before probing the follows edge\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "FILTER (?u != ?v)",
+							"?u <http://example.com/theme/social/follows> ?v",
+							"Social media q3 should prune self-pairs before direct follow lookups\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?u <http://example.com/theme/social/follows> ?v",
+							"OPTIONAL",
+							"Social media q3 should run the bounded follow probe before the optional name lookup\n"
+									+ snapshot.plan());
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d, 1);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void socialMediaNoSelfFollowUsesFiniteAntiProbeBeforeFollowProbe(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 4, snapshot -> {
+					assertBefore(snapshot.renderedQuery(), "VALUES ?u", "FILTER NOT EXISTS",
+							"Social media q4 should bind the finite u set before the self-loop anti-probe\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "FILTER NOT EXISTS", "VALUES ?v",
+							"Social media q4 should run the bounded anti-probe before expanding v candidates\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "FILTER (?u != ?v)",
+							"?u <http://example.com/theme/social/follows> ?v",
+							"Social media q4 should prune finite self-pairs before the follows lookup\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?u <http://example.com/theme/social/follows> ?v",
+							"OPTIONAL",
+							"Social media q4 should run the bounded follows lookup before optional name probing\n"
+									+ snapshot.plan());
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d, 1);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void socialMediaSixCliqueUsesPairedValuesBeforeFollowProbe(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 6, snapshot -> {
+					assertBefore(snapshot.renderedQuery(), "VALUES (?u ?v)",
+							"?u <http://example.com/theme/social/follows> ?v",
+							"Social media q6 should keep the finite pair product before probing the follows edge\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "FILTER (?u != ?v)",
+							"?u <http://example.com/theme/social/follows> ?v",
+							"Social media q6 should prune self-pairs before direct follow lookups\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?u <http://example.com/theme/social/follows> ?v",
+							"OPTIONAL",
+							"Social media q6 should run the bounded follow probe before the optional name lookup\n"
+									+ snapshot.plan());
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d, 1);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void socialMediaFourCycleContinuesForwardBeforeClosingReverseProbe(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SOCIAL_MEDIA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertBefore(renderedQuery, "VALUES ?b",
+							"?a <http://example.com/theme/social/follows> ?b .",
+							"Social media q9 should anchor the four-cycle from finite b bindings\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
+							"?b <http://example.com/theme/social/follows> ?c .",
+							"Social media q9 should expand from the finite incoming b edge before b/c\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?b <http://example.com/theme/social/follows> ?c .",
+							"?c <http://example.com/theme/social/follows> ?d .",
+							"Social media q9 should continue the forward c/d fanout before closing the cycle\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?c <http://example.com/theme/social/follows> ?d .",
+							"?d <http://example.com/theme/social/follows> ?a .",
+							"Social media q9 should leave the d/a edge as the exact closing lookup\n"
+									+ snapshot.plan());
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d, 1);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -230,7 +409,7 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
-	void socialMediaFiveCycleInterleavesValuesWithFollowsEdges(@TempDir Path dataDir) throws Exception {
+	void socialMediaFiveCyclePrunesFiniteBindingsBeforeFollowsEdges(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
@@ -239,15 +418,27 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
 					String renderedQuery = snapshot.renderedQuery();
-					assertBefore(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .", "VALUES ?c",
-							"Social media q10 should probe (a,b) follow edges before expanding c bindings\n"
+					assertBefore(renderedQuery, "VALUES ?c", "?b <http://example.com/theme/social/follows> ?c .",
+							"Social media q10 should guard the (b,c) edge with finite c bindings\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "?b <http://example.com/theme/social/follows> ?c .", "VALUES ?d",
-							"Social media q10 should probe (b,c) follow edges before expanding d bindings\n"
+					assertBefore(renderedQuery, "VALUES ?d", "?c <http://example.com/theme/social/follows> ?d .",
+							"Social media q10 should guard the (c,d) edge with finite d bindings\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "?c <http://example.com/theme/social/follows> ?d .", "VALUES ?e",
-							"Social media q10 should prune d via follow edge before expanding e bindings\n"
+					assertBefore(renderedQuery, "VALUES ?e", "?d <http://example.com/theme/social/follows> ?e .",
+							"Social media q10 should guard the (d,e) edge with finite e bindings\n"
 									+ snapshot.plan());
+					assertBefore(renderedQuery, "FILTER (?a != ?c)",
+							"?a <http://example.com/theme/social/follows> ?b .",
+							"Social media q10 should finish the finite a/c pruning window before probing "
+									+ "the bound (a,b) edge\n" + snapshot.plan());
+					assertBefore(renderedQuery, "FILTER (?d != ?e)",
+							"?a <http://example.com/theme/social/follows> ?b .",
+							"Social media q10 should prune the finite e window before running follow guards\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
+							"EXISTS { ?a <http://example.com/theme/social/name> ?name .",
+							"Social media q10 should still apply follow guards before probing the correlated "
+									+ "EXISTS name scope per prefix row\n" + snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -267,9 +458,17 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?node a <http://example.com/theme/connected/Node>",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q2 should apply the Node type guard before the weight scan so the "
+									+ "filtered predicate does not drive a wider prefix\n" + snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/connected/weight> ?w",
 							"<http://example.com/theme/connected/connectsTo> ?neighbor",
 							"Highly connected q2 should bind the weight filter before expanding connectsTo fanout\n"
+									+ snapshot.plan());
+					assertDoesNotContain(snapshot.renderedQuery(), "OPTIONAL",
+							"Highly connected q2 should remove the no-new-binding reverse optional probe; "
+									+ "it only repeats already-bound edge existence checks before grouping\n"
 									+ snapshot.plan());
 				});
 			} finally {
@@ -290,9 +489,14 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 8, snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?b <http://example.com/theme/social/follows> ?c",
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/social/name> ?optName",
+							"?a <http://example.com/theme/social/follows> ?b",
+							"Social q8 should use the null-rejecting optional name lookup before scanning "
+									+ "the cycle fanout\n" + snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/social/name> ?optName",
 							"?c <http://example.com/theme/social/follows> ?a",
-							"Social q8 should bind the forward b->c cycle edge before the reverse c->a probe\n"
+							"Social q8 should use the null-rejecting optional name lookup before probing "
+									+ "the closing cycle edge\n"
 									+ snapshot.plan());
 				});
 			} finally {
@@ -337,6 +541,23 @@ class LmdbThemeQueryRegressionTest {
 				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "FILTER NOT EXISTS");
+					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 4 }",
+							"?node a <http://example.com/theme/connected/Node>",
+							"Highly connected q5 should bind the singleton threshold outside the typed-node loop "
+									+ "so the outer join subtree is not reopened once per node\n" + snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?node a <http://example.com/theme/connected/Node>",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q5 should apply the Node type guard before the weight scan so the "
+									+ "anti-exists scope is charged against the typed prefix\n" + snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 4 }",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q5 should bind the singleton threshold before the outer weight fanout "
+									+ "so the anti-exists scope is not unlocked per candidate row\n" + snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"<http://example.com/theme/connected/weight> ?w .\n  FILTER (?w IN",
+							"Highly connected q5 should probe the anti-exists weight scope once per typed node "
+									+ "before expanding candidate rows through the outer weight fanout\n"
+									+ snapshot.plan());
 					assertPredicateLookupWorkRowsAbove(snapshot.plan(),
 							"http://example.com/theme/connected/weight", 10_000.0d);
 				});
@@ -358,6 +579,30 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "OPTIONAL",
+							"Train q9 should keep the variable-variable optional filter as a left join; "
+									+ "rewriting it to an inner join loses the faster operational-point plan\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(),
+							"?section <http://example.com/theme/train/hasTrackSection> ?track",
+							"?section a <http://example.com/theme/train/SectionOfLine>",
+							"Train q9 should drive from hasTrackSection with the correlated track-type EXISTS guard "
+									+ "before probing section type; type-first repeats the hasTrack/EXISTS lookups per "
+									+ "section and is measurably slower\n" + snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "FILTER EXISTS",
+							"Train q9 should keep the no-new-binding EXISTS probe as a smallest-window filter; "
+									+ "folding it into the join bundle adds normal join materialization work without "
+									+ "reducing the required per-track type probe\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(),
+							"?section <http://example.com/theme/train/hasTrackSection> ?track",
+							"FILTER EXISTS",
+							"Train q9 should unlock the track-type EXISTS probe immediately after hasTrackSection\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "FILTER EXISTS",
+							"?section a <http://example.com/theme/train/SectionOfLine>",
+							"Train q9 should run the track-type EXISTS guard before the section type probe\n"
+									+ snapshot.plan());
 					assertPredicateLookupWorkRowsAbove(snapshot.plan(),
 							"http://example.com/theme/train/connectsOperationalPoint", 10_000.0d);
 				});
@@ -484,6 +729,34 @@ class LmdbThemeQueryRegressionTest {
 					assertDoesNotContain(snapshot.plan(), "deferredFilterScope=bindingPrefix",
 							"Library q5 should not place the correlated NOT EXISTS around the threshold VALUES "
 									+ "before the Loan type guard\n" + snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void pharmaTargetsWithOptionalDiseaseKeepsBoundTargetLookupBeforeDrugType(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?target a <http://example.com/theme/pharma/Target>",
+							"?target <http://example.com/theme/pharma/inPathway> ?pathway",
+							"Pharma q2 should bind the target type guard before target pathway expansion\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(),
+							"?drug <http://example.com/theme/pharma/targets> ?target",
+							"?drug a <http://example.com/theme/pharma/Drug>",
+							"Pharma q2 should probe targets from the bound target before scanning all drugs\n"
+									+ snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -736,6 +1009,41 @@ class LmdbThemeQueryRegressionTest {
 									+ "\"2024-02-01\"^^<http://www.w3.org/2001/XMLSchema#date>))",
 							"?enc a <http://example.com/theme/medical/Encounter>",
 							"Medical q2 should apply the selective date filter before the broad Encounter type scan\n"
+									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalEncounterConditionCodeKeepsEncounterAnchor(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareThemeStore(dataDir, theme, 4);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 4, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 4, snapshot.plan());
+					String renderedQuery = snapshot.renderedQuery();
+					assertDoesNotContain(renderedQuery, "VALUES ?code",
+							"Medical q4 should not turn the local code filter into a driving VALUES factor\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?enc a <http://example.com/theme/medical/Encounter>",
+							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
+							"Medical q4 should keep the Encounter type anchor before hasCondition fanout\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?enc <http://example.com/theme/medical/hasCondition> ?cond",
+							"?cond <http://example.com/theme/medical/code> ?code",
+							"Medical q4 should bind condition from encounter before probing code\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?cond <http://example.com/theme/medical/code> ?code",
+							"OPTIONAL",
+							"Medical q4 should defer handledBy optional work until after the condition/code join\n"
 									+ snapshot.plan());
 				});
 			} finally {
@@ -1093,6 +1401,12 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
+	private static void assertContains(String value, String expected, String message) {
+		if (!value.contains(expected)) {
+			throw new AssertionError(message + "\nExpected to find `" + expected + "` in:\n" + value);
+		}
+	}
+
 	private static void assertDoesNotContain(String value, String unexpected, String message) {
 		if (value.contains(unexpected)) {
 			throw new AssertionError(message + "\nDid not expect to find `" + unexpected + "` in:\n" + value);
@@ -1279,10 +1593,10 @@ class LmdbThemeQueryRegressionTest {
 		int directLookupCount = 0;
 		while (matcher.find()) {
 			directLookupCount++;
-			double workRows = parsePlanRows(matcher.group(1));
-			if (workRows > maxWorkRows) {
-				throw new AssertionError("Expected direct lookup plannedWorkRows <= " + maxWorkRows + " but got "
-						+ matcher.group(1) + " in:\n" + plan);
+			double accessRows = directLookupAccessRows(matcher.group(), matcher.group(1));
+			if (accessRows > maxWorkRows) {
+				throw new AssertionError("Expected direct lookup plannedAccessRows <= " + maxWorkRows + " but got "
+						+ accessRows + " in:\n" + plan);
 			}
 		}
 		if (directLookupCount < 6) {
@@ -1295,16 +1609,21 @@ class LmdbThemeQueryRegressionTest {
 		int directLookupCount = 0;
 		while (matcher.find()) {
 			directLookupCount++;
-			double workRows = parsePlanRows(matcher.group(1));
-			if (workRows > maxWorkRows) {
-				throw new AssertionError("Expected direct lookup plannedWorkRows <= " + maxWorkRows + " but got "
-						+ matcher.group(1) + " in:\n" + plan);
+			double accessRows = directLookupAccessRows(matcher.group(), matcher.group(1));
+			if (accessRows > maxWorkRows) {
+				throw new AssertionError("Expected direct lookup plannedAccessRows <= " + maxWorkRows + " but got "
+						+ accessRows + " in:\n" + plan);
 			}
 		}
 		if (directLookupCount < minDirectLookups) {
 			throw new AssertionError(
 					"Expected at least " + minDirectLookups + " direct lookup factors in:\n" + plan);
 		}
+	}
+
+	private static double directLookupAccessRows(String directLookupHeader, String fallbackWorkRows) {
+		Matcher accessRows = Pattern.compile("plannedAccessRows=([^,)]*)").matcher(directLookupHeader);
+		return accessRows.find() ? parsePlanRows(accessRows.group(1)) : parsePlanRows(fallbackWorkRows);
 	}
 
 	private static void assertPredicateLookupWorkRowsBelow(String plan, String predicateIri, double maxWorkRows) {

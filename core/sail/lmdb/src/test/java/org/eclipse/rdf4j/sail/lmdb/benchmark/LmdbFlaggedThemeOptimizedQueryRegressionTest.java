@@ -339,8 +339,8 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 					+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.SOCIAL_MEDIA && expectation.queryIndex == 10
-				&& !socialCliqueBindingsAppearBeforeCycleEdges(snapshot.renderedQuery)) {
-			mismatches.add(key + " should bind clique variables c/d/e before evaluating follows edges\n"
+				&& !socialFiveCycleUsesGuardedForwardCascade(snapshot.renderedQuery)) {
+			mismatches.add(key + " should use the guarded forward follows cascade before closing the cycle\n"
 					+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.LIBRARY && expectation.queryIndex == 7
@@ -352,12 +352,26 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		return mismatches;
 	}
 
-	private static boolean socialCliqueBindingsAppearBeforeCycleEdges(String renderedQuery) {
+	private static boolean socialFiveCycleUsesGuardedForwardCascade(String renderedQuery) {
+		String follows = "<http://example.com/theme/social/follows>";
+		int valuesAB = renderedQuery.indexOf("VALUES (?a ?b)");
 		int valuesC = renderedQuery.indexOf("VALUES ?c");
 		int valuesD = renderedQuery.indexOf("VALUES ?d");
 		int valuesE = renderedQuery.indexOf("VALUES ?e");
-		int firstCycleEdge = renderedQuery.indexOf("?a <http://example.com/theme/social/follows> ?b");
-		return valuesC >= 0 && valuesD > valuesC && valuesE > valuesD && firstCycleEdge > valuesE;
+		int edgeAB = renderedQuery.indexOf("?a " + follows + " ?b");
+		int edgeBC = renderedQuery.indexOf("?b " + follows + " ?c");
+		int edgeCD = renderedQuery.indexOf("?c " + follows + " ?d");
+		int edgeDE = renderedQuery.indexOf("?d " + follows + " ?e");
+		int edgeEA = renderedQuery.indexOf("?e " + follows + " ?a");
+		return valuesAB >= 0
+				&& edgeAB > valuesAB
+				&& valuesC > edgeAB
+				&& edgeBC > valuesC
+				&& valuesD > edgeBC
+				&& edgeCD > valuesD
+				&& valuesE > edgeCD
+				&& edgeDE > valuesE
+				&& edgeEA > edgeDE;
 	}
 
 	private static List<String> directLookupWorkMismatches(String plan, double maxWorkRows, String key) {

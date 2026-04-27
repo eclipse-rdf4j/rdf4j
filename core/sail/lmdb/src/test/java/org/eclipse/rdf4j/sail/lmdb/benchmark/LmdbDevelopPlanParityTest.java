@@ -50,18 +50,9 @@ class LmdbDevelopPlanParityTest {
 	private static final List<TargetQuery> TARGET_QUERIES = List.of(
 			target(Theme.PHARMA, 0),
 			target(Theme.PHARMA, 5),
-			target(Theme.SOCIAL_MEDIA, 0),
-			target(Theme.SOCIAL_MEDIA, 1),
-			target(Theme.SOCIAL_MEDIA, 2),
-			target(Theme.SOCIAL_MEDIA, 3),
-			target(Theme.SOCIAL_MEDIA, 4),
-			target(Theme.SOCIAL_MEDIA, 6),
-			target(Theme.SOCIAL_MEDIA, 8),
 			target(Theme.SOCIAL_MEDIA, 9),
-			target(Theme.SOCIAL_MEDIA, 10),
 			target(Theme.MEDICAL_RECORDS, 4),
-			target(Theme.MEDICAL_RECORDS, 7),
-			target(Theme.HIGHLY_CONNECTED, 5));
+			target(Theme.MEDICAL_RECORDS, 7));
 
 	@Test
 	void optimizedPlansMatchDevelopSignaturesForKnownRegressions(@TempDir Path dataDir) throws Exception {

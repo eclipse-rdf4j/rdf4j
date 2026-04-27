@@ -3603,14 +3603,13 @@ Optimized query:
 
 ```sparql
 SELECT (COUNT(DISTINCT ?a) AS ?count) WHERE {
+  VALUES ?optName { "user0" "user1" "user2" }
+  ?a <http://example.com/theme/social/name> ?optName .
+  FILTER (?optName IN ("user0", "user1", "user2"))
+  ?c <http://example.com/theme/social/follows> ?a .
   ?a <http://example.com/theme/social/follows> ?b .
   ?b <http://example.com/theme/social/follows> ?c .
-  ?c <http://example.com/theme/social/follows> ?a .
   BIND(?a AS ?cycleStart)
-  OPTIONAL {
-    ?a <http://example.com/theme/social/name> ?optName .
-  }
-  FILTER (?optName IN ("user0", "user1", "user2"))
 }
 ```
 
@@ -3622,40 +3621,42 @@ Projection
 ║     ProjectionElem "count"
 ╚══ Extension
    ├── Group ()
-   │  ╠══ Filter
-   │  ║  ├── ListMemberOperator
-   │  ║  │     Var (name=optName)
-   │  ║  │     ValueConstant (value="user0")
-   │  ║  │     ValueConstant (value="user1")
-   │  ║  │     ValueConstant (value="user2")
-   │  ║  └── LeftJoin
-   │  ║     ╠══ Extension [left]
-   │  ║     ║  ├── Join (JoinIterator) (resultSizeEstimate=188738.0M)
-   │  ║     ║  │  ╠══ Join (JoinIterator) (resultSizeEstimate=1.3M) [left]
-   │  ║     ║  │  ║  ├── StatementPattern (costEstimate=47.9K, resultSizeEstimate=143.7K) [left]
-   │  ║     ║  │  ║  │     s: Var (name=a)
-   │  ║     ║  │  ║  │     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║  │  ║  │     o: Var (name=b)
-   │  ║     ║  │  ║  └── StatementPattern (costEstimate=190, resultSizeEstimate=143.7K) [right]
-   │  ║     ║  │  ║        s: Var (name=b)
-   │  ║     ║  │  ║        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║  │  ║        o: Var (name=c)
-   │  ║     ║  │  ╚══ StatementPattern (costEstimate=0.50, resultSizeEstimate=143.7K) [right]
-   │  ║     ║  │        s: Var (name=c)
-   │  ║     ║  │        p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
-   │  ║     ║  │        o: Var (name=a)
-   │  ║     ║  └── ExtensionElem (cycleStart)
-   │  ║     ║        Var (name=a)
-   │  ║     ╚══ StatementPattern (resultSizeEstimate=16.0K) [right]
-   │  ║           s: Var (name=a)
-   │  ║           p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
-   │  ║           o: Var (name=optName)
+   │  ╠══ Extension
+   │  ║  ├── Join (JoinIterator) (resultSizeEstimate=1.0M)
+   │  ║  │  ╠══ BindingSetAssignment ([[optName="user0"], [optName="user1"], [optName="user2"]]) (resultSizeEstimate=3.00, optimizer.runtimeFeedbackConfidence=0.09, plannedWorkRows=3.00, plannerId=lmdb-sketch, plannerAlgorithm=DYNAMIC_PROGRAMMING, plannerPath=ROBUST_USED, optimizer.runtimeFeedback=filterFeedback=deferredFilters=1, knownPassRatios=1, sources={learned_filter=1}, totalEvidence=6, optimizer.physicalRefinement=costModel=lmdb, accessPathSelection=per-step, optimizer.logicalExploration=mode=dp-frontier, frontierLimit=4, beamWidth=4, candidates=39, accepted=35, rejectedAlternatives=4, maxFrontierWidth=4, finalFrontierWidth=4, optimizer.runtimeHints=runtimeCorrection=filter-feedback-candidate, deferredFilters=1) [left]
+   │  ║  │  ╚══ Join (JoinIterator) (resultSizeEstimate=1.2M) [right]
+   │  ║  │     ├── Filter (plannedFilterEvidenceCount=6, plannedFilterPassRatio=1.00, filterSelectivitySource=learned_filter, optimizer.strategy=lmdb-sketch-filter-localPattern, deferredFilterScope=localPattern) [left]
+   │  ║  │     │  ╠══ ListMemberOperator
+   │  ║  │     │  ║     Var (name=optName) (bindingState=bound)
+   │  ║  │     │  ║     ValueConstant (value="user0")
+   │  ║  │     │  ║     ValueConstant (value="user1")
+   │  ║  │     │  ║     ValueConstant (value="user2")
+   │  ║  │     │  ╚══ StatementPattern (resultSizeEstimate=1.00, plannedAccessRows=1.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedWorkRows=2.00, plannedIndexName=posc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[P, O], plannedBoundVars=optName, sharedJoinVars=[optName])
+   │  ║  │     │        s: Var (name=a) (bindingState=unbound)
+   │  ║  │     │        p: Var (name=_const_7d17b943_uri, value=http://example.com/theme/social/name, anonymous)
+   │  ║  │     │        o: Var (name=optName) (bindingState=bound)
+   │  ║  │     └── Join (JoinIterator) (resultSizeEstimate=1.3M) [right]
+   │  ║  │        ╠══ StatementPattern (resultSizeEstimate=9.00, plannedAccessRows=3.00, plannedRepeatedInvocations=3.00, plannedIndexPrefixLength=1.00, plannedAccessPathCandidates=4.00, plannedDistinctLookupBindings=1.00, plannedWorkRows=18, plannedIndexName=ospc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[O], plannedMissingLookupComponents=[P], plannedBoundVars=a,optName, sharedJoinVars=[a]) [left]
+   │  ║  │        ║     s: Var (name=c) (bindingState=unbound)
+   │  ║  │        ║     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║  │        ║     o: Var (name=a) (bindingState=bound)
+   │  ║  │        ╚══ Join (JoinIterator) (resultSizeEstimate=1.3M) [right]
+   │  ║  │           ├── StatementPattern (resultSizeEstimate=9.00, plannedAccessRows=9.00, plannedRepeatedInvocations=9.00, plannedIndexPrefixLength=2.00, plannedAccessPathCandidates=4.00, plannedDistinctLookupBindings=9.00, plannedWorkRows=109, plannedIndexName=spoc, plannedIndexAccessMode=prefixScan, plannedLookupComponents=[S, P], plannedMissingLookupComponents=[P], plannedBoundVars=a,c,optName, sharedJoinVars=[c]) [left]
+   │  ║  │           │     s: Var (name=a) (bindingState=bound)
+   │  ║  │           │     p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║  │           │     o: Var (name=b) (bindingState=unbound)
+   │  ║  │           └── StatementPattern (resultSizeEstimate=0, plannedAccessRows=0, plannedRepeatedInvocations=82, plannedIndexPrefixLength=3.00, plannedAccessPathCandidates=4.00, plannedDistinctLookupBindings=82, plannedWorkRows=164, plannedIndexName=spoc, plannedIndexAccessMode=directLookup, plannedLookupComponents=[S, P, O], plannedBoundVars=a,b,c,optName, sharedJoinVars=[a, b]) [right]
+   │  ║  │                 s: Var (name=b) (bindingState=bound)
+   │  ║  │                 p: Var (name=_const_9c68e12a_uri, value=http://example.com/theme/social/follows, anonymous)
+   │  ║  │                 o: Var (name=c) (bindingState=bound)
+   │  ║  └── ExtensionElem (cycleStart)
+   │  ║        Var (name=a) (bindingState=bound)
    │  ╚══ GroupElem (count)
    │        Count (Distinct)
-   │           Var (name=a)
+   │           Var (name=a) (bindingState=bound)
    └── ExtensionElem (count)
          Count (Distinct)
-            Var (name=a)
+            Var (name=a) (bindingState=unbound)
 ```
 
 ### Query 9

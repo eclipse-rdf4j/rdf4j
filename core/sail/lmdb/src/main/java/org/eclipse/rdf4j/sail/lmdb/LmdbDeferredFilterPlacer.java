@@ -21,8 +21,10 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 
 final class LmdbDeferredFilterPlacer {
@@ -57,6 +59,7 @@ final class LmdbDeferredFilterPlacer {
 			optimized = applyPrefixBindingDeferredFilters(optimized, pendingFilters, prefixBindingNames,
 					currentPatterns, remainingPatternsAfterFactor.get(i));
 			factors.add(new SegmentFactor(optimized, currentPatterns));
+			groupSafePrefixBindingWindowFilters(factors, pendingFilters, boundBeforeSegment, prefixBindingNames);
 			prefixBindingNames.addAll(optimized.getBindingNames());
 		}
 		List<DeferredFilter> unresolvedFilters = new ArrayList<>();
@@ -68,6 +71,8 @@ final class LmdbDeferredFilterPlacer {
 				unresolvedFilters.add(filter);
 			}
 		}
+
+		preferAnchoredSamePredicateCycleOrder(factors, boundBeforeSegment);
 
 		Deque<TupleExpr> roots = new ArrayDeque<>(factors.size());
 		for (SegmentFactor factor : factors) {
@@ -90,7 +95,7 @@ final class LmdbDeferredFilterPlacer {
 			if (window == null) {
 				continue;
 			}
-			if (bestWindow == null || compareBindingAssignmentWindow(window, filter, bestWindow,
+			if (bestWindow == null || compareBindingAssignmentWindow(factors, window, filter, bestWindow,
 					sortedFilters.get(bestIndex)) < 0) {
 				bestIndex = i;
 				bestWindow = window;
@@ -99,8 +104,14 @@ final class LmdbDeferredFilterPlacer {
 		return bestIndex < 0 ? 0 : bestIndex;
 	}
 
-	private int compareBindingAssignmentWindow(BindingAssignmentWindow left, DeferredFilter leftFilter,
+	private int compareBindingAssignmentWindow(List<SegmentFactor> factors, BindingAssignmentWindow left,
+			DeferredFilter leftFilter,
 			BindingAssignmentWindow right, DeferredFilter rightFilter) {
+		boolean leftBridge = isCheapBridgeBeforeSingleVarExists(factors, left, leftFilter, right, rightFilter);
+		boolean rightBridge = isCheapBridgeBeforeSingleVarExists(factors, right, rightFilter, left, leftFilter);
+		if (leftBridge != rightBridge) {
+			return leftBridge ? -1 : 1;
+		}
 		int endComparison = Integer.compare(left.endIndex, right.endIndex);
 		if (endComparison != 0) {
 			return endComparison;
@@ -114,6 +125,22 @@ final class LmdbDeferredFilterPlacer {
 			return costComparison;
 		}
 		return Integer.compare(leftFilter.originalIndex, rightFilter.originalIndex);
+	}
+
+	private boolean isCheapBridgeBeforeSingleVarExists(List<SegmentFactor> factors,
+			BindingAssignmentWindow bridgeWindow,
+			DeferredFilter bridgeFilter, BindingAssignmentWindow existsWindow, DeferredFilter existsFilter) {
+		if (bridgeFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
+				|| LmdbJoinPlanSupport.containsExists(bridgeFilter.condition)
+				|| !LmdbJoinPlanSupport.containsExists(existsFilter.condition)
+				|| existsWindow.selectedIndexes.size() != 1
+				|| bridgeWindow.startIndex != existsWindow.startIndex
+				|| bridgeWindow.endIndex <= existsWindow.endIndex
+				|| !bridgeFilter.requiredVars.containsAll(existsFilter.requiredVars)) {
+			return false;
+		}
+		SegmentFactor existsFactor = factors.get(existsWindow.selectedIndexes.get(0).intValue());
+		return existsFactor.bindingNames.size() <= existsFilter.requiredVars.size();
 	}
 
 	private TupleExpr applyPrefixBindingDeferredFilters(TupleExpr tupleExpr,
@@ -133,13 +160,16 @@ final class LmdbDeferredFilterPlacer {
 		for (int i = 0; i < deferredFilters.size();) {
 			DeferredFilter deferredFilter = deferredFilters.get(i);
 			if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, availableNames,
-					assignmentBindingNames)) {
+					assignmentBindingNames)
+					&& !hasPendingSplitExistsFilter(deferredFilters, deferredFilter, availableNames,
+							assignmentBindingNames)) {
 				prefixFilters.add(deferredFilter);
 				deferredFilters.remove(i);
 				continue;
 			}
 			if (prefixBindingNames.containsAll(deferredFilter.requiredVars)
 					|| !availableNames.containsAll(deferredFilter.requiredVars)
+					|| !assignmentBindingNames.containsAll(deferredFilter.requiredVars)
 					|| deferredFilter.patternLocalBase != null
 					|| deferredFilter.originPatterns.isEmpty()
 					|| !currentPatterns.containsAll(deferredFilter.originPatterns)
@@ -154,8 +184,78 @@ final class LmdbDeferredFilterPlacer {
 			prefixFilters.add(deferredFilter);
 			deferredFilters.remove(i);
 		}
-		return prefixFilters.isEmpty() ? tupleExpr
-				: filterWrapper.wrap(tupleExpr, prefixFilters, "bindingPrefix");
+		if (prefixFilters.isEmpty()) {
+			return tupleExpr;
+		}
+		TupleExpr filtered = tupleExpr;
+		return filterWrapper.wrap(filtered, prefixFilters, "bindingPrefix");
+	}
+
+	private void groupSafePrefixBindingWindowFilters(List<SegmentFactor> factors, List<DeferredFilter> deferredFilters,
+			Set<String> boundBeforeSegment, Set<String> prefixBindingNames) {
+		if (factors.isEmpty() || deferredFilters.isEmpty()) {
+			return;
+		}
+		SegmentFactor currentFactor = factors.get(factors.size() - 1);
+		Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport
+				.positionableBindingSetAssignmentNames(currentFactor.tupleExpr);
+		if (assignmentNames.isEmpty()) {
+			return;
+		}
+		Set<String> assignmentBindingNames = assignmentNames.get();
+		Set<String> availableNames = new HashSet<>(prefixBindingNames);
+		availableNames.addAll(assignmentBindingNames);
+		List<DeferredFilter> windowFilters = new ArrayList<>();
+		Set<String> requiredVars = new HashSet<>();
+		for (int i = 0; i < deferredFilters.size();) {
+			DeferredFilter deferredFilter = deferredFilters.get(i);
+			if (!canGroupDeferredFilterOnCurrentBindingWindow(deferredFilter, prefixBindingNames, availableNames,
+					assignmentBindingNames)
+					|| hasPendingSplitExistsFilter(deferredFilters, deferredFilter, availableNames,
+							assignmentBindingNames)) {
+				i++;
+				continue;
+			}
+			windowFilters.add(deferredFilter);
+			requiredVars.addAll(deferredFilter.requiredVars);
+			deferredFilters.remove(i);
+		}
+		if (windowFilters.isEmpty()) {
+			return;
+		}
+		int startIndex = smallestSuffixStartForRequiredVars(factors, requiredVars, boundBeforeSegment);
+		if (startIndex < 0) {
+			deferredFilters.addAll(windowFilters);
+			return;
+		}
+		groupDeferredFiltersOnWindow(factors, windowFilters, new int[] { startIndex, factors.size() - 1 },
+				"bindingWindow");
+	}
+
+	private boolean canGroupDeferredFilterOnCurrentBindingWindow(DeferredFilter deferredFilter,
+			Set<String> prefixBindingNames, Set<String> availableNames, Set<String> assignmentBindingNames) {
+		return deferredFilter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP
+				&& !LmdbJoinPlanSupport.containsExists(deferredFilter.condition)
+				&& deferredFilter.patternLocalBase == null
+				&& deferredFilter.originPatterns.isEmpty()
+				&& !deferredFilter.requiredVars.isEmpty()
+				&& !prefixBindingNames.containsAll(deferredFilter.requiredVars)
+				&& availableNames.containsAll(deferredFilter.requiredVars)
+				&& !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars)
+				&& !Collections.disjoint(assignmentBindingNames, deferredFilter.requiredVars)
+				&& !assignmentBindingNames.containsAll(deferredFilter.requiredVars);
+	}
+
+	private int smallestSuffixStartForRequiredVars(List<SegmentFactor> factors, Set<String> requiredVars,
+			Set<String> boundBeforeSegment) {
+		Set<String> availableNames = new HashSet<>(boundBeforeSegment);
+		for (int i = factors.size() - 1; i >= 0; i--) {
+			availableNames.addAll(factors.get(i).bindingNames);
+			if (availableNames.containsAll(requiredVars)) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private boolean canApplyDeferredFilterToBindingPrefix(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
@@ -168,7 +268,7 @@ final class LmdbDeferredFilterPlacer {
 						|| !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars))
 				&& !prefixBindingNames.containsAll(deferredFilter.requiredVars)
 				&& availableNames.containsAll(deferredFilter.requiredVars)
-				&& !Collections.disjoint(assignmentBindingNames, deferredFilter.requiredVars);
+				&& assignmentBindingNames.containsAll(deferredFilter.requiredVars);
 	}
 
 	private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {
@@ -202,6 +302,7 @@ final class LmdbDeferredFilterPlacer {
 		for (DeferredFilter deferredFilter : deferredFilters) {
 			if (deferredFilter == candidate || !LmdbJoinPlanSupport.containsExists(deferredFilter.condition)
 					|| !availableNames.containsAll(deferredFilter.requiredVars)
+					|| Collections.disjoint(candidate.requiredVars, deferredFilter.requiredVars)
 					|| assignmentBindingNames.containsAll(deferredFilter.requiredVars)
 					|| assignmentBindingNames.containsAll(candidate.requiredVars)) {
 				continue;
@@ -226,6 +327,9 @@ final class LmdbDeferredFilterPlacer {
 		if (filter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP) {
 			window = smallestBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
 		}
+		if (window == null && isCorrelatedNotExistsFilter(filter)) {
+			window = smallestBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
+		}
 		if (window == null) {
 			if (filter.originPatterns.isEmpty()) {
 				return false;
@@ -234,8 +338,18 @@ final class LmdbDeferredFilterPlacer {
 			if (window == null) {
 				return false;
 			}
+			window = expandWindowToCoverRequiredVars(factors, window, filter.requiredVars, boundBeforeSegment);
+			if (window == null) {
+				return false;
+			}
 		}
 		return groupDeferredFilterOnWindow(factors, filter, window);
+	}
+
+	private boolean isCorrelatedNotExistsFilter(DeferredFilter filter) {
+		return !filter.requiredVars.isEmpty()
+				&& filter.condition instanceof Not not
+				&& LmdbJoinPlanSupport.containsExists(not.getArg());
 	}
 
 	private int[] smallestSinglePatternBindingCoveringWindow(List<SegmentFactor> factors, Set<String> requiredVars,
@@ -259,14 +373,15 @@ final class LmdbDeferredFilterPlacer {
 
 	private boolean groupDeferredFilterOnBindingAssignments(List<SegmentFactor> factors,
 			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
-		if (LmdbJoinPlanSupport.containsExists(deferredFilter.condition)) {
-			return false;
-		}
 		BindingAssignmentWindow window = bindingAssignmentCoveringWindow(factors, deferredFilter, boundBeforeSegment);
 		if (window == null) {
 			return false;
 		}
 		boolean bindingOnlySpan = isBindingOnlySpan(factors, window.startIndex, window.endIndex);
+		boolean containsExists = LmdbJoinPlanSupport.containsExists(deferredFilter.condition);
+		if (containsExists && !bindingAssignmentWindowBindsOnlyRequiredVars(factors, window, deferredFilter)) {
+			return false;
+		}
 		if (!deferredFilter.originPatterns.isEmpty() && !bindingOnlySpan) {
 			return false;
 		}
@@ -289,6 +404,17 @@ final class LmdbDeferredFilterPlacer {
 			factors.remove((int) window.selectedIndexes.get(i));
 		}
 		factors.add(insertionIndex, groupedFactor);
+		return true;
+	}
+
+	private boolean bindingAssignmentWindowBindsOnlyRequiredVars(List<SegmentFactor> factors,
+			BindingAssignmentWindow window, DeferredFilter deferredFilter) {
+		for (Integer selectedIndex : window.selectedIndexes) {
+			SegmentFactor factor = factors.get(selectedIndex.intValue());
+			if (!deferredFilter.requiredVars.containsAll(factor.bindingNames)) {
+				return false;
+			}
+		}
 		return true;
 	}
 
@@ -317,7 +443,20 @@ final class LmdbDeferredFilterPlacer {
 			}
 			coveredVars.addAll(factor.bindingNames);
 		}
-		return coveredVars.containsAll(deferredFilter.requiredVars);
+		if (!coveredVars.containsAll(deferredFilter.requiredVars)) {
+			return false;
+		}
+		for (int i = window.startIndex; i <= window.endIndex; i++) {
+			if (window.selectedIndexes.contains(i)) {
+				continue;
+			}
+			SegmentFactor factor = factors.get(i);
+			if (!LmdbJoinPlanSupport.isBindingOnlyFactor(factor)
+					&& !Collections.disjoint(factor.bindingNames, coveredVars)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private boolean containsExistsFilter(TupleExpr tupleExpr) {
@@ -355,6 +494,11 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private boolean groupDeferredFilterOnWindow(List<SegmentFactor> factors, DeferredFilter filter, int[] window) {
+		return groupDeferredFiltersOnWindow(factors, List.of(filter), window, "smallestWindow");
+	}
+
+	private boolean groupDeferredFiltersOnWindow(List<SegmentFactor> factors, List<DeferredFilter> filters,
+			int[] window, String placement) {
 		Deque<TupleExpr> windowRoots = new ArrayDeque<>(window[1] - window[0] + 1);
 		Set<StatementPattern> containedPatterns = LmdbJoinPlanSupport.identityPatternSet();
 		for (int i = window[0]; i <= window[1]; i++) {
@@ -362,7 +506,7 @@ final class LmdbDeferredFilterPlacer {
 			windowRoots.addLast(factor.tupleExpr);
 			containedPatterns.addAll(factor.containedPatterns);
 		}
-		TupleExpr filteredRoot = filterWrapper.wrap(buildJoinRoot(windowRoots), List.of(filter), "smallestWindow");
+		TupleExpr filteredRoot = filterWrapper.wrap(buildJoinRoot(windowRoots), filters, placement);
 		for (int i = window[1]; i >= window[0]; i--) {
 			factors.remove(i);
 		}
@@ -424,6 +568,27 @@ final class LmdbDeferredFilterPlacer {
 		return bestStart < 0 ? null : new int[] { bestStart, bestEnd };
 	}
 
+	private int[] expandWindowToCoverRequiredVars(List<SegmentFactor> factors, int[] window, Set<String> requiredVars,
+			Set<String> boundBeforeSegment) {
+		if (requiredVars.isEmpty()) {
+			return window;
+		}
+		Set<String> availableVars = new HashSet<>(boundBeforeSegment);
+		for (int i = window[0]; i <= window[1]; i++) {
+			availableVars.addAll(factors.get(i).bindingNames);
+		}
+		if (availableVars.containsAll(requiredVars)) {
+			return window;
+		}
+		for (int end = window[1] + 1; end < factors.size(); end++) {
+			availableVars.addAll(factors.get(end).bindingNames);
+			if (availableVars.containsAll(requiredVars)) {
+				return new int[] { window[0], end };
+			}
+		}
+		return null;
+	}
+
 	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs) {
 		if (orderedArgs.isEmpty()) {
 			return null;
@@ -433,6 +598,173 @@ final class LmdbDeferredFilterPlacer {
 			root = joinFactory.create(orderedArgs.removeLast(), root);
 		}
 		return root;
+	}
+
+	private void preferAnchoredSamePredicateCycleOrder(List<SegmentFactor> factors, Set<String> boundBeforeSegment) {
+		boolean changed;
+		do {
+			changed = false;
+			Set<String> bound = new HashSet<>(boundBeforeSegment);
+			Set<String> anchoredBindings = new HashSet<>(boundBeforeSegment);
+			Set<String> lastIntroduced = Set.of();
+			boolean previousForwardExpansion = false;
+			for (int i = 0; i + 1 < factors.size(); i++) {
+				SegmentFactor current = factors.get(i);
+				SegmentFactor next = factors.get(i + 1);
+				if (sameConstantPredicate(current, next)
+						&& isAnchoredForwardSeed(current, bound, anchoredBindings)
+						&& isAnchoredReverseSeed(next, bound, anchoredBindings)) {
+					Collections.swap(factors, i, i + 1);
+					changed = true;
+					break;
+				}
+				if (sameConstantPredicate(current, next)
+						&& isDisconnectedExpansion(current, bound)
+						&& isConnectedExpansion(next, bound)) {
+					Collections.swap(factors, i, i + 1);
+					changed = true;
+					break;
+				}
+				if (sameConstantPredicate(current, next)
+						&& isReverseExpansion(current, bound)
+						&& !isAnchoredReverseSeedBeforeForwardSeed(current, next, bound, anchoredBindings)
+						&& anchoredForwardExpansion(next, bound, anchoredBindings, lastIntroduced,
+								previousForwardExpansion)) {
+					Collections.swap(factors, i, i + 1);
+					changed = true;
+					break;
+				}
+				previousForwardExpansion = isForwardExpansion(current, bound);
+				lastIntroduced = introducedBindingNames(current, bound);
+				bound.addAll(current.bindingNames);
+				if (LmdbJoinPlanSupport.isBindingOnlyFactor(current)) {
+					anchoredBindings.addAll(current.bindingNames);
+				}
+			}
+		} while (changed);
+	}
+
+	private boolean isAnchoredReverseSeedBeforeForwardSeed(SegmentFactor reverseFactor, SegmentFactor forwardFactor,
+			Set<String> bound, Set<String> anchoredBindings) {
+		if (!isAnchoredReverseSeed(reverseFactor, bound, anchoredBindings)
+				|| !isAnchoredForwardSeed(forwardFactor, bound, anchoredBindings)) {
+			return false;
+		}
+		StatementPattern reversePattern = singlePattern(reverseFactor);
+		StatementPattern forwardPattern = singlePattern(forwardFactor);
+		String reverseObjectName = reversePattern == null ? null : unboundName(reversePattern.getObjectVar());
+		String forwardSubjectName = forwardPattern == null ? null : unboundName(forwardPattern.getSubjectVar());
+		return reverseObjectName != null
+				&& reverseObjectName.equals(forwardSubjectName)
+				&& anchoredBindings.contains(reverseObjectName);
+	}
+
+	private boolean isAnchoredForwardSeed(SegmentFactor factor, Set<String> bound, Set<String> anchoredBindings) {
+		StatementPattern pattern = singlePattern(factor);
+		if (pattern == null || !isForwardExpansion(factor, bound)) {
+			return false;
+		}
+		String subjectName = unboundName(pattern.getSubjectVar());
+		return subjectName != null && anchoredBindings.contains(subjectName);
+	}
+
+	private boolean isAnchoredReverseSeed(SegmentFactor factor, Set<String> bound, Set<String> anchoredBindings) {
+		StatementPattern pattern = singlePattern(factor);
+		if (pattern == null || !isReverseExpansion(factor, bound)) {
+			return false;
+		}
+		String objectName = unboundName(pattern.getObjectVar());
+		return objectName != null && anchoredBindings.contains(objectName);
+	}
+
+	private boolean isConnectedExpansion(SegmentFactor factor, Set<String> bound) {
+		StatementPattern pattern = singlePattern(factor);
+		if (pattern == null) {
+			return false;
+		}
+		String subjectName = unboundName(pattern.getSubjectVar());
+		String objectName = unboundName(pattern.getObjectVar());
+		return subjectName != null
+				&& objectName != null
+				&& (bound.contains(subjectName) || bound.contains(objectName));
+	}
+
+	private boolean isDisconnectedExpansion(SegmentFactor factor, Set<String> bound) {
+		StatementPattern pattern = singlePattern(factor);
+		if (pattern == null) {
+			return false;
+		}
+		String subjectName = unboundName(pattern.getSubjectVar());
+		String objectName = unboundName(pattern.getObjectVar());
+		return subjectName != null
+				&& objectName != null
+				&& !bound.contains(subjectName)
+				&& !bound.contains(objectName);
+	}
+
+	private boolean anchoredForwardExpansion(SegmentFactor factor, Set<String> bound, Set<String> anchoredBindings,
+			Set<String> lastIntroduced, boolean previousForwardExpansion) {
+		StatementPattern pattern = singlePattern(factor);
+		String subjectName = pattern == null ? null : unboundName(pattern.getSubjectVar());
+		return subjectName != null
+				&& isForwardExpansion(factor, bound)
+				&& (anchoredBindings.contains(subjectName)
+						|| previousForwardExpansion && lastIntroduced.contains(subjectName));
+	}
+
+	private boolean isForwardExpansion(SegmentFactor factor, Set<String> bound) {
+		StatementPattern pattern = singlePattern(factor);
+		if (pattern == null) {
+			return false;
+		}
+		String subjectName = unboundName(pattern.getSubjectVar());
+		String objectName = unboundName(pattern.getObjectVar());
+		return subjectName != null
+				&& objectName != null
+				&& bound.contains(subjectName)
+				&& !bound.contains(objectName);
+	}
+
+	private boolean isReverseExpansion(SegmentFactor factor, Set<String> bound) {
+		StatementPattern pattern = singlePattern(factor);
+		if (pattern == null) {
+			return false;
+		}
+		String subjectName = unboundName(pattern.getSubjectVar());
+		String objectName = unboundName(pattern.getObjectVar());
+		return subjectName != null
+				&& objectName != null
+				&& bound.contains(objectName)
+				&& !bound.contains(subjectName);
+	}
+
+	private Set<String> introducedBindingNames(SegmentFactor factor, Set<String> bound) {
+		Set<String> introduced = new HashSet<>(factor.bindingNames);
+		introduced.removeAll(bound);
+		return introduced;
+	}
+
+	private boolean sameConstantPredicate(SegmentFactor left, SegmentFactor right) {
+		StatementPattern leftPattern = singlePattern(left);
+		StatementPattern rightPattern = singlePattern(right);
+		if (leftPattern == null || rightPattern == null) {
+			return false;
+		}
+		Var leftPredicate = leftPattern.getPredicateVar();
+		Var rightPredicate = rightPattern.getPredicateVar();
+		return leftPredicate != null
+				&& rightPredicate != null
+				&& leftPredicate.hasValue()
+				&& rightPredicate.hasValue()
+				&& leftPredicate.getValue().equals(rightPredicate.getValue());
+	}
+
+	private StatementPattern singlePattern(SegmentFactor factor) {
+		return factor.containedPatterns.size() == 1 ? factor.containedPatterns.iterator().next() : null;
+	}
+
+	private String unboundName(Var var) {
+		return var != null && !var.hasValue() ? var.getName() : null;
 	}
 
 	private static final class BindingAssignmentWindow {

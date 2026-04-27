@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -113,9 +115,9 @@ final class SketchJoinOrderReorderer {
 
 		SketchJoinOrderPlanner planner = factorCostModel == null
 				? new SketchJoinOrderPlanner(estimator, workAdjuster, plannedExpressions, plannedBound,
-						deferredFilters)
+						deferredFilters, planningInputs.prefixRows())
 				: new SketchJoinOrderPlanner(estimator, factorCostModel, plannedExpressions, plannedBound,
-						deferredFilters);
+						deferredFilters, planningInputs.prefixRows());
 		SketchJoinOrderPlanner.PlanOutcome outcome = planner.plan(algorithm);
 		estimator.recordJoinOrderPlannerPath(outcome.path());
 		if (outcome.plan().isEmpty()) {
@@ -133,21 +135,22 @@ final class SketchJoinOrderReorderer {
 
 	private PlanningInputs promoteFilterLookupBindings(List<TupleExpr> expressions, Set<String> initiallyBoundVars,
 			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
-		if (factorCostModel != null) {
-			return new PlanningInputs(List.copyOf(expressions), Set.copyOf(initiallyBoundVars), List.of());
-		}
 		LinkedHashSet<Integer> prefixIndices = new LinkedHashSet<>();
 		List<Integer> smallBindingAssignments = smallBindingAssignmentIndices(expressions);
 		Set<String> smallBindingVars = bindingVars(expressions, smallBindingAssignments);
-		double combinedBindingRows = combinedBindingRows(expressions, smallBindingAssignments);
+		double combinedBindingRows = combinedBindingRows(expressions, smallBindingAssignments,
+				BINDING_PREFIX_MAX_COMBINED_ROWS);
 		if (smallBindingAssignments.size() > 1
 				&& combinedBindingRows <= BINDING_PREFIX_MAX_COMBINED_ROWS
 				&& allGraphExpressionsTouchBindingVars(expressions, smallBindingVars)) {
 			addGuardCompatibleBindingPrefixes(expressions, smallBindingAssignments, smallBindingVars, deferredFilters,
 					prefixIndices);
 		}
+		double coveredLookupBindingRows = combinedBindingRows(expressions, smallBindingAssignments,
+				COVERED_LOOKUP_BINDING_PREFIX_MAX_COMBINED_ROWS);
 		if (smallBindingAssignments.size() > 1
-				&& combinedBindingRows <= COVERED_LOOKUP_BINDING_PREFIX_MAX_COMBINED_ROWS
+				&& coveredLookupBindingRows <= COVERED_LOOKUP_BINDING_PREFIX_MAX_COMBINED_ROWS
+				&& hasSingleGraphExpression(expressions)
 				&& allGraphExpressionsCoveredByBindingVars(expressions, smallBindingVars)) {
 			addGuardCompatibleBindingPrefixes(expressions, smallBindingAssignments, smallBindingVars, deferredFilters,
 					prefixIndices);
@@ -163,16 +166,19 @@ final class SketchJoinOrderReorderer {
 			if (shouldHoldBackForGuardedFilter(assignmentVars, smallBindingVars, deferredFilters)) {
 				continue;
 			}
-			if (intersects(assignmentVars, graphBindingVars)) {
+			if (intersects(assignmentVars, graphBindingVars)
+					&& canPromoteWithinSmallBindingPrefix(expressions, prefixIndices, index)) {
 				prefixIndices.add(index);
 				continue;
 			}
-			if (!intersects(assignmentVars, graphBindingVars) && intersects(assignmentVars, filterConditionVars)) {
+			if (!intersects(assignmentVars, graphBindingVars)
+					&& intersects(assignmentVars, filterConditionVars)
+					&& canPromoteWithinSmallBindingPrefix(expressions, prefixIndices, index)) {
 				prefixIndices.add(index);
 			}
 		}
 		if (prefixIndices.isEmpty()) {
-			return new PlanningInputs(List.copyOf(expressions), Set.copyOf(initiallyBoundVars), List.of());
+			return new PlanningInputs(List.copyOf(expressions), Set.copyOf(initiallyBoundVars), List.of(), 1.0d);
 		}
 
 		List<TupleExpr> prefixExpressions = new ArrayList<>(prefixIndices.size());
@@ -188,7 +194,25 @@ final class SketchJoinOrderReorderer {
 			}
 		}
 		return new PlanningInputs(List.copyOf(plannedExpressions), Set.copyOf(boundVars),
-				List.copyOf(prefixExpressions));
+				List.copyOf(prefixExpressions), bindingPrefixRows(prefixExpressions));
+	}
+
+	private double bindingPrefixRows(List<TupleExpr> prefixExpressions) {
+		double rows = 1.0d;
+		for (TupleExpr prefixExpression : prefixExpressions) {
+			if (!(prefixExpression instanceof BindingSetAssignment assignment)) {
+				continue;
+			}
+			double bindingRows = bindingRows(assignment);
+			if (!(Double.isFinite(bindingRows) && bindingRows > 0.0d)) {
+				continue;
+			}
+			rows *= bindingRows;
+			if (!Double.isFinite(rows)) {
+				return Double.MAX_VALUE;
+			}
+		}
+		return rows;
 	}
 
 	private void addGuardCompatibleBindingPrefixes(List<TupleExpr> expressions, List<Integer> smallBindingAssignments,
@@ -234,7 +258,17 @@ final class SketchJoinOrderReorderer {
 		return indices;
 	}
 
-	private double combinedBindingRows(List<TupleExpr> expressions, List<Integer> bindingAssignmentIndices) {
+	private boolean canPromoteWithinSmallBindingPrefix(List<TupleExpr> expressions, Set<Integer> prefixIndices,
+			Integer candidateIndex) {
+		List<Integer> candidateIndices = new ArrayList<>(prefixIndices.size() + 1);
+		candidateIndices.addAll(prefixIndices);
+		candidateIndices.add(candidateIndex);
+		return combinedBindingRows(expressions, candidateIndices,
+				BINDING_PREFIX_MAX_COMBINED_ROWS) <= BINDING_PREFIX_MAX_COMBINED_ROWS;
+	}
+
+	private double combinedBindingRows(List<TupleExpr> expressions, List<Integer> bindingAssignmentIndices,
+			double maxRows) {
 		if (bindingAssignmentIndices.isEmpty()) {
 			return 0.0d;
 		}
@@ -249,8 +283,8 @@ final class SketchJoinOrderReorderer {
 				return 0.0d;
 			}
 			combinedRows *= rows;
-			if (!Double.isFinite(combinedRows) || combinedRows > BINDING_PREFIX_MAX_COMBINED_ROWS) {
-				return BINDING_PREFIX_MAX_COMBINED_ROWS + 1.0d;
+			if (!Double.isFinite(combinedRows) || combinedRows > maxRows) {
+				return maxRows + 1.0d;
 			}
 		}
 		return combinedRows;
@@ -276,6 +310,20 @@ final class SketchJoinOrderReorderer {
 			}
 		}
 		return hasGraphExpression;
+	}
+
+	private boolean hasSingleGraphExpression(List<TupleExpr> expressions) {
+		int graphExpressions = 0;
+		for (TupleExpr expression : expressions) {
+			if (expression instanceof BindingSetAssignment) {
+				continue;
+			}
+			graphExpressions++;
+			if (graphExpressions > 1) {
+				return false;
+			}
+		}
+		return graphExpressions == 1;
 	}
 
 	private boolean allGraphExpressionsCoveredByBindingVars(List<TupleExpr> expressions, Set<String> bindingVars) {
@@ -372,9 +420,23 @@ final class SketchJoinOrderReorderer {
 		diagnostics.add("prefix promotion: prefixes=" + SketchJoinOrderPlanner.describeExprOrder(prefixExpressions));
 		diagnostics.addAll(plan.getDiagnostics());
 		List<JoinOrderPlanner.PlanStep> steps = prependBindingPrefixSteps(prefixExpressions, plan.getSteps());
+		double totalWorkRows = sumStepWorkRows(steps);
+		Map<String, Double> summaryDoubleMetrics = new HashMap<>(plan.getSummaryDoubleMetrics());
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWorkRows);
 		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), plan.getEstimatedFinalRows(),
-				plan.getEstimatedTotalWork() + totalBindingRows(prefixExpressions), diagnostics,
-				plan.getSummaryStringMetrics(), plan.getSummaryDoubleMetrics(), steps);
+				totalWorkRows, diagnostics, plan.getSummaryStringMetrics(), summaryDoubleMetrics, steps);
+	}
+
+	private double sumStepWorkRows(List<JoinOrderPlanner.PlanStep> steps) {
+		double total = 0.0d;
+		for (JoinOrderPlanner.PlanStep step : steps) {
+			double stepWorkRows = step.getStepWorkRows();
+			if (!(Double.isFinite(stepWorkRows) && stepWorkRows >= 0.0d)) {
+				return Double.NaN;
+			}
+			total += stepWorkRows;
+		}
+		return total;
 	}
 
 	private List<TupleExpr> preferBoundLookupBeforeIndependentScan(List<TupleExpr> orderedArgs) {
@@ -418,7 +480,9 @@ final class SketchJoinOrderReorderer {
 		for (int i = 0; i < reordered.size(); i++) {
 			TupleExpr current = reordered.get(i);
 			Set<String> currentVars = expressionVars(current);
-			if (!lastIntroducedVars.isEmpty() && intersects(currentVars, lastIntroducedVars)) {
+			boolean fullyBoundCurrent = !(current instanceof BindingSetAssignment)
+					&& boundVars.containsAll(currentVars);
+			if (!lastIntroducedVars.isEmpty() && intersects(currentVars, lastIntroducedVars) && !fullyBoundCurrent) {
 				for (int j = i + 1; j < reordered.size(); j++) {
 					TupleExpr candidate = reordered.get(j);
 					Set<String> candidateVars = expressionVars(candidate);
@@ -531,6 +595,6 @@ final class SketchJoinOrderReorderer {
 	}
 
 	private record PlanningInputs(List<TupleExpr> expressions, Set<String> boundVars,
-			List<TupleExpr> prefixExpressions) {
+			List<TupleExpr> prefixExpressions, double prefixRows) {
 	}
 }

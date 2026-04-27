@@ -69,10 +69,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx32G" })
-@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -96,6 +96,7 @@ public class ThemeQueryBenchmark {
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
+	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
@@ -120,7 +121,6 @@ public class ThemeQueryBenchmark {
 			"MEDICAL_RECORDS",
 			"SOCIAL_MEDIA",
 			"LIBRARY",
-
 			"ENGINEERING",
 			"HIGHLY_CONNECTED",
 			"TRAIN",
@@ -246,13 +246,17 @@ public class ThemeQueryBenchmark {
 	private DbFileSizes readExpectedDbFileSizes() throws IOException {
 		var expectedDbFileSizeFile = expectedDbFileSizeFile();
 		if (!expectedDbFileSizeFile.isFile()) {
-			return defaultExpectedDbFileSizes();
+			return missingExpectedDbFileSizes();
 		}
 		var properties = new Properties();
 		try (var inputStream = new FileInputStream(expectedDbFileSizeFile)) {
 			properties.load(inputStream);
 		}
 		try {
+			String tripleIndexes = properties.getProperty(TRIPLE_INDEXES_PROPERTY);
+			if (!storeConfig.getTripleIndexes().equals(tripleIndexes)) {
+				return missingExpectedDbFileSizes();
+			}
 			return new DbFileSizes(
 					parseSizeProperty(properties, TRIPLES_DATA_SIZE_PROPERTY),
 					parseSizeProperty(properties, VALUES_DATA_SIZE_PROPERTY));
@@ -262,7 +266,7 @@ public class ThemeQueryBenchmark {
 			if (!expectedDbFileSizeFile.delete()) {
 				System.out.println("Unable to delete invalid expected LMDB size file: " + expectedDbFileSizeFile);
 			}
-			return defaultExpectedDbFileSizes();
+			return missingExpectedDbFileSizes();
 		}
 	}
 
@@ -270,6 +274,7 @@ public class ThemeQueryBenchmark {
 		var properties = new Properties();
 		properties.setProperty(TRIPLES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.triplesDataSizeBytes));
 		properties.setProperty(VALUES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.valuesDataSizeBytes));
+		properties.setProperty(TRIPLE_INDEXES_PROPERTY, storeConfig.getTripleIndexes());
 		try (var outputStream = new FileOutputStream(expectedDbFileSizeFile())) {
 			properties.store(outputStream, "Expected LMDB data file sizes for ThemeQueryBenchmark");
 		}
@@ -289,6 +294,10 @@ public class ThemeQueryBenchmark {
 
 	private DbFileSizes defaultExpectedDbFileSizes() {
 		return new DbFileSizes(EXPECTED_TRIPLES_DATA_SIZE_BYTES, EXPECTED_VALUES_DATA_SIZE_BYTES);
+	}
+
+	private DbFileSizes missingExpectedDbFileSizes() {
+		return new DbFileSizes(-1L, -1L);
 	}
 
 	private DbFileSizes currentDbFileSizes() {

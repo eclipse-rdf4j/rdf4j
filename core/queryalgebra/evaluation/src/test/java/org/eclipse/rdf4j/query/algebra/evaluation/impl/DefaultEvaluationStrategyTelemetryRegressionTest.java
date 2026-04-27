@@ -18,12 +18,15 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -31,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -136,6 +140,63 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		assertThat(statistics.filteredCount).isEqualTo(1L);
 	}
 
+	@Test
+	void subqueryFilterDoesNotRecordCorrelatedOutcomeFeedback() {
+		BindingSetAssignment assignments = new BindingSetAssignment();
+		QueryBindingSet keep = new QueryBindingSet();
+		keep.addBinding("name", SimpleValueFactory.getInstance().createLiteral("keep"));
+		assignments.setBindingSets(List.of(keep));
+
+		Filter filter = new Filter(assignments,
+				new Compare(Var.of("name"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("keep")),
+						Compare.CompareOp.EQ));
+		Exists exists = new Exists(filter);
+
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null, 0,
+				statistics);
+
+		assertThat(strategy.precompile(exists, new QueryEvaluationContext.Minimal((Dataset) null))
+				.evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.TRUE);
+
+		assertThat(statistics.recordCalls).isZero();
+		assertThat(statistics.passedCount).isZero();
+		assertThat(statistics.filteredCount).isZero();
+	}
+
+	@Test
+	void repeatedLocalPatternFilterRecordsTopLevelOutcomeFeedback() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("urn:p")), Var.of("value"));
+		pattern.setDoubleMetricPlanned("plannedRepeatedInvocations", 1000.0d);
+		Filter filter = new Filter(pattern,
+				new Compare(Var.of("value"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("keep")),
+						Compare.CompareOp.EQ));
+
+		QueryBindingSet keep = new QueryBindingSet();
+		keep.addBinding("s", SimpleValueFactory.getInstance().createIRI("urn:s"));
+		keep.addBinding("value", SimpleValueFactory.getInstance().createLiteral("keep"));
+
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null, 0,
+				statistics);
+
+		try (FilterIterator iterator = new FilterIterator(filter,
+				new CloseableIteratorIteration<>(List.of(keep).iterator()),
+				new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.TRUE), strategy,
+				statistics)) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next().getValue("value").stringValue()).isEqualTo("keep");
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		assertThat(statistics.recordCalls).isEqualTo(1);
+		assertThat(statistics.passedCount).isEqualTo(1L);
+		assertThat(statistics.filteredCount).isZero();
+	}
+
 	private static StatementPattern statementPatternWithMetrics(int index) {
 		StatementPattern statementPattern = new StatementPattern(
 				Var.of("s", SimpleValueFactory.getInstance().createIRI("urn:test:s" + index)),
@@ -177,11 +238,13 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 	}
 
 	private static final class RecordingEvaluationStatistics extends EvaluationStatistics {
+		private long recordCalls;
 		private long passedCount;
 		private long filteredCount;
 
 		@Override
 		public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
+			recordCalls++;
 			this.passedCount += passedCount;
 			this.filteredCount += filteredCount;
 		}

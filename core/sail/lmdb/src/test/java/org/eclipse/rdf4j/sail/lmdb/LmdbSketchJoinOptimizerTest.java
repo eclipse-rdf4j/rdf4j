@@ -24,6 +24,9 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -87,6 +90,103 @@ class LmdbSketchJoinOptimizerTest {
 		Filter movedFilter = assertInstanceOf(Filter.class, leftJoin.getLeftArg());
 		assertTrue(containsFilter(leftJoin.getLeftArg()));
 		assertEquals(List.of(first, second), joinArgs(movedFilter.getArg()));
+	}
+
+	@Test
+	void keepsVariableVariableOptionalCompareAsLeftJoin() {
+		StatementPattern section = statementPattern("section", "type", "sectionType");
+		StatementPattern track = statementPattern("section", "hasTrack", "track");
+		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
+				new ExtensionElem(new Var("op"), "optOp"));
+		Compare condition = new Compare(new Var("optOp"), new Var("section"), Compare.CompareOp.NE);
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(section, track), optional), condition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Filter optimizedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, optimizedFilter.getArg());
+		assertTrue(containsLeftJoin(root.getArg()));
+	}
+
+	@Test
+	void rewritesNullRejectingOptionalCompareAgainstConstant() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		StatementPattern follows = statementPattern("person", "follows", "friend");
+		StatementPattern optional = statementPattern("person", "name", "optName");
+		Compare condition = new Compare(new Var("optName"), new ValueConstant(VF.createLiteral("person/42")),
+				Compare.CompareOp.EQ);
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(person, follows), optional), condition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		TupleExpr optimized = root.getArg();
+		TupleExpr rewritten = optimized instanceof Filter ? ((Filter) optimized).getArg() : optimized;
+		assertInstanceOf(Join.class, rewritten);
+		assertTrue(!containsLeftJoin(root.getArg()));
+	}
+
+	@Test
+	void keepsOptionalCompareAgainstConstantWhenFilterUsesOptionalAlias() {
+		StatementPattern node = statementPattern("node", "type", "nodeType");
+		Extension optional = new Extension(statementPattern("node", "weight", "w"), new ExtensionElem(new Var("w"),
+				"optWeight"));
+		Compare condition = new Compare(new Var("optWeight"), new ValueConstant(VF.createLiteral(5)),
+				Compare.CompareOp.GT);
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(node, optional), condition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Filter optimizedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, optimizedFilter.getArg());
+		assertTrue(containsLeftJoin(root.getArg()));
+	}
+
+	@Test
+	void removesNoNewBindingOptionalDirectProbe() {
+		StatementPattern type = statementPattern("node", "type", "nodeType");
+		StatementPattern connects = statementPattern("node", "connectsTo", "neighbor");
+		StatementPattern reverseProbe = statementPattern("neighbor", "connectsTo", "node");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(type, connects), reverseProbe));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertTrue(!containsLeftJoin(root.getArg()));
+		assertEquals(List.of(type, connects), joinArgs(root.getArg()));
+	}
+
+	@Test
+	void rewritesNoNewBindingExistsDirectProbeToJoinFactor() {
+		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
+		StatementPattern trackType = new StatementPattern(new Var("track"),
+				new Var("_const_type", VF.createIRI("urn:type")),
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")));
+		QueryRoot root = new QueryRoot(new Filter(hasTrack, new Exists(trackType)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertTrue(!containsFilter(root.getArg()));
+		assertEquals(List.of(hasTrack, trackType), joinArgs(root.getArg()));
+	}
+
+	@Test
+	void rewritesNoNewBindingExistsProbeAboveOptionalFilterToJoinFactor() {
+		StatementPattern sectionType = statementPattern("section", "type", "sectionType");
+		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
+		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
+				new ExtensionElem(new Var("op"), "optOp"));
+		Compare optionalFilter = new Compare(new Var("optOp"), new Var("section"), Compare.CompareOp.NE);
+		StatementPattern trackType = new StatementPattern(new Var("track"),
+				new Var("_const_type", VF.createIRI("urn:type")),
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")));
+		QueryRoot root = new QueryRoot(
+				new Filter(new Filter(new LeftJoin(new Join(sectionType, hasTrack), optional), optionalFilter),
+						new Exists(trackType)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertTrue(!containsExistsFilter(root.getArg()));
+		assertTrue(containsLeftJoin(root.getArg()));
+		assertTrue(joinArgs(root.getArg()).contains(trackType));
 	}
 
 	@Test
@@ -224,6 +324,42 @@ class LmdbSketchJoinOptimizerTest {
 		if (tupleExpr instanceof Join) {
 			Join join = (Join) tupleExpr;
 			return containsFilter(join.getLeftArg()) || containsFilter(join.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsExistsFilter(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter) {
+			Filter filter = (Filter) tupleExpr;
+			return filter.getCondition() instanceof Exists || containsExistsFilter(filter.getArg());
+		}
+		if (tupleExpr instanceof Extension) {
+			return containsExistsFilter(((Extension) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+			return containsExistsFilter(leftJoin.getLeftArg()) || containsExistsFilter(leftJoin.getRightArg());
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return containsExistsFilter(join.getLeftArg()) || containsExistsFilter(join.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsLeftJoin(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof LeftJoin) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter) {
+			return containsLeftJoin(((Filter) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof Extension) {
+			return containsLeftJoin(((Extension) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
 		}
 		return false;
 	}

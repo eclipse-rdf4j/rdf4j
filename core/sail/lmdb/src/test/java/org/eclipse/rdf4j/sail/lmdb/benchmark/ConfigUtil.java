@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  * Creates LMDB store configurations for benchmarking.
  */
 final class ConfigUtil {
-	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc";
+	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
 	private static final String ALL_TRIPLE_INDEXES = "spoc,psoc,sopc,opsc,posc,ospc";
 
 	static LmdbStoreConfig createConfig() {

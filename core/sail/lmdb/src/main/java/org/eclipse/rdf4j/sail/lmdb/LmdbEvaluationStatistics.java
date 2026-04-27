@@ -194,6 +194,50 @@ class LmdbEvaluationStatistics
 		return estimateLmdbFactorCost(factor, currentlyBoundVars);
 	}
 
+	@Override
+	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		if (context == null) {
+			return estimateLmdbFactorCost(factor, Set.of());
+		}
+		Optional<FactorCostEstimate> estimate = estimateLmdbFactorCost(factor, context.getCurrentlyBoundVars());
+		if (estimate.isEmpty() || !context.isNestedIteratorInvocation()) {
+			return estimate;
+		}
+		return estimate.map(factorCostEstimate -> accountNestedInvocationWork(factorCostEstimate, context));
+	}
+
+	private FactorCostEstimate accountNestedInvocationWork(FactorCostEstimate estimate,
+			JoinFactorCostModel.CostContext context) {
+		double outerPrefixRows = context.getOuterPrefixRows();
+		if (!isFiniteNonNegative(outerPrefixRows) || outerPrefixRows <= 1.0d) {
+			return estimate;
+		}
+		double workRows = estimate.getWorkRows();
+		if (!isFiniteNonNegative(workRows)) {
+			return estimate;
+		}
+		double perInvocationWorkRows = workRows;
+		Double accessRows = estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+		if (accessRows != null && isFiniteNonNegative(accessRows.doubleValue())) {
+			perInvocationWorkRows = Math.max(perInvocationWorkRows, accessRows.doubleValue());
+		}
+		double multipliedWorkRows = outerPrefixRows * perInvocationWorkRows;
+		double nestedWorkRows = isFiniteNonNegative(multipliedWorkRows)
+				? Math.max(outerPrefixRows, multipliedWorkRows)
+				: Math.max(outerPrefixRows, perInvocationWorkRows);
+		if (!isFiniteNonNegative(nestedWorkRows) || nestedWorkRows <= workRows) {
+			return estimate;
+		}
+		Map<String, Double> doubleMetrics = new HashMap<>(estimate.getDoubleMetrics());
+		doubleMetrics.put("plannedRepeatedInvocations", outerPrefixRows);
+		double distinctLookupBindings = context.getDistinctLookupBindings();
+		if (isFiniteNonNegative(distinctLookupBindings)) {
+			doubleMetrics.put("plannedDistinctLookupBindings", distinctLookupBindings);
+		}
+		return new FactorCostEstimate(nestedWorkRows, estimate.getOutputRows(), estimate.getStringMetrics(),
+				doubleMetrics);
+	}
+
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
 		return estimateLmdbFactorCost(factor, currentlyBoundVars, Double.NaN);
 	}
@@ -462,13 +506,21 @@ class LmdbEvaluationStatistics
 			}
 			boolean directLookup = isExactDirectLookup(accessShape, candidate.prefixComponentMask(), rowsBefore,
 					filterAppliedAtAccess);
-			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, rowsAfter)
+			boolean exactStatementDirectLookup = directLookup
+					&& isExactStatementLookup(accessShape, candidate.prefixComponentMask());
+			double plannedRowsBefore = exactStatementDirectLookup
+					? Math.min(rowsBefore, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+					: rowsBefore;
+			double plannedRowsAfter = exactStatementDirectLookup
+					? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+					: rowsAfter;
+			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter)
 					: filterAppliedAtAccess ? rowsAfter : rowsBefore;
 			if (!isFiniteNonNegative(workRows)) {
 				continue;
 			}
 			int coveredLookupComponentMask = accessShape.lookupBoundComponentMask() & candidate.prefixComponentMask();
-			AccessPathEstimate estimate = new AccessPathEstimate(workRows, rowsBefore, rowsAfter,
+			AccessPathEstimate estimate = new AccessPathEstimate(workRows, plannedRowsBefore, plannedRowsAfter,
 					candidate.indexFieldSequence(), candidate.prefixLength(), candidate.prefixComponentMask(),
 					directLookup, coveredLookupComponentMask,
 					accessShape.lookupBoundComponentMask() & ~candidate.prefixComponentMask(), candidateCount);
@@ -487,6 +539,9 @@ class LmdbEvaluationStatistics
 	}
 
 	private int compareAccessPathEstimate(AccessPathEstimate left, AccessPathEstimate right) {
+		if (left.directLookup() != right.directLookup()) {
+			return left.directLookup() ? -1 : 1;
+		}
 		int workComparison = Double.compare(left.workRowsPerInvocation(), right.workRowsPerInvocation());
 		if (workComparison != 0) {
 			return workComparison;
@@ -517,6 +572,12 @@ class LmdbEvaluationStatistics
 			return true;
 		}
 		return rowsBeforeFilter <= DIRECT_LOOKUP_WORK_ROW_FLOOR;
+	}
+
+	private boolean isExactStatementLookup(SketchBasedJoinEstimator.AccessShape accessShape, int prefixComponentMask) {
+		int exactStatementMask = componentBit(Component.S) | componentBit(Component.P) | componentBit(Component.O);
+		return (prefixComponentMask & exactStatementMask) == exactStatementMask
+				&& (accessShape.lookupBoundComponentMask() & exactStatementMask) == exactStatementMask;
 	}
 
 	private int componentBit(Component component) {

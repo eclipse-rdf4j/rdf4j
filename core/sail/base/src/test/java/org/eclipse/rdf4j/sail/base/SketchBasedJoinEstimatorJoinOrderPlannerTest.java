@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
@@ -248,6 +250,67 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void contextAwareCostModelNestedWorkIsNotAmplifiedAgain() {
+		StubSailStore store = new StubSailStore();
+		IRI fanoutPredicate = VF.createIRI("urn:fanout");
+		IRI probePredicate = VF.createIRI("urn:probe");
+		Resource sharedSubject = VF.createIRI("urn:shared");
+		for (int i = 0; i < 100; i++) {
+			store.add(VF.createStatement(sharedSubject, fanoutPredicate, VF.createIRI("urn:x" + i)));
+		}
+		store.add(VF.createStatement(sharedSubject, probePredicate, VF.createIRI("urn:probe-value")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern fanout = pattern("s", fanoutPredicate, "x");
+		StatementPattern probe = pattern("s", probePredicate, "probe");
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return Optional.empty();
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				if (factor == fanout) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 100.0d));
+				}
+				if (factor == probe) {
+					double perInvocationRows = 2.0d;
+					double nestedWorkRows = context.isNestedIteratorInvocation()
+							? Math.max(context.getOuterPrefixRows(), context.getOuterPrefixRows() * perInvocationRows)
+							: perInvocationRows;
+					Map<String, String> stringMetrics = Map.of(
+							TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "prefixScan",
+							TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "[S, P]");
+					Map<String, Double> doubleMetrics = context.isNestedIteratorInvocation()
+							? Map.of(TelemetryMetricNames.PLANNED_ACCESS_ROWS, perInvocationRows,
+									"plannedRepeatedInvocations", context.getOuterPrefixRows())
+							: Map.of(TelemetryMetricNames.PLANNED_ACCESS_ROWS, perInvocationRows);
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(nestedWorkRows, 1.0d,
+							stringMetrics, doubleMetrics));
+				}
+				return Optional.empty();
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.estimateJoinOrder(List.of(fanout, probe), Set.of(), JoinOrderPlanner.Algorithm.GREEDY,
+						costModel, List.of())
+				.orElseThrow();
+
+		double correlatedStepWorkRows = plan.getSteps()
+				.get(1)
+				.getStepWorkRows();
+		assertTrue(correlatedStepWorkRows < 500.0d,
+				"Context-aware physical cost already charged nested invocations; planner should not multiply again: "
+						+ correlatedStepWorkRows);
+	}
+
+	@Test
 	void nestedDeferredFilterChargesPerInvocationSubplanWork() {
 		StubSailStore store = new StubSailStore();
 		IRI pValue = VF.createIRI("urn:pValue");
@@ -332,6 +395,41 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Lookup-only BindingSetAssignment should be evaluated before the graph");
 		assertTrue(orderedArgs.indexOf(feedsPattern) < orderedArgs.indexOf(filteredName),
 				"Expected connected graph planning to remain available after promoting lookup-only bindings");
+	}
+
+	@Test
+	void planJoinOrderPlacesBridgeBeforeDisconnectedPathLeaves() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI generatorType = VF.createIRI("urn:Generator");
+		IRI feeds = VF.createIRI("urn:feeds");
+		IRI name = VF.createIRI("urn:name");
+		for (int i = 0; i < 100; i++) {
+			Resource entity = VF.createIRI("urn:generator:" + i);
+			Resource substation = VF.createIRI("urn:substation:" + i);
+			store.add(VF.createStatement(entity, rdfType, generatorType));
+			store.add(VF.createStatement(entity, feeds, substation));
+			store.add(VF.createStatement(substation, name, VF.createLiteral("Substation " + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("entity"), Var.of("rdfType", rdfType),
+				Var.of("generatorType", generatorType));
+		StatementPattern feedsPattern = pattern("entity", feeds, "substation");
+		StatementPattern namePattern = pattern("substation", name, "name");
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(
+				List.of(typePattern, feedsPattern, namePattern), Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to handle a simple two-hop path");
+		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+		int typeIndex = orderedArgs.indexOf(typePattern);
+		int feedsIndex = orderedArgs.indexOf(feedsPattern);
+		int nameIndex = orderedArgs.indexOf(namePattern);
+		assertTrue(feedsIndex < Math.max(typeIndex, nameIndex),
+				"Bridge pattern must be planned before both disconnected leaves are in the prefix: " + orderedArgs);
 	}
 
 	@Test
@@ -494,7 +592,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void dynamicProgrammingBindsSmallCycleValuesBeforeFollowsEdges() {
+	void dynamicProgrammingInterleavesLargeCycleValuesWithFollowsEdges() {
 		StubSailStore store = new StubSailStore();
 		IRI follows = VF.createIRI("urn:follows");
 		List<Resource> users = new ArrayList<>();
@@ -559,15 +657,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce the social five-cycle plan");
 		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
-		int firstFollowsEdge = orderedArgs.stream()
-				.filter(StatementPattern.class::isInstance)
-				.mapToInt(orderedArgs::indexOf)
-				.min()
-				.orElseThrow();
-		assertTrue(orderedArgs.indexOf(userPairs) < firstFollowsEdge, "Pair VALUES should precede follows edges");
-		assertTrue(orderedArgs.indexOf(cValues) < firstFollowsEdge, "c VALUES should precede follows edges");
-		assertTrue(orderedArgs.indexOf(dValues) < firstFollowsEdge, "d VALUES should precede follows edges");
-		assertTrue(orderedArgs.indexOf(eValues) < firstFollowsEdge, "e VALUES should precede follows edges");
+		assertTrue(orderedArgs.indexOf(userPairs) < orderedArgs.indexOf(aFollowsB),
+				"Pair VALUES should precede the first bounded follows edge");
+		assertTrue(orderedArgs.indexOf(aFollowsB) < orderedArgs.indexOf(cValues),
+				"The first bounded follows edge should run before expanding c VALUES: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(bFollowsC) < orderedArgs.indexOf(dValues),
+				"The b/c follows edge should run before expanding d VALUES: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(cFollowsD) < orderedArgs.indexOf(eValues),
+				"The c/d follows edge should run before expanding e VALUES: " + orderedArgs);
 		assertTrue(attempt.getPlan()
 				.get()
 				.getDiagnostics()
@@ -725,6 +822,33 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(orderedArgs.indexOf(typePattern) > 0,
 				"Bound rdf:type guard should remain in the planned connected suffix");
 		assertPlanWorkMatchesStepSum(plan.get());
+	}
+
+	@Test
+	void estimateFilterPassIgnoresLearnedFeedbackInsideSubqueryScope() {
+		StubSailStore store = new StubSailStore();
+		IRI weight = VF.createIRI("urn:weight");
+		for (int i = 0; i < 100; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:node:" + i), weight, VF.createLiteral(i % 10)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.10d));
+		estimator.rebuild();
+
+		Filter localFilter = new Filter(pattern("node", weight, "w"),
+				new Compare(Var.of("w"), new ValueConstant(VF.createLiteral(4)), Compare.CompareOp.LT));
+		assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN,
+				estimator.estimateFilterPass(localFilter).getSource(),
+				"Local filters can use learned selectivity feedback");
+
+		Filter subqueryFilter = new Filter(pattern("node", weight, "w2"),
+				new Compare(Var.of("w2"), new ValueConstant(VF.createLiteral(4)), Compare.CompareOp.LT));
+		new Exists(subqueryFilter);
+
+		assertEquals(EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN,
+				estimator.estimateFilterPass(subqueryFilter).getSource(),
+				"Correlated subquery filters should not use learned selectivity from per-invocation samples");
 	}
 
 	@Test

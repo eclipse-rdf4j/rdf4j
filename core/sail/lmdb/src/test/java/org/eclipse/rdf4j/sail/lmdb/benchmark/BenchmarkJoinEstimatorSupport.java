@@ -41,6 +41,7 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
+	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ENABLED = "rdf4j.lmdb.themeRegression.persistentStore.enabled";
@@ -244,6 +245,7 @@ public final class BenchmarkJoinEstimatorSupport {
 				Long.toString(new File(storeDirectory, TRIPLES_DATA_FILE).length()));
 		properties.setProperty(VALUES_DATA_SIZE_PROPERTY,
 				Long.toString(new File(storeDirectory, VALUES_DATA_FILE).length()));
+		properties.setProperty(TRIPLE_INDEXES_PROPERTY, ConfigUtil.createConfig().getTripleIndexes());
 		try (var outputStream = new FileOutputStream(new File(storeDirectory, EXPECTED_DB_FILE_SIZES_FILE))) {
 			properties.store(outputStream, "Expected LMDB data file sizes for ThemeQueryBenchmark");
 		}
@@ -309,6 +311,10 @@ public final class BenchmarkJoinEstimatorSupport {
 			properties.load(inputStream);
 		}
 		try {
+			String tripleIndexes = properties.getProperty(TRIPLE_INDEXES_PROPERTY);
+			if (!ConfigUtil.createConfig().getTripleIndexes().equals(tripleIndexes)) {
+				return null;
+			}
 			return new DbFileSizes(
 					parseSizeProperty(properties, TRIPLES_DATA_SIZE_PROPERTY),
 					parseSizeProperty(properties, VALUES_DATA_SIZE_PROPERTY));

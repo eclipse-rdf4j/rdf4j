@@ -25,10 +25,12 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -199,6 +201,35 @@ class LmdbSketchAwareFilterPlacementTest {
 	}
 
 	@Test
+	void bindingWindowFilterKeepsIncomingValuesBindings(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadFiniteChainData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			String query = String.join("\n",
+					"PREFIX ex: <urn:test:>",
+					"SELECT (COUNT(*) AS ?count) WHERE {",
+					"  VALUES ?a { ex:a ex:b }",
+					"  VALUES ?b { ex:a ex:b }",
+					"  FILTER (?a != ?b)",
+					"  ?a ex:p ?b .",
+					"  VALUES ?c { ex:a ex:b }",
+					"  FILTER (?b != ?c)",
+					"  ?b ex:p ?c .",
+					"}");
+
+			assertEquals(2L, evaluateCount(repository, query),
+					"A filter spanning an existing binding and a later VALUES binding must see both variables");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
 		SailRepository repository = new SailRepository(store);
@@ -342,7 +373,7 @@ class LmdbSketchAwareFilterPlacementTest {
 				coldOptimized = (TupleExpr) explanation.tupleExpr();
 			}
 
-			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(coldOptimized));
+			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(coldOptimized), coldOptimized);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				try (var result = connection.prepareTupleQuery(query).evaluate()) {
@@ -358,7 +389,7 @@ class LmdbSketchAwareFilterPlacementTest {
 				optimized = (TupleExpr) explanation.tupleExpr();
 			}
 
-			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized));
+			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
 		} finally {
 			repository.shutDown();
 		}
@@ -385,7 +416,7 @@ class LmdbSketchAwareFilterPlacementTest {
 				optimized = (TupleExpr) explanation.tupleExpr();
 			}
 
-			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized));
+			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
 		} finally {
 			repository.shutDown();
 		}
@@ -422,7 +453,7 @@ class LmdbSketchAwareFilterPlacementTest {
 		}
 	}
 
-	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder) {
+	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, TupleExpr optimized) {
 		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
 		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
 		int typeIndex = mandatoryLeafOrder.indexOf(MEDICAL_TYPE_LABEL);
@@ -432,7 +463,8 @@ class LmdbSketchAwareFilterPlacementTest {
 		assertTrue(handledByIndex >= 0 && typeIndex >= 0,
 				"Expected optimized q2 plan to retain handledBy and rdf:type in the mandatory prefix");
 		assertTrue(recordedOnIndex < handledByIndex && recordedOnIndex < typeIndex,
-				"Expected optimized q2 plan to place recordedOn + date filter before handledBy and rdf:type once learned/sample selectivity is available");
+				"Expected optimized q2 plan to place recordedOn + date filter before handledBy and rdf:type once learned/sample selectivity is available: "
+						+ mandatoryLeafOrder + "\n" + optimized);
 	}
 
 	private static void assertSubstationNameMovesFirst(List<String> mandatoryLeafOrder) {
@@ -487,6 +519,28 @@ class LmdbSketchAwareFilterPlacementTest {
 			}
 
 			connection.commit();
+		}
+	}
+
+	private static void loadFiniteChainData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			IRI a = VF.createIRI("urn:test:a");
+			IRI b = VF.createIRI("urn:test:b");
+			IRI predicate = VF.createIRI("urn:test:p");
+			connection.add(a, predicate, b);
+			connection.add(b, predicate, a);
+			connection.commit();
+		}
+	}
+
+	private static long evaluateCount(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			assertTrue(result.hasNext(), "Aggregate count query should return one result row");
+			BindingSet bindingSet = result.next();
+			assertTrue(!result.hasNext(), "Aggregate count query should return only one result row");
+			return ((Literal) bindingSet.getValue("count")).longValue();
 		}
 	}
 

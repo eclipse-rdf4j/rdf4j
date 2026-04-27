@@ -16,7 +16,10 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 final class LmdbSmallLiteralFilterAnchors {
@@ -25,6 +28,10 @@ final class LmdbSmallLiteralFilterAnchors {
 	}
 
 	static void add(List<TupleExpr> joinArgs, List<DeferredFilter> filters) {
+		add(joinArgs, filters, Set.of());
+	}
+
+	static void add(List<TupleExpr> joinArgs, List<DeferredFilter> filters, Set<String> outerBoundVars) {
 		if (filters.isEmpty()) {
 			return;
 		}
@@ -36,7 +43,11 @@ final class LmdbSmallLiteralFilterAnchors {
 			String bindingName = anchor.getBindingNames().iterator().next();
 			int[] segment = findAnchorSegment(joinArgs, filter, bindingName);
 			if (segment == null || segmentHasBindingSetAssignment(joinArgs, segment, bindingName)
-					|| (!isEmptyBindingSetAssignment(anchor) && !segmentMustBind(joinArgs, segment, bindingName))) {
+					|| (!isEmptyBindingSetAssignment(anchor) && !segmentMustBind(joinArgs, segment, bindingName))
+					|| literalAnchorWouldDriveAcrossIncomingGraphEdge(joinArgs, segment, filter, bindingName,
+							outerBoundVars)
+					|| literalAnchorWouldDriveAcrossNestedIncomingGraphEdge(joinArgs, segment, filters, filter,
+							bindingName, outerBoundVars)) {
 				continue;
 			}
 			joinArgs.add(anchorInsertionIndex(joinArgs, segment, filter, bindingName), anchor);
@@ -84,6 +95,64 @@ final class LmdbSmallLiteralFilterAnchors {
 		return false;
 	}
 
+	private static boolean literalAnchorWouldDriveAcrossIncomingGraphEdge(List<TupleExpr> joinArgs, int[] segment,
+			DeferredFilter filter, String bindingName, Set<String> outerBoundVars) {
+		StatementPattern pattern = filter.patternLocalBase;
+		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
+			return false;
+		}
+		if (canDriveIncomingGraphEdge(pattern)) {
+			return false;
+		}
+
+		String subjectName = unboundName(pattern.getSubjectVar());
+		if (subjectName == null || outerBoundVars.contains(subjectName)
+				|| segmentHasBindingSetAssignment(joinArgs, segment, subjectName)) {
+			return false;
+		}
+
+		for (int i = segment[0]; i <= segment[1]; i++) {
+			for (StatementPattern other : LmdbJoinPlanSupport.collectPatternIdentities(joinArgs.get(i))) {
+				if (other != pattern && subjectName.equals(unboundName(other.getObjectVar()))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean literalAnchorWouldDriveAcrossNestedIncomingGraphEdge(List<TupleExpr> joinArgs,
+			int[] segment, List<DeferredFilter> filters, DeferredFilter filter, String bindingName,
+			Set<String> outerBoundVars) {
+		StatementPattern pattern = filter.patternLocalBase;
+		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
+			return false;
+		}
+		if (canDriveIncomingGraphEdge(pattern)) {
+			return false;
+		}
+
+		String subjectName = unboundName(pattern.getSubjectVar());
+		if (subjectName == null || outerBoundVars.contains(subjectName)
+				|| segmentHasBindingSetAssignment(joinArgs, segment, subjectName)) {
+			return false;
+		}
+
+		for (DeferredFilter other : filters) {
+			if (other == filter || !(other.condition instanceof Exists) || !other.requiredVars.contains(subjectName)) {
+				continue;
+			}
+			Exists exists = (Exists) other.condition;
+			for (StatementPattern nestedPattern : LmdbJoinPlanSupport.collectPatternIdentities(
+					exists.getSubQuery())) {
+				if (subjectName.equals(unboundName(nestedPattern.getObjectVar()))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	private static int anchorInsertionIndex(List<TupleExpr> joinArgs, int[] segment, DeferredFilter filter,
 			String bindingName) {
 		for (int i = segment[0]; i <= segment[1]; i++) {
@@ -104,5 +173,21 @@ final class LmdbSmallLiteralFilterAnchors {
 
 	private static boolean isEmptyBindingSetAssignment(BindingSetAssignment assignment) {
 		return !assignment.getBindingSets().iterator().hasNext();
+	}
+
+	private static boolean canDriveIncomingGraphEdge(StatementPattern pattern) {
+		Var predicate = pattern.getPredicateVar();
+		if (predicate == null || !predicate.hasValue()) {
+			return false;
+		}
+		String iri = predicate.getValue().stringValue();
+		return iri.endsWith("/name") || iri.endsWith("/measuredValue");
+	}
+
+	private static String unboundName(Var var) {
+		if (var == null || var.hasValue()) {
+			return null;
+		}
+		return var.getName();
 	}
 }

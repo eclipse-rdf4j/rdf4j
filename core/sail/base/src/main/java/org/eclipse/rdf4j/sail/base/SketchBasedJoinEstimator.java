@@ -68,11 +68,13 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -3501,11 +3503,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	public EvaluationStatistics.FilterPassEstimate estimateFilterPass(Filter filter) {
-		StatementPattern pattern = basePatternForFilter(filter);
-		if (filter == null || filter.getCondition() == null) {
-			return new EvaluationStatistics.FilterPassEstimate(-1.0d,
-					EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
+		if (filter == null || filter.getCondition() == null || isPartOfSubQuery(filter)) {
+			return unknownFilterPassEstimate();
 		}
+		StatementPattern pattern = basePatternForFilter(filter);
 		if (pattern == null) {
 			TuplePlanEstimate argEstimate = estimateTupleExprPlan(filter.getArg());
 			double heuristicMultiplier = estimateHeuristicFilterMultiplier(argEstimate, filter.getCondition());
@@ -3513,8 +3514,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return new EvaluationStatistics.FilterPassEstimate(heuristicMultiplier,
 						EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC);
 			}
-			return new EvaluationStatistics.FilterPassEstimate(-1.0d,
-					EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
+			return unknownFilterPassEstimate();
 		}
 		JoinStatsProvider statsProvider = learnedStatsProvider;
 		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
@@ -3553,8 +3553,20 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return new EvaluationStatistics.FilterPassEstimate(heuristicMultiplier,
 					EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC);
 		}
+		return unknownFilterPassEstimate();
+	}
+
+	private static EvaluationStatistics.FilterPassEstimate unknownFilterPassEstimate() {
 		return new EvaluationStatistics.FilterPassEstimate(-1.0d,
 				EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
+	}
+
+	private static boolean isPartOfSubQuery(QueryModelNode node) {
+		if (node instanceof SubQueryValueOperator) {
+			return true;
+		}
+		QueryModelNode parent = node.getParentNode();
+		return parent != null && isPartOfSubQuery(parent);
 	}
 
 	private TuplePlanEstimate toPlannerTupleEstimate(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
@@ -4188,16 +4200,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (distinct == 0.0d) {
 				return new SharedVarEstimate(0.0d, 0.0d, intersection);
 			}
-			double rows = Math.min(disconnectedRows, intersectionResult.rows);
-			return new SharedVarEstimate(normalizeRows(rows), distinct, intersection);
+			double rows = normalizeRows(Math.min(disconnectedRows, intersectionResult.rows));
+			return new SharedVarEstimate(rows, distinct, intersection);
 		}
+		return new SharedVarEstimate(
+				estimateStatsSharedVarJoinRows(leftRows, rightRows, leftDistinct, rightDistinct, disconnectedRows),
+				Math.min(leftDistinct, rightDistinct), null);
+	}
+
+	private double estimateStatsSharedVarJoinRows(double leftRows, double rightRows, double leftDistinct,
+			double rightDistinct, double disconnectedRows) {
 		double rows = leftRows * rightRows;
 		if (!Double.isFinite(rows)) {
 			rows = Double.MAX_VALUE;
 		}
 		rows = rows / Math.max(leftDistinct, rightDistinct);
 		rows = Math.min(rows, disconnectedRows);
-		return new SharedVarEstimate(normalizeRows(rows), Math.min(leftDistinct, rightDistinct), null);
+		return normalizeRows(rows);
 	}
 
 	private static SketchIntersectionResult intersectJoinOrderingSketches(ArrayOfDoublesSketch left,
