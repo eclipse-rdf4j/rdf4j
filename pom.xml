@@ -56,7 +56,7 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
 		<slf4j.version>2.0.17</slf4j.version>
-		<logback.version>1.5.21</logback.version>
+		<logback.version>1.5.26</logback.version>
 		<log4j.version>2.25.4</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
 		<httpclient5.version>5.4.3</httpclient5.version>
