@@ -37,9 +37,9 @@
 		</dependency>
 		<!--Update the lz4 dependency from the earlier net.jpountz.lz4, avoids duplicate classfiles downstream-->
 		<dependency>
-			<groupId>org.lz4</groupId>
+			<groupId>at.yawk.lz4</groupId>
 			<artifactId>lz4-java</artifactId>
-			<version>1.8.0</version>
+			<version>1.10.4</version>
 		</dependency>
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>
