@@ -1,0 +1,10 @@
+PREFIX : <http://example/>
+## How many triples?
+:s :p "🂡" .
+:s :p "\U0001F0A1" .
+:s :p "\uD83C\uDCA1" .
+
+## Effect on output?
+:s1 :p "🂡" .
+:s2 :p "\U0001F0A1" .
+:s3 :p "\uD83C\uDCA1" .

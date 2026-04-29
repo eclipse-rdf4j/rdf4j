@@ -24,7 +24,9 @@ import java.io.Reader;
 import java.io.StringReader;
 import java.net.URL;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -621,4 +623,14 @@ public class TurtleParserTest {
 		}
 	}
 
+	@Test
+	public void testStrangeUtf8() throws IOException {
+		try (InputStream in = this.getClass().getResourceAsStream("/strange_utf8.ttl")) {
+			parser.parse(in, baseURI);
+			Collection<Statement> stmts = statementCollector.getStatements();
+			assertEquals(6, stmts.size());
+			Set<Statement> set = new HashSet<>(stmts);
+			assertEquals(4, set.size());
+		}
+	}
 }
