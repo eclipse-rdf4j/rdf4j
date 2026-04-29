@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
 /**
  * Optional SPI for cost-based join-order planning over a flat list of join arguments.
@@ -114,10 +115,12 @@ public interface JoinOrderPlanner {
 		private final String debugLabel;
 		private final String selectivitySource;
 		private final long evidenceCount;
+		private final ValueExpr condition;
 		private final boolean hasNestedTupleExpression;
 		private final TupleExpr nestedTupleExpression;
 		private final boolean notExists;
 		private final boolean lookupCompatible;
+		private final boolean costOnly;
 
 		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
 				String debugLabel) {
@@ -145,23 +148,56 @@ public interface JoinOrderPlanner {
 		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
 				String debugLabel, String selectivitySource, long evidenceCount, TupleExpr nestedTupleExpression,
 				boolean notExists, boolean lookupCompatible) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount, null,
+					nestedTupleExpression, notExists, lookupCompatible);
+		}
+
+		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, ValueExpr condition,
+				TupleExpr nestedTupleExpression, boolean notExists, boolean lookupCompatible) {
 			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount,
-					nestedTupleExpression != null, nestedTupleExpression, notExists, lookupCompatible);
+					condition, nestedTupleExpression, notExists, lookupCompatible, false);
+		}
+
+		public FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, ValueExpr condition,
+				TupleExpr nestedTupleExpression, boolean notExists, boolean lookupCompatible, boolean costOnly) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount,
+					condition, nestedTupleExpression != null, nestedTupleExpression, notExists, lookupCompatible,
+					costOnly);
 		}
 
 		private FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
 				String debugLabel, String selectivitySource, long evidenceCount, boolean hasNestedTupleExpression,
 				TupleExpr nestedTupleExpression, boolean notExists, boolean lookupCompatible) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount, null,
+					hasNestedTupleExpression, nestedTupleExpression, notExists, lookupCompatible, false);
+		}
+
+		private FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, ValueExpr condition,
+				boolean hasNestedTupleExpression, TupleExpr nestedTupleExpression, boolean notExists,
+				boolean lookupCompatible) {
+			this(requiredVars, estimatedPassRatio, conditionCost, debugLabel, selectivitySource, evidenceCount,
+					condition, hasNestedTupleExpression, nestedTupleExpression, notExists, lookupCompatible, false);
+		}
+
+		private FilterConstraint(Set<String> requiredVars, double estimatedPassRatio, int conditionCost,
+				String debugLabel, String selectivitySource, long evidenceCount, ValueExpr condition,
+				boolean hasNestedTupleExpression, TupleExpr nestedTupleExpression, boolean notExists,
+				boolean lookupCompatible, boolean costOnly) {
 			this.requiredVars = Set.copyOf(requiredVars);
 			this.estimatedPassRatio = estimatedPassRatio;
 			this.conditionCost = conditionCost;
 			this.debugLabel = debugLabel;
 			this.selectivitySource = selectivitySource;
 			this.evidenceCount = evidenceCount;
+			this.condition = condition == null ? null : condition.clone();
 			this.hasNestedTupleExpression = hasNestedTupleExpression;
 			this.nestedTupleExpression = nestedTupleExpression;
 			this.notExists = notExists;
 			this.lookupCompatible = lookupCompatible;
+			this.costOnly = costOnly;
 		}
 
 		public Set<String> getRequiredVars() {
@@ -188,6 +224,10 @@ public interface JoinOrderPlanner {
 			return evidenceCount;
 		}
 
+		public Optional<ValueExpr> getCondition() {
+			return Optional.ofNullable(condition);
+		}
+
 		public boolean hasNestedTupleExpression() {
 			return hasNestedTupleExpression;
 		}
@@ -202,6 +242,10 @@ public interface JoinOrderPlanner {
 
 		public boolean isLookupCompatible() {
 			return lookupCompatible;
+		}
+
+		public boolean isCostOnly() {
+			return costOnly;
 		}
 	}
 
@@ -281,6 +325,7 @@ public interface JoinOrderPlanner {
 		private final double stepWorkRows;
 		private final Map<String, String> stringMetrics;
 		private final Map<String, Double> doubleMetrics;
+		private final List<Integer> appliedFilterIndexes;
 
 		public PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
 				double stepWorkRows) {
@@ -289,6 +334,13 @@ public interface JoinOrderPlanner {
 
 		public PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
 				double stepWorkRows, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics) {
+			this(boundVarsBefore, factorOutputRows, prefixOutputRows, stepWorkRows, stringMetrics, doubleMetrics,
+					List.of());
+		}
+
+		public PlanStep(Set<String> boundVarsBefore, double factorOutputRows, double prefixOutputRows,
+				double stepWorkRows, Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,
+				List<Integer> appliedFilterIndexes) {
 			this.boundVarsBefore = Set.copyOf(boundVarsBefore);
 			this.factorOutputRows = factorOutputRows;
 			this.prefixOutputRows = prefixOutputRows;
@@ -299,6 +351,9 @@ public interface JoinOrderPlanner {
 			this.doubleMetrics = doubleMetrics == null || doubleMetrics.isEmpty()
 					? Map.of()
 					: Collections.unmodifiableMap(new HashMap<>(doubleMetrics));
+			this.appliedFilterIndexes = appliedFilterIndexes == null || appliedFilterIndexes.isEmpty()
+					? List.of()
+					: List.copyOf(appliedFilterIndexes);
 		}
 
 		public Set<String> getBoundVarsBefore() {
@@ -323,6 +378,10 @@ public interface JoinOrderPlanner {
 
 		public Map<String, Double> getDoubleMetrics() {
 			return doubleMetrics;
+		}
+
+		public List<Integer> getAppliedFilterIndexes() {
+			return appliedFilterIndexes;
 		}
 	}
 

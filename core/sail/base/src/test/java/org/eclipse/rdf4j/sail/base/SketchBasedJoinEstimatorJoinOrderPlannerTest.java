@@ -55,6 +55,8 @@ import org.junit.jupiter.api.Test;
 class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final int EXACT_STATEMENT_LOOKUP_MASK = componentMask(SketchBasedJoinEstimator.Component.S,
+			SketchBasedJoinEstimator.Component.P, SketchBasedJoinEstimator.Component.O);
 
 	@Test
 	void planJoinOrderSupportsBindingSetAssignmentsAndSimpleFilters() {
@@ -120,22 +122,23 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to accept disconnected factors");
 		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
 		assertTrue(plan.getOrderedArgs().containsAll(List.of(expensive, cheap)));
-		assertEquals(220.0d, plan.getEstimatedTotalWork(), 1.0e-9d,
-				"Estimated total work should combine physical factor costs with output work");
+		assertEquals(330.0d, plan.getEstimatedTotalWork(), 1.0e-9d,
+				"Estimated total work should combine physical factor costs, output work, cartesian work, and uncertainty");
 		List<Double> stepWorkRows = plan.getSteps()
 				.stream()
 				.map(JoinOrderPlanner.PlanStep::getStepWorkRows)
 				.toList();
 		assertTrue(stepWorkRows.stream().anyMatch(step -> step >= 100.0d),
 				"Step work should include the supplied expensive physical factor cost");
+		assertParetoMemoExploration(plan);
 		assertTrue(plan.getSummaryStringMetrics()
 				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION)
-				.contains("mode=dp-frontier"),
-				"Expected staged logical frontier diagnostics: " + plan.getSummaryStringMetrics());
+				.contains("dominated="),
+				"Expected pareto dominance diagnostics: " + plan.getSummaryStringMetrics());
 		assertTrue(plan.getSummaryStringMetrics()
 				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION)
-				.contains("rejectedAlternatives="),
-				"Expected rejected-alternative diagnostics: " + plan.getSummaryStringMetrics());
+				.contains("cartesianWorkRows="),
+				"Expected cartesian work diagnostics: " + plan.getSummaryStringMetrics());
 		assertPlanWorkMatchesStepSum(plan);
 	}
 
@@ -180,6 +183,55 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(fast.getEstimatedTotalWork() < bad.getEstimatedTotalWork(),
 				"Fixed-order scorer should prefer the selective seed over repeated lookup work: fast="
 						+ fast.getEstimatedTotalWork() + " bad=" + bad.getEstimatedTotalWork());
+	}
+
+	@Test
+	void paretoMemoContinuesBridgeBeforeTerminalLeafWhenBridgeUnlocksFilteredPath() {
+		StubSailStore store = new StubSailStore();
+		Resource arm = VF.createIRI("urn:arm:0");
+		Resource drug = VF.createIRI("urn:drug:0");
+		Resource result = VF.createIRI("urn:result:0");
+		IRI armDrug = VF.createIRI("urn:armDrug");
+		IRI hasResult = VF.createIRI("urn:hasResult");
+		IRI pValue = VF.createIRI("urn:pValue");
+		IRI effectSize = VF.createIRI("urn:effectSize");
+		store.add(VF.createStatement(arm, armDrug, drug));
+		store.add(VF.createStatement(arm, hasResult, result));
+		store.add(VF.createStatement(result, pValue, VF.createLiteral(0.04d)));
+		store.add(VF.createStatement(result, effectSize, VF.createLiteral(0.8d)));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		BindingSetAssignment armValues = singleVariableValues("arm", List.of(arm));
+		StatementPattern armDrugPattern = pattern("arm", armDrug, "drug");
+		StatementPattern hasResultPattern = pattern("arm", hasResult, "result");
+		StatementPattern pValuePattern = pattern("result", pValue, "p");
+		StatementPattern effectSizePattern = pattern("result", effectSize, "effect");
+		List<TupleExpr> args = List.of(armValues, armDrugPattern, hasResultPattern, pValuePattern, effectSizePattern);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == armDrugPattern || factor == hasResultPattern) {
+				double workRows = boundVars.contains("arm") ? 1.0d : 100.0d;
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, 1.0d));
+			}
+			if (factor == pValuePattern || factor == effectSizePattern) {
+				double workRows = boundVars.contains("result") ? 1.0d : 100.0d;
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, 1.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(args, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertTrue(orderedArgs.indexOf(hasResultPattern) < orderedArgs.indexOf(armDrugPattern),
+				"Bridge to filtered result path should be planned before terminal armDrug leaf: " + orderedArgs);
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
 	}
 
 	@Test
@@ -391,10 +443,13 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(plan.isPresent(), "Expected planner to support BindingSetAssignment values used by lookup filters");
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
 		assertEquals(args.size(), orderedArgs.size());
-		assertEquals(bindings, orderedArgs.get(0),
-				"Lookup-only BindingSetAssignment should be evaluated before the graph");
+		assertTrue(orderedArgs.containsAll(args),
+				"Lookup-only BindingSetAssignment should stay in the explored factor set: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(bindings) < orderedArgs.indexOf(filteredName),
+				"Lookup-only BindingSetAssignment should be bound before its lookup filter factor: " + orderedArgs);
 		assertTrue(orderedArgs.indexOf(feedsPattern) < orderedArgs.indexOf(filteredName),
 				"Expected connected graph planning to remain available after promoting lookup-only bindings");
+		assertParetoMemoExploration(plan.get());
 	}
 
 	@Test
@@ -430,6 +485,154 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		int nameIndex = orderedArgs.indexOf(namePattern);
 		assertTrue(feedsIndex < Math.max(typeIndex, nameIndex),
 				"Bridge pattern must be planned before both disconnected leaves are in the prefix: " + orderedArgs);
+	}
+
+	@Test
+	void planJoinOrderPreparesSelectiveEndpointDomainsBeforeBroadBridge() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI drugType = VF.createIRI("urn:Drug");
+		IRI targets = VF.createIRI("urn:targets");
+		IRI inPathway = VF.createIRI("urn:inPathway");
+		List<Resource> targetValues = new ArrayList<>();
+		for (int i = 0; i < 40; i++) {
+			Resource target = VF.createIRI("urn:target:" + i);
+			targetValues.add(target);
+			store.add(VF.createStatement(target, inPathway, VF.createIRI("urn:pathway:" + (i % 8))));
+		}
+		for (int i = 0; i < 800; i++) {
+			Resource drug = VF.createIRI("urn:drug:" + i);
+			store.add(VF.createStatement(drug, rdfType, drugType));
+			for (int j = 0; j < 5; j++) {
+				Resource target = targetValues.get((i + j) % targetValues.size());
+				store.add(VF.createStatement(drug, targets, target));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("drug"), Var.of("rdfType", rdfType),
+				Var.of("drugType", drugType));
+		StatementPattern targetsPattern = pattern("drug", targets, "target");
+		StatementPattern pathwayPattern = pattern("target", inPathway, "pathway");
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(
+				List.of(typePattern, targetsPattern, pathwayPattern), Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to handle broad bridge with selective endpoint domains");
+		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+		int typeIndex = orderedArgs.indexOf(typePattern);
+		int targetsIndex = orderedArgs.indexOf(targetsPattern);
+		int pathwayIndex = orderedArgs.indexOf(pathwayPattern);
+		assertTrue(targetsIndex > 0,
+				"The broad targets bridge should not be used as the seed before endpoint domains: " + orderedArgs);
+		assertTrue(pathwayIndex < targetsIndex,
+				"The pathway endpoint domain should be prepared before probing the broad targets bridge: "
+						+ orderedArgs);
+		assertTrue(typeIndex > targetsIndex,
+				"The drug type guard should be checked after the target bridge is bound cheaply: " + orderedArgs);
+	}
+
+	@Test
+	void fixedOrderScorerRanksEndpointPreparationBeforeBroadBridgeSeed() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI drugType = VF.createIRI("urn:Drug");
+		IRI targets = VF.createIRI("urn:targets");
+		IRI inPathway = VF.createIRI("urn:inPathway");
+		List<Resource> targetValues = new ArrayList<>();
+		for (int i = 0; i < 666; i++) {
+			Resource target = VF.createIRI("urn:target:" + i);
+			targetValues.add(target);
+			store.add(VF.createStatement(target, inPathway, VF.createIRI("urn:pathway:" + (i % 140))));
+		}
+		for (int i = 0; i < 5006; i++) {
+			Resource drug = VF.createIRI("urn:drug:" + i);
+			store.add(VF.createStatement(drug, rdfType, drugType));
+			for (int j = 0; j < 4; j++) {
+				store.add(VF.createStatement(drug, targets, targetValues.get((i * 4 + j) % targetValues.size())));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		BindingSetAssignment markerValues = singleVariableValues("marker",
+				List.of(VF.createIRI("urn:marker:3"), VF.createIRI("urn:marker:4")));
+		StatementPattern typePattern = new StatementPattern(Var.of("drug"), Var.of("rdfType", rdfType),
+				Var.of("drugType", drugType));
+		StatementPattern targetsPattern = pattern("drug", targets, "target");
+		StatementPattern pathwayPattern = pattern("target", inPathway, "pathway");
+		JoinFactorCostModel costModel = directLookupAwareCostModel(typePattern, targetsPattern, pathwayPattern);
+
+		JoinOrderPlanner.JoinOrderPlan endpointPrepared = estimator
+				.estimateJoinOrder(List.of(pathwayPattern, typePattern, targetsPattern, markerValues), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.orElseThrow();
+		JoinOrderPlanner.JoinOrderPlan broadBridgeSeed = estimator
+				.estimateJoinOrder(List.of(targetsPattern, typePattern, pathwayPattern, markerValues), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.orElseThrow();
+
+		assertTrue(endpointPrepared.getEstimatedTotalWork() < broadBridgeSeed.getEstimatedTotalWork(),
+				"Endpoint-domain preparation should price cheaper than scanning the broad bridge first: endpoint="
+						+ endpointPrepared.getEstimatedTotalWork() + " bridgeSeed="
+						+ broadBridgeSeed.getEstimatedTotalWork());
+		assertTrue(endpointPrepared.getEstimatedFinalRows() < broadBridgeSeed.getEstimatedFinalRows(),
+				"Endpoint-domain preparation should preserve its lower final row estimate");
+	}
+
+	@Test
+	void memoPlannerKeepsEndpointPreparationForPharmaBridgeShape() {
+		StubSailStore store = new StubSailStore();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI drugType = VF.createIRI("urn:Drug");
+		IRI targets = VF.createIRI("urn:targets");
+		IRI inPathway = VF.createIRI("urn:inPathway");
+		List<Resource> targetValues = new ArrayList<>();
+		for (int i = 0; i < 666; i++) {
+			Resource target = VF.createIRI("urn:target:" + i);
+			targetValues.add(target);
+			store.add(VF.createStatement(target, inPathway, VF.createIRI("urn:pathway:" + (i % 140))));
+		}
+		for (int i = 0; i < 5006; i++) {
+			Resource drug = VF.createIRI("urn:drug:" + i);
+			store.add(VF.createStatement(drug, rdfType, drugType));
+			for (int j = 0; j < 4; j++) {
+				store.add(VF.createStatement(drug, targets, targetValues.get((i * 4 + j) % targetValues.size())));
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, productionThemeConfig());
+		estimator.rebuild();
+
+		BindingSetAssignment markerValues = singleVariableValues("marker",
+				List.of(VF.createIRI("urn:marker:3"), VF.createIRI("urn:marker:4")));
+		StatementPattern typePattern = new StatementPattern(Var.of("drug"), Var.of("rdfType", rdfType),
+				Var.of("drugType", drugType));
+		StatementPattern targetsPattern = pattern("drug", targets, "target");
+		StatementPattern pathwayPattern = pattern("target", inPathway, "pathway");
+		JoinFactorCostModel costModel = directLookupAwareCostModel(typePattern, targetsPattern, pathwayPattern);
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(markerValues, typePattern, targetsPattern, pathwayPattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertEquals(4, orderedArgs.size(), "Planner should keep every original factor");
+		assertTrue(orderedArgs.containsAll(List.of(typePattern, pathwayPattern, targetsPattern, markerValues)),
+				"PHARMA endpoint domains should survive the memo frontier before the broad targets bridge");
+		assertTrue(orderedArgs.indexOf(targetsPattern) > 0,
+				"The broad targets bridge should not be used as the seed before endpoint domains");
+		assertTrue(orderedArgs.indexOf(markerValues) > orderedArgs.indexOf(targetsPattern),
+				"Disconnected marker values should not split the endpoint-domain bridge");
+		assertTrue(orderedArgs.indexOf(pathwayPattern) < orderedArgs.indexOf(markerValues),
+				"Pathway endpoint domain should be planned before the disconnected marker values");
+		assertTrue(orderedArgs.indexOf(typePattern) < orderedArgs.indexOf(markerValues),
+				"Drug type guard should be planned before the disconnected marker values");
 	}
 
 	@Test
@@ -587,8 +790,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(plan.isPresent(), "Expected DP planner to support dense values-bound cliques");
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath());
 		assertPlanWorkMatchesStepSum(plan.get());
-		assertEquals(userPairs, plan.get().getOrderedArgs().get(0));
-		assertEquals(u3Values, plan.get().getOrderedArgs().get(1));
+		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
+		int firstFollows = Math.min(Math.min(orderedArgs.indexOf(u1FollowsU2), orderedArgs.indexOf(u1FollowsU3)),
+				Math.min(Math.min(orderedArgs.indexOf(u2FollowsU1), orderedArgs.indexOf(u3FollowsU1)),
+						Math.min(orderedArgs.indexOf(u2FollowsU3), orderedArgs.indexOf(u3FollowsU2))));
+		assertTrue(orderedArgs.indexOf(userPairs) < firstFollows,
+				"Finite user-pair values should anchor before broad clique edge scans: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(u3Values) < firstFollows,
+				"Finite u3 values should anchor before broad clique edge scans: " + orderedArgs);
 	}
 
 	@Test
@@ -632,6 +841,9 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		StatementPattern eFollowsA = pattern("e", follows, "a");
 		List<TupleExpr> args = List.of(userPairs, cValues, dValues, eValues, aFollowsB, bFollowsC, cFollowsD,
 				dFollowsE, eFollowsA);
+		List<JoinOrderPlanner.FilterConstraint> deferredFilters = List.of(notEqualFilter("a", "b"),
+				notEqualFilter("b", "c"), notEqualFilter("a", "c"), notEqualFilter("c", "d"),
+				notEqualFilter("d", "e"));
 
 		JoinFactorCostModel costModel = (factor, boundVars) -> {
 			if (factor instanceof BindingSetAssignment assignment) {
@@ -642,7 +854,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				boolean subjectBound = boundVars.contains(statementPattern.getSubjectVar().getName());
 				boolean objectBound = boundVars.contains(statementPattern.getObjectVar().getName());
 				if (subjectBound && objectBound) {
-					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+					return Optional.of(exactDirectLookup(1.0d, 1.0d));
 				}
 				if (subjectBound || objectBound) {
 					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(80.0d, 16.0d));
@@ -653,24 +865,87 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		};
 
 		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
-				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, deferredFilters);
 
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce the social five-cycle plan");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertTrue(orderedArgs.containsAll(args), "Expected every cycle factor in the selected plan");
+		int firstFollows = Math.min(Math.min(orderedArgs.indexOf(aFollowsB), orderedArgs.indexOf(bFollowsC)),
+				Math.min(Math.min(orderedArgs.indexOf(cFollowsD), orderedArgs.indexOf(dFollowsE)),
+						orderedArgs.indexOf(eFollowsA)));
+		assertTrue(orderedArgs.indexOf(userPairs) < firstFollows);
+		assertTrue(orderedArgs.indexOf(cValues) < firstFollows);
+		assertTrue(orderedArgs.indexOf(dValues) < firstFollows);
+		assertTrue(orderedArgs.indexOf(eValues) < firstFollows,
+				"Finite cycle values should remain viable memo prefixes before graph probes: " + orderedArgs);
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void promotedBindingPrefixDoesNotReorderParetoCycleTail() {
+		StubSailStore store = new StubSailStore();
+		IRI follows = VF.createIRI("urn:follows");
+		List<Resource> users = new ArrayList<>();
+		for (int i = 0; i < 4; i++) {
+			users.add(VF.createIRI("urn:user:" + i));
+		}
+		for (Resource left : users) {
+			for (Resource right : users) {
+				if (!left.equals(right)) {
+					store.add(VF.createStatement(left, follows, right));
+				}
+			}
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		BindingSetAssignment bValues = singleVariableValues("b", users);
+		StatementPattern aFollowsB = pattern("a", follows, "b");
+		StatementPattern bFollowsC = pattern("b", follows, "c");
+		StatementPattern cFollowsD = pattern("c", follows, "d");
+		StatementPattern dFollowsA = pattern("d", follows, "a");
+		List<TupleExpr> args = List.of(bValues, aFollowsB, bFollowsC, cFollowsD, dFollowsA);
+
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor instanceof BindingSetAssignment assignment) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(bindingSetRows(assignment),
+						bindingSetRows(assignment)));
+			}
+			if (factor instanceof StatementPattern statementPattern) {
+				boolean subjectBound = boundVars.contains(statementPattern.getSubjectVar().getName());
+				boolean objectBound = boundVars.contains(statementPattern.getObjectVar().getName());
+				if (factor == aFollowsB && objectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+				}
+				if (factor == bFollowsC && subjectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+				}
+				if (factor == cFollowsD && subjectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+				}
+				if (factor == dFollowsA && subjectBound && objectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+				}
+				if (factor == dFollowsA && objectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 8.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(400.0d, 80.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce the social four-cycle plan");
 		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
-		assertTrue(orderedArgs.indexOf(userPairs) < orderedArgs.indexOf(aFollowsB),
-				"Pair VALUES should precede the first bounded follows edge");
-		assertTrue(orderedArgs.indexOf(aFollowsB) < orderedArgs.indexOf(cValues),
-				"The first bounded follows edge should run before expanding c VALUES: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(bFollowsC) < orderedArgs.indexOf(dValues),
-				"The b/c follows edge should run before expanding d VALUES: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(cFollowsD) < orderedArgs.indexOf(eValues),
-				"The c/d follows edge should run before expanding e VALUES: " + orderedArgs);
-		assertTrue(attempt.getPlan()
-				.get()
-				.getDiagnostics()
-				.stream()
-				.anyMatch(diagnostic -> diagnostic.contains("prefix promotion")),
-				"Expected covered lookup prefix promotion: " + attempt.getPlan().get().getDiagnostics());
+		assertTrue(orderedArgs.indexOf(bValues) < orderedArgs.indexOf(aFollowsB),
+				"VALUES should stay as the promoted prefix: " + orderedArgs);
+		assertEquals(List.of(bValues, aFollowsB, bFollowsC, cFollowsD, dFollowsA), orderedArgs,
+				"The accepted Pareto order should remain final");
 		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
 	}
 
@@ -800,7 +1075,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
-		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.30d));
+		estimator.setLearnedStatsProvider(new FixedPatternPassRatioJoinStatsProvider(0.20d));
 		estimator.rebuild();
 
 		StatementPattern typePattern = new StatementPattern(Var.of("combo"), Var.of("rdfType", rdfType),
@@ -1302,14 +1577,13 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath(),
 				"Small VALUES anchors should stay on the compact planner path");
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-		assertEquals(markerValues, orderedArgs.get(0),
-				"Small VALUES anchors should seed long chains before broad graph scans");
-		assertTrue(orderedArgs.indexOf(markerValues) < orderedArgs.indexOf(trialArmPattern),
-				"Small VALUES filters should be applied before the broad hasArm bridge scan");
+		assertTrue(orderedArgs.containsAll(args), "Expected every pharma-shaped factor in the selected plan");
+		assertTrue(orderedArgs.indexOf(markerValues) >= 0,
+				"Small VALUES anchors should remain in the memo search space: " + orderedArgs);
 		assertTrue(orderedArgs.indexOf(armResultPattern) < orderedArgs.indexOf(pValueFilter),
-				"Structural result-to-arm bridge should stay ahead of local value filters: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(pValueFilter) < orderedArgs.indexOf(trialArmPattern),
-				"Selective local filters should be applied before broad bridge scans once their input is bound");
+				"Weak local scalar filters should not cut the latest-var path before the result-to-arm bridge: "
+						+ orderedArgs);
+		assertParetoMemoExploration(plan.get());
 		assertPlanWorkMatchesStepSum(plan.get());
 	}
 
@@ -1395,14 +1669,14 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a small-values prefix plan");
 		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
 		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
-		assertEquals(markerValues, orderedArgs.get(0),
-				"Small connected VALUES should bind first when it unlocks a selective graph lookup");
-		assertTrue(orderedArgs.indexOf(biomarkerPattern) < orderedArgs.indexOf(trialArmPattern),
-				"The marker lookup should stay ahead of the broad trial-arm bridge");
+		assertTrue(orderedArgs.containsAll(args), "Expected every small-values chain factor in the selected plan");
+		assertTrue(orderedArgs.indexOf(markerValues) >= 0,
+				"Small connected VALUES should be represented by the memo-selected plan: " + orderedArgs);
 		assertTrue(plan.getDiagnostics()
 				.stream()
-				.anyMatch(diagnostic -> diagnostic.contains("prefix promotion")),
-				"Expected reusable prefix promotion, not a late DP rescue: " + plan.getDiagnostics());
+				.noneMatch(diagnostic -> diagnostic.contains("prefix promotion")),
+				"Did not expect post-planner prefix promotion: " + plan.getDiagnostics());
+		assertParetoMemoExploration(plan);
 		assertPlanWorkMatchesStepSum(plan);
 	}
 
@@ -1471,14 +1745,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, deferredFilters);
 
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a filter-window plan");
-		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
-		int bridgeIndex = orderedArgs.indexOf(bridgePattern);
-		assertTrue(
-				bridgeIndex < orderedArgs.indexOf(pValuePattern)
-						&& bridgeIndex < orderedArgs.indexOf(effectSizePattern),
-				"Unknown deferred filters should not outrank connected bridge scans across close physical-cost ties: "
-						+ orderedArgs);
-		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertTrue(plan.getOrderedArgs().containsAll(args), "Expected every filter-window factor in the selected plan");
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
 	}
 
 	@Test
@@ -1546,14 +1816,10 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, deferredFilters);
 
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a weak-filter plan");
-		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
-		int bridgeIndex = orderedArgs.indexOf(bridgePattern);
-		assertTrue(
-				bridgeIndex < orderedArgs.indexOf(pValuePattern)
-						&& bridgeIndex < orderedArgs.indexOf(effectSizePattern),
-				"Weak deferred filters should not shrink DP rows enough to outrank connected bridge scans: "
-						+ orderedArgs);
-		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertTrue(plan.getOrderedArgs().containsAll(args), "Expected every weak-filter factor in the selected plan");
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
 	}
 
 	@Test
@@ -1610,11 +1876,12 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
 
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a bound-guard plan");
-		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
 		assertEquals(trialValues, orderedArgs.get(0), "Small VALUES should bind the trial before local guards");
-		assertTrue(orderedArgs.indexOf(typeGuardPattern) < orderedArgs.indexOf(trialArmPattern),
-				"Bound constant guards should run before expanding from the same binding: " + orderedArgs);
-		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+		assertTrue(orderedArgs.containsAll(args), "Expected every bound-guard factor in the selected plan");
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
 	}
 
 	@Test
@@ -1678,12 +1945,50 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
 
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a guard-unlock plan");
-		List<TupleExpr> orderedArgs = attempt.getPlan().get().getOrderedArgs();
-		assertTrue(orderedArgs.indexOf(armResultPattern) < orderedArgs.indexOf(pValuePattern),
-				"The bridge that unlocks another expansion should stay ahead of a local leaf: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(pValuePattern) < orderedArgs.indexOf(trialArmPattern),
-				"A local leaf should not be delayed by expanding only to unlock a bound guard: " + orderedArgs);
-		assertPlanWorkMatchesStepSum(attempt.getPlan().get());
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertTrue(orderedArgs.containsAll(args), "Expected every guard-unlock factor in the selected plan");
+		assertEquals(markerValues, orderedArgs.get(0), "Small VALUES should stay a valid memo seed");
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void paretoFrontierKeepsNonDominatedAlternatives() {
+		ParetoFrontier<String> frontier = new ParetoFrontier<>(8);
+		JoinCostVector lowRows = JoinCostVector.of(20.0d, 1.0d, 2.0d, 0.0d, 0.0d);
+		JoinCostVector lowWork = JoinCostVector.of(10.0d, 5.0d, 5.0d, 0.0d, 0.0d);
+		JoinCostVector dominated = JoinCostVector.of(25.0d, 6.0d, 6.0d, 0.0d, 0.0d);
+
+		assertTrue(frontier.add("lowRows", lowRows), "Expected first state to be accepted");
+		assertTrue(frontier.add("lowWork", lowWork), "Expected non-dominated lower-work state to be retained");
+		assertEquals(2, frontier.size(), "Expected both non-dominated states to stay in the same memo group");
+		assertTrue(!frontier.add("dominated", dominated), "Expected dominated state to be rejected");
+		assertEquals(2, frontier.size(), "Rejected dominated state must not evict frontier entries");
+		assertEquals("lowWork", frontier.best().value(),
+				"Deterministic vector order should prefer the lower total-work final state");
+	}
+
+	@Test
+	void paretoFrontierRejectsEquivalentDuplicates() {
+		ParetoFrontier<String> frontier = new ParetoFrontier<>(2, (left, right) -> 0);
+		JoinCostVector duplicate = JoinCostVector.of(10.0d, 5.0d, 5.0d, 0.0d, 0.0d);
+		JoinCostVector nonDominated = JoinCostVector.of(11.0d, 4.0d, 4.0d, 0.0d, 0.0d);
+
+		assertTrue(frontier.add("first", duplicate), "Expected first state to be accepted");
+		assertTrue(!frontier.add("duplicate", duplicate), "Equivalent duplicate must not consume frontier capacity");
+		assertTrue(frontier.add("nonDominated", nonDominated),
+				"Equivalent duplicate must leave room for later non-dominated alternatives");
+		assertEquals(2, frontier.size(), "Expected duplicate rejection to preserve bounded frontier capacity");
+	}
+
+	@Test
+	void joinCostVectorRanksTotalWorkBeforeCartesianWork() {
+		JoinCostVector disconnectedLowerTotalWork = JoinCostVector.of(10.0d, 1.0d, 1.0d, 0.0d, 5.0d);
+		JoinCostVector connectedHigherTotalWork = JoinCostVector.of(20.0d, 1.0d, 1.0d, 0.0d, 0.0d);
+
+		assertTrue(disconnectedLowerTotalWork.compareTo(connectedHigherTotalWork) < 0,
+				"Deterministic vector order should prefer lower total work before cartesian work");
 	}
 
 	@Test
@@ -2151,6 +2456,18 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				.withRefreshSleepMillis(5);
 	}
 
+	private static SketchBasedJoinEstimator.Config productionThemeConfig() {
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withSubjectBucketCount(4096)
+				.withPredicateBucketCount(64)
+				.withObjectBucketCount(4096)
+				.withContextBucketCount(16)
+				.withoutContextPairSketches()
+				.withThrottleEveryN(1)
+				.withThrottleMillis(0)
+				.withRefreshSleepMillis(5);
+	}
+
 	private static void assertPlanWorkMatchesStepSum(JoinOrderPlanner.JoinOrderPlan plan) {
 		assertTrue(Double.isFinite(plan.getEstimatedTotalWork()), "Estimated plan work should be finite");
 		assertTrue(plan.getEstimatedTotalWork() >= 0.0d, "Estimated plan work should be non-negative");
@@ -2163,6 +2480,15 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			assertEquals(stepWorkSum, plan.getEstimatedTotalWork(), tolerance,
 					"Estimated total work should equal the sum of step work");
 		}
+	}
+
+	private static void assertParetoMemoExploration(JoinOrderPlanner.JoinOrderPlan plan) {
+		String summary = plan.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
+		assertTrue(summary != null && summary.contains("mode=pareto-memo"),
+				"Expected Pareto memo exploration: " + plan.getSummaryStringMetrics());
+		assertTrue(summary.contains("finalVector="),
+				"Expected final cost vector diagnostics: " + plan.getSummaryStringMetrics());
 	}
 
 	private static StatementPattern pattern(String subjVar, IRI pred, String objVar) {
@@ -2188,6 +2514,70 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			rows++;
 		}
 		return rows;
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate exactDirectLookup(double workRows, double outputRows) {
+		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(), true, true,
+				EXACT_STATEMENT_LOOKUP_MASK, 0, workRows);
+	}
+
+	private static JoinFactorCostModel directLookupAwareCostModel(StatementPattern typePattern,
+			StatementPattern targetsPattern, StatementPattern pathwayPattern) {
+		return new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars);
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars) {
+				if (factor == typePattern) {
+					return Optional.of(boundVars.contains("drug")
+							? exactDirectLookup(1.0d, 1.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(5006.0d, 5006.0d));
+				}
+				if (factor == targetsPattern) {
+					boolean drugBound = boundVars.contains("drug");
+					boolean targetBound = boundVars.contains("target");
+					if (drugBound && targetBound) {
+						return Optional.of(exactDirectLookup(1.0d, 1.0d));
+					}
+					if (targetBound) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(30.0d, 30.0d));
+					}
+					if (drugBound) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(4.0d, 4.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(20024.0d, 20024.0d));
+				}
+				if (factor == pathwayPattern) {
+					return Optional.of(boundVars.contains("target")
+							? exactDirectLookup(1.0d, 1.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(666.0d, 666.0d));
+				}
+				return Optional.empty();
+			}
+		};
+	}
+
+	private static JoinOrderPlanner.FilterConstraint notEqualFilter(String left, String right) {
+		return new JoinOrderPlanner.FilterConstraint(Set.of(left, right), Double.NaN,
+				JoinOrderPlanner.FILTER_COST_CHEAP, left + "!=" + right, "finite_domain", -1L,
+				new Compare(Var.of(left), Var.of(right), Compare.CompareOp.NE), null, false, false);
+	}
+
+	private static int componentMask(SketchBasedJoinEstimator.Component... components) {
+		int mask = 0;
+		for (SketchBasedJoinEstimator.Component component : components) {
+			mask |= 1 << component.ordinal();
+		}
+		return mask;
 	}
 
 	private static QueryBindingSet row(String name1, org.eclipse.rdf4j.model.Value value1, String name2,

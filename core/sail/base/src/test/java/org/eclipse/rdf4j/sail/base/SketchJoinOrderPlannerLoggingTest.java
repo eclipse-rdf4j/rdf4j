@@ -44,9 +44,9 @@ class SketchJoinOrderPlannerLoggingTest {
 	private static final String LMDB_PLAN_ALTERNATIVES_PROPERTY = "rdf4j.optimizer.lmdb.planAlternatives";
 
 	private Logger plannerLogger;
-	private Logger reordererLogger;
+	private Logger estimatorLogger;
 	private Level originalPlannerLevel;
-	private Level originalReordererLevel;
+	private Level originalEstimatorLevel;
 	private ListAppender<ILoggingEvent> listAppender;
 	private String originalTraceDiagnosticsProperty;
 	private String originalLmdbPlanAlternativesProperty;
@@ -54,15 +54,15 @@ class SketchJoinOrderPlannerLoggingTest {
 	@BeforeEach
 	void attachAppender() {
 		plannerLogger = (Logger) LoggerFactory.getLogger(SketchJoinOrderPlanner.class);
-		reordererLogger = (Logger) LoggerFactory.getLogger(SketchJoinOrderReorderer.class);
+		estimatorLogger = (Logger) LoggerFactory.getLogger(SketchBasedJoinEstimator.class);
 		originalPlannerLevel = plannerLogger.getLevel();
-		originalReordererLevel = reordererLogger.getLevel();
+		originalEstimatorLevel = estimatorLogger.getLevel();
 		listAppender = new ListAppender<>();
 		listAppender.start();
 		plannerLogger.setLevel(Level.DEBUG);
-		reordererLogger.setLevel(Level.DEBUG);
+		estimatorLogger.setLevel(Level.DEBUG);
 		plannerLogger.addAppender(listAppender);
-		reordererLogger.addAppender(listAppender);
+		estimatorLogger.addAppender(listAppender);
 		originalTraceDiagnosticsProperty = System.getProperty(TRACE_DIAGNOSTICS_PROPERTY);
 		originalLmdbPlanAlternativesProperty = System.getProperty(LMDB_PLAN_ALTERNATIVES_PROPERTY);
 		System.clearProperty(TRACE_DIAGNOSTICS_PROPERTY);
@@ -72,9 +72,9 @@ class SketchJoinOrderPlannerLoggingTest {
 	@AfterEach
 	void detachAppender() {
 		plannerLogger.detachAppender(listAppender);
-		reordererLogger.detachAppender(listAppender);
+		estimatorLogger.detachAppender(listAppender);
 		plannerLogger.setLevel(originalPlannerLevel);
-		reordererLogger.setLevel(originalReordererLevel);
+		estimatorLogger.setLevel(originalEstimatorLevel);
 		if (originalTraceDiagnosticsProperty == null) {
 			System.clearProperty(TRACE_DIAGNOSTICS_PROPERTY);
 		} else {
@@ -94,25 +94,21 @@ class SketchJoinOrderPlannerLoggingTest {
 		String logOutput = logOutput();
 
 		assertThat(logOutput)
-				.contains("Sketch join reorder input:")
+				.contains("Sketch join planner input:")
 				.contains("originalOrder=")
 				.contains("factor[0]")
 				.contains("factor[1]")
-				.contains("greedy seed")
-				.contains("greedy choose")
+				.contains("pareto beam")
 				.contains("result: order=")
 				.contains("outputRows=")
-				.contains("workRows=")
+				.contains("totalWorkRows=")
 				.contains("SP(?x urn:pB ?y)")
-				.doesNotContain("greedy seed candidate")
-				.doesNotContain("greedy candidate");
+				.doesNotContain("finalFrontier[0]");
 
 		assertThat(diagnostics(plan))
-				.anySatisfy(line -> assertThat(line).contains("greedy seed"))
-				.anySatisfy(line -> assertThat(line).contains("greedy choose"))
+				.anySatisfy(line -> assertThat(line).contains("pareto beam"))
 				.anySatisfy(line -> assertThat(line).contains("result: order="))
-				.noneSatisfy(line -> assertThat(line).contains("greedy seed candidate"))
-				.noneSatisfy(line -> assertThat(line).contains("greedy candidate"));
+				.noneSatisfy(line -> assertThat(line).contains("finalFrontier[0]"));
 	}
 
 	@Test
@@ -124,24 +120,20 @@ class SketchJoinOrderPlannerLoggingTest {
 		String logOutput = logOutput();
 
 		assertThat(logOutput)
-				.contains("Sketch join reorder input:")
+				.contains("Sketch join planner input:")
 				.contains("originalOrder=")
 				.contains("factor[0]")
 				.contains("factor[1]")
-				.contains("greedy seed")
-				.contains("greedy seed candidate")
-				.contains("greedy candidate")
-				.contains("greedy choose")
+				.contains("pareto beam")
+				.contains("finalFrontier[0]")
 				.contains("result: order=")
 				.contains("outputRows=")
-				.contains("workRows=")
+				.contains("totalWorkRows=")
 				.contains("SP(?x urn:pB ?y)");
 
 		assertThat(diagnostics(plan))
-				.anySatisfy(line -> assertThat(line).contains("greedy seed"))
-				.anySatisfy(line -> assertThat(line).contains("greedy seed candidate"))
-				.anySatisfy(line -> assertThat(line).contains("greedy candidate"))
-				.anySatisfy(line -> assertThat(line).contains("greedy choose"))
+				.anySatisfy(line -> assertThat(line).contains("pareto beam"))
+				.anySatisfy(line -> assertThat(line).contains("finalFrontier[0]"))
 				.anySatisfy(line -> assertThat(line).contains("result: order="));
 	}
 
@@ -154,20 +146,15 @@ class SketchJoinOrderPlannerLoggingTest {
 		String logOutput = logOutput();
 
 		assertThat(logOutput)
-				.contains("greedy seed candidate")
-				.contains("greedy candidate")
-				.contains("prefixRows=")
-				.contains("factorWorkRows=")
-				.contains("nestedFilterWorkRows=")
-				.contains("totalWork=")
-				.contains("filterPlacement=")
-				.contains("accepted=")
-				.contains("rejectionReason=");
+				.contains("pareto beam")
+				.contains("finalFrontier[0]")
+				.contains("JoinCostVector")
+				.contains("totalWorkRows=")
+				.contains("finalRows=");
 
 		assertThat(diagnostics(plan))
-				.anySatisfy(line -> assertThat(line).contains("factorWorkRows="))
-				.anySatisfy(line -> assertThat(line).contains("nestedFilterWorkRows="))
-				.anySatisfy(line -> assertThat(line).contains("rejectionReason="));
+				.anySatisfy(line -> assertThat(line).contains("finalFrontier[0]"))
+				.anySatisfy(line -> assertThat(line).contains("JoinCostVector"));
 	}
 
 	private static JoinOrderPlanner.JoinOrderPlan planTwoFactorGreedyJoin() {

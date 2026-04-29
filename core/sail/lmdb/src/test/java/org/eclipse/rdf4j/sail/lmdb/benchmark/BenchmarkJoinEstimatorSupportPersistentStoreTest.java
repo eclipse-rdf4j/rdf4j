@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
@@ -27,6 +29,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class BenchmarkJoinEstimatorSupportPersistentStoreTest {
+
+	private static final byte[] JOIN_ESTIMATOR_METADATA_MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
+	private static final int JOIN_ESTIMATOR_METADATA_VERSION = 2;
+	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
+	private static final int DEFAULT_PREDICATE_BUCKET_COUNT = 64;
+	private static final int DEFAULT_CONTEXT_BUCKET_COUNT = 16;
+	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 64;
+	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.";
+	private static final String NOMINAL_ENTRIES_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "nominalEntries";
+	private static final String SKETCH_K_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "sketchK";
 
 	@AfterEach
 	void clearSystemProperties() {
@@ -70,6 +82,7 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 				storeDirectory -> {
 					buildCount.incrementAndGet();
 					writeFakeStoreDataFiles(storeDirectory, 23, 29);
+					writeFakeEstimatorMetadata(storeDirectory);
 				});
 		ThemeRegressionStore second = BenchmarkJoinEstimatorSupport.prepareThemeRegressionStore(
 				dataDir.resolve("ignored"),
@@ -88,6 +101,109 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 
 		BenchmarkJoinEstimatorSupport.cleanupThemeRegressionStore(second);
 		assertTrue(Files.exists(second.storeDirectory()));
+	}
+
+	@Test
+	void preparePersistentThemeRegressionStoreReusesStoreWhenEnabledPropertyIsUnset(@TempDir Path dataDir)
+			throws Exception {
+		System.setProperty(BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName(),
+				dataDir.resolve("persistent-lmdb-theme-store").toString());
+
+		AtomicInteger buildCount = new AtomicInteger();
+		ThemeRegressionStore first = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+				"theme-query-regression/lmdb-theme",
+				storeDirectory -> {
+					buildCount.incrementAndGet();
+					writeFakeStoreDataFiles(storeDirectory, 61, 67);
+					writeFakeEstimatorMetadata(storeDirectory);
+				});
+		ThemeRegressionStore second = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+				"theme-query-regression/lmdb-theme",
+				storeDirectory -> {
+					buildCount.incrementAndGet();
+					writeFakeStoreDataFiles(storeDirectory, 71, 73);
+				});
+
+		assertTrue(first.persistent());
+		assertFalse(first.reused());
+		assertTrue(second.persistent());
+		assertTrue(second.reused());
+		assertEquals(first.storeDirectory(), second.storeDirectory());
+		assertEquals(1, buildCount.get());
+		assertTrue(Files.exists(second.storeDirectory()));
+	}
+
+	@Test
+	void preparePersistentThemeRegressionStoreRebuildsWhenEstimatorSnapshotIsMissing(@TempDir Path dataDir)
+			throws Exception {
+		System.setProperty(BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName(),
+				dataDir.resolve("persistent-lmdb-theme-store").toString());
+
+		AtomicInteger buildCount = new AtomicInteger();
+		ThemeRegressionStore first = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+				"theme-query-regression/missing-estimator",
+				storeDirectory -> {
+					buildCount.incrementAndGet();
+					writeFakeStoreDataFiles(storeDirectory, 79, 83);
+				});
+		ThemeRegressionStore second = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+				"theme-query-regression/missing-estimator",
+				storeDirectory -> {
+					buildCount.incrementAndGet();
+					writeFakeStoreDataFiles(storeDirectory, 89, 97);
+					writeFakeEstimatorMetadata(storeDirectory);
+				});
+
+		assertTrue(first.persistent());
+		assertFalse(first.reused());
+		assertTrue(second.persistent());
+		assertFalse(second.reused());
+		assertEquals(first.storeDirectory(), second.storeDirectory());
+		assertEquals(2, buildCount.get());
+		assertEquals(89L, Files.size(second.storeDirectory().resolve("triples/data.mdb")));
+		assertEquals(97L, Files.size(second.storeDirectory().resolve("values/data.mdb")));
+	}
+
+	@Test
+	void preparePersistentThemeRegressionStoreRebuildsWhenEstimatorSnapshotConfigurationDiffers(@TempDir Path dataDir)
+			throws Exception {
+		System.setProperty(BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName(),
+				dataDir.resolve("persistent-lmdb-theme-store").toString());
+		String previousNominalEntries = System.getProperty(NOMINAL_ENTRIES_PROPERTY);
+		String previousSketchK = System.getProperty(SKETCH_K_PROPERTY);
+		try {
+			System.setProperty(NOMINAL_ENTRIES_PROPERTY, "512");
+			System.setProperty(SKETCH_K_PROPERTY, "2048");
+
+			AtomicInteger buildCount = new AtomicInteger();
+			ThemeRegressionStore first = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+					"theme-query-regression/stale-estimator",
+					storeDirectory -> {
+						buildCount.incrementAndGet();
+						writeFakeStoreDataFiles(storeDirectory, 101, 103);
+						writeFakeEstimatorMetadata(storeDirectory, new EstimatorMetadataFingerprint(
+								DEFAULT_BUCKET_COUNT, DEFAULT_PREDICATE_BUCKET_COUNT, DEFAULT_BUCKET_COUNT,
+								DEFAULT_CONTEXT_BUCKET_COUNT, true, DEFAULT_SKETCH_NOMINAL_ENTRIES));
+					});
+			ThemeRegressionStore second = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+					"theme-query-regression/stale-estimator",
+					storeDirectory -> {
+						buildCount.incrementAndGet();
+						writeFakeStoreDataFiles(storeDirectory, 107, 109);
+						writeFakeEstimatorMetadata(storeDirectory);
+					});
+
+			assertTrue(first.persistent());
+			assertFalse(first.reused());
+			assertTrue(second.persistent());
+			assertFalse(second.reused());
+			assertEquals(2, buildCount.get());
+			assertEquals(107L, Files.size(second.storeDirectory().resolve("triples/data.mdb")));
+			assertEquals(109L, Files.size(second.storeDirectory().resolve("values/data.mdb")));
+		} finally {
+			restoreSystemProperty(NOMINAL_ENTRIES_PROPERTY, previousNominalEntries);
+			restoreSystemProperty(SKETCH_K_PROPERTY, previousSketchK);
+		}
 	}
 
 	@Test
@@ -129,6 +245,111 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 		Files.write(storeDirectory.resolve("values/data.mdb"), new byte[valuesSizeBytes]);
 	}
 
+	private static void writeFakeEstimatorMetadata(Path storeDirectory) throws IOException {
+		writeFakeEstimatorMetadata(storeDirectory, currentEstimatorMetadataFingerprint());
+	}
+
+	private static void writeFakeEstimatorMetadata(Path storeDirectory, EstimatorMetadataFingerprint fingerprint)
+			throws IOException {
+		Files.createDirectories(storeDirectory.resolve("join-estimator.rjes"));
+		try (OutputStream outputStream = Files
+				.newOutputStream(storeDirectory.resolve("join-estimator.rjes/metadata.bin"));
+				DataOutputStream output = new DataOutputStream(outputStream)) {
+			output.write(JOIN_ESTIMATOR_METADATA_MAGIC);
+			output.writeInt(JOIN_ESTIMATOR_METADATA_VERSION);
+			output.writeInt(Math.max(Math.max(fingerprint.subjectBucketCount, fingerprint.predicateBucketCount),
+					Math.max(fingerprint.objectBucketCount, fingerprint.contextBucketCount)));
+			output.writeInt(fingerprint.subjectBucketCount);
+			output.writeInt(fingerprint.predicateBucketCount);
+			output.writeInt(fingerprint.objectBucketCount);
+			output.writeInt(fingerprint.contextBucketCount);
+			output.writeBoolean(fingerprint.contextPairSketchesEnabled);
+			output.writeInt(fingerprint.sketchNominalEntries);
+			output.writeInt(0);
+			output.writeByte(0);
+			output.writeLong(0L);
+			output.writeLong(0L);
+			output.writeLong(0L);
+			output.writeLong(0L);
+			output.writeLong(0L);
+		}
+	}
+
+	private static EstimatorMetadataFingerprint currentEstimatorMetadataFingerprint() {
+		int subjectBucketCount = DEFAULT_BUCKET_COUNT;
+		int predicateBucketCount = DEFAULT_PREDICATE_BUCKET_COUNT;
+		int objectBucketCount = DEFAULT_BUCKET_COUNT;
+		int contextBucketCount = DEFAULT_CONTEXT_BUCKET_COUNT;
+		boolean nominalEntriesPropertySet = estimatorPropertyPresent("nominalEntries");
+		boolean subjectBucketPropertySet = estimatorPropertyPresent("subjectBucketCount");
+		boolean predicateBucketPropertySet = estimatorPropertyPresent("predicateBucketCount");
+		boolean objectBucketPropertySet = estimatorPropertyPresent("objectBucketCount");
+		boolean contextBucketPropertySet = estimatorPropertyPresent("contextBucketCount");
+		boolean sketchKPropertySet = estimatorPropertyPresent("sketchK");
+		int nominalEntries = estimatorIntProperty("nominalEntries", DEFAULT_BUCKET_COUNT);
+		if (nominalEntriesPropertySet) {
+			if (!subjectBucketPropertySet) {
+				subjectBucketCount = nominalEntries;
+			}
+			if (!predicateBucketPropertySet) {
+				predicateBucketCount = nominalEntries;
+			}
+			if (!objectBucketPropertySet) {
+				objectBucketCount = nominalEntries;
+			}
+			if (!contextBucketPropertySet) {
+				contextBucketCount = nominalEntries;
+			}
+		}
+		subjectBucketCount = estimatorIntProperty("subjectBucketCount", subjectBucketCount);
+		predicateBucketCount = estimatorIntProperty("predicateBucketCount", predicateBucketCount);
+		objectBucketCount = estimatorIntProperty("objectBucketCount", objectBucketCount);
+		contextBucketCount = estimatorIntProperty("contextBucketCount", contextBucketCount);
+		boolean contextPairSketchesEnabled = estimatorBooleanProperty("contextPairSketchesEnabled", false);
+		int sketchKMultiplier = Math.max(0, estimatorIntProperty("sketchKMultiplier", 0));
+		int sketchNominalEntries = sketchKPropertySet
+				? estimatorIntProperty("sketchK", -1)
+				: DEFAULT_SKETCH_NOMINAL_ENTRIES;
+		if (sketchNominalEntries <= 0) {
+			int maxBucketCount = Math.max(Math.max(subjectBucketCount, predicateBucketCount),
+					Math.max(objectBucketCount, contextBucketCount));
+			sketchNominalEntries = sketchKMultiplier > 0
+					? Math.max(16, maxBucketCount * sketchKMultiplier)
+					: DEFAULT_SKETCH_NOMINAL_ENTRIES;
+		}
+		return new EstimatorMetadataFingerprint(subjectBucketCount, predicateBucketCount, objectBucketCount,
+				contextBucketCount, contextPairSketchesEnabled, sketchNominalEntries);
+	}
+
+	private static boolean estimatorPropertyPresent(String name) {
+		return System.getProperty(ESTIMATOR_PROPERTY_PREFIX + name) != null;
+	}
+
+	private static int estimatorIntProperty(String name, int defaultValue) {
+		String value = System.getProperty(ESTIMATOR_PROPERTY_PREFIX + name);
+		if (value == null) {
+			return defaultValue;
+		}
+		try {
+			return Integer.parseInt(value.trim());
+		} catch (NumberFormatException e) {
+			return defaultValue;
+		}
+	}
+
+	private static boolean estimatorBooleanProperty(String name, boolean defaultValue) {
+		String value = System.getProperty(ESTIMATOR_PROPERTY_PREFIX + name);
+		return value == null ? defaultValue : Boolean.parseBoolean(value);
+	}
+
+	private static void restoreSystemProperty(String propertyName, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(propertyName);
+		} else {
+			System.setProperty(propertyName, previousValue);
+		}
+	}
+
 	private static void writeIncorrectExpectedSizes(Path storeDirectory, long triplesSizeBytes, long valuesSizeBytes)
 			throws IOException {
 		Properties properties = new Properties();
@@ -137,5 +358,10 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 		try (var outputStream = Files.newOutputStream(storeDirectory.resolve("expected-db-file-sizes.properties"))) {
 			properties.store(outputStream, "incorrect sizes for mismatch testing");
 		}
+	}
+
+	private record EstimatorMetadataFingerprint(int subjectBucketCount, int predicateBucketCount,
+			int objectBucketCount, int contextBucketCount, boolean contextPairSketchesEnabled,
+			int sketchNominalEntries) {
 	}
 }

@@ -33,6 +33,7 @@ import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -368,7 +369,7 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 				verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
@@ -401,7 +402,7 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);

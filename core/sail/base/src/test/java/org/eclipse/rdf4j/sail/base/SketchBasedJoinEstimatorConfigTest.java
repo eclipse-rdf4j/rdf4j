@@ -190,14 +190,15 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void defaultsPreserveUniformBucketsAndContextPairSketches() throws Exception {
+	void defaultsPreserveConfiguredBucketsAndContextPairSketches() throws Exception {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults();
 
-		assertEquals(1024, intField(cfg, "nominalEntries"));
-		assertEquals(1024, intField(cfg, "subjectBucketCount"));
-		assertEquals(1024, intField(cfg, "predicateBucketCount"));
-		assertEquals(1024, intField(cfg, "objectBucketCount"));
-		assertEquals(1024, intField(cfg, "contextBucketCount"));
+		int defaultBucketCount = staticIntField(SketchBasedJoinEstimator.class, "DEFAULT_BUCKET_COUNT");
+		assertEquals(defaultBucketCount, intField(cfg, "nominalEntries"));
+		assertEquals(defaultBucketCount, intField(cfg, "subjectBucketCount"));
+		assertEquals(64, intField(cfg, "predicateBucketCount"));
+		assertEquals(defaultBucketCount, intField(cfg, "objectBucketCount"));
+		assertEquals(16, intField(cfg, "contextBucketCount"));
 		assertTrue(booleanField(cfg, "contextPairSketchesEnabled"));
 	}
 
@@ -499,6 +500,12 @@ class SketchBasedJoinEstimatorConfigTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.getInt(target);
+	}
+
+	private static int staticIntField(Class<?> target, String name) throws Exception {
+		Field field = target.getDeclaredField(name);
+		field.setAccessible(true);
+		return field.getInt(null);
 	}
 
 	private static long longField(Object target, String name) throws Exception {

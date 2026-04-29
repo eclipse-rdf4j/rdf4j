@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -37,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -114,14 +117,18 @@ class LmdbSketchAwareFilterPlacementTest {
 				optimized = (TupleExpr) explanation.tupleExpr();
 			}
 
-			Filter branchNameFilter = findBranchNameFilter(optimized);
-			assertNotNull(branchNameFilter, "Expected optimized plan to retain the branch-name filter");
-			assertTrue(branchNameFilter.getArg() instanceof org.eclipse.rdf4j.query.algebra.StatementPattern,
-					"Branch-name filter should be pushed onto its local statement pattern when sketch estimation is ready");
-			assertTrue(branchNameFilter.getArg().getBindingNames().contains("branch"),
-					"Branch-name filter should stay attached to the branch pattern");
-			assertTrue(!branchNameFilter.getArg().getBindingNames().contains("copy"),
-					"Branch-name filter should no longer sit above the copy join once local selectivity is known");
+			BindingSetAssignment branchNameValues = findBindingSetAssignment(optimized, "branchName");
+			assertNotNull(branchNameValues,
+					"Expected optimized plan to retain the branch-name constraint as a finite VALUES anchor");
+			assertLiteralValues(branchNameValues, "branchName", "Branch 0", "Branch 1");
+
+			StatementPattern branchNamePattern = findStatementPattern(optimized, NAME, "branchName");
+			assertNotNull(branchNamePattern,
+					"Expected optimized plan to retain the branch-name lookup pattern");
+			assertTrue(branchNamePattern.getBindingNames().contains("branch"),
+					"Branch-name lookup should stay attached to the branch pattern");
+			assertTrue(!branchNamePattern.getBindingNames().contains("copy"),
+					"Branch-name lookup should no longer sit above the copy join once local selectivity is known");
 		} finally {
 			repository.shutDown();
 		}
@@ -147,16 +154,24 @@ class LmdbSketchAwareFilterPlacementTest {
 					"  FILTER ((?branchName = \"Branch 0\") || (?branchName = \"Branch 1\"))",
 					"}");
 
-			Filter filter;
+			TupleExpr optimized;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				filter = findBranchNameFilter((TupleExpr) explanation.tupleExpr());
+				optimized = (TupleExpr) explanation.tupleExpr();
 			}
 
-			assertNotNull(filter, "Expected optimized plan to retain the branch-name filter");
-			assertTrue(filter.getArg() instanceof StatementPattern,
-					"Expected the branch-name filter to remain attached to its statement pattern");
+			BindingSetAssignment branchNameValues = findBindingSetAssignment(optimized, "branchName");
+			assertNotNull(branchNameValues,
+					"Expected optimized plan to retain the branch-name constraint as a finite VALUES anchor");
+			assertLiteralValues(branchNameValues, "branchName", "Branch 0", "Branch 1");
 
+			Filter filter = new Filter(
+					new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME), Var.of("branchName")),
+					new Or(
+							new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 0")),
+									Compare.CompareOp.EQ),
+							new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 1")),
+									Compare.CompareOp.EQ)));
 			double passRatio = statistics.estimateFilterPassRatio(filter);
 			double baseRows = statistics.getCardinality(filter.getArg());
 			double filteredRows = statistics.getCardinality(filter);
@@ -345,7 +360,15 @@ class LmdbSketchAwareFilterPlacementTest {
 					.stream()
 					.anyMatch(step -> step.getStringMetrics().containsKey(TelemetryMetricNames.UNLOCKED_FILTERS)),
 					"Expected planner step diagnostics to show the deferred filter unlock");
-			assertTrue(withFilter.getEstimatedTotalWork() > withoutFilter.getEstimatedTotalWork(),
+			assertTrue(withFilter.getSteps()
+					.stream()
+					.anyMatch(step -> step.getAppliedFilterIndexes().contains(0)),
+					"Expected LMDB access-metric enrichment to preserve deferred filter action indexes");
+			assertTrue(withFilter.getSteps()
+					.stream()
+					.filter(step -> step.getAppliedFilterIndexes().contains(0))
+					.anyMatch(step -> step.getStepWorkRows() > step.getDoubleMetrics()
+							.getOrDefault(TelemetryMetricNames.PLANNED_WORK_ROWS, 0.0d)),
 					"Expected expensive deferred filter evaluation to add step work");
 		} finally {
 			repository.shutDown();
@@ -453,6 +476,21 @@ class LmdbSketchAwareFilterPlacementTest {
 		}
 	}
 
+	@Test
+	void deferredFilterPlacementPreservesAcceptedFactorOrder() {
+		StatementPattern forward = new StatementPattern(Var.of("anchor"), Var.of("edge", VF.createIRI("urn:edge")),
+				Var.of("right"));
+		StatementPattern reverse = new StatementPattern(Var.of("left"), Var.of("edge", VF.createIRI("urn:edge")),
+				Var.of("anchor"));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr, Join::new,
+				(root, filters, scope) -> root);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(forward, reverse)), List.of(),
+				Set.of("anchor"));
+
+		assertEquals(List.of(forward, reverse), collectJoinArgs(root));
+	}
+
 	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, TupleExpr optimized) {
 		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
 		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
@@ -481,18 +519,53 @@ class LmdbSketchAwareFilterPlacementTest {
 						+ mandatoryLeafOrder);
 	}
 
-	private static Filter findBranchNameFilter(TupleExpr optimized) {
-		List<Filter> matches = new ArrayList<>(1);
+	private static BindingSetAssignment findBindingSetAssignment(TupleExpr optimized, String bindingName) {
+		List<BindingSetAssignment> matches = new ArrayList<>(1);
 		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			public void meet(Filter node) {
-				if (matches.isEmpty() && VarNameCollector.process(node.getCondition()).contains("branchName")) {
+			public void meet(BindingSetAssignment node) {
+				if (matches.isEmpty() && node.getBindingNames().contains(bindingName)) {
 					matches.add(node);
 				}
 				super.meet(node);
 			}
 		});
 		return matches.isEmpty() ? null : matches.get(0);
+	}
+
+	private static StatementPattern findStatementPattern(TupleExpr optimized, IRI predicate, String objectBindingName) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (matches.isEmpty()
+						&& node.getPredicateVar() != null
+						&& predicate.equals(node.getPredicateVar().getValue())
+						&& node.getObjectVar() != null
+						&& objectBindingName.equals(node.getObjectVar().getName())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.get(0);
+	}
+
+	private static void assertLiteralValues(BindingSetAssignment assignment, String bindingName,
+			String... expectedLabels) {
+		List<String> actualLabels = literalValues(assignment, bindingName);
+		assertEquals(List.of(expectedLabels), actualLabels);
+	}
+
+	private static List<String> literalValues(BindingSetAssignment assignment, String bindingName) {
+		List<String> labels = new ArrayList<>();
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value instanceof Literal) {
+				labels.add(((Literal) value).getLabel());
+			}
+		}
+		return labels;
 	}
 
 	private static void loadLibraryData(SailRepository repository) {
@@ -592,6 +665,21 @@ class LmdbSketchAwareFilterPlacementTest {
 		return leaves;
 	}
 
+	private static List<TupleExpr> collectJoinArgs(TupleExpr tupleExpr) {
+		List<TupleExpr> args = new ArrayList<>();
+		collectJoinArgs(tupleExpr, args);
+		return args;
+	}
+
+	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinArgs(join.getLeftArg(), args);
+			collectJoinArgs(join.getRightArg(), args);
+			return;
+		}
+		args.add(tupleExpr);
+	}
+
 	private static void collectMandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
 		if (tupleExpr instanceof Join join) {
 			collectMandatoryLeafOrder(join.getLeftArg(), leaves);
@@ -608,6 +696,12 @@ class LmdbSketchAwareFilterPlacementTest {
 				return;
 			}
 			collectMandatoryLeafOrder(filter.getArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof BindingSetAssignment bindingSetAssignment) {
+			if (isSubstationNameValues(bindingSetAssignment)) {
+				leaves.add(GRID_SUBSTATION_NAME_FILTER);
+			}
 			return;
 		}
 		if (tupleExpr instanceof StatementPattern statementPattern) {
@@ -639,6 +733,12 @@ class LmdbSketchAwareFilterPlacementTest {
 		}
 		return filter.getArg()instanceof BindingSetAssignment bindingSetAssignment
 				&& bindingSetAssignment.getBindingNames().contains("name");
+	}
+
+	private static boolean isSubstationNameValues(BindingSetAssignment bindingSetAssignment) {
+		return bindingSetAssignment.getBindingNames().contains("name")
+				&& literalValues(bindingSetAssignment, "name").stream()
+						.anyMatch(label -> label.startsWith("Substation "));
 	}
 
 	private static String labelFor(StatementPattern statementPattern) {

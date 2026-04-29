@@ -37,10 +37,13 @@ final class LmdbSmallLiteralFilterAnchors {
 		}
 		for (DeferredFilter filter : filters) {
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.condition);
-			if (anchor == null) {
+			if (anchor == null || !LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(filter.passEstimate)) {
 				continue;
 			}
 			String bindingName = anchor.getBindingNames().iterator().next();
+			if (!LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter.patternLocalBase, bindingName)) {
+				continue;
+			}
 			int[] segment = findAnchorSegment(joinArgs, filter, bindingName);
 			if (segment == null || segmentHasBindingSetAssignment(joinArgs, segment, bindingName)
 					|| (!isEmptyBindingSetAssignment(anchor) && !segmentMustBind(joinArgs, segment, bindingName))
@@ -101,7 +104,7 @@ final class LmdbSmallLiteralFilterAnchors {
 		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
 			return false;
 		}
-		if (canDriveIncomingGraphEdge(pattern)) {
+		if (LmdbJoinPlanSupport.canDriveLiteralObjectFilterAnchor(pattern)) {
 			return false;
 		}
 
@@ -128,7 +131,7 @@ final class LmdbSmallLiteralFilterAnchors {
 		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
 			return false;
 		}
-		if (canDriveIncomingGraphEdge(pattern)) {
+		if (LmdbJoinPlanSupport.canDriveLiteralObjectFilterAnchor(pattern)) {
 			return false;
 		}
 
@@ -173,15 +176,6 @@ final class LmdbSmallLiteralFilterAnchors {
 
 	private static boolean isEmptyBindingSetAssignment(BindingSetAssignment assignment) {
 		return !assignment.getBindingSets().iterator().hasNext();
-	}
-
-	private static boolean canDriveIncomingGraphEdge(StatementPattern pattern) {
-		Var predicate = pattern.getPredicateVar();
-		if (predicate == null || !predicate.hasValue()) {
-			return false;
-		}
-		String iri = predicate.getValue().stringValue();
-		return iri.endsWith("/name") || iri.endsWith("/measuredValue");
 	}
 
 	private static String unboundName(Var var) {

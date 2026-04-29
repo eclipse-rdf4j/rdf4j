@@ -21,7 +21,9 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -59,6 +62,61 @@ class LmdbSketchJoinOptimizerTest {
 
 		assertEquals(List.of(third, first, second), joinArgs(root.getArg()));
 		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
+	void acceptedPlannerOrderIsFinal() {
+		BindingSetAssignment boundObjects = values("knownObject", "DX-200", "DX-201");
+		StatementPattern guard = new StatementPattern(new Var("s"), new Var("_type", RDF.TYPE),
+				new Var("_person", VF.createIRI("urn:Person")));
+		StatementPattern lookup = statementPattern("s", "hasKnownObject", "knownObject");
+		QueryRoot root = new QueryRoot(new Join(boundObjects, new Join(guard, lookup)));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(boundObjects, guard, lookup));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(List.of(boundObjects, guard, lookup), joinArgs(root.getArg()));
+		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
+	void acceptedPlannerOrderSurvivesDeferredFilterPlacement() {
+		BindingSetAssignment boundB = values("b", "user-3", "user-4", "user-5", "user-6");
+		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
+		StatementPattern bFollowsC = statementPattern("b", "follows", "c");
+		StatementPattern dFollowsA = statementPattern("d", "follows", "a");
+		StatementPattern cFollowsD = statementPattern("c", "follows", "d");
+		QueryRoot root = new QueryRoot(new Filter(
+				new Join(boundB, new Join(aFollowsB, new Join(bFollowsC, new Join(dFollowsA, cFollowsD)))),
+				and(notEqual("a", "b"), notEqual("b", "c"), notEqual("c", "d"), notEqual("d", "a"))));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(
+				List.of(boundB, aFollowsB, bFollowsC, cFollowsD, dFollowsA));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(List.of(aFollowsB, bFollowsC, cFollowsD, dFollowsA), statementPatterns(root.getArg()));
+		assertEquals(1, statistics.planningAttempts);
+	}
+
+	@Test
+	void materializesAcceptedPlannerOrderAsLeftDeepPrefixPipeline() {
+		BindingSetAssignment boundA = values("a", "user-7", "user-8");
+		BindingSetAssignment boundB = values("b", "user-7", "user-8");
+		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
+		StatementPattern bFollowsC = statementPattern("b", "follows", "c");
+		QueryRoot root = new QueryRoot(new Join(boundA, new Join(boundB, new Join(aFollowsB, bFollowsC))));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(boundA, boundB, aFollowsB, bFollowsC));
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		Join finalJoin = assertInstanceOf(Join.class, root.getArg());
+		assertEquals(bFollowsC, finalJoin.getRightArg());
+		Join edgeJoin = assertInstanceOf(Join.class, finalJoin.getLeftArg());
+		assertEquals(aFollowsB, edgeJoin.getRightArg());
+		Join valueJoin = assertInstanceOf(Join.class, edgeJoin.getLeftArg());
+		assertEquals(boundA, valueJoin.getLeftArg());
+		assertEquals(boundB, valueJoin.getRightArg());
+		assertEquals(List.of(boundA, boundB, aFollowsB, bFollowsC), joinArgs(root.getArg()));
 	}
 
 	@Test
@@ -301,10 +359,28 @@ class LmdbSketchJoinOptimizerTest {
 		return assignment;
 	}
 
+	private static ValueExpr and(ValueExpr first, ValueExpr second, ValueExpr... rest) {
+		ValueExpr result = new And(first, second);
+		for (ValueExpr condition : rest) {
+			result = new And(result, condition);
+		}
+		return result;
+	}
+
+	private static Compare notEqual(String leftName, String rightName) {
+		return new Compare(new Var(leftName), new Var(rightName), Compare.CompareOp.NE);
+	}
+
 	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
 		List<TupleExpr> args = new ArrayList<>();
 		collectJoinArgs(tupleExpr, args);
 		return args;
+	}
+
+	private static List<StatementPattern> statementPatterns(TupleExpr tupleExpr) {
+		List<StatementPattern> patterns = new ArrayList<>();
+		collectStatementPatterns(tupleExpr, patterns);
+		return patterns;
 	}
 
 	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
@@ -315,6 +391,22 @@ class LmdbSketchJoinOptimizerTest {
 			return;
 		}
 		args.add(tupleExpr);
+	}
+
+	private static void collectStatementPatterns(TupleExpr tupleExpr, List<StatementPattern> patterns) {
+		if (tupleExpr instanceof StatementPattern) {
+			patterns.add((StatementPattern) tupleExpr);
+			return;
+		}
+		if (tupleExpr instanceof Filter) {
+			collectStatementPatterns(((Filter) tupleExpr).getArg(), patterns);
+			return;
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			collectStatementPatterns(join.getLeftArg(), patterns);
+			collectStatementPatterns(join.getRightArg(), patterns);
+		}
 	}
 
 	private static boolean containsFilter(TupleExpr tupleExpr) {

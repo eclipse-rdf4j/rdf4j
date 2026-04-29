@@ -100,6 +100,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-memoization").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
+			sharedCardinalityCache().clear();
 			loadData(repository);
 
 			EvaluationStatistics statistics = extractEvaluationStatistics(repository);
@@ -111,9 +112,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			statistics.getCardinality(followsB);
 			statistics.getCardinality(name);
 
-			Map<?, ?> cache = cardinalityCache(statistics);
+			Map<?, ?> cache = sharedCardinalityCache();
 			assertEquals(2, cache.size(), "Equivalent follows patterns should share one memoized entry");
 		} finally {
+			sharedCardinalityCache().clear();
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
@@ -440,15 +442,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		return found[0];
 	}
 
-	private static Map<?, ?> cardinalityCache(EvaluationStatistics statistics) throws Exception {
-		assertTrue(statistics.getClass().getName().endsWith("LmdbEvaluationStatistics"));
-		Field field = statistics.getClass().getDeclaredField("cardinalityCache");
-		field.setAccessible(true);
-		return (Map<?, ?>) field.get(statistics);
-	}
-
 	private static Map<?, ?> sharedCardinalityCache() throws Exception {
-		Field field = LmdbEvaluationStatistics.class.getDeclaredField("sharedCardinalityCache");
+		Field field = LmdbStatementPatternCardinalitySource.class.getDeclaredField("SHARED_CARDINALITY_CACHE");
 		field.setAccessible(true);
 		return (Map<?, ?>) field.get(null);
 	}

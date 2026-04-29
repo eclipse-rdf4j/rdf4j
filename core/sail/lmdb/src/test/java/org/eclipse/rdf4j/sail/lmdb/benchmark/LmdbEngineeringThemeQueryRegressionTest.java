@@ -42,7 +42,6 @@ class LmdbEngineeringThemeQueryRegressionTest {
 			SELECT (COUNT(DISTINCT ?assembly) AS ?count) WHERE {
 			  VALUES ?name { "Assembly 1" "Assembly 2" }
 			  ?assembly <http://example.com/theme/engineering/name> ?name .
-			  FILTER ((?name = "Assembly 1") || (?name = "Assembly 2"))
 			  ?assembly a <http://example.com/theme/engineering/Assembly> .
 			  OPTIONAL {
 			    ?component <http://example.com/theme/engineering/partOf> ?assembly .
@@ -232,7 +231,6 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"Engineering q7 plan should use the bound name lookup before the rdf:type direct lookup");
 		assertNamePatternUsesBoundValue(plan, "Engineering q7", false);
-		assertContains(plan, "ValueConstant (value=\"REQ-1000\")");
 	}
 
 	private static void assertEngineeringQ10DevelopPlanShape(String plan) {
@@ -242,9 +240,9 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"value=http://example.com/theme/engineering/name",
 				"Engineering q10 should anchor the finite name set before the name access");
 		assertNamePatternUsesBoundValue(plan, "Engineering q10");
-		assertBefore(plan, "ValueConstant (value=\"Assembly 1\")",
+		assertBefore(plan, "BindingSetAssignment ([[name=\"Assembly 1\"], [name=\"Assembly 2\"]])",
 				"value=http://example.com/theme/engineering/partOf",
-				"Engineering q10 should apply the Assembly name filter before expanding optional partOf");
+				"Engineering q10 should anchor the Assembly names before expanding optional partOf");
 		assertOptionalPartOfUsesBoundAssembly(plan);
 		assertMinusSatisfiesStaysNewScope(plan);
 	}
@@ -297,10 +295,6 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"LeftJoin",
 				"Join (JoinIterator)",
 				"BindingSetAssignment ([[name=\"Assembly 1\"], [name=\"Assembly 2\"]])",
-				"deferredFilterScope=localPattern)",
-				"Or",
-				"ValueConstant (value=\"Assembly 1\")",
-				"ValueConstant (value=\"Assembly 2\")",
 				"value=http://example.com/theme/engineering/name",
 				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"value=http://example.com/theme/engineering/Assembly",

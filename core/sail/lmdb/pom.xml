@@ -241,8 +241,12 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
 					<systemPropertyVariables>
-						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.nominalEntries>1024</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.nominalEntries>
-						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>4096</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.subjectBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.predicateBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.objectBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextPairSketchesEnabled>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>64</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>
@@ -250,8 +254,12 @@
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
 					<systemPropertyVariables>
-						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.nominalEntries>1024</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.nominalEntries>
-						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>4096</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.subjectBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.predicateBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.objectBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextBucketCount>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.contextPairSketchesEnabled>
+						<org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>64</org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.sketchK>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>

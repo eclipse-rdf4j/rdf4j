@@ -150,7 +150,6 @@ Optimized query:
 SELECT ?transformer (COUNT(DISTINCT ?meter) AS ?meterCount) WHERE {
   VALUES ?name { "Substation 0" "Substation 1" "Substation 2" }
   ?substation <http://example.com/theme/grid/name> ?name .
-  FILTER (?name IN ("Substation 0", "Substation 1", "Substation 2"))
   ?transformer <http://example.com/theme/grid/feeds> ?substation .
   ?transformer a <http://example.com/theme/grid/Transformer> .
   OPTIONAL {
@@ -1584,7 +1583,6 @@ Optimized query:
 SELECT ?author (COUNT(DISTINCT ?book) AS ?bookCount) WHERE {
   VALUES ?authorName { "Author 1" "Author 2" "Author 3" }
   ?author <http://example.com/theme/library/name> ?authorName .
-  FILTER (?authorName IN ("Author 1", "Author 2", "Author 3"))
   ?author a <http://example.com/theme/library/Author> .
   OPTIONAL {
     ?book <http://example.com/theme/library/writtenBy> ?author .
@@ -3743,7 +3741,7 @@ FILTER (?d != ?e)
 OPTIONAL {
 ?e <http://example.com/theme/social/name> ?optName .
 }
-FILTER ((?optName IN ("user7", "user8", "user9", "user10", "user11")) && EXISTS { ?a <http://example.com/theme/social/name> ?name . FILTER ((?name = "user7") || (?name = "user8")) })
+FILTER ((?optName IN ("user7", "user8", "user9", "user10", "user11")) && EXISTS { VALUES ?name { "user7" "user8" } ?a <http://example.com/theme/social/name> ?name . })
 }
 ```
 
@@ -3876,7 +3874,6 @@ Optimized query:
 SELECT ?line (COUNT(DISTINCT ?section) AS ?sectionCount) WHERE {
   VALUES ?lineName { "Line 0" "Line 1" "Line 2" }
   ?line <http://example.com/theme/train/name> ?lineName .
-  FILTER (?lineName IN ("Line 0", "Line 1", "Line 2"))
   ?line a <http://example.com/theme/train/Line> .
   OPTIONAL {
     ?section <http://example.com/theme/train/partOfLine> ?line .

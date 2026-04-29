@@ -339,8 +339,8 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 					+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.SOCIAL_MEDIA && expectation.queryIndex == 10
-				&& !socialFiveCycleUsesGuardedForwardCascade(snapshot.renderedQuery)) {
-			mismatches.add(key + " should use the guarded forward follows cascade before closing the cycle\n"
+				&& !socialFiveCycleUsesFinitePruningBeforeFollows(snapshot.renderedQuery)) {
+			mismatches.add(key + " should finish finite-domain pruning before probing the follows cycle\n"
 					+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.LIBRARY && expectation.queryIndex == 7
@@ -352,25 +352,31 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		return mismatches;
 	}
 
-	private static boolean socialFiveCycleUsesGuardedForwardCascade(String renderedQuery) {
+	private static boolean socialFiveCycleUsesFinitePruningBeforeFollows(String renderedQuery) {
 		String follows = "<http://example.com/theme/social/follows>";
 		int valuesAB = renderedQuery.indexOf("VALUES (?a ?b)");
 		int valuesC = renderedQuery.indexOf("VALUES ?c");
 		int valuesD = renderedQuery.indexOf("VALUES ?d");
 		int valuesE = renderedQuery.indexOf("VALUES ?e");
+		int filterAB = renderedQuery.indexOf("FILTER (?a != ?b)");
+		int filterCD = renderedQuery.indexOf("FILTER (?c != ?d)");
+		int filterDE = renderedQuery.indexOf("FILTER (?d != ?e)");
 		int edgeAB = renderedQuery.indexOf("?a " + follows + " ?b");
 		int edgeBC = renderedQuery.indexOf("?b " + follows + " ?c");
 		int edgeCD = renderedQuery.indexOf("?c " + follows + " ?d");
 		int edgeDE = renderedQuery.indexOf("?d " + follows + " ?e");
 		int edgeEA = renderedQuery.indexOf("?e " + follows + " ?a");
 		return valuesAB >= 0
-				&& edgeAB > valuesAB
-				&& valuesC > edgeAB
-				&& edgeBC > valuesC
-				&& valuesD > edgeBC
-				&& edgeCD > valuesD
-				&& valuesE > edgeCD
-				&& edgeDE > valuesE
+				&& filterAB > valuesAB
+				&& valuesC > filterAB
+				&& valuesD > valuesC
+				&& filterCD > valuesD
+				&& valuesE > filterCD
+				&& filterDE > valuesE
+				&& edgeAB > filterDE
+				&& edgeBC > edgeAB
+				&& edgeCD > edgeBC
+				&& edgeDE > edgeCD
 				&& edgeEA > edgeDE;
 	}
 

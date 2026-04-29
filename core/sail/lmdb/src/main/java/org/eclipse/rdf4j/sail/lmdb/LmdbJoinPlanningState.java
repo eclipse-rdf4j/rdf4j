@@ -65,10 +65,19 @@ final class SegmentFactor {
 	final TupleExpr tupleExpr;
 	final Set<String> bindingNames;
 	final Set<StatementPattern> containedPatterns;
+	final int firstFactorOrder;
+	final int lastFactorOrder;
 
-	SegmentFactor(TupleExpr tupleExpr, Set<StatementPattern> containedPatterns) {
+	SegmentFactor(TupleExpr tupleExpr, Set<StatementPattern> containedPatterns, int factorOrder) {
+		this(tupleExpr, containedPatterns, factorOrder, factorOrder);
+	}
+
+	SegmentFactor(TupleExpr tupleExpr, Set<StatementPattern> containedPatterns, int firstFactorOrder,
+			int lastFactorOrder) {
 		this.tupleExpr = tupleExpr;
 		this.bindingNames = Set.copyOf(tupleExpr.getBindingNames());
 		this.containedPatterns = DeferredFilter.identityCopy(containedPatterns);
+		this.firstFactorOrder = firstFactorOrder;
+		this.lastFactorOrder = lastFactorOrder;
 	}
 }

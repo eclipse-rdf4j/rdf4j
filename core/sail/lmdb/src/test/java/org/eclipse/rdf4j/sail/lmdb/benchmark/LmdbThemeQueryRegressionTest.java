@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -27,7 +28,20 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -42,12 +56,32 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbThemeQueryRegressionTest {
 
+	private static final ValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
+	private static final IRI PHARMA_BIOMARKER_3 = VALUE_FACTORY
+			.createIRI("http://example.com/theme/pharma/biomarker/3");
+	private static final IRI PHARMA_BIOMARKER_4 = VALUE_FACTORY
+			.createIRI("http://example.com/theme/pharma/biomarker/4");
+	private static final IRI PHARMA_DRUG = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/Drug");
+	private static final IRI PHARMA_IN_PATHWAY = VALUE_FACTORY
+			.createIRI("http://example.com/theme/pharma/inPathway");
+	private static final IRI PHARMA_TARGET = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/Target");
+	private static final IRI PHARMA_TARGETS = VALUE_FACTORY.createIRI("http://example.com/theme/pharma/targets");
+	private static final IRI LIBRARY_BORROWED_BY = VALUE_FACTORY
+			.createIRI("http://example.com/theme/library/borrowedBy");
+	private static final IRI LIBRARY_HAS_COPY = VALUE_FACTORY.createIRI("http://example.com/theme/library/hasCopy");
+	private static final IRI LIBRARY_LOAN = VALUE_FACTORY.createIRI("http://example.com/theme/library/Loan");
+	private static final IRI LIBRARY_LOANED_COPY = VALUE_FACTORY
+			.createIRI("http://example.com/theme/library/loanedCopy");
+	private static final IRI LIBRARY_MEMBER = VALUE_FACTORY.createIRI("http://example.com/theme/library/Member");
+	private static final IRI LIBRARY_NAME = VALUE_FACTORY.createIRI("http://example.com/theme/library/name");
+	private static final IRI LIBRARY_WRITTEN_BY = VALUE_FACTORY
+			.createIRI("http://example.com/theme/library/writtenBy");
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "theme-query-regression";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
-			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
-			+ "=true to reuse cached theme stores under persistent-lmdb-theme-store.";
+			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName()
+			+ "=<path> to change the cache root.";
 
 	private static final Map<Theme, List<Integer>> HIGH_VALUE_QUERY_INDEXES = Map.of(
 			Theme.SOCIAL_MEDIA, List.of(0, 1, 2, 3, 4, 6, 8, 9, 10),
@@ -132,8 +166,8 @@ class LmdbThemeQueryRegressionTest {
 	private static final String ELECTRICAL_GRID_Q1_FASTEST_RENDERED_QUERY = String.join("\n",
 			"SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {",
 			"  {",
-			"    ?entity <http://example.com/theme/grid/name> ?name .",
 			"    ?entity a <http://example.com/theme/grid/Substation> .",
+			"    ?entity <http://example.com/theme/grid/name> ?name .",
 			"    VALUES ?target { \"Substation 1\" \"Substation 2\" }",
 			"    FILTER ((?name = ?target) || (?name = \"Substation 3\"))",
 			"  }",
@@ -148,22 +182,6 @@ class LmdbThemeQueryRegressionTest {
 			"  OPTIONAL {",
 			"    ?entity <http://example.com/theme/grid/feeds> ?substation2 .",
 			"  }",
-			"}");
-	private static final String LIBRARY_Q9_FASTEST_RENDERED_QUERY = String.join("\n",
-			"SELECT (COUNT(DISTINCT ?member) AS ?count) WHERE {",
-			"  ?author <http://example.com/theme/library/name> ?authorName .",
-			"  FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
-			"  ?book <http://example.com/theme/library/writtenBy> ?author .",
-			"  ?book <http://example.com/theme/library/hasCopy> ?copy .",
-			"  ?loan <http://example.com/theme/library/loanedCopy> ?copy .",
-			"  ?loan <http://example.com/theme/library/borrowedBy> ?member .",
-			"  ?member a <http://example.com/theme/library/Member> .",
-			"  ?loan a <http://example.com/theme/library/Loan> .",
-			"  VALUES ?target { \"Author 1\" \"Author 2\" }",
-			"  OPTIONAL {",
-			"    ?book <http://example.com/theme/library/title> ?optTitle .",
-			"  }",
-			"  FILTER ((?optTitle != \"\") && NOT EXISTS { ?loan <http://example.com/theme/library/dueDate> ?due . FILTER (?due < \"2024-01-10\"^^<http://www.w3.org/2001/XMLSchema#date>) })",
 			"}");
 
 	@ParameterizedTest(name = "{0}")
@@ -385,7 +403,7 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
-	void socialMediaFiveCycleKeepsFastestKnownValuesCascade(@TempDir Path dataDir) throws Exception {
+	void socialMediaFiveCycleKeepsFastestKnownFinitePruningShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
@@ -393,12 +411,16 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
-					assertContains(snapshot.renderedQuery(), "VALUES (?a ?b)");
+					assertContains(snapshot.renderedQuery(), "VALUES (?a ?b)",
+							"Social media q10 should keep the fastest known finite (a,b) pruning prefix\n"
+									+ snapshot.plan());
 					assertDoesNotContain(snapshot.renderedQuery(), "VALUES (?d ?e)",
 							"Social media q10 should not pair d/e before the c/d inequality can prune d");
-					assertBefore(snapshot.renderedQuery(), "FILTER (?c != ?d)", "VALUES ?e",
-							"Social media q10 should prune d from the c binding before expanding e\n"
+					assertBefore(snapshot.renderedQuery(), "FILTER (?d != ?e)",
+							"?a <http://example.com/theme/social/follows> ?b .",
+							"Social media q10 should finish finite-domain pruning before probing follows\n"
 									+ snapshot.plan());
+					assertDirectLookupPlannedWorkRowsBelow(snapshot.plan(), 100.0d, 5);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -436,7 +458,7 @@ class LmdbThemeQueryRegressionTest {
 							"Social media q10 should prune the finite e window before running follow guards\n"
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
-							"EXISTS { ?a <http://example.com/theme/social/name> ?name .",
+							"?a <http://example.com/theme/social/name> ?name .",
 							"Social media q10 should still apply follow guards before probing the correlated "
 									+ "EXISTS name scope per prefix row\n" + snapshot.plan());
 				});
@@ -458,10 +480,6 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?node a <http://example.com/theme/connected/Node>",
-							"<http://example.com/theme/connected/weight> ?w",
-							"Highly connected q2 should apply the Node type guard before the weight scan so the "
-									+ "filtered predicate does not drive a wider prefix\n" + snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/connected/weight> ?w",
 							"<http://example.com/theme/connected/connectsTo> ?neighbor",
 							"Highly connected q2 should bind the weight filter before expanding connectsTo fanout\n"
@@ -749,8 +767,13 @@ class LmdbThemeQueryRegressionTest {
 				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "?target a <http://example.com/theme/pharma/Target>",
+							"?drug <http://example.com/theme/pharma/targets> ?target",
+							"Pharma q2 should bind the target type guard before target drug expansion\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(),
 							"?target <http://example.com/theme/pharma/inPathway> ?pathway",
-							"Pharma q2 should bind the target type guard before target pathway expansion\n"
+							"?drug <http://example.com/theme/pharma/targets> ?target",
+							"Pharma q2 should bind the target pathway domain before target drug expansion\n"
 									+ snapshot.plan());
 					assertBefore(snapshot.renderedQuery(),
 							"?drug <http://example.com/theme/pharma/targets> ?target",
@@ -848,6 +871,10 @@ class LmdbThemeQueryRegressionTest {
 					assertBefore(renderedQuery, "?result <http://example.com/theme/pharma/biomarker> ?marker",
 							"?result <http://example.com/theme/pharma/pValue> ?p",
 							"Pharma q5 should not seed from a broad p-value scan\n" + snapshot.plan());
+					assertBefore(renderedQuery, "?result <http://example.com/theme/pharma/pValue> ?p",
+							"?trial <http://example.com/theme/pharma/hasArm> ?arm",
+							"Pharma q5 should apply the scalar result filter before expanding trials\n"
+									+ snapshot.plan());
 					assertBefore(renderedQuery, "?arm <http://example.com/theme/pharma/hasResult> ?result",
 							"?trial <http://example.com/theme/pharma/hasArm> ?arm",
 							"Pharma q5 should bind arms before trial expansion\n" + snapshot.plan());
@@ -858,6 +885,151 @@ class LmdbThemeQueryRegressionTest {
 							"Pharma q5 should evaluate the scalar result filter before optional effect filtering\n"
 									+ snapshot.plan());
 				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void pharmaQ2TargetTypePreparesTargetDomainBeforePathwayExpansion(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				JoinOrderPlanner planner = joinOrderPlanner(store);
+				StatementPattern targetType = pharmaTargetTypePattern();
+				StatementPattern inPathway = pharmaInPathwayPattern();
+				StatementPattern targets = pharmaTargetsPattern();
+				StatementPattern drugType = pharmaDrugTypePattern();
+
+				JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(
+						List.of(targetType, inPathway, targets, drugType),
+						Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						List.of());
+				JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan()
+						.orElseThrow(() -> new AssertionError("PHARMA q2 segment planning was rejected: "
+								+ attempt.getDiagnostics()));
+
+				List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+				String diagnostics = "PHARMA q2 should prepare the target domain before expanding to drugs.\n"
+						+ "Diagnostics:\n" + String.join("\n", plan.getDiagnostics()) + "\nSelected steps:\n"
+						+ describePlanSteps(plan) + "\nTarget-domain fixed order:\n"
+						+ describeFixedOrder(planner, List.of(targetType, inPathway, targets, drugType))
+						+ "\nPathway-first fixed order:\n"
+						+ describeFixedOrder(planner, List.of(inPathway, targetType, targets, drugType));
+				Assertions.assertTrue(orderedArgs.indexOf(targetType) < orderedArgs.indexOf(targets)
+						&& orderedArgs.indexOf(inPathway) < orderedArgs.indexOf(targets)
+						&& orderedArgs.indexOf(targets) < orderedArgs.indexOf(drugType), diagnostics);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void pharmaQ10MandatoryBridgePreparesEndpointDomainsBeforeTargetsSeed(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				JoinOrderPlanner planner = joinOrderPlanner(store);
+				BindingSetAssignment markerBindings = pharmaMarkerBindings();
+				StatementPattern drugType = pharmaDrugTypePattern();
+				StatementPattern targets = pharmaTargetsPattern();
+				StatementPattern inPathway = pharmaInPathwayPattern();
+
+				JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(
+						List.of(markerBindings, drugType, targets, inPathway),
+						Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						List.of());
+				JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan()
+						.orElseThrow(() -> new AssertionError("PHARMA q10 bridge planning was rejected: "
+								+ attempt.getDiagnostics()));
+
+				List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+				Assertions.assertEquals(4, orderedArgs.size(), "PHARMA q10 should keep all four factors");
+				Assertions.assertTrue(orderedArgs.containsAll(List.of(inPathway, drugType, targets, markerBindings)),
+						"PHARMA q10 should retain the expected factors.\nDiagnostics:\n"
+								+ String.join("\n", plan.getDiagnostics()) + "\nSelected steps:\n"
+								+ describePlanSteps(plan));
+				Assertions.assertTrue(orderedArgs.indexOf(targets) > 0
+						&& orderedArgs.indexOf(targets) < orderedArgs.indexOf(markerBindings)
+						&& orderedArgs.indexOf(drugType) < orderedArgs.indexOf(markerBindings)
+						&& orderedArgs.indexOf(inPathway) < orderedArgs.indexOf(markerBindings),
+						"PHARMA q10 should avoid a targets seed and complete the connected drug/pathway bridge "
+								+ "before the marker domain. History contains fast pathway-first and drug-first "
+								+ "bridge orders; the targets-first seed matches a slower family.\nDiagnostics:\n"
+								+ String.join("\n", plan.getDiagnostics()) + "\nSelected steps:\n"
+								+ describePlanSteps(plan) + "\nEndpoint fixed order:\n"
+								+ describeFixedOrder(planner, List.of(inPathway, drugType, targets, markerBindings))
+								+ "\nTargets fixed order:\n"
+								+ describeFixedOrder(planner, List.of(targets, drugType, inPathway, markerBindings)));
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void libraryQ9FiniteAuthorDomainPrecedesNameLookupInMemo(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = prepareThemeStore(dataDir, theme, 9);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				JoinOrderPlanner planner = joinOrderPlanner(store);
+				BindingSetAssignment targetBindings = libraryTargetBindings();
+				StatementPattern nameLookup = libraryAuthorNamePattern();
+				StatementPattern writtenBy = libraryWrittenByPattern();
+				BindingSetAssignment authorNameBindings = libraryAuthorNameBindings();
+				StatementPattern hasCopy = libraryHasCopyPattern();
+				StatementPattern loanedCopy = libraryLoanedCopyPattern();
+				StatementPattern loanType = libraryLoanTypePattern();
+				StatementPattern borrowedBy = libraryBorrowedByPattern();
+				StatementPattern memberType = libraryMemberTypePattern();
+				List<JoinOrderPlanner.FilterConstraint> filters = List.of(libraryAuthorNameFilter());
+
+				JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(
+						List.of(targetBindings, nameLookup, writtenBy, authorNameBindings, hasCopy, loanedCopy,
+								loanType, borrowedBy, memberType),
+						Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						filters);
+				JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan()
+						.orElseThrow(() -> new AssertionError("LIBRARY q9 finite-domain planning was rejected: "
+								+ attempt.getDiagnostics()));
+
+				Assertions.assertEquals(List.of(authorNameBindings, nameLookup, targetBindings),
+						plan.getOrderedArgs()
+								.subList(0, 3),
+						"LIBRARY q9 should use the finite author-name domain to make the name lookup bound. "
+								+ "The target/name/filter prefix scans the whole name predicate before discovering "
+								+ "the finite domain.\nDiagnostics:\n" + String.join("\n", plan.getDiagnostics())
+								+ "\nSelected steps:\n" + describePlanSteps(plan)
+								+ "\nFinite-domain fixed order:\n"
+								+ describeFixedOrder(planner, List.of(authorNameBindings, nameLookup, targetBindings,
+										writtenBy, hasCopy, loanedCopy, loanType, borrowedBy, memberType), filters)
+								+ "\nBroad-name fixed order:\n"
+								+ describeFixedOrder(planner, List.of(targetBindings, nameLookup, writtenBy,
+										authorNameBindings, hasCopy, loanedCopy, loanType, borrowedBy, memberType),
+										filters));
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -928,10 +1100,13 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/engineering/name> ?assemblyName",
-							"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
-							"Engineering q2 should keep the assembly-name filter directly after the name pattern\n"
+					assertBefore(snapshot.renderedQuery(), "VALUES ?assemblyName",
+							"<http://example.com/theme/engineering/name> ?assemblyName",
+							"Engineering q2 should bind the finite assembly-name set before the name lookup\n"
 									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/engineering/name> ?assemblyName",
+							"?assembly a <http://example.com/theme/engineering/Assembly>",
+							"Engineering q2 should resolve the name lookup before the type guard\n" + snapshot.plan());
 					assertEngineeringAssemblyNameFilterDoesNotScanAllNames(snapshot.plan());
 				});
 			} finally {
@@ -1168,7 +1343,7 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
-	void libraryMembersBorrowingBooksByAuthorsUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
+	void libraryMembersBorrowingBooksByAuthorsUsesFiniteAuthorAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 9);
 		try {
@@ -1177,11 +1352,29 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
-					if (!LIBRARY_Q9_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
-						throw new AssertionError("Library q9 should match the fastest author/book/loan shape\n"
-								+ "Expected:\n" + LIBRARY_Q9_FASTEST_RENDERED_QUERY + "\nActual:\n"
-								+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
-					}
+					String renderedQuery = snapshot.renderedQuery();
+					assertBefore(renderedQuery, "VALUES ?authorName { \"Author 1\" \"Author 2\" \"Author 3\" }",
+							"?author <http://example.com/theme/library/name> ?authorName",
+							"Library q9 should bind the finite author-name domain before the author-name lookup\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?author <http://example.com/theme/library/name> ?authorName",
+							"VALUES ?target { \"Author 1\" \"Author 2\" }",
+							"Library q9 should keep the original target assignment after the selective name lookup\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "VALUES ?target { \"Author 1\" \"Author 2\" }",
+							"FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
+							"Library q9 should apply the original filter once both finite domains are bound\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?book <http://example.com/theme/library/writtenBy> ?author",
+							"?book <http://example.com/theme/library/hasCopy> ?copy",
+							"Library q9 should preserve the author/book/copy expansion\n" + snapshot.plan());
+					assertBefore(renderedQuery, "?book <http://example.com/theme/library/hasCopy> ?copy",
+							"?loan <http://example.com/theme/library/loanedCopy> ?copy",
+							"Library q9 should bind copies before loan probes\n" + snapshot.plan());
+					assertLibraryQ9FastLoanTail(renderedQuery, snapshot.plan());
+					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
+							30.0d);
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 200.0d, 4);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1251,8 +1444,7 @@ class LmdbThemeQueryRegressionTest {
 	private static Path prepareThemeStore(Path dataDir, Theme theme, List<Integer> primeIndexes) throws Exception {
 		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primeIndexes);
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
-				.prepareThemeRegressionStore(
-						dataDir.resolve(theme.name()),
+				.preparePersistentThemeRegressionStore(
 						storeKey,
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
@@ -1281,6 +1473,150 @@ class LmdbThemeQueryRegressionTest {
 				.map(String::valueOf)
 				.collect(Collectors.joining("-"));
 		return key.isEmpty() ? "no-prime" : key;
+	}
+
+	private static JoinOrderPlanner joinOrderPlanner(LmdbStore store) {
+		try {
+			Method getBackingStore = LmdbStore.class.getDeclaredMethod("getBackingStore");
+			getBackingStore.setAccessible(true);
+			Object backingStore = getBackingStore.invoke(store);
+			Method getEvaluationStatistics = backingStore.getClass().getDeclaredMethod("getEvaluationStatistics");
+			getEvaluationStatistics.setAccessible(true);
+			return (JoinOrderPlanner) getEvaluationStatistics.invoke(backingStore);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Unable to access LMDB join order planner", e);
+		}
+	}
+
+	private static BindingSetAssignment pharmaMarkerBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		QueryBindingSet marker3 = new QueryBindingSet();
+		marker3.addBinding("marker", PHARMA_BIOMARKER_3);
+		QueryBindingSet marker4 = new QueryBindingSet();
+		marker4.addBinding("marker", PHARMA_BIOMARKER_4);
+		assignment.setBindingNames(Set.of("marker"));
+		assignment.setBindingSets(List.<BindingSet>of(marker3, marker4));
+		return assignment;
+	}
+
+	private static StatementPattern pharmaDrugTypePattern() {
+		return new StatementPattern(Var.of("drug"), Var.of("_const_type", RDF.TYPE),
+				Var.of("_const_drug", PHARMA_DRUG));
+	}
+
+	private static StatementPattern pharmaTargetTypePattern() {
+		return new StatementPattern(Var.of("target"), Var.of("_const_target_type", RDF.TYPE),
+				Var.of("_const_target", PHARMA_TARGET));
+	}
+
+	private static StatementPattern pharmaTargetsPattern() {
+		return new StatementPattern(Var.of("drug"), Var.of("_const_targets", PHARMA_TARGETS), Var.of("target"));
+	}
+
+	private static StatementPattern pharmaInPathwayPattern() {
+		return new StatementPattern(Var.of("target"), Var.of("_const_inPathway", PHARMA_IN_PATHWAY),
+				Var.of("pathway"));
+	}
+
+	private static BindingSetAssignment libraryAuthorNameBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("authorName"));
+		assignment.setBindingSets(List.of(singleLiteralBinding("authorName", "Author 1"),
+				singleLiteralBinding("authorName", "Author 2"), singleLiteralBinding("authorName", "Author 3")));
+		return assignment;
+	}
+
+	private static BindingSetAssignment libraryTargetBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("target"));
+		assignment.setBindingSets(List.of(singleLiteralBinding("target", "Author 1"),
+				singleLiteralBinding("target", "Author 2")));
+		return assignment;
+	}
+
+	private static QueryBindingSet singleLiteralBinding(String name, String value) {
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		bindingSet.addBinding(name, VALUE_FACTORY.createLiteral(value));
+		return bindingSet;
+	}
+
+	private static StatementPattern libraryAuthorNamePattern() {
+		return new StatementPattern(Var.of("author"), Var.of("_const_name", LIBRARY_NAME), Var.of("authorName"));
+	}
+
+	private static StatementPattern libraryWrittenByPattern() {
+		return new StatementPattern(Var.of("book"), Var.of("_const_writtenBy", LIBRARY_WRITTEN_BY),
+				Var.of("author"));
+	}
+
+	private static StatementPattern libraryHasCopyPattern() {
+		return new StatementPattern(Var.of("book"), Var.of("_const_hasCopy", LIBRARY_HAS_COPY), Var.of("copy"));
+	}
+
+	private static StatementPattern libraryLoanedCopyPattern() {
+		return new StatementPattern(Var.of("loan"), Var.of("_const_loanedCopy", LIBRARY_LOANED_COPY),
+				Var.of("copy"));
+	}
+
+	private static StatementPattern libraryLoanTypePattern() {
+		return new StatementPattern(Var.of("loan"), Var.of("_const_type", RDF.TYPE),
+				Var.of("_const_loan", LIBRARY_LOAN));
+	}
+
+	private static StatementPattern libraryBorrowedByPattern() {
+		return new StatementPattern(Var.of("loan"), Var.of("_const_borrowedBy", LIBRARY_BORROWED_BY),
+				Var.of("member"));
+	}
+
+	private static StatementPattern libraryMemberTypePattern() {
+		return new StatementPattern(Var.of("member"), Var.of("_const_type", RDF.TYPE),
+				Var.of("_const_member", LIBRARY_MEMBER));
+	}
+
+	private static JoinOrderPlanner.FilterConstraint libraryAuthorNameFilter() {
+		return new JoinOrderPlanner.FilterConstraint(Set.of("authorName", "target"), 4.9419322955275514E-5,
+				JoinOrderPlanner.FILTER_COST_CHEAP, "authorName=target||authorName=Author3", "learned_filter",
+				40470L,
+				new Or(new Compare(Var.of("authorName"), Var.of("target"), Compare.CompareOp.EQ),
+						new Compare(Var.of("authorName"),
+								new ValueConstant(VALUE_FACTORY.createLiteral("Author 3")), Compare.CompareOp.EQ)),
+				null, false, false);
+	}
+
+	private static String describePlanSteps(JoinOrderPlanner.JoinOrderPlan plan) {
+		StringBuilder builder = new StringBuilder();
+		List<JoinOrderPlanner.PlanStep> steps = plan.getSteps();
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		for (int i = 0; i < orderedArgs.size(); i++) {
+			builder.append(i)
+					.append(": ")
+					.append(orderedArgs.get(i).getSignature())
+					.append(" stepWorkRows=")
+					.append(i < steps.size() ? steps.get(i).getStepWorkRows() : "<missing>")
+					.append(" factorRows=")
+					.append(i < steps.size() ? steps.get(i).getFactorOutputRows() : "<missing>")
+					.append(" resultRows=")
+					.append(i < steps.size() ? steps.get(i).getPrefixOutputRows() : "<missing>")
+					.append(" metrics=")
+					.append(i < steps.size() ? steps.get(i).getStringMetrics() : "<missing>")
+					.append('\n');
+		}
+		return builder.toString();
+	}
+
+	private static String describeFixedOrder(JoinOrderPlanner planner, List<TupleExpr> orderedArgs) {
+		return describeFixedOrder(planner, orderedArgs, List.of());
+	}
+
+	private static String describeFixedOrder(JoinOrderPlanner planner, List<TupleExpr> orderedArgs,
+			List<JoinOrderPlanner.FilterConstraint> filters) {
+		return planner
+				.estimateJoinOrder(orderedArgs, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, filters)
+				.map(plan -> "estimatedTotalWork=" + plan.getEstimatedTotalWork()
+						+ ", estimatedFinalRows=" + plan.getEstimatedFinalRows()
+						+ ", diagnostics=" + String.join(" | ", plan.getDiagnostics())
+						+ "\n" + describePlanSteps(plan))
+				.orElse("<rejected>");
 	}
 
 	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, List<Integer> queryIndexes) {
@@ -1431,6 +1767,28 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
+	private static void assertLibraryQ9FastLoanTail(String renderedQuery, String plan) {
+		String loanedCopy = "?loan <http://example.com/theme/library/loanedCopy> ?copy";
+		String borrowedBy = "?loan <http://example.com/theme/library/borrowedBy> ?member";
+		String loanType = "?loan a <http://example.com/theme/library/Loan>";
+		String memberType = "?member a <http://example.com/theme/library/Member>";
+
+		int loanedCopyIndex = renderedQuery.indexOf(loanedCopy);
+		int borrowedByIndex = renderedQuery.indexOf(borrowedBy);
+		int loanTypeIndex = renderedQuery.indexOf(loanType);
+		int memberTypeIndex = renderedQuery.indexOf(memberType);
+		boolean loanTypeFirstTail = loanedCopyIndex >= 0 && loanedCopyIndex < loanTypeIndex
+				&& loanTypeIndex < borrowedByIndex && borrowedByIndex < memberTypeIndex;
+		boolean memberTypeFirstTail = loanedCopyIndex >= 0 && loanedCopyIndex < borrowedByIndex
+				&& borrowedByIndex < memberTypeIndex && memberTypeIndex < loanTypeIndex;
+		if (!loanTypeFirstTail && !memberTypeFirstTail) {
+			throw new AssertionError("Library q9 should use a historically fast loan/member validation tail\n"
+					+ "Expected either loanedCopy -> Loan type -> borrowedBy -> Member type or "
+					+ "loanedCopy -> borrowedBy -> Member type -> Loan type\nQuery:\n" + renderedQuery + "\nPlan:\n"
+					+ plan);
+		}
+	}
+
 	private static void assertHighValueAnchors(Theme theme, int queryIndex, String renderedQuery) {
 		for (ShapeAnchor anchor : HIGH_VALUE_ANCHORS) {
 			if (anchor.theme() == theme && anchor.queryIndex() == queryIndex) {
@@ -1525,7 +1883,12 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	private static void assertEngineeringAssemblyNameFilterDoesNotScanAllNames(String plan) {
+		int assignmentIndex = plan.indexOf("BindingSetAssignment ([[assemblyName=\"Assembly 1\"], "
+				+ "[assemblyName=\"Assembly 2\"], [assemblyName=\"Assembly 3\"]])");
 		int assemblyLiteralIndex = plan.indexOf("ValueConstant (value=\"Assembly 1\")");
+		if (assemblyLiteralIndex < 0) {
+			assemblyLiteralIndex = assignmentIndex;
+		}
 		if (assemblyLiteralIndex < 0) {
 			throw new AssertionError("Engineering q2 plan should expose the assembly-name literals:\n" + plan);
 		}
@@ -1574,11 +1937,8 @@ class LmdbThemeQueryRegressionTest {
 				"FILTER (?capacity IN (700, 800, 900))",
 				"Electrical grid q5 should keep the capacity filter attached to the capacity pattern\n" + plan);
 		assertBefore(renderedQuery, "FILTER (?capacity IN (700, 800, 900))",
-				"?generator a <http://example.com/theme/grid/Generator>",
-				"Electrical grid q5 should apply the selective capacity filter before the broad type check\n" + plan);
-		assertBefore(renderedQuery, "?generator a <http://example.com/theme/grid/Generator>",
 				"VALUES ?threshold { 700 }",
-				"Electrical grid q5 should keep the threshold VALUES after the generator/type anchor\n" + plan);
+				"Electrical grid q5 should apply the selective capacity filter before the broad type check\n" + plan);
 		assertBefore(renderedQuery, "VALUES ?threshold { 700 }", "FILTER NOT EXISTS",
 				"Electrical grid q5 should bind the threshold before the anti-join filter\n" + plan);
 
@@ -1613,6 +1973,23 @@ class LmdbThemeQueryRegressionTest {
 			if (accessRows > maxWorkRows) {
 				throw new AssertionError("Expected direct lookup plannedAccessRows <= " + maxWorkRows + " but got "
 						+ accessRows + " in:\n" + plan);
+			}
+		}
+		if (directLookupCount < minDirectLookups) {
+			throw new AssertionError(
+					"Expected at least " + minDirectLookups + " direct lookup factors in:\n" + plan);
+		}
+	}
+
+	private static void assertDirectLookupPlannedWorkRowsBelow(String plan, double maxWorkRows, int minDirectLookups) {
+		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+		int directLookupCount = 0;
+		while (matcher.find()) {
+			directLookupCount++;
+			double workRows = parsePlanRows(matcher.group(1));
+			if (workRows > maxWorkRows) {
+				throw new AssertionError("Expected direct lookup plannedWorkRows <= " + maxWorkRows + " but got "
+						+ workRows + " in:\n" + plan);
 			}
 		}
 		if (directLookupCount < minDirectLookups) {

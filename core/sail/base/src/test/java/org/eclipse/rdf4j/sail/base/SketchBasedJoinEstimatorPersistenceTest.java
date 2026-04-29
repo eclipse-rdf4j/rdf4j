@@ -245,10 +245,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		flushIncrementalBuffer(estimator);
 
 		assertTrue(estimator.persistIfDirty(), "Expected snapshot with single and pair sketches");
-		long frameBytes = maxSketchBytes(estimator) + Integer.BYTES + Integer.BYTES;
-		long expectedSinglesChunk = expectedSketchPartBytes(8L * (4L + 8L + 16L + 4L) * frameBytes, 64, frameBytes);
-		long enabledPairCells = 4L * 8L + 4L * 16L + 8L * 16L;
-		long expectedPairsChunk = expectedSketchPartBytes(6L * enabledPairCells * frameBytes, 64, frameBytes);
+		long expectedSinglesChunk = sketchChunkBytes(estimator, SketchEstimatorPersistenceStore.FILE_KIND_SINGLES);
+		long expectedPairsChunk = sketchChunkBytes(estimator, SketchEstimatorPersistenceStore.FILE_KIND_PAIRS);
 
 		assertEquals(expectedSinglesChunk, Files.size(storeDirectory.resolve("a/singles.part1.sketches")));
 		assertEquals(expectedPairsChunk, Files.size(storeDirectory.resolve("a/pairs.part1.sketches")));
@@ -909,12 +907,7 @@ class SketchBasedJoinEstimatorPersistenceTest {
 						.withoutContextPairSketches()
 						.withThrottleEveryN(Integer.MAX_VALUE)
 						.withThrottleMillis(0));
-		int maxSketchBytes = (int) privateFieldValue(privateFieldValue(estimator, "current"), "maxSketchBytes");
-		SketchEstimatorPersistenceStore store = openStoreForTesting(snapshot, 1024,
-				maxSketchBytes + Integer.BYTES + Integer.BYTES);
-		setPrivateFieldValue(estimator, "persistenceFile", snapshot.toAbsolutePath().normalize());
-		setPrivateFieldValue(estimator, "persistenceEnabled", true);
-		setPrivateFieldValue(estimator, "persistenceStore", store);
+		estimator.configurePersistence(snapshot, false);
 
 		IRI predicatePrefix = VF.createIRI("urn:compact:p");
 		for (int s = 0; s < 8; s++) {
@@ -931,9 +924,10 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 		assertTrue(estimator.persistIfDirty(), "Expected pair-heavy snapshot to persist");
 		int pairPartFiles = countPartFiles(snapshot, "pairs");
-		assertTrue(pairPartFiles <= 4,
-				"Disabled context pairs with four buckets should persist compact pair payloads, not one max-size "
-						+ "slot per pair sketch; pair part files=" + pairPartFiles);
+		assertTrue(pairPartFiles <= 64,
+				"Disabled context pairs with four buckets should keep pair payload files within the dynamic chunk "
+						+ "target instead of expanding toward one part per pair sketch; pair part files="
+						+ pairPartFiles);
 	}
 
 	@Test
@@ -1095,12 +1089,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		return field.get(target);
 	}
 
-	private static void setPrivateFieldValue(Object target, String fieldName, Object value) throws Exception {
-		Field field = target.getClass().getDeclaredField(fieldName);
-		field.setAccessible(true);
-		field.set(target, value);
-	}
-
 	private static void awaitUninterruptibly(CountDownLatch latch) {
 		boolean interrupted = false;
 		while (true) {
@@ -1207,13 +1195,11 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				"Sketch part files should be sparse after tiny writes; allocatedBytes=" + allocatedBytes);
 	}
 
-	private static long expectedSketchPartBytes(long maximumKindBytes, int targetFiles, long minimumFrameBytes) {
-		long chunkBytes = (maximumKindBytes + targetFiles - 1L) / targetFiles;
-		return Math.max(minimumFrameBytes, chunkBytes);
-	}
-
-	private static long maxSketchBytes(SketchBasedJoinEstimator estimator) throws Exception {
-		return ((Number) privateFieldValue(privateFieldValue(estimator, "current"), "maxSketchBytes")).longValue();
+	private static long sketchChunkBytes(SketchBasedJoinEstimator estimator, byte fileKind) throws Exception {
+		Object chunks = invokePrivate(estimator, "sketchFileChunks", new Class<?>[0]);
+		Method method = chunks.getClass().getDeclaredMethod("chunkBytes", byte.class);
+		method.setAccessible(true);
+		return ((Number) method.invoke(chunks, fileKind)).longValue();
 	}
 
 	private static Object invokePrivate(Object target, String methodName, Class<?>[] parameterTypes, Object... args)

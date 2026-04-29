@@ -66,10 +66,10 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			Object singleTriples = objectField(objectField(estimator, "bufA"), "singleTriples");
 
-			assertEquals(64, componentArrayLength(singleTriples, "S"));
-			assertEquals(16, componentArrayLength(singleTriples, "P"));
-			assertEquals(32, componentArrayLength(singleTriples, "O"));
-			assertEquals(8, componentArrayLength(singleTriples, "C"));
+			assertEquals(configuredBucketCount("subjectBucketCount", 64), componentArrayLength(singleTriples, "S"));
+			assertEquals(configuredBucketCount("predicateBucketCount", 16), componentArrayLength(singleTriples, "P"));
+			assertEquals(configuredBucketCount("objectBucketCount", 32), componentArrayLength(singleTriples, "O"));
+			assertEquals(configuredBucketCount("contextBucketCount", 8), componentArrayLength(singleTriples, "C"));
 		} finally {
 			store.shutDown();
 		}
@@ -439,6 +439,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 	private static int componentArrayLength(Object stateComponents, String component) throws Exception {
 		return ((AtomicReferenceArray<?>) component(stateComponents, component)).length();
+	}
+
+	private static int configuredBucketCount(String propertyName, int configValue) {
+		String value = System.getProperty("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator." + propertyName);
+		return value == null ? configValue : Integer.parseInt(value);
 	}
 
 	private static File estimatorStore(File dataDir) {

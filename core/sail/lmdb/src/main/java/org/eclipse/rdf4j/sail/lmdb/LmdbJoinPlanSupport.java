@@ -31,9 +31,12 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -57,6 +60,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 final class LmdbJoinPlanSupport {
 
 	private static final int SMALL_LITERAL_FILTER_ANCHOR_LIMIT = 32;
+	private static final double SMALL_LITERAL_FILTER_ANCHOR_MAX_PASS_RATIO = 0.75d;
 
 	private LmdbJoinPlanSupport() {
 	}
@@ -82,6 +86,76 @@ final class LmdbJoinPlanSupport {
 		return deferredFilters;
 	}
 
+	static void markRedundantRequiredExistsFilters(List<TupleExpr> requiredArgs, List<DeferredFilter> filters) {
+		if (requiredArgs.isEmpty() || filters.isEmpty()) {
+			return;
+		}
+		for (DeferredFilter filter : filters) {
+			if (!filter.applied && isRedundantRequiredExistsFilter(requiredArgs, filter)) {
+				filter.applied = true;
+			}
+		}
+	}
+
+	private static boolean isRedundantRequiredExistsFilter(List<TupleExpr> requiredArgs, DeferredFilter filter) {
+		StatementPattern pattern = positiveExistsStatementPattern(filter.condition);
+		if (pattern == null) {
+			return false;
+		}
+		for (TupleExpr arg : requiredArgs) {
+			if (containsEquivalentRequiredPattern(arg, pattern)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static StatementPattern positiveExistsStatementPattern(ValueExpr condition) {
+		if (!(condition instanceof Exists)) {
+			return null;
+		}
+		TupleExpr subQuery = ((Exists) condition).getSubQuery();
+		return subQuery instanceof StatementPattern ? (StatementPattern) subQuery : null;
+	}
+
+	static boolean containsEquivalentRequiredPattern(TupleExpr tupleExpr, StatementPattern expectedPattern) {
+		if (tupleExpr instanceof StatementPattern) {
+			return sameStatementPattern((StatementPattern) tupleExpr, expectedPattern);
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return containsEquivalentRequiredPattern(join.getLeftArg(), expectedPattern)
+					|| containsEquivalentRequiredPattern(join.getRightArg(), expectedPattern);
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			return containsEquivalentRequiredPattern(((LeftJoin) tupleExpr).getLeftArg(), expectedPattern);
+		}
+		if (tupleExpr instanceof Difference) {
+			return containsEquivalentRequiredPattern(((Difference) tupleExpr).getLeftArg(), expectedPattern);
+		}
+		if (tupleExpr instanceof UnaryTupleOperator) {
+			return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
+		}
+		return false;
+	}
+
+	private static boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
+		return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
+				&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
+				&& samePatternVar(left.getObjectVar(), right.getObjectVar())
+				&& samePatternVar(left.getContextVar(), right.getContextVar());
+	}
+
+	private static boolean samePatternVar(Var left, Var right) {
+		if (left == null || right == null) {
+			return left == right;
+		}
+		if (left.hasValue() || right.hasValue()) {
+			return left.hasValue() && right.hasValue() && left.getValue().equals(right.getValue());
+		}
+		return left.getName() != null && left.getName().equals(right.getName());
+	}
+
 	static List<ValueExpr> splitConjuncts(ValueExpr condition) {
 		if (condition instanceof And) {
 			And and = (And) condition;
@@ -102,6 +176,11 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static List<JoinOrderPlanner.FilterConstraint> toPlannerFilterConstraints(List<DeferredFilter> deferredFilters) {
+		return toPlannerFilterConstraints(deferredFilters, false);
+	}
+
+	static List<JoinOrderPlanner.FilterConstraint> toPlannerFilterConstraints(List<DeferredFilter> deferredFilters,
+			boolean costOnly) {
 		if (deferredFilters.isEmpty()) {
 			return List.of();
 		}
@@ -114,9 +193,11 @@ final class LmdbJoinPlanSupport {
 					deferredFilter.condition.toString(),
 					deferredFilter.passEstimate.getSource().name().toLowerCase(),
 					deferredFilter.passEstimate.getEvidenceCount(),
+					deferredFilter.condition.clone(),
 					nestedTupleExpression == null ? null : nestedTupleExpression.tupleExpr().clone(),
 					nestedTupleExpression != null && nestedTupleExpression.notExists(),
-					isLookupCompatibleFilter(deferredFilter.condition)));
+					isLookupCompatibleFilter(deferredFilter.condition),
+					costOnly));
 		}
 		return constraints;
 	}
@@ -261,6 +342,51 @@ final class LmdbJoinPlanSupport {
 		return null;
 	}
 
+	static boolean isSelectiveSmallLiteralFilterAnchor(EvaluationStatistics statistics, Filter filter,
+			ValueExpr condition) {
+		if (statistics == null) {
+			return true;
+		}
+		return isSelectiveSmallLiteralFilterAnchor(estimateFilterPass(statistics, filter, condition));
+	}
+
+	static boolean isSelectiveSmallLiteralFilterAnchor(EvaluationStatistics.FilterPassEstimate estimate) {
+		if (estimate == null || !isValidPassRatio(estimate.getPassRatio())) {
+			return false;
+		}
+		if (estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC
+				|| estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN) {
+			return false;
+		}
+		return estimate.getPassRatio() <= SMALL_LITERAL_FILTER_ANCHOR_MAX_PASS_RATIO;
+	}
+
+	static boolean canMaterializeSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
+			BindingSetAssignment anchor) {
+		if (anchor == null || anchor.getAssuredBindingNames().size() != 1) {
+			return false;
+		}
+		String bindingName = anchor.getAssuredBindingNames().iterator().next();
+		return canMaterializeSmallLiteralFilterAnchor(patternLocalBaseForFilterCondition(filter, condition),
+				bindingName);
+	}
+
+	static boolean canMaterializeSmallLiteralFilterAnchor(StatementPattern pattern, String bindingName) {
+		if (pattern == null || bindingName == null) {
+			return true;
+		}
+		return !bindingName.equals(unboundName(pattern.getObjectVar())) || canDriveLiteralObjectFilterAnchor(pattern);
+	}
+
+	static boolean canDriveLiteralObjectFilterAnchor(StatementPattern pattern) {
+		Var predicate = pattern.getPredicateVar();
+		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+			return false;
+		}
+		String iri = predicate.getValue().stringValue();
+		return iri.endsWith("/name") || iri.endsWith("/measuredValue") || iri.endsWith("/title");
+	}
+
 	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
 		return TupleExprs.isVariableScopeChange(tupleExpr) || TupleExprs.containsExtension(tupleExpr)
 				|| TupleExprs.containsSubquery(tupleExpr);
@@ -332,7 +458,7 @@ final class LmdbJoinPlanSupport {
 		return bindingSetAssignmentNames.containsAll(requiredVars);
 	}
 
-	private static EvaluationStatistics.FilterPassEstimate estimateFilterPass(EvaluationStatistics statistics,
+	static EvaluationStatistics.FilterPassEstimate estimateFilterPass(EvaluationStatistics statistics,
 			Filter filter, ValueExpr condition) {
 		if (statistics == null) {
 			return new EvaluationStatistics.FilterPassEstimate(-1.0d,
@@ -412,6 +538,13 @@ final class LmdbJoinPlanSupport {
 		return true;
 	}
 
+	private static String unboundName(Var var) {
+		if (var == null || var.hasValue()) {
+			return null;
+		}
+		return var.getName();
+	}
+
 	private static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg) {
 		if (leftArg instanceof Var && rightArg instanceof ValueConstant) {
 			return smallLiteralFilterAnchor((Var) leftArg, (ValueConstant) rightArg);
@@ -436,7 +569,7 @@ final class LmdbJoinPlanSupport {
 		return smallLiteralFilterAnchor(bindingName, values);
 	}
 
-	private static BindingSetAssignment smallLiteralFilterAnchor(String bindingName, LinkedHashSet<Value> values) {
+	static BindingSetAssignment smallLiteralFilterAnchor(String bindingName, LinkedHashSet<Value> values) {
 		if (values.isEmpty() || values.size() > SMALL_LITERAL_FILTER_ANCHOR_LIMIT) {
 			return null;
 		}
@@ -453,7 +586,7 @@ final class LmdbJoinPlanSupport {
 		return assignment;
 	}
 
-	private static boolean isSafeValuesAnchorValue(Value value) {
+	static boolean isSafeValuesAnchorValue(Value value) {
 		return value != null && isValuesExpressible(value) && !isUnsafeCoreInEqualityValue(value);
 	}
 

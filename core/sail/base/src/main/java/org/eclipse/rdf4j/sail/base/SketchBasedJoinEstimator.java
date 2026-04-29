@@ -185,6 +185,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final double DEFAULT_ZERO_INTERSECTION_SKEW_RATIO = 128.0d;
 	private static final long DEFAULT_ZERO_INTERSECTION_ROW_BUDGET = 1_000_000L;
 	private static final int DEFAULT_ZERO_INTERSECTION_SAMPLE_SIZE = 128;
+	private static final int FINITE_UNIQUE_JOIN_CAP_MAX_ROWS = 4096;
 	private static final Object FINITE_FILTER_UNSUPPORTED = new Object();
 	private static final Object FINITE_FILTER_UNBOUND = new Object();
 	/* ────────────────────────────────────────────────────────────── */
@@ -1314,7 +1315,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final Future<?> asyncIncrementalWorker;
 	private IngestEvent[] incrementalBuffer = new IngestEvent[INCREMENTAL_BATCH_SIZE * 2];
 	private int incrementalBufferCount;
-	private int asyncIncrementalBatchCount;
+	private volatile int asyncIncrementalBatchCount;
 
 	// ──────────────────────────────────────────────────────────────
 	// Staleness tracking (global, lock‑free reads)
@@ -1374,10 +1375,29 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int kCfg = cfg.sketchK;
 		int kMult = cfg.sketchKMultiplier;
 
+		boolean nominalEntriesPropertySet = propPresent("nominalEntries");
+		boolean subjectBucketPropertySet = propPresent("subjectBucketCount");
+		boolean predicateBucketPropertySet = propPresent("predicateBucketCount");
+		boolean objectBucketPropertySet = propPresent("objectBucketCount");
+		boolean contextBucketPropertySet = propPresent("contextBucketCount");
 		boolean sketchKPropertySet = propPresent("sketchK");
 
 		// Overlay from system properties (take precedence)
 		nEntries = propInt("nominalEntries", nEntries);
+		if (nominalEntriesPropertySet) {
+			if (!subjectBucketPropertySet) {
+				sBuckets = nEntries;
+			}
+			if (!predicateBucketPropertySet) {
+				pBuckets = nEntries;
+			}
+			if (!objectBucketPropertySet) {
+				oBuckets = nEntries;
+			}
+			if (!contextBucketPropertySet) {
+				cBuckets = nEntries;
+			}
+		}
 		sBuckets = propInt("subjectBucketCount", sBuckets);
 		pBuckets = propInt("predicateBucketCount", pBuckets);
 		oBuckets = propInt("objectBucketCount", oBuckets);
@@ -2207,6 +2227,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private void waitForAsyncIncrementalBatches() {
+		if (asyncIncrementalBatchCount == 0) {
+			// this is good enough
+			return;
+		}
+
 		synchronized (asyncIncrementalDrainLock) {
 			while (asyncIncrementalBatchCount > 0) {
 				if (asyncIncrementalFailure.get() != null) {
@@ -3474,10 +3499,47 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					null, List.of("rejected: empty join segment"));
 		}
 
-		SketchJoinOrderReorderer reorderer = factorCostModel == null
-				? new SketchJoinOrderReorderer(this, workAdjuster)
-				: new SketchJoinOrderReorderer(this, factorCostModel);
-		return reorderer.planAttempt(args, initiallyBoundVars, algorithm, deferredFilters);
+		Set<String> bound = initiallyBoundVars == null ? Collections.emptySet() : Set.copyOf(initiallyBoundVars);
+		List<TupleExpr> expressions = List.copyOf(args);
+		List<String> inputDiagnostics = List.of("input: algorithm=" + algorithm + " initiallyBoundVars=" + bound
+				+ " originalOrder=" + SketchJoinOrderPlanner.describeExprOrder(expressions) + " plannedOrder="
+				+ SketchJoinOrderPlanner.describeExprOrder(expressions) + " plannedBoundVars=" + bound);
+		if (logger.isDebugEnabled()) {
+			logger.debug(
+					"Sketch join planner input: algorithm={} initiallyBoundVars={} originalOrder={} plannedOrder={} plannedBoundVars={}",
+					algorithm, bound, SketchJoinOrderPlanner.describeExprOrder(expressions),
+					SketchJoinOrderPlanner.describeExprOrder(expressions), bound);
+		}
+
+		SketchJoinOrderPlanner planner = factorCostModel == null
+				? new SketchJoinOrderPlanner(this, workAdjuster, expressions, bound, deferredFilters, 1.0d)
+				: new SketchJoinOrderPlanner(this, factorCostModel, expressions, bound, deferredFilters, 1.0d);
+		SketchJoinOrderPlanner.PlanOutcome outcome = planner.plan(algorithm);
+		recordJoinOrderPlannerPath(outcome.path());
+		if (outcome.plan().isEmpty()) {
+			List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + outcome.diagnostics().size());
+			diagnostics.addAll(inputDiagnostics);
+			diagnostics.addAll(outcome.diagnostics());
+			return JoinOrderPlanner.PlanningAttempt.rejected("sketch", algorithm, outcome.path().name(),
+					outcome.rejectedFactor(), diagnostics);
+		}
+		JoinOrderPlanner.JoinOrderPlan plan = prependJoinPlannerInputDiagnostics(outcome.plan().get(),
+				inputDiagnostics);
+		return JoinOrderPlanner.PlanningAttempt.planned(plan, "sketch", algorithm, outcome.path().name(),
+				plan.getDiagnostics());
+	}
+
+	private JoinOrderPlanner.JoinOrderPlan prependJoinPlannerInputDiagnostics(JoinOrderPlanner.JoinOrderPlan plan,
+			List<String> inputDiagnostics) {
+		if (inputDiagnostics.isEmpty()) {
+			return plan;
+		}
+		List<String> diagnostics = new ArrayList<>(inputDiagnostics.size() + plan.getDiagnostics().size());
+		diagnostics.addAll(inputDiagnostics);
+		diagnostics.addAll(plan.getDiagnostics());
+		return new JoinOrderPlanner.JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(),
+				plan.getEstimatedTotalWork(), diagnostics, plan.getSummaryStringMetrics(),
+				plan.getSummaryDoubleMetrics(), plan.getSteps());
 	}
 
 	SketchPlannerPath lastJoinOrderPlannerPath() {
@@ -3603,12 +3665,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private SmallVarStatsMap newVarStatsMap() {
+		return newVarStatsMap(4);
+	}
+
+	private SmallVarStatsMap newVarStatsMap(int expectedSize) {
 		OptimizationScopeState scope = optimizationScope.get();
-		return new SmallVarStatsMap(scope == null ? null : scope.variableDictionary);
+		return new SmallVarStatsMap(scope == null ? null : scope.variableDictionary, expectedSize);
 	}
 
 	private SmallVarStatsMap copyVarStats(Map<String, VarPlanStats> varStats) {
-		SmallVarStatsMap copy = newVarStatsMap();
+		SmallVarStatsMap copy = newVarStatsMap(varStats.size());
 		copy.putAll(varStats);
 		return copy;
 	}
@@ -3666,7 +3732,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private Map<String, VarPlanStats> estimatePatternVarStats(StatementPattern pattern, double baseRows) {
-		Map<String, VarPlanStats> varStats = newVarStatsMap();
+		Map<String, VarPlanStats> varStats = newVarStatsMap(pattern.getVarList().size());
 		for (Var var : pattern.getVarList()) {
 			if (var == null || var.hasValue() || var.getName() == null || varStats.containsKey(var.getName())) {
 				continue;
@@ -3690,7 +3756,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private Map<String, VarPlanStats> estimateAllUnboundPatternVarStats(StatementPattern pattern, double rows) {
-		Map<String, VarPlanStats> varStats = newVarStatsMap();
+		Map<String, VarPlanStats> varStats = newVarStatsMap(pattern.getVarList().size());
 		if (!(Double.isFinite(rows) && rows > 0.0d)) {
 			return varStats;
 		}
@@ -3734,7 +3800,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		rows = normalizeRows(rows);
-		Map<String, VarPlanStats> varStats = newVarStatsMap();
+		Map<String, VarPlanStats> varStats = newVarStatsMap(bindingNames.size());
 		for (Map.Entry<String, Set<Value>> entry : valueSets.entrySet()) {
 			if (!entry.getValue().isEmpty()) {
 				double distinct = clampDistinct(entry.getValue().size(), rows);
@@ -3920,7 +3986,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		double baseRows = normalizeRows(estimate.baseRows * selectivity);
 		double outputRows = normalizeRows(estimate.outputRows * selectivity);
-		Map<String, VarPlanStats> normalizedStats = newVarStatsMap();
+		Map<String, VarPlanStats> normalizedStats = newVarStatsMap(adjustedStats.size());
 		for (Map.Entry<String, VarPlanStats> entry : adjustedStats.entrySet()) {
 			VarPlanStats stats = entry.getValue();
 			// Once an outer binding narrows the tuple subset, unconditional sketches no longer represent the remaining
@@ -3976,11 +4042,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		double baseRows = normalizeRows(estimate.baseRows * selectivity);
 		double outputRows = normalizeRows(estimate.outputRows * selectivity);
-		SmallVarStatsMap normalizedStats = newVarStatsMap();
+		SmallVarStatsMap normalizedStats = newVarStatsMap(adjustedStats.size());
 		for (int i = 0; i < adjustedStats.size(); i++) {
-			VarPlanStats stats = adjustedStats.valueAt(i);
 			normalizedStats.putNew(adjustedStats.keyAt(i), adjustedStats.idAt(i),
-					new VarPlanStats(clampDistinct(stats.distinct, outputRows), null, null));
+					clampDistinct(adjustedStats.distinctAt(i), outputRows), null, null);
 		}
 
 		return new TuplePlanEstimate(baseRows, outputRows, estimate.localFilterMultiplier, normalizedStats);
@@ -4051,7 +4116,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double outputRows = normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
 		double workRows = normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
 
-		Map<String, VarPlanStats> mergedStats = newVarStatsMap();
+		Map<String, VarPlanStats> mergedStats = newVarStatsMap(left.varStats.size() + right.varStats.size());
 		for (Map.Entry<String, VarPlanStats> entry : left.varStats.entrySet()) {
 			String varName = entry.getKey();
 			SharedVarEstimate shared = sharedVars.get(varName);
@@ -4094,22 +4159,30 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				if (id == VariableDictionary.NO_ID) {
 					continue;
 				}
-				VarPlanStats rightStats = rightStatsMap.getById(id);
-				if (rightStats == null) {
+				if (!rightStatsMap.containsId(id)) {
 					continue;
 				}
-				VarPlanStats leftStats = leftStatsMap.valueAt(i);
-				SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftStats, rightStats,
-						disconnectedRows, sketchIntersectionCache, useSketches);
+				int rightIndex = rightStatsMap.indexForId(id);
+				if (rightIndex < 0) {
+					continue;
+				}
+				double leftDistinct = leftStatsMap.distinctAt(i);
+				double rightDistinct = rightStatsMap.distinctAt(rightIndex);
+				ArrayOfDoublesSketch leftSketch = leftStatsMap.sketchAt(i);
+				ArrayOfDoublesSketch rightSketch = rightStatsMap.sketchAt(rightIndex);
+				StatementPattern leftPattern = leftStatsMap.patternAt(i);
+				StatementPattern rightPattern = rightStatsMap.patternAt(rightIndex);
+				SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftDistinct,
+						leftSketch, rightDistinct, rightSketch, leftPattern, rightPattern, disconnectedRows,
+						sketchIntersectionCache, useSketches);
 				if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
 						&& right.localFilterMultiplier == 1.0d
-						&& leftStats.pattern != null && rightStats.pattern != null) {
-					Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftStats.pattern, rightStats.pattern,
-							leftStatsMap.keyAt(i), leftStats.distinct, rightStats.distinct, left.outputRows,
-							right.baseRows, disconnectedRows);
+						&& leftPattern != null && rightPattern != null) {
+					Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftPattern, rightPattern,
+							leftStatsMap.keyAt(i), leftDistinct, rightDistinct, left.outputRows, right.baseRows,
+							disconnectedRows);
 					if (exactJoinRows != null && exactJoinRows > 0.0d) {
-						shared = new SharedVarEstimate(exactJoinRows, Math.min(leftStats.distinct,
-								rightStats.distinct), null);
+						shared = new SharedVarEstimate(exactJoinRows, Math.min(leftDistinct, rightDistinct), null);
 					}
 				}
 				if (sharedDistinctByLeftIndex == null) {
@@ -4139,29 +4212,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double outputRows = normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
 		double workRows = normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
 
-		Map<String, VarPlanStats> mergedStats = newVarStatsMap();
+		SmallVarStatsMap mergedStats = newVarStatsMap(leftStatsMap.size() + rightStatsMap.size());
 		for (int i = 0; i < leftStatsMap.size(); i++) {
-			VarPlanStats stats = leftStatsMap.valueAt(i);
+			int id = leftStatsMap.idAt(i);
+			String key = leftStatsMap.keyAt(i);
 			if (sharedDistinctByLeftIndex != null && !Double.isNaN(sharedDistinctByLeftIndex[i])) {
-				mergedStats.put(leftStatsMap.keyAt(i),
-						new VarPlanStats(clampDistinct(sharedDistinctByLeftIndex[i], outputRows),
-								sharedSketchByLeftIndex[i]));
+				mergedStats.putNew(key, id, clampDistinct(sharedDistinctByLeftIndex[i], outputRows),
+						sharedSketchByLeftIndex[i], null);
 			} else {
-				ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? stats.sketch : null;
-				StatementPattern pattern = useSketches && !conditionedWithoutSketch ? stats.pattern : null;
-				mergedStats.put(leftStatsMap.keyAt(i),
-						new VarPlanStats(clampDistinct(stats.distinct, outputRows), sketch, pattern));
+				ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? leftStatsMap.sketchAt(i)
+						: null;
+				StatementPattern pattern = useSketches && !conditionedWithoutSketch ? leftStatsMap.patternAt(i) : null;
+				mergedStats.putNew(key, id, clampDistinct(leftStatsMap.distinctAt(i), outputRows), sketch, pattern);
 			}
 		}
 		for (int i = 0; i < rightStatsMap.size(); i++) {
-			String key = rightStatsMap.keyAt(i);
-			if (mergedStats.containsKey(key)) {
+			int id = rightStatsMap.idAt(i);
+			if (id != VariableDictionary.NO_ID && leftStatsMap.containsId(id)) {
 				continue;
 			}
-			VarPlanStats stats = rightStatsMap.valueAt(i);
-			ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? stats.sketch : null;
-			StatementPattern pattern = useSketches && !conditionedWithoutSketch ? stats.pattern : null;
-			mergedStats.put(key, new VarPlanStats(clampDistinct(stats.distinct, outputRows), sketch, pattern));
+			String key = rightStatsMap.keyAt(i);
+			if (id == VariableDictionary.NO_ID && mergedStats.containsKey(key)) {
+				continue;
+			}
+			ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? rightStatsMap.sketchAt(i) : null;
+			StatementPattern pattern = useSketches && !conditionedWithoutSketch ? rightStatsMap.patternAt(i) : null;
+			mergedStats.putNew(key, id, clampDistinct(rightStatsMap.distinctAt(i), outputRows), sketch, pattern);
 		}
 		return new JoinStepEstimate(outputRows, workRows, mergedStats);
 	}
@@ -4181,6 +4257,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	TuplePlanEstimate withOutputRowsForJoinOrdering(TuplePlanEstimate estimate, double outputRows) {
 		double rows = Math.max(0.0d, outputRows);
+		if (Double.compare(rows, estimate.outputRows) == 0) {
+			return estimate;
+		}
 		boolean narrowed = rows < estimate.outputRows;
 		return new TuplePlanEstimate(rows, rows, estimate.localFilterMultiplier,
 				clampVarStatsToRows(estimate.varStats, rows, !narrowed));
@@ -4189,23 +4268,65 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, VarPlanStats leftStats,
 			VarPlanStats rightStats, double disconnectedRows,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
-		double leftDistinct = Math.max(1.0d, leftStats.distinct);
-		double rightDistinct = Math.max(1.0d, rightStats.distinct);
-		if (useSketches && leftStats.sketch != null && rightStats.sketch != null) {
+		return estimateSharedVarJoin(leftRows, rightRows, leftStats.distinct, leftStats.sketch, rightStats.distinct,
+				rightStats.sketch, leftStats.pattern, rightStats.pattern, disconnectedRows, sketchIntersectionCache,
+				useSketches);
+	}
+
+	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, double leftDistinct,
+			ArrayOfDoublesSketch leftSketch, double rightDistinct, ArrayOfDoublesSketch rightSketch,
+			StatementPattern leftPattern, StatementPattern rightPattern, double disconnectedRows,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
+		leftDistinct = Math.max(1.0d, leftDistinct);
+		rightDistinct = Math.max(1.0d, rightDistinct);
+		if (useSketches && leftSketch != null && rightSketch != null) {
 			SketchIntersectionResult intersectionResult = sketchIntersectionCache == null
-					? intersectJoinOrderingSketches(leftStats.sketch, rightStats.sketch)
-					: sketchIntersectionCache.intersect(leftStats.sketch, rightStats.sketch);
+					? intersectJoinOrderingSketches(leftSketch, rightSketch)
+					: sketchIntersectionCache.intersect(leftSketch, rightSketch);
 			ArrayOfDoublesSketch intersection = intersectionResult.sketch;
 			double distinct = Math.min(intersectionResult.distinct, Math.min(leftDistinct, rightDistinct));
 			if (distinct == 0.0d) {
 				return new SharedVarEstimate(0.0d, 0.0d, intersection);
 			}
 			double rows = normalizeRows(Math.min(disconnectedRows, intersectionResult.rows));
+			double finiteUniqueCap = finiteUniqueJoinRowCap(leftRows, rightRows, leftDistinct, rightDistinct,
+					distinct, leftPattern, rightPattern);
+			if (Double.isFinite(finiteUniqueCap)) {
+				rows = normalizeRows(Math.min(rows, finiteUniqueCap));
+			}
 			return new SharedVarEstimate(rows, distinct, intersection);
 		}
 		return new SharedVarEstimate(
 				estimateStatsSharedVarJoinRows(leftRows, rightRows, leftDistinct, rightDistinct, disconnectedRows),
 				Math.min(leftDistinct, rightDistinct), null);
+	}
+
+	private double finiteUniqueJoinRowCap(double leftRows, double rightRows, double leftDistinct,
+			double rightDistinct, double intersectionDistinct, StatementPattern leftPattern,
+			StatementPattern rightPattern) {
+		if (!Double.isFinite(intersectionDistinct) || intersectionDistinct <= 0.0d) {
+			return Double.NaN;
+		}
+		double cap = Double.POSITIVE_INFINITY;
+		if (isFiniteUniqueSketchDomain(leftRows, leftDistinct, leftPattern)
+				&& Double.isFinite(rightRows) && Double.isFinite(rightDistinct) && rightDistinct > 0.0d) {
+			cap = Math.min(cap, intersectionDistinct * Math.max(1.0d, rightRows / rightDistinct));
+		}
+		if (isFiniteUniqueSketchDomain(rightRows, rightDistinct, rightPattern)
+				&& Double.isFinite(leftRows) && Double.isFinite(leftDistinct) && leftDistinct > 0.0d) {
+			cap = Math.min(cap, intersectionDistinct * Math.max(1.0d, leftRows / leftDistinct));
+		}
+		return Double.isFinite(cap) ? cap : Double.NaN;
+	}
+
+	private boolean isFiniteUniqueSketchDomain(double rows, double distinct, StatementPattern pattern) {
+		return pattern == null
+				&& Double.isFinite(rows)
+				&& rows > 0.0d
+				&& rows <= FINITE_UNIQUE_JOIN_CAP_MAX_ROWS
+				&& Double.isFinite(distinct)
+				&& distinct > 0.0d
+				&& Math.abs(rows - distinct) <= Math.max(1.0e-9d, rows * 1.0e-9d);
 	}
 
 	private double estimateStatsSharedVarJoinRows(double leftRows, double rightRows, double leftDistinct,
@@ -4251,7 +4372,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (varStats.isEmpty()) {
 			return Collections.emptyMap();
 		}
-		Map<String, VarPlanStats> clamped = newVarStatsMap();
+		if (keepSketches && varStatsAlreadyClamped(varStats, rows)) {
+			return varStats;
+		}
+		Map<String, VarPlanStats> clamped = newVarStatsMap(varStats.size());
 		for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
 			VarPlanStats stats = entry.getValue();
 			clamped.put(entry.getKey(),
@@ -4261,12 +4385,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return clamped;
 	}
 
+	private boolean varStatsAlreadyClamped(Map<String, VarPlanStats> varStats, double rows) {
+		for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
+			VarPlanStats stats = entry.getValue();
+			if (Double.compare(clampDistinct(stats.distinct, rows), stats.distinct) != 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	static final class TuplePlanEstimate {
 		private final double baseRows;
 		private final double outputRows;
 		private final double localFilterMultiplier;
 		private final Map<String, VarPlanStats> varStats;
-		private final Set<String> joinVars;
 
 		private TuplePlanEstimate(double baseRows, double outputRows, double localFilterMultiplier,
 				Map<String, VarPlanStats> varStats) {
@@ -4274,7 +4407,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			this.outputRows = outputRows;
 			this.localFilterMultiplier = localFilterMultiplier;
 			this.varStats = freezeVarStats(varStats);
-			this.joinVars = this.varStats.keySet();
 		}
 
 		double outputRows() {
@@ -4296,6 +4428,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				maxDistinct = Math.max(maxDistinct, stats.distinct);
 			}
 			return found ? Math.min(maxDistinct, outputRows) : outputRows;
+		}
+
+		double distinctBinding(int variableId, String[] variableNames) {
+			if (variableId < 0 || variableNames == null || variableId >= variableNames.length) {
+				return outputRows;
+			}
+			String varName = variableNames[variableId];
+			if (varName == null) {
+				return outputRows;
+			}
+			VarPlanStats stats = varStats.get(varName);
+			if (stats == null || !Double.isFinite(stats.distinct) || stats.distinct <= 0.0d) {
+				return outputRows;
+			}
+			return Math.min(stats.distinct, outputRows);
 		}
 
 		String summary() {
@@ -4521,22 +4668,43 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static final class SmallVarStatsMap extends AbstractMap<String, VarPlanStats> {
 		private static final int NO_ID = VariableDictionary.NO_ID;
+		private static final int ID_INDEX_SLOT_BITS = 4;
+		private static final long ID_INDEX_SLOT_MASK = (1L << ID_INDEX_SLOT_BITS) - 1L;
+		private static final int PACKED_ID_INDEX_COUNT = Long.SIZE / ID_INDEX_SLOT_BITS;
 
 		private final VariableDictionary dictionary;
-		private String[] keys = new String[4];
-		private int[] ids = new int[4];
-		private VarPlanStats[] values = new VarPlanStats[4];
-		private int[] indexesById = new int[8];
+		private String[] keys;
+		private int[] ids;
+		private double[] distincts;
+		private ArrayOfDoublesSketch[] sketches;
+		private StatementPattern[] patterns;
 		private int size;
 		private long variableMask;
+		private long packedIndexById;
 		private boolean frozen;
 		private Set<Entry<String, VarPlanStats>> entrySet;
 		private Set<String> keySet;
 
 		private SmallVarStatsMap(VariableDictionary dictionary) {
+			this(dictionary, 4);
+		}
+
+		private SmallVarStatsMap(VariableDictionary dictionary, int expectedSize) {
 			this.dictionary = dictionary;
-			Arrays.fill(ids, NO_ID);
-			Arrays.fill(indexesById, -1);
+			int capacity = initialCapacity(expectedSize);
+			keys = new String[capacity];
+			ids = new int[capacity];
+			distincts = new double[capacity];
+			sketches = new ArrayOfDoublesSketch[capacity];
+			patterns = new StatementPattern[capacity];
+		}
+
+		private static int initialCapacity(int expectedSize) {
+			int capacity = 4;
+			while (capacity < expectedSize) {
+				capacity <<= 1;
+			}
+			return capacity;
 		}
 
 		private boolean sameDictionary(SmallVarStatsMap other) {
@@ -4556,12 +4724,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private VarPlanStats valueAt(int index) {
-			return values[index];
+			return new VarPlanStats(distincts[index], sketches[index], patterns[index]);
+		}
+
+		private double distinctAt(int index) {
+			return distincts[index];
+		}
+
+		private ArrayOfDoublesSketch sketchAt(int index) {
+			return sketches[index];
+		}
+
+		private StatementPattern patternAt(int index) {
+			return patterns[index];
 		}
 
 		private VarPlanStats getById(int id) {
+			if (!containsId(id)) {
+				return null;
+			}
+			return getByExistingId(id);
+		}
+
+		private VarPlanStats getByExistingId(int id) {
 			int index = indexForId(id);
-			return index < 0 ? null : values[index];
+			return index < 0 ? null : valueAt(index);
+		}
+
+		private boolean containsId(int id) {
+			return id >= 0 && id < Long.SIZE - 1 && (variableMask & (1L << id)) != 0L;
 		}
 
 		private void freeze() {
@@ -4578,8 +4769,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			int id = dictionary == null ? NO_ID : dictionary.id(key);
 			int index = id == NO_ID ? indexOfKey(key) : indexForId(id);
 			if (index >= 0) {
-				VarPlanStats previous = values[index];
-				values[index] = value;
+				VarPlanStats previous = valueAt(index);
+				distincts[index] = value.distinct;
+				sketches[index] = value.sketch;
+				patterns[index] = value.pattern;
 				return previous;
 			}
 			putNew(key, id, value);
@@ -4595,9 +4788,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 						int id = source.idAt(i);
 						int index = id == NO_ID ? indexOfKey(source.keyAt(i)) : indexForId(id);
 						if (index >= 0) {
-							values[index] = source.valueAt(i);
+							distincts[index] = source.distinctAt(i);
+							sketches[index] = source.sketchAt(i);
+							patterns[index] = source.patternAt(i);
 						} else {
-							putNew(source.keyAt(i), id, source.valueAt(i));
+							putNew(source.keyAt(i), id, source.distinctAt(i), source.sketchAt(i),
+									source.patternAt(i));
 						}
 					}
 					return;
@@ -4611,7 +4807,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		@Override
 		public VarPlanStats get(Object key) {
 			int index = indexOfLookupKey(key);
-			return index < 0 ? null : values[index];
+			return index < 0 ? null : valueAt(index);
 		}
 
 		@Override
@@ -4652,7 +4848,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 								throw new NoSuchElementException();
 							}
 							int current = index++;
-							return new SimpleImmutableEntry<>(keys[current], values[current]);
+							return new SimpleImmutableEntry<>(keys[current], valueAt(current));
 						}
 					};
 				}
@@ -4711,20 +4907,38 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private int indexForId(int id) {
-			return id >= 0 && id < indexesById.length ? indexesById[id] : -1;
+			if (id == NO_ID) {
+				return -1;
+			}
+			if (id >= 0 && id < PACKED_ID_INDEX_COUNT) {
+				int shift = id * ID_INDEX_SLOT_BITS;
+				int encoded = (int) ((packedIndexById >>> shift) & ID_INDEX_SLOT_MASK);
+				if (encoded != 0) {
+					return encoded - 1;
+				}
+			}
+			return indexOfId(id);
 		}
 
 		private void putNew(String key, int id, VarPlanStats value) {
+			putNew(key, id, value.distinct, value.sketch, value.pattern);
+		}
+
+		private void putNew(String key, int id, double distinct, ArrayOfDoublesSketch sketch,
+				StatementPattern pattern) {
 			ensureCapacity(size + 1);
-			if (id != NO_ID) {
-				ensureIdCapacity(id + 1);
-				indexesById[id] = size;
-			}
 			keys[size] = key;
 			ids[size] = id;
-			values[size] = value;
+			distincts[size] = distinct;
+			sketches[size] = sketch;
+			patterns[size] = pattern;
 			if (dictionary != null) {
 				variableMask |= dictionary.bit(id);
+			}
+			if (id >= 0 && id < PACKED_ID_INDEX_COUNT && size < ID_INDEX_SLOT_MASK) {
+				int shift = id * ID_INDEX_SLOT_BITS;
+				packedIndexById &= ~(ID_INDEX_SLOT_MASK << shift);
+				packedIndexById |= (long) (size + 1) << shift;
 			}
 			keySet = null;
 			size++;
@@ -4740,21 +4954,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 			keys = Arrays.copyOf(keys, nextCapacity);
 			ids = Arrays.copyOf(ids, nextCapacity);
-			Arrays.fill(ids, size, nextCapacity, NO_ID);
-			values = Arrays.copyOf(values, nextCapacity);
-		}
-
-		private void ensureIdCapacity(int minCapacity) {
-			if (minCapacity <= indexesById.length) {
-				return;
-			}
-			int current = indexesById.length;
-			int nextCapacity = current;
-			while (nextCapacity < minCapacity) {
-				nextCapacity <<= 1;
-			}
-			indexesById = Arrays.copyOf(indexesById, nextCapacity);
-			Arrays.fill(indexesById, current, nextCapacity, -1);
+			distincts = Arrays.copyOf(distincts, nextCapacity);
+			sketches = Arrays.copyOf(sketches, nextCapacity);
+			patterns = Arrays.copyOf(patterns, nextCapacity);
 		}
 	}
 
@@ -5366,7 +5568,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		totalRows = normalizeRows(totalRows);
-		Map<String, VarPlanStats> varStats = newVarStatsMap();
+		Map<String, VarPlanStats> varStats = newVarStatsMap(survivingAssignmentValues.size() + carriedDistinct.size());
 		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
 			double distinct = clampDistinct(entry.getValue().size(), totalRows);
 			ArrayOfDoublesSketch sketch = survivingAssignmentSketches.get(entry.getKey());
@@ -5447,7 +5649,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		totalRows = normalizeRows(totalRows);
-		Map<String, VarPlanStats> varStats = newVarStatsMap();
+		Map<String, VarPlanStats> varStats = newVarStatsMap(survivingAssignmentValues.size() + carriedDistinct.size());
 		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
 			double distinct = clampDistinct(entry.getValue().size(), totalRows);
 			ArrayOfDoublesSketch sketch = survivingAssignmentSketches.get(entry.getKey());
@@ -5558,7 +5760,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		rows = normalizeRows(rows);
-		Map<String, VarPlanStats> varStats = newVarStatsMap();
+		Map<String, VarPlanStats> varStats = newVarStatsMap(distinctValues.size());
 		for (Map.Entry<String, Set<Value>> entry : distinctValues.entrySet()) {
 			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue().size(), rows), null,
 					pattern));
@@ -6166,7 +6368,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return estimate == null ? -1.0d : estimate.outputRows();
 	}
 
-	AccessShape accessShapeForJoinOrdering(TupleExpr tupleExpr, String[] sourceVariableNames,
+	public double factorOutputRowsForJoinOrdering(TupleExpr tupleExpr, String[] sourceVariableNames,
+			long sourceBoundVarMask) {
+		if (tupleExpr == null) {
+			return -1.0d;
+		}
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope == null) {
+			return factorOutputRowsForJoinOrdering(tupleExpr,
+					externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
+		}
+		long boundVarMask = scope.variableDictionary.maskOf(sourceVariableNames, sourceBoundVarMask);
+		if (boundVarMask == BOUND_VAR_MASK_OVERFLOW) {
+			return factorOutputRowsForJoinOrdering(tupleExpr,
+					externalVariableMaskSet(sourceVariableNames, sourceBoundVarMask));
+		}
+		TuplePlanEstimate estimate = estimateTupleExprPlan(tupleExpr, scope, boundVarMask);
+		return estimate == null ? -1.0d : estimate.outputRows();
+	}
+
+	public AccessShape accessShapeForJoinOrdering(TupleExpr tupleExpr, String[] sourceVariableNames,
 			long sourceBoundVarMask) {
 		if (tupleExpr == null) {
 			return null;
@@ -7256,7 +7477,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return estimate;
 		}
 		double filteredRows = normalizeRows(applyFilterMultiplier(estimate.outputRows, multiplier));
-		Map<String, VarPlanStats> filteredStats = newVarStatsMap();
+		Map<String, VarPlanStats> filteredStats = newVarStatsMap(estimate.varStats.size());
 		for (Map.Entry<String, VarPlanStats> entry : estimate.varStats.entrySet()) {
 			filteredStats.put(entry.getKey(),
 					new VarPlanStats(clampDistinct(entry.getValue().distinct, filteredRows), null));

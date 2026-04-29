@@ -61,7 +61,7 @@ class LmdbFilterSelectivityStats
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String SIDECAR_SUFFIX = ".filters";
-	private static final int PERSIST_VERSION = 2;
+	private static final int PERSIST_VERSION = 3;
 	private static final int SAMPLE_SCAN_BUDGET = 4096;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final long MISSING_VALUE_ID = Long.MIN_VALUE;
@@ -307,8 +307,10 @@ class LmdbFilterSelectivityStats
 		Map<PatternKey, LearnedCounts> loadedPatternTotals = new HashMap<>();
 		Map<PatternFilterKey, SampledPassRatio> loadedSampled = new HashMap<>();
 
+		int persistedVersion;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
-			if (in.readInt() != PERSIST_VERSION) {
+			persistedVersion = in.readInt();
+			if (persistedVersion != PERSIST_VERSION && persistedVersion != 2) {
 				return;
 			}
 			SnapshotRevision persistedRevision = SnapshotRevision.readFrom(in);
@@ -342,7 +344,7 @@ class LmdbFilterSelectivityStats
 			for (int i = 0; i < sampledEntries; i++) {
 				PatternFilterKey key = PatternFilterKey.readFrom(in);
 				SampledPassRatio sampled = SampledPassRatio.readFrom(in);
-				if (!isValidPassRatio(sampled.passRatio)) {
+				if (persistedVersion != PERSIST_VERSION || !isValidPassRatio(sampled.passRatio)) {
 					continue;
 				}
 				loadedSampled.put(key, sampled);
@@ -360,7 +362,7 @@ class LmdbFilterSelectivityStats
 			learnedByPattern.putAll(loadedPatternTotals);
 			sampledByFilter.clear();
 			sampledByFilter.putAll(loadedSampled);
-			dirty = false;
+			dirty = persistedVersion != PERSIST_VERSION;
 		}
 	}
 
@@ -392,6 +394,7 @@ class LmdbFilterSelectivityStats
 		int eligibleRows = 0;
 		int scannedRows = 0;
 
+		boolean scanBudgetExhausted = false;
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			for (boolean explicit : new boolean[] { true, false }) {
 				try (RecordIterator triples = tripleStore.getTriples(txn, subjId, predId, objId, contextId, explicit)) {
@@ -412,6 +415,9 @@ class LmdbFilterSelectivityStats
 							samples.set(replacementIndex, bindingSet);
 						}
 					}
+					if (scannedRows >= SAMPLE_SCAN_BUDGET && triples.next() != null) {
+						scanBudgetExhausted = true;
+					}
 				}
 				if (scannedRows >= SAMPLE_SCAN_BUDGET) {
 					break;
@@ -421,7 +427,7 @@ class LmdbFilterSelectivityStats
 			return null;
 		}
 
-		if (samples.isEmpty()) {
+		if (samples.isEmpty() || scanBudgetExhausted) {
 			return null;
 		}
 
