@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -333,6 +334,131 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 	}
 
+	@Test
+	void optimizerSamplingCanBeDisabledForUnlearnedFilters() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampling-disabled").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingEnabled(false);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Disabling optimizer sampling should prevent unlearned filters from spending sampling budget");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void optimizerVotesUnlearnedFilterForBackgroundSamplingWhenForegroundSamplingDisabled() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-vote").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingEnabled(false);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Foreground optimizer sampling is disabled for this test");
+			List<?> requests = drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10);
+			assertEquals(1, requests.size(),
+					"Expected optimizer to vote for background sampling of the unknown filter");
+			Object request = requests.get(0);
+			assertEquals("urn:test:name", invokeString(request, "predicateIri"));
+			assertTrue(invokeString(request, "filterKey").length() > 0,
+					"Expected background request to retain the canonical filter key");
+			assertEquals(1L, invokeLong(request, "voteCount"));
+			assertTrue(invokeDouble(request, "expectedRuntimeRows") > 0.0d);
+			assertTrue(invokeDouble(request, "expectedBenefitRows") > 0.0d);
+			assertTrue(invokeBoolean(request, "foregroundNeeded"),
+					"Foreground planner needs should be visible to the background sampler");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void repeatedOptimizerNeedPromotesBackgroundSamplingRequestToFront() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-promotion").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingEnabled(false);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter nameFilter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+			Filter followsFilter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:follows> ?o . FILTER(?o != <urn:test:user:0>) }");
+
+			statistics.estimateFilterPass(nameFilter);
+			statistics.estimateFilterPass(followsFilter);
+			statistics.estimateFilterPass(nameFilter);
+
+			List<?> requests = drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10);
+			assertEquals(2, requests.size());
+			assertEquals("urn:test:name", invokeString(requests.get(0), "predicateIri"),
+					"Repeated foreground needs should move the matching request to the front");
+			assertEquals(2L, invokeLong(requests.get(0), "voteCount"));
+			assertEquals("urn:test:follows", invokeString(requests.get(1), "predicateIri"));
+			assertEquals(1L, invokeLong(requests.get(1), "voteCount"));
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void optimizerSamplingBudgetScalesWithExpectedRuntimeAndBenefit() throws Exception {
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
+				Files.createTempDirectory("lmdb-eval-stats-sampling-budget").resolve("join-estimator.rjes"),
+				mock(TripleStore.class),
+				mock(ValueStore.class));
+		Method budgetMethod = LmdbFilterSelectivityStats.class.getDeclaredMethod(
+				"optimizerSamplingRowBudget",
+				double.class,
+				double.class,
+				double.class);
+		budgetMethod.setAccessible(true);
+
+		int highRuntimeLowBenefit = invokeBudget(budgetMethod, stats, 100_000.0d, 10.0d, 1.0d);
+		int highRuntimeHighBenefit = invokeBudget(budgetMethod, stats, 100_000.0d, 75_000.0d, 1.0d);
+		int cappedHugeBenefit = invokeBudget(budgetMethod, stats, 1_000_000.0d, 900_000.0d, 1.0d);
+
+		assertEquals(0, highRuntimeLowBenefit,
+				"Low-benefit choices should not spend optimizer-time sampling rows just because a query is large");
+		assertTrue(highRuntimeHighBenefit > highRuntimeLowBenefit,
+				"Sampling row budget should increase when the expected plan benefit increases");
+		assertEquals(LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_ROWS, cappedHugeBenefit,
+				"Proportional sampling must still respect the configured hard row cap");
+	}
+
+	@Test
 	void recordsLearnedFilterPassRatioForExternalBoundPatternLocalFilter() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-learned-filter").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
@@ -343,16 +469,20 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			backingStore.getSketchBasedJoinEstimator().rebuild();
 
-			Filter filter = firstFilter(
-					"SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } ?s <urn:test:name> ?name . FILTER(?name = ?target) }");
+			String externalBoundQuery = """
+					SELECT * WHERE {
+						VALUES ?target { "u0" "u1" }
+						?s <urn:test:name> ?name .
+						FILTER(?name = ?target)
+					}
+					""";
+			Filter filter = firstFilter(externalBoundQuery);
 			EvaluationStatistics beforeExecution = backingStore.getEvaluationStatistics();
 			assertTrue(beforeExecution.estimateFilterPassRatio(filter) < 0.0d,
 					"Expected external-bound filter to have no sampled or heuristic estimate before runtime learning");
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL,
-						"SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } ?s <urn:test:name> ?name . FILTER(?name = ?target) }")
-						.evaluate()) {
+				try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, externalBoundQuery).evaluate()) {
 					while (result.hasNext()) {
 						result.next();
 					}
@@ -360,9 +490,24 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			}
 
 			EvaluationStatistics afterExecution = backingStore.getEvaluationStatistics();
-			double learnedPassRatio = afterExecution.estimateFilterPassRatio(filter);
-			assertTrue(learnedPassRatio > 0.0d && learnedPassRatio < 1.0d,
-					"Expected runtime evaluation to record a learned pass ratio for external-bound pattern-local filters");
+			Filter plannedFilterAfterLiteralAnchor = firstFilter("""
+					SELECT * WHERE {
+						VALUES ?target { "u0" "u1" }
+						VALUES ?name { "u0" "u1" }
+						?s <urn:test:name> ?name .
+						FILTER(?name = ?target)
+					}
+					""");
+			EvaluationStatistics.FilterPassEstimate learnedEstimate = afterExecution
+					.estimateFilterPass(plannedFilterAfterLiteralAnchor);
+			double learnedPassRatio = learnedEstimate.getPassRatio();
+
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, learnedEstimate.getSource(),
+					"Expected runtime feedback to be keyed by the local bound-component mask used after anchoring");
+			assertTrue(learnedPassRatio >= 0.0d && learnedPassRatio <= 1.0d,
+					"Expected runtime evaluation to record a valid learned pass ratio");
+			assertTrue(learnedEstimate.getEvidenceCount() > 0L,
+					"Expected runtime evaluation to retain evidence for external-bound pattern-local filters");
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -424,6 +569,50 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		});
 		assertNotNull(found[0], "Expected query to contain a FILTER");
 		return found[0];
+	}
+
+	private static int invokeBudget(Method method, LmdbFilterSelectivityStats stats, double expectedRuntimeRows,
+			double expectedBenefitRows, double decisionUncertainty) throws Exception {
+		return ((Number) method.invoke(stats, expectedRuntimeRows, expectedBenefitRows, decisionUncertainty))
+				.intValue();
+	}
+
+	private static LmdbFilterSelectivityStats extractFilterSelectivityStats(LmdbSailStore store) throws Exception {
+		Field field = LmdbSailStore.class.getDeclaredField("filterSelectivityStats");
+		field.setAccessible(true);
+		return (LmdbFilterSelectivityStats) field.get(store);
+	}
+
+	private static List<?> drainBackgroundSamplingRequests(LmdbFilterSelectivityStats stats, int maxCount)
+			throws Exception {
+		Method method = LmdbFilterSelectivityStats.class.getDeclaredMethod("drainBackgroundSamplingRequests",
+				int.class);
+		method.setAccessible(true);
+		return (List<?>) method.invoke(stats, maxCount);
+	}
+
+	private static String invokeString(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return (String) method.invoke(target);
+	}
+
+	private static long invokeLong(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return ((Number) method.invoke(target)).longValue();
+	}
+
+	private static double invokeDouble(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return ((Number) method.invoke(target)).doubleValue();
+	}
+
+	private static boolean invokeBoolean(Object target, String methodName) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(methodName);
+		method.setAccessible(true);
+		return (Boolean) method.invoke(target);
 	}
 
 	private static LeftJoin leftJoin(String query) {

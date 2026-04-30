@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,16 +25,19 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -61,37 +65,39 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void rewritesSelectiveFilterInToBindingSetAssignment() {
+	void rewritesSelectiveFilterInToBindingSetAssignmentAndRetainsFilterEvidence() {
 		Filter filter = new Filter(statementPatternWithPredicate("s", "http://example.com/theme/library/name", "o"),
 				listMember("o", "A", "B"));
 		QueryRoot root = new QueryRoot(filter);
 
 		new LmdbFilterSimplifierOptimizer(new FixedFilterPassStatistics(0.50d)).optimize(root, null, null);
 
-		Join join = assertInstanceOf(Join.class, root.getArg());
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		Join join = assertInstanceOf(Join.class, retainedFilter.getArg());
 		BindingSetAssignment values = assertInstanceOf(BindingSetAssignment.class, join.getLeftArg());
 		assertIterableEquals(Set.of("o"), values.getBindingNames());
 		assertIterableEquals(List.of(VF.createLiteral("A"), VF.createLiteral("B")),
 				bindingValues(values, "o"));
 		assertInstanceOf(StatementPattern.class, join.getRightArg());
-		assertFalse(containsFilter(root.getArg()));
+		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
 	}
 
 	@Test
-	void rewritesSelectiveTitleFilterInToBindingSetAssignment() {
+	void rewritesSelectiveTitleFilterInToBindingSetAssignmentAndRetainsFilterEvidence() {
 		Filter filter = new Filter(statementPatternWithPredicate("book", "http://example.com/theme/library/title",
 				"title"), listMember("title", "Book 1", "Book 2"));
 		QueryRoot root = new QueryRoot(filter);
 
 		new LmdbFilterSimplifierOptimizer(new FixedFilterPassStatistics(0.50d)).optimize(root, null, null);
 
-		Join join = assertInstanceOf(Join.class, root.getArg());
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		Join join = assertInstanceOf(Join.class, retainedFilter.getArg());
 		BindingSetAssignment values = assertInstanceOf(BindingSetAssignment.class, join.getLeftArg());
 		assertIterableEquals(Set.of("title"), values.getBindingNames());
 		assertIterableEquals(List.of(VF.createLiteral("Book 1"), VF.createLiteral("Book 2")),
 				bindingValues(values, "title"));
 		assertInstanceOf(StatementPattern.class, join.getRightArg());
-		assertFalse(containsFilter(root.getArg()));
+		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
 	}
 
 	@Test
@@ -134,20 +140,37 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void anchorsUnknownSafeFilterInAsValuesAndRemovesRedundantFilter() {
+	void anchorsUnknownSafeFilterInAsValuesAndRetainsFilterEvidence() {
 		Filter filter = new Filter(statementPatternWithPredicate("substation", "http://example.com/theme/grid/name",
 				"name"), listMember("name", "Substation 0", "Substation 1", "Substation 2"));
 		QueryRoot root = new QueryRoot(filter);
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
-		Join anchored = assertInstanceOf(Join.class, root.getArg());
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		Join anchored = assertInstanceOf(Join.class, retainedFilter.getArg());
 		BindingSetAssignment nameValues = assertInstanceOf(BindingSetAssignment.class, anchored.getLeftArg());
 		assertIterableEquals(Set.of("name"), nameValues.getBindingNames());
 		assertIterableEquals(List.of(VF.createLiteral("Substation 0"), VF.createLiteral("Substation 1"),
 				VF.createLiteral("Substation 2")), bindingValues(nameValues, "name"));
 		assertInstanceOf(StatementPattern.class, anchored.getRightArg());
-		assertFalse(containsFilter(root.getArg()));
+		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+	}
+
+	@Test
+	void keepsFilterWhenEquivalentValuesAlreadyAnchorVariable() {
+		BindingSetAssignment nameValues = values("name", "Component 1", "Component 2");
+		StatementPattern componentName = statementPatternWithPredicate("component",
+				"http://example.com/theme/engineering/name", "name");
+		Filter filter = new Filter(new Join(nameValues, componentName),
+				new Or(compareLiteral("name", "Component 1"), compareLiteral("name", "Component 2")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Or.class, retainedFilter.getCondition());
+		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "name"));
 	}
 
 	@Test
@@ -188,10 +211,11 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void doesNotRewriteFilterInOverOptionalBindingToPreOptionalValues() {
+	void keepsOptionalSafeFilterOverOptionalBindingAsLocalFilter() {
 		StatementPattern required = statementPattern("s", "type", "type");
 		StatementPattern optional = statementPattern("s", "name", "optName");
-		Filter filter = new Filter(new LeftJoin(required, optional), listMember("optName", "A", "B"));
+		Filter filter = new Filter(new LeftJoin(required, optional),
+				new Or(new Not(new Bound(new Var("optName"))), listMember("optName", "A", "B")));
 		QueryRoot root = new QueryRoot(filter);
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
@@ -199,6 +223,62 @@ class LmdbFilterSimplifierOptimizerTest {
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(LeftJoin.class, retainedFilter.getArg());
 		assertFalse(containsBindingSetAssignment(root.getArg()));
+	}
+
+	@Test
+	void rewritesUnboundRejectingOptionalFilterToMandatoryLiteralAnchor() {
+		StatementPattern required = statementPattern("s", "type", "type");
+		StatementPattern optional = statementPatternWithPredicate("s", "http://example.com/theme/social/name",
+				"optName");
+		Filter filter = new Filter(new LeftJoin(required, optional), listMember("optName", "A", "B"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
+		assertFalse(containsLeftJoin(retainedFilter.getArg()));
+		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+	}
+
+	@Test
+	void keepsMandatoryOptionalLiteralAnchorOnFormerOptionalSide() {
+		BindingSetAssignment users = values("u", "user7", "user8");
+		TupleExpr activityUnion = new Union(statementPattern("u", "follows", "v"),
+				statementPattern("post", "authored", "u"));
+		TupleExpr required = new Join(users, activityUnion);
+		StatementPattern optional = statementPatternWithPredicate("u", "http://example.com/theme/social/name",
+				"optName");
+		Filter filter = new Filter(new LeftJoin(required, optional), listMember("optName", "user7", "user8"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
+		assertTrue(containsStatementPatternWithObject(retainedFilter.getArg(), "optName"));
+		assertFalse(containsLeftJoin(retainedFilter.getArg()));
+	}
+
+	@Test
+	void hoistsMandatoryOptionalLiteralAnchorAheadOfLeftUnionFanout() {
+		BindingSetAssignment users = values("u", "user7", "user8");
+		TupleExpr activityUnion = new Union(statementPattern("u", "follows", "v"),
+				statementPattern("post", "authored", "u"));
+		TupleExpr required = new Join(users, activityUnion);
+		StatementPattern optional = statementPatternWithPredicate("u", "http://example.com/theme/social/name",
+				"optName");
+		Filter filter = new Filter(new LeftJoin(required, optional), listMember("optName", "user7", "user8"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		Join topJoin = assertInstanceOf(Join.class, retainedFilter.getArg());
+		assertFalse(containsUnion(topJoin.getLeftArg()));
+		assertTrue(containsUnion(topJoin.getRightArg()));
+		assertTrue(containsBindingSetAssignmentFor(topJoin.getLeftArg(), "optName"));
+		assertFalse(containsBindingSetAssignmentFor(topJoin.getRightArg(), "optName"));
 	}
 
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
@@ -314,6 +394,58 @@ class LmdbFilterSimplifierOptimizerTest {
 			Join join = (Join) tupleExpr;
 			return containsBindingSetAssignmentFor(join.getLeftArg(), bindingName)
 					|| containsBindingSetAssignmentFor(join.getRightArg(), bindingName);
+		}
+		return false;
+	}
+
+	private static boolean containsLeftJoin(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof LeftJoin) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter) {
+			return containsLeftJoin(((Filter) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsStatementPatternWithObject(TupleExpr tupleExpr, String objectName) {
+		if (tupleExpr instanceof StatementPattern) {
+			return objectName.equals(((StatementPattern) tupleExpr).getObjectVar().getName());
+		}
+		if (tupleExpr instanceof Filter) {
+			return containsStatementPatternWithObject(((Filter) tupleExpr).getArg(), objectName);
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+			return containsStatementPatternWithObject(leftJoin.getLeftArg(), objectName)
+					|| containsStatementPatternWithObject(leftJoin.getRightArg(), objectName);
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return containsStatementPatternWithObject(join.getLeftArg(), objectName)
+					|| containsStatementPatternWithObject(join.getRightArg(), objectName);
+		}
+		return false;
+	}
+
+	private static boolean containsUnion(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Union) {
+			return true;
+		}
+		if (tupleExpr instanceof Join) {
+			Join join = (Join) tupleExpr;
+			return containsUnion(join.getLeftArg()) || containsUnion(join.getRightArg());
+		}
+		if (tupleExpr instanceof Filter) {
+			return containsUnion(((Filter) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+			return containsUnion(leftJoin.getLeftArg()) || containsUnion(leftJoin.getRightArg());
 		}
 		return false;
 	}

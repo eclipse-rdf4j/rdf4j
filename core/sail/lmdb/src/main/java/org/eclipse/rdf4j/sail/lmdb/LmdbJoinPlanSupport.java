@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -378,6 +380,30 @@ final class LmdbJoinPlanSupport {
 		return !bindingName.equals(unboundName(pattern.getObjectVar())) || canDriveLiteralObjectFilterAnchor(pattern);
 	}
 
+	static boolean containsPathContextBinding(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr == null || bindingName == null) {
+			return false;
+		}
+		boolean[] contains = { false };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ArbitraryLengthPath node) {
+				if (isNamedVar(node.getContextVar(), bindingName)) {
+					contains[0] = true;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(ZeroLengthPath node) {
+				if (isNamedVar(node.getContextVar(), bindingName)) {
+					contains[0] = true;
+				}
+			}
+		});
+		return contains[0];
+	}
+
 	static boolean canDriveLiteralObjectFilterAnchor(StatementPattern pattern) {
 		Var predicate = pattern.getPredicateVar();
 		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
@@ -424,11 +450,6 @@ final class LmdbJoinPlanSupport {
 	}
 
 	private static StatementPattern patternLocalBaseForFilterCondition(Filter filter, ValueExpr condition) {
-		Set<String> conditionVars = VarNameCollector.process(condition);
-		if (bindingSetAssignmentsCover(filter.getArg(), conditionVars)) {
-			return null;
-		}
-
 		Set<StatementPattern> patterns = FilterSelectivityKeys.originPatternsForFilter(filter);
 		StatementPattern match = null;
 		for (StatementPattern pattern : patterns) {
@@ -440,22 +461,10 @@ final class LmdbJoinPlanSupport {
 			}
 			match = pattern;
 		}
-		return match;
-	}
-
-	private static boolean bindingSetAssignmentsCover(TupleExpr tupleExpr, Set<String> requiredVars) {
-		if (tupleExpr == null || requiredVars == null || requiredVars.isEmpty()) {
-			return false;
+		if (match != null) {
+			return match;
 		}
-
-		Set<String> bindingSetAssignmentNames = new HashSet<>();
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(BindingSetAssignment bindingSetAssignment) {
-				bindingSetAssignmentNames.addAll(bindingSetAssignment.getAssuredBindingNames());
-			}
-		});
-		return bindingSetAssignmentNames.containsAll(requiredVars);
+		return null;
 	}
 
 	static EvaluationStatistics.FilterPassEstimate estimateFilterPass(EvaluationStatistics statistics,
@@ -543,6 +552,10 @@ final class LmdbJoinPlanSupport {
 			return null;
 		}
 		return var.getName();
+	}
+
+	private static boolean isNamedVar(Var var, String bindingName) {
+		return var != null && bindingName.equals(var.getName());
 	}
 
 	private static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg) {

@@ -14,9 +14,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -35,7 +38,7 @@ final class LmdbUnionFilterDistributor {
 	static TupleExpr tryDistribute(List<TupleExpr> joinArgs, List<DeferredFilter> filters,
 			Set<String> outerBoundVars, BranchOptimizer branchOptimizer, JoinFactory joinFactory,
 			FilterWrapper filterWrapper) {
-		if (filters.isEmpty() || joinArgs.size() < 2) {
+		if (joinArgs.size() < 2) {
 			return null;
 		}
 		int unionIndex = singleUnionIndex(joinArgs);
@@ -45,24 +48,33 @@ final class LmdbUnionFilterDistributor {
 
 		List<TupleExpr> prefixFactors = new ArrayList<>(joinArgs.size() - 1);
 		Set<String> prefixBindings = new HashSet<>(outerBoundVars);
+		boolean hasFinitePrefixAnchor = false;
 		for (int i = 0; i < joinArgs.size(); i++) {
 			if (i == unionIndex) {
 				continue;
 			}
 			TupleExpr joinArg = joinArgs.get(i);
-			if (LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(joinArg).isEmpty()) {
+			Optional<Set<String>> assignmentNames = finitePrefixAnchorNames(joinArg);
+			if (assignmentNames.isPresent()) {
+				hasFinitePrefixAnchor = true;
+				prefixBindings.addAll(assignmentNames.get());
+				prefixBindings.addAll(joinArg.getBindingNames());
+				prefixFactors.add(joinArg);
+				continue;
+			}
+			if (!hasFinitePrefixAnchor || !isSafeDependentPrefixFactor(joinArg, prefixBindings)) {
 				return null;
 			}
 			prefixFactors.add(joinArg);
 			prefixBindings.addAll(joinArg.getBindingNames());
 		}
-		if (prefixFactors.isEmpty()) {
+		if (!hasFinitePrefixAnchor || prefixFactors.isEmpty()) {
 			return null;
 		}
 
 		Union union = (Union) joinArgs.get(unionIndex);
-		if (!isSafeUnionDistributionBranch(union.getLeftArg())
-				|| !isSafeUnionDistributionBranch(union.getRightArg())) {
+		if (!isSafeUnionDistributionBranch(union.getLeftArg(), prefixBindings)
+				|| !isSafeUnionDistributionBranch(union.getRightArg(), prefixBindings)) {
 			return null;
 		}
 		Set<String> availableBindings = new HashSet<>(prefixBindings);
@@ -99,14 +111,95 @@ final class LmdbUnionFilterDistributor {
 	private static TupleExpr buildBranch(TupleExpr branch, List<TupleExpr> prefixFactors,
 			List<DeferredFilter> filters, Set<String> outerBoundVars, BranchOptimizer branchOptimizer,
 			JoinFactory joinFactory, FilterWrapper filterWrapper) {
-		TupleExpr root = branchOptimizer.optimize(branch.clone(), outerBoundVars);
-		for (TupleExpr prefixFactor : prefixFactors) {
-			root = joinFactory.create(root, prefixFactor.clone());
-		}
+		TupleExpr root = prependPrefix(branch.clone(), prefixFactors, joinFactory);
+		root = branchOptimizer.optimize(root, outerBoundVars);
 		return filterWrapper.wrap(root, filters, "unionBranch");
 	}
 
-	private static boolean isSafeUnionDistributionBranch(TupleExpr branch) {
+	private static TupleExpr prependPrefix(TupleExpr branch, List<TupleExpr> prefixFactors, JoinFactory joinFactory) {
+		if (branch instanceof Extension) {
+			Extension extension = (Extension) branch;
+			extension.setArg(joinPrefix(prefixFactors, extension.getArg(), joinFactory));
+			return extension;
+		}
+		return joinPrefix(prefixFactors, branch, joinFactory);
+	}
+
+	private static TupleExpr joinPrefix(List<TupleExpr> prefixFactors, TupleExpr branch, JoinFactory joinFactory) {
+		TupleExpr root = null;
+		for (TupleExpr prefixFactor : prefixFactors) {
+			TupleExpr prefix = prefixFactor.clone();
+			root = root == null ? prefix : joinFactory.create(root, prefix);
+		}
+		return root == null ? branch : joinFactory.create(root, branch);
+	}
+
+	private static Optional<Set<String>> finitePrefixAnchorNames(TupleExpr tupleExpr) {
+		Optional<Set<String>> names = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(tupleExpr);
+		if (names.isPresent()) {
+			return names;
+		}
+
+		Set<String> found = new HashSet<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				found.addAll(node.getAssuredBindingNames());
+			}
+		});
+		return found.isEmpty() ? Optional.empty() : Optional.of(found);
+	}
+
+	private static boolean isSafeDependentPrefixFactor(TupleExpr tupleExpr, Set<String> prefixBindings) {
+		if (!hasSharedBinding(tupleExpr.getBindingNames(), prefixBindings) || !tupleExpr.getAssuredBindingNames()
+				.containsAll(tupleExpr.getBindingNames())) {
+			return false;
+		}
+		boolean[] unsafe = { false };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				unsafe[0] = true;
+			}
+
+			@Override
+			public void meet(Service node) {
+				unsafe[0] = true;
+			}
+
+			@Override
+			public void meet(Group node) {
+				unsafe[0] = true;
+			}
+
+			@Override
+			public void meet(Projection node) {
+				unsafe[0] = true;
+			}
+
+			@Override
+			public void meet(Extension node) {
+				unsafe[0] = true;
+			}
+
+			@Override
+			public void meet(Union node) {
+				unsafe[0] = true;
+			}
+		});
+		return !unsafe[0];
+	}
+
+	private static boolean hasSharedBinding(Set<String> left, Set<String> right) {
+		for (String name : left) {
+			if (right.contains(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isSafeUnionDistributionBranch(TupleExpr branch, Set<String> prefixBindings) {
 		boolean[] unsafe = { false };
 		branch.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -131,7 +224,13 @@ final class LmdbUnionFilterDistributor {
 
 			@Override
 			public void meet(Extension node) {
-				unsafe[0] = true;
+				for (ExtensionElem element : node.getElements()) {
+					if (prefixBindings.contains(element.getName())) {
+						unsafe[0] = true;
+						return;
+					}
+				}
+				super.meet(node);
 			}
 
 			@Override

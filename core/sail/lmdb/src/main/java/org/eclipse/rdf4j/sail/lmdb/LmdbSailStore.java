@@ -321,7 +321,9 @@ class LmdbSailStore implements SailStore {
 			if (sketchBasedJoinEstimator != null) {
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
-				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore);
+				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
+						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
 				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
 				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);

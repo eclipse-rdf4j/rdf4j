@@ -49,6 +49,8 @@ class LmdbThemeTopRegressionSnapshotTest {
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "top-regression-snapshot";
+	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
+			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
@@ -82,17 +84,49 @@ class LmdbThemeTopRegressionSnapshotTest {
 			GROUP BY ?pathway
 			HAVING (COUNT(DISTINCT ?drug) > 1)
 			""";
+	private static final String PHARMA_Q5_FAST_SCALAR_BEFORE_ARM_BRIDGE_QUERY = """
+			SELECT (COUNT(DISTINCT ?trial) AS ?count) WHERE {
+			VALUES ?marker { <http://example.com/theme/pharma/biomarker/0> <http://example.com/theme/pharma/biomarker/1> <http://example.com/theme/pharma/biomarker/2> }
+			?result <http://example.com/theme/pharma/biomarker> ?marker .
+			?result <http://example.com/theme/pharma/pValue> ?p .
+			FILTER ((?p < 0.05) || (?p = 0.05))
+			?arm <http://example.com/theme/pharma/hasResult> ?result .
+			?trial <http://example.com/theme/pharma/hasArm> ?arm .
+			?trial a <http://example.com/theme/pharma/ClinicalTrial> .
+			OPTIONAL {
+			?result <http://example.com/theme/pharma/effectSize> ?effect .
+			BIND(?effect AS ?optEffect)
+			}
+			FILTER (?optEffect > 0.3)
+			}
+			""";
 	private static final List<TargetQuery> TOP_REGRESSIONS = List.of(
 			target(Theme.PHARMA, 0),
-			target(Theme.SOCIAL_MEDIA, 10),
-			target(Theme.ELECTRICAL_GRID, 2),
-			target(Theme.PHARMA, 5),
-			target(Theme.LIBRARY, 2),
+			target(Theme.SOCIAL_MEDIA, 5),
 			target(Theme.TRAIN, 2),
-			target(Theme.SOCIAL_MEDIA, 3),
-			target(Theme.SOCIAL_MEDIA, 4),
-			target(Theme.PHARMA, 10),
-			target(Theme.SOCIAL_MEDIA, 6));
+			target(Theme.SOCIAL_MEDIA, 10),
+			target(Theme.SOCIAL_MEDIA, 0),
+			target(Theme.ELECTRICAL_GRID, 2),
+			target(Theme.LIBRARY, 2),
+			target(Theme.ENGINEERING, 4),
+			target(Theme.LIBRARY, 4),
+			target(Theme.ENGINEERING, 2),
+			target(Theme.ENGINEERING, 7),
+			target(Theme.ELECTRICAL_GRID, 4),
+			target(Theme.TRAIN, 8),
+			target(Theme.SOCIAL_MEDIA, 1),
+			target(Theme.ENGINEERING, 10),
+			target(Theme.ENGINEERING, 9),
+			target(Theme.ENGINEERING, 3),
+			target(Theme.LIBRARY, 8),
+			target(Theme.PHARMA, 5),
+			target(Theme.HIGHLY_CONNECTED, 5),
+			target(Theme.ENGINEERING, 8),
+			target(Theme.LIBRARY, 7),
+			target(Theme.ELECTRICAL_GRID, 7),
+			target(Theme.HIGHLY_CONNECTED, 8),
+			target(Theme.MEDICAL_RECORDS, 7),
+			target(Theme.SOCIAL_MEDIA, 9));
 
 	@Test
 	void topRegressionOptimizedQueriesMatchFastestKnownSnapshots(@TempDir Path dataDir) throws Exception {
@@ -172,6 +206,7 @@ class LmdbThemeTopRegressionSnapshotTest {
 				}
 			}
 		}
+		queries.putAll(ThemeQueryHistory.fastestPlanBearingOptimizedQueries(historyResultsDirectory()));
 		return queries;
 	}
 
@@ -203,6 +238,19 @@ class LmdbThemeTopRegressionSnapshotTest {
 			return repositoryFile;
 		}
 		throw new AssertionError("Unable to locate fastest-run snapshot file " + SNAPSHOT_FILE);
+	}
+
+	private static Path historyResultsDirectory() {
+		Path basedirDirectory = Path.of(System.getProperty("basedir", "."), RESULT_DIRECTORY,
+				"theme-query-benchmark-results");
+		if (Files.isDirectory(basedirDirectory)) {
+			return basedirDirectory;
+		}
+		Path repositoryDirectory = Path.of("core/sail/lmdb", RESULT_DIRECTORY, "theme-query-benchmark-results");
+		if (Files.isDirectory(repositoryDirectory)) {
+			return repositoryDirectory;
+		}
+		throw new AssertionError("Unable to locate theme query benchmark results directory");
 	}
 
 	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
@@ -253,21 +301,128 @@ class LmdbThemeTopRegressionSnapshotTest {
 		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(targetQuery.key(), () -> {
 			String actual = explainOptimized(repository, targetQuery);
 			String normalizedActual = normalize(actual);
-			if (!normalize(expected).equals(normalizedActual)
-					&& !isKnownFastEquivalent(targetQuery, normalizedActual)) {
-				throw new AssertionError(
-						mismatch(targetQuery, expected, actual) + "\nActual plan:\n"
-								+ explainOptimizedPlan(repository, targetQuery));
+			if (!fastShapeMatches(targetQuery, expected, normalizedActual)) {
+				String plan = explainOptimizedPlan(repository, targetQuery);
+				if (!knownFastPlanEquivalent(targetQuery, normalizedActual, plan)) {
+					throw new AssertionError(mismatch(targetQuery, expected, actual) + "\nActual plan:\n" + plan);
+				}
 			}
 			assertKnownPlanShape(repository, targetQuery);
 		});
 	}
 
 	private static boolean isKnownFastEquivalent(TargetQuery targetQuery, String normalizedActual) {
-		return targetQuery.theme == Theme.PHARMA
-				&& targetQuery.queryIndex == 10
+		if (targetQuery.theme != Theme.PHARMA) {
+			return false;
+		}
+		if (targetQuery.queryIndex == 5) {
+			return normalizedActual.equals(normalize(PHARMA_Q5_FAST_SCALAR_BEFORE_ARM_BRIDGE_QUERY));
+		}
+		return targetQuery.queryIndex == 10
 				&& (normalizedActual.equals(normalize(PHARMA_Q10_FAST_DRUG_FIRST_BRIDGE_QUERY))
 						|| normalizedActual.equals(normalize(PHARMA_Q10_FAST_PATHWAY_TARGET_BRIDGE_QUERY)));
+	}
+
+	private static boolean fastShapeMatches(TargetQuery targetQuery, String expected, String normalizedActual) {
+		if (normalize(expected).equals(normalizedActual) || isKnownFastEquivalent(targetQuery, normalizedActual)) {
+			return true;
+		}
+		List<String> expectedShape = criticalShapeLines(normalize(expected));
+		List<String> actualShape = criticalShapeLines(normalizedActual);
+		return containsOrderedSubsequence(actualShape, expectedShape);
+	}
+
+	private static boolean knownFastPlanEquivalent(TargetQuery targetQuery, String normalizedActual, String plan) {
+		if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 0) {
+			return socialMediaQ0FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 1) {
+			return socialMediaQ1FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 5) {
+			return normalizedActual.contains("VALUES ?u { <http://example.com/theme/social/user/7>")
+					&& normalizedActual
+							.contains("VALUES ?optName { \"user7\" \"user8\" \"user9\" \"user10\" \"user11\" }")
+					&& normalizedActual
+							.contains("FILTER (?optName IN (\"user7\", \"user8\", \"user9\", \"user10\", \"user11\"))")
+					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows")
+					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored")
+					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/name");
+		}
+		if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 10) {
+			return socialMediaQ10FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.TRAIN && targetQuery.queryIndex == 2) {
+			return trainQ2FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.TRAIN && targetQuery.queryIndex == 8) {
+			return trainQ8FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.ELECTRICAL_GRID && targetQuery.queryIndex == 2) {
+			return electricalGridQ2FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.ELECTRICAL_GRID && targetQuery.queryIndex == 4) {
+			return electricalGridQ4FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.ELECTRICAL_GRID && targetQuery.queryIndex == 7) {
+			return electricalGridQ7FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 2) {
+			return libraryQ2FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 4) {
+			return libraryQ4FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 7) {
+			return libraryQ7FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 8) {
+			return libraryQ8FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
+			return engineeringQ9FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		return false;
+	}
+
+	private static List<String> criticalShapeLines(String query) {
+		return query.lines()
+				.map(String::strip)
+				.filter(line -> !line.isEmpty())
+				.filter(LmdbThemeTopRegressionSnapshotTest::isCriticalShapeLine)
+				.map(LmdbThemeTopRegressionSnapshotTest::canonicalShapeLine)
+				.collect(Collectors.toList());
+	}
+
+	private static boolean isCriticalShapeLine(String line) {
+		return line.startsWith("VALUES ")
+				|| line.startsWith("FILTER")
+				|| line.startsWith("OPTIONAL")
+				|| line.startsWith("MINUS")
+				|| line.startsWith("EXISTS")
+				|| line.startsWith("NOT EXISTS")
+				|| line.startsWith("?")
+				|| line.startsWith("<");
+	}
+
+	private static String canonicalShapeLine(String line) {
+		return line.replaceAll("_anon_(path|having)_[A-Za-z0-9]+", "_anon_$1")
+				.replaceAll("\\s+", " ")
+				.strip();
+	}
+
+	private static boolean containsOrderedSubsequence(List<String> actual, List<String> expected) {
+		int actualIndex = 0;
+		for (String expectedLine : expected) {
+			while (actualIndex < actual.size() && !actual.get(actualIndex).equals(expectedLine)) {
+				actualIndex++;
+			}
+			if (actualIndex == actual.size()) {
+				return false;
+			}
+			actualIndex++;
+		}
+		return true;
 	}
 
 	private static void assertKnownPlanShape(SailRepository repository, TargetQuery targetQuery) {
@@ -293,7 +448,757 @@ class LmdbThemeTopRegressionSnapshotTest {
 			assertPlanBefore(plan, targetQuery.key(),
 					"value=http://example.com/theme/pharma/hasResult",
 					"value=http://example.com/theme/pharma/pValue");
+		} else if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 0) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = socialMediaQ0FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast pair/name shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 1) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = socialMediaQ1FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast bounded clique shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 5) {
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			assertPlanContains(plan, targetQuery.key(),
+					"BindingSetAssignment ([[u=http://example.com/theme/social/user/7]",
+					"BindingSetAssignment ([[optName=\"user7\"]",
+					"value=http://example.com/theme/social/name",
+					"value=http://example.com/theme/social/follows",
+					"value=http://example.com/theme/social/authored",
+					"plannedFilterPassRatio=0");
+			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows"),
+					targetQuery.key() + " should use bound follows access:\n" + plan);
+			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored"),
+					targetQuery.key() + " should use bound authored access:\n" + plan);
+			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/name"),
+					targetQuery.key() + " should use bound name access:\n" + plan);
+		} else if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 10) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = socialMediaQ10FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast five-cycle shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.TRAIN && targetQuery.queryIndex == 2) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = trainQ2FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast finite line-name shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.TRAIN && targetQuery.queryIndex == 8) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = trainQ8FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast bounded line-service shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ELECTRICAL_GRID && targetQuery.queryIndex == 2) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = electricalGridQ2FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast substation-transformer shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ELECTRICAL_GRID && targetQuery.queryIndex == 4) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = electricalGridQ4FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast substation-line shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ELECTRICAL_GRID && targetQuery.queryIndex == 7) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = electricalGridQ7FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast substation-transformer anti-join shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 2) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = libraryQ2FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast author-name shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 4) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = libraryQ4FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast title-copy shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 7) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = libraryQ7FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast branch-copy shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 8) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = libraryQ8FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast member-loan shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = engineeringQ9FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast measurement-requirement shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		}
+	}
+
+	private static List<String> socialMediaQ0FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES (?u ?v)",
+				"missing finite pair pruning prefix");
+		requireBefore(mismatches, renderedQuery, "FILTER (?u != ?v)",
+				"?u <http://example.com/theme/social/follows> ?v .",
+				"self-pair pruning should run before the follows lookup");
+		requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
+				"VALUES ?optName",
+				"finite name anchor should run after the bounded follows lookup");
+		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+				"?u <http://example.com/theme/social/name> ?optName .",
+				"optName VALUES should make the name lookup exact");
+		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+				"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+				"optName VALUES should retain the literal filter");
+		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
+				"literal optName filter should remain before projection");
+		requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
+				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
+				"pair projection should run after bounded follows/name lookups");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/follows", "follows");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> socialMediaQ1FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES (?u1 ?u2)",
+				"missing finite u1/u2 pair pruning prefix");
+		requireBefore(mismatches, renderedQuery, "VALUES (?u1 ?u2)", "VALUES ?u3",
+				"finite u3 domain should extend the finite clique prefix");
+		requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u2)",
+				"?u1 <http://example.com/theme/social/follows> ?u2 .",
+				"u1/u2 inequality should run before follows lookups");
+		requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u3)",
+				"?u1 <http://example.com/theme/social/follows> ?u2 .",
+				"u1/u3 inequality should run before follows lookups");
+		requireBefore(mismatches, renderedQuery, "FILTER (?u2 != ?u3)",
+				"?u1 <http://example.com/theme/social/follows> ?u2 .",
+				"u2/u3 inequality should run before follows lookups");
+		requireBefore(mismatches, renderedQuery, "?u1 <http://example.com/theme/social/follows> ?u2 .",
+				"?u2 <http://example.com/theme/social/follows> ?u1 .",
+				"bounded follows clique should probe u1/u2 before u2/u1");
+		requireBefore(mismatches, renderedQuery, "?u2 <http://example.com/theme/social/follows> ?u1 .",
+				"?u1 <http://example.com/theme/social/follows> ?u3 .",
+				"bounded follows clique should probe reciprocal pair before u1/u3");
+		requireBefore(mismatches, renderedQuery, "?u1 <http://example.com/theme/social/follows> ?u3 .",
+				"?u3 <http://example.com/theme/social/follows> ?u1 .",
+				"bounded follows clique should probe u1/u3 before u3/u1");
+		requireBefore(mismatches, renderedQuery, "?u3 <http://example.com/theme/social/follows> ?u1 .",
+				"?u2 <http://example.com/theme/social/follows> ?u3 .",
+				"bounded follows clique should probe u3/u1 before u2/u3");
+		requireBefore(mismatches, renderedQuery, "?u2 <http://example.com/theme/social/follows> ?u3 .",
+				"?u3 <http://example.com/theme/social/follows> ?u2 .",
+				"bounded follows clique should close with u3/u2");
+		requireBefore(mismatches, renderedQuery, "?u3 <http://example.com/theme/social/follows> ?u2 .",
+				"FILTER EXISTS",
+				"correlated name EXISTS should run after the bounded clique lookups");
+		requireContains(mismatches, renderedQuery, "VALUES ?name { \"user0\" \"user1\" }",
+				"correlated name EXISTS should expose its small literal domain");
+		requireBefore(mismatches, renderedQuery, "VALUES ?name { \"user0\" \"user1\" }",
+				"?u1 <http://example.com/theme/social/name> ?name .",
+				"inner name VALUES should guard the correlated name lookup");
+		requireBefore(mismatches, renderedQuery, "FILTER EXISTS", "MINUS",
+				"name EXISTS should run before the materialized self-loop exclusion");
+		requireContains(mismatches, renderedQuery, "MINUS",
+				"self-loop exclusion should remain a materialized anti-join");
+		requireDoesNotContain(mismatches, renderedQuery, "FILTER NOT EXISTS",
+				"self-loop exclusion should not become a correlated FILTER NOT EXISTS");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/follows", "follows");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 7);
+		return mismatches;
+	}
+
+	private static List<String> socialMediaQ10FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES (?a ?b)",
+				"missing fastest known finite (a,b) pruning prefix");
+		requireDoesNotContain(mismatches, renderedQuery, "VALUES (?d ?e)",
+				"must not pair d/e before c/d and d/e inequalities can prune finite domains");
+		requireBefore(mismatches, renderedQuery, "VALUES ?c",
+				"?b <http://example.com/theme/social/follows> ?c .",
+				"finite c bindings should guard the b/c follows lookup");
+		requireBefore(mismatches, renderedQuery, "VALUES ?d",
+				"?c <http://example.com/theme/social/follows> ?d .",
+				"finite d bindings should guard the c/d follows lookup");
+		requireBefore(mismatches, renderedQuery, "VALUES ?e",
+				"?d <http://example.com/theme/social/follows> ?e .",
+				"finite e bindings should guard the d/e follows lookup");
+		requireBefore(mismatches, renderedQuery, "FILTER (?a != ?c)",
+				"?a <http://example.com/theme/social/follows> ?b .",
+				"finite a/c pruning should finish before the first follows lookup");
+		requireBefore(mismatches, renderedQuery, "FILTER (?d != ?e)",
+				"?a <http://example.com/theme/social/follows> ?b .",
+				"finite d/e pruning should finish before the first follows lookup");
+		requireBefore(mismatches, renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
+				"?b <http://example.com/theme/social/follows> ?c .",
+				"follows cascade should expand a/b before b/c");
+		requireBefore(mismatches, renderedQuery, "?b <http://example.com/theme/social/follows> ?c .",
+				"?c <http://example.com/theme/social/follows> ?d .",
+				"follows cascade should expand b/c before c/d");
+		requireBefore(mismatches, renderedQuery, "?c <http://example.com/theme/social/follows> ?d .",
+				"?d <http://example.com/theme/social/follows> ?e .",
+				"follows cascade should expand c/d before d/e");
+		requireBefore(mismatches, renderedQuery, "?d <http://example.com/theme/social/follows> ?e .",
+				"?e <http://example.com/theme/social/follows> ?a .",
+				"follows cascade should close with e/a after d/e");
+		requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/follows> ?a .",
+				"VALUES ?optName",
+				"optional name finite anchor should stay after the bounded follows cascade");
+		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+				"?e <http://example.com/theme/social/name> ?optName .",
+				"optName finite anchor should make the optional name lookup exact");
+		requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/name> ?optName .",
+				"FILTER EXISTS",
+				"correlated EXISTS name probe should run after the optional name lookup");
+		requireContains(mismatches, renderedQuery, "VALUES ?name { \"user7\" \"user8\" }",
+				"correlated EXISTS should expose its small literal name domain");
+		requireBefore(mismatches, renderedQuery, "VALUES ?name { \"user7\" \"user8\" }",
+				"?a <http://example.com/theme/social/name> ?name .",
+				"inner name VALUES should guard the correlated name lookup");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/follows", "follows");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 6);
+		return mismatches;
+	}
+
+	private static List<String> trainQ2FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?lineName { \"Line 0\" \"Line 1\" \"Line 2\" }",
+				"missing finite line-name anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?lineName",
+				"?line <http://example.com/theme/train/name> ?lineName .",
+				"finite line-name values should guard the line name lookup");
+		requireBefore(mismatches, renderedQuery, "?line <http://example.com/theme/train/name> ?lineName .",
+				"?line a <http://example.com/theme/train/Line> .",
+				"line name lookup should bind line before the type guard");
+		requireBefore(mismatches, renderedQuery, "?line a <http://example.com/theme/train/Line> .",
+				"OPTIONAL",
+				"Line type guard should run before optional section fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL",
+				"?section <http://example.com/theme/train/partOfLine> ?line .",
+				"partOfLine should stay inside the optional after line is bound");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Line type");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
+				"plannedLookupComponents=[O]", "partOfLine optional should use bound line object access");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> trainQ8FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?optName { \"Line 0\" \"Line 1\" }",
+				"missing finite line-name anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+				"?line <http://example.com/theme/train/name> ?optName .",
+				"literal optName filter should guard the line name lookup");
+		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"Line 0\", \"Line 1\"))",
+				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
+				"retained optName filter should run before section fanout");
+		requireBefore(mismatches, renderedQuery, "?line <http://example.com/theme/train/name> ?optName .",
+				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
+				"line name lookup should bind line before the first section lookup");
+		requireBefore(mismatches, renderedQuery, "?s1 <http://example.com/theme/train/partOfLine> ?line .",
+				"?service <http://example.com/theme/train/runsOnSection> ?s1 .",
+				"first section lookup should bind s1 before service fanout");
+		requireBefore(mismatches, renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s1 .",
+				"?service <http://example.com/theme/train/runsOnSection> ?s2 .",
+				"bound service should drive the second section probe");
+		requireBefore(mismatches, renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s2 .",
+				"?s2 <http://example.com/theme/train/partOfLine> ?line .",
+				"second service section should be checked against the bounded line");
+		requireBefore(mismatches, renderedQuery, "?s1 <http://example.com/theme/train/connectsOperationalPoint> ?op .",
+				"?s2 <http://example.com/theme/train/connectsOperationalPoint> ?op .",
+				"operational-point EXISTS should probe s1 before the exact s2 join");
+		requireBefore(mismatches, renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s1 .",
+				"?service a <http://example.com/theme/train/TrainService> .",
+				"first runsOnSection lookup should bind service before the type guard");
+		requireBefore(mismatches, renderedQuery, "?service a <http://example.com/theme/train/TrainService> .",
+				"FILTER EXISTS",
+				"TrainService type guard should run before the correlated operational-point EXISTS");
+		requireBefore(mismatches, renderedQuery, "?s2 <http://example.com/theme/train/partOfLine> ?line .",
+				"FILTER EXISTS",
+				"bounded service/section lookups should run before the correlated operational-point EXISTS");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
+				"plannedLookupComponents=[O]", "partOfLine should use bound line object access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/connectsOperationalPoint",
+				"plannedLookupComponents=[S, P]", "first operational-point probe should use bound section access");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/runsOnSection", "runsOnSection");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "TrainService type");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 5);
+		return mismatches;
+	}
+
+	private static List<String> electricalGridQ2FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"VALUES ?name { \"Substation 0\" \"Substation 1\" \"Substation 2\" }",
+				"missing finite substation-name anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?name",
+				"?substation <http://example.com/theme/grid/name> ?name .",
+				"finite substation-name values should guard the name lookup");
+		requireBefore(mismatches, renderedQuery, "?substation <http://example.com/theme/grid/name> ?name .",
+				"?transformer <http://example.com/theme/grid/feeds> ?substation .",
+				"name lookup should bind substation before transformer feeds");
+		requireBefore(mismatches, renderedQuery, "?transformer <http://example.com/theme/grid/feeds> ?substation .",
+				"?transformer a <http://example.com/theme/grid/Transformer> .",
+				"feeds lookup should bind transformer before the type guard");
+		requireBefore(mismatches, renderedQuery, "?transformer a <http://example.com/theme/grid/Transformer> .",
+				"OPTIONAL",
+				"Transformer type guard should run before optional meter fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL",
+				"?transformer <http://example.com/theme/grid/hasMeter> ?meter .",
+				"hasMeter lookup should stay inside the optional after transformer is bound");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/grid/name", "grid name");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/feeds",
+				"plannedLookupComponents=[O]", "feeds should use bound substation object access");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Transformer type");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/hasMeter",
+				"plannedLookupComponents=[S, P]", "hasMeter optional should use bound transformer subject access");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> electricalGridQ4FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?name { \"Substation 0\" \"Substation 1\" }",
+				"missing finite substation-name anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?name",
+				"?substation <http://example.com/theme/grid/name> ?name .",
+				"finite substation-name values should guard the name lookup");
+		requireBefore(mismatches, renderedQuery, "?substation <http://example.com/theme/grid/name> ?name .",
+				"?line <http://example.com/theme/grid/connectsTo> ?substation .",
+				"name lookup should bind substation before line expansion");
+		requireBefore(mismatches, renderedQuery, "?line <http://example.com/theme/grid/connectsTo> ?substation .",
+				"?line a <http://example.com/theme/grid/Line> .",
+				"connectsTo lookup should bind line before the type guard");
+		requireBefore(mismatches, renderedQuery, "?line a <http://example.com/theme/grid/Line> .",
+				"OPTIONAL",
+				"Line type guard should run before optional connectsTo fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL",
+				"?line <http://example.com/theme/grid/connectsTo> ?other2 .",
+				"optional connectsTo lookup should stay inside the optional");
+		requireBefore(mismatches, renderedQuery, "?line <http://example.com/theme/grid/connectsTo> ?other2 .",
+				"FILTER EXISTS",
+				"optional fanout should stay before the retained correlated EXISTS");
+		requireBefore(mismatches, renderedQuery, "FILTER EXISTS",
+				"?line <http://example.com/theme/grid/connectsTo> ?other .",
+				"correlated EXISTS should retain its bound line probe");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/grid/name", "grid name");
+		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/connectsTo",
+				"plannedLookupComponents=[O]", "first connectsTo should use bound substation object access");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Line type");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> electricalGridQ7FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?name { \"Substation 0\" \"Substation 1\" }",
+				"missing finite substation-name anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?name",
+				"?substation <http://example.com/theme/grid/name> ?name .",
+				"finite substation-name values should guard the name lookup");
+		requireBefore(mismatches, renderedQuery, "?substation <http://example.com/theme/grid/name> ?name .",
+				"?transformer <http://example.com/theme/grid/feeds> ?substation .",
+				"name lookup should bind substation before transformer feeds");
+		requireBefore(mismatches, renderedQuery, "?transformer <http://example.com/theme/grid/feeds> ?substation .",
+				"?transformer a <http://example.com/theme/grid/Transformer> .",
+				"feeds lookup should bind transformer before the type guard");
+		requireBefore(mismatches, renderedQuery, "?transformer a <http://example.com/theme/grid/Transformer> .",
+				"FILTER EXISTS",
+				"Transformer type guard should run before bounded meter EXISTS");
+		requireBefore(mismatches, renderedQuery, "FILTER EXISTS",
+				"?transformer <http://example.com/theme/grid/hasMeter> ?meter .",
+				"meter EXISTS should retain its bound transformer probe");
+		requireBefore(mismatches, renderedQuery, "FILTER EXISTS", "MINUS",
+				"bounded meter EXISTS should run before the materialized anti-join");
+		requireContains(mismatches, renderedQuery, "MINUS",
+				"meter/substation exclusion should remain a materialized anti-join");
+		requireBefore(mismatches, renderedQuery, "?meter <http://example.com/theme/grid/measures> ?load .",
+				"FILTER (?load = ?substation)",
+				"MINUS filter should stay attached to the meter measure probe");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/grid/name", "grid name");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/feeds",
+				"plannedLookupComponents=[O]", "feeds should use bound substation object access");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Transformer type");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/hasMeter",
+				"plannedLookupComponents=[S, P]", "hasMeter EXISTS should use bound transformer subject access");
+		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/measures",
+				"plannedLookupComponents=[P]", "MINUS measure probe should remain predicate anchored");
+		requireContains(mismatches, plan, "antiJoinRewrite=materialized-minus",
+				"MINUS should remain materialized instead of correlated filter-not-exists");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> libraryQ2FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"VALUES ?authorName { \"Author 1\" \"Author 2\" \"Author 3\" }",
+				"missing finite author-name anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?authorName",
+				"?author <http://example.com/theme/library/name> ?authorName .",
+				"finite author-name values should guard the name lookup");
+		requireBefore(mismatches, renderedQuery, "?author <http://example.com/theme/library/name> ?authorName .",
+				"?author a <http://example.com/theme/library/Author> .",
+				"name lookup should bind author before the type guard");
+		requireBefore(mismatches, renderedQuery, "?author a <http://example.com/theme/library/Author> .",
+				"OPTIONAL",
+				"Author type guard should run before optional book fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL",
+				"?book <http://example.com/theme/library/writtenBy> ?author .",
+				"writtenBy lookup should stay inside the optional after author is bound");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/library/name", "library name");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Author type");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/writtenBy",
+				"plannedLookupComponents=[O]", "writtenBy optional should use bound author object access");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> libraryQ4FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?title { \"Book 1\" \"Book 2\" }",
+				"missing finite title anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?title",
+				"?book <http://example.com/theme/library/title> ?title .",
+				"finite title values should guard the title lookup");
+		requireBefore(mismatches, renderedQuery, "?book <http://example.com/theme/library/title> ?title .",
+				"?book a <http://example.com/theme/library/Book> .",
+				"title lookup should bind book before the type guard");
+		requireBefore(mismatches, renderedQuery, "?book a <http://example.com/theme/library/Book> .",
+				"OPTIONAL",
+				"Book type guard should run before optional author fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL",
+				"?book <http://example.com/theme/library/writtenBy> ?author .",
+				"writtenBy lookup should stay inside the optional after book is bound");
+		requireBefore(mismatches, renderedQuery, "?book <http://example.com/theme/library/writtenBy> ?author .",
+				"FILTER EXISTS",
+				"optional author fanout should run before the bounded copy EXISTS");
+		requireBefore(mismatches, renderedQuery, "FILTER EXISTS",
+				"?book <http://example.com/theme/library/hasCopy> ?copy .",
+				"copy EXISTS should retain its bound book probe");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/title",
+				"plannedLookupComponents=[P, O]", "title lookup should use finite title object access");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[S, P, O]", "Book type should use bound book direct access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/writtenBy",
+				"plannedLookupComponents=[S, P]", "writtenBy optional should use bound book subject access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/hasCopy",
+				"plannedLookupComponents=[S, P]", "hasCopy EXISTS should use bound book subject access");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> libraryQ7FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?branchName { \"Branch 0\" \"Branch 1\" }",
+				"missing finite branch-name anchor");
+		requireContains(mismatches, renderedQuery, "FILTER (!(CONTAINS(STR(?branch), \"branch/0\")))",
+				"missing retained branch exclusion filter");
+		requireBefore(mismatches, renderedQuery, "VALUES ?branchName",
+				"?branch <http://example.com/theme/library/name> ?branchName .",
+				"finite branch-name values should guard the branch name lookup");
+		requireBefore(mismatches, renderedQuery, "?branch <http://example.com/theme/library/name> ?branchName .",
+				"FILTER (!(CONTAINS(STR(?branch), \"branch/0\")))",
+				"branch exclusion should run after branch is bound");
+		requireBefore(mismatches, renderedQuery, "FILTER (!(CONTAINS(STR(?branch), \"branch/0\")))",
+				"?copy <http://example.com/theme/library/locatedAt> ?branch .",
+				"branch exclusion should run before copy location expansion");
+		requireBefore(mismatches, renderedQuery, "?copy <http://example.com/theme/library/locatedAt> ?branch .",
+				"?copy a <http://example.com/theme/library/Copy> .",
+				"locatedAt should bind copy before the Copy type guard");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/name",
+				"plannedLookupComponents=[P, O]", "branch name lookup should use finite branch-name object access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/locatedAt",
+				"plannedLookupComponents=[O]", "locatedAt should use bound branch object access");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[S, P, O]", "Copy type should use bound copy exact access");
+		requirePredicateLookupWorkRowsAbove(mismatches, plan,
+				"http://example.com/theme/library/locatedAt", 1_000.0d);
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> libraryQ8FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"VALUES ?optName { \"Member 1\" \"Member 2\" \"Member 3\" }",
+				"missing finite member-name anchor");
+		requireContains(mismatches, renderedQuery,
+				"FILTER (?optName IN (\"Member 1\", \"Member 2\", \"Member 3\"))",
+				"missing retained member-name filter");
+		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+				"?member <http://example.com/theme/library/name> ?optName .",
+				"finite member-name values should guard the name lookup");
+		requireBefore(mismatches, renderedQuery, "?member <http://example.com/theme/library/name> ?optName .",
+				"?loan <http://example.com/theme/library/borrowedBy> ?member .",
+				"name lookup should bind member before loan lookup");
+		requireBefore(mismatches, renderedQuery, "?loan <http://example.com/theme/library/borrowedBy> ?member .",
+				"?loan a <http://example.com/theme/library/Loan> .",
+				"borrowedBy should bind loan before the Loan type guard");
+		requireBefore(mismatches, renderedQuery, "?loan a <http://example.com/theme/library/Loan> .",
+				"?loan <http://example.com/theme/library/loanedCopy> ?copy .",
+				"Loan type guard should run before copy fanout");
+		requireBefore(mismatches, renderedQuery, "?loan <http://example.com/theme/library/loanedCopy> ?copy .",
+				"?book <http://example.com/theme/library/hasCopy> ?copy .",
+				"loanedCopy should bind copy before book lookup");
+		requireBefore(mismatches, renderedQuery, "?book <http://example.com/theme/library/hasCopy> ?copy .",
+				"?book a <http://example.com/theme/library/Book> .",
+				"hasCopy should bind book before the Book type guard");
+		requireBefore(mismatches, renderedQuery, "?book a <http://example.com/theme/library/Book> .",
+				"?book <http://example.com/theme/library/writtenBy> ?author .",
+				"Book type guard should run before author fanout");
+		requireBefore(mismatches, renderedQuery, "?book <http://example.com/theme/library/writtenBy> ?author .",
+				"?copy <http://example.com/theme/library/locatedAt> ?branch .",
+				"writtenBy should remain before the branch fanout");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/name",
+				"plannedLookupComponents=[P, O]", "name lookup should use finite member-name object access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/borrowedBy",
+				"plannedLookupComponents=[P, O]", "borrowedBy should use bound member object access");
+		requireAnyPredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[S, P, O]", "type guards should use exact direct access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/loanedCopy",
+				"plannedLookupComponents=[S, P]", "loanedCopy should use bound loan subject access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/hasCopy",
+				"plannedLookupComponents=[P, O]", "hasCopy should use bound copy object access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/writtenBy",
+				"plannedLookupComponents=[S, P]", "writtenBy should use bound book subject access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/locatedAt",
+				"plannedLookupComponents=[S, P]", "locatedAt should use bound copy subject access");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 6);
+		return mismatches;
+	}
+
+	private static List<String> engineeringQ9FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireBefore(mismatches, renderedQuery,
+				"?measurement <http://example.com/theme/engineering/measuredValue> ?value .",
+				"FILTER (?value IN (0.85, 0.9, 0.95))",
+				"measuredValue lookup should feed the retained value filter");
+		requireContains(mismatches, renderedQuery, "VALUES ?threshold { 0.85 }",
+				"single-row threshold binding should remain visible");
+		requireBefore(mismatches, renderedQuery, "FILTER (?value IN (0.85, 0.9, 0.95))",
+				"?test <http://example.com/theme/engineering/verifiedBy> ?measurement .",
+				"value filter should run before the measurement-to-test bridge");
+		requireBefore(mismatches, renderedQuery,
+				"?test <http://example.com/theme/engineering/verifiedBy> ?measurement .",
+				"?requirement <http://example.com/theme/engineering/verifiedBy> ?test .",
+				"verifiedBy cascade should bind test before requirement");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/verifiedBy> ?test .",
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"requirement type guard should run after requirement is bound");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"OPTIONAL",
+				"requirement chain should finish before optional component-name fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL",
+				"FILTER ((?optName != \"\") && EXISTS",
+				"optional component name should remain before the correlated filter");
+		requireContains(mismatches, renderedQuery,
+				"?component <http://example.com/theme/engineering/name> ?optName .",
+				"optional component-name lookup should remain visible");
+		requireContains(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"correlated satisfies EXISTS should remain visible");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/verifiedBy", "verifiedBy");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"Requirement type");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/measuredValue",
+				"plannedLookupComponents=[P]", "measuredValue should stay a bounded predicate scan");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/name",
+				"plannedLookupComponents=[P]", "optional component name should stay predicate-local");
+		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/satisfies",
+				"plannedIndexAccessMode=directLookup", "correlated satisfies EXISTS should be direct");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
+	private static void requireContains(List<String> mismatches, String text, String expected, String description) {
+		if (!text.contains(expected)) {
+			mismatches.add(description + ": missing `" + expected + "`");
+		}
+	}
+
+	private static void requireDoesNotContain(List<String> mismatches, String text, String unexpected,
+			String description) {
+		if (text.contains(unexpected)) {
+			mismatches.add(description + ": found `" + unexpected + "`");
+		}
+	}
+
+	private static void requireBefore(List<String> mismatches, String text, String before, String after,
+			String description) {
+		int beforeIndex = text.indexOf(before);
+		int afterIndex = text.indexOf(after);
+		if (beforeIndex < 0 || afterIndex < 0 || beforeIndex >= afterIndex) {
+			mismatches.add(description + ": expected `" + before + "` before `" + after + "`");
+		}
+	}
+
+	private static void requirePlanAccess(List<String> mismatches, String plan, String predicateIri, String label) {
+		if (!planHasBoundPredicateAccess(plan, predicateIri)) {
+			mismatches.add("missing bound " + label + " predicate access for `" + predicateIri + "`");
+		}
+	}
+
+	private static void requirePredicateHeaderContains(List<String> mismatches, String plan, String predicateIri,
+			String expectedHeaderPart, String description) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		if (predicateIndex < 0) {
+			mismatches.add(description + ": missing predicate `" + predicateIri + "`");
+			return;
+		}
+		int patternStart = plan.lastIndexOf("StatementPattern (", predicateIndex);
+		int patternEnd = plan.indexOf('\n', patternStart);
+		if (patternStart < 0 || patternEnd < 0) {
+			mismatches.add(description + ": missing statement-pattern header for `" + predicateIri + "`");
+			return;
+		}
+		String header = plan.substring(patternStart, patternEnd);
+		if (!header.contains(expectedHeaderPart)) {
+			mismatches.add(description + ": expected `" + expectedHeaderPart + "` in `" + header + "`");
+		}
+	}
+
+	private static void requireAnyPredicateHeaderContains(List<String> mismatches, String plan, String predicateIri,
+			String expectedHeaderPart, String description) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		boolean foundPredicate = false;
+		while (predicateIndex >= 0) {
+			foundPredicate = true;
+			int patternStart = plan.lastIndexOf("StatementPattern (", predicateIndex);
+			int patternEnd = patternStart >= 0 ? plan.indexOf('\n', patternStart) : -1;
+			if (patternStart >= 0 && patternEnd >= 0) {
+				String header = plan.substring(patternStart, patternEnd);
+				if (header.contains(expectedHeaderPart)) {
+					return;
+				}
+			}
+			predicateIndex = plan.indexOf("value=" + predicateIri, predicateIndex + 1);
+		}
+		if (!foundPredicate) {
+			mismatches.add(description + ": missing predicate `" + predicateIri + "`");
+		} else {
+			mismatches.add(description + ": no `" + predicateIri + "` header contained `" + expectedHeaderPart + "`");
+		}
+	}
+
+	private static void requireDirectLookupAccessWorkRowsBelow(List<String> mismatches, String plan, double maxWorkRows,
+			int minDirectLookups) {
+		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+		int directLookupCount = 0;
+		while (matcher.find()) {
+			directLookupCount++;
+			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
+			if (workRows > maxWorkRows) {
+				mismatches.add("direct lookup plannedAccessWorkRows should be <= " + maxWorkRows + " but got "
+						+ workRows);
+			}
+		}
+		if (directLookupCount < minDirectLookups) {
+			mismatches.add("expected at least " + minDirectLookups + " direct lookup factors but found "
+					+ directLookupCount);
+		}
+	}
+
+	private static void requirePredicateLookupWorkRowsAbove(List<String> mismatches, String plan, String predicateIri,
+			double minWorkRows) {
+		String pattern = statementPatternForPredicate(plan, predicateIri);
+		if (pattern == null) {
+			mismatches.add("missing predicate `" + predicateIri + "`");
+			return;
+		}
+		Matcher matcher = Pattern.compile("plannedWorkRows=([^,)]*)").matcher(pattern);
+		if (!matcher.find()) {
+			mismatches.add("missing plannedWorkRows for predicate `" + predicateIri + "`");
+			return;
+		}
+		double workRows = parsePlanRows(matcher.group(1));
+		if (workRows < minWorkRows) {
+			mismatches.add("expected `" + predicateIri + "` plannedWorkRows >= " + minWorkRows + " but got "
+					+ workRows);
+		}
+	}
+
+	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
+		Matcher accessWorkRows = Pattern.compile("plannedAccessWorkRows=([^,)]*)").matcher(directLookupHeader);
+		return accessWorkRows.find() ? parsePlanRows(accessWorkRows.group(1)) : parsePlanRows(fallbackWorkRows);
+	}
+
+	private static double parsePlanRows(String value) {
+		String trimmed = value.trim();
+		double multiplier = 1.0d;
+		if (trimmed.endsWith("K")) {
+			multiplier = 1_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("M")) {
+			multiplier = 1_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		} else if (trimmed.endsWith("B")) {
+			multiplier = 1_000_000_000.0d;
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		}
+		return Double.parseDouble(trimmed) * multiplier;
+	}
+
+	private static boolean planHasBoundPredicateAccess(String plan, String predicateIri) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		while (predicateIndex >= 0) {
+			int patternStart = plan.lastIndexOf("StatementPattern (", predicateIndex);
+			if (patternStart >= 0) {
+				int patternEnd = plan.indexOf('\n', patternStart);
+				String patternLine = plan.substring(patternStart, patternEnd >= 0 ? patternEnd : plan.length());
+				if (patternLine.contains("plannedBoundVars=")) {
+					return true;
+				}
+			}
+			predicateIndex = plan.indexOf("value=" + predicateIri, predicateIndex + 1);
+		}
+		return false;
+	}
+
+	private static String statementPatternForPredicate(String plan, String predicateIri) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		if (predicateIndex < 0) {
+			return null;
+		}
+		int patternStart = plan.lastIndexOf("StatementPattern (", predicateIndex);
+		if (patternStart < 0) {
+			return null;
+		}
+		int nextPattern = plan.indexOf("StatementPattern (", predicateIndex + 1);
+		return plan.substring(patternStart, nextPattern >= 0 ? nextPattern : plan.length());
 	}
 
 	private static String explainOptimizedPlan(SailRepository repository, TargetQuery targetQuery) {

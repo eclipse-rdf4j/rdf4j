@@ -49,6 +49,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import org.apache.datasketches.hash.MurmurHash3;
+import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesCompactSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -2833,6 +2834,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private PatternStats freezePatternStats(PatternStats patternStats) {
 		if (patternStats.sketch == null) {
+			return patternStats;
+		}
+		if (patternStats.sketch.isEmpty()) {
+			return new PatternStats(EMPTY, patternStats.card);
+		}
+		if (patternStats.sketch instanceof ArrayOfDoublesCompactSketch) {
 			return patternStats;
 		}
 		return new PatternStats(patternStats.sketch.compact(), patternStats.card);

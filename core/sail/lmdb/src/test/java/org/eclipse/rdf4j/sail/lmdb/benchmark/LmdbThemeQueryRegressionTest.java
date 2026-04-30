@@ -420,7 +420,7 @@ class LmdbThemeQueryRegressionTest {
 							"?a <http://example.com/theme/social/follows> ?b .",
 							"Social media q10 should finish finite-domain pruning before probing follows\n"
 									+ snapshot.plan());
-					assertDirectLookupPlannedWorkRowsBelow(snapshot.plan(), 100.0d, 5);
+					assertDirectLookupAccessWorkRowsBelow(snapshot.plan(), 100.0d, 5);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -713,10 +713,18 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 7, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "VALUES ?branchName",
+							"<http://example.com/theme/library/name> ?branchName",
+							"Library q7 should bind finite branch names before the branch name lookup\n"
+									+ snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/library/name> ?branchName",
 							"<http://example.com/theme/library/locatedAt> ?branch",
 							"Library q7 should keep the selective branch-name anchor before copy location expansion");
 					assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
+					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
+							12.0d);
+					assertPredicateLookupWorkRowsAbove(snapshot.plan(),
+							"http://example.com/theme/library/locatedAt", 1_000.0d);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -747,6 +755,42 @@ class LmdbThemeQueryRegressionTest {
 					assertDoesNotContain(snapshot.plan(), "deferredFilterScope=bindingPrefix",
 							"Library q5 should not place the correlated NOT EXISTS around the threshold VALUES "
 									+ "before the Loan type guard\n" + snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void libraryMemberLoansApplyLoanTypeBeforeCopyFanout(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 8, snapshot.plan());
+					String renderedQuery = snapshot.renderedQuery();
+					assertBefore(renderedQuery, "VALUES ?optName { \"Member 1\" \"Member 2\" \"Member 3\" }",
+							"?member <http://example.com/theme/library/name> ?optName",
+							"Library q8 should keep the finite member-name anchor before the name lookup\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?member <http://example.com/theme/library/name> ?optName",
+							"?loan <http://example.com/theme/library/borrowedBy> ?member",
+							"Library q8 should use the bounded member before binding loans\n" + snapshot.plan());
+					assertBefore(renderedQuery, "?loan <http://example.com/theme/library/borrowedBy> ?member",
+							"?loan a <http://example.com/theme/library/Loan>",
+							"Library q8 should bind loans through borrowedBy before the Loan type guard\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?loan a <http://example.com/theme/library/Loan>",
+							"?loan <http://example.com/theme/library/loanedCopy> ?copy",
+							"Library q8 should apply the cheap Loan type guard before copy/book fanout\n"
+									+ snapshot.plan());
+					assertDirectLookupWorkRowsBelow(snapshot.plan(), 200.0d, 6);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1996,6 +2040,28 @@ class LmdbThemeQueryRegressionTest {
 			throw new AssertionError(
 					"Expected at least " + minDirectLookups + " direct lookup factors in:\n" + plan);
 		}
+	}
+
+	private static void assertDirectLookupAccessWorkRowsBelow(String plan, double maxWorkRows, int minDirectLookups) {
+		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+		int directLookupCount = 0;
+		while (matcher.find()) {
+			directLookupCount++;
+			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
+			if (workRows > maxWorkRows) {
+				throw new AssertionError("Expected direct lookup plannedAccessWorkRows <= " + maxWorkRows
+						+ " but got " + workRows + " in:\n" + plan);
+			}
+		}
+		if (directLookupCount < minDirectLookups) {
+			throw new AssertionError(
+					"Expected at least " + minDirectLookups + " direct lookup factors in:\n" + plan);
+		}
+	}
+
+	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
+		Matcher accessWorkRows = Pattern.compile("plannedAccessWorkRows=([^,)]*)").matcher(directLookupHeader);
+		return accessWorkRows.find() ? parsePlanRows(accessWorkRows.group(1)) : parsePlanRows(fallbackWorkRows);
 	}
 
 	private static double directLookupAccessRows(String directLookupHeader, String fallbackWorkRows) {

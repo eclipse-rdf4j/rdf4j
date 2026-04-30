@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -119,11 +121,20 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 
 		TupleExpr arg = filter.getArg();
+		List<ValueExpr> conditions = LmdbJoinPlanSupport.splitConjuncts(filter.getCondition());
+		Set<String> mandatoryOptionalAnchorBindings = new HashSet<>();
+		TupleExpr mandatoryArg = makeUnboundRejectingOptionalsMandatory(arg, conditions,
+				mandatoryOptionalAnchorBindings);
+		if (mandatoryArg != arg) {
+			arg = mandatoryArg;
+			filter.setArg(arg);
+		}
+
 		Set<String> assuredBindings = arg.getAssuredBindingNames();
 		Map<String, LinkedHashSet<Value>> assignmentValues = collectSmallLiteralAssignmentValues(arg);
 		List<BindingSetAssignment> anchors = new ArrayList<>();
 		List<ValueExpr> remainingConditions = new ArrayList<>();
-		for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
+		for (ValueExpr condition : conditions) {
 			BindingSetAssignment valuesVariableAnchor = valuesVariableFilterAnchor(condition, assignmentValues);
 			if (valuesVariableAnchor != null
 					&& isSelectiveSmallLiteralAnchor(filter, condition)
@@ -135,8 +146,17 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			}
 
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
+			if (shouldRetainMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings)) {
+				remainingConditions.add(condition);
+				continue;
+			}
 			if (anchor != null && canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings)) {
-				anchors.add(anchor);
+				if (equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)) {
+					remainingConditions.add(condition);
+				} else {
+					anchors.add(anchor);
+					remainingConditions.add(condition);
+				}
 			} else {
 				remainingConditions.add(condition);
 			}
@@ -155,6 +175,99 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		filter.setArg(anchoredArg);
 		filter.setCondition(LmdbJoinPlanSupport.combinedCondition(remainingConditions));
 		annotateFilter(filter);
+	}
+
+	private static TupleExpr makeUnboundRejectingOptionalsMandatory(TupleExpr arg, List<ValueExpr> conditions,
+			Set<String> mandatoryOptionalAnchorBindings) {
+		TupleExpr current = arg;
+		for (ValueExpr condition : conditions) {
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
+			String bindingName = singleBindingName(anchor);
+			if (bindingName == null) {
+				continue;
+			}
+			TupleExpr mandatory = makeOptionalBindingMandatory(current, bindingName, anchor);
+			if (mandatory != current) {
+				current = mandatory;
+				mandatoryOptionalAnchorBindings.add(bindingName);
+			}
+		}
+		return current;
+	}
+
+	private static TupleExpr makeOptionalBindingMandatory(TupleExpr arg, String bindingName,
+			BindingSetAssignment anchor) {
+		if (!(arg instanceof LeftJoin)) {
+			return arg;
+		}
+
+		LeftJoin leftJoin = (LeftJoin) arg;
+		if (leftJoin.hasCondition() || leftJoin.getLeftArg().getBindingNames().contains(bindingName)
+				|| !leftJoin.getRightArg().getBindingNames().contains(bindingName)) {
+			return arg;
+		}
+		TupleExpr mandatoryRightArg = new Join(anchor, leftJoin.getRightArg());
+		TupleExpr hoisted = hoistMandatoryRightArgAheadOfScopedFanout(leftJoin.getLeftArg(), mandatoryRightArg);
+		if (hoisted != null) {
+			return hoisted;
+		}
+		return new Join(leftJoin.getLeftArg(), mandatoryRightArg);
+	}
+
+	private static TupleExpr hoistMandatoryRightArgAheadOfScopedFanout(TupleExpr leftArg, TupleExpr mandatoryRightArg) {
+		if (!(leftArg instanceof Join)) {
+			return null;
+		}
+
+		Join leftJoin = (Join) leftArg;
+		TupleExpr seedArg = leftJoin.getLeftArg();
+		TupleExpr fanoutArg = leftJoin.getRightArg();
+		if (!(fanoutArg instanceof Union) && (!(fanoutArg instanceof VariableScopeChange)
+				|| !((VariableScopeChange) fanoutArg).isVariableScopeChange())) {
+			return null;
+		}
+
+		Set<String> sharedBindingNames = new HashSet<>(mandatoryRightArg.getBindingNames());
+		sharedBindingNames.retainAll(leftArg.getBindingNames());
+		if (sharedBindingNames.isEmpty() || !seedArg.getAssuredBindingNames().containsAll(sharedBindingNames)) {
+			return null;
+		}
+
+		return new Join(new Join(seedArg, mandatoryRightArg), fanoutArg);
+	}
+
+	private static boolean shouldRetainMandatoryOptionalFilter(BindingSetAssignment anchor,
+			Set<String> mandatoryOptionalAnchorBindings) {
+		String bindingName = singleBindingName(anchor);
+		return bindingName != null && mandatoryOptionalAnchorBindings.contains(bindingName);
+	}
+
+	private static String singleBindingName(BindingSetAssignment anchor) {
+		if (anchor == null || anchor.getBindingNames().size() != 1) {
+			return null;
+		}
+		return anchor.getBindingNames().iterator().next();
+	}
+
+	private static boolean equivalentSmallLiteralAssignmentExists(BindingSetAssignment anchor,
+			Map<String, LinkedHashSet<Value>> assignmentValues) {
+		String bindingName = singleBindingName(anchor);
+		if (bindingName == null) {
+			return false;
+		}
+		LinkedHashSet<Value> existingValues = assignmentValues.get(bindingName);
+		if (existingValues == null) {
+			return false;
+		}
+		LinkedHashSet<Value> anchorValues = new LinkedHashSet<>();
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value == null) {
+				return false;
+			}
+			anchorValues.add(value);
+		}
+		return existingValues.equals(anchorValues);
 	}
 
 	private static Map<String, LinkedHashSet<Value>> collectSmallLiteralAssignmentValues(TupleExpr tupleExpr) {
@@ -256,8 +369,12 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private boolean canMaterializeSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
 			BindingSetAssignment anchor,
 			Set<String> assuredBindings) {
-		return anchor.getBindingNames().size() == 1
-				&& assuredBindings.contains(anchor.getBindingNames().iterator().next())
+		if (anchor.getBindingNames().size() != 1) {
+			return false;
+		}
+		String bindingName = anchor.getBindingNames().iterator().next();
+		return assuredBindings.contains(bindingName)
+				&& !LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)
 				&& LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
 	}
 

@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
@@ -45,7 +44,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	}
 
 	private static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
-	private static final BindingSetAssignmentInlinerOptimizer BINDING_SET_ASSIGNMENT_INLINER = new BindingSetAssignmentInlinerOptimizer();
 	private static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	private static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
 	private static final DisjunctiveConstraintOptimizer DISJUNCTIVE_CONSTRAINT_OPTIMIZER = new DisjunctiveConstraintOptimizer();
@@ -71,7 +69,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
-				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,

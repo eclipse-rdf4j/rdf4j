@@ -884,6 +884,97 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void dynamicProgrammingKeepsFiveCycleFiniteDomainsInChainOrder() {
+		StubSailStore store = new StubSailStore();
+		IRI follows = VF.createIRI("urn:follows");
+		IRI name = VF.createIRI("urn:name");
+		List<Resource> users = new ArrayList<>();
+		List<org.eclipse.rdf4j.model.Value> userNames = new ArrayList<>();
+		for (int i = 7; i <= 11; i++) {
+			Resource user = VF.createIRI("urn:user:" + i);
+			users.add(user);
+			userNames.add(VF.createLiteral("user" + i));
+			store.add(VF.createStatement(user, name, VF.createLiteral("user" + i)));
+		}
+		for (Resource left : users) {
+			for (Resource right : users) {
+				if (!left.equals(right)) {
+					store.add(VF.createStatement(left, follows, right));
+				}
+			}
+		}
+
+		BindingSetAssignment aValues = singleVariableValues("a", users);
+		BindingSetAssignment bValues = singleVariableValues("b", users);
+		BindingSetAssignment cValues = singleVariableValues("c", users);
+		BindingSetAssignment dValues = singleVariableValues("d", users);
+		BindingSetAssignment eValues = singleVariableValues("e", users);
+		BindingSetAssignment optNameValues = singleVariableValues("optName", userNames);
+		BindingSetAssignment nameValues = singleVariableValues("name", userNames.subList(0, 2));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern aFollowsB = pattern("a", follows, "b");
+		StatementPattern bFollowsC = pattern("b", follows, "c");
+		StatementPattern cFollowsD = pattern("c", follows, "d");
+		StatementPattern dFollowsE = pattern("d", follows, "e");
+		StatementPattern eFollowsA = pattern("e", follows, "a");
+		StatementPattern eName = pattern("e", name, "optName");
+		StatementPattern aName = pattern("a", name, "name");
+		TupleExpr nestedNameLookup = new Join(nameValues, aName);
+		List<TupleExpr> args = List.of(aValues, bValues, cValues, dValues, eValues, optNameValues,
+				aFollowsB, bFollowsC, cFollowsD, dFollowsE, eFollowsA, eName);
+		List<JoinOrderPlanner.FilterConstraint> deferredFilters = List.of(notEqualFilter("a", "b"),
+				notEqualFilter("b", "c"), notEqualFilter("c", "d"), notEqualFilter("d", "e"),
+				notEqualFilter("a", "c"),
+				new JoinOrderPlanner.FilterConstraint(Set.of("a"), 0.4d, JoinOrderPlanner.FILTER_COST_EXPENSIVE,
+						"exists-name", "sketch_nested_exists", 0L, new Exists(nestedNameLookup.clone()),
+						nestedNameLookup, false, false));
+
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor instanceof BindingSetAssignment assignment) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(bindingSetRows(assignment),
+						bindingSetRows(assignment)));
+			}
+			if (factor instanceof StatementPattern statementPattern) {
+				boolean subjectBound = boundVars.contains(statementPattern.getSubjectVar().getName());
+				boolean objectBound = boundVars.contains(statementPattern.getObjectVar().getName());
+				if (subjectBound && objectBound) {
+					return Optional.of(exactDirectLookup(1.0d, 1.0d));
+				}
+				if (subjectBound || objectBound) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(80.0d, 16.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(400.0d, 80.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, deferredFilters);
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce the social five-cycle plan");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertEquals(aValues, orderedArgs.get(0), "Finite q10 domain should seed from the first chain variable");
+		assertEquals(bValues, orderedArgs.get(1),
+				"Finite q10 domain should keep the first follows edge pair before the closing edge: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(aFollowsB) > orderedArgs.indexOf(eValues),
+				"Finite q10 domains should finish before follows probes: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(optNameValues) > orderedArgs.indexOf(eFollowsA),
+				"Optional-name values should wait until cheap bound follows guards finish: " + orderedArgs);
+		assertTrue(orderedArgs.indexOf(optNameValues) < orderedArgs.indexOf(eName),
+				"Finite optional-name values should bind before the name lookup makes a broad probe: " + orderedArgs);
+		int existsFilterIndex = deferredFilters.size() - 1;
+		int existsFilterStep = firstStepApplyingFilter(plan, existsFilterIndex);
+		assertTrue(existsFilterStep >= orderedArgs.indexOf(eFollowsA),
+				"Nested EXISTS should be applied after cheap bound follows guards: steps=" + plan.getSteps());
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void promotedBindingPrefixDoesNotReorderParetoCycleTail() {
 		StubSailStore store = new StubSailStore();
 		IRI follows = VF.createIRI("urn:follows");
@@ -2570,6 +2661,18 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		return new JoinOrderPlanner.FilterConstraint(Set.of(left, right), Double.NaN,
 				JoinOrderPlanner.FILTER_COST_CHEAP, left + "!=" + right, "finite_domain", -1L,
 				new Compare(Var.of(left), Var.of(right), Compare.CompareOp.NE), null, false, false);
+	}
+
+	private static int firstStepApplyingFilter(JoinOrderPlanner.JoinOrderPlan plan, int filterIndex) {
+		for (int i = 0; i < plan.getSteps().size(); i++) {
+			if (plan.getSteps()
+					.get(i)
+					.getAppliedFilterIndexes()
+					.contains(Integer.valueOf(filterIndex))) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private static int componentMask(SketchBasedJoinEstimator.Component... components) {

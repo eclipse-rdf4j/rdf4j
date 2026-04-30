@@ -315,7 +315,8 @@ final class LmdbDeferredFilterPlacer {
 	private boolean canApplyDeferredFilterToTupleExpr(DeferredFilter deferredFilter, TupleExpr tupleExpr) {
 		return tupleExpr instanceof StatementPattern
 				&& deferredFilter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP
-				&& deferredFilter.patternLocalBase == tupleExpr;
+				&& deferredFilter.patternLocalBase == tupleExpr
+				&& tupleExpr.getBindingNames().containsAll(deferredFilter.requiredVars);
 	}
 
 	private boolean hasPendingSplitExistsFilter(List<DeferredFilter> deferredFilters, DeferredFilter candidate,

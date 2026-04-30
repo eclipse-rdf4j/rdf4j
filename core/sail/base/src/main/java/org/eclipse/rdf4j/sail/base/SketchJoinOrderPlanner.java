@@ -71,6 +71,7 @@ final class SketchJoinOrderPlanner {
 	private static final double FILTERED_SEED_MAX_STEP_WORK_RATIO = 12.0d;
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
 	private static final double BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO = 3.0d;
+	private static final double FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS = 1_000.0d;
 	private static final int FINITE_DOMAIN_FILTER_MAX_ENUMERATED_BINDINGS = 4096;
 	private static final int COMPLETED_DEFERRED_FILTER_CONNECTIONS = 2;
 	private static final double DEFERRED_FILTER_ORDERING_MAX_PASS_RATIO = 0.5d;
@@ -874,6 +875,12 @@ final class SketchJoinOrderPlanner {
 		if (!isFactorActionLegal(factorIndex, initiallyBoundVarMask)) {
 			return null;
 		}
+		if (shouldDelayUnfilteredFiniteSeed(factorIndex)) {
+			return null;
+		}
+		if (shouldDelayFiniteLookupGuardedSeed(factorIndex)) {
+			return null;
+		}
 		long seedMask = bit(factorIndex);
 		PlanFactor factor = factors.get(factorIndex);
 		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(factorIndex,
@@ -954,6 +961,63 @@ final class SketchJoinOrderPlanner {
 				1, seedEstimate, stepWorkRows, costVector, 0L, 1,
 				boundVariableMask(seedMask));
 		return applyAutomaticFilterActions(seed);
+	}
+
+	private boolean shouldDelayUnfilteredFiniteSeed(int factorIndex) {
+		if (!isSmallBindingSetAssignment(factorIndex)) {
+			return false;
+		}
+		long seedVars = bindingVarMasks[factorIndex] & variableUniverseMask;
+		if (finiteFilterParticipationCount(seedVars) > 0) {
+			return false;
+		}
+		long assignments = smallBindingSetAssignmentFactorMask & ~bit(factorIndex);
+		while (assignments != 0L) {
+			int assignment = Long.numberOfTrailingZeros(assignments);
+			assignments &= assignments - 1L;
+			if (finiteFilterParticipationCount(bindingVarMasks[assignment] & variableUniverseMask) > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean shouldDelayFiniteLookupGuardedSeed(int factorIndex) {
+		if (isBindingSetAssignment(factorIndex) || statementPatternFactor(factorIndex) == null) {
+			return false;
+		}
+		long pendingAssignments = smallBindingSetAssignmentFactorMask;
+		if (pendingAssignments == 0L) {
+			return false;
+		}
+		long legalAssignments = 0L;
+		long assignments = pendingAssignments;
+		while (assignments != 0L) {
+			int assignment = Long.numberOfTrailingZeros(assignments);
+			assignments &= assignments - 1L;
+			if (isFactorActionLegal(assignment, initiallyBoundVarMask)) {
+				legalAssignments |= bit(assignment);
+			}
+		}
+		if (legalAssignments == 0L) {
+			return false;
+		}
+		long pendingAssignmentVars = assignmentVariableMask(legalAssignments) & ~initiallyBoundVarMask;
+		if (pendingAssignmentVars == 0L) {
+			return false;
+		}
+		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(factorIndex,
+				initiallyBoundVarMask);
+		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(factorIndex, 0L, initiallyBoundVarMask,
+				conditionedEstimate.outputRows(), null);
+		if (isExactStatementDirectLookup(physicalEstimate)) {
+			return false;
+		}
+		long missingLookupVars = missingExactLookupVariableMask(factorIndex,
+				physicalEstimate.lookupComponentMask(), initiallyBoundVarMask);
+		return (missingLookupVars != 0L && (missingLookupVars & ~pendingAssignmentVars) == 0L)
+				|| shouldDelayBroadLookupForFinitePrefixGuard(physicalEstimate, missingLookupVars,
+						pendingAssignmentVars);
 	}
 
 	private boolean appliesSelectiveSeedFilterRowFlow(long seedMask,
@@ -2899,7 +2963,141 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private long candidateActionsMask(StatePlan plan) {
-		return candidatesMask(plan) | availableFilterActionMask(plan);
+		long candidates = candidatesMask(plan);
+		candidates = delayFiniteCompletableLookupCandidates(plan, candidates);
+		candidates = delayUnfilteredFiniteAssignmentsUntilExactLookupGuards(plan, candidates);
+		candidates = preferBoundSubjectTypeGuards(plan.mask(), candidates);
+		return candidates | availableFilterActionMask(plan);
+	}
+
+	private long delayFiniteCompletableLookupCandidates(StatePlan plan, long candidates) {
+		long pendingAssignments = candidates & smallBindingSetAssignmentFactorMask;
+		if (pendingAssignments == 0L) {
+			return candidates;
+		}
+		long delayed = 0L;
+		long boundVarMask = plan.boundVarMask();
+		long pendingAssignmentVars = assignmentVariableMask(pendingAssignments) & ~boundVarMask;
+		long statementCandidates = candidates & ~bindingSetAssignmentFactorMask;
+		while (statementCandidates != 0L) {
+			int candidate = Long.numberOfTrailingZeros(statementCandidates);
+			statementCandidates &= statementCandidates - 1L;
+			if (statementPatternFactor(candidate) == null) {
+				continue;
+			}
+			FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(candidate, plan.mask(), boundVarMask,
+					factorOutputRows[candidate], plan.estimate());
+			if (isExactStatementDirectLookup(physicalEstimate)) {
+				continue;
+			}
+			long missingLookupVars = missingExactLookupVariableMask(candidate,
+					physicalEstimate.lookupComponentMask(), boundVarMask);
+			if (missingLookupVars != 0L && (missingLookupVars & ~pendingAssignmentVars) == 0L) {
+				delayed |= bit(candidate);
+				continue;
+			}
+			if (shouldDelayBroadLookupForFinitePrefixGuard(physicalEstimate, missingLookupVars,
+					pendingAssignmentVars)) {
+				delayed |= bit(candidate);
+			}
+		}
+		return candidates & ~delayed;
+	}
+
+	private boolean shouldDelayBroadLookupForFinitePrefixGuard(FactorPhysicalEstimate physicalEstimate,
+			long missingLookupVars, long pendingAssignmentVars) {
+		if (physicalEstimate == null || missingLookupVars == 0L
+				|| (missingLookupVars & pendingAssignmentVars) == 0L
+				|| isExactStatementDirectLookup(physicalEstimate)) {
+			return false;
+		}
+		double currentAccessRows = physicalEstimate.accessRowsBeforeFilter();
+		if (!isFiniteNonNegative(currentAccessRows)) {
+			currentAccessRows = physicalEstimate.workRows();
+		}
+		if (!isFiniteNonNegative(currentAccessRows)) {
+			currentAccessRows = physicalEstimate.factorOutputRows();
+		}
+		return isFiniteNonNegative(currentAccessRows)
+				&& currentAccessRows >= FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS;
+	}
+
+	private long delayUnfilteredFiniteAssignmentsUntilExactLookupGuards(StatePlan plan, long candidates) {
+		long assignments = candidates & smallBindingSetAssignmentFactorMask;
+		if (assignments == 0L) {
+			return candidates;
+		}
+		long unfilteredAssignments = 0L;
+		long filterUnlockingAssignments = 0L;
+		long filterParticipatingAssignments = 0L;
+		long boundVarMask = plan.boundVarMask();
+		long remaining = assignments;
+		while (remaining != 0L) {
+			int assignment = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			long assignmentVars = bindingVarMasks[assignment] & ~boundVarMask;
+			if (assignmentVars == 0L) {
+				continue;
+			}
+			if (delayedFiniteFilterCount(boundVarMask, assignmentVars) > 0) {
+				filterUnlockingAssignments |= bit(assignment);
+			} else if (finiteFilterParticipationCount(assignmentVars) > 0) {
+				filterParticipatingAssignments |= bit(assignment);
+			} else {
+				unfilteredAssignments |= bit(assignment);
+			}
+		}
+		long preferredFiniteAssignments = filterUnlockingAssignments != 0L
+				? filterUnlockingAssignments
+				: filterParticipatingAssignments;
+		if (unfilteredAssignments == 0L
+				|| (preferredFiniteAssignments == 0L && pendingBoundExactLookupGuardMask(plan) == 0L)) {
+			return candidates;
+		}
+		return candidates & ~unfilteredAssignments;
+	}
+
+	private int finiteFilterParticipationCount(long assignmentVars) {
+		if (deferredFilters.isEmpty() || assignmentVars == 0L) {
+			return 0;
+		}
+		int count = 0;
+		for (int i = 0; i < plannedFilterActionCount(); i++) {
+			long requiredVars = deferredFilterRequiredVarMasks[i];
+			if (Long.bitCount(requiredVars) >= 2 && (requiredVars & assignmentVars) != 0L) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private long assignmentVariableMask(long assignmentMask) {
+		long variables = 0L;
+		long assignments = assignmentMask;
+		while (assignments != 0L) {
+			int assignment = Long.numberOfTrailingZeros(assignments);
+			assignments &= assignments - 1L;
+			variables |= bindingVarMasks[assignment] & variableUniverseMask;
+		}
+		return variables;
+	}
+
+	private long missingExactLookupVariableMask(int factorIndex, int lookupComponentMask, long boundVarMask) {
+		StatementPattern statementPattern = statementPatternFactor(factorIndex);
+		if (statementPattern == null) {
+			return 0L;
+		}
+		long missingVars = 0L;
+		if ((lookupComponentMask & componentBit(SketchBasedJoinEstimator.Component.S)) == 0) {
+			missingVars |= variableMask(statementPattern.getSubjectVar()) & ~boundVarMask;
+		}
+		if ((lookupComponentMask & componentBit(SketchBasedJoinEstimator.Component.P)) == 0) {
+			missingVars |= variableMask(statementPattern.getPredicateVar()) & ~boundVarMask;
+		}
+		if ((lookupComponentMask & componentBit(SketchBasedJoinEstimator.Component.O)) == 0) {
+			missingVars |= variableMask(statementPattern.getObjectVar()) & ~boundVarMask;
+		}
+		return missingVars;
 	}
 
 	private long availableFilterActionMask(StatePlan plan) {
@@ -2908,7 +3106,51 @@ final class SketchJoinOrderPlanner {
 		}
 		long filters = eligibleDeferredFilterMask(plan.boundVarMask(), plan.appliedFilterMask(),
 				plannedFilterMask & ~automaticFilterMask);
+		filters = delayNestedFilterActionsUntilBoundExactLookupGuardsRun(plan, filters);
 		return filters << factors.size();
+	}
+
+	private long delayNestedFilterActionsUntilBoundExactLookupGuardsRun(StatePlan plan, long filters) {
+		if (filters == 0L
+				|| (pendingSmallBindingAssignmentMask(plan) == 0L && pendingBoundExactLookupGuardMask(plan) == 0L)) {
+			return filters;
+		}
+		long blocked = 0L;
+		long remaining = filters;
+		while (remaining != 0L) {
+			int filterIndex = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			if (deferredFilters.get(filterIndex).hasNestedTupleExpression()) {
+				blocked |= bit(filterIndex);
+			}
+		}
+		return filters & ~blocked;
+	}
+
+	private long pendingSmallBindingAssignmentMask(StatePlan plan) {
+		return candidatesMask(plan) & smallBindingSetAssignmentFactorMask;
+	}
+
+	private long pendingBoundExactLookupGuardMask(StatePlan plan) {
+		long candidates = candidatesMask(plan) & ~bindingSetAssignmentFactorMask;
+		if (candidates == 0L) {
+			return 0L;
+		}
+		long boundVarMask = plan.boundVarMask();
+		long guards = 0L;
+		while (candidates != 0L) {
+			int candidate = Long.numberOfTrailingZeros(candidates);
+			candidates &= candidates - 1L;
+			if ((runtimeVarMasks[candidate] & ~boundVarMask) != 0L) {
+				continue;
+			}
+			FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(candidate, plan.mask(), boundVarMask,
+					factorOutputRows[candidate], plan.estimate());
+			if (isExactStatementDirectLookup(physicalEstimate)) {
+				guards |= bit(candidate);
+			}
+		}
+		return guards;
 	}
 
 	private StatePlan applyAutomaticFilterActions(StatePlan plan) {
@@ -3154,6 +3396,9 @@ final class SketchJoinOrderPlanner {
 		double rowsPerInvocation = physicalEstimate.accessRowsBeforeFilter();
 		if (!isFiniteNonNegative(rowsPerInvocation)) {
 			rowsPerInvocation = physicalEstimate.factorOutputRows();
+		} else if (physicalEstimate.missingLookupComponents() > 0
+				&& isFiniteNonNegative(physicalEstimate.factorOutputRows())) {
+			rowsPerInvocation = Math.max(rowsPerInvocation, physicalEstimate.factorOutputRows());
 		}
 		if (!isFiniteNonNegative(rowsPerInvocation) || rowsPerInvocation <= 0.0d) {
 			return Double.NaN;
@@ -3222,6 +3467,16 @@ final class SketchJoinOrderPlanner {
 		int lookupBoundComponentMask = accessShape.lookupBoundComponentMask();
 		return (lookupBoundComponentMask & exactStatementMask) == exactStatementMask
 				&& accessShape.isDirectLookup(lookupBoundComponentMask);
+	}
+
+	private boolean isExactStatementDirectLookup(FactorPhysicalEstimate physicalEstimate) {
+		if (physicalEstimate == null || !physicalEstimate.directLookup()) {
+			return false;
+		}
+		int exactStatementMask = componentBit(SketchBasedJoinEstimator.Component.S)
+				| componentBit(SketchBasedJoinEstimator.Component.P)
+				| componentBit(SketchBasedJoinEstimator.Component.O);
+		return (physicalEstimate.lookupComponentMask() & exactStatementMask) == exactStatementMask;
 	}
 
 	private int componentBit(SketchBasedJoinEstimator.Component component) {
@@ -6021,6 +6276,9 @@ final class SketchJoinOrderPlanner {
 		}
 		stringMetrics.putAll(factorCostEstimate.getStringMetrics());
 		doubleMetrics.putAll(factorCostEstimate.getDoubleMetrics());
+		if (physicalEstimate.physicalComparable() && isFiniteNonNegative(physicalEstimate.workRows())) {
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, physicalEstimate.workRows());
+		}
 	}
 
 	private Set<String> sharedJoinVars(TupleExpr tupleExpr, Set<String> boundBefore) {

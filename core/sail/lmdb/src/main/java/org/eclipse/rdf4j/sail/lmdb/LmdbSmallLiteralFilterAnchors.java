@@ -46,6 +46,7 @@ final class LmdbSmallLiteralFilterAnchors {
 			}
 			int[] segment = findAnchorSegment(joinArgs, filter, bindingName);
 			if (segment == null || segmentHasBindingSetAssignment(joinArgs, segment, bindingName)
+					|| segmentContainsPathContextBinding(joinArgs, segment, bindingName)
 					|| (!isEmptyBindingSetAssignment(anchor) && !segmentMustBind(joinArgs, segment, bindingName))
 					|| literalAnchorWouldDriveAcrossIncomingGraphEdge(joinArgs, segment, filter, bindingName,
 							outerBoundVars)
@@ -83,6 +84,16 @@ final class LmdbSmallLiteralFilterAnchors {
 		for (int i = segment[0]; i <= segment[1]; i++) {
 			Optional<Set<String>> names = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(joinArgs.get(i));
 			if (names.isPresent() && names.get().contains(bindingName)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean segmentContainsPathContextBinding(List<TupleExpr> joinArgs, int[] segment,
+			String bindingName) {
+		for (int i = segment[0]; i <= segment[1]; i++) {
+			if (LmdbJoinPlanSupport.containsPathContextBinding(joinArgs.get(i), bindingName)) {
 				return true;
 			}
 		}
