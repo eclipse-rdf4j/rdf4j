@@ -265,7 +265,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				properties.setVersion(String.valueOf(VERSION));
 			}
 
-			backingStore = new LmdbSailStore(dataDir, properties, config);
+			boolean useSketchBasedJoinEstimator = usesLmdbEvaluationStrategyFactory();
+			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 
 			// update version afer loading and potential internal migration within value and triple store
 			if (updateVersion) {
@@ -277,7 +278,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				@Override
 				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
-					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, new StoreProperties(), config);
+					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, new StoreProperties(), config,
+							useSketchBasedJoinEstimator);
 					lmdbSailStore.enableMultiThreading = false;
 					return lmdbSailStore;
 				}
@@ -419,6 +421,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	LmdbSailStore getBackingStore() {
 		return backingStore;
+	}
+
+	private boolean usesLmdbEvaluationStrategyFactory() {
+		return getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory;
 	}
 
 	private boolean upgradeStore(File dataDir, String version) throws SailException {

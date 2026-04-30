@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.DataOutputStream;
@@ -31,7 +32,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -50,6 +53,34 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	private static final String FILTER_SNAPSHOT_FILE = SNAPSHOT_FILE + ".filters";
 	private static final String LEARNED_FILTER_QUERY = "SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } "
 			+ "?s <urn:test:name> ?name . FILTER(?name = ?target) }";
+
+	@Test
+	void customEvaluationStrategyFactoryDisablesSketchEstimatorAndKeepsPageCardinality(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc").setPageCardinalityEstimator(true);
+		config.setEvaluationStrategyFactoryClassName(StrictEvaluationStrategyFactory.class.getName());
+
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:test:custom:predicate");
+		repository.init();
+		try {
+			loadPredicateData(repository, predicate);
+
+			assertNull(store.getBackingStore().getSketchBasedJoinEstimator(),
+					"Custom evaluation factories should not allocate the sketch estimator");
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			assertFalse(statistics.supportsJoinEstimation(),
+					"Custom evaluation factories should not expose sketch join estimation");
+			assertTrue(statistics.getCardinality(firstStatementPattern(predicate)) > 0.0d,
+					"Statement-pattern cardinality should still use the LMDB page estimator");
+		} finally {
+			repository.shutDown();
+		}
+
+		assertFalse(estimatorStore(dataDir).exists(),
+				"Custom evaluation factories should not persist sketch estimator state");
+	}
 
 	@Test
 	void storeConfigIsPassedToSketchEstimator(@TempDir File dataDir) throws Exception {
@@ -466,6 +497,18 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		}
 	}
 
+	private static void loadPredicateData(SailRepository repository, IRI predicate) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 4; i++) {
+				connection.add(vf.createIRI("urn:test:custom:subject:" + i), predicate,
+						vf.createLiteral("value-" + i));
+			}
+			connection.commit();
+		}
+	}
+
 	private static void recordLearnedFilterPassRatio(LmdbStore store, Filter filter) {
 		store.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter, 2L, 6L);
 	}
@@ -476,6 +519,22 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static StatementPattern firstStatementPattern(IRI predicate) {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s <" + predicate.stringValue() + "> ?o . }", null);
+		StatementPattern[] found = new StatementPattern[1];
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
 				if (found[0] == null) {
 					found[0] = node;
 				}

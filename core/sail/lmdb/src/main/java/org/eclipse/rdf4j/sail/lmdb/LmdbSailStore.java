@@ -290,9 +290,17 @@ class LmdbSailStore implements SailStore {
 	 */
 	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config)
 			throws IOException, SailException {
+		this(dataDir, properties, config, true);
+	}
+
+	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled)
+			throws IOException, SailException {
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
-		this.sketchBasedJoinEstimator = new SketchBasedJoinEstimator(this, sketchEstimatorConfig(config));
+		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
+				? new SketchBasedJoinEstimator(this, sketchEstimatorConfig(config))
+				: null;
 		Function<Long, byte[]> encode = element -> {
 			ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
 			bb.putLong(element);
@@ -310,18 +318,20 @@ class LmdbSailStore implements SailStore {
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
-			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
-			boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
-			filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore);
-			sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
-			sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
-			sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
-			sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
-			sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
-			if (!snapshotExists) {
-				sketchBasedJoinEstimator.rebuild();
+			if (sketchBasedJoinEstimator != null) {
+				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
+				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
+				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore);
+				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
+				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
+				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
+				sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
+				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
+				if (!snapshotExists) {
+					sketchBasedJoinEstimator.rebuild();
+				}
+				sketchBasedJoinEstimator.startBackgroundRefresh(3);
 			}
-			sketchBasedJoinEstimator.startBackgroundRefresh(3);
 		} finally {
 			if (!initialized) {
 				close();
@@ -392,7 +402,9 @@ class LmdbSailStore implements SailStore {
 			try {
 				cancelAndDrainScheduledEstimatorPersist();
 				persistEstimatorState();
-				sketchBasedJoinEstimator.close();
+				if (sketchBasedJoinEstimator != null) {
+					sketchBasedJoinEstimator.close();
+				}
 			} finally {
 				try {
 					if (namespaceStore != null) {
@@ -466,7 +478,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void persistEstimatorState() {
-		sketchBasedJoinEstimator.persistIfDirty();
+		if (sketchBasedJoinEstimator != null) {
+			sketchBasedJoinEstimator.persistIfDirty();
+		}
 		if (filterSelectivityStats != null) {
 			filterSelectivityStats.persistIfDirty();
 		}
@@ -624,8 +638,8 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public LmdbSailDataset dataset(IsolationLevel level) throws SailException {
-			boolean isEstimatorRefresh = SketchBasedJoinEstimator.REFRESH_THREAD_NAME
-					.equals(Thread.currentThread().getName());
+			boolean isEstimatorRefresh = sketchBasedJoinEstimator != null
+					&& SketchBasedJoinEstimator.REFRESH_THREAD_NAME.equals(Thread.currentThread().getName());
 			// Refresh reader transactions can remain open across write commits and must not
 			// participate in the active txn reset/renew cycle.
 			boolean trackActive = !isEstimatorRefresh;
@@ -647,7 +661,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void queueEstimatorAdd(Statement st) {
-			if (!explicit) {
+			if (!explicit || sketchBasedJoinEstimator == null) {
 				return;
 			}
 			if (nonIsolated) {
@@ -665,7 +679,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void queueEstimatorRemove(Statement st) {
-			if (!explicit) {
+			if (!explicit || sketchBasedJoinEstimator == null) {
 				return;
 			}
 			if (nonIsolated) {
@@ -705,7 +719,7 @@ class LmdbSailStore implements SailStore {
 			if (nonIsolated) {
 				// In NONE isolation updates are applied eagerly; rollback cannot replay inverse deltas safely.
 				// Discard the derived state and rebuild it from authoritative store data.
-				if (nonIsolatedUpdatesApplied) {
+				if (nonIsolatedUpdatesApplied && sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 					nonIsolatedUpdatesApplied = false;
 				}
@@ -720,7 +734,9 @@ class LmdbSailStore implements SailStore {
 			synchronized (pendingEstimatorUpdates) {
 				pendingEstimatorUpdates.clear();
 			}
-			sketchBasedJoinEstimator.discardAndMarkForRebuild();
+			if (sketchBasedJoinEstimator != null) {
+				sketchBasedJoinEstimator.discardAndMarkForRebuild();
+			}
 			nonIsolatedUpdatesApplied = false;
 			logger.warn("Discarded join estimator state after failure while {}; store data remains authoritative",
 					action,
@@ -808,12 +824,16 @@ class LmdbSailStore implements SailStore {
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
 						applyEstimatorUpdates();
-						filterSelectivityStats.recordStoreMutation();
+						if (filterSelectivityStats != null) {
+							filterSelectivityStats.recordStoreMutation();
+						}
 						nonIsolatedUpdatesApplied = false;
-						try {
-							scheduleEstimatorPersist();
-						} catch (RuntimeException e) {
-							logger.warn("Failed to schedule join estimator persistence after commit", e);
+						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null) {
+							try {
+								scheduleEstimatorPersist();
+							} catch (RuntimeException e) {
+								logger.warn("Failed to schedule join estimator persistence after commit", e);
+							}
 						}
 					}
 				}

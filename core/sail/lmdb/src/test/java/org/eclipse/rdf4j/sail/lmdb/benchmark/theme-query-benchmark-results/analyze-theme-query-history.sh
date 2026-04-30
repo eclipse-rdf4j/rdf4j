@@ -16,7 +16,7 @@ SUMMARY_ROW_RE = re.compile(
     r"^ThemeQueryBenchmark\.executeQuery\s+([A-Z_]+)\s+(\d+)\s+avgt\s+(?:\d+\s+)?([0-9.]+)"
 )
 PARAM_RE = re.compile(r"^# Parameters: \(themeName = ([A-Z_]+), z_queryIndex = (\d+)\)$", re.MULTILINE)
-OPTIMIZED_MARKER_RE = re.compile(r"^.*### Optimized Query ###\s*$", re.MULTILINE)
+QUERY_MARKER_RE = re.compile(r"^.*### (Optimized|Telemetry) Query ###\s*$", re.MULTILINE)
 SPARQL_START_RE = re.compile(r"^(SELECT|ASK|CONSTRUCT|DESCRIBE)\b")
 SCORE_LINE_RE = re.compile(r"^(?:Iteration\s+\d+:\s+)?[0-9.]+(?:\s+±\s+[0-9.]+)?\s+ms/op$")
 RESULT_LINE_RE = re.compile(r'^Result "')
@@ -33,20 +33,38 @@ class QueryKey:
 
 @dataclass(frozen=True)
 class QueryContent:
-    query_plan: Optional[str]
+    optimized_plan: Optional[str]
     optimized_query: Optional[str]
+    telemetry_plan: Optional[str] = None
+    telemetry_query: Optional[str] = None
+
+    @property
+    def query_plan(self) -> Optional[str]:
+        return self.optimized_plan
 
     @property
     def has_plan(self) -> bool:
-        return bool(self.query_plan)
+        return bool(self.optimized_plan or self.telemetry_plan)
 
     @property
     def has_query(self) -> bool:
-        return bool(self.optimized_query)
+        return bool(self.optimized_query or self.telemetry_query)
 
     @property
     def richness(self) -> int:
-        return int(self.has_plan) + int(self.has_query)
+        return (
+            int(bool(self.optimized_plan))
+            + int(bool(self.optimized_query))
+            + int(bool(self.telemetry_plan))
+            + int(bool(self.telemetry_query))
+        )
+
+    def has_plan_for(self, plan_kind: str) -> bool:
+        if plan_kind == "optimized":
+            return bool(self.optimized_plan)
+        if plan_kind == "telemetry":
+            return bool(self.telemetry_plan)
+        return self.has_plan
 
 
 @dataclass(frozen=True)
@@ -90,6 +108,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--theme", help="Selected theme for query drill-down mode.")
     parser.add_argument("--query-index", type=int, help="Selected query index for drill-down mode.")
     parser.add_argument(
+        "--plans-only",
+        action="store_true",
+        help="In query drill-down mode, only print result files that contain the selected query plan kind.",
+    )
+    parser.add_argument(
+        "--result-file",
+        help="In query drill-down mode, only print the selected results file name.",
+    )
+    parser.add_argument(
+        "--plan-kind",
+        choices=("all", "optimized", "telemetry"),
+        default="all",
+        help="In query drill-down mode, print optimized plans, telemetry plans, or both.",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
         help="Print every latest query in the overview, not only queries that are more than 20%% slower than history.",
@@ -100,6 +133,18 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Sort regressing queries from biggest to smallest regression.",
     )
     parser.add_argument(
+        "--min-slower-pct",
+        type=float,
+        default=20.0,
+        help="Only print queries where the historical best is at least this percent faster than latest.",
+    )
+    parser.add_argument(
+        "--min-delta-ms",
+        type=float,
+        default=0.0,
+        help="Only print queries where latest is at least this many ms/op slower than historical best.",
+    )
+    parser.add_argument(
         "--top",
         type=int,
         help="Only print the top N regressing queries. Implies regression sorting.",
@@ -107,9 +152,23 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     args = parser.parse_args(argv[1:] if argv else [])
     if (args.theme is None) ^ (args.query_index is None):
         parser.error("--theme and --query-index must be supplied together")
+    query_mode = args.theme is not None
+    query_only_flags = args.plans_only or args.result_file is not None or args.plan_kind != "all"
+    if query_only_flags and not query_mode:
+        parser.error("--plans-only, --result-file, and --plan-kind require --theme/--query-index")
     if args.top is not None and args.top < 1:
         parser.error("--top must be >= 1")
-    if args.theme is not None and (args.sort_regressions or args.top is not None or args.all):
+    if args.min_slower_pct < 0.0 or args.min_slower_pct > 100.0:
+        parser.error("--min-slower-pct must be between 0 and 100")
+    if args.min_delta_ms < 0.0:
+        parser.error("--min-delta-ms must be >= 0")
+    if query_mode and (
+        args.sort_regressions
+        or args.top is not None
+        or args.all
+        or args.min_slower_pct != 20.0
+        or args.min_delta_ms != 0.0
+    ):
         parser.error("--theme/--query-index cannot be combined with overview-only flags")
     if args.all and args.sort_regressions:
         parser.error("--all cannot be combined with --sort-regressions")
@@ -155,29 +214,54 @@ def parse_result_file(path: Path) -> ResultFile:
 
 
 def extract_query_content(block: str) -> QueryContent:
-    marker = OPTIMIZED_MARKER_RE.search(block)
-    if not marker:
-        return QueryContent(query_plan=None, optimized_query=None)
+    markers = list(QUERY_MARKER_RE.finditer(block))
+    if not markers:
+        return QueryContent(optimized_plan=None, optimized_query=None)
 
-    after_marker = block[marker.end():].splitlines()
-    while after_marker and not after_marker[0].strip():
-        after_marker.pop(0)
-    if not after_marker:
-        return QueryContent(query_plan=None, optimized_query=None)
+    optimized_plan: Optional[str] = None
+    optimized_query: Optional[str] = None
+    telemetry_plan: Optional[str] = None
+    telemetry_query: Optional[str] = None
+
+    for index, marker in enumerate(markers):
+        section_start = marker.end()
+        section_end = markers[index + 1].start() if index + 1 < len(markers) else len(block)
+        plan, query = extract_marked_query_section(block[section_start:section_end])
+        kind = marker.group(1)
+        if kind == "Optimized":
+            optimized_plan = plan
+            optimized_query = query
+        elif kind == "Telemetry":
+            telemetry_plan = plan
+            telemetry_query = query
+
+    return QueryContent(
+        optimized_plan=optimized_plan,
+        optimized_query=optimized_query,
+        telemetry_plan=telemetry_plan,
+        telemetry_query=telemetry_query,
+    )
+
+
+def extract_marked_query_section(section: str) -> Tuple[Optional[str], Optional[str]]:
+    lines = section.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if not lines:
+        return None, None
 
     query_start = None
-    for index, line in enumerate(after_marker):
+    for index, line in enumerate(lines):
         if SPARQL_START_RE.match(line):
             query_start = index
             break
 
     if query_start is None:
-        plan_text = trim_block(after_marker)
-        return QueryContent(query_plan=plan_text, optimized_query=None)
+        return trim_block(lines), None
 
-    plan_lines = after_marker[:query_start]
+    plan_lines = lines[:query_start]
     query_lines: List[str] = []
-    for line in after_marker[query_start:]:
+    for line in lines[query_start:]:
         stripped = line.strip()
         if RESULT_LINE_RE.match(line) or SCORE_LINE_RE.match(stripped):
             break
@@ -185,10 +269,7 @@ def extract_query_content(block: str) -> QueryContent:
             break
         query_lines.append(line)
 
-    return QueryContent(
-        query_plan=trim_block(plan_lines),
-        optimized_query=trim_block(query_lines),
-    )
+    return trim_block(plan_lines), trim_block(query_lines)
 
 
 def trim_block(lines: Iterable[str]) -> Optional[str]:
@@ -211,15 +292,21 @@ def newest_dated_file(files: Dict[str, ResultFile]) -> ResultFile:
     return files[sorted(dated)[-1][2]]
 
 
-def historical_matches(files: Dict[str, ResultFile], latest: ResultFile, key: QueryKey) -> List[HistoricalMatch]:
+def historical_matches(
+    files: Dict[str, ResultFile],
+    latest: ResultFile,
+    key: QueryKey,
+    min_slower_pct: float,
+    min_delta_ms: float,
+) -> List[HistoricalMatch]:
     latest_score = latest.summary_rows[key]
-    threshold = latest_score * 0.8
+    threshold = latest_score * (1.0 - (min_slower_pct / 100.0))
     matches: List[HistoricalMatch] = []
     for name, result in files.items():
         if name == latest.path.name:
             continue
         score = result.summary_rows.get(key)
-        if score is None or score > threshold:
+        if score is None or score > threshold or latest_score - score < min_delta_ms:
             continue
         content = result.query_content.get(key, QueryContent(None, None))
         matches.append(
@@ -310,8 +397,12 @@ def comparison_for_key(files: Dict[str, ResultFile], latest: ResultFile, key: Qu
     )
 
 
-def is_regression(comparison: QueryComparison) -> bool:
-    return comparison.direction == "slower" and comparison.delta_percent >= 20.0
+def is_regression(comparison: QueryComparison, min_slower_pct: float, min_delta_ms: float) -> bool:
+    return (
+        comparison.direction == "slower"
+        and comparison.delta_percent >= min_slower_pct
+        and comparison.latest_score - comparison.fastest_score >= min_delta_ms
+    )
 
 
 def regression_sort_key(comparison: QueryComparison) -> Tuple[float, float, str, int]:
@@ -333,11 +424,19 @@ def summary_line(comparison: QueryComparison) -> str:
     return prefix + f"{comparison.delta_percent:.1f}% slower than best"
 
 
-def sorted_regression_keys(comparisons: Dict[QueryKey, QueryComparison]) -> List[QueryKey]:
+def sorted_regression_keys(
+    comparisons: Dict[QueryKey, QueryComparison],
+    min_slower_pct: float,
+    min_delta_ms: float,
+) -> List[QueryKey]:
     return [
         comparison.key
         for comparison in sorted(
-            (comparison for comparison in comparisons.values() if is_regression(comparison)),
+            (
+                comparison
+                for comparison in comparisons.values()
+                if is_regression(comparison, min_slower_pct, min_delta_ms)
+            ),
             key=regression_sort_key,
         )
     ]
@@ -361,9 +460,11 @@ def format_summary(
     include_all: bool,
     sort_regressions: bool,
     top_n: Optional[int],
+    min_slower_pct: float,
+    min_delta_ms: float,
 ) -> str:
     comparisons = {key: comparison_for_key(files, latest, key) for key in latest.summary_order}
-    regression_keys = sorted_regression_keys(comparisons)
+    regression_keys = sorted_regression_keys(comparisons, min_slower_pct, min_delta_ms)
     if top_n is not None:
         regression_keys = regression_keys[:top_n]
 
@@ -372,19 +473,30 @@ def format_summary(
     elif sort_regressions or top_n is not None:
         summary_keys = regression_keys
     else:
-        summary_keys = [key for key in latest.summary_order if is_regression(comparisons[key])]
+        summary_keys = [
+            key for key in latest.summary_order if is_regression(comparisons[key], min_slower_pct, min_delta_ms)
+        ]
 
-    detail_keys = regression_keys if (sort_regressions or top_n is not None) else [key for key in latest.summary_order if is_regression(comparisons[key])]
+    detail_keys = (
+        regression_keys
+        if (sort_regressions or top_n is not None)
+        else [
+            key
+            for key in latest.summary_order
+            if is_regression(comparisons[key], min_slower_pct, min_delta_ms)
+        ]
+    )
 
     lines = [
         f"Latest run: {latest.path.name}",
-        "Threshold: 20.0%",
-        "",
-        "Summary",
+        f"Threshold: {min_slower_pct:.1f}%",
     ]
+    if min_delta_ms > 0.0:
+        lines.append(f"Minimum delta: {format_score(min_delta_ms)} ms")
+    lines.extend(["", "Summary"])
 
     if not summary_keys:
-        lines.append("No queries are more than 20.0% slower than historical best.")
+        lines.append(f"No queries match the {min_slower_pct:.1f}% / {format_score(min_delta_ms)} ms thresholds.")
     elif sort_regressions or top_n is not None:
         lines.extend(format_sorted_summary(comparisons, summary_keys))
     else:
@@ -399,7 +511,7 @@ def format_summary(
     if detail_keys:
         lines.extend(["", "Details"])
         for key in detail_keys:
-            matches = historical_matches(files, latest, key)
+            matches = historical_matches(files, latest, key, min_slower_pct, min_delta_ms)
             lines.append("")
             lines.append(key.label())
             lines.append(f"  latest: {format_score(latest.summary_rows[key])} ms/op")
@@ -416,16 +528,35 @@ def format_summary(
     return "\n".join(lines)
 
 
-def render_query_mode(files: Dict[str, ResultFile], latest: ResultFile, key: QueryKey) -> str:
+def render_query_mode(
+    files: Dict[str, ResultFile],
+    latest: ResultFile,
+    key: QueryKey,
+    plans_only: bool,
+    result_file: Optional[str],
+    plan_kind: str,
+) -> str:
     if key not in latest.summary_rows:
         raise SystemExit(f"{key.label()} not present in latest run {latest.path.name}")
 
     matches = query_runs(files, key)
+    if result_file is not None:
+        matches = [match for match in matches if match.file_name == result_file]
+    if plans_only:
+        matches = [match for match in matches if match.content.has_plan_for(plan_kind)]
+
     lines = [
         f"Latest run: {latest.path.name}",
         f"Query: {key.label()}",
         f"Latest score: {format_score(latest.summary_rows[key])} ms/op",
     ]
+    if result_file is not None:
+        lines.append(f"Result file: {result_file}")
+    if plans_only:
+        lines.append(f"Plan filter: {plan_kind}")
+    if not matches:
+        lines.extend(["", "No matching runs."])
+        return "\n".join(lines)
 
     for index, match in enumerate(matches, start=1):
         lines.extend(
@@ -437,22 +568,39 @@ def render_query_mode(files: Dict[str, ResultFile], latest: ResultFile, key: Que
                 f"{delta_label(match.percent_faster)} | "
                 f"plan {'yes' if match.content.has_plan else 'no'} | "
                 f"query {'yes' if match.content.has_query else 'no'}",
-                "",
-                "   Optimized query plan:",
             ]
         )
-        if match.content.has_plan:
-            lines.extend(indent_fence("text", match.content.query_plan))
-        else:
-            lines.append("   not present in this result file")
 
-        lines.extend(["", "   Optimized query:"])
-        if match.content.has_query:
-            lines.extend(indent_fence("sparql", match.content.optimized_query))
-        else:
-            lines.append("   not present in this result file")
+        if plan_kind in ("all", "optimized"):
+            append_named_query_sections(
+                lines,
+                "Optimized",
+                match.content.optimized_plan,
+                match.content.optimized_query,
+            )
+        if plan_kind in ("all", "telemetry") and (
+            plan_kind == "telemetry" or match.content.telemetry_plan or match.content.telemetry_query
+        ):
+            append_named_query_sections(
+                lines,
+                "Telemetry",
+                match.content.telemetry_plan,
+                match.content.telemetry_query,
+            )
 
     return "\n".join(lines)
+
+
+def append_named_query_sections(
+    lines: List[str],
+    section_name: str,
+    plan: Optional[str],
+    query: Optional[str],
+) -> None:
+    lines.extend(["", f"   {section_name} query plan:"])
+    lines.extend(indent_fence("text", plan))
+    lines.extend(["", f"   {section_name} query:"])
+    lines.extend(indent_fence("sparql", query))
 
 
 def indent_fence(info: str, body: Optional[str]) -> List[str]:
@@ -477,9 +625,24 @@ def main(argv: Sequence[str]) -> int:
     latest = newest_dated_file(files)
 
     if args.theme is not None:
-        output = render_query_mode(files, latest, QueryKey(args.theme, args.query_index))
+        output = render_query_mode(
+            files,
+            latest,
+            QueryKey(args.theme, args.query_index),
+            args.plans_only,
+            args.result_file,
+            args.plan_kind,
+        )
     else:
-        output = format_summary(latest, files, args.all, args.sort_regressions, args.top)
+        output = format_summary(
+            latest,
+            files,
+            args.all,
+            args.sort_regressions,
+            args.top,
+            args.min_slower_pct,
+            args.min_delta_ms,
+        )
 
     print(output)
     return 0

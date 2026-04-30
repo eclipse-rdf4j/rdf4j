@@ -88,6 +88,9 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public boolean supportsJoinEstimation() {
+		if (sketchBasedJoinEstimator == null) {
+			return false;
+		}
 		long now = System.currentTimeMillis();
 		long revisionId = valueStore.getRevision().getRevisionId();
 		if (now < joinSupportCacheExpiryMs && revisionId == joinSupportCacheRevisionId) {
@@ -104,11 +107,14 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public boolean supportsFilterSelectivityCosting() {
-		return true;
+		return sketchBasedJoinEstimator != null;
 	}
 
 	@Override
 	public QueryOptimizationScope beginQueryOptimizationScope() {
+		if (sketchBasedJoinEstimator == null) {
+			return QueryOptimizationScopeProvider.NO_OP_SCOPE;
+		}
 		return sketchBasedJoinEstimator.beginQueryOptimizationScope();
 	}
 
@@ -193,11 +199,17 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+		if (sketchBasedJoinEstimator == null) {
+			return estimatePageWalkingFactorCost(factor);
+		}
 		return estimateLmdbFactorCost(factor, currentlyBoundVars);
 	}
 
 	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		if (sketchBasedJoinEstimator == null) {
+			return estimatePageWalkingFactorCost(factor);
+		}
 		if (context == null) {
 			return estimateLmdbFactorCost(factor, Set.of());
 		}
@@ -206,6 +218,15 @@ class LmdbEvaluationStatistics
 			return estimate;
 		}
 		return estimate.map(factorCostEstimate -> accountNestedInvocationWork(factor, factorCostEstimate, context));
+	}
+
+	private Optional<FactorCostEstimate> estimatePageWalkingFactorCost(TupleExpr factor) {
+		if (factor == null) {
+			return Optional.empty();
+		}
+		double outputRows = estimateFactorOutputRows(factor, Set.of());
+		return isFiniteNonNegative(outputRows) ? Optional.of(new FactorCostEstimate(outputRows, outputRows))
+				: Optional.empty();
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor,
@@ -292,6 +313,9 @@ class LmdbEvaluationStatistics
 
 	private SketchBasedJoinEstimator.AccessShape accessShapeForContext(TupleExpr factor,
 			JoinFactorCostModel.CostContext context) {
+		if (sketchBasedJoinEstimator == null) {
+			return null;
+		}
 		if (context.hasCurrentlyBoundVarMask()) {
 			return sketchBasedJoinEstimator.accessShapeForJoinOrdering(factor, context.getVariableNames(),
 					context.getCurrentlyBoundVarMask());
@@ -567,9 +591,11 @@ class LmdbEvaluationStatistics
 	}
 
 	private double estimateFactorOutputRows(TupleExpr factor, Set<String> boundVars) {
-		double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, boundVars);
-		if (isFiniteNonNegative(sketchRows)) {
-			return sketchRows;
+		if (sketchBasedJoinEstimator != null) {
+			double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, boundVars);
+			if (isFiniteNonNegative(sketchRows)) {
+				return sketchRows;
+			}
 		}
 		if (factor instanceof BindingSetAssignment assignment) {
 			double rows = 0.0d;
@@ -582,10 +608,12 @@ class LmdbEvaluationStatistics
 	}
 
 	private double estimateFactorOutputRows(TupleExpr factor, String[] variableNames, long boundVarMask) {
-		double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, variableNames,
-				boundVarMask);
-		if (isFiniteNonNegative(sketchRows)) {
-			return sketchRows;
+		if (sketchBasedJoinEstimator != null) {
+			double sketchRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, variableNames,
+					boundVarMask);
+			if (isFiniteNonNegative(sketchRows)) {
+				return sketchRows;
+			}
 		}
 		if (factor instanceof BindingSetAssignment assignment) {
 			double rows = 0.0d;
@@ -869,6 +897,9 @@ class LmdbEvaluationStatistics
 	}
 
 	public Object joinEstimationDiagnostics() {
+		if (sketchBasedJoinEstimator == null) {
+			return Map.of("estimator", "disabled");
+		}
 		SketchBasedJoinEstimator.Staleness staleness = sketchBasedJoinEstimator.staleness();
 		Map<String, Object> diagnostics = new LinkedHashMap<>();
 		diagnostics.put("estimator", "SketchBasedJoinEstimator");
@@ -889,12 +920,18 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public double estimateFilterPassRatio(Filter filter) {
+		if (sketchBasedJoinEstimator == null) {
+			return -1.0d;
+		}
 		double ratio = sketchBasedJoinEstimator.estimateFilterPassRatio(filter);
 		return Double.isFinite(ratio) && ratio >= 0.0d && ratio <= 1.0d ? ratio : -1.0d;
 	}
 
 	@Override
 	public FilterPassEstimate estimateFilterPass(Filter filter) {
+		if (sketchBasedJoinEstimator == null) {
+			return super.estimateFilterPass(filter);
+		}
 		return sketchBasedJoinEstimator.estimateFilterPass(filter);
 	}
 
