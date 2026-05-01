@@ -47,16 +47,6 @@ final class ParetoJoinMemoPlanner<T> {
 			BiFunction<T, Integer, T> transitionFactory, ToLongFunction<T> factorMask,
 			ToIntFunction<T> planStepCount, ToLongFunction<T> memoGroupKey,
 			ToLongFunction<T> candidateMask,
-			Function<T, JoinCostVector> costVector, Comparator<T> tieBreaker, Predicate<T> finalPlan) {
-		this(factorCount, maxPlanStepCount, frontierLimit, beamWidth, seedFactory, transitionFactory, factorMask,
-				planStepCount, memoGroupKey, candidateMask, costVector, tieBreaker, finalPlan, 0);
-	}
-
-	ParetoJoinMemoPlanner(int factorCount, int maxPlanStepCount, int frontierLimit, int beamWidth,
-			IntFunction<T> seedFactory,
-			BiFunction<T, Integer, T> transitionFactory, ToLongFunction<T> factorMask,
-			ToIntFunction<T> planStepCount, ToLongFunction<T> memoGroupKey,
-			ToLongFunction<T> candidateMask,
 			Function<T, JoinCostVector> costVector, Comparator<T> tieBreaker, Predicate<T> finalPlan,
 			int memoGroupArraySize) {
 		this.factorCount = factorCount;

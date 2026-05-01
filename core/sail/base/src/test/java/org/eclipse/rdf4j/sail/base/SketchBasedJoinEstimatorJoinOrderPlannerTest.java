@@ -1009,6 +1009,28 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void plannerRejectsSegmentsBeyondBitMaskCapacity() {
+		StubSailStore store = new StubSailStore();
+		IRI predicate = VF.createIRI("urn:many");
+		store.add(VF.createStatement(VF.createIRI("urn:s"), predicate, VF.createIRI("urn:o")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		List<TupleExpr> args = new ArrayList<>();
+		for (int i = 0; i <= Long.SIZE; i++) {
+			args.add(pattern("s" + i, predicate, "o" + i));
+		}
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.GREEDY, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP,
+				List.of(notEqualFilter("s0", "s1")));
+
+		assertTrue(attempt.getPlan().isEmpty(), "Expected planner to reject segments beyond long-mask capacity");
+		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE.name(), attempt.getPlannerPath());
+	}
+
+	@Test
 	void promotedBindingPrefixDoesNotReorderParetoCycleTail() {
 		StubSailStore store = new StubSailStore();
 		IRI follows = VF.createIRI("urn:follows");
@@ -2570,12 +2592,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertPlanWorkMatchesStepSum(plan.get());
 	}
 
-	private static final class FixedPatternPassRatioJoinStatsProvider implements JoinStatsProvider {
-		private final double passRatio;
-
-		private FixedPatternPassRatioJoinStatsProvider(double passRatio) {
-			this.passRatio = passRatio;
-		}
+	private record FixedPatternPassRatioJoinStatsProvider(double passRatio) implements JoinStatsProvider {
 
 		@Override
 		public void reset() {
@@ -2804,16 +2821,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		return values;
 	}
 
-	private static final class CountingValue implements Value {
+	private record CountingValue(String value, AtomicInteger equalsCalls) implements Value {
 		private static final long serialVersionUID = 1L;
-
-		private final String value;
-		private final AtomicInteger equalsCalls;
-
-		private CountingValue(String value, AtomicInteger equalsCalls) {
-			this.value = value;
-			this.equalsCalls = equalsCalls;
-		}
 
 		@Override
 		public String stringValue() {
@@ -2840,16 +2849,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		}
 	}
 
-	private static final class FingerprintCountingValue implements Value {
+	private record FingerprintCountingValue(String value, AtomicInteger stringValueCalls) implements Value {
 		private static final long serialVersionUID = 1L;
-
-		private final String value;
-		private final AtomicInteger stringValueCalls;
-
-		private FingerprintCountingValue(String value, AtomicInteger stringValueCalls) {
-			this.value = value;
-			this.stringValueCalls = stringValueCalls;
-		}
 
 		@Override
 		public String stringValue() {

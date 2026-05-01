@@ -77,7 +77,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
@@ -363,7 +362,7 @@ class TripleStore implements Closeable {
 		}
 
 		List<String> orderedSpecs = new ArrayList<>(indexSpecs);
-		String mainFieldSeq = orderedSpecs.get(0);
+		String mainFieldSeq = orderedSpecs.getFirst();
 		List<String> secondarySpecs = new ArrayList<>(orderedSpecs.subList(1, orderedSpecs.size()));
 		OrderScore bestSecondaryOrder = findBestSecondaryIndexOrder(mainFieldSeq, secondarySpecs);
 
@@ -493,18 +492,9 @@ class TripleStore implements Closeable {
 		throw new IllegalStateException("Unable to reconstruct secondary index order");
 	}
 
-	private static final class OrderScore {
+	private record OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
+
 		private static final OrderScore EMPTY = new OrderScore(List.of(), 0, 0);
-
-		private final List<String> indexOrder;
-		private final int reusedTransitions;
-		private final int mainOrderResets;
-
-		private OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
-			this.indexOrder = indexOrder;
-			this.reusedTransitions = reusedTransitions;
-			this.mainOrderResets = mainOrderResets;
-		}
 
 		@Override
 		public String toString() {
@@ -528,7 +518,7 @@ class TripleStore implements Closeable {
 		addedIndexSpecs.removeAll(currentIndexSpecs);
 
 		if (!addedIndexSpecs.isEmpty()) {
-			TripleIndex sourceIndex = indexes.get(0);
+			TripleIndex sourceIndex = indexes.getFirst();
 			for (boolean explicit : new boolean[] { true, false }) {
 				try (MemoryStack stack = stackPush()) {
 					MDBVal keyValue = MDBVal.calloc(stack);
@@ -612,7 +602,7 @@ class TripleStore implements Closeable {
 		}
 
 		if (!removedIndexExceptions.isEmpty()) {
-			throw new IOException(removedIndexExceptions.get(0));
+			throw new IOException(removedIndexExceptions.getFirst());
 		}
 
 		// Update the indexes variable, using the specified index order
@@ -650,7 +640,7 @@ class TripleStore implements Closeable {
 			env = 0;
 
 			if (!caughtExceptions.isEmpty()) {
-				throw new IOException(caughtExceptions.get(0));
+				throw new IOException(caughtExceptions.getFirst());
 			}
 		}
 	}
@@ -690,7 +680,7 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
-		TripleIndex mainIndex = indexes.get(0);
+		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
 			mdb_stat(txn, mainIndex.getDB(explicit), stat);
@@ -1106,26 +1096,6 @@ class TripleStore implements Closeable {
 		return bestIndex;
 	}
 
-	IndexPrefixSelection selectBestIndexPrefix(Set<Component> boundComponents) {
-		return selectBestIndexPrefix(componentMask(boundComponents));
-	}
-
-	IndexPrefixSelection selectBestIndexPrefix(int boundComponentMask) {
-		List<IndexAccessPath> accessPaths = indexAccessPaths(boundComponentMask);
-		if (accessPaths.isEmpty()) {
-			return new IndexPrefixSelection("", 0, 0);
-		}
-
-		IndexAccessPath bestPath = accessPaths.get(0);
-		for (IndexAccessPath candidate : accessPaths) {
-			if (candidate.prefixLength() > bestPath.prefixLength()) {
-				bestPath = candidate;
-			}
-		}
-		return new IndexPrefixSelection(bestPath.indexFieldSequence(), bestPath.prefixLength(),
-				bestPath.prefixComponentMask());
-	}
-
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
 		long subj = boundMask(boundComponentMask, Component.S);
 		long pred = boundMask(boundComponentMask, Component.P);
@@ -1250,7 +1220,7 @@ class TripleStore implements Closeable {
 	int localCount = 0;
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		TripleIndex mainIndex = indexes.get(0);
+		TripleIndex mainIndex = indexes.getFirst();
 		boolean stAdded;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
@@ -1339,7 +1309,7 @@ class TripleStore implements Closeable {
 			return;
 		}
 
-		TripleIndex mainIndex = indexes.get(0);
+		TripleIndex mainIndex = indexes.getFirst();
 		int addedCount = 0;
 		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -1464,21 +1434,9 @@ class TripleStore implements Closeable {
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int count,
-			boolean explicit)
-			throws IOException {
-		storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, null);
-	}
-
-	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int count,
 			boolean explicit, IntConsumer addedIndexConsumer)
 			throws IOException {
 		storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, addedIndexConsumer);
-	}
-
-	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,
-			int count, boolean explicit)
-			throws IOException {
-		storeTriplesIndividually(subj, pred, obj, context, startIndex, count, explicit, null);
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,

@@ -420,7 +420,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			List<?> requests = drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10);
 			assertEquals(1, requests.size(),
 					"Expected optimizer to vote for background sampling of the unknown filter");
-			Object request = requests.get(0);
+			Object request = requests.getFirst();
 			assertEquals("urn:test:name", invokeString(request, "predicateIri"));
 			assertTrue(invokeString(request, "filterKey").length() > 0,
 					"Expected background request to retain the canonical filter key");
@@ -505,7 +505,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				LmdbValue.UNKNOWN_ID);
 		List<?> requests = drainBackgroundSamplingRequests(stats, 10);
 		assertEquals(1, requests.size(), "Expected repeated foreground needs to share one request");
-		assertEquals(2L, invokeLong(requests.get(0), "voteCount"));
+		assertEquals(2L, invokeLong(requests.getFirst(), "voteCount"));
 	}
 
 	@Test
@@ -616,7 +616,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	private static StatementPattern statementPattern(String query) {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		List<StatementPattern> patterns = StatementPatternCollector.process(parsed.getTupleExpr());
-		return patterns.get(0);
+		return patterns.getFirst();
 	}
 
 	private static Filter filterWrappedPattern(String subjectVarName, String predicateIri, String objectVarName,

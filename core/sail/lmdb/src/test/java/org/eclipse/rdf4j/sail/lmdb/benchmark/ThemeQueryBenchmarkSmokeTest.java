@@ -340,7 +340,7 @@ class ThemeQueryBenchmarkSmokeTest {
 				super.meet(node);
 			}
 		});
-		return matches.isEmpty() ? null : matches.get(0);
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 
 	private static String labelFor(StatementPattern statementPattern) {
@@ -386,6 +386,6 @@ class ThemeQueryBenchmarkSmokeTest {
 				super.meetNode(node);
 			}
 		});
-		return matches.isEmpty() ? null : matches.get(0);
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 }

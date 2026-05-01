@@ -147,10 +147,9 @@ final class LmdbStatementPatternCardinalitySource {
 			if (this == obj) {
 				return true;
 			}
-			if (!(obj instanceof SharedCardinalityKey)) {
+			if (!(obj instanceof SharedCardinalityKey other)) {
 				return false;
 			}
-			SharedCardinalityKey other = (SharedCardinalityKey) obj;
 			return tripleStoreIdentity == other.tripleStoreIdentity
 					&& dataRevision == other.dataRevision
 					&& subjId == other.subjId

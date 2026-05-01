@@ -105,7 +105,7 @@ class PageEstimatorPredicateCardinalityRegressionTest {
 		String query = "SELECT * WHERE { ?s <" + followsPredicate.stringValue() + "> ?o . }";
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		List<StatementPattern> patterns = StatementPatternCollector.process(parsed.getTupleExpr());
-		return patterns.get(0);
+		return patterns.getFirst();
 	}
 
 	private static IRI iri(String prefix, int index) {

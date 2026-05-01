@@ -176,7 +176,7 @@ final class LmdbDeferredFilterPlacer {
 				|| !bridgeFilter.requiredVars.containsAll(existsFilter.requiredVars)) {
 			return false;
 		}
-		SegmentFactor existsFactor = factors.get(existsWindow.selectedIndexes.get(0).intValue());
+		SegmentFactor existsFactor = factors.get(existsWindow.selectedIndexes.getFirst().intValue());
 		return existsFactor.bindingNames.size() <= existsFilter.requiredVars.size();
 	}
 
@@ -233,7 +233,7 @@ final class LmdbDeferredFilterPlacer {
 		if (factors.isEmpty() || deferredFilters.isEmpty()) {
 			return;
 		}
-		SegmentFactor currentFactor = factors.get(factors.size() - 1);
+		SegmentFactor currentFactor = factors.getLast();
 		Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport
 				.positionableBindingSetAssignmentNames(currentFactor.tupleExpr);
 		if (assignmentNames.isEmpty()) {
@@ -881,8 +881,8 @@ final class LmdbDeferredFilterPlacer {
 
 		private BindingAssignmentWindow(List<Integer> selectedIndexes) {
 			this.selectedIndexes = selectedIndexes;
-			this.startIndex = selectedIndexes.get(0);
-			this.endIndex = selectedIndexes.get(selectedIndexes.size() - 1);
+			this.startIndex = selectedIndexes.getFirst();
+			this.endIndex = selectedIndexes.getLast();
 		}
 	}
 }

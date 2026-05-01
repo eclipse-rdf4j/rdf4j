@@ -189,7 +189,7 @@ class ValueStoreHashCacheTest {
 
 	@SuppressWarnings("unchecked")
 	private MappedByteBuffer firstSegment(ValueStoreHashFile hashFile) throws Exception {
-		return segments(hashFile).get(0);
+		return segments(hashFile).getFirst();
 	}
 
 	@SuppressWarnings("unchecked")

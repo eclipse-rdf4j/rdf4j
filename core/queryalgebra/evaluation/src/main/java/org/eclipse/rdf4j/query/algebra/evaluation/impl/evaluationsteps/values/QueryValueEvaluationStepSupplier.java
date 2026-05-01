@@ -58,8 +58,7 @@ public class QueryValueEvaluationStepSupplier {
 
 		if (argValue instanceof IRI || argValue instanceof Triple) {
 			return valueFactory.createLiteral(argValue.toString());
-		} else if (argValue instanceof Literal) {
-			Literal literal = (Literal) argValue;
+		} else if (argValue instanceof Literal literal) {
 
 			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
 				return literal;
@@ -101,8 +100,7 @@ public class QueryValueEvaluationStepSupplier {
 	private static Value label(QueryValueEvaluationStep arg, BindingSet bindings, ValueFactory vf) {
 		Value argValue = arg.evaluate(bindings);
 
-		if (argValue instanceof Literal) {
-			Literal literal = (Literal) argValue;
+		if (argValue instanceof Literal literal) {
 
 			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
 				return literal;
@@ -117,8 +115,7 @@ public class QueryValueEvaluationStepSupplier {
 	private static Value datatype(QueryValueEvaluationStep arg, BindingSet bindings) {
 		Value v = arg.evaluate(bindings);
 
-		if (v instanceof Literal) {
-			Literal literal = (Literal) v;
+		if (v instanceof Literal literal) {
 
 			if (literal.getDatatype() != null) {
 				// literal with datatype
@@ -156,8 +153,7 @@ public class QueryValueEvaluationStepSupplier {
 	private static Value namespace(QueryValueEvaluationStep arg, BindingSet bindings, ValueFactory valueFactory) {
 		Value argValue = arg.evaluate(bindings);
 
-		if (argValue instanceof IRI) {
-			IRI uri = (IRI) argValue;
+		if (argValue instanceof IRI uri) {
 			return valueFactory.createIRI(uri.getNamespace());
 		} else {
 			throw new ValueExprEvaluationException();
@@ -170,8 +166,7 @@ public class QueryValueEvaluationStepSupplier {
 
 	private static Value localName(QueryValueEvaluationStep arg, BindingSet bindings, ValueFactory valueFactory) {
 		Value argValue = arg.evaluate(bindings);
-		if (argValue instanceof IRI) {
-			IRI uri = (IRI) argValue;
+		if (argValue instanceof IRI uri) {
 			return valueFactory.createLiteral(uri.getLocalName());
 		} else {
 			throw new ValueExprEvaluationException();
@@ -185,8 +180,7 @@ public class QueryValueEvaluationStepSupplier {
 	private static Value lang(QueryValueEvaluationStep arg, BindingSet bindings, ValueFactory valueFactory) {
 		Value argValue = arg.evaluate(bindings);
 
-		if (argValue instanceof Literal) {
-			Literal literal = (Literal) argValue;
+		if (argValue instanceof Literal literal) {
 			return valueFactory.createLiteral(literal.getLanguage().orElse(""));
 		}
 
@@ -284,8 +278,7 @@ public class QueryValueEvaluationStepSupplier {
 	}
 
 	private static IRI iriFunction(String baseURI, Value argValue, ValueFactory vf) {
-		if (argValue instanceof Literal) {
-			final Literal lit = (Literal) argValue;
+		if (argValue instanceof Literal lit) {
 
 			String uriString = lit.getLabel();
 			try {

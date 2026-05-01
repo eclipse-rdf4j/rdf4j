@@ -10,12 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -490,33 +488,6 @@ class SailSourceModel extends AbstractModel {
 			}
 		}
 		return false;
-	}
-
-	Resource[] cast(Value[] contexts) {
-		if (contexts instanceof Resource[]) {
-			return (Resource[]) contexts;
-		}
-		if (contexts == null) {
-			return new Resource[] { null };
-		}
-		if (contexts.length == 0) {
-			return new Resource[0];
-		}
-		Resource[] result = new Resource[contexts.length];
-		for (int i = 0; i < result.length; i++) {
-			if (contexts[i] == null || contexts[i] instanceof Resource) {
-				result[i] = (Resource) contexts[i];
-			} else {
-				List<Resource> list = new ArrayList<>();
-				for (Value v : contexts) {
-					if (v == null || v instanceof Resource) {
-						list.add((Resource) v);
-					}
-				}
-				return list.toArray(new Resource[list.size()]);
-			}
-		}
-		return result;
 	}
 
 }

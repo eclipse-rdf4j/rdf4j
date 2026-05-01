@@ -45,10 +45,10 @@ final class LmdbDataFile implements Closeable {
 			if (candidate == null) {
 				continue;
 			}
-			if (candidate.txnId == pinnedTxnId) {
+			if (candidate.txnId() == pinnedTxnId) {
 				return candidate;
 			}
-			if (candidate.txnId <= pinnedTxnId && (selected == null || candidate.txnId > selected.txnId)) {
+			if (candidate.txnId() <= pinnedTxnId && (selected == null || candidate.txnId() > selected.txnId())) {
 				selected = candidate;
 			}
 		}
@@ -60,12 +60,12 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	LmdbPage readPage(long pgno, LmdbMeta meta) throws IOException {
-		long offset = pgno * meta.pageSize;
-		if (offset < 0 || offset + meta.pageSize > meta.mapSize) {
-			throw new IOException("Page " + pgno + " is outside map bounds (mapsize=" + meta.mapSize + ")");
+		long offset = pgno * meta.pageSize();
+		if (offset < 0 || offset + meta.pageSize() > meta.mapSize()) {
+			throw new IOException("Page " + pgno + " is outside map bounds (mapsize=" + meta.mapSize() + ")");
 		}
-		ByteBuffer page = readAt(offset, meta.pageSize, meta.byteOrder);
-		return LmdbPage.parse(pgno, page, meta.pageSize);
+		ByteBuffer page = readAt(offset, meta.pageSize(), meta.byteOrder());
+		return LmdbPage.parse(pgno, page, meta.pageSize());
 	}
 
 	@Override
@@ -94,7 +94,7 @@ final class LmdbDataFile implements Closeable {
 		LmdbDb mainDb = LmdbDb.parse(page, META_BASE_OFFSET + LmdbFormat.META_DBS_OFFSET + LmdbFormat.META_DB_SIZE);
 		long lastPage = page.getLong(META_BASE_OFFSET + LmdbFormat.META_LAST_PG_OFFSET);
 		long txnId = page.getLong(META_BASE_OFFSET + LmdbFormat.META_TXNID_OFFSET);
-		return new LmdbMeta(metaPage, txnId, freeDb.pad, mapSize, lastPage, freeDb, mainDb, order);
+		return new LmdbMeta(metaPage, txnId, freeDb.pad(), mapSize, lastPage, freeDb, mainDb, order);
 	}
 
 	private int probePageSize(ByteOrder order) throws IOException {

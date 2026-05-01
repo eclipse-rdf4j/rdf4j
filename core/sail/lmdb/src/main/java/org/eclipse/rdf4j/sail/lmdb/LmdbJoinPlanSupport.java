@@ -124,8 +124,7 @@ final class LmdbJoinPlanSupport {
 		if (tupleExpr instanceof StatementPattern) {
 			return sameStatementPattern((StatementPattern) tupleExpr, expectedPattern);
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsEquivalentRequiredPattern(join.getLeftArg(), expectedPattern)
 					|| containsEquivalentRequiredPattern(join.getRightArg(), expectedPattern);
 		}
@@ -159,8 +158,7 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static List<ValueExpr> splitConjuncts(ValueExpr condition) {
-		if (condition instanceof And) {
-			And and = (And) condition;
+		if (condition instanceof And and) {
 			List<ValueExpr> conjuncts = new ArrayList<>();
 			conjuncts.addAll(splitConjuncts(and.getLeftArg()));
 			conjuncts.addAll(splitConjuncts(and.getRightArg()));
@@ -170,7 +168,7 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static ValueExpr combinedCondition(List<ValueExpr> conditions) {
-		ValueExpr result = conditions.get(0).clone();
+		ValueExpr result = conditions.getFirst().clone();
 		for (int i = 1; i < conditions.size(); i++) {
 			result = new And(result, conditions.get(i).clone());
 		}
@@ -215,22 +213,18 @@ final class LmdbJoinPlanSupport {
 	}
 
 	private static boolean isLookupCompatibleFilter(ValueExpr condition) {
-		if (condition instanceof Or) {
-			Or or = (Or) condition;
+		if (condition instanceof Or or) {
 			return isLookupCompatibleFilter(or.getLeftArg()) && isLookupCompatibleFilter(or.getRightArg());
 		}
-		if (condition instanceof ListMemberOperator) {
-			ListMemberOperator list = (ListMemberOperator) condition;
+		if (condition instanceof ListMemberOperator list) {
 			return list.getArguments()
 					.stream()
 					.allMatch(argument -> argument instanceof Var || argument instanceof ValueConstant);
 		}
-		if (condition instanceof SameTerm) {
-			SameTerm sameTerm = (SameTerm) condition;
+		if (condition instanceof SameTerm sameTerm) {
 			return isLookupCompatibleEquality(sameTerm.getLeftArg(), sameTerm.getRightArg());
 		}
-		if (condition instanceof Compare) {
-			Compare compare = (Compare) condition;
+		if (condition instanceof Compare compare) {
 			return compare.getOperator() == Compare.CompareOp.EQ
 					&& isLookupCompatibleEquality(compare.getLeftArg(), compare.getRightArg());
 		}
@@ -268,7 +262,7 @@ final class LmdbJoinPlanSupport {
 		for (int i = orderedJoinArgs.size() - 1; i >= 0; i--) {
 			Set<StatementPattern> after = identityPatternSet();
 			after.addAll(suffixPatterns);
-			remainingPatterns.add(0, after);
+			remainingPatterns.addFirst(after);
 			suffixPatterns.addAll(collectPatternIdentities(orderedJoinArgs.get(i)));
 		}
 		return remainingPatterns;
@@ -306,11 +300,10 @@ final class LmdbJoinPlanSupport {
 	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition) {
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
-			if (arguments.isEmpty() || !(arguments.get(0) instanceof Var)) {
+			if (arguments.isEmpty() || !(arguments.getFirst()instanceof Var filterVar)) {
 				return null;
 			}
 
-			Var filterVar = (Var) arguments.get(0);
 			String bindingName = filterVar.getName();
 			if (bindingName == null || filterVar.hasValue()) {
 				return null;
@@ -333,12 +326,10 @@ final class LmdbJoinPlanSupport {
 		if (condition instanceof Or) {
 			return smallLiteralOrEqualityFilterAnchor((Or) condition);
 		}
-		if (condition instanceof Compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
-			Compare compare = (Compare) condition;
+		if (condition instanceof Compare compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
 			return smallLiteralFilterAnchor(compare.getLeftArg(), compare.getRightArg());
 		}
-		if (condition instanceof SameTerm) {
-			SameTerm sameTerm = (SameTerm) condition;
+		if (condition instanceof SameTerm sameTerm) {
 			return smallLiteralFilterAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
 		}
 		return null;
@@ -489,8 +480,7 @@ final class LmdbJoinPlanSupport {
 		if (condition instanceof Not && ((Not) condition).getArg() instanceof Exists) {
 			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
 		}
-		if (condition instanceof And) {
-			And and = (And) condition;
+		if (condition instanceof And and) {
 			return Math.max(filterConditionCost(and.getLeftArg()), filterConditionCost(and.getRightArg()));
 		}
 		return JoinOrderPlanner.FILTER_COST_CHEAP;
@@ -505,17 +495,14 @@ final class LmdbJoinPlanSupport {
 	}
 
 	private static boolean collectOrEqualityAnchorValues(ValueExpr condition, OrEqualityAnchorCollector collector) {
-		if (condition instanceof Or) {
-			Or or = (Or) condition;
+		if (condition instanceof Or or) {
 			return collectOrEqualityAnchorValues(or.getLeftArg(), collector)
 					&& collectOrEqualityAnchorValues(or.getRightArg(), collector);
 		}
-		if (condition instanceof Compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
-			Compare compare = (Compare) condition;
+		if (condition instanceof Compare compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
 			return collectOrEqualityAnchorValue(compare.getLeftArg(), compare.getRightArg(), collector);
 		}
-		if (condition instanceof SameTerm) {
-			SameTerm sameTerm = (SameTerm) condition;
+		if (condition instanceof SameTerm sameTerm) {
 			return collectOrEqualityAnchorValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), collector);
 		}
 		return false;
@@ -636,22 +623,8 @@ final class LmdbJoinPlanSupport {
 				|| tupleExpr instanceof Slice;
 	}
 
-	private static final class NestedTupleExpression {
-		private final TupleExpr tupleExpr;
-		private final boolean notExists;
+	private record NestedTupleExpression(TupleExpr tupleExpr, boolean notExists) {
 
-		private NestedTupleExpression(TupleExpr tupleExpr, boolean notExists) {
-			this.tupleExpr = tupleExpr;
-			this.notExists = notExists;
-		}
-
-		private TupleExpr tupleExpr() {
-			return tupleExpr;
-		}
-
-		private boolean notExists() {
-			return notExists;
-		}
 	}
 
 	private static final class OrEqualityAnchorCollector {

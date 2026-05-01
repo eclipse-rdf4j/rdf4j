@@ -446,14 +446,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		return new Expectation(theme, queryIndex);
 	}
 
-	private static final class Expectation {
-		private final Theme theme;
-		private final int queryIndex;
-
-		private Expectation(Theme theme, int queryIndex) {
-			this.theme = theme;
-			this.queryIndex = queryIndex;
-		}
+	private record Expectation(Theme theme, int queryIndex) {
 
 		@Override
 		public String toString() {
@@ -461,13 +454,6 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		}
 	}
 
-	private static final class OptimizerSnapshot {
-		private final String plan;
-		private final String renderedQuery;
-
-		private OptimizerSnapshot(String plan, String renderedQuery) {
-			this.plan = plan;
-			this.renderedQuery = renderedQuery;
-		}
+	private record OptimizerSnapshot(String plan, String renderedQuery) {
 	}
 }

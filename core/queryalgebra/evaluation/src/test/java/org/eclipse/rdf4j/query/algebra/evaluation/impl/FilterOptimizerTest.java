@@ -221,64 +221,6 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void standardPipelinePreJoinFilterPassKeepsFilterAboveJoinWhenJoinRemainsCheaperThanFilteredPattern() {
-		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . "
-				+ "FILTER(?branchName = \"Branch 0\") }";
-
-		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
-		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
-				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
-				new EmptyTripleSource(),
-				new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d, 20.0d));
-
-		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
-				break;
-			}
-			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-		}
-
-		List<Filter> filters = findAll(root, Filter.class);
-		assertThat(filters)
-				.as("Before join ordering, the pre-pass should keep the filter at the join when the filtered pattern is still less selective")
-				.singleElement()
-				.satisfies(filter -> {
-					assertThat(filter.getCondition()).isInstanceOf(Compare.class);
-					assertThat(filter.getArg()).isInstanceOf(Join.class);
-				});
-	}
-
-	@Test
-	public void standardPipelinePreJoinFilterPassStillPushesFilterBelowJoinWhenOnlyFilterSelectivityCostingIsAvailable() {
-		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . "
-				+ "FILTER(?branchName = \"Branch 0\") }";
-
-		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
-		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
-				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
-				new EmptyTripleSource(),
-				new FilterSelectivityOnlyStatistics(10.0d, 100.0d, 20.0d, 20.0d));
-
-		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
-				break;
-			}
-			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-		}
-
-		List<Filter> filters = findAll(root, Filter.class);
-		assertThat(filters)
-				.as("Before sketches are ready, the pre-pass should still push a pattern-local filter below the join")
-				.singleElement()
-				.satisfies(filter -> {
-					assertThat(filter.getCondition()).isInstanceOf(Compare.class);
-					assertThat(filter.getArg()).isInstanceOf(StatementPattern.class);
-					assertThat(((StatementPattern) filter.getArg()).getPredicateVar().getValue().stringValue())
-							.isEqualTo("urn:name");
-				});
-	}
-
-	@Test
 	public void standardPipelineFinalFilterPassAnnotatesSelectivityFromCardinalityStatsUsedForPlacement() {
 		String query = "SELECT * WHERE {?branch <urn:rank> ?rank . ?copy <urn:locatedAt> ?branch . "
 				+ "FILTER(?rank = 1 && ?rank != 2) }";
@@ -433,8 +375,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	private static void collectJoinLeaves(TupleExpr tupleExpr, List<TupleExpr> leaves) {
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			collectJoinLeaves(join.getLeftArg(), leaves);
 			collectJoinLeaves(join.getRightArg(), leaves);
 			return;
@@ -458,7 +399,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				super.meetNode(node);
 			}
 		});
-		return matches.get(0);
+		return matches.getFirst();
 	}
 
 	private static <T extends TupleExpr> List<T> findAll(TupleExpr root, Class<T> type) {

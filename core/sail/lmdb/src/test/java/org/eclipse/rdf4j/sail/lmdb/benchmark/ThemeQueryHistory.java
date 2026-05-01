@@ -129,8 +129,8 @@ final class ThemeQueryHistory {
 
 	private static Section extractMarkedQuerySection(String section) {
 		List<String> lines = section.lines().collect(Collectors.toList());
-		while (!lines.isEmpty() && lines.get(0).isBlank()) {
-			lines.remove(0);
+		while (!lines.isEmpty() && lines.getFirst().isBlank()) {
+			lines.removeFirst();
 		}
 		int queryStart = -1;
 		for (int i = 0; i < lines.size(); i++) {

@@ -125,14 +125,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 	private record RareOverlapFixture(SketchBasedJoinEstimator estimator, Join join, double actualJoinRows) {
 	}
 
-	private static final class PropertyState {
-		private final String[] keys;
-		private final String[] values;
-
-		private PropertyState(String[] keys, String[] values) {
-			this.keys = keys;
-			this.values = values;
-		}
+	private record PropertyState(String[] keys, String[] values) {
 
 		private static PropertyState capture(String... keys) {
 			String[] values = new String[keys.length];

@@ -450,9 +450,8 @@ public class GroupIteratorTest {
 						return;
 					}
 					Value v = evaluate(s);
-					if (v instanceof Literal) {
+					if (v instanceof Literal nextLiteral) {
 						if (distinctValue.test(v)) {
-							Literal nextLiteral = (Literal) v;
 							if (nextLiteral.getDatatype() != null
 									&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 								sum.value = MathUtil.compute(sum.value, nextLiteral, MathExpr.MathOp.PLUS);
@@ -496,9 +495,8 @@ public class GroupIteratorTest {
 					Value v = evaluate(0, bindingSet); // take first argument as binding set
 					Value v2 = evaluate(1, bindingSet); // take second argument as binding set
 
-					if (v instanceof Literal) {
+					if (v instanceof Literal nextLiteral) {
 						if (distinctValue.test(List.of(v))) {
-							Literal nextLiteral = (Literal) v;
 							if (nextLiteral.getDatatype() != null
 									&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 								sum.value = MathUtil.compute(sum.value, nextLiteral, MathExpr.MathOp.PLUS);
@@ -510,9 +508,8 @@ public class GroupIteratorTest {
 						}
 					}
 
-					if (v2 instanceof Literal) {
+					if (v2 instanceof Literal nextLiteral) {
 						if (distinctValue.test(List.of(v2))) {
-							Literal nextLiteral = (Literal) v2;
 							if (nextLiteral.getDatatype() != null
 									&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 								sum.value = MathUtil.compute(sum.value, nextLiteral, MathExpr.MathOp.PLUS);
@@ -592,9 +589,8 @@ public class GroupIteratorTest {
 						return;
 					}
 					Value v = evaluate(0, bindingSet);
-					if (v instanceof Literal) {
+					if (v instanceof Literal nextLiteral) {
 						if (distinctValue.test(List.of(v))) {
-							Literal nextLiteral = (Literal) v;
 							if (nextLiteral.getDatatype() != null
 									&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 								sum.value = MathUtil.compute(sum.value, nextLiteral, MathExpr.MathOp.PLUS);

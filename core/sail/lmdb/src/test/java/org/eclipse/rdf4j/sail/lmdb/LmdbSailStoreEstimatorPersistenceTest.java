@@ -552,21 +552,4 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		}
 	}
 
-	private static void loadManyStatements(LmdbStore store, int resourceCount) throws Exception {
-		var vf = SimpleValueFactory.getInstance();
-		IRI condition = vf.createIRI("http://example.com/theme/medical/Condition");
-		IRI code = vf.createIRI("http://example.com/theme/medical/code");
-		IRI patient = vf.createIRI("http://example.com/theme/medical/patient");
-		try (NotifyingSailConnection conn = store.getConnection()) {
-			conn.begin(IsolationLevels.NONE);
-			for (int i = 0; i < resourceCount; i++) {
-				var subject = vf.createIRI("urn:test:persist:condition:" + i);
-				conn.addStatement(subject, org.eclipse.rdf4j.model.vocabulary.RDF.TYPE, condition);
-				conn.addStatement(subject, code, vf.createLiteral("DX-" + i));
-				conn.addStatement(subject, patient, vf.createIRI("urn:test:persist:patient:" + (i % 512)));
-			}
-			conn.commit();
-		}
-	}
-
 }

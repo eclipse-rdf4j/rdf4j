@@ -13,27 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.nio.ByteOrder;
 
-final class LmdbMeta {
-
-	final int metaPage;
-	final long txnId;
-	final int pageSize;
-	final long mapSize;
-	final long lastPage;
-	final LmdbDb freeDb;
-	final LmdbDb mainDb;
-	final ByteOrder byteOrder;
-
-	LmdbMeta(int metaPage, long txnId, int pageSize, long mapSize, long lastPage, LmdbDb freeDb, LmdbDb mainDb,
-			ByteOrder byteOrder) {
-		this.metaPage = metaPage;
-		this.txnId = txnId;
-		this.pageSize = pageSize;
-		this.mapSize = mapSize;
-		this.lastPage = lastPage;
-		this.freeDb = freeDb;
-		this.mainDb = mainDb;
-		this.byteOrder = byteOrder;
-	}
+record LmdbMeta(int metaPage, long txnId, int pageSize, long mapSize, long lastPage, LmdbDb freeDb, LmdbDb mainDb,
+		ByteOrder byteOrder) {
 
 }

@@ -43,9 +43,7 @@ public class StrAfter implements Function {
 		Value leftArg = args[0];
 		Value rightArg = args[1];
 
-		if (leftArg instanceof Literal && rightArg instanceof Literal) {
-			Literal leftLit = (Literal) leftArg;
-			Literal rightLit = (Literal) rightArg;
+		if (leftArg instanceof Literal leftLit && rightArg instanceof Literal rightLit) {
 
 			if (QueryEvaluationUtility.compatibleArguments(leftLit, rightLit)) {
 				String lexicalValue = leftLit.getLabel();

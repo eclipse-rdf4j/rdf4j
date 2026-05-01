@@ -191,7 +191,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		List<StatementPattern> stmts = stmtFinder.getStatements();
 
 		assertEquals(stmts.size(), 3);
-		assertEquals(stmts.get(0).getSubjectVar().getValue().stringValue(), "ex:b");
+		assertEquals(stmts.getFirst().getSubjectVar().getValue().stringValue(), "ex:b");
 		assertEquals(stmts.get(0).getPredicateVar().getValue().stringValue(), "ex:a");
 		assertEquals(stmts.get(0).getObjectVar().getValue(), null);
 		assertEquals(stmts.get(1).getSubjectVar().getValue().stringValue(), "ex:b");
@@ -413,8 +413,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				return getStatementCardinality((StatementPattern) expr);
 			}
 
-			if (expr instanceof Join) {
-				Join join = (Join) expr;
+			if (expr instanceof Join join) {
 				return getCardinality(join.getLeftArg()) * getCardinality(join.getRightArg());
 			}
 

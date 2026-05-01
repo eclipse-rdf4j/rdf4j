@@ -154,7 +154,7 @@ public interface JoinFactorCostModel {
 						while (remaining != 0L) {
 							int id = Long.numberOfTrailingZeros(remaining);
 							remaining &= ~(1L << id);
-							if (id >= 0 && id < variableNames.length && variableNames[id] != null) {
+							if (id < variableNames.length && variableNames[id] != null) {
 								return variableNames[id];
 							}
 						}
@@ -172,7 +172,7 @@ public interface JoinFactorCostModel {
 				while (remaining != 0L) {
 					int id = Long.numberOfTrailingZeros(remaining);
 					remaining &= ~(1L << id);
-					if (id >= 0 && id < variableNames.length && value.equals(variableNames[id])) {
+					if (id < variableNames.length && value.equals(variableNames[id])) {
 						return true;
 					}
 				}
@@ -271,10 +271,6 @@ public interface JoinFactorCostModel {
 
 		public double getAccessRowsBeforeFilter() {
 			return accessRowsBeforeFilter;
-		}
-
-		public boolean isNestedInvocationCosted() {
-			return nestedInvocationCosted;
 		}
 
 		public boolean isRepeatedInvocationsCosted() {

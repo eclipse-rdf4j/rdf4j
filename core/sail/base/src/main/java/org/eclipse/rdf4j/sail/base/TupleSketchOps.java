@@ -23,7 +23,9 @@ import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesSketchIterator;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketchBuilder;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 
+@Experimental
 final class TupleSketchOps {
 
 	private static final int NUMBER_OF_VALUES = 1;
@@ -53,10 +55,6 @@ final class TupleSketchOps {
 				.setResizeFactor(ResizeFactor.X8)
 				.setNumberOfValues(NUMBER_OF_VALUES)
 				.build(payload);
-	}
-
-	static ArrayOfDoublesUpdatableSketch heapify(byte[] payload) {
-		return ArrayOfDoublesUpdatableSketch.heapify(MemorySegment.ofArray(payload));
 	}
 
 	static ArrayOfDoublesUpdatableSketch heapify(MemorySegment payload) {
@@ -96,20 +94,6 @@ final class TupleSketchOps {
 		return scaleByTheta(sum, sketch);
 	}
 
-	static double estimatePositiveDistinct(ArrayOfDoublesSketch sketch) {
-		if (sketch == null || sketch.getRetainedEntries() == 0) {
-			return 0.0d;
-		}
-		double count = 0.0d;
-		ArrayOfDoublesSketchIterator iterator = sketch.iterator();
-		while (iterator.next()) {
-			if (iterator.getValues()[0] > 0.0d) {
-				count++;
-			}
-		}
-		return scaleByTheta(count, sketch);
-	}
-
 	static double estimateDistinct(ArrayOfDoublesSketch sketch) {
 		if (sketch == null || sketch.getRetainedEntries() == 0) {
 			return 0.0d;
@@ -119,10 +103,6 @@ final class TupleSketchOps {
 
 	static double estimateIntersectionProductSum(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
 		return intersectProductStats(left, right, k).positiveSum();
-	}
-
-	static ArrayOfDoublesSketch intersectProduct(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
-		return intersectProductStats(left, right, k).sketch();
 	}
 
 	static ArrayOfDoublesSketch intersectMin(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
@@ -220,14 +200,7 @@ final class TupleSketchOps {
 		return (int) mixed;
 	}
 
-	private static final class DirectLookupTable {
-		private final long[] keys;
-		private final double[] values;
-
-		private DirectLookupTable(long[] keys, double[] values) {
-			this.keys = keys;
-			this.values = values;
-		}
+	private record DirectLookupTable(long[] keys, double[] values) {
 
 		private double find(long targetKey) {
 			int mask = keys.length - 1;

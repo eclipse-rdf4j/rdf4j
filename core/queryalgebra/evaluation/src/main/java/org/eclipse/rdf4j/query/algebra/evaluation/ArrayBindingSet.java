@@ -358,8 +358,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return true;
 		}
 
-		if (other instanceof ArrayBindingSet) {
-			ArrayBindingSet o = (ArrayBindingSet) other;
+		if (other instanceof ArrayBindingSet o) {
 			// Fast path when we share the same bindingNames array (identity equality)
 
 			if (this.bindingNames == o.bindingNames) {

@@ -28,13 +28,16 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.slf4j.Logger;
 
+@Experimental
 final class SketchEstimatorPersistenceStore implements AutoCloseable {
 
 	static final byte FILE_KIND_GLOBAL = 1;
@@ -112,10 +115,6 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		return store;
 	}
 
-	Path directory() {
-		return directory;
-	}
-
 	boolean hasMetadata() {
 		return Files.isRegularFile(metadataPath());
 	}
@@ -138,9 +137,7 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	synchronized void reset() throws IOException {
 		closeMappedSketchFiles();
 		for (int slot = 0; slot < appendOffsets.length; slot++) {
-			for (int fileKind = 0; fileKind < appendOffsets[slot].length; fileKind++) {
-				appendOffsets[slot][fileKind] = 0L;
-			}
+			Arrays.fill(appendOffsets[slot], 0L);
 		}
 		mappedSketchFileMapCount = 0;
 		deleteDirectoryContents();
@@ -187,9 +184,9 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	}
 
 	synchronized void flush() throws IOException {
-		for (MappedSketchChunk mapped : mappedSketchFiles.values()) {
-			// mapped.force(); we never need to force sync, this is all for stats and some corruption is fine
-		}
+//		for (MappedSketchChunk mapped : mappedSketchFiles.values()) {
+		// mapped.force(); we never need to force sync, this is all for stats and some corruption is fine
+//		}
 	}
 
 	synchronized byte[] read(Ref ref) throws IOException {
@@ -454,16 +451,12 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 	}
 
 	private static String sketchesBaseName(byte fileKind) {
-		switch (fileKind) {
-		case FILE_KIND_GLOBAL:
-			return "global";
-		case FILE_KIND_SINGLES:
-			return "singles";
-		case FILE_KIND_PAIRS:
-			return "pairs";
-		default:
-			throw new IllegalArgumentException("Unknown sketch file kind: " + fileKind);
-		}
+		return switch (fileKind) {
+		case FILE_KIND_GLOBAL -> "global";
+		case FILE_KIND_SINGLES -> "singles";
+		case FILE_KIND_PAIRS -> "pairs";
+		default -> throw new IllegalArgumentException("Unknown sketch file kind: " + fileKind);
+		};
 	}
 
 	private Path slotDirectory(byte slot) {
@@ -540,34 +533,13 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		T read(MemorySegment payload) throws IOException;
 	}
 
-	static final class FramedPayloadAllocation {
-		final Ref ref;
-		final MemorySegment payload;
-
-		FramedPayloadAllocation(Ref ref, MemorySegment payload) {
-			this.ref = ref;
-			this.payload = payload;
-		}
+	record FramedPayloadAllocation(Ref ref, MemorySegment payload) {
 	}
 
-	private static final class MappedSketchSlice {
-		private final MemorySegment segment;
-
-		private MappedSketchSlice(MemorySegment segment) {
-			this.segment = segment;
-		}
+	private record MappedSketchSlice(MemorySegment segment) {
 	}
 
-	private static final class MappedSketchChunkKey {
-		private final byte slot;
-		private final byte fileKind;
-		private final long chunkStart;
-
-		private MappedSketchChunkKey(byte slot, byte fileKind, long chunkStart) {
-			this.slot = slot;
-			this.fileKind = fileKind;
-			this.chunkStart = chunkStart;
-		}
+	private record MappedSketchChunkKey(byte slot, byte fileKind, long chunkStart) {
 
 		@Override
 		public boolean equals(Object other) {
@@ -670,52 +642,18 @@ final class SketchEstimatorPersistenceStore implements AutoCloseable {
 		}
 
 		long chunkBytes(byte fileKind) {
-			switch (fileKind) {
-			case FILE_KIND_GLOBAL:
-				return globalChunkBytes;
-			case FILE_KIND_SINGLES:
-				return singlesChunkBytes;
-			case FILE_KIND_PAIRS:
-				return pairsChunkBytes;
-			default:
-				throw new IllegalArgumentException("Unknown sketch file kind: " + fileKind);
-			}
+			return switch (fileKind) {
+			case FILE_KIND_GLOBAL -> globalChunkBytes;
+			case FILE_KIND_SINGLES -> singlesChunkBytes;
+			case FILE_KIND_PAIRS -> pairsChunkBytes;
+			default -> throw new IllegalArgumentException("Unknown sketch file kind: " + fileKind);
+			};
 		}
 	}
 
-	static final class Ref {
-		final byte slot;
-		final byte fileKind;
-		final long offset;
-		final int length;
-		final long generation;
-
-		Ref(byte slot, byte fileKind, long offset, int length, long generation) {
-			this.slot = slot;
-			this.fileKind = fileKind;
-			this.offset = offset;
-			this.length = length;
-			this.generation = generation;
-		}
+	record Ref(byte slot, byte fileKind, long offset, int length, long generation) {
 	}
 
-	static final class IndexEntry {
-		final byte recType;
-		final boolean delete;
-		final byte axisA;
-		final byte axisB;
-		final int x;
-		final int y;
-		final Ref ref;
-
-		IndexEntry(byte recType, boolean delete, byte axisA, byte axisB, int x, int y, Ref ref) {
-			this.recType = recType;
-			this.delete = delete;
-			this.axisA = axisA;
-			this.axisB = axisB;
-			this.x = x;
-			this.y = y;
-			this.ref = ref;
-		}
+	record IndexEntry(byte recType, boolean delete, byte axisA, byte axisB, int x, int y, Ref ref) {
 	}
 }

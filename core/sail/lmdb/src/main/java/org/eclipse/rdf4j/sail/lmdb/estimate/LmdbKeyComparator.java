@@ -18,20 +18,6 @@ final class LmdbKeyComparator {
 	private LmdbKeyComparator() {
 	}
 
-	static int compare(byte[] left, int leftLength, byte[] right, int rightLength) {
-		int len = Math.min(leftLength, rightLength);
-		for (int i = 0; i < len; i++) {
-			int diff = (left[i] & 0xff) - (right[i] & 0xff);
-			if (diff != 0) {
-				return diff;
-			}
-		}
-		if (leftLength == rightLength) {
-			return 0;
-		}
-		return leftLength < rightLength ? -1 : 1;
-	}
-
 	static int compare(byte[] left, int leftLength, ByteBuffer right, int rightOffset, int rightLength) {
 		int len = Math.min(leftLength, rightLength);
 		for (int i = 0; i < len; i++) {

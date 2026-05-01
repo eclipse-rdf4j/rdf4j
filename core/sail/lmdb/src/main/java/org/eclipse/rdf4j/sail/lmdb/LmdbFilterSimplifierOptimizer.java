@@ -94,8 +94,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		public void meet(Filter filter) {
 			super.meet(filter);
 			annotateFilter(filter);
-			if (filter.getArg() instanceof Filter && canMerge(filter, (Filter) filter.getArg())) {
-				Filter childFilter = (Filter) filter.getArg();
+			if (filter.getArg()instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
 				annotateFilter(filter);
@@ -210,11 +209,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static MandatoryOptionalRewrite makeOptionalBindingMandatory(TupleExpr arg, String bindingName,
 			BindingSetAssignment anchor) {
-		if (!(arg instanceof LeftJoin)) {
+		if (!(arg instanceof LeftJoin leftJoin)) {
 			return MandatoryOptionalRewrite.unchanged(arg);
 		}
 
-		LeftJoin leftJoin = (LeftJoin) arg;
 		if (leftJoin.hasCondition() || leftJoin.getLeftArg().getBindingNames().contains(bindingName)
 				|| !leftJoin.getRightArg().getBindingNames().contains(bindingName)) {
 			return MandatoryOptionalRewrite.unchanged(arg);
@@ -243,14 +241,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				aliasFilterIsRedundant);
 	}
 
-	private static final class MandatoryOptionalRewrite {
-		private final TupleExpr tupleExpr;
-		private final boolean aliasFilterIsRedundant;
-
-		private MandatoryOptionalRewrite(TupleExpr tupleExpr, boolean aliasFilterIsRedundant) {
-			this.tupleExpr = tupleExpr;
-			this.aliasFilterIsRedundant = aliasFilterIsRedundant;
-		}
+	private record MandatoryOptionalRewrite(TupleExpr tupleExpr, boolean aliasFilterIsRedundant) {
 
 		private static MandatoryOptionalRewrite unchanged(TupleExpr tupleExpr) {
 			return new MandatoryOptionalRewrite(tupleExpr, false);
@@ -276,8 +267,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			@Override
 			public void meet(Extension extension) {
 				for (ExtensionElem element : extension.getElements()) {
-					if (extensionName.equals(element.getName()) && element.getExpr() instanceof Var) {
-						Var sourceVar = (Var) element.getExpr();
+					if (extensionName.equals(element.getName()) && element.getExpr()instanceof Var sourceVar) {
 						if (!sourceVar.hasValue() && sourceVar.getName() != null) {
 							sourceNames.add(sourceVar.getName());
 						}
@@ -366,11 +356,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static TupleExpr hoistMandatoryRightArgAheadOfScopedFanout(TupleExpr leftArg, BindingSetAssignment anchor,
 			TupleExpr rightArg) {
-		if (!(leftArg instanceof Join)) {
+		if (!(leftArg instanceof Join leftJoin)) {
 			return null;
 		}
 
-		Join leftJoin = (Join) leftArg;
 		TupleExpr seedArg = leftJoin.getLeftArg();
 		TupleExpr fanoutArg = leftJoin.getRightArg();
 		if (!(fanoutArg instanceof Union) && (!(fanoutArg instanceof VariableScopeChange)
@@ -450,8 +439,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			collectSmallLiteralAssignmentValues(((Filter) tupleExpr).getArg(), valuesByBinding);
 			return;
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			collectSmallLiteralAssignmentValues(join.getLeftArg(), valuesByBinding);
 			collectSmallLiteralAssignmentValues(join.getRightArg(), valuesByBinding);
 			return;
@@ -497,17 +485,14 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static boolean collectValuesVariableAnchor(ValueExpr condition,
 			ValuesVariableAnchorCollector collector) {
-		if (condition instanceof Or) {
-			Or or = (Or) condition;
+		if (condition instanceof Or or) {
 			return collectValuesVariableAnchor(or.getLeftArg(), collector)
 					&& collectValuesVariableAnchor(or.getRightArg(), collector);
 		}
-		if (condition instanceof Compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
-			Compare compare = (Compare) condition;
+		if (condition instanceof Compare compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
 			return collectValuesVariableAnchorValue(compare.getLeftArg(), compare.getRightArg(), collector);
 		}
-		if (condition instanceof SameTerm) {
-			SameTerm sameTerm = (SameTerm) condition;
+		if (condition instanceof SameTerm sameTerm) {
 			return collectValuesVariableAnchorValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), collector);
 		}
 		return false;
@@ -567,8 +552,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static int conditionCostClass(ValueExpr condition) {
-		if (condition instanceof And) {
-			And and = (And) condition;
+		if (condition instanceof And and) {
 			return Math.max(conditionCostClass(and.getLeftArg()), conditionCostClass(and.getRightArg()));
 		}
 		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {

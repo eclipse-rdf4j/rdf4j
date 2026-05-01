@@ -70,8 +70,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
-		if (initializedValue instanceof LmdbBNode) {
-			LmdbBNode lmdbBNode = (LmdbBNode) initializedValue;
+		if (initializedValue instanceof LmdbBNode lmdbBNode) {
 			super.setID(lmdbBNode.getID());
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
@@ -111,8 +110,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 			return true;
 		}
 
-		if (o instanceof LmdbBNode && internalID != LmdbValue.UNKNOWN_ID) {
-			LmdbBNode otherLmdbBNode = (LmdbBNode) o;
+		if (o instanceof LmdbBNode otherLmdbBNode && internalID != LmdbValue.UNKNOWN_ID) {
 
 			if (otherLmdbBNode.internalID != LmdbValue.UNKNOWN_ID && revision.equals(otherLmdbBNode.revision)) {
 				// LmdbBNode's from the same revision of the same lmdb store,

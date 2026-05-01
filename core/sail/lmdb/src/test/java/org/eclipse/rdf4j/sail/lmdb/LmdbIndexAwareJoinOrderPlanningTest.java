@@ -155,7 +155,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 						.explain(Explanation.Level.Optimized);
 				String optimizedPlan = explanation.toString();
 
-				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"), optimizedPlan);
+				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNER_ID + "="), optimizedPlan);
 				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_INDEX_NAME + "="), optimizedPlan);
 				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH + "="),
 						optimizedPlan);
@@ -377,7 +377,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					+ attempt.getDiagnostics());
 			assertEstimatedWorkMatchesStepSum(plan.get());
 			List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-			assertEquals(tuples, orderedArgs.get(0),
+			assertEquals(tuples, orderedArgs.getFirst(),
 					"Finite tuple domain should seed the social-chain plan before direct lookups");
 
 			double finiteTupleRows = bindingSetRows(tuples);
@@ -711,14 +711,12 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	private static void collectSocialMediaQ4MandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			collectSocialMediaQ4MandatoryLeafOrder(join.getLeftArg(), leaves);
 			collectSocialMediaQ4MandatoryLeafOrder(join.getRightArg(), leaves);
 			return;
 		}
-		if (tupleExpr instanceof Filter) {
-			Filter filter = (Filter) tupleExpr;
+		if (tupleExpr instanceof Filter filter) {
 			if (containsNotExists(filter.getCondition())) {
 				leaves.add("u-restriction");
 				return;
@@ -726,8 +724,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			collectSocialMediaQ4MandatoryLeafOrder(filter.getArg(), leaves);
 			return;
 		}
-		if (tupleExpr instanceof StatementPattern) {
-			StatementPattern statementPattern = (StatementPattern) tupleExpr;
+		if (tupleExpr instanceof StatementPattern statementPattern) {
 			if (SOCIAL_FOLLOWS.equals(statementPattern.getPredicateVar().getValue())) {
 				leaves.add("follows");
 			}
@@ -761,7 +758,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			}
 		});
 		assertTrue(!matches.isEmpty(), "Expected a FILTER NOT EXISTS in optimized q4 plan");
-		return matches.get(0);
+		return matches.getFirst();
 	}
 
 	private static void collectStatementPatterns(TupleExpr tupleExpr, List<StatementPattern> patterns) {

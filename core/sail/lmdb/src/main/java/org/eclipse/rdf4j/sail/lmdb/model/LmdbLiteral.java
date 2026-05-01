@@ -150,8 +150,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
-		if (initializedValue instanceof LmdbLiteral) {
-			LmdbLiteral lmdbLiteral = (LmdbLiteral) initializedValue;
+		if (initializedValue instanceof LmdbLiteral lmdbLiteral) {
 			this.label = lmdbLiteral.label;
 			this.language = lmdbLiteral.language;
 			this.datatype = lmdbLiteral.datatype;
@@ -229,8 +228,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			return true;
 		}
 
-		if (o instanceof LmdbLiteral && internalID != UNKNOWN_ID) {
-			LmdbLiteral otherLmdbLiteral = (LmdbLiteral) o;
+		if (o instanceof LmdbLiteral otherLmdbLiteral && internalID != UNKNOWN_ID) {
 
 			if (otherLmdbLiteral.internalID != UNKNOWN_ID
 					&& revision.equals(otherLmdbLiteral.revision)) {

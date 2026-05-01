@@ -127,8 +127,8 @@ final class LmdbPage {
 
 	void copyKey(int index, byte[] destination) throws IOException {
 		LmdbNode node = node(index);
-		buffer.position(node.keyOffset);
-		buffer.get(destination, 0, node.keySize);
+		buffer.position(node.keyOffset());
+		buffer.get(destination, 0, node.keySize());
 	}
 
 }

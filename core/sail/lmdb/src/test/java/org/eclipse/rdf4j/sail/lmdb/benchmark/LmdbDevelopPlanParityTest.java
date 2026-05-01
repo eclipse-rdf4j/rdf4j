@@ -376,29 +376,14 @@ class LmdbDevelopPlanParityTest {
 		return new TargetQuery(theme, queryIndex);
 	}
 
-	private static final class TargetQuery {
-		private final Theme theme;
-		private final int queryIndex;
-
-		private TargetQuery(Theme theme, int queryIndex) {
-			this.theme = theme;
-			this.queryIndex = queryIndex;
-		}
+	private record TargetQuery(Theme theme, int queryIndex) {
 
 		private String key() {
 			return theme.name() + ":" + queryIndex;
 		}
 	}
 
-	private static final class PlanSignature {
-		private final List<String> lines;
+	private record PlanSignature(List<String> lines) {
 
-		private PlanSignature(List<String> lines) {
-			this.lines = lines;
-		}
-
-		private List<String> lines() {
-			return lines;
-		}
 	}
 }

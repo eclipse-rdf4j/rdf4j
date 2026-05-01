@@ -47,7 +47,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	public long totalEntries(long txnId, String dbName) throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
 		LmdbDb db = namedDb(snapshot, dbName);
-		return db == null ? 0 : db.entries;
+		return db == null ? 0 : db.entries();
 	}
 
 	@Override
@@ -79,16 +79,16 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		byte[] keyWithTerminator = new byte[key.length + 1];
 		System.arraycopy(key, 0, keyWithTerminator, 0, key.length);
 
-		byte[] value = counter.findValueByExactKey(snapshot.meta.mainDb, key, key.length, lookupStats);
+		byte[] value = counter.findValueByExactKey(snapshot.meta.mainDb(), key, key.length, lookupStats);
 		if (value == null) {
-			value = counter.findValueByExactKey(snapshot.meta.mainDb, keyWithTerminator, keyWithTerminator.length,
+			value = counter.findValueByExactKey(snapshot.meta.mainDb(), keyWithTerminator, keyWithTerminator.length,
 					lookupStats);
 		}
 		if (value == null) {
 			return null;
 		}
 
-		ByteBuffer valueBuffer = ByteBuffer.wrap(value).order(snapshot.meta.byteOrder);
+		ByteBuffer valueBuffer = ByteBuffer.wrap(value).order(snapshot.meta.byteOrder());
 		LmdbDb parsed = LmdbDb.parse(valueBuffer, 0);
 		LmdbDb existing = snapshot.namedDbs.putIfAbsent(dbName, parsed);
 		return existing == null ? parsed : existing;

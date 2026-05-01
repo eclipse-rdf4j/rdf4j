@@ -478,16 +478,6 @@ class LmdbEvaluationStatistics
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, String[] variableNames,
-			long boundVarMask) {
-		return estimateLmdbFactorCost(factor, variableNames, boundVarMask, Double.NaN, true);
-	}
-
-	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, String[] variableNames,
-			long boundVarMask, double knownOutputRows) {
-		return estimateLmdbFactorCost(factor, variableNames, boundVarMask, knownOutputRows, true);
-	}
-
-	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, String[] variableNames,
 			long boundVarMask, double knownOutputRows, boolean collectMetrics) {
 		if (factor == null) {
 			return Optional.empty();
@@ -528,11 +518,6 @@ class LmdbEvaluationStatistics
 		estimate = estimateSupplier.get();
 		scope.factorCostCache.put(cacheKey, estimate);
 		return estimate;
-	}
-
-	private Optional<FactorCostEstimate> estimateLmdbFactorCost(double outputRows,
-			SketchBasedJoinEstimator.AccessShape accessShape) {
-		return estimateLmdbFactorCost(outputRows, accessShape, true);
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(double outputRows,
@@ -631,8 +616,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private void flattenJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
-		if (tupleExpr instanceof Join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
 			flattenJoinFactors(join.getLeftArg(), factors);
 			flattenJoinFactors(join.getRightArg(), factors);
 			return;
@@ -1037,77 +1021,10 @@ class LmdbEvaluationStatistics
 		}
 	}
 
-	private static final class AccessPathEstimate {
-		private final double workRowsPerInvocation;
-		private final double rowsBeforeFilterAtAccess;
-		private final double rowsAfterFilterAtAccess;
-		private final String indexFieldSequence;
-		private final int prefixLength;
-		private final int prefixComponentMask;
-		private final boolean directLookup;
-		private final int lookupComponentMask;
-		private final int missingLookupComponentMask;
-		private final int candidateCount;
+	private record AccessPathEstimate(double workRowsPerInvocation, double rowsBeforeFilterAtAccess,
+			double rowsAfterFilterAtAccess, String indexFieldSequence, int prefixLength, int prefixComponentMask,
+			boolean directLookup, int lookupComponentMask, int missingLookupComponentMask, int candidateCount) {
 
-		private AccessPathEstimate(double workRowsPerInvocation, double rowsBeforeFilterAtAccess,
-				double rowsAfterFilterAtAccess, String indexFieldSequence, int prefixLength,
-				int prefixComponentMask, boolean directLookup, int lookupComponentMask,
-				int missingLookupComponentMask, int candidateCount) {
-			this.workRowsPerInvocation = workRowsPerInvocation;
-			this.rowsBeforeFilterAtAccess = rowsBeforeFilterAtAccess;
-			this.rowsAfterFilterAtAccess = rowsAfterFilterAtAccess;
-			this.indexFieldSequence = indexFieldSequence;
-			this.prefixLength = prefixLength;
-			this.prefixComponentMask = prefixComponentMask;
-			this.directLookup = directLookup;
-			this.lookupComponentMask = lookupComponentMask;
-			this.missingLookupComponentMask = missingLookupComponentMask;
-			this.candidateCount = candidateCount;
-		}
-
-		double workRowsPerInvocation() {
-			return workRowsPerInvocation;
-		}
-
-		double rowsBeforeFilterAtAccess() {
-			return rowsBeforeFilterAtAccess;
-		}
-
-		double rowsAfterFilterAtAccess() {
-			return rowsAfterFilterAtAccess;
-		}
-
-		String indexFieldSequence() {
-			return indexFieldSequence;
-		}
-
-		int prefixLength() {
-			return prefixLength;
-		}
-
-		int prefixComponentMask() {
-			return prefixComponentMask;
-		}
-
-		boolean directLookup() {
-			return directLookup;
-		}
-
-		int lookupComponentMask() {
-			return lookupComponentMask;
-		}
-
-		int missingLookupComponentMask() {
-			return missingLookupComponentMask;
-		}
-
-		int candidateCount() {
-			return candidateCount;
-		}
-	}
-
-	public boolean isJoinEstimationReady() {
-		return supportsJoinEstimation();
 	}
 
 	public Object joinEstimationDiagnostics() {

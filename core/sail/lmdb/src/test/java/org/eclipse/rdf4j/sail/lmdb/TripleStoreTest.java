@@ -131,7 +131,7 @@ public class TripleStoreTest {
 			fallbackStore.commit();
 
 			fallbackStore.startTransaction();
-			TripleStore.TripleIndex mainIndex = getIndexes(fallbackStore).get(0);
+			TripleStore.TripleIndex mainIndex = getIndexes(fallbackStore).getFirst();
 			long writeTxn = getWriteTxn(fallbackStore);
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				MDBVal keyVal = MDBVal.malloc(stack);

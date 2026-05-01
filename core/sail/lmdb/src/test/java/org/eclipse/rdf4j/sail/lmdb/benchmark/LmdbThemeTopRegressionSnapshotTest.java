@@ -35,16 +35,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbThemeTopRegressionSnapshotTest {
 
 	private static final Pattern THEME_HEADER = Pattern.compile("## ([A-Z_]+)");
 	private static final Pattern QUERY_HEADER = Pattern.compile("### (?:([A-Z_]+) )?Query ([0-9]+)");
-	private static final String ENABLED_PROPERTY = "rdf4j.lmdb.topRegressionSnapshot.enabled";
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.topRegressionSnapshot.queryKeys";
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
@@ -1154,25 +1151,6 @@ class LmdbThemeTopRegressionSnapshotTest {
 		}
 	}
 
-	private static void requirePredicateLookupWorkRowsAbove(List<String> mismatches, String plan, String predicateIri,
-			double minWorkRows) {
-		String pattern = statementPatternForPredicate(plan, predicateIri);
-		if (pattern == null) {
-			mismatches.add("missing predicate `" + predicateIri + "`");
-			return;
-		}
-		Matcher matcher = Pattern.compile("plannedWorkRows=([^,)]*)").matcher(pattern);
-		if (!matcher.find()) {
-			mismatches.add("missing plannedWorkRows for predicate `" + predicateIri + "`");
-			return;
-		}
-		double workRows = parsePlanRows(matcher.group(1));
-		if (workRows < minWorkRows) {
-			mismatches.add("expected `" + predicateIri + "` plannedWorkRows >= " + minWorkRows + " but got "
-					+ workRows);
-		}
-	}
-
 	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
 		Matcher accessWorkRows = Pattern.compile("plannedAccessWorkRows=([^,)]*)").matcher(directLookupHeader);
 		return accessWorkRows.find() ? parsePlanRows(accessWorkRows.group(1)) : parsePlanRows(fallbackWorkRows);
@@ -1276,27 +1254,13 @@ class LmdbThemeTopRegressionSnapshotTest {
 		return new TargetQuery(theme, queryIndex);
 	}
 
-	private static final class TargetQuery {
-		private final Theme theme;
-		private final int queryIndex;
-
-		private TargetQuery(Theme theme, int queryIndex) {
-			this.theme = theme;
-			this.queryIndex = queryIndex;
-		}
+	private record TargetQuery(Theme theme, int queryIndex) {
 
 		private String key() {
 			return theme.name() + ":" + queryIndex;
 		}
 	}
 
-	private static final class Block {
-		private final String text;
-		private final int nextIndex;
-
-		private Block(String text, int nextIndex) {
-			this.text = text;
-			this.nextIndex = nextIndex;
-		}
+	private record Block(String text, int nextIndex) {
 	}
 }

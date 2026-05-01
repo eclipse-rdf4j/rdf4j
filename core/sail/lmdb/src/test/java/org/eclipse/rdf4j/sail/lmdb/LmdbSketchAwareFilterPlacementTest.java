@@ -530,7 +530,7 @@ class LmdbSketchAwareFilterPlacementTest {
 				super.meet(node);
 			}
 		});
-		return matches.isEmpty() ? null : matches.get(0);
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 
 	private static StatementPattern findStatementPattern(TupleExpr optimized, IRI predicate, String objectBindingName) {
@@ -548,7 +548,7 @@ class LmdbSketchAwareFilterPlacementTest {
 				super.meet(node);
 			}
 		});
-		return matches.isEmpty() ? null : matches.get(0);
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 
 	private static void assertLiteralValues(BindingSetAssignment assignment, String bindingName,
@@ -774,6 +774,6 @@ class LmdbSketchAwareFilterPlacementTest {
 				super.meetNode(node);
 			}
 		});
-		return matches.isEmpty() ? null : matches.get(0);
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 }

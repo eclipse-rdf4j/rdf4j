@@ -171,9 +171,7 @@ public class SketchEstimatorIngestionBenchmark {
 		return state.estimator.rebuild();
 	}
 
-	private static final class BenchmarkSailStore implements SailStore {
-		private final List<Statement> data;
-
+	private record BenchmarkSailStore(List<Statement> data) implements SailStore {
 		private BenchmarkSailStore(List<Statement> data) {
 			this.data = List.copyOf(data);
 		}
@@ -203,12 +201,7 @@ public class SketchEstimatorIngestionBenchmark {
 		}
 	}
 
-	private static final class BenchmarkSailSource implements SailSource {
-		private final List<Statement> data;
-
-		private BenchmarkSailSource(List<Statement> data) {
-			this.data = data;
-		}
+	private record BenchmarkSailSource(List<Statement> data) implements SailSource {
 
 		@Override
 		public void close() {
@@ -238,12 +231,7 @@ public class SketchEstimatorIngestionBenchmark {
 		}
 	}
 
-	private static final class BenchmarkSailDataset implements SailDataset {
-		private final List<Statement> data;
-
-		private BenchmarkSailDataset(List<Statement> data) {
-			this.data = data;
-		}
+	private record BenchmarkSailDataset(List<Statement> data) implements SailDataset {
 
 		@Override
 		public void close() {

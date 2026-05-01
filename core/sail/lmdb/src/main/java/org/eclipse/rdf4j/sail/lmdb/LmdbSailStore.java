@@ -38,8 +38,6 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -98,7 +96,7 @@ class LmdbSailStore implements SailStore {
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
-	private LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
+	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
 		t.setDaemon(true);
@@ -106,14 +104,14 @@ class LmdbSailStore implements SailStore {
 	});
 	private final AtomicBoolean persistScheduled = new AtomicBoolean(false);
 	private volatile ScheduledFuture<?> persistFuture;
-	private volatile long estimatorPersistDelayMillis = 1000L;
+	private final long estimatorPersistDelayMillis = 1000L;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
 	 *
 	 * @param <T> Type of elements within this buffer
 	 */
-	final class CircularBuffer<T> {
+	static final class CircularBuffer<T> {
 
 		private final T[] elements;
 		private volatile int head = 0;
@@ -509,45 +507,6 @@ class LmdbSailStore implements SailStore {
 		return new LmdbSailSource(false);
 	}
 
-	CloseableIteration<Resource> getContexts() throws IOException {
-		Txn txn = tripleStore.getTxnManager().createReadTxn();
-		RecordIterator records = tripleStore.getAllTriplesSortedByContext(txn);
-		CloseableIteration<? extends Statement> stIter1;
-		if (records == null) {
-			// Iterator over all statements
-			stIter1 = createStatementIterator(txn, null, null, null, true);
-		} else {
-			stIter1 = new LmdbStatementIterator(records, valueStore);
-		}
-
-		FilterIteration<Statement> stIter2 = new FilterIteration<>(
-				stIter1) {
-			@Override
-			protected boolean accept(Statement st) {
-				return st.getContext() != null;
-			}
-
-			@Override
-			protected void handleClose() {
-
-			}
-		};
-
-		return new ConvertingIteration<>(stIter2) {
-			@Override
-			protected Resource convert(Statement sourceObject) throws SailException {
-				return sourceObject.getContext();
-			}
-
-			@Override
-			protected void handleClose() throws SailException {
-				// correctly close read txn
-				txn.close();
-				super.handleClose();
-			}
-		};
-	}
-
 	/**
 	 * Creates a statement iterator based on the supplied pattern.
 	 *
@@ -614,7 +573,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		if (perContextIterList.size() == 1) {
-			return perContextIterList.get(0);
+			return perContextIterList.getFirst();
 		} else {
 			return new UnionIteration<>(perContextIterList);
 		}
@@ -1196,8 +1155,6 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 		}
-
-		private int counter = 0;
 
 		private void addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource context)
 				throws SailException {

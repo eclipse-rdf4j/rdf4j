@@ -186,7 +186,7 @@ public class SketchEstimatorThemeMemoryBenchmark {
 	}
 
 	private static long executeSanityQuery(SailRepository repository, List<Theme> themes) {
-		Theme theme = themes.contains(Theme.MEDICAL_RECORDS) ? Theme.MEDICAL_RECORDS : themes.get(0);
+		Theme theme = themes.contains(Theme.MEDICAL_RECORDS) ? Theme.MEDICAL_RECORDS : themes.getFirst();
 		int queryIndex = 0;
 		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
 		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
@@ -228,12 +228,7 @@ public class SketchEstimatorThemeMemoryBenchmark {
 	private record EstimatorPrecision(int bucketCount, int sketchNominalEntries) {
 	}
 
-	private static final class EstimatorPropertyScope implements AutoCloseable {
-		private final Map<String, String> previousValues;
-
-		private EstimatorPropertyScope(Map<String, String> previousValues) {
-			this.previousValues = previousValues;
-		}
+	private record EstimatorPropertyScope(Map<String, String> previousValues) implements AutoCloseable {
 
 		private static EstimatorPropertyScope open(EstimatorPrecision precision) {
 			Map<String, String> properties = new LinkedHashMap<>();

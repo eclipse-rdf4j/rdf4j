@@ -71,6 +71,6 @@ class ArrayBindingBasedQueryEvaluationContextTest {
 			throw new AssertionError("Expected to find node of type " + type.getSimpleName());
 		}
 
-		return matches.get(0);
+		return matches.getFirst();
 	}
 }

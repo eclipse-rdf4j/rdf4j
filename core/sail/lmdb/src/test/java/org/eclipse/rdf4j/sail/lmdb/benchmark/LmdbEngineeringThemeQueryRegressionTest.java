@@ -37,21 +37,6 @@ class LmdbEngineeringThemeQueryRegressionTest {
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
-	private static final String ENGINEERING_Q10_DEVELOP_RENDERED_QUERY = """
-			SELECT (COUNT(DISTINCT ?assembly) AS ?count) WHERE {
-			  VALUES ?name { "Assembly 1" "Assembly 2" }
-			  ?assembly <http://example.com/theme/engineering/name> ?name .
-			  ?assembly a <http://example.com/theme/engineering/Assembly> .
-			  OPTIONAL {
-			    ?component <http://example.com/theme/engineering/partOf> ?assembly .
-			    BIND(?component AS ?optComponent)
-			  }
-			  FILTER (?optComponent != ?assembly)
-			  MINUS {
-			    ?requirement <http://example.com/theme/engineering/satisfies> ?component .
-			  }
-			}""";
-
 	@Test
 	void requirementExistsMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
@@ -339,19 +324,6 @@ class LmdbEngineeringThemeQueryRegressionTest {
 			assertContains(pattern, "plannedLookupComponents=[P, O]");
 			assertContains(pattern, "plannedIndexAccessMode=directLookup");
 		}
-	}
-
-	private static void assertNamePatternUsesBoundSubject(String plan, String label, String subjectName) {
-		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
-		if (predicateIndex < 0) {
-			throw new AssertionError(label + " plan should include the name pattern:\n" + plan);
-		}
-
-		String pattern = statementPatternWindow(plan, predicateIndex, "BindingSetAssignment");
-		assertContains(pattern, "s: Var (name=" + subjectName + ") (bindingState=bound)");
-		assertContains(pattern, "o: Var (name=name) (bindingState=unbound)");
-		assertContains(pattern, "plannedBoundVars=[" + subjectName + "]");
-		assertContains(pattern, "plannedLookupComponents=[S, P]");
 	}
 
 	private static void assertOptionalPartOfUsesBoundAssembly(String plan) {

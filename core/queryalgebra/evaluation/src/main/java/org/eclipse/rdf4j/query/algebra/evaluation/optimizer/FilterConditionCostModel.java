@@ -24,8 +24,7 @@ final class FilterConditionCostModel {
 	}
 
 	static int conditionCostClass(ValueExpr condition) {
-		if (condition instanceof And) {
-			And and = (And) condition;
+		if (condition instanceof And and) {
 			return Math.max(conditionCostClass(and.getLeftArg()), conditionCostClass(and.getRightArg()));
 		}
 		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {

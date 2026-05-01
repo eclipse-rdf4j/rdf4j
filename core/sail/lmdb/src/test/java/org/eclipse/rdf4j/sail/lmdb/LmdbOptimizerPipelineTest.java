@@ -203,22 +203,19 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	private static void collectEngineeringNameFilterLiterals(ValueExpr valueExpr, Set<String> values) {
-		if (valueExpr instanceof Or) {
-			Or or = (Or) valueExpr;
+		if (valueExpr instanceof Or or) {
 			collectEngineeringNameFilterLiterals(or.getLeftArg(), values);
 			collectEngineeringNameFilterLiterals(or.getRightArg(), values);
 			return;
 		}
-		if (valueExpr instanceof And) {
-			And and = (And) valueExpr;
+		if (valueExpr instanceof And and) {
 			collectEngineeringNameFilterLiterals(and.getLeftArg(), values);
 			collectEngineeringNameFilterLiterals(and.getRightArg(), values);
 			return;
 		}
-		if (!(valueExpr instanceof Compare)) {
+		if (!(valueExpr instanceof Compare compare)) {
 			return;
 		}
-		Compare compare = (Compare) valueExpr;
 		if (compare.getOperator() != Compare.CompareOp.EQ) {
 			return;
 		}

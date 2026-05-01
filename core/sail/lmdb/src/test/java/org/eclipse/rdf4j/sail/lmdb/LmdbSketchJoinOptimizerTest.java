@@ -381,7 +381,7 @@ class LmdbSketchJoinOptimizerTest {
 
 		List<TupleExpr> args = joinArgs(root.getArg());
 		assertEquals(3, args.size());
-		Union distributedUnion = assertInstanceOf(Union.class, args.get(0));
+		Union distributedUnion = assertInstanceOf(Union.class, args.getFirst());
 		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "u"));
 		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "u"));
 		assertFalse(containsBindingSetAssignment(distributedUnion, "optName"));
@@ -434,8 +434,7 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			collectJoinArgs(join.getLeftArg(), args);
 			collectJoinArgs(join.getRightArg(), args);
 			return;
@@ -456,14 +455,12 @@ class LmdbSketchJoinOptimizerTest {
 			collectStatementPatterns(((Extension) tupleExpr).getArg(), patterns);
 			return;
 		}
-		if (tupleExpr instanceof Union) {
-			Union union = (Union) tupleExpr;
+		if (tupleExpr instanceof Union union) {
 			collectStatementPatterns(union.getLeftArg(), patterns);
 			collectStatementPatterns(union.getRightArg(), patterns);
 			return;
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			collectStatementPatterns(join.getLeftArg(), patterns);
 			collectStatementPatterns(join.getRightArg(), patterns);
 		}
@@ -473,27 +470,23 @@ class LmdbSketchJoinOptimizerTest {
 		if (tupleExpr instanceof Filter) {
 			return true;
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsFilter(join.getLeftArg()) || containsFilter(join.getRightArg());
 		}
 		return false;
 	}
 
 	private static boolean containsExistsFilter(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof Filter) {
-			Filter filter = (Filter) tupleExpr;
+		if (tupleExpr instanceof Filter filter) {
 			return filter.getCondition() instanceof Exists || containsExistsFilter(filter.getArg());
 		}
 		if (tupleExpr instanceof Extension) {
 			return containsExistsFilter(((Extension) tupleExpr).getArg());
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return containsExistsFilter(leftJoin.getLeftArg()) || containsExistsFilter(leftJoin.getRightArg());
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsExistsFilter(join.getLeftArg()) || containsExistsFilter(join.getRightArg());
 		}
 		return false;
@@ -509,8 +502,7 @@ class LmdbSketchJoinOptimizerTest {
 		if (tupleExpr instanceof Extension) {
 			return containsLeftJoin(((Extension) tupleExpr).getArg());
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
 		}
 		return false;
@@ -527,13 +519,11 @@ class LmdbSketchJoinOptimizerTest {
 		if (tupleExpr instanceof Extension) {
 			return containsBindingSetAssignment(((Extension) tupleExpr).getArg(), bindingName);
 		}
-		if (tupleExpr instanceof Union) {
-			Union union = (Union) tupleExpr;
+		if (tupleExpr instanceof Union union) {
 			return containsBindingSetAssignment(union.getLeftArg(), bindingName)
 					|| containsBindingSetAssignment(union.getRightArg(), bindingName);
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsBindingSetAssignment(join.getLeftArg(), bindingName)
 					|| containsBindingSetAssignment(join.getRightArg(), bindingName);
 		}

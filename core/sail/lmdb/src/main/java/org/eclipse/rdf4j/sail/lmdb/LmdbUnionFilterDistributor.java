@@ -134,8 +134,7 @@ final class LmdbUnionFilterDistributor {
 	}
 
 	private static TupleExpr prependPrefix(TupleExpr branch, List<TupleExpr> prefixFactors, JoinFactory joinFactory) {
-		if (branch instanceof Extension) {
-			Extension extension = (Extension) branch;
+		if (branch instanceof Extension extension) {
 			extension.setArg(joinPrefix(prefixFactors, extension.getArg(), joinFactory));
 			return extension;
 		}

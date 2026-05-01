@@ -292,13 +292,11 @@ class LmdbUnionFilterDistributorTest {
 		if (tupleExpr instanceof Filter) {
 			return containsBindingSetAssignmentFor(((Filter) tupleExpr).getArg(), bindingName);
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return containsBindingSetAssignmentFor(leftJoin.getLeftArg(), bindingName)
 					|| containsBindingSetAssignmentFor(leftJoin.getRightArg(), bindingName);
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsBindingSetAssignmentFor(join.getLeftArg(), bindingName)
 					|| containsBindingSetAssignmentFor(join.getRightArg(), bindingName);
 		}
@@ -312,13 +310,11 @@ class LmdbUnionFilterDistributorTest {
 		if (tupleExpr instanceof Filter) {
 			return containsStatementPatternWithObject(((Filter) tupleExpr).getArg(), objectName);
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return containsStatementPatternWithObject(leftJoin.getLeftArg(), objectName)
 					|| containsStatementPatternWithObject(leftJoin.getRightArg(), objectName);
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsStatementPatternWithObject(join.getLeftArg(), objectName)
 					|| containsStatementPatternWithObject(join.getRightArg(), objectName);
 		}

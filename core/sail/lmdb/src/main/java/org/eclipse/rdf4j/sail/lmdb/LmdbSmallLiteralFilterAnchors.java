@@ -153,10 +153,10 @@ final class LmdbSmallLiteralFilterAnchors {
 		}
 
 		for (DeferredFilter other : filters) {
-			if (other == filter || !(other.condition instanceof Exists) || !other.requiredVars.contains(subjectName)) {
+			if (other == filter || !(other.condition instanceof Exists exists)
+					|| !other.requiredVars.contains(subjectName)) {
 				continue;
 			}
-			Exists exists = (Exists) other.condition;
 			for (StatementPattern nestedPattern : LmdbJoinPlanSupport.collectPatternIdentities(
 					exists.getSubQuery())) {
 				if (subjectName.equals(unboundName(nestedPattern.getObjectVar()))) {

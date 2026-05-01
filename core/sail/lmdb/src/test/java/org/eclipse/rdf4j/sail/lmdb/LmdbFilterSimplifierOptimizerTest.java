@@ -386,8 +386,7 @@ class LmdbFilterSimplifierOptimizerTest {
 		if (tupleExpr instanceof Filter) {
 			return true;
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsFilter(join.getLeftArg()) || containsFilter(join.getRightArg());
 		}
 		return false;
@@ -400,13 +399,11 @@ class LmdbFilterSimplifierOptimizerTest {
 		if (tupleExpr instanceof Filter) {
 			return containsBindingSetAssignment(((Filter) tupleExpr).getArg());
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return containsBindingSetAssignment(leftJoin.getLeftArg())
 					|| containsBindingSetAssignment(leftJoin.getRightArg());
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsBindingSetAssignment(join.getLeftArg())
 					|| containsBindingSetAssignment(join.getRightArg());
 		}
@@ -420,13 +417,11 @@ class LmdbFilterSimplifierOptimizerTest {
 		if (tupleExpr instanceof Filter) {
 			return containsBindingSetAssignmentFor(((Filter) tupleExpr).getArg(), bindingName);
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return containsBindingSetAssignmentFor(leftJoin.getLeftArg(), bindingName)
 					|| containsBindingSetAssignmentFor(leftJoin.getRightArg(), bindingName);
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsBindingSetAssignmentFor(join.getLeftArg(), bindingName)
 					|| containsBindingSetAssignmentFor(join.getRightArg(), bindingName);
 		}
@@ -440,8 +435,7 @@ class LmdbFilterSimplifierOptimizerTest {
 		if (tupleExpr instanceof Filter) {
 			return containsLeftJoin(((Filter) tupleExpr).getArg());
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
 		}
 		return false;
@@ -454,13 +448,11 @@ class LmdbFilterSimplifierOptimizerTest {
 		if (tupleExpr instanceof Filter) {
 			return containsStatementPatternWithObject(((Filter) tupleExpr).getArg(), objectName);
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return containsStatementPatternWithObject(leftJoin.getLeftArg(), objectName)
 					|| containsStatementPatternWithObject(leftJoin.getRightArg(), objectName);
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsStatementPatternWithObject(join.getLeftArg(), objectName)
 					|| containsStatementPatternWithObject(join.getRightArg(), objectName);
 		}
@@ -471,15 +463,13 @@ class LmdbFilterSimplifierOptimizerTest {
 		if (tupleExpr instanceof Union) {
 			return true;
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			return containsUnion(join.getLeftArg()) || containsUnion(join.getRightArg());
 		}
 		if (tupleExpr instanceof Filter) {
 			return containsUnion(((Filter) tupleExpr).getArg());
 		}
-		if (tupleExpr instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) tupleExpr;
+		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return containsUnion(leftJoin.getLeftArg()) || containsUnion(leftJoin.getRightArg());
 		}
 		return false;

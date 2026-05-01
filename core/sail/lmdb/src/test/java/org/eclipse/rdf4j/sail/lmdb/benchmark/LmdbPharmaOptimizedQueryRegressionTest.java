@@ -229,13 +229,6 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 		}
 	}
 
-	private static final class OptimizerSnapshot {
-		private final String plan;
-		private final String renderedQuery;
-
-		private OptimizerSnapshot(String plan, String renderedQuery) {
-			this.plan = plan;
-			this.renderedQuery = renderedQuery;
-		}
+	private record OptimizerSnapshot(String plan, String renderedQuery) {
 	}
 }

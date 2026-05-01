@@ -171,23 +171,19 @@ public final class FilterSelectivityKeys {
 		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {
 			return null;
 		}
-		if (condition instanceof And) {
-			And and = (And) condition;
+		if (condition instanceof And and) {
 			return commutative("AND", templateKey(and.getLeftArg(), localRoles),
 					templateKey(and.getRightArg(), localRoles));
 		}
-		if (condition instanceof Or) {
-			Or or = (Or) condition;
+		if (condition instanceof Or or) {
 			return commutative("OR", templateKey(or.getLeftArg(), localRoles),
 					templateKey(or.getRightArg(), localRoles));
 		}
-		if (condition instanceof SameTerm) {
-			SameTerm sameTerm = (SameTerm) condition;
+		if (condition instanceof SameTerm sameTerm) {
 			return commutative("SAMETERM", templateKey(sameTerm.getLeftArg(), localRoles),
 					templateKey(sameTerm.getRightArg(), localRoles));
 		}
-		if (condition instanceof Compare) {
-			Compare compare = (Compare) condition;
+		if (condition instanceof Compare compare) {
 			if (compare.getOperator() != Compare.CompareOp.EQ) {
 				return null;
 			}
@@ -197,8 +193,7 @@ public final class FilterSelectivityKeys {
 		if (condition instanceof ListMemberOperator) {
 			return listMemberTemplateKey((ListMemberOperator) condition, localRoles);
 		}
-		if (condition instanceof FunctionCall) {
-			FunctionCall functionCall = (FunctionCall) condition;
+		if (condition instanceof FunctionCall functionCall) {
 			List<String> args = new ArrayList<>(functionCall.getArgs().size());
 			for (ValueExpr arg : functionCall.getArgs()) {
 				String argKey = templateKey(arg, localRoles);
@@ -237,7 +232,7 @@ public final class FilterSelectivityKeys {
 		if (arguments.size() < 2) {
 			return null;
 		}
-		String member = templateKey(arguments.get(0), localRoles);
+		String member = templateKey(arguments.getFirst(), localRoles);
 		if (member == null) {
 			return null;
 		}

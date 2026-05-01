@@ -52,6 +52,7 @@ import org.apache.datasketches.hash.MurmurHash3;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesCompactSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesSketch;
 import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -159,6 +160,7 @@ import org.slf4j.LoggerFactory;
  * }
  * </pre>
  */
+@Experimental
 public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider {
 
 	public static final String REFRESH_THREAD_NAME = "RdfJoinEstimator-Refresh";
@@ -1423,21 +1425,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.asyncIncrementalWorker = asyncIncrementalExecutor.submit(this::runAsyncIncrementalIngest);
 	}
 
-	private static int resolveSketchK(int kProp, int kCfg, int buckets, int kMult) {
-		if (kProp > 0) {
-			return kProp;
-		}
-		if (kCfg > 0) {
-			return kCfg;
-		}
-		if (kMult > 0) {
-			return Math.max(1, buckets * kMult);
-		}
-		return DEFAULT_SKETCH_NOMINAL_ENTRIES;
-	}
-
-	/* --------------------------------------------------------------------- */
-
 	@Override
 	public QueryOptimizationScope beginQueryOptimizationScope() {
 		OptimizationScopeState scope = optimizationScope.get();
@@ -2258,14 +2245,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void rethrowAsyncIncrementalFailure() {
 		Throwable failure = asyncIncrementalFailure.get();
-		if (failure == null) {
-			return;
-		}
-		if (failure instanceof Error) {
-			throw (Error) failure;
-		}
-		if (failure instanceof RuntimeException) {
-			throw (RuntimeException) failure;
+		switch (failure) {
+			case null -> {
+				return;
+			}
+			case Error error -> throw error;
+			case RuntimeException runtimeException -> throw runtimeException;
+			default -> {
+			}
 		}
 		throw new RuntimeException("Asynchronous incremental join-estimator ingestion failed", failure);
 	}
@@ -2370,7 +2357,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private int expectedSingleBatchUpdates(int batchSize) {
 		long batchEstimate = (long) batchSize << 3;
 		long addressBound = ((long) nominalEntries << 5) + 8L;
-		return (int) Math.min(Integer.MAX_VALUE, Math.min(batchEstimate, Math.max(64L, addressBound)));
+		return (int) Math.min(Integer.MAX_VALUE, Math.clamp(addressBound, 64L, batchEstimate));
 	}
 
 	private void applyGroupedUpdate(State state, byte slot, int keyPrefix, int x, int y, long firstValue,
@@ -3112,18 +3099,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private record StateComponents<T> (T S, T P, T O, T C) {
 
 		T get(Component component) {
-			switch (component) {
-			case S:
-				return S;
-			case P:
-				return P;
-			case O:
-				return O;
-			case C:
-				return C;
-			default:
-				throw new IllegalStateException("Unsupported component: " + component);
-			}
+			return switch (component) {
+			case S -> S;
+			case P -> P;
+			case O -> O;
+			case C -> C;
+			};
 		}
 
 		void forEach(Consumer<? super T> consumer) {
@@ -3318,7 +3299,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		case P -> predicateBucketCount;
 		case O -> objectBucketCount;
 		case C -> contextBucketCount;
-		default -> throw new IllegalStateException("Unsupported component: " + component);
 		};
 	}
 
@@ -3428,13 +3408,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			JoinFactorCostModel factorCostModel, List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
 		return estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm, JoinOrderWorkAdjuster.NO_OP,
 				Objects.requireNonNull(factorCostModel, "factorCostModel"), deferredFilters);
-	}
-
-	public Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
-			Set<String> initiallyBoundVars, JoinOrderPlanner.Algorithm algorithm, JoinOrderWorkAdjuster workAdjuster,
-			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
-		return estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm,
-				Objects.requireNonNull(workAdjuster, "workAdjuster"), null, deferredFilters);
 	}
 
 	private Optional<JoinOrderPlanner.JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs,
@@ -3628,10 +3601,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			estimate = estimatePatternTupleExprPlan(input);
 		}
 		return applyInitiallyBoundVarMask(estimate, scope, initiallyBoundVarMask);
-	}
-
-	private SmallVarStatsMap newVarStatsMap() {
-		return newVarStatsMap(4);
 	}
 
 	private SmallVarStatsMap newVarStatsMap(int expectedSize) {
@@ -4390,23 +4359,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return outputRows;
 		}
 
-		double distinctBindings(Set<String> varNames) {
-			if (varNames == null || varNames.isEmpty()) {
-				return 1.0d;
-			}
-			double maxDistinct = 1.0d;
-			boolean found = false;
-			for (String varName : varNames) {
-				VarPlanStats stats = varStats.get(varName);
-				if (stats == null || !Double.isFinite(stats.distinct) || stats.distinct <= 0.0d) {
-					return outputRows;
-				}
-				found = true;
-				maxDistinct = Math.max(maxDistinct, stats.distinct);
-			}
-			return found ? Math.min(maxDistinct, outputRows) : outputRows;
-		}
-
 		double distinctBinding(int variableId, String[] variableNames) {
 			if (variableId < 0 || variableNames == null || variableId >= variableNames.length) {
 				return outputRows;
@@ -4652,10 +4604,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private boolean frozen;
 		private Set<Entry<String, VarPlanStats>> entrySet;
 		private Set<String> keySet;
-
-		private SmallVarStatsMap(VariableDictionary dictionary) {
-			this(dictionary, 4);
-		}
 
 		private SmallVarStatsMap(VariableDictionary dictionary, int expectedSize) {
 			this.dictionary = dictionary;
@@ -5126,12 +5074,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return summarized.toString();
 	}
 
-	private enum EvictionResult {
-		EVICTED,
-		FAILED,
-		NEEDS_UNLOAD
-	}
-
 	public double cardinality(Join node) {
 		if (!isReady()) {
 			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_NOT_READY);
@@ -5349,26 +5291,30 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return plannerEstimate;
 		}
 
-		if (tupleExpr instanceof Filter) {
-			return estimateFilteredTupleExprPlan((Filter) tupleExpr, initiallyBoundVars);
-		}
-		if (tupleExpr instanceof Join join) {
-			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, initiallyBoundVars);
-		}
-		if (tupleExpr instanceof LeftJoin join) {
-			if (join.hasCondition()) {
-				return null;
+		switch (tupleExpr) {
+			case Filter filter -> {
+				return estimateFilteredTupleExprPlan(filter, initiallyBoundVars);
 			}
-			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, initiallyBoundVars);
-		}
-		if (tupleExpr instanceof EmptySet) {
-			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
-		}
-		if (tupleExpr instanceof SingletonSet) {
-			return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
-		}
-		if (tupleExpr instanceof Slice) {
-			return estimateSliceTupleExprPlan((Slice) tupleExpr, initiallyBoundVars);
+			case Join join -> {
+				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, initiallyBoundVars);
+			}
+			case LeftJoin join -> {
+				if (join.hasCondition()) {
+					return null;
+				}
+				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, initiallyBoundVars);
+			}
+			case EmptySet emptySet -> {
+				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+			}
+			case SingletonSet singletonSet -> {
+				return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
+			}
+			case Slice slice -> {
+				return estimateSliceTupleExprPlan(slice, initiallyBoundVars);
+			}
+			default -> {
+			}
 		}
 		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
 			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, initiallyBoundVars);
@@ -5390,28 +5336,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return plannerEstimate;
 		}
 
-		if (tupleExpr instanceof Filter) {
-			return estimateFilteredTupleExprPlan((Filter) tupleExpr, scope, initiallyBoundVarMask);
-		}
-		if (tupleExpr instanceof Join join) {
-			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, scope,
-					initiallyBoundVarMask);
-		}
-		if (tupleExpr instanceof LeftJoin join) {
-			if (join.hasCondition()) {
-				return null;
+		switch (tupleExpr) {
+			case Filter filter -> {
+				return estimateFilteredTupleExprPlan(filter, scope, initiallyBoundVarMask);
 			}
-			return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, scope,
-					initiallyBoundVarMask);
-		}
-		if (tupleExpr instanceof EmptySet) {
-			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
-		}
-		if (tupleExpr instanceof SingletonSet) {
-			return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
-		}
-		if (tupleExpr instanceof Slice) {
-			return estimateSliceTupleExprPlan((Slice) tupleExpr, scope, initiallyBoundVarMask);
+			case Join join -> {
+				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), false, scope,
+						initiallyBoundVarMask);
+			}
+			case LeftJoin join -> {
+				if (join.hasCondition()) {
+					return null;
+				}
+				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, scope,
+						initiallyBoundVarMask);
+			}
+			case EmptySet emptySet -> {
+				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+			}
+			case SingletonSet singletonSet -> {
+				return new TuplePlanEstimate(1.0d, 1.0d, 1.0d, Collections.emptyMap());
+			}
+			case Slice slice -> {
+				return estimateSliceTupleExprPlan(slice, scope, initiallyBoundVarMask);
+			}
+			default -> {
+			}
 		}
 		if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced) {
 			return estimateDistinctTupleExprPlan((UnaryTupleOperator) tupleExpr, scope, initiallyBoundVarMask);
@@ -5667,7 +5617,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private TupleExpr bindTupleExpr(TupleExpr tupleExpr, BindingSet bindingSet) {
 		TupleExpr bound = tupleExpr.clone();
-		bound.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+		bound.visit(new AbstractSimpleQueryModelVisitor<>(true) {
 			@Override
 			public void meet(Var var) {
 				if (var.hasValue() || var.getName() == null || !bindingSet.hasBinding(var.getName())) {
@@ -6626,18 +6576,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 			names[count++] = varName;
 		}
-		switch (count) {
-		case 0:
-			return Set.of();
-		case 1:
-			return Set.of(names[0]);
-		case 2:
-			return Set.of(names[0], names[1]);
-		case 3:
-			return Set.of(names[0], names[1], names[2]);
-		default:
-			return Set.of(names[0], names[1], names[2], names[3]);
-		}
+		return switch (count) {
+		case 0 -> Set.of();
+		case 1 -> Set.of(names[0]);
+		case 2 -> Set.of(names[0], names[1]);
+		case 3 -> Set.of(names[0], names[1], names[2]);
+		default -> Set.of(names[0], names[1], names[2], names[3]);
+		};
 	}
 
 	private static boolean containsName(String[] names, int count, String name) {
@@ -7463,7 +7408,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (value == 0.0d) {
 			return 0.0d;
 		}
-		return Math.max(MIN_FILTER_MULTIPLIER, Math.min(1.0d, value));
+		return Math.clamp(value, MIN_FILTER_MULTIPLIER, 1.0d);
 	}
 
 	private double normalizeExactFilterMultiplier(double value) {
@@ -7800,7 +7745,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	// ──────────────────────────────────────────────────────────────
 
 	private static double clamp(double v, double lo, double hi) {
-		return Math.max(lo, Math.min(hi, v));
+		return Math.clamp(hi, lo, v);
 	}
 
 	/**
@@ -8049,11 +7994,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void loadDirectoryIndexEntries(List<SketchEstimatorPersistenceStore.IndexEntry> entries) {
 		for (SketchEstimatorPersistenceStore.IndexEntry entry : entries) {
-			SketchAddress address = new SketchAddress(entry.recType, entry.delete, entry.axisA, entry.axisB, entry.x,
-					entry.y);
+			SketchAddress address = new SketchAddress(entry.recType(), entry.delete(), entry.axisA(), entry.axisB(),
+					entry.x(),
+					entry.y());
 			int entryId = cacheDirectory.findOrAdd(address);
-			cacheDirectory.setPersistedRef(entryId, entry.ref.slot, entry.ref.fileKind, entry.ref.offset,
-					entry.ref.length, entry.ref.generation);
+			cacheDirectory.setPersistedRef(entryId, entry.ref().slot(), entry.ref().fileKind(), entry.ref().offset(),
+					entry.ref().length(), entry.ref().generation());
 		}
 	}
 
@@ -8172,10 +8118,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return slot == BufferSlot.A ? (byte) 0 : (byte) 1;
 	}
 
-	private State stateOf(BufferSlot slot) {
-		return slot == BufferSlot.A ? bufA : bufB;
-	}
-
 	private static SketchAddress singleTripleAddress(boolean isDelete, Component component, int idx) {
 		return new SketchAddress(REC_SINGLE_TRIPLE, isDelete, (byte) component.ordinal(), (byte) 0, idx, 0);
 	}
@@ -8238,11 +8180,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
 						fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, state.maxSketchBytes,
 						slotGenerations[slot]);
-				ArrayOfDoublesUpdatableSketch sketch = TupleSketchOps.newSketch(state.k, allocation.payload);
-				SketchEstimatorPersistenceStore.Ref persistedRef = allocation.ref;
+				ArrayOfDoublesUpdatableSketch sketch = TupleSketchOps.newSketch(state.k, allocation.payload());
+				SketchEstimatorPersistenceStore.Ref persistedRef = allocation.ref();
 				synchronized (sketchCacheLock) {
-					cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind, persistedRef.offset,
-							persistedRef.length, persistedRef.generation);
+					cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind(), persistedRef.offset(),
+							persistedRef.length(), persistedRef.generation());
 					indexDirty.set(true);
 				}
 				return sketch;
@@ -8301,10 +8243,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private void touchResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch,
-			boolean enforceBudget) {
-	}
-
-	private void touchResidentSketch(State state, int entryId, ArrayOfDoublesUpdatableSketch sketch,
 			boolean enforceBudget) {
 	}
 
@@ -8397,14 +8335,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			int entryId = cacheDirectory.findOrAdd(keyPrefix, keyHash, x, y);
 			cacheDirectory.markDirty(entryId, slot);
 		}
-	}
-
-	private void markDirty(State state, int entryId) {
-		byte slot = slotByte(slotOf(state));
-		synchronized (sketchCacheLock) {
-			cacheDirectory.markDirty(entryId, slot);
-		}
-		dirty.set(true);
 	}
 
 	private boolean refreshDirtyFlagFromCacheDirectory() {
@@ -8587,12 +8517,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
 					fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, slotBytes, slotGenerations[slot]);
 			if (payload.length > 0) {
-				MemorySegment.copy(MemorySegment.ofArray(payload), 0L, allocation.payload, 0L, payload.length);
+				MemorySegment.copy(MemorySegment.ofArray(payload), 0L, allocation.payload(), 0L, payload.length);
 			}
-			SketchEstimatorPersistenceStore.Ref persistedRef = allocation.ref;
+			SketchEstimatorPersistenceStore.Ref persistedRef = allocation.ref();
 			synchronized (sketchCacheLock) {
-				cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind, persistedRef.offset,
-						persistedRef.length, persistedRef.generation);
+				cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind(), persistedRef.offset(),
+						persistedRef.length(), persistedRef.generation());
 				cacheDirectory.clearDirty(entryId, slot);
 				indexDirty.set(true);
 			}
@@ -8608,19 +8538,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private static byte fileKindFor(SketchAddress address) {
-		switch (address.recType) {
-		case REC_GLOBAL_COMPONENT:
-			return SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL;
-		case REC_SINGLE_TRIPLE:
-		case REC_SINGLE_CPL:
-			return SketchEstimatorPersistenceStore.FILE_KIND_SINGLES;
-		case REC_PAIR_TRIPLE:
-		case REC_PAIR_COMP1:
-		case REC_PAIR_COMP2:
-			return SketchEstimatorPersistenceStore.FILE_KIND_PAIRS;
-		default:
-			throw new IllegalStateException("Unknown sketch record type: " + address.recType);
-		}
+		return switch (address.recType) {
+		case REC_GLOBAL_COMPONENT -> SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL;
+		case REC_SINGLE_TRIPLE, REC_SINGLE_CPL -> SketchEstimatorPersistenceStore.FILE_KIND_SINGLES;
+		case REC_PAIR_TRIPLE, REC_PAIR_COMP1, REC_PAIR_COMP2 -> SketchEstimatorPersistenceStore.FILE_KIND_PAIRS;
+		default -> throw new IllegalStateException("Unknown sketch record type: " + address.recType);
+		};
 	}
 
 	private byte[] serializeNativeSketchPayload(ArrayOfDoublesUpdatableSketch sketch) throws IOException {
@@ -8635,7 +8558,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			PersistedSketchRef persistedSketchRef, SketchAddress address, byte slot) throws IOException {
 		SketchEstimatorPersistenceStore.Ref storeRef = persistedSketchRef.storeRef(slot);
 		if (shouldPersistCompactly(address)
-				&& storeRef.length < state.maxSketchBytes + SKETCH_PAYLOAD_FRAME_HEADER_BYTES) {
+				&& storeRef.length() < state.maxSketchBytes + SKETCH_PAYLOAD_FRAME_HEADER_BYTES) {
 			return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::heapify);
 		}
 		return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::wrapUpdatable);
@@ -8760,20 +8683,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		for (int i = 0; i < arr.length(); i++) {
 			arr.set(i, null);
 		}
-	}
-
-	private void updateSketchRaw(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y,
-			long thetaHash) {
-		boolean deleteDelta = isDelete;
-		isDelete = false;
-		int entryId;
-		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.findOrAdd(recType, isDelete, axisA, axisB, x, y);
-		}
-		ArrayOfDoublesUpdatableSketch sketch = getSketchForWrite(state, recType, isDelete, axisA, axisB, x, y, entryId);
-		tupleUpdateRaw(sketch, thetaHash, signedDelta(deleteDelta));
-		markDirty(state, entryId);
-		touchResidentSketch(state, entryId, sketch, false);
 	}
 
 	/* ────────────────────────────────────────────────────────────── */

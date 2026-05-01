@@ -209,8 +209,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			SketchEstimatorPersistenceStore.Ref second = store.append((byte) 0,
 					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, secondPayload, 1L);
 
-			assertEquals(0L, first.offset);
-			assertEquals(firstPayload.length, second.offset);
+			assertEquals(0L, first.offset());
+			assertEquals(firstPayload.length, second.offset());
 			assertFalse(Files.exists(storeDirectory.resolve("a/global.sketches")),
 					"Sketch payload storage should use fixed part files, not a growing monolith");
 			assertTrue(
@@ -269,8 +269,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 			SketchEstimatorPersistenceStore.Ref second = store.append((byte) 0,
 					SketchEstimatorPersistenceStore.FILE_KIND_GLOBAL, secondPayload, 1L);
 
-			assertEquals(0L, first.offset);
-			assertEquals(16L, second.offset, "Second payload should start in part2 instead of growing part1");
+			assertEquals(0L, first.offset());
+			assertEquals(16L, second.offset(), "Second payload should start in part2 instead of growing part1");
 			assertEquals(16L, Files.size(storeDirectory.resolve("a/global.part1.sketches")));
 			assertEquals(16L, Files.size(storeDirectory.resolve("a/global.part2.sketches")));
 			assertFalse(Files.exists(storeDirectory.resolve("a/global.sketches")),

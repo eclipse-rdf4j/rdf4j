@@ -28,10 +28,9 @@ public interface ValueStoreRevision {
 			if (this == o) {
 				return true;
 			}
-			if (!(o instanceof ValueStoreRevision)) {
+			if (!(o instanceof ValueStoreRevision other)) {
 				return false;
 			}
-			ValueStoreRevision other = (ValueStoreRevision) o;
 			return getRevisionId() == other.getRevisionId() && Objects.equals(getValueStore(), other.getValueStore());
 		}
 

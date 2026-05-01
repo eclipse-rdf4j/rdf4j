@@ -13,28 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.nio.ByteBuffer;
 
-final class LmdbDb {
-
-	final int pad;
-	final int flags;
-	final int depth;
-	final long branchPages;
-	final long leafPages;
-	final long overflowPages;
-	final long entries;
-	final long rootPgno;
-
-	LmdbDb(int pad, int flags, int depth, long branchPages, long leafPages, long overflowPages, long entries,
-			long rootPgno) {
-		this.pad = pad;
-		this.flags = flags;
-		this.depth = depth;
-		this.branchPages = branchPages;
-		this.leafPages = leafPages;
-		this.overflowPages = overflowPages;
-		this.entries = entries;
-		this.rootPgno = rootPgno;
-	}
+record LmdbDb(int pad, int flags, int depth, long branchPages, long leafPages, long overflowPages, long entries,
+		long rootPgno) {
 
 	boolean isEmpty() {
 		return rootPgno == LmdbFormat.P_INVALID || entries == 0;

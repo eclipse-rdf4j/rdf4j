@@ -600,7 +600,6 @@ class ValueStore extends AbstractValueFactory {
 	 *
 	 * @param id    ID of a value object
 	 * @param value ID of a value object
-	 * @return the value object or <code>null</code> if not found
 	 */
 	void cacheValue(long id, LmdbValue value) {
 		int idx = (int) (id & valueCacheMask);
@@ -1151,7 +1150,7 @@ class ValueStore extends AbstractValueFactory {
 			// wrap into read txn as resizeMap expects an active surrounding read txn
 			readTransaction(env, (stack1, txn1) -> {
 				// contains IDs for data types and namespaces which are freed by garbage collecting literals and URIs
-				resizeMap(writeTxn, 2 * ids.size() * (1 + Long.BYTES + 2 + Long.BYTES));
+				resizeMap(writeTxn, 2L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
 
 				final Collection<Long> finalIds = ids;
 				final Collection<Long> finalNextIds = nextIds;
@@ -1731,15 +1730,14 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] value2data(Value value, boolean create) throws IOException {
-		if (value instanceof IRI) {
-			return uri2data((IRI) value, create);
-		} else if (value instanceof BNode) {
-			return bnode2data((BNode) value, create);
-		} else if (value instanceof Literal) {
-			return literal2data((Literal) value, create);
-		} else {
-			throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
-		}
+		Value.Type type = value.getType();
+		return switch (type) {
+		case Value.Type.IRI -> uri2data((IRI) value, create);
+		case Value.Type.BNode -> bnode2data((BNode) value, create);
+		case Value.Type.Literal -> literal2data((Literal) value, create);
+		default -> throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
+		};
+
 	}
 
 	private byte[] uri2data(IRI uri, boolean create) throws IOException {
@@ -1826,21 +1824,13 @@ class ValueStore extends AbstractValueFactory {
 		return literalData;
 	}
 
-	private boolean isNamespaceData(byte[] data) {
-		return data[0] == NAMESPACE_VALUE;
-	}
-
 	private LmdbValue data2value(long id, byte[] data, LmdbValue value) throws IOException {
-		switch (data[0]) {
-		case URI_VALUE:
-			return data2uri(id, data, (LmdbIRI) value);
-		case BNODE_VALUE:
-			return data2bnode(id, data, (LmdbBNode) value);
-		case LITERAL_VALUE:
-			return data2literal(id, data, (LmdbLiteral) value);
-		default:
-			throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
-		}
+		return switch (data[0]) {
+		case URI_VALUE -> data2uri(id, data, (LmdbIRI) value);
+		case BNODE_VALUE -> data2bnode(id, data, (LmdbBNode) value);
+		case LITERAL_VALUE -> data2literal(id, data, (LmdbLiteral) value);
+		default -> throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
+		};
 	}
 
 	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {

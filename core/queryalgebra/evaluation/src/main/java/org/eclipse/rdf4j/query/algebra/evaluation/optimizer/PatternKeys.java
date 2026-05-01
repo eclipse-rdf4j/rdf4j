@@ -31,7 +31,7 @@ public final class PatternKeys {
 	}
 
 	public static IRI predicateKey(IRI predicate, Value object) {
-		if (predicate != null && RDF.TYPE.equals(predicate) && object instanceof IRI) {
+		if (RDF.TYPE.equals(predicate) && object instanceof IRI) {
 			String objectIri = object.stringValue();
 			return RDF_TYPE_OBJECT_KEYS.computeIfAbsent(objectIri,
 					value -> SimpleValueFactory.getInstance().createIRI(RDF_TYPE_PREFIX + value));

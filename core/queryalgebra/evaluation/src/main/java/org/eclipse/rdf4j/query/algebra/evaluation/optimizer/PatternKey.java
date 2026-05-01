@@ -18,43 +18,21 @@ import org.eclipse.rdf4j.model.IRI;
 /**
  * Key identifying a triple pattern and which positions are bound.
  */
-public final class PatternKey {
+public record PatternKey(IRI predicate, int boundMask) {
 
 	public static final int SUBJECT_BOUND = 0b100;
 	public static final int PREDICATE_BOUND = 0b010;
 	public static final int OBJECT_BOUND = 0b001;
-
-	private final IRI predicate;
-	private final int boundMask;
-
-	public PatternKey(IRI predicate, int boundMask) {
-		this.predicate = predicate;
-		this.boundMask = boundMask;
-	}
-
-	public IRI getPredicate() {
-		return predicate;
-	}
-
-	public int getBoundMask() {
-		return boundMask;
-	}
 
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
 		}
-		if (!(o instanceof PatternKey)) {
+		if (!(o instanceof PatternKey(IRI predicate1, int mask))) {
 			return false;
 		}
-		PatternKey other = (PatternKey) o;
-		return boundMask == other.boundMask && Objects.equals(predicate, other.predicate);
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(predicate, boundMask);
+		return boundMask == mask && Objects.equals(predicate, predicate1);
 	}
 
 	@Override

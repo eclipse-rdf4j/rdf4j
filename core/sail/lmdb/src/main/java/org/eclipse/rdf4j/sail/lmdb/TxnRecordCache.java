@@ -43,6 +43,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 
 import org.apache.commons.io.FileUtils;
 import org.lwjgl.PointerBuffer;
@@ -102,22 +103,22 @@ final class TxnRecordCache {
 		FileUtils.deleteDirectory(dbDir.toFile());
 	}
 
-	protected void commit() throws IOException {
+	void commit() throws IOException {
 		if (writeTxn != 0) {
 			E(mdb_txn_commit(writeTxn));
 			writeTxn = 0;
 		}
 	}
 
-	protected boolean storeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
+	boolean storeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
 		return update(quad, explicit, OP_ADD, contextDelta);
 	}
 
-	protected void removeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
+	void removeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
 		update(quad, explicit, OP_REMOVE, contextDelta);
 	}
 
-	protected RecordState getRecordState(long[] quad, boolean explicit) throws IOException {
+	RecordState getRecordState(long[] quad, boolean explicit) {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
@@ -130,11 +131,11 @@ final class TxnRecordCache {
 				return RecordState.ABSENT;
 			}
 
-			return isAdd(dataVal.mv_data().get(0)) ? RecordState.ADD : RecordState.REMOVE;
+			return isAdd(Objects.requireNonNull(dataVal.mv_data()).get(0)) ? RecordState.ADD : RecordState.REMOVE;
 		}
 	}
 
-	protected boolean update(long[] quad, boolean explicit, byte operation, boolean contextDelta) throws IOException {
+	private boolean update(long[] quad, boolean explicit, byte operation, boolean contextDelta) throws IOException {
 		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
 			// resize map if required
 			E(mdb_txn_commit(writeTxn));
@@ -156,10 +157,10 @@ final class TxnRecordCache {
 			keyVal.mv_data(keyBuf);
 
 			boolean foundExplicit = mdb_get(writeTxn, dbiExplicit, keyVal, dataVal) == MDB_SUCCESS &&
-					isAdd(dataVal.mv_data().get(0));
+					isAdd(Objects.requireNonNull(dataVal.mv_data()).get(0));
 			boolean foundImplicit = !foundExplicit && mdb_get(writeTxn, dbiInferred, keyVal, dataVal) == MDB_SUCCESS
 					&&
-					isAdd(dataVal.mv_data().get(0));
+					isAdd(Objects.requireNonNull(dataVal.mv_data()).get(0));
 
 			boolean found = foundExplicit || foundImplicit;
 			if (operation == OP_ADD) {
@@ -186,12 +187,12 @@ final class TxnRecordCache {
 		}
 	}
 
-	protected RecordCacheIterator getRecords(boolean explicit) throws IOException {
+	RecordCacheIterator getRecords(boolean explicit) throws IOException {
 		return new RecordCacheIterator(explicit ? dbiExplicit : dbiInferred);
 	}
 
 	static class Record {
-		long quad[];
+		long[] quad;
 		boolean add;
 		boolean contextDelta;
 	}
@@ -224,7 +225,7 @@ final class TxnRecordCache {
 		public Record next() {
 			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
 				Varint.readListUnsigned(keyData.mv_data(), quad);
-				byte op = valueData.mv_data().get(0);
+				byte op = Objects.requireNonNull(valueData.mv_data()).get(0);
 				Record r = new Record();
 				r.quad = quad;
 				r.add = isAdd(op);

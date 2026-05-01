@@ -144,7 +144,7 @@ final class LmdbUtil {
 	 * </pre>
 	 */
 	private static long mdbTxnMtNextPgno(long txn) {
-		return MemoryUtil.memGetAddress(txn + 2 * Pointer.POINTER_SIZE);
+		return MemoryUtil.memGetAddress(txn + 2L * Pointer.POINTER_SIZE);
 	}
 
 	/**

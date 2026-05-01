@@ -837,25 +837,8 @@ class LmdbFilterSelectivityStats
 		return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
 	}
 
-	private static final class SamplingCandidate {
-		private final PatternFilterKey key;
-		private final long subjId;
-		private final long predId;
-		private final long objId;
-		private final long contextId;
-		private final double expectedRuntimeRows;
-		private final double expectedBenefitRows;
-
-		private SamplingCandidate(PatternFilterKey key, long subjId, long predId, long objId, long contextId,
-				double expectedRuntimeRows, double expectedBenefitRows) {
-			this.key = key;
-			this.subjId = subjId;
-			this.predId = predId;
-			this.objId = objId;
-			this.contextId = contextId;
-			this.expectedRuntimeRows = expectedRuntimeRows;
-			this.expectedBenefitRows = expectedBenefitRows;
-		}
+	private record SamplingCandidate(PatternFilterKey key, long subjId, long predId, long objId, long contextId,
+			double expectedRuntimeRows, double expectedBenefitRows) {
 	}
 
 	static final class BackgroundSamplingRequest {
@@ -911,7 +894,7 @@ class LmdbFilterSelectivityStats
 		}
 
 		String predicateIri() {
-			IRI predicate = key.patternKey.getPredicate();
+			IRI predicate = key.patternKey.predicate();
 			return predicate == null ? "" : predicate.stringValue();
 		}
 
@@ -936,54 +919,35 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	private static final class RuntimeRowsKey {
-		private final long subjId;
-		private final long predId;
-		private final long objId;
-		private final long contextId;
-
-		private RuntimeRowsKey(long subjId, long predId, long objId, long contextId) {
-			this.subjId = subjId;
-			this.predId = predId;
-			this.objId = objId;
-			this.contextId = contextId;
-		}
+	private record RuntimeRowsKey(long subjId, long predId, long objId, long contextId) {
 
 		@Override
 		public boolean equals(Object other) {
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof RuntimeRowsKey)) {
+			if (!(other instanceof RuntimeRowsKey that)) {
 				return false;
 			}
-			RuntimeRowsKey that = (RuntimeRowsKey) other;
 			return subjId == that.subjId && predId == that.predId && objId == that.objId
 					&& contextId == that.contextId;
 		}
 
-		@Override
-		public int hashCode() {
-			return Objects.hash(subjId, predId, objId, contextId);
-		}
 	}
 
-	private static final class PatternFilterKey {
-		private final PatternKey patternKey;
-		private final String filterKey;
-
+	private record PatternFilterKey(PatternKey patternKey, String filterKey) {
 		private PatternFilterKey(PatternKey patternKey, String filterKey) {
 			this.patternKey = Objects.requireNonNull(patternKey, "patternKey");
 			this.filterKey = Objects.requireNonNull(filterKey, "filterKey");
 		}
 
 		private void writeTo(DataOutputStream out) throws IOException {
-			IRI predicate = patternKey.getPredicate();
+			IRI predicate = patternKey.predicate();
 			out.writeBoolean(predicate != null);
 			if (predicate != null) {
 				writeString(out, predicate.stringValue());
 			}
-			out.writeInt(patternKey.getBoundMask());
+			out.writeInt(patternKey.boundMask());
 			writeString(out, filterKey);
 		}
 
@@ -998,17 +962,12 @@ class LmdbFilterSelectivityStats
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof PatternFilterKey)) {
+			if (!(other instanceof PatternFilterKey that)) {
 				return false;
 			}
-			PatternFilterKey that = (PatternFilterKey) other;
 			return patternKey.equals(that.patternKey) && filterKey.equals(that.filterKey);
 		}
 
-		@Override
-		public int hashCode() {
-			return Objects.hash(patternKey, filterKey);
-		}
 	}
 
 	private static final class LearnedCounts {
@@ -1045,14 +1004,7 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	private static final class SampledPassRatio {
-		private final double passRatio;
-		private final int sampleSize;
-
-		private SampledPassRatio(double passRatio, int sampleSize) {
-			this.passRatio = passRatio;
-			this.sampleSize = sampleSize;
-		}
+	private record SampledPassRatio(double passRatio, int sampleSize) {
 
 		private void writeTo(DataOutputStream out) throws IOException {
 			out.writeDouble(passRatio);
@@ -1064,14 +1016,7 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	private static final class SnapshotRevision {
-		private final long size;
-		private final long lastModifiedMillis;
-
-		private SnapshotRevision(long size, long lastModifiedMillis) {
-			this.size = size;
-			this.lastModifiedMillis = lastModifiedMillis;
-		}
+	private record SnapshotRevision(long size, long lastModifiedMillis) {
 
 		private boolean matches(SnapshotRevision other) {
 			return other != null && size == other.size && lastModifiedMillis == other.lastModifiedMillis;

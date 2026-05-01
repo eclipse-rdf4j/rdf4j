@@ -98,10 +98,6 @@ public class FilterOptimizer implements QueryOptimizer {
 		this(statistics, true, true);
 	}
 
-	FilterOptimizer(EvaluationStatistics statistics, boolean mergeAdjacentFilters) {
-		this(statistics, mergeAdjacentFilters, true);
-	}
-
 	public FilterOptimizer(EvaluationStatistics statistics, boolean mergeAdjacentFilters,
 			boolean considerJoinPlacementCost) {
 		this.statistics = statistics;
@@ -151,9 +147,7 @@ public class FilterOptimizer implements QueryOptimizer {
 	 * {@link VariableScopeChange}.
 	 */
 	private static void transferScopeChange(QueryModelNode source, QueryModelNode target) {
-		if (source instanceof VariableScopeChange && target instanceof VariableScopeChange) {
-			VariableScopeChange src = (VariableScopeChange) source;
-			VariableScopeChange tgt = (VariableScopeChange) target;
+		if (source instanceof VariableScopeChange src && target instanceof VariableScopeChange tgt) {
 			tgt.setVariableScopeChange(src.isVariableScopeChange());
 		}
 	}
@@ -183,10 +177,9 @@ public class FilterOptimizer implements QueryOptimizer {
 
 	private static Set<String> bindingSetAssignmentOnlyNames(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof BindingSetAssignment) {
-			return ((BindingSetAssignment) tupleExpr).getAssuredBindingNames();
+			return tupleExpr.getAssuredBindingNames();
 		}
-		if (tupleExpr instanceof Join) {
-			Join join = (Join) tupleExpr;
+		if (tupleExpr instanceof Join join) {
 			Set<String> leftNames = bindingSetAssignmentOnlyNames(join.getLeftArg());
 			Set<String> rightNames = bindingSetAssignmentOnlyNames(join.getRightArg());
 			if (leftNames == null || rightNames == null) {
@@ -224,19 +217,17 @@ public class FilterOptimizer implements QueryOptimizer {
 		if (condition instanceof Not && ((Not) condition).getArg() instanceof Exists) {
 			return true;
 		}
-		if (condition instanceof And) {
-			And and = (And) condition;
+		if (condition instanceof And and) {
 			return containsExistsCondition(and.getLeftArg()) || containsExistsCondition(and.getRightArg());
 		}
 		return false;
 	}
 
 	private static String compareOtherBindingName(ValueExpr condition, String assignmentName) {
-		if (!(condition instanceof Compare)) {
+		if (!(condition instanceof Compare compare)) {
 			return null;
 		}
 
-		Compare compare = (Compare) condition;
 		String left = unboundVarName(compare.getLeftArg());
 		String right = unboundVarName(compare.getRightArg());
 		if (assignmentName.equals(left) && right != null) {
@@ -249,8 +240,7 @@ public class FilterOptimizer implements QueryOptimizer {
 	}
 
 	private static String unboundVarName(ValueExpr expression) {
-		if (expression instanceof Var) {
-			Var var = (Var) expression;
+		if (expression instanceof Var var) {
 			if (!var.hasValue()) {
 				return var.getName();
 			}
@@ -266,8 +256,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
-			if (filter.getCondition() instanceof And) {
-				And and = (And) filter.getCondition();
+			if (filter.getCondition()instanceof And and) {
 				filter.setCondition(and.getLeftArg().clone());
 				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
 				transferScopeChange(filter, newFilter); // preserve scope flag
@@ -289,9 +278,8 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getArg() instanceof Filter && filter.getParentNode() != null) {
+			if (filter.getArg()instanceof Filter childFilter && filter.getParentNode() != null) {
 
-				Filter childFilter = (Filter) filter.getArg();
 				QueryModelNode parent = filter.getParentNode();
 				And merge = mergeConditionsInFilterOrder(childFilter.getArg(), childFilter.getCondition(),
 						filter.getCondition());
@@ -494,8 +482,7 @@ public class FilterOptimizer implements QueryOptimizer {
 				return false;
 			}
 
-			if (statistics instanceof JoinFactorCostModel) {
-				JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
+			if (statistics instanceof JoinFactorCostModel costModel) {
 				Filter candidateFilter = new Filter(candidateArg.clone(), filter.getCondition().clone());
 				OptionalWorkRows joinWork = estimateWorkRows(costModel, join);
 				OptionalWorkRows candidateWork = estimateWorkRows(costModel, candidateFilter);
@@ -555,7 +542,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			return Double.isFinite(value) && value >= 0.0d;
 		}
 
-		private final class OptionalWorkRows {
+		private static final class OptionalWorkRows {
 			private final boolean available;
 			private final double workRows;
 

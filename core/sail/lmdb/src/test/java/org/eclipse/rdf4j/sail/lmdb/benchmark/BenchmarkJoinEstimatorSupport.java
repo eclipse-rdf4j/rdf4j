@@ -24,9 +24,6 @@ import java.nio.file.Path;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -34,12 +31,10 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 
 public final class BenchmarkJoinEstimatorSupport {
 
-	private static final int BENCHMARK_STALENESS_THRESHOLD = 3;
 	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(1);
 	private static final long ROBUST_READY_POLL_MILLIS = 1000L;
 	private static final long QUERY_REGRESSION_PASS_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
 	private static final long QUERY_REGRESSION_PASS_POLL_MILLIS = 100L;
-	private static final long NO_HEADROOM_OVERRIDE = -1L;
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
@@ -58,10 +53,6 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ROOT = "rdf4j.lmdb.themeRegression.persistentStore.root";
 	private static final String DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT = "persistent-lmdb-theme-store";
 	private static final Method GET_BACKING_STORE = reflectMethod(LmdbStore.class, "getBackingStore");
-
-	private static final Method LAST_JOIN_ORDER_PLANNER_PATH = reflectMethod(
-			SketchBasedJoinEstimator.class,
-			"lastJoinOrderPlannerPath");
 
 	private BenchmarkJoinEstimatorSupport() {
 	}
@@ -187,38 +178,6 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	public static String persistentThemeRegressionStoreRootPropertyName() {
 		return PERSISTENT_THEME_REGRESSION_STORE_ROOT;
-	}
-
-	public static void prepareFixedMedicalRecordsExplanationStore(File storeDirectory) throws IOException {
-		FileUtils.deleteDirectory(storeDirectory);
-		Files.createDirectories(storeDirectory.toPath());
-
-		LmdbStore store = new LmdbStore(storeDirectory, ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		var vf = SimpleValueFactory.getInstance();
-		var condition = vf.createIRI("http://example.com/theme/medical/Condition");
-		var medication = vf.createIRI("http://example.com/theme/medical/Medication");
-		var code = vf.createIRI("http://example.com/theme/medical/code");
-
-		try {
-			try (var connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(vf.createIRI("urn:test:condition:1"), org.eclipse.rdf4j.model.vocabulary.RDF.TYPE,
-						condition);
-				connection.add(vf.createIRI("urn:test:condition:1"), code, vf.createLiteral("DX-200"));
-				connection.add(vf.createIRI("urn:test:condition:2"), org.eclipse.rdf4j.model.vocabulary.RDF.TYPE,
-						condition);
-				connection.add(vf.createIRI("urn:test:condition:2"), code, vf.createLiteral("DX-202"));
-				connection.add(vf.createIRI("urn:test:medication:1"), org.eclipse.rdf4j.model.vocabulary.RDF.TYPE,
-						medication);
-				connection.add(vf.createIRI("urn:test:medication:1"), code, vf.createLiteral("DX-201"));
-				connection.commit();
-			}
-		} finally {
-			repository.shutDown();
-		}
-
-		writeExpectedDbFileSizes(storeDirectory);
 	}
 
 	static SketchBasedJoinEstimator resolveEstimator(LmdbStore store) throws IOException {
