@@ -28,6 +28,8 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -239,6 +241,23 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
 		assertFalse(containsLeftJoin(retainedFilter.getArg()));
 		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+	}
+
+	@Test
+	void keepsBindAliasOptionalFilterWithoutLiteralAnchor() {
+		StatementPattern required = statementPattern("s", "type", "type");
+		Extension optional = new Extension(
+				statementPatternWithPredicate("s", "http://example.com/theme/pharma/severity", "severity"),
+				new ExtensionElem(new Var("severity"), "optSeverity"));
+		Filter filter = new Filter(new LeftJoin(required, optional), listMember("optSeverity", "Mild", "Moderate"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "optSeverity"));
+		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "severity"));
 	}
 
 	@Test

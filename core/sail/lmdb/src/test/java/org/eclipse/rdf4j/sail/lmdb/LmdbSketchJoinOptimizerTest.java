@@ -120,6 +120,28 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void finiteAnchorMaterializationDoesNotReplanSyntheticJoinsForCardinality() {
+		BindingSetAssignment boundDisease = values("disease", "disease-0", "disease-1");
+		StatementPattern studiesDisease = statementPattern("trial", "studiesDisease", "disease");
+		StatementPattern trialType = statementPattern("trial", "type", "trialType");
+		StatementPattern hasArm = statementPattern("trial", "hasArm", "arm");
+		StatementPattern armDrug = statementPattern("arm", "armDrug", "drug");
+		QueryRoot root = new QueryRoot(new Join(boundDisease,
+				new Join(studiesDisease, new Join(trialType, new Join(hasArm, armDrug)))));
+		PlanningStatistics statistics = PlanningStatistics.supportingJoinEstimation();
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(0, statistics.planningAttempts);
+		assertEquals(0, statistics.joinCardinalityRequests);
+		List<TupleExpr> orderedArgs = joinArgs(root.getArg());
+		assertEquals(boundDisease, orderedArgs.get(0));
+		assertEquals(studiesDisease, orderedArgs.get(1));
+		assertEquals(5, orderedArgs.size());
+		assertTrue(orderedArgs.containsAll(List.of(boundDisease, studiesDisease, trialType, hasArm, armDrug)));
+	}
+
+	@Test
 	void leavesJoinSegmentOrderUnchangedWhenPlannerRejects() {
 		StatementPattern first = statementPattern("s1", "p1", "o1");
 		StatementPattern second = statementPattern("s2", "p2", "o2");
@@ -483,6 +505,8 @@ class LmdbSketchJoinOptimizerTest {
 
 		private final List<TupleExpr> plan;
 		private int planningAttempts;
+		private int joinCardinalityRequests;
+		private boolean supportsJoinEstimation;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -494,6 +518,25 @@ class LmdbSketchJoinOptimizerTest {
 
 		static PlanningStatistics rejected() {
 			return new PlanningStatistics(null);
+		}
+
+		static PlanningStatistics supportingJoinEstimation() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.supportsJoinEstimation = true;
+			return statistics;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Join) {
+				joinCardinalityRequests++;
+			}
+			return 1.0d;
+		}
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return supportsJoinEstimation;
 		}
 
 		@Override

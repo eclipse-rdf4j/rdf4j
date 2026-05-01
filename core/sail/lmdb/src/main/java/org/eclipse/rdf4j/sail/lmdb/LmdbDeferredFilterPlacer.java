@@ -49,6 +49,11 @@ final class LmdbDeferredFilterPlacer {
 
 	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
 			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps) {
+		return buildSegmentRoot(orderedArgs, filters, boundBeforeSegment, filterPlacementSteps, false);
+	}
+
+	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
+			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps, boolean rightDeepJoinTree) {
 		if (orderedArgs.isEmpty()) {
 			return null;
 		}
@@ -87,7 +92,7 @@ final class LmdbDeferredFilterPlacer {
 		for (SegmentFactor factor : factors) {
 			roots.addLast(factor.tupleExpr);
 		}
-		TupleExpr root = buildJoinRoot(roots);
+		TupleExpr root = buildJoinRoot(roots, rightDeepJoinTree);
 		for (DeferredFilter filter : unresolvedFilters) {
 			root = filterWrapper.wrap(root, List.of(filter), "root");
 		}
@@ -664,8 +669,19 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs) {
+		return buildJoinRoot(orderedArgs, false);
+	}
+
+	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs, boolean rightDeepJoinTree) {
 		if (orderedArgs.isEmpty()) {
 			return null;
+		}
+		if (rightDeepJoinTree) {
+			TupleExpr root = orderedArgs.removeLast();
+			while (!orderedArgs.isEmpty()) {
+				root = joinFactory.create(orderedArgs.removeLast(), root);
+			}
+			return root;
 		}
 		TupleExpr root = orderedArgs.removeFirst();
 		while (!orderedArgs.isEmpty()) {

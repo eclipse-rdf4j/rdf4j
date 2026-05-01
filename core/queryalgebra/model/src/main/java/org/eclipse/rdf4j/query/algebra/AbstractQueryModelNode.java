@@ -64,6 +64,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private Map<String, Long> longMetricsPlanned = Collections.emptyMap();
 	private Map<String, Double> doubleMetricsPlanned = Collections.emptyMap();
 	private Map<String, String> stringMetricsPlanned = Collections.emptyMap();
+	@JsonIgnore
+	private transient Map<Object, Object> queryModelMetadata = Collections.emptyMap();
 
 	private double cardinality = CARDINALITY_NOT_SET;
 
@@ -138,6 +140,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 					: new HashMap<>(doubleMetricsPlanned);
 			clone.stringMetricsPlanned = stringMetricsPlanned.isEmpty() ? Collections.emptyMap()
 					: new HashMap<>(stringMetricsPlanned);
+			clone.queryModelMetadata = queryModelMetadata.isEmpty() ? Collections.emptyMap()
+					: new HashMap<>(queryModelMetadata);
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -446,6 +450,43 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
+	}
+
+	@Override
+	public Object getQueryModelMetadata(Object key) {
+		Objects.requireNonNull(key, "key");
+		return queryModelMetadata.get(key);
+	}
+
+	@Override
+	public void setQueryModelMetadata(Object key, Object value) {
+		Objects.requireNonNull(key, "key");
+		if (value == null) {
+			removeQueryModelMetadata(key);
+			return;
+		}
+		if (queryModelMetadata.isEmpty()) {
+			queryModelMetadata = new HashMap<>();
+		}
+		queryModelMetadata.put(key, value);
+	}
+
+	@Override
+	public Object removeQueryModelMetadata(Object key) {
+		Objects.requireNonNull(key, "key");
+		if (queryModelMetadata.isEmpty()) {
+			return null;
+		}
+		Object removed = queryModelMetadata.remove(key);
+		if (queryModelMetadata.isEmpty()) {
+			queryModelMetadata = Collections.emptyMap();
+		}
+		return removed;
+	}
+
+	@Override
+	public void clearQueryModelMetadata() {
+		queryModelMetadata = Collections.emptyMap();
 	}
 
 	/**

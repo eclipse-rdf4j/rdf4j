@@ -102,16 +102,16 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-//			"0",
-//			"1",
-//			"2",
-//			"3",
-//			"4",
-//			"5",
-//			"6",
-//			"7",
-//			"8",
-//			"9",
+			"0",
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
+			"9",
 			"10",
 //			"11",
 //			"12"
@@ -119,14 +119,14 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
+			"MEDICAL_RECORDS",
 			"SOCIAL_MEDIA",
-//			"LIBRARY",
-//			"ENGINEERING",
-//			"HIGHLY_CONNECTED",
-//			"TRAIN",
-//			"ELECTRICAL_GRID",
-//			"PHARMA"
+			"LIBRARY",
+			"ENGINEERING",
+			"HIGHLY_CONNECTED",
+			"TRAIN",
+			"ELECTRICAL_GRID",
+			"PHARMA"
 	})
 	public String themeName;
 

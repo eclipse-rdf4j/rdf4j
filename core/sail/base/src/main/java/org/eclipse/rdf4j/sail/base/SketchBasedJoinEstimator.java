@@ -177,6 +177,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long TUPLE_UPDATE_SEED = 9001L;
 	private static final Component[] COMPONENT_VALUES = Component.values();
 	private static final int COMPONENT_MASK_COUNT = 1 << COMPONENT_VALUES.length;
+	private static final Object PATTERN_VARIABLE_EQUALITIES_METADATA_KEY = new Object();
+	private static final PatternVariableEqualities NO_PATTERN_VARIABLE_EQUALITIES = new PatternVariableEqualities(
+			new byte[0], new byte[0]);
 	private static final long BOUND_VAR_MASK_OVERFLOW = Long.MIN_VALUE;
 	private static final Pair[] PAIR_VALUES = Pair.values();
 	private static final Set<Component>[] COMPONENT_SETS_BY_MASK = buildComponentSetsByMask();
@@ -6084,12 +6087,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private StatementPattern bindPatternVar(StatementPattern pattern, String sharedVarName, Value sharedValue) {
 		StatementPattern boundPattern = pattern.clone();
+		boolean mutated = false;
 		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(boundPattern, component);
 			if (var == null || var.hasValue() || var.getName() == null || !sharedVarName.equals(var.getName())) {
 				continue;
 			}
 			var.replaceWith(Var.of(var.getName(), sharedValue, var.isAnonymous(), var.isConstant()));
+			mutated = true;
+		}
+		if (mutated) {
+			boundPattern.removeQueryModelMetadata(PATTERN_VARIABLE_EQUALITIES_METADATA_KEY);
 		}
 		return boundPattern;
 	}
@@ -6137,31 +6145,80 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private boolean statementMatchesPatternVariableEqualities(StatementPattern pattern, Statement statement) {
-		Map<String, Value> seen = new HashMap<>();
+		PatternVariableEqualities equalities = patternVariableEqualities(pattern);
+		if (equalities == NO_PATTERN_VARIABLE_EQUALITIES) {
+			return true;
+		}
+		return equalities.matches(statement);
+	}
+
+	private PatternVariableEqualities patternVariableEqualities(StatementPattern pattern) {
+		Object cached = pattern.getQueryModelMetadata(PATTERN_VARIABLE_EQUALITIES_METADATA_KEY);
+		if (cached instanceof PatternVariableEqualities) {
+			return (PatternVariableEqualities) cached;
+		}
+
+		String[] names = new String[COMPONENT_VALUES.length];
 		for (Component component : COMPONENT_VALUES) {
 			Var var = varForComponent(pattern, component);
 			if (var == null || var.hasValue() || var.getName() == null) {
 				continue;
 			}
-			Value value = statementValue(statement, component);
-			if (seen.containsKey(var.getName())) {
-				if (!Objects.equals(seen.get(var.getName()), value)) {
-					return false;
+			names[component.ordinal()] = var.getName();
+		}
+
+		byte[] leftComponents = new byte[6];
+		byte[] rightComponents = new byte[6];
+		int equalityCount = 0;
+		for (int left = 0; left < names.length; left++) {
+			String leftName = names[left];
+			if (leftName == null) {
+				continue;
+			}
+			for (int right = left + 1; right < names.length; right++) {
+				if (leftName.equals(names[right])) {
+					leftComponents[equalityCount] = (byte) left;
+					rightComponents[equalityCount] = (byte) right;
+					equalityCount++;
 				}
-			} else {
-				seen.put(var.getName(), value);
 			}
 		}
-		return true;
+
+		PatternVariableEqualities equalities = equalityCount == 0 ? NO_PATTERN_VARIABLE_EQUALITIES
+				: new PatternVariableEqualities(Arrays.copyOf(leftComponents, equalityCount),
+						Arrays.copyOf(rightComponents, equalityCount));
+		pattern.setQueryModelMetadata(PATTERN_VARIABLE_EQUALITIES_METADATA_KEY, equalities);
+		return equalities;
 	}
 
-	private Value statementValue(Statement statement, Component component) {
+	private static Value statementValue(Statement statement, Component component) {
 		return switch (component) {
 		case S -> statement.getSubject();
 		case P -> statement.getPredicate();
 		case O -> statement.getObject();
 		case C -> statement.getContext();
 		};
+	}
+
+	private static final class PatternVariableEqualities {
+		private final byte[] leftComponents;
+		private final byte[] rightComponents;
+
+		private PatternVariableEqualities(byte[] leftComponents, byte[] rightComponents) {
+			this.leftComponents = leftComponents;
+			this.rightComponents = rightComponents;
+		}
+
+		private boolean matches(Statement statement) {
+			for (int i = 0; i < leftComponents.length; i++) {
+				Value left = statementValue(statement, COMPONENT_VALUES[leftComponents[i]]);
+				Value right = statementValue(statement, COMPONENT_VALUES[rightComponents[i]]);
+				if (!Objects.equals(left, right)) {
+					return false;
+				}
+			}
+			return true;
+		}
 	}
 
 	private static final class SharedVarScan {
@@ -7650,6 +7707,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private boolean bindPatternVars(StatementPattern pattern, String varName, Value value) {
 		boolean found = false;
+		boolean mutated = false;
 		for (Var patternVar : new Var[] {
 				pattern.getSubjectVar(),
 				pattern.getPredicateVar(),
@@ -7666,7 +7724,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (!patternVar.hasValue()) {
 				pattern.replaceChildNode(patternVar,
 						Var.of(patternVar.getName(), value, patternVar.isAnonymous(), patternVar.isConstant()));
+				mutated = true;
 			}
+		}
+		if (mutated) {
+			pattern.removeQueryModelMetadata(PATTERN_VARIABLE_EQUALITIES_METADATA_KEY);
 		}
 		return found;
 	}

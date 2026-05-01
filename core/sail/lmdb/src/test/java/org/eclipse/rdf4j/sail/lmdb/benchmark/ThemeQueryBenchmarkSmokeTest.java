@@ -25,6 +25,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -43,6 +44,11 @@ class ThemeQueryBenchmarkSmokeTest {
 	private static final String MEDICAL_RECORDED_ON_FILTER = "recordedOn-filter";
 	private static final String MEDICAL_HANDLED_BY_LABEL = "handledBy";
 	private static final String MEDICAL_TYPE_LABEL = "encounter-type";
+	private static final String PHARMA = "http://example.com/theme/pharma/";
+	private static final String PHARMA_BIOMARKER_LABEL = "pharma-biomarker";
+	private static final String PHARMA_HAS_RESULT_LABEL = "pharma-hasResult";
+	private static final String PHARMA_HAS_ARM_LABEL = "pharma-hasArm";
+	private static final String PHARMA_P_VALUE_FILTER = "pharma-pValue-filter";
 
 	@Test
 	void executeQueryReturnsExpectedCountForMedicalRecordsQueryTwo() throws Exception {
@@ -72,6 +78,16 @@ class ThemeQueryBenchmarkSmokeTest {
 		} finally {
 			benchmark.tearDown();
 		}
+	}
+
+	@Test
+	void executeQueryReturnsExpectedCountForPharmaQueryOne() throws Exception {
+		assertThemeQueryCount(Theme.PHARMA, 1);
+	}
+
+	@Test
+	void executeQueryReturnsExpectedCountForPharmaQueryTwo() throws Exception {
+		assertThemeQueryCount(Theme.PHARMA, 2);
 	}
 
 	@Test
@@ -114,6 +130,19 @@ class ThemeQueryBenchmarkSmokeTest {
 				"Second benchmark trial should reuse the persisted join-estimator sketches instead of rebuilding them");
 	}
 
+	private static void assertThemeQueryCount(Theme theme, int queryIndex) throws Exception {
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = theme.name();
+		benchmark.z_queryIndex = queryIndex;
+
+		benchmark.setup();
+		try {
+			assertEquals(ThemeQueryCatalog.expectedCountFor(theme, queryIndex), benchmark.executeQuery());
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
 	private static List<Path> persistedSketchFiles(Path store) throws Exception {
 		try (Stream<Path> paths = Files.find(store, 2,
 				(path, attributes) -> attributes.isRegularFile()
@@ -153,6 +182,43 @@ class ThemeQueryBenchmarkSmokeTest {
 		}
 	}
 
+	@Test
+	void explainQueryPlacesPharmaQ5PValueFilterBeforeTrialExpansion() throws Exception {
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.PHARMA.name();
+		benchmark.z_queryIndex = 5;
+
+		benchmark.setup();
+		try {
+			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
+			int biomarkerIndex = mandatoryLeafOrder.indexOf(PHARMA_BIOMARKER_LABEL);
+			int hasResultIndex = mandatoryLeafOrder.indexOf(PHARMA_HAS_RESULT_LABEL);
+			int hasArmIndex = mandatoryLeafOrder.indexOf(PHARMA_HAS_ARM_LABEL);
+			int pValueFilterIndex = mandatoryLeafOrder.indexOf(PHARMA_P_VALUE_FILTER);
+
+			assertTrue(biomarkerIndex >= 0 && hasResultIndex >= 0 && hasArmIndex >= 0 && pValueFilterIndex >= 0,
+					"Expected q5 mandatory prefix to expose biomarker, hasResult, hasArm, and pValue filter; order="
+							+ mandatoryLeafOrder);
+			assertTrue(biomarkerIndex < pValueFilterIndex,
+					"Expected q5 to bind result through the finite marker domain before pValue; order="
+							+ mandatoryLeafOrder);
+			assertTrue(hasResultIndex < pValueFilterIndex,
+					"Expected q5 to bind arms through hasResult before applying the pValue filter; order="
+							+ mandatoryLeafOrder);
+			assertTrue(pValueFilterIndex < hasArmIndex,
+					"Expected q5 to apply the local pValue filter before expanding trials through hasArm; order="
+							+ mandatoryLeafOrder);
+			assertTrue(hasResultIndex < hasArmIndex,
+					"Expected q5 to bind arms before trial expansion; order=" + mandatoryLeafOrder);
+			assertTrue(hasFiniteAnchorRightDeepPrefix(optimized),
+					"Expected q5 to keep the finite marker VALUES anchor as a right-deep join prefix; order="
+							+ mandatoryLeafOrder);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
 	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, double passRatio, double baseRows,
 			double filteredRows) {
 		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
@@ -171,13 +237,37 @@ class ThemeQueryBenchmarkSmokeTest {
 
 	private static List<String> collectMandatoryLeafOrder(TupleExpr optimized) {
 		ArrayList<String> leaves = new ArrayList<>();
-		TupleExpr mandatoryRoot = optimized;
-		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
-		if (leftJoin != null) {
-			mandatoryRoot = leftJoin.getLeftArg();
-		}
+		TupleExpr mandatoryRoot = mandatoryRoot(optimized);
 		collectMandatoryLeafOrder(mandatoryRoot, leaves);
 		return leaves;
+	}
+
+	private static TupleExpr mandatoryRoot(TupleExpr optimized) {
+		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
+		return leftJoin == null ? optimized : leftJoin.getLeftArg();
+	}
+
+	private static boolean hasFiniteAnchorRightDeepPrefix(TupleExpr optimized) {
+		TupleExpr current = mandatoryRoot(optimized);
+		List<String> expectedRightDeepLabels = List.of(
+				PHARMA_BIOMARKER_LABEL,
+				PHARMA_HAS_RESULT_LABEL,
+				PHARMA_P_VALUE_FILTER,
+				PHARMA_HAS_ARM_LABEL);
+		if (!(current instanceof Join join) || !(join.getLeftArg() instanceof BindingSetAssignment)) {
+			return false;
+		}
+		current = join.getRightArg();
+		for (String expectedLabel : expectedRightDeepLabels) {
+			if (!(current instanceof Join joinStep)) {
+				return expectedLabel.equals(labelForLeaf(current));
+			}
+			if (!expectedLabel.equals(labelForLeaf(joinStep.getLeftArg()))) {
+				return false;
+			}
+			current = joinStep.getRightArg();
+		}
+		return true;
 	}
 
 	private static void collectMandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
@@ -189,6 +279,10 @@ class ThemeQueryBenchmarkSmokeTest {
 		if (tupleExpr instanceof Filter filter) {
 			if (isRecordedOnFilter(filter)) {
 				leaves.add(MEDICAL_RECORDED_ON_FILTER);
+				return;
+			}
+			if (isPharmaPValueFilter(filter)) {
+				leaves.add(PHARMA_P_VALUE_FILTER);
 				return;
 			}
 			collectMandatoryLeafOrder(filter.getArg(), leaves);
@@ -206,12 +300,33 @@ class ThemeQueryBenchmarkSmokeTest {
 		}
 	}
 
+	private static String labelForLeaf(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter && isPharmaPValueFilter(filter)) {
+			return PHARMA_P_VALUE_FILTER;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			return labelFor(statementPattern);
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+			return labelForLeaf(unaryTupleOperator.getArg());
+		}
+		return null;
+	}
+
 	private static boolean isRecordedOnFilter(Filter filter) {
 		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
 			return false;
 		}
 		return MEDICAL_RECORDED_ON.equals(statementPattern.getPredicateVar().getValue().stringValue())
 				&& VarNameCollector.process(filter.getCondition()).contains("date");
+	}
+
+	private static boolean isPharmaPValueFilter(Filter filter) {
+		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			return false;
+		}
+		return (PHARMA + "pValue").equals(statementPattern.getPredicateVar().getValue().stringValue())
+				&& VarNameCollector.process(filter.getCondition()).contains("p");
 	}
 
 	private static Filter findRecordedOnFilter(TupleExpr optimized) {
@@ -242,6 +357,15 @@ class ThemeQueryBenchmarkSmokeTest {
 		}
 		if ((MEDICAL + "handledBy").equals(predicateValue)) {
 			return MEDICAL_HANDLED_BY_LABEL;
+		}
+		if ((PHARMA + "biomarker").equals(predicateValue)) {
+			return PHARMA_BIOMARKER_LABEL;
+		}
+		if ((PHARMA + "hasResult").equals(predicateValue)) {
+			return PHARMA_HAS_RESULT_LABEL;
+		}
+		if ((PHARMA + "hasArm").equals(predicateValue)) {
+			return PHARMA_HAS_ARM_LABEL;
 		}
 		if ("http://www.w3.org/1999/02/22-rdf-syntax-ns#type".equals(predicateValue)
 				&& object != null

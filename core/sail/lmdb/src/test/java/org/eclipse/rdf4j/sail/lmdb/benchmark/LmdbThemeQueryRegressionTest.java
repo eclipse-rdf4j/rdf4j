@@ -1026,6 +1026,16 @@ class LmdbThemeQueryRegressionTest {
 								+ describeFixedOrder(planner, List.of(inPathway, drugType, targets, markerBindings))
 								+ "\nTargets fixed order:\n"
 								+ describeFixedOrder(planner, List.of(targets, drugType, inPathway, markerBindings)));
+				Assertions.assertTrue(orderedArgs.indexOf(drugType) < orderedArgs.indexOf(targets)
+						&& orderedArgs.indexOf(targets) < orderedArgs.indexOf(inPathway),
+						"PHARMA q10 fastest plan-bearing history starts with the Drug type guard, then probes "
+								+ "targets and inPathway through subject-bound lookups. The pathway-first family "
+								+ "is consistently slower for this query.\nDiagnostics:\n"
+								+ String.join("\n", plan.getDiagnostics()) + "\nSelected steps:\n"
+								+ describePlanSteps(plan) + "\nDrug-type fixed order:\n"
+								+ describeFixedOrder(planner, List.of(drugType, targets, inPathway, markerBindings))
+								+ "\nPathway-first fixed order:\n"
+								+ describeFixedOrder(planner, List.of(inPathway, targets, drugType, markerBindings)));
 			} finally {
 				shutdownAndRelease(repository, store);
 			}

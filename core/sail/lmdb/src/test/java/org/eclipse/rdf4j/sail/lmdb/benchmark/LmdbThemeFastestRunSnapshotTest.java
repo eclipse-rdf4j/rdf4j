@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -118,6 +119,33 @@ class LmdbThemeFastestRunSnapshotTest {
 	}
 
 	@Test
+	void pharmaQuery0BenchmarkLifecycleAvoidsMemoExplosion(@TempDir Path dataDir) throws Exception {
+		Path storeDir = dataDir.resolve("pharma-q0-benchmark-lifecycle");
+		LmdbStoreConfig bulkLoadConfig = ConfigUtil.createConfig();
+		bulkLoadConfig.setIterationCacheSyncThreshold(0);
+		LmdbStore store = new LmdbStore(storeDir.toFile(), bulkLoadConfig);
+		SailRepository repository = new SailRepository(store);
+		try {
+			for (Theme theme : Theme.values()) {
+				loadData(repository, theme);
+			}
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+
+		store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
+			assertCanonicalFiniteAnchorFastPath(query0.plan(), "PHARMA:0 benchmark lifecycle");
+			OptimizerSnapshot telemetryQuery0 = explain(repository, Theme.PHARMA, 0, Explanation.Level.Telemetry);
+			assertCanonicalFiniteAnchorFastPath(telemetryQuery0.plan(), "PHARMA:0 benchmark lifecycle telemetry");
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
 	void pharmaQueries0And1KeepFastPlanShape(@TempDir Path dataDir) throws Exception {
 		Path storeDir = prepareThemeStore(dataDir, Theme.PHARMA);
 		try {
@@ -126,8 +154,7 @@ class LmdbThemeFastestRunSnapshotTest {
 			try {
 				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:0", () -> {
 					OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
-					assertPlannerCostInvariants(query0.plan(), "PHARMA:0", 10_000.0d);
-					assertPlannerCandidateBudget(query0.plan(), "PHARMA:0", 1_024);
+					assertCanonicalFiniteAnchorFastPath(query0.plan(), "PHARMA:0");
 					assertPlanContains(query0.plan(), "PHARMA:0",
 							"BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
 							"value=http://example.com/theme/pharma/studiesDisease",
@@ -142,6 +169,9 @@ class LmdbThemeFastestRunSnapshotTest {
 					assertPlanBefore(query0.plan(), "PHARMA:0",
 							"value=http://example.com/theme/pharma/hasArm",
 							"value=http://example.com/theme/pharma/hasResult");
+					assertPlanBefore(query0.plan(), "PHARMA:0",
+							"value=http://example.com/theme/pharma/hasResult",
+							"value=http://example.com/theme/pharma/armDrug");
 					assertPlanBefore(query0.plan(), "PHARMA:0",
 							"value=http://example.com/theme/pharma/armDrug",
 							"value=http://example.com/theme/pharma/pValue");
@@ -180,13 +210,29 @@ class LmdbThemeFastestRunSnapshotTest {
 		assertDirectLookupWorkRowsBelow(plan, key, maxDirectLookupWorkRows);
 	}
 
+	private static void assertCanonicalFiniteAnchorFastPath(String plan, String key) {
+		assertFalse(plan.contains("plannerId=lmdb-sketch"),
+				key + " should keep the already finite-anchored chain out of sketch planning:\n" + plan);
+		assertFalse(plan.contains("optimizer.logicalExploration"),
+				key + " should not spend Pareto memo/beam work on a canonical finite-anchor chain:\n" + plan);
+		assertPlanBefore(plan, key, "BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
+				"value=http://example.com/theme/pharma/studiesDisease");
+		assertPlanBefore(plan, key, "value=http://example.com/theme/pharma/studiesDisease",
+				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		assertPlanBefore(plan, key, "value=http://example.com/theme/pharma/hasArm",
+				"value=http://example.com/theme/pharma/pValue");
+	}
+
 	private static void assertPlannerCandidateBudget(String plan, String key, int maxCandidates) {
 		Matcher matcher = OPTIMIZER_CANDIDATES.matcher(plan);
-		assertTrue(matcher.find(), key + " should expose optimizer candidate diagnostics:\n" + plan);
-		int candidates = Integer.parseInt(matcher.group(1));
-		assertTrue(candidates <= maxCandidates,
+		int largestCandidates = -1;
+		while (matcher.find()) {
+			largestCandidates = Math.max(largestCandidates, Integer.parseInt(matcher.group(1)));
+		}
+		assertTrue(largestCandidates >= 0, key + " should expose optimizer candidate diagnostics:\n" + plan);
+		assertTrue(largestCandidates <= maxCandidates,
 				key + " should avoid exhaustive memo planning for a bounded finite-anchor query, got candidates="
-						+ candidates + " max=" + maxCandidates + "\n" + plan);
+						+ largestCandidates + " max=" + maxCandidates + "\n" + plan);
 	}
 
 	private static void verifyTheme(Path dataDir, Theme theme, List<ExpectedSnapshot> planSnapshots)
@@ -252,10 +298,15 @@ class LmdbThemeFastestRunSnapshotTest {
 	}
 
 	private static OptimizerSnapshot explainOptimized(SailRepository repository, Theme theme, int queryIndex) {
+		return explain(repository, theme, queryIndex, Explanation.Level.Optimized);
+	}
+
+	private static OptimizerSnapshot explain(SailRepository repository, Theme theme, int queryIndex,
+			Explanation.Level level) {
 		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Explanation explanation = connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Optimized);
+					.explain(level);
 			return new OptimizerSnapshot(
 					explanation.toString(),
 					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));

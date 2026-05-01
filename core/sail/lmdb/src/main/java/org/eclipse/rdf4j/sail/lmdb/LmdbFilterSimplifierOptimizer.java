@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -48,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
@@ -124,8 +127,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		TupleExpr arg = filter.getArg();
 		List<ValueExpr> conditions = LmdbJoinPlanSupport.splitConjuncts(filter.getCondition());
 		Set<String> mandatoryOptionalAnchorBindings = new HashSet<>();
+		Set<String> removableMandatoryOptionalAnchorBindings = new HashSet<>();
 		TupleExpr mandatoryArg = makeUnboundRejectingOptionalsMandatory(arg, conditions,
-				mandatoryOptionalAnchorBindings);
+				mandatoryOptionalAnchorBindings, removableMandatoryOptionalAnchorBindings);
 		if (mandatoryArg != arg) {
 			arg = mandatoryArg;
 			filter.setArg(arg);
@@ -147,7 +151,12 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			}
 
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
-			if (shouldRetainMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings)) {
+			if (shouldDropMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings,
+					removableMandatoryOptionalAnchorBindings)) {
+				continue;
+			}
+			if (shouldRetainMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings,
+					removableMandatoryOptionalAnchorBindings)) {
 				remainingConditions.add(condition);
 				continue;
 			}
@@ -163,23 +172,23 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			}
 		}
 
+		if (remainingConditions.isEmpty()) {
+			filter.replaceWith(anchors.isEmpty() ? arg : prependAnchors(arg, anchors));
+			return;
+		}
+
 		if (anchors.isEmpty()) {
 			return;
 		}
 
 		TupleExpr anchoredArg = prependAnchors(arg, anchors);
-		if (remainingConditions.isEmpty()) {
-			filter.replaceWith(anchoredArg);
-			return;
-		}
-
 		filter.setArg(anchoredArg);
 		filter.setCondition(LmdbJoinPlanSupport.combinedCondition(remainingConditions));
 		annotateFilter(filter);
 	}
 
 	private static TupleExpr makeUnboundRejectingOptionalsMandatory(TupleExpr arg, List<ValueExpr> conditions,
-			Set<String> mandatoryOptionalAnchorBindings) {
+			Set<String> mandatoryOptionalAnchorBindings, Set<String> removableMandatoryOptionalAnchorBindings) {
 		TupleExpr current = arg;
 		for (ValueExpr condition : conditions) {
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
@@ -187,35 +196,118 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			if (bindingName == null) {
 				continue;
 			}
-			TupleExpr mandatory = makeOptionalBindingMandatory(current, bindingName, anchor);
-			if (mandatory != current) {
-				current = mandatory;
+			MandatoryOptionalRewrite rewrite = makeOptionalBindingMandatory(current, bindingName, anchor);
+			if (rewrite.tupleExpr != current) {
+				current = rewrite.tupleExpr;
 				mandatoryOptionalAnchorBindings.add(bindingName);
+				if (rewrite.aliasFilterIsRedundant) {
+					removableMandatoryOptionalAnchorBindings.add(bindingName);
+				}
 			}
 		}
 		return current;
 	}
 
-	private static TupleExpr makeOptionalBindingMandatory(TupleExpr arg, String bindingName,
+	private static MandatoryOptionalRewrite makeOptionalBindingMandatory(TupleExpr arg, String bindingName,
 			BindingSetAssignment anchor) {
 		if (!(arg instanceof LeftJoin)) {
-			return arg;
+			return MandatoryOptionalRewrite.unchanged(arg);
 		}
 
 		LeftJoin leftJoin = (LeftJoin) arg;
 		if (leftJoin.hasCondition() || leftJoin.getLeftArg().getBindingNames().contains(bindingName)
 				|| !leftJoin.getRightArg().getBindingNames().contains(bindingName)) {
-			return arg;
+			return MandatoryOptionalRewrite.unchanged(arg);
 		}
-		TupleExpr hoisted = hoistMandatoryRightArgAheadOfScopedFanout(leftJoin.getLeftArg(), anchor,
+
+		if (extensionElementNames(leftJoin.getRightArg()).contains(bindingName)) {
+			return MandatoryOptionalRewrite.unchanged(arg);
+		}
+
+		BindingSetAssignment placementAnchor = directExtensionSourceAnchor(bindingName, anchor,
+				leftJoin.getRightArg());
+		boolean aliasFilterIsRedundant = placementAnchor != null;
+		if (placementAnchor == null) {
+			placementAnchor = anchor;
+		}
+		TupleExpr hoisted = hoistMandatoryRightArgAheadOfScopedFanout(leftJoin.getLeftArg(), placementAnchor,
 				leftJoin.getRightArg());
 		if (hoisted != null) {
-			return hoisted;
+			return new MandatoryOptionalRewrite(hoisted, aliasFilterIsRedundant);
 		}
 		if (finiteLeftBindingsCoverOptionalProbeInput(leftJoin, bindingName)) {
-			return arg;
+			return MandatoryOptionalRewrite.unchanged(arg);
 		}
-		return new Join(leftJoin.getLeftArg(), new Join(anchor, leftJoin.getRightArg()));
+		return new MandatoryOptionalRewrite(
+				new Join(leftJoin.getLeftArg(), new Join(placementAnchor, leftJoin.getRightArg())),
+				aliasFilterIsRedundant);
+	}
+
+	private static final class MandatoryOptionalRewrite {
+		private final TupleExpr tupleExpr;
+		private final boolean aliasFilterIsRedundant;
+
+		private MandatoryOptionalRewrite(TupleExpr tupleExpr, boolean aliasFilterIsRedundant) {
+			this.tupleExpr = tupleExpr;
+			this.aliasFilterIsRedundant = aliasFilterIsRedundant;
+		}
+
+		private static MandatoryOptionalRewrite unchanged(TupleExpr tupleExpr) {
+			return new MandatoryOptionalRewrite(tupleExpr, false);
+		}
+	}
+
+	private static BindingSetAssignment directExtensionSourceAnchor(String bindingName, BindingSetAssignment anchor,
+			TupleExpr tupleExpr) {
+		if (anchor == null || anchor.getBindingNames().size() != 1 || !anchor.getBindingNames().contains(bindingName)) {
+			return null;
+		}
+		String sourceBindingName = directExtensionSourceName(tupleExpr, bindingName);
+		if (sourceBindingName == null || sourceBindingName.equals(bindingName)
+				|| extensionElementNames(tupleExpr).contains(sourceBindingName)) {
+			return null;
+		}
+		return renameAnchor(anchor, bindingName, sourceBindingName);
+	}
+
+	private static String directExtensionSourceName(TupleExpr tupleExpr, String extensionName) {
+		Set<String> sourceNames = new LinkedHashSet<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension extension) {
+				for (ExtensionElem element : extension.getElements()) {
+					if (extensionName.equals(element.getName()) && element.getExpr() instanceof Var) {
+						Var sourceVar = (Var) element.getExpr();
+						if (!sourceVar.hasValue() && sourceVar.getName() != null) {
+							sourceNames.add(sourceVar.getName());
+						}
+					}
+				}
+				extension.visitChildren(this);
+			}
+		});
+		return sourceNames.size() == 1 ? sourceNames.iterator().next() : null;
+	}
+
+	private static BindingSetAssignment renameAnchor(BindingSetAssignment anchor, String sourceBindingName,
+			String targetBindingName) {
+		BindingSetAssignment renamed = new BindingSetAssignment();
+		renamed.setBindingNames(Set.of(targetBindingName));
+		List<BindingSet> bindingSets = new ArrayList<>();
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(sourceBindingName);
+			if (!LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)) {
+				return null;
+			}
+			MapBindingSet renamedBindingSet = new MapBindingSet(1);
+			renamedBindingSet.addBinding(targetBindingName, value);
+			bindingSets.add(renamedBindingSet);
+		}
+		if (bindingSets.isEmpty()) {
+			return null;
+		}
+		renamed.setBindingSets(bindingSets);
+		return renamed;
 	}
 
 	private static boolean finiteLeftBindingsCoverOptionalProbeInput(LeftJoin leftJoin, String optionalBinding) {
@@ -298,9 +390,17 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static boolean shouldRetainMandatoryOptionalFilter(BindingSetAssignment anchor,
-			Set<String> mandatoryOptionalAnchorBindings) {
+			Set<String> mandatoryOptionalAnchorBindings, Set<String> removableMandatoryOptionalAnchorBindings) {
 		String bindingName = singleBindingName(anchor);
-		return bindingName != null && mandatoryOptionalAnchorBindings.contains(bindingName);
+		return bindingName != null && mandatoryOptionalAnchorBindings.contains(bindingName)
+				&& !removableMandatoryOptionalAnchorBindings.contains(bindingName);
+	}
+
+	private static boolean shouldDropMandatoryOptionalFilter(BindingSetAssignment anchor,
+			Set<String> mandatoryOptionalAnchorBindings, Set<String> removableMandatoryOptionalAnchorBindings) {
+		String bindingName = singleBindingName(anchor);
+		return bindingName != null && mandatoryOptionalAnchorBindings.contains(bindingName)
+				&& removableMandatoryOptionalAnchorBindings.contains(bindingName);
 	}
 
 	private static String singleBindingName(BindingSetAssignment anchor) {
@@ -435,8 +535,23 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 		String bindingName = anchor.getBindingNames().iterator().next();
 		return assuredBindings.contains(bindingName)
+				&& !extensionElementNames(filter.getArg()).contains(bindingName)
 				&& !LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)
 				&& LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
+	}
+
+	private static Set<String> extensionElementNames(TupleExpr tupleExpr) {
+		Set<String> names = new HashSet<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension extension) {
+				for (ExtensionElem element : extension.getElements()) {
+					names.add(element.getName());
+				}
+				extension.visitChildren(this);
+			}
+		});
+		return names;
 	}
 
 	private boolean isSelectiveSmallLiteralAnchor(Filter filter, ValueExpr condition) {

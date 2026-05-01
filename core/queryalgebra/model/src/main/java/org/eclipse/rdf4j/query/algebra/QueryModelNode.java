@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -348,6 +349,49 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
+		// no-op
+	}
+
+	/**
+	 * Returns transient optimizer metadata attached to this query model node for the supplied key.
+	 *
+	 * @param key non-null metadata key
+	 * @return the metadata value, or {@code null} if absent
+	 */
+	@Experimental
+	default Object getQueryModelMetadata(Object key) {
+		Objects.requireNonNull(key, "key");
+		return null;
+	}
+
+	/**
+	 * Attaches transient optimizer metadata to this query model node. Passing {@code null} as value removes the key.
+	 *
+	 * @param key   non-null metadata key
+	 * @param value metadata value, or {@code null} to remove
+	 */
+	@Experimental
+	default void setQueryModelMetadata(Object key, Object value) {
+		Objects.requireNonNull(key, "key");
+	}
+
+	/**
+	 * Removes transient optimizer metadata from this query model node.
+	 *
+	 * @param key non-null metadata key
+	 * @return the removed value, or {@code null} if absent
+	 */
+	@Experimental
+	default Object removeQueryModelMetadata(Object key) {
+		Objects.requireNonNull(key, "key");
+		return null;
+	}
+
+	/**
+	 * Clears all transient optimizer metadata attached to this query model node.
+	 */
+	@Experimental
+	default void clearQueryModelMetadata() {
 		// no-op
 	}
 
