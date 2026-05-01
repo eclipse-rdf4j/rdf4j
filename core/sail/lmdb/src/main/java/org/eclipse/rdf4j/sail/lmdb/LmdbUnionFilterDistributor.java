@@ -128,8 +128,9 @@ final class LmdbUnionFilterDistributor {
 			List<DeferredFilter> filters, Set<String> outerBoundVars, BranchOptimizer branchOptimizer,
 			JoinFactory joinFactory, FilterWrapper filterWrapper) {
 		TupleExpr root = prependPrefix(branch.clone(), prefixFactors, joinFactory);
+		root = filterWrapper.wrap(root, filters, "unionBranch");
 		root = branchOptimizer.optimize(root, outerBoundVars);
-		return filterWrapper.wrap(root, filters, "unionBranch");
+		return root;
 	}
 
 	private static TupleExpr prependPrefix(TupleExpr branch, List<TupleExpr> prefixFactors, JoinFactory joinFactory) {

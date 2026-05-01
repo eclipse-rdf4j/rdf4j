@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -22,15 +23,19 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -102,6 +107,95 @@ class LmdbUnionFilterDistributorTest {
 		assertTrue(containsStatementPatternWithObject(root.getRightArg(), "optName"));
 	}
 
+	@Test
+	void exposesBranchFiltersToBranchOptimizer() {
+		TupleExpr union = new Union(
+				new Join(statementPattern("entity", "http://example.com/theme/engineering/type", "kind"),
+						statementPattern("entity", "http://example.com/theme/engineering/name", "name")),
+				new Join(statementPattern("entity", "http://example.com/theme/engineering/type", "kind"),
+						statementPattern("entity", "http://example.com/theme/engineering/name", "name")));
+		DeferredFilter filter = new DeferredFilter(
+				new Compare(new Var("name"), new Var("target"), Compare.CompareOp.EQ),
+				Set.of("name", "target"), 1, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		boolean[] sawBranchFilter = { false };
+
+		TupleExpr distributed = LmdbUnionFilterDistributor.tryDistribute(List.of(values("target", "REQ-1000"), union),
+				List.of(filter), Set.of(), (tupleExpr, ignored) -> {
+					sawBranchFilter[0] |= tupleExpr instanceof Filter;
+					return tupleExpr;
+				}, Join::new, LmdbUnionFilterDistributorTest::wrapFilters);
+
+		assertInstanceOf(Union.class, distributed);
+		assertTrue(sawBranchFilter[0]);
+	}
+
+	@Test
+	void placesCorrelatedBranchFilterOnFinitePrefixAssignment() {
+		StatementPattern namePattern = statementPattern("entity", "http://example.com/theme/engineering/name", "name");
+		BindingSetAssignment targetValues = values("target", "REQ-1000", "REQ-1001");
+		DeferredFilter filter = new DeferredFilter(
+				new Compare(new Var("name"), new Var("target"), Compare.CompareOp.EQ),
+				Set.of("name", "target"), 1, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, ignored) -> tupleExpr, Join::new,
+				LmdbUnionFilterDistributorTest::wrapFilters);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(namePattern, targetValues)),
+				List.of(filter), Set.of());
+
+		Join join = assertInstanceOf(Join.class, root);
+		assertInstanceOf(StatementPattern.class, join.getLeftArg());
+		Filter assignmentFilter = assertInstanceOf(Filter.class, join.getRightArg());
+		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+	}
+
+	@Test
+	void placesCorrelatedOrBranchFilterOnFinitePrefixAssignment() {
+		StatementPattern namePattern = statementPattern("entity", "http://example.com/theme/engineering/name", "name");
+		BindingSetAssignment targetValues = values("target", "REQ-1000", "REQ-1001");
+		DeferredFilter filter = new DeferredFilter(
+				new Or(new Compare(new Var("name"), new Var("target"), Compare.CompareOp.EQ),
+						new Compare(new Var("name"), new ValueConstant(VF.createLiteral("REQ-1002")),
+								Compare.CompareOp.EQ)),
+				Set.of("name", "target"), 1, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, ignored) -> tupleExpr, Join::new,
+				LmdbUnionFilterDistributorTest::wrapFilters);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(namePattern, targetValues)),
+				List.of(filter), Set.of());
+
+		Join join = assertInstanceOf(Join.class, root);
+		assertInstanceOf(StatementPattern.class, join.getLeftArg());
+		Filter assignmentFilter = assertInstanceOf(Filter.class, join.getRightArg());
+		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+	}
+
+	@Test
+	void keepsSplitFiniteInequalityOnBindingWindow() {
+		BindingSetAssignment userValues = values("u", "user0", "user1", "user2");
+		BindingSetAssignment peerValues = values("v", "user0", "user1", "user2");
+		DeferredFilter filter = new DeferredFilter(
+				new Compare(new Var("u"), new Var("v"), Compare.CompareOp.NE),
+				Set.of("u", "v"), 1, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, ignored) -> tupleExpr, Join::new,
+				LmdbUnionFilterDistributorTest::wrapFilters);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(userValues, peerValues)),
+				List.of(filter), Set.of());
+
+		Filter windowFilter = assertInstanceOf(Filter.class, root);
+		Join finiteWindow = assertInstanceOf(Join.class, windowFilter.getArg());
+		assertInstanceOf(BindingSetAssignment.class, finiteWindow.getLeftArg());
+		assertInstanceOf(BindingSetAssignment.class, finiteWindow.getRightArg());
+	}
+
 	private static void assertPrefixInsideExtension(TupleExpr branch, boolean expectOptNameAssignment,
 			boolean expectOptNamePattern) {
 		Extension extension = assertInstanceOf(Extension.class, branch);
@@ -131,6 +225,14 @@ class LmdbUnionFilterDistributorTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static TupleExpr wrapFilters(TupleExpr root, List<DeferredFilter> filters, String placement) {
+		TupleExpr result = root;
+		for (DeferredFilter filter : filters) {
+			result = new Filter(result, filter.condition.clone());
+		}
+		return result;
 	}
 
 	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {

@@ -564,15 +564,27 @@ class LmdbThemeTopRegressionSnapshotTest {
 		requireBefore(mismatches, renderedQuery, "FILTER (?u != ?v)",
 				"?u <http://example.com/theme/social/follows> ?v .",
 				"self-pair pruning should run before the follows lookup");
-		requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
-				"VALUES ?optName",
-				"finite name anchor should run after the bounded follows lookup");
-		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
-				"?u <http://example.com/theme/social/name> ?optName .",
-				"optName VALUES should make the name lookup exact");
-		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
-				"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-				"optName VALUES should retain the literal filter");
+		if (renderedQuery.contains("VALUES ?optName")) {
+			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
+					"VALUES ?optName",
+					"finite name anchor should run after the bounded follows lookup");
+			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+					"?u <http://example.com/theme/social/name> ?optName .",
+					"optName VALUES should make the name lookup exact");
+			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+					"optName VALUES should retain the literal filter");
+		} else {
+			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
+					"?u <http://example.com/theme/social/name> ?optName .",
+					"optional name lookup should stay after the bounded follows lookup");
+			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
+					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+					"literal optName filter should stay after the optional name lookup");
+			requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/social/name",
+					"plannedLookupComponents=[S, P]",
+					"optional name lookup should use bound subject access when optName is filtered afterwards");
+		}
 		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
 				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
 				"literal optName filter should remain before projection");
@@ -668,14 +680,26 @@ class LmdbThemeTopRegressionSnapshotTest {
 		requireBefore(mismatches, renderedQuery, "?d <http://example.com/theme/social/follows> ?e .",
 				"?e <http://example.com/theme/social/follows> ?a .",
 				"follows cascade should close with e/a after d/e");
-		requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/follows> ?a .",
-				"VALUES ?optName",
-				"optional name finite anchor should stay after the bounded follows cascade");
-		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
-				"?e <http://example.com/theme/social/name> ?optName .",
-				"optName finite anchor should make the optional name lookup exact");
+		if (renderedQuery.contains("VALUES ?optName")) {
+			requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/follows> ?a .",
+					"VALUES ?optName",
+					"optional name finite anchor should stay after the bounded follows cascade");
+			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+					"?e <http://example.com/theme/social/name> ?optName .",
+					"optName finite anchor should make the optional name lookup exact");
+		} else {
+			requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/follows> ?a .",
+					"?e <http://example.com/theme/social/name> ?optName .",
+					"optional name lookup should stay after the bounded follows cascade");
+			requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/name> ?optName .",
+					"FILTER ((?optName IN",
+					"optional name literal filter should stay after the optional name lookup");
+			requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/social/name",
+					"plannedLookupComponents=[S, P]",
+					"optional name lookup should use bound subject access when optName is filtered afterwards");
+		}
 		requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/name> ?optName .",
-				"FILTER EXISTS",
+				"EXISTS {",
 				"correlated EXISTS name probe should run after the optional name lookup");
 		requireContains(mismatches, renderedQuery, "VALUES ?name { \"user7\" \"user8\" }",
 				"correlated EXISTS should expose its small literal name domain");

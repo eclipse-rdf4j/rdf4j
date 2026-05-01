@@ -22,11 +22,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 final class LmdbDeferredFilterPlacer {
 
@@ -297,7 +300,27 @@ final class LmdbDeferredFilterPlacer {
 						|| !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars))
 				&& !prefixBindingNames.containsAll(deferredFilter.requiredVars)
 				&& availableNames.containsAll(deferredFilter.requiredVars)
-				&& assignmentBindingNames.containsAll(deferredFilter.requiredVars);
+				&& !Collections.disjoint(assignmentBindingNames, deferredFilter.requiredVars)
+				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames);
+	}
+
+	private boolean canApplySplitPrefixFilter(DeferredFilter deferredFilter, Set<String> assignmentBindingNames) {
+		return assignmentBindingNames.containsAll(deferredFilter.requiredVars)
+				|| !containsNotEquals(deferredFilter.condition);
+	}
+
+	private boolean containsNotEquals(ValueExpr condition) {
+		boolean[] contains = { false };
+		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Compare node) {
+				if (node.getOperator() == Compare.CompareOp.NE) {
+					contains[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return contains[0];
 	}
 
 	private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {

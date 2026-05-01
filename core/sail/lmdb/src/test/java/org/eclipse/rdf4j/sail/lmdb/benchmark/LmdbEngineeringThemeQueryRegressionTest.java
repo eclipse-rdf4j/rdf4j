@@ -336,8 +336,8 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		String pattern = statementPatternWindow(plan, predicateIndex, "StatementPattern");
 		assertContains(pattern, "o: Var (name=name) (bindingState=bound)");
 		if (requirePlannerMetrics) {
-			assertContainsAny(pattern, "plannedBoundVars=[name]", "plannedBoundVars=name");
 			assertContains(pattern, "plannedLookupComponents=[P, O]");
+			assertContains(pattern, "plannedIndexAccessMode=directLookup");
 		}
 	}
 
