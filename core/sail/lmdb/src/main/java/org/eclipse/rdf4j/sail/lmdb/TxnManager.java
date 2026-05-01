@@ -74,9 +74,9 @@ class TxnManager {
 	private int retryStartReadTxn(MemoryStack stack, PointerBuffer pp) throws IOException {
 		int rc = MDB_READERS_FULL;
 		for (int i = 0; i < READERS_FULL_RETRIES && rc == MDB_READERS_FULL; i++) {
-			closeInactiveReaders();
+			closePooledReaders();
 			checkForDeadReaders(stack);
-			waitForActiveReaderToClose();
+			waitForTrackedReaderToClose(null);
 			rc = mdb_txn_begin(env, NULL, MDB_RDONLY, pp);
 		}
 		return rc;
@@ -85,19 +85,6 @@ class TxnManager {
 	private void checkForDeadReaders(MemoryStack stack) throws IOException {
 		IntBuffer dead = stack.mallocInt(1);
 		E(mdb_reader_check(env, dead));
-	}
-
-	private void closeInactiveReaders() {
-		closeInactiveReaders(null);
-	}
-
-	private void closeInactiveReaders(Txn excludedTxn) {
-		closePooledReaders();
-		for (Txn txn : inactiveTransactions()) {
-			if (txn != excludedTxn) {
-				txn.closeInactive();
-			}
-		}
 	}
 
 	private void closePooledReaders() {
@@ -112,9 +99,9 @@ class TxnManager {
 		}
 	}
 
-	private void waitForActiveReaderToClose() throws IOException {
+	private void waitForTrackedReaderToClose(Txn excludedTxn) throws IOException {
 		synchronized (active) {
-			if (active.containsValue(Boolean.TRUE)) {
+			if (hasTrackedReaders(excludedTxn)) {
 				try {
 					active.wait(READERS_FULL_WAIT_MILLIS);
 				} catch (InterruptedException e) {
@@ -123,6 +110,15 @@ class TxnManager {
 				}
 			}
 		}
+	}
+
+	private boolean hasTrackedReaders(Txn excludedTxn) {
+		for (Txn txn : active.keySet()) {
+			if (txn != excludedTxn) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -227,18 +223,6 @@ class TxnManager {
 		}
 	}
 
-	private List<Txn> inactiveTransactions() {
-		List<Txn> inactiveTransactions = new ArrayList<>();
-		synchronized (active) {
-			for (var entry : active.entrySet()) {
-				if (!entry.getValue()) {
-					inactiveTransactions.add(entry.getKey());
-				}
-			}
-		}
-		return inactiveTransactions;
-	}
-
 	private void updateActiveState(Txn txn, boolean isActive) {
 		synchronized (active) {
 			if (active.containsKey(txn)) {
@@ -332,8 +316,6 @@ class TxnManager {
 				txnActive = false;
 				updateActiveState(this, false);
 				activate();
-			} else {
-				closeInactive();
 			}
 			version++;
 		}
@@ -373,13 +355,6 @@ class TxnManager {
 			updateActiveState(this, false);
 		}
 
-		private synchronized void closeInactive() {
-			if (!closed && !txnActive && txn != 0) {
-				mdb_txn_abort(txn);
-				txn = 0;
-			}
-		}
-
 		long version() {
 			return version;
 		}
@@ -399,9 +374,9 @@ class TxnManager {
 		int rc = MDB_READERS_FULL;
 		try (MemoryStack stack = stackPush()) {
 			for (int i = 0; i < READERS_FULL_RETRIES && rc == MDB_READERS_FULL; i++) {
-				closeInactiveReaders(excludedTxn);
+				closePooledReaders();
 				checkForDeadReaders(stack);
-				waitForActiveReaderToClose();
+				waitForTrackedReaderToClose(excludedTxn);
 				rc = mdb_txn_renew(txn);
 			}
 		}
