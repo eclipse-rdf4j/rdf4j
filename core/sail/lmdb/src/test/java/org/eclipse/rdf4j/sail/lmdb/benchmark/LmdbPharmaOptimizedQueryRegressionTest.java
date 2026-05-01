@@ -157,10 +157,19 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 	private static void assertPlannerCostInvariants(int queryIndex, OptimizerSnapshot snapshot) {
 		String key = "PHARMA query " + queryIndex;
 		assertTrue(snapshot.renderedQuery.contains("SELECT"), key + " should still render an optimized query");
-		assertTrue(snapshot.plan.contains("plannerId=lmdb-sketch"), key + " should use LMDB sketch planning:\n"
-				+ snapshot.plan);
-		assertTrue(snapshot.plan.contains("plannerPath=ROBUST_USED"), key + " should use the robust planner path:\n"
-				+ snapshot.plan);
+		boolean sketchPlan = snapshot.plan.contains("plannerId=lmdb-sketch");
+		boolean finiteAnchorPlan = snapshot.plan.contains("plannerId=lmdb-finite-anchor");
+		assertTrue(sketchPlan || finiteAnchorPlan, key + " should use LMDB planning:\n" + snapshot.plan);
+		if (sketchPlan) {
+			assertTrue(snapshot.plan.contains("plannerPath=ROBUST_USED"),
+					key + " should use the robust planner path:\n" + snapshot.plan);
+		} else {
+			assertTrue(snapshot.plan.contains("plannerPath=CANONICAL_FINITE_ANCHOR"),
+					key + " should mark canonical finite-anchor planning:\n" + snapshot.plan);
+			assertFalse(snapshot.plan.contains("optimizer.logicalExploration"),
+					key + " should not spend Pareto memo work on a canonical finite-anchor chain:\n"
+							+ snapshot.plan);
+		}
 		assertFalse(snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE"),
 				key + " should not reject supported segment shapes:\n" + snapshot.plan);
 		assertDirectLookupWorkRowsBelow(snapshot.plan, 100_000.0d, key);

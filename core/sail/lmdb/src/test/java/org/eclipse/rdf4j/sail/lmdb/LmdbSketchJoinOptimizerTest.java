@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -363,6 +364,33 @@ class LmdbSketchJoinOptimizerTest {
 		assertScopedBranchBeforeValues(optimized.getRightArg());
 	}
 
+	@Test
+	void keepsUnionIndependentFiniteSuffixAfterScopedUnion() {
+		BindingSetAssignment users = values("u", "user7", "user8");
+		BindingSetAssignment names = values("optName", "user7", "user8");
+		StatementPattern nameLookup = statementPattern("u", "name", "optName");
+		Union union = new Union(
+				new Extension(new Join(statementPattern("u", "follows", "v"), statementPattern("v", "follows", "u")),
+						new ExtensionElem(new Var("v"), "activity")),
+				new Extension(statementPattern("post", "authored", "u"), new ExtensionElem(new Var("post"),
+						"activity")));
+		union.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(new Join(users, new Join(names, new Join(nameLookup, union))));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		List<TupleExpr> args = joinArgs(root.getArg());
+		assertEquals(3, args.size());
+		Union distributedUnion = assertInstanceOf(Union.class, args.get(0));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getLeftArg(), "u"));
+		assertTrue(containsBindingSetAssignment(distributedUnion.getRightArg(), "u"));
+		assertFalse(containsBindingSetAssignment(distributedUnion, "optName"));
+		assertFalse(statementPatterns(distributedUnion).stream()
+				.anyMatch(pattern -> "optName".equals(pattern.getObjectVar().getName())));
+		assertTrue(containsBindingSetAssignment(args.get(1), "optName"));
+		assertEquals("optName", assertInstanceOf(StatementPattern.class, args.get(2)).getObjectVar().getName());
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
@@ -422,6 +450,16 @@ class LmdbSketchJoinOptimizerTest {
 		}
 		if (tupleExpr instanceof Filter) {
 			collectStatementPatterns(((Filter) tupleExpr).getArg(), patterns);
+			return;
+		}
+		if (tupleExpr instanceof Extension) {
+			collectStatementPatterns(((Extension) tupleExpr).getArg(), patterns);
+			return;
+		}
+		if (tupleExpr instanceof Union) {
+			Union union = (Union) tupleExpr;
+			collectStatementPatterns(union.getLeftArg(), patterns);
+			collectStatementPatterns(union.getRightArg(), patterns);
 			return;
 		}
 		if (tupleExpr instanceof Join) {
@@ -486,6 +524,14 @@ class LmdbSketchJoinOptimizerTest {
 		if (tupleExpr instanceof Filter) {
 			return containsBindingSetAssignment(((Filter) tupleExpr).getArg(), bindingName);
 		}
+		if (tupleExpr instanceof Extension) {
+			return containsBindingSetAssignment(((Extension) tupleExpr).getArg(), bindingName);
+		}
+		if (tupleExpr instanceof Union) {
+			Union union = (Union) tupleExpr;
+			return containsBindingSetAssignment(union.getLeftArg(), bindingName)
+					|| containsBindingSetAssignment(union.getRightArg(), bindingName);
+		}
 		if (tupleExpr instanceof Join) {
 			Join join = (Join) tupleExpr;
 			return containsBindingSetAssignment(join.getLeftArg(), bindingName)
@@ -495,10 +541,11 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	private static void assertScopedBranchBeforeValues(TupleExpr tupleExpr) {
-		Join join = assertInstanceOf(Join.class, tupleExpr);
+		assertTrue(containsFilter(tupleExpr));
+		TupleExpr joinRoot = tupleExpr instanceof Filter ? ((Filter) tupleExpr).getArg() : tupleExpr;
+		Join join = assertInstanceOf(Join.class, joinRoot);
 		assertTrue(assertInstanceOf(VariableScopeChange.class, join.getLeftArg()).isVariableScopeChange());
 		assertTrue(containsBindingSetAssignment(join.getRightArg(), "target"));
-		assertTrue(containsFilter(join.getRightArg()));
 	}
 
 	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner {

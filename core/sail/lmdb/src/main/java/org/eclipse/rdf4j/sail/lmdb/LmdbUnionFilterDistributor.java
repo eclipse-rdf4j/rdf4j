@@ -47,12 +47,10 @@ final class LmdbUnionFilterDistributor {
 		}
 
 		List<TupleExpr> prefixFactors = new ArrayList<>(joinArgs.size() - 1);
+		List<TupleExpr> suffixFactors = new ArrayList<>(joinArgs.subList(unionIndex + 1, joinArgs.size()));
 		Set<String> prefixBindings = new HashSet<>(outerBoundVars);
 		boolean hasFinitePrefixAnchor = false;
-		for (int i = 0; i < joinArgs.size(); i++) {
-			if (i == unionIndex) {
-				continue;
-			}
+		for (int i = 0; i < unionIndex; i++) {
 			TupleExpr joinArg = joinArgs.get(i);
 			Optional<Set<String>> assignmentNames = finitePrefixAnchorNames(joinArg);
 			if (assignmentNames.isPresent()) {
@@ -77,21 +75,39 @@ final class LmdbUnionFilterDistributor {
 				|| !isSafeUnionDistributionBranch(union.getRightArg(), prefixBindings)) {
 			return null;
 		}
-		Set<String> availableBindings = new HashSet<>(prefixBindings);
-		availableBindings.addAll(union.getBindingNames());
+		Set<String> branchAvailableBindings = new HashSet<>(prefixBindings);
+		branchAvailableBindings.addAll(union.getBindingNames());
+		Set<String> finalAvailableBindings = new HashSet<>(branchAvailableBindings);
+		for (TupleExpr suffixFactor : suffixFactors) {
+			finalAvailableBindings.addAll(suffixFactor.getBindingNames());
+		}
+		List<DeferredFilter> branchFilters = new ArrayList<>();
+		List<DeferredFilter> postUnionFilters = new ArrayList<>();
 		for (DeferredFilter filter : filters) {
-			if (!availableBindings.containsAll(filter.requiredVars)) {
+			if (branchAvailableBindings.containsAll(filter.requiredVars)) {
+				branchFilters.add(filter);
+			} else if (finalAvailableBindings.containsAll(filter.requiredVars)) {
+				postUnionFilters.add(filter);
+			} else {
 				return null;
 			}
 		}
 
-		TupleExpr left = buildBranch(union.getLeftArg(), prefixFactors, filters, outerBoundVars, branchOptimizer,
+		TupleExpr left = buildBranch(union.getLeftArg(), prefixFactors, branchFilters, outerBoundVars, branchOptimizer,
 				joinFactory, filterWrapper);
-		TupleExpr right = buildBranch(union.getRightArg(), prefixFactors, filters, outerBoundVars, branchOptimizer,
+		TupleExpr right = buildBranch(union.getRightArg(), prefixFactors, branchFilters, outerBoundVars,
+				branchOptimizer,
 				joinFactory, filterWrapper);
 		Union distributed = new Union(left, right);
 		distributed.setVariableScopeChange(union.isVariableScopeChange());
-		return distributed;
+		if (suffixFactors.isEmpty()) {
+			return distributed;
+		}
+
+		TupleExpr suffix = joinFactors(suffixFactors, joinFactory);
+		suffix = branchOptimizer.optimize(suffix, branchAvailableBindings);
+		TupleExpr root = joinFactory.create(distributed, suffix);
+		return filterWrapper.wrap(root, postUnionFilters, "unionSuffix");
 	}
 
 	private static int singleUnionIndex(List<TupleExpr> joinArgs) {
@@ -126,12 +142,17 @@ final class LmdbUnionFilterDistributor {
 	}
 
 	private static TupleExpr joinPrefix(List<TupleExpr> prefixFactors, TupleExpr branch, JoinFactory joinFactory) {
-		TupleExpr root = null;
-		for (TupleExpr prefixFactor : prefixFactors) {
-			TupleExpr prefix = prefixFactor.clone();
-			root = root == null ? prefix : joinFactory.create(root, prefix);
-		}
+		TupleExpr root = joinFactors(prefixFactors, joinFactory);
 		return root == null ? branch : joinFactory.create(root, branch);
+	}
+
+	private static TupleExpr joinFactors(List<TupleExpr> factors, JoinFactory joinFactory) {
+		TupleExpr root = null;
+		for (TupleExpr factor : factors) {
+			TupleExpr clone = factor.clone();
+			root = root == null ? clone : joinFactory.create(root, clone);
+		}
+		return root;
 	}
 
 	private static Optional<Set<String>> finitePrefixAnchorNames(TupleExpr tupleExpr) {

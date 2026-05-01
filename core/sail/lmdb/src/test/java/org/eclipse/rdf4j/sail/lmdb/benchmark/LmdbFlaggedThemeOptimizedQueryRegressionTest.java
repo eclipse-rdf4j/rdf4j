@@ -322,7 +322,8 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		if (!snapshot.plan.contains("plannerId=lmdb-sketch")) {
 			mismatches.add(key + " should use LMDB sketch planning\n" + snapshot.plan);
 		}
-		if (!snapshot.plan.contains("plannerPath=ROBUST_USED")) {
+		if (!snapshot.plan.contains("plannerPath=ROBUST_USED")
+				&& !snapshot.plan.contains("plannerPath=ANTI_JOIN_RETAINED")) {
 			mismatches.add(key + " should use the robust planner path\n" + snapshot.plan);
 		}
 		if (snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE")) {

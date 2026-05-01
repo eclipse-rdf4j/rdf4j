@@ -68,6 +68,7 @@ class LmdbFilterSelectivityStats
 	private static final String SIDECAR_SUFFIX = ".filters";
 	private static final int PERSIST_VERSION = 3;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
+	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = 1024;
 	private static final double LOW_BENEFIT_ROWS_THRESHOLD = 32.0d;
 	private static final double LOW_BENEFIT_RATIO_THRESHOLD = 0.25d;
 	private static final double FULL_SCAN_ROW_BUDGET = 1_000_000.0d;
@@ -261,7 +262,7 @@ class LmdbFilterSelectivityStats
 
 		synchronized (this) {
 			SampledPassRatio cached = sampledByFilter.get(key);
-			if (cached != null) {
+			if (isUsableSampledPassRatio(cached)) {
 				return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(cached.passRatio, cached.sampleSize);
 			}
 		}
@@ -271,7 +272,7 @@ class LmdbFilterSelectivityStats
 		}
 
 		SampledPassRatio sampled = sampleFilterPassRatio(filter, pattern, candidate);
-		if (sampled == null || !isValidPassRatio(sampled.passRatio)) {
+		if (!isUsableSampledPassRatio(sampled)) {
 			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
@@ -406,7 +407,7 @@ class LmdbFilterSelectivityStats
 			for (int i = 0; i < sampledEntries; i++) {
 				PatternFilterKey key = PatternFilterKey.readFrom(in);
 				SampledPassRatio sampled = SampledPassRatio.readFrom(in);
-				if (persistedVersion != PERSIST_VERSION || !isValidPassRatio(sampled.passRatio)) {
+				if (persistedVersion != PERSIST_VERSION || !isUsableSampledPassRatio(sampled)) {
 					continue;
 				}
 				loadedSampled.put(key, sampled);
@@ -521,6 +522,10 @@ class LmdbFilterSelectivityStats
 			} catch (RuntimeException e) {
 				return null;
 			}
+		}
+
+		if (passed == 0 && samples.size() < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
+			return null;
 		}
 
 		return new SampledPassRatio((double) passed / samples.size(), samples.size());
@@ -809,6 +814,11 @@ class LmdbFilterSelectivityStats
 
 	private static boolean isValidPassRatio(double value) {
 		return Double.isFinite(value) && value >= 0.0d && value <= 1.0d;
+	}
+
+	private static boolean isUsableSampledPassRatio(SampledPassRatio sampled) {
+		return sampled != null && isValidPassRatio(sampled.passRatio)
+				&& (sampled.passRatio > 0.0d || sampled.sampleSize >= ZERO_HIT_SAMPLE_MIN_EVIDENCE);
 	}
 
 	private static void writeString(DataOutputStream out, String value) throws IOException {

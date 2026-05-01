@@ -147,7 +147,7 @@ class LmdbThemeFastestRunSnapshotTest {
 
 	@Test
 	void pharmaQueries0And1KeepFastPlanShape(@TempDir Path dataDir) throws Exception {
-		Path storeDir = prepareThemeStore(dataDir, Theme.PHARMA);
+		Path storeDir = prepareAllThemesBenchmarkStore(dataDir);
 		try {
 			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -200,6 +200,33 @@ class LmdbThemeFastestRunSnapshotTest {
 		} finally {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDir);
 		}
+	}
+
+	private static Path prepareAllThemesBenchmarkStore(Path dataDir) throws Exception {
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("fastest-run-snapshot-all-themes"),
+						PERSISTENT_STORE_KEY_PREFIX + "/ALL_THEMES",
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								for (Theme theme : Theme.values()) {
+									loadData(repository, theme);
+								}
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primePharmaFastestRunLearnedStats(repository);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for fastest-run all-theme regression. " + PERSISTENT_STORE_HINT);
+		}
+		return preparedStore.storeDirectory();
 	}
 
 	private static void assertPlannerCostInvariants(String plan, String key, double maxDirectLookupWorkRows) {
@@ -294,6 +321,27 @@ class LmdbThemeFastestRunSnapshotTest {
 			RDFInserter inserter = new RDFInserter(connection);
 			ThemeDataSetGenerator.generate(theme, inserter);
 			connection.commit();
+		}
+	}
+
+	private static void primePharmaFastestRunLearnedStats(SailRepository repository) {
+		for (int queryIndex : List.of(0, 1)) {
+			String query = ThemeQueryCatalog.queryFor(Theme.PHARMA, queryIndex);
+			long expected = ThemeQueryCatalog.expectedCountFor(Theme.PHARMA, queryIndex);
+			long actual = executeQuery(repository, query);
+			if (actual != expected) {
+				fail("Unable to prime learned filter stats for PHARMA:" + queryIndex + ": expected=" + expected
+						+ ", actual=" + actual);
+			}
+		}
+	}
+
+	private static long executeQuery(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.evaluate()
+					.stream()
+					.count();
 		}
 	}
 

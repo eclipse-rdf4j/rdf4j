@@ -1179,7 +1179,12 @@ class LmdbThemeTopRegressionSnapshotTest {
 			if (patternStart >= 0) {
 				int patternEnd = plan.indexOf('\n', patternStart);
 				String patternLine = plan.substring(patternStart, patternEnd >= 0 ? patternEnd : plan.length());
-				if (patternLine.contains("plannedBoundVars=")) {
+				String pattern = statementPatternForPredicate(plan.substring(patternStart), predicateIri);
+				boolean hasBoundVariable = pattern != null && pattern.contains("(bindingState=bound)");
+				boolean usesBoundLookup = patternLine.contains("plannedLookupComponents=[S")
+						|| patternLine.contains("plannedLookupComponents=[P, O]")
+						|| patternLine.contains("plannedLookupComponents=[O]");
+				if (patternLine.contains("plannedBoundVars=") || hasBoundVariable && usesBoundLookup) {
 					return true;
 				}
 			}

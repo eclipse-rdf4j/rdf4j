@@ -72,6 +72,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	private static final double FINITE_BINDING_GUARD_PRODUCT_LIMIT = 5000.0d;
 	private static final int CORRELATED_ANTI_JOIN_COMPLEX_SUFFIX_PATTERN_LIMIT = 3;
+	private static final String FINITE_ANCHOR_PLANNER_ID = "lmdb-finite-anchor";
+	private static final String FINITE_ANCHOR_PLANNER_PATH = "CANONICAL_FINITE_ANCHOR";
+	private static final String LMDB_PHYSICAL_REFINEMENT = "costModel=lmdb, accessPathSelection=per-step";
 	private final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 
@@ -1330,6 +1333,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private TupleExpr buildOrderedRoot(CollectedJoinArgs collected, Set<String> outerBoundVars) {
 			rewriteSmallLiteralDeferredFilterAnchors(collected);
 			deduplicateEquivalentBindingSetAssignments(collected.joinArgs);
+			moveUnionIndependentFiniteSuffixAfterScopedUnion(collected.joinArgs, outerBoundVars);
 			Set<String> scopeBindingNames = new HashSet<>(outerBoundVars);
 			for (TupleExpr joinArg : collected.joinArgs) {
 				scopeBindingNames.addAll(joinArg.getBindingNames());
@@ -1347,6 +1351,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			LmdbSmallLiteralFilterAnchors.add(collected.joinArgs, filters, outerBoundVars);
 			deduplicateEquivalentBindingSetAssignments(collected.joinArgs);
 			splitCartesianBindingSetAssignments(collected.joinArgs);
+			moveUnionIndependentFiniteSuffixAfterScopedUnion(collected.joinArgs, outerBoundVars);
 			List<TupleExpr> roots = new ArrayList<>();
 			List<TupleExpr> currentSegment = new ArrayList<>();
 			List<DelayedExtension> delayedExtensions = new ArrayList<>();
@@ -1389,6 +1394,84 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return root;
+		}
+
+		private void moveUnionIndependentFiniteSuffixAfterScopedUnion(List<TupleExpr> joinArgs,
+				Set<String> outerBoundVars) {
+			int unionIndex = singleScopedUnionIndex(joinArgs);
+			if (unionIndex <= 1) {
+				return;
+			}
+			TupleExpr union = joinArgs.get(unionIndex);
+			Set<String> unionBindings = plannerBindingNames(union.getBindingNames());
+			if (unionBindings.isEmpty()) {
+				return;
+			}
+			int suffixStart = unionIndependentFiniteSuffixStart(joinArgs, unionIndex, unionBindings, outerBoundVars);
+			if (suffixStart < 0) {
+				return;
+			}
+			List<TupleExpr> suffix = new ArrayList<>(joinArgs.subList(suffixStart, unionIndex));
+			joinArgs.subList(suffixStart, unionIndex).clear();
+			joinArgs.addAll(suffixStart + 1, suffix);
+		}
+
+		private int singleScopedUnionIndex(List<TupleExpr> joinArgs) {
+			int unionIndex = -1;
+			for (int i = 0; i < joinArgs.size(); i++) {
+				TupleExpr joinArg = joinArgs.get(i);
+				if (!(joinArg instanceof Union) || !TupleExprs.isVariableScopeChange(joinArg)) {
+					continue;
+				}
+				if (unionIndex >= 0) {
+					return -1;
+				}
+				unionIndex = i;
+			}
+			return unionIndex;
+		}
+
+		private int unionIndependentFiniteSuffixStart(List<TupleExpr> joinArgs, int unionIndex,
+				Set<String> unionBindings, Set<String> outerBoundVars) {
+			Set<String> prefixBindings = new HashSet<>(outerBoundVars);
+			boolean hasFiniteUnionAnchor = false;
+			for (int i = 0; i < unionIndex - 1; i++) {
+				TupleExpr prefixFactor = joinArgs.get(i);
+				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport
+						.positionableBindingSetAssignmentNames(prefixFactor);
+				if (assignmentNames.isPresent() && !Collections.disjoint(assignmentNames.get(), unionBindings)) {
+					hasFiniteUnionAnchor = true;
+				}
+				prefixBindings.addAll(plannerBindingNames(prefixFactor.getBindingNames()));
+				if (hasFiniteUnionAnchor
+						&& canMoveFiniteSuffixAfterUnion(joinArgs.subList(i + 1, unionIndex), prefixBindings,
+								unionBindings)) {
+					return i + 1;
+				}
+			}
+			return -1;
+		}
+
+		private boolean canMoveFiniteSuffixAfterUnion(List<TupleExpr> suffix, Set<String> prefixBindings,
+				Set<String> unionBindings) {
+			if (suffix.isEmpty()) {
+				return false;
+			}
+			Set<String> availableBindings = new HashSet<>(prefixBindings);
+			for (TupleExpr factor : suffix) {
+				if (TupleExprs.isVariableScopeChange(factor)
+						|| !(factor instanceof BindingSetAssignment || factor instanceof StatementPattern)) {
+					return false;
+				}
+				Set<String> factorBindings = plannerBindingNames(factor.getBindingNames());
+				Set<String> introducedBindings = new HashSet<>(factorBindings);
+				introducedBindings.removeAll(availableBindings);
+				if (!Collections.disjoint(introducedBindings, unionBindings)) {
+					return false;
+				}
+				availableBindings.addAll(factorBindings);
+			}
+			return true;
 		}
 
 		private DelayedExtension delayableIndependentExtension(TupleExpr joinArg, List<TupleExpr> joinArgs, int index,
@@ -1729,8 +1812,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			LmdbJoinPlanSupport.markRedundantRequiredExistsFilters(segment, filters);
 			List<DeferredFilter> segmentFilters = new ArrayList<>();
 			for (DeferredFilter filter : filters) {
-				if (!filter.applied && segmentBindings.containsAll(filter.requiredVars)
-						&& !Collections.disjoint(segmentLocalBindings, filter.requiredVars)) {
+				if (!filter.applied && segmentLocalBindings.containsAll(filter.requiredVars)) {
 					segmentFilters.add(filter);
 				}
 			}
@@ -1782,7 +1864,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
-					return new OrderedSegment(new ArrayDeque<>(canonicalFiniteAnchorOrder.get()), Map.of(), true);
+					List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
+					applyFiniteAnchorPlannerMetrics(orderedArgs);
+					return new OrderedSegment(new ArrayDeque<>(orderedArgs), Map.of(), true);
 				}
 			}
 			JoinOrderPlanner planner = (JoinOrderPlanner) statistics;
@@ -1795,7 +1879,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 							boundBeforeSegment, plannerFilters);
 					if (canonicalFiniteAnchorOrder.isPresent()) {
-						return new OrderedSegment(new ArrayDeque<>(canonicalFiniteAnchorOrder.get()), Map.of(), true);
+						List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
+						applyFiniteAnchorPlannerMetrics(orderedArgs);
+						return new OrderedSegment(new ArrayDeque<>(orderedArgs), Map.of(), true);
 					}
 				}
 				return locallySelectiveFallbackOrder(segment);
@@ -2291,6 +2377,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					tupleExpr.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
 				}
 			}
+		}
+
+		private void applyFiniteAnchorPlannerMetrics(List<TupleExpr> orderedArgs) {
+			if (orderedArgs.isEmpty()) {
+				return;
+			}
+			TupleExpr root = orderedArgs.get(0);
+			root.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, FINITE_ANCHOR_PLANNER_ID);
+			root.setStringMetricPlanned(TelemetryMetricNames.PLANNER_PATH, FINITE_ANCHOR_PLANNER_PATH);
+			root.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
+					LMDB_PHYSICAL_REFINEMENT);
 		}
 
 		private final class AntiJoinCost {
