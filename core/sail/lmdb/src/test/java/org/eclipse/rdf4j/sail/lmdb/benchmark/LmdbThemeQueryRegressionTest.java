@@ -1416,16 +1416,13 @@ class LmdbThemeQueryRegressionTest {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
-					assertBefore(renderedQuery, "VALUES ?authorName",
+					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
 							"?author <http://example.com/theme/library/name> ?authorName",
 							"Library q9 should bind the finite author-name domain before the author-name lookup\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES ?target",
+					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
 							"FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
 							"Library q9 should apply the original filter once both finite domains are bound\n"
-									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES ?authorName", "VALUES ?target",
-							"Library q9 should preserve the finite author-name anchor before the target filter anchor\n"
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "?book <http://example.com/theme/library/writtenBy> ?author",
 							"?book <http://example.com/theme/library/hasCopy> ?copy",
