@@ -24,6 +24,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -300,6 +301,12 @@ final class LmdbDeferredFilterPlacer {
 			return false;
 		}
 		Set<String> conditionBindingNames = conditionBindingNames(deferredFilter);
+		return canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, availableNames,
+				assignmentBindingNames, conditionBindingNames);
+	}
+
+	private boolean canApplyDeferredFilterToBindingPrefix(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
+			Set<String> availableNames, Set<String> assignmentBindingNames, Set<String> conditionBindingNames) {
 		return !conditionBindingNames.isEmpty()
 				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
 						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
@@ -381,6 +388,9 @@ final class LmdbDeferredFilterPlacer {
 			Set<String> boundBeforeSegment) {
 		int[] window = null;
 		if (groupDeferredFilterOnBindingAssignments(factors, filter, boundBeforeSegment)) {
+			return true;
+		}
+		if (groupDeferredFilterOnBindingPrefix(factors, filter, boundBeforeSegment)) {
 			return true;
 		}
 		if (filter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP) {
@@ -483,6 +493,7 @@ final class LmdbDeferredFilterPlacer {
 		if (targetIndex < 0) {
 			return false;
 		}
+		targetIndex = expandCorrelatedExistsWindowOverLocalFilters(factors, filter, targetIndex);
 		Set<String> availableNames = new HashSet<>(boundBeforeSegment);
 		for (int i = 0; i <= targetIndex; i++) {
 			availableNames.addAll(factors.get(i).bindingNames);
@@ -502,6 +513,43 @@ final class LmdbDeferredFilterPlacer {
 			}
 		}
 		return -1;
+	}
+
+	private int expandCorrelatedExistsWindowOverLocalFilters(List<SegmentFactor> factors, DeferredFilter filter,
+			int targetIndex) {
+		if (!isCorrelatedExistsFilter(filter)) {
+			return targetIndex;
+		}
+		int end = targetIndex;
+		while (end + 1 < factors.size() && isCheapLocalFilterForCorrelatedFilter(factors.get(end + 1), filter)) {
+			end++;
+		}
+		return end;
+	}
+
+	private boolean isCorrelatedExistsFilter(DeferredFilter filter) {
+		return !filter.requiredVars.isEmpty()
+				&& filter.condition instanceof Exists;
+	}
+
+	private boolean isCheapLocalFilterForCorrelatedFilter(SegmentFactor factor, DeferredFilter filter) {
+		return !Collections.disjoint(factor.bindingNames, filter.requiredVars)
+				&& containsNonExistsFilter(factor.tupleExpr);
+	}
+
+	private boolean containsNonExistsFilter(TupleExpr tupleExpr) {
+		boolean[] contains = { false };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (!LmdbJoinPlanSupport.containsExists(node.getCondition())) {
+					contains[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return contains[0];
 	}
 
 	private boolean isCorrelatedNotExistsFilter(DeferredFilter filter) {
@@ -571,6 +619,44 @@ final class LmdbDeferredFilterPlacer {
 		}
 		factors.add(insertionIndex, groupedFactor);
 		return true;
+	}
+
+	private boolean groupDeferredFilterOnBindingPrefix(List<SegmentFactor> factors,
+			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
+		if (LmdbJoinPlanSupport.containsExists(deferredFilter.condition)) {
+			return false;
+		}
+		Set<String> conditionBindingNames = conditionBindingNames(deferredFilter);
+		if (conditionBindingNames.isEmpty()) {
+			return false;
+		}
+		Set<String> prefixBindingNames = new HashSet<>(boundBeforeSegment);
+		for (int i = 0; i < factors.size(); i++) {
+			SegmentFactor factor = factors.get(i);
+			if (LmdbJoinPlanSupport.isBindingOnlyFactor(factor)) {
+				Set<String> assignmentBindingNames = plannerBindingNames(factor.bindingNames);
+				Set<String> availableNames = new HashSet<>(prefixBindingNames);
+				availableNames.addAll(assignmentBindingNames);
+				if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, availableNames,
+						assignmentBindingNames, conditionBindingNames)) {
+					TupleExpr filteredRoot = filterWrapper.wrap(factor.tupleExpr, List.of(deferredFilter),
+							"bindingPrefix");
+					factors.set(i, new SegmentFactor(filteredRoot, factor.containedPatterns, factor.firstFactorOrder,
+							factor.lastFactorOrder));
+					return true;
+				}
+			}
+			prefixBindingNames.addAll(prefixVisibleBindingNames(factor));
+		}
+		return false;
+	}
+
+	private Set<String> prefixVisibleBindingNames(SegmentFactor factor) {
+		Set<String> bindingNames = new HashSet<>(plannerBindingNames(factor.bindingNames));
+		for (StatementPattern pattern : factor.containedPatterns) {
+			bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
+		}
+		return bindingNames;
 	}
 
 	private boolean selectedIndexesAreContiguous(List<Integer> selectedIndexes) {
