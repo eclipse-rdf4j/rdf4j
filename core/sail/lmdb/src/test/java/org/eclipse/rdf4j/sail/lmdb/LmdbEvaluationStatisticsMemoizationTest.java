@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -28,6 +29,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -41,6 +43,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -50,6 +54,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 
 class LmdbEvaluationStatisticsMemoizationTest {
@@ -194,6 +199,38 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertEquals(7.0d, card);
 		verify(estimator, times(1)).cardinality(any(Join.class));
+	}
+
+	@Test
+	void repeatedFactorCostUsesSingleAccessPathProbeWithinOptimizationScope() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of());
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of("s"),
+				Var.of("p", vf.createIRI("urn:test:follows")),
+				Var.of("o"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(1 << SketchBasedJoinEstimator.Component.S.ordinal());
+		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("s"))).thenReturn(12.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("s"))).thenReturn(accessShape);
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.CostContext context = new JoinFactorCostModel.CostContext(Set.of("s"),
+					1.0d, 1.0d, false, false);
+
+			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
+			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
+		}
+
+		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of("s"));
+		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of("s"));
+		verify(tripleStore, times(1)).indexAccessPaths(anyInt());
 	}
 
 	@Test
@@ -431,6 +468,44 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
+	}
+
+	@Test
+	void repeatedFilterSamplingNeedUsesSingleRuntimeRowsProbe() throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:test:follows");
+		IRI excludedObject = vf.createIRI("urn:test:user:0");
+		TripleStore tripleStore = mock(TripleStore.class);
+		ValueStore valueStore = mock(ValueStore.class);
+		when(valueStore.getId(predicate)).thenReturn(7L);
+		when(tripleStore.cardinality(LmdbValue.UNKNOWN_ID, 7L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
+				.thenReturn(128.0d);
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
+				Files.createTempDirectory("lmdb-eval-stats-runtime-rows-cache").resolve("join-estimator.rjes"),
+				tripleStore,
+				valueStore,
+				false,
+				0L,
+				0,
+				true);
+		StatementPattern pattern = new StatementPattern(
+				Var.of("s"),
+				Var.of("p", predicate),
+				Var.of("o"));
+		Filter filter = new Filter(pattern.clone(),
+				new Compare(Var.of("o"), new ValueConstant(excludedObject), Compare.CompareOp.NE));
+
+		stats.estimateFilterPass(filter, pattern);
+		stats.estimateFilterPass(filter, pattern);
+
+		verify(tripleStore, times(1)).cardinality(
+				LmdbValue.UNKNOWN_ID,
+				7L,
+				LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID);
+		List<?> requests = drainBackgroundSamplingRequests(stats, 10);
+		assertEquals(1, requests.size(), "Expected repeated foreground needs to share one request");
+		assertEquals(2L, invokeLong(requests.get(0), "voteCount"));
 	}
 
 	@Test

@@ -97,20 +97,21 @@ public class ThemeQueryBenchmark {
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
+	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-			"0",
-			"1",
-			"2",
-			"3",
-			"4",
-			"5",
-			"6",
-			"7",
-			"8",
-			"9",
+//			"0",
+//			"1",
+//			"2",
+//			"3",
+//			"4",
+//			"5",
+//			"6",
+//			"7",
+//			"8",
+//			"9",
 			"10",
 //			"11",
 //			"12"
@@ -118,14 +119,14 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
+//			"MEDICAL_RECORDS",
 			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 
@@ -409,21 +410,23 @@ public class ThemeQueryBenchmark {
 //			previousJoinOrderStrategy = null;
 //		}
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			System.out.println("### Optimized Query ###");
-			Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-			System.out.println(explain);
-			TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-			System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-			System.out.println();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			System.out.println("### Telemetry Query ###");
-			Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
-			System.out.println(explain);
-			TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-			System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-			System.out.println();
+		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Optimized Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Telemetry Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
 		}
 		if (repository != null) {
 			repository.shutDown();

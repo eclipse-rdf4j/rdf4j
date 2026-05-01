@@ -115,28 +115,32 @@ final class ParetoJoinMemoPlanner<T> {
 	Result<T> planBeam() {
 		StatsBuilder stats = new StatsBuilder();
 		ParetoFrontier<T> beam = new ParetoFrontier<>(beamWidth, tieBreaker);
+		ParetoFrontier<T> finalBeam = new ParetoFrontier<>(beamWidth, tieBreaker);
 		for (int i = 0; i < factorCount; i++) {
 			T seed = seedFactory.apply(i);
 			if (seed != null) {
-				add(beam, seed, stats);
+				add(finalPlan.test(seed) ? finalBeam : beam, seed, stats);
 			}
 		}
 		for (int depth = 1; depth < maxPlanStepCount && !beam.isEmpty(); depth++) {
 			ParetoFrontier<T> nextBeam = new ParetoFrontier<>(beamWidth, tieBreaker);
 			beam.forEach((prefix, ignored) -> {
+				if (finalPlan.test(prefix)) {
+					finalBeam.add(prefix, costVector.apply(prefix));
+					return;
+				}
 				long candidates = candidateMask.applyAsLong(prefix);
 				while (candidates != 0L) {
 					int candidate = Long.numberOfTrailingZeros(candidates);
 					candidates &= candidates - 1L;
 					T transition = transitionFactory.apply(prefix, candidate);
 					if (transition != null) {
-						add(nextBeam, transition, stats);
+						add(finalPlan.test(transition) ? finalBeam : nextBeam, transition, stats);
 					}
 				}
 			});
 			beam = nextBeam;
 		}
-		ParetoFrontier<T> finalBeam = new ParetoFrontier<>(beamWidth, tieBreaker);
 		beam.forEach((plan, cost) -> {
 			if (finalPlan.test(plan)) {
 				finalBeam.add(plan, cost);

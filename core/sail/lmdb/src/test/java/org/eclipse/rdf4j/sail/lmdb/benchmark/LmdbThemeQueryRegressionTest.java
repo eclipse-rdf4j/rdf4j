@@ -78,6 +78,8 @@ class LmdbThemeQueryRegressionTest {
 			.createIRI("http://example.com/theme/library/writtenBy");
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+	private static final Pattern OPTIMIZER_CANDIDATES = Pattern.compile(
+			"optimizer\\.logicalExploration=[^\\n)]*candidates=(\\d+)");
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "theme-query-regression";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName()
@@ -421,6 +423,9 @@ class LmdbThemeQueryRegressionTest {
 							"Social media q10 should finish finite-domain pruning before probing follows\n"
 									+ snapshot.plan());
 					assertDirectLookupAccessWorkRowsBelow(snapshot.plan(), 100.0d, 5);
+					assertPlannerCandidateBudget(snapshot.plan(), 512,
+							"Social media q10 should avoid a full memo search when finite VALUES make all follows "
+									+ "probes cheap direct lookups");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -2057,6 +2062,17 @@ class LmdbThemeQueryRegressionTest {
 			throw new AssertionError(
 					"Expected at least " + minDirectLookups + " direct lookup factors in:\n" + plan);
 		}
+	}
+
+	private static void assertPlannerCandidateBudget(String plan, int maxCandidates, String message) {
+		Matcher matcher = OPTIMIZER_CANDIDATES.matcher(plan);
+		int largestCandidates = -1;
+		while (matcher.find()) {
+			largestCandidates = Math.max(largestCandidates, Integer.parseInt(matcher.group(1)));
+		}
+		Assertions.assertTrue(largestCandidates >= 0, message + "\nMissing optimizer candidate diagnostics:\n" + plan);
+		Assertions.assertTrue(largestCandidates <= maxCandidates,
+				message + ", got candidates=" + largestCandidates + " max=" + maxCandidates + "\n" + plan);
 	}
 
 	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {

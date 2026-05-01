@@ -24,9 +24,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -975,6 +977,38 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void dynamicProgrammingCachesDeferredFiniteFilterRatios() {
+		AtomicInteger equalsCalls = new AtomicInteger();
+		List<CountingValue> users = countingValues("urn:user:", 5, equalsCalls);
+
+		BindingSetAssignment aValues = singleVariableValues("a", users);
+		BindingSetAssignment bValues = singleVariableValues("b", users);
+		BindingSetAssignment cValues = singleVariableValues("c", users);
+		BindingSetAssignment dValues = singleVariableValues("d", users);
+		BindingSetAssignment eValues = singleVariableValues("e", users);
+		List<TupleExpr> args = List.of(aValues, bValues, cValues, dValues, eValues);
+		List<JoinOrderPlanner.FilterConstraint> deferredFilters = List.of(notEqualFilter("a", "b"),
+				notEqualFilter("b", "c"), notEqualFilter("c", "d"), notEqualFilter("d", "e"),
+				notEqualFilter("a", "c"));
+
+		StubSailStore store = new StubSailStore();
+		store.add(VF.createStatement(VF.createIRI("urn:ready:s"), VF.createIRI("urn:ready:p"),
+				VF.createIRI("urn:ready:o")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		equalsCalls.set(0);
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP,
+				deferredFilters);
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected finite-domain-only plan");
+		assertTrue(equalsCalls.get() <= 1_250,
+				"Deferred finite filter ratios should be memoized by condition and factor mask; equalsCalls="
+						+ equalsCalls.get());
+	}
+
+	@Test
 	void promotedBindingPrefixDoesNotReorderParetoCycleTail() {
 		StubSailStore store = new StubSailStore();
 		IRI follows = VF.createIRI("urn:follows");
@@ -1059,6 +1093,27 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void positiveReadinessIsReusedAcrossOptimizationScopes() {
+		StubSailStore store = new StubSailStore();
+		IRI predicate = VF.createIRI("urn:p");
+		store.add(VF.createStatement(VF.createIRI("urn:s"), predicate, VF.createIRI("urn:o")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			assertTrue(estimator.isReady());
+			assertEquals(1, estimator.scopedReadinessScansForTesting(),
+					"Initial readiness should scan active sketch groups once");
+		}
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			assertTrue(estimator.isReady());
+			assertEquals(0, estimator.scopedReadinessScansForTesting(),
+					"Stable positive readiness should not rescan active sketch groups for every prepare scope");
+		}
+	}
+
+	@Test
 	void defaultConfigCachesPatternEstimatesAcrossOptimizationScopes() {
 		StubSailStore store = new StubSailStore();
 		IRI left = VF.createIRI("urn:left");
@@ -1110,6 +1165,56 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 			assertSame(scopedLeft, scopedRight,
 					"Join-order transitions in one optimization should share the sketch-intersection memo");
 		}
+	}
+
+	@Test
+	void bindingSetAssignmentEstimateCacheIgnoresUnrelatedBoundVars() {
+		StubSailStore store = new StubSailStore();
+		IRI p = VF.createIRI("urn:p");
+		store.add(VF.createStatement(VF.createIRI("urn:s"), p, VF.createIRI("urn:o")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		AtomicInteger stringValueCalls = new AtomicInteger();
+		BindingSetAssignment values = singleVariableValues("b",
+				List.of(new FingerprintCountingValue("urn:b1", stringValueCalls),
+						new FingerprintCountingValue("urn:b2", stringValueCalls),
+						new FingerprintCountingValue("urn:b3", stringValueCalls)));
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			estimator.conditionedFactorEstimateForJoinOrdering(values, new String[] { "a" }, 1L);
+			estimator.conditionedFactorEstimateForJoinOrdering(values, new String[] { "a", "c" }, 3L);
+			estimator.conditionedFactorEstimateForJoinOrdering(values, new String[] { "c", "d", "e" }, 7L);
+		}
+
+		assertEquals(3, stringValueCalls.get(),
+				"Unrelated bound vars should not rebuild BindingSetAssignment value fingerprints");
+	}
+
+	@Test
+	void bindingSetAssignmentEstimateCacheReusesShallowClones() {
+		StubSailStore store = new StubSailStore();
+		IRI p = VF.createIRI("urn:p");
+		store.add(VF.createStatement(VF.createIRI("urn:s"), p, VF.createIRI("urn:o")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		AtomicInteger stringValueCalls = new AtomicInteger();
+		BindingSetAssignment values = singleVariableValues("b",
+				List.of(new FingerprintCountingValue("urn:b1", stringValueCalls),
+						new FingerprintCountingValue("urn:b2", stringValueCalls),
+						new FingerprintCountingValue("urn:b3", stringValueCalls)));
+
+		try (var ignored = estimator.beginQueryOptimizationScope()) {
+			estimator.conditionedFactorEstimateForJoinOrdering(values.clone(), new String[] { "a", "b" }, 3L);
+			estimator.conditionedFactorEstimateForJoinOrdering(values.clone(), new String[] { "b", "c" }, 3L);
+			estimator.conditionedFactorEstimateForJoinOrdering(values.clone(), new String[] { "b", "d" }, 3L);
+		}
+
+		assertEquals(3, stringValueCalls.get(),
+				"Shallow BindingSetAssignment clones should reuse value fingerprints within one optimization");
 	}
 
 	@Test
@@ -2689,6 +2794,86 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		row.addBinding(name1, value1);
 		row.addBinding(name2, value2);
 		return row;
+	}
+
+	private static List<CountingValue> countingValues(String prefix, int count, AtomicInteger equalsCalls) {
+		List<CountingValue> values = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			values.add(new CountingValue(prefix + i, equalsCalls));
+		}
+		return values;
+	}
+
+	private static final class CountingValue implements Value {
+		private static final long serialVersionUID = 1L;
+
+		private final String value;
+		private final AtomicInteger equalsCalls;
+
+		private CountingValue(String value, AtomicInteger equalsCalls) {
+			this.value = value;
+			this.equalsCalls = equalsCalls;
+		}
+
+		@Override
+		public String stringValue() {
+			return value;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			equalsCalls.incrementAndGet();
+			if (this == obj) {
+				return true;
+			}
+			return obj instanceof CountingValue other && value.equals(other.value);
+		}
+
+		@Override
+		public int hashCode() {
+			return value.hashCode();
+		}
+
+		@Override
+		public String toString() {
+			return value;
+		}
+	}
+
+	private static final class FingerprintCountingValue implements Value {
+		private static final long serialVersionUID = 1L;
+
+		private final String value;
+		private final AtomicInteger stringValueCalls;
+
+		private FingerprintCountingValue(String value, AtomicInteger stringValueCalls) {
+			this.value = value;
+			this.stringValueCalls = stringValueCalls;
+		}
+
+		@Override
+		public String stringValue() {
+			stringValueCalls.incrementAndGet();
+			return value;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			return obj instanceof FingerprintCountingValue other && value.equals(other.value);
+		}
+
+		@Override
+		public int hashCode() {
+			return value.hashCode();
+		}
+
+		@Override
+		public String toString() {
+			return value;
+		}
 	}
 
 	@SuppressWarnings("unchecked")

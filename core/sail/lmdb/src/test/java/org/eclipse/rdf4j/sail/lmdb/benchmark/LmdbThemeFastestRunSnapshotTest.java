@@ -50,6 +50,8 @@ class LmdbThemeFastestRunSnapshotTest {
 	private static final Pattern FILTER_PASS_RATIO = Pattern.compile("plannedFilterPassRatio=([0-9.]+)");
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+	private static final Pattern OPTIMIZER_CANDIDATES = Pattern.compile(
+			"optimizer\\.logicalExploration=[^\\n)]*candidates=(\\d+)");
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.fastestRunSnapshot.queryKeys";
@@ -125,6 +127,7 @@ class LmdbThemeFastestRunSnapshotTest {
 				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:0", () -> {
 					OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
 					assertPlannerCostInvariants(query0.plan(), "PHARMA:0", 10_000.0d);
+					assertPlannerCandidateBudget(query0.plan(), "PHARMA:0", 1_024);
 					assertPlanContains(query0.plan(), "PHARMA:0",
 							"BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",
 							"value=http://example.com/theme/pharma/studiesDisease",
@@ -175,6 +178,15 @@ class LmdbThemeFastestRunSnapshotTest {
 		assertFalse(plan.contains("plannerPath=UNSUPPORTED_SHAPE"),
 				key + " should not reject supported segment shapes:\n" + plan);
 		assertDirectLookupWorkRowsBelow(plan, key, maxDirectLookupWorkRows);
+	}
+
+	private static void assertPlannerCandidateBudget(String plan, String key, int maxCandidates) {
+		Matcher matcher = OPTIMIZER_CANDIDATES.matcher(plan);
+		assertTrue(matcher.find(), key + " should expose optimizer candidate diagnostics:\n" + plan);
+		int candidates = Integer.parseInt(matcher.group(1));
+		assertTrue(candidates <= maxCandidates,
+				key + " should avoid exhaustive memo planning for a bounded finite-anchor query, got candidates="
+						+ candidates + " max=" + maxCandidates + "\n" + plan);
 	}
 
 	private static void verifyTheme(Path dataDir, Theme theme, List<ExpectedSnapshot> planSnapshots)

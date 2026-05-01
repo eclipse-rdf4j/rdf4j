@@ -261,6 +261,22 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void keepsFiniteInputOptionalLiteralFilterAsLeftJoinPrefixProbe() {
+		BindingSetAssignment users = values("e", "user7", "user8");
+		TupleExpr required = new Join(users, statementPattern("a", "follows", "e"));
+		StatementPattern optional = statementPatternWithPredicate("e", "http://example.com/theme/social/name",
+				"optName");
+		Filter filter = new Filter(new LeftJoin(required, optional), listMember("optName", "user7", "user8"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
+	}
+
+	@Test
 	void hoistsMandatoryOptionalLiteralAnchorAheadOfLeftUnionFanout() {
 		BindingSetAssignment users = values("u", "user7", "user8");
 		TupleExpr activityUnion = new Union(statementPattern("u", "follows", "v"),

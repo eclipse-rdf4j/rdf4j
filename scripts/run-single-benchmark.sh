@@ -17,6 +17,8 @@ Options:
   --enable-jfr                      Enable JFR profiling with fixed iteration and timing settings
   --enable-jfr-cpu-times            Include Java 25 CPU time JFR options (requires --enable-jfr)
   --jfr-output <path>               Override the destination file for the JFR recording
+  --enable-jmh-jfr                  Enable JMH's Java Flight Recorder profiler
+  --jmh-jfr-output-dir <path>       Override the destination directory for JMH JFR recordings
   --                                Treat the remaining arguments as raw JMH arguments
 USAGE
 }
@@ -35,14 +37,18 @@ forks=1
 benchmark_params=()
 jmh_extra_args=()
 jvm_args=()
+profiling_jvm_args=()
 measurement_time=""
 enable_jfr=false
 enable_jfr_cpu_times=false
 jfr_output=""
+enable_jmh_jfr=false
+jmh_jfr_output_dir=""
 warmup_overridden=false
 measurement_overridden=false
 forks_overridden=false
 jfr_notice=""
+jmh_jfr_notice=""
 mvn_threads="${RDF4J_BENCHMARK_MVN_THREADS:-2C}"
 
 while [[ $# -gt 0 ]]; do
@@ -102,6 +108,14 @@ while [[ $# -gt 0 ]]; do
                 jfr_output="$2"
                 shift 2
                 ;;
+        --enable-jmh-jfr)
+                enable_jmh_jfr=true
+                shift
+                ;;
+        --jmh-jfr-output-dir)
+                jmh_jfr_output_dir="$2"
+                shift 2
+                ;;
         --dry-run)
                 dry_run=true
                 shift
@@ -141,6 +155,11 @@ done
 module_dir="${REPO_ROOT}/${module}"
 if [[ ! -d "${module_dir}" ]]; then
         echo "Error: Module directory '${module}' does not exist." >&2
+        exit 1
+fi
+
+if ${enable_jfr} && ${enable_jmh_jfr}; then
+        echo "Error: --enable-jfr and --enable-jmh-jfr cannot be combined." >&2
         exit 1
 fi
 
@@ -199,8 +218,49 @@ if ${enable_jfr}; then
         start_flight_recording_option="$(printf '%s,' "${start_flight_recording_options[@]}")"
         start_flight_recording_option="${start_flight_recording_option%,}"
         jvm_args+=("-XX:StartFlightRecording=${start_flight_recording_option}")
+        profiling_jvm_args+=("-Drdf4j.benchmark.profiling=true")
 
         jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."
+fi
+
+if ${enable_jmh_jfr}; then
+        if (( ${#jmh_extra_args[@]} > 0 )); then
+                echo "Error: --enable-jmh-jfr cannot be combined with additional JMH arguments." >&2
+                exit 1
+        fi
+
+        if ${warmup_overridden} && [[ "${warmup_iterations}" != "0" ]]; then
+                echo "Error: --enable-jmh-jfr requires 0 warmup iterations." >&2
+                exit 1
+        fi
+
+        if ${measurement_overridden} && [[ "${measurement_iterations}" != "10" ]]; then
+                echo "Error: --enable-jmh-jfr requires 10 measurement iterations." >&2
+                exit 1
+        fi
+
+        if ${forks_overridden} && [[ "${forks}" != "1" ]]; then
+                echo "Error: --enable-jmh-jfr requires a single fork." >&2
+                exit 1
+        fi
+
+        warmup_iterations=0
+        measurement_iterations=10
+        measurement_time="10s"
+        forks=1
+
+        local_class="${benchmark_class##*.}"
+        sanitized_class="${local_class//[^A-Za-z0-9_]/_}"
+        sanitized_method="${benchmark_method//[^A-Za-z0-9_]/_}"
+        if [[ -z "${jmh_jfr_output_dir}" ]]; then
+                jmh_jfr_output_dir="${module_dir}/target/jmh-jfr/${sanitized_class}.${sanitized_method}"
+        elif [[ "${jmh_jfr_output_dir}" != /* ]]; then
+                jmh_jfr_output_dir="${REPO_ROOT}/${jmh_jfr_output_dir}"
+        fi
+
+        jmh_extra_args+=("-prof" "jfr:dir=${jmh_jfr_output_dir},configName=profile,debugNonSafePoints=true")
+        profiling_jvm_args+=("-Drdf4j.benchmark.profiling=true")
+        jmh_jfr_notice="JMH JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recordings will be written under ${jmh_jfr_output_dir}."
 fi
 
 mvn_common_args=(
@@ -231,6 +291,9 @@ for param in "${benchmark_params[@]}"; do
         jmh_args+=(-p "${param}")
 done
 for arg in "${jvm_args[@]}"; do
+        jmh_args+=("-jvmArgsAppend" "${arg}")
+done
+for arg in "${profiling_jvm_args[@]}"; do
         jmh_args+=("-jvmArgsAppend" "${arg}")
 done
 for arg in "${jmh_extra_args[@]}"; do
@@ -291,6 +354,9 @@ if ${dry_run}; then
         if ${enable_jfr}; then
                 echo "${jfr_notice}"
         fi
+        if ${enable_jmh_jfr}; then
+                echo "${jmh_jfr_notice}"
+        fi
         jar_path="$(find_benchmark_jar "${module_dir}" false)"
         print_command "${mvn_cmd_parallel[@]}"
         echo "# On failure, reruns single-threaded:"
@@ -322,6 +388,11 @@ java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
 if ${enable_jfr}; then
         echo "${jfr_notice}"
         mkdir -p "$(dirname "${jfr_output}")"
+fi
+
+if ${enable_jmh_jfr}; then
+        echo "${jmh_jfr_notice}"
+        mkdir -p "${jmh_jfr_output_dir}"
 fi
 
 printf 'Running benchmark with jar %s\n' "${jar_path}"

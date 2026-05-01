@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -138,6 +139,7 @@ final class SketchJoinOrderPlanner {
 	private final Map<LocalFilterPassRatioKey, Double> localFilterPassRatioMemo = new HashMap<>();
 	private final Map<Long, Double> finiteBindingAssignmentPrefixRowsMemo = new HashMap<>();
 	private final Map<FiniteBindingVariableValuesKey, Set<Value>> finiteBindingVariableValuesMemo = new HashMap<>();
+	private final Map<ValueExpr, Map<Long, Double>> finiteDomainConditionPassRatioMemo = new IdentityHashMap<>();
 	private final SketchBasedJoinEstimator.SketchPlannerPath factorRejectionPath;
 	private final TupleExpr rejectedFactor;
 	private final List<JoinOrderPlanner.FilterConstraint> deferredFilters;
@@ -1349,6 +1351,18 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private double finiteDomainConditionPassRatio(ValueExpr condition, long factorMask) {
+		Map<Long, Double> ratiosByMask = finiteDomainConditionPassRatioMemo.computeIfAbsent(condition,
+				ignored -> new HashMap<>());
+		Double ratio = ratiosByMask.get(factorMask);
+		if (ratio != null) {
+			return ratio.doubleValue();
+		}
+		ratio = computeFiniteDomainConditionPassRatio(condition, factorMask);
+		ratiosByMask.put(factorMask, ratio);
+		return ratio.doubleValue();
+	}
+
+	private double computeFiniteDomainConditionPassRatio(ValueExpr condition, long factorMask) {
 		double enumeratedRatio = finiteDomainConditionPassRatioByEnumeration(condition, factorMask);
 		if (isValidPassRatio(enumeratedRatio)) {
 			return enumeratedRatio;

@@ -1349,25 +1349,38 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			splitCartesianBindingSetAssignments(collected.joinArgs);
 			List<TupleExpr> roots = new ArrayList<>();
 			List<TupleExpr> currentSegment = new ArrayList<>();
+			List<DelayedExtension> delayedExtensions = new ArrayList<>();
 			Set<String> boundBeforeSegment = new HashSet<>(outerBoundVars);
 
-			for (TupleExpr joinArg : collected.joinArgs) {
+			for (int i = 0; i < collected.joinArgs.size(); i++) {
+				TupleExpr joinArg = collected.joinArgs.get(i);
+				DelayedExtension delayedExtension = delayableIndependentExtension(joinArg, collected.joinArgs, i,
+						filters);
+				if (delayedExtension != null) {
+					currentSegment.addAll(delayedExtension.segmentArgs);
+					delayedExtensions.add(delayedExtension);
+					continue;
+				}
 				if (LmdbJoinPlanSupport.isJoinOrderSeparator(joinArg)) {
 					TupleExpr optimizedSeparator = optimizeStandalone(joinArg, boundBeforeSegment);
-					if (shouldPlaceBindingOnlySegmentAfterSeparator(currentSegment, optimizedSeparator)) {
+					if (delayedExtensions.isEmpty()
+							&& shouldPlaceBindingOnlySegmentAfterSeparator(currentSegment, optimizedSeparator)) {
 						roots.add(optimizedSeparator);
 						boundBeforeSegment.addAll(optimizedSeparator.getBindingNames());
-						appendSegmentRoot(roots, currentSegment, filters, costingOnlyFilters, boundBeforeSegment);
+						appendSegmentRoot(roots, currentSegment, filters, costingOnlyFilters, boundBeforeSegment,
+								delayedExtensions);
 						continue;
 					}
-					appendSegmentRoot(roots, currentSegment, filters, costingOnlyFilters, boundBeforeSegment);
+					appendSegmentRoot(roots, currentSegment, filters, costingOnlyFilters, boundBeforeSegment,
+							delayedExtensions);
 					roots.add(optimizedSeparator);
 					boundBeforeSegment.addAll(optimizedSeparator.getBindingNames());
 				} else {
 					currentSegment.add(joinArg);
 				}
 			}
-			appendSegmentRoot(roots, currentSegment, filters, costingOnlyFilters, boundBeforeSegment);
+			appendSegmentRoot(roots, currentSegment, filters, costingOnlyFilters, boundBeforeSegment,
+					delayedExtensions);
 
 			TupleExpr root = buildJoinRoot(new ArrayDeque<>(roots));
 			for (DeferredFilter filter : filters) {
@@ -1376,6 +1389,82 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return root;
+		}
+
+		private DelayedExtension delayableIndependentExtension(TupleExpr joinArg, List<TupleExpr> joinArgs, int index,
+				List<DeferredFilter> filters) {
+			if (!(joinArg instanceof Extension extension) || TupleExprs.isVariableScopeChange(extension)) {
+				return null;
+			}
+			DelayedExtension delayedExtension = delayableExtension(extension);
+			if (delayedExtension == null
+					|| suffixBeforeNextSeparatorReferences(joinArgs, index + 1, delayedExtension.bindingNames)
+					|| filtersReference(filters, delayedExtension.bindingNames)) {
+				return null;
+			}
+			return delayedExtension;
+		}
+
+		private DelayedExtension delayableExtension(Extension extension) {
+			Set<String> argBindings = plannerBindingNames(extension.getArg().getBindingNames());
+			Set<String> extensionNames = new LinkedHashSet<>();
+			List<ExtensionElem> elements = new ArrayList<>();
+			for (ExtensionElem element : extension.getElements()) {
+				String name = element.getName();
+				if (name == null || argBindings.contains(name) || !extensionNames.add(name)
+						|| !argBindings.containsAll(VarNameCollector.process(element.getExpr()))) {
+					return null;
+				}
+				elements.add(element);
+			}
+			if (elements.isEmpty()) {
+				return null;
+			}
+			List<TupleExpr> segmentArgs = new ArrayList<>();
+			if (!flattenDelayableExtensionArg(extension.getArg(), segmentArgs) || segmentArgs.isEmpty()) {
+				return null;
+			}
+			return new DelayedExtension(List.copyOf(segmentArgs), List.copyOf(elements), Set.copyOf(extensionNames));
+		}
+
+		private boolean flattenDelayableExtensionArg(TupleExpr tupleExpr, List<TupleExpr> segmentArgs) {
+			if (LmdbJoinPlanSupport.isJoinOrderSeparator(tupleExpr)) {
+				return false;
+			}
+			if (tupleExpr instanceof Join join) {
+				return flattenDelayableExtensionArg(join.getLeftArg(), segmentArgs)
+						&& flattenDelayableExtensionArg(join.getRightArg(), segmentArgs);
+			}
+			segmentArgs.add(tupleExpr);
+			return true;
+		}
+
+		private boolean suffixBeforeNextSeparatorReferences(List<TupleExpr> joinArgs, int start, Set<String> names) {
+			for (int i = start; i < joinArgs.size(); i++) {
+				TupleExpr joinArg = joinArgs.get(i);
+				if (LmdbJoinPlanSupport.isJoinOrderSeparator(joinArg)) {
+					return false;
+				}
+				if (referencesAny(joinArg, names)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean filtersReference(List<DeferredFilter> filters, Set<String> names) {
+			for (DeferredFilter filter : filters) {
+				if (!Collections.disjoint(VarNameCollector.process(filter.condition), names)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean referencesAny(TupleExpr tupleExpr, Set<String> names) {
+			Set<String> referencedNames = new HashSet<>(VarNameCollector.process(tupleExpr));
+			referencedNames.addAll(tupleExpr.getBindingNames());
+			return !Collections.disjoint(referencedNames, names);
 		}
 
 		private void rewriteSmallLiteralDeferredFilterAnchors(CollectedJoinArgs collected) {
@@ -1625,7 +1714,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void appendSegmentRoot(List<TupleExpr> roots, List<TupleExpr> segment, List<DeferredFilter> filters,
-				List<DeferredFilter> costingOnlyFilters, Set<String> boundBeforeSegment) {
+				List<DeferredFilter> costingOnlyFilters, Set<String> boundBeforeSegment,
+				List<DelayedExtension> delayedExtensions) {
 			if (segment.isEmpty()) {
 				return;
 			}
@@ -1657,12 +1747,29 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			TupleExpr root = buildSegmentRoot(ordered.orderedArgs, segmentFilters, boundBeforeSegment,
 					ordered.filterPlacementSteps);
 			if (root != null) {
+				root = wrapDelayedExtensions(root, delayedExtensions);
 				roots.add(root);
 			}
 			for (TupleExpr tupleExpr : segment) {
 				boundBeforeSegment.addAll(tupleExpr.getBindingNames());
 			}
+			for (DelayedExtension delayedExtension : delayedExtensions) {
+				boundBeforeSegment.addAll(delayedExtension.bindingNames);
+			}
 			segment.clear();
+			delayedExtensions.clear();
+		}
+
+		private TupleExpr wrapDelayedExtensions(TupleExpr root, List<DelayedExtension> delayedExtensions) {
+			TupleExpr result = root;
+			for (DelayedExtension delayedExtension : delayedExtensions) {
+				Extension extension = new Extension(result);
+				for (ExtensionElem element : delayedExtension.elements) {
+					extension.addElement(element.clone());
+				}
+				result = extension;
+			}
+			return result;
 		}
 
 		private OrderedSegment orderSegment(List<TupleExpr> segment, Set<String> boundBeforeSegment,
@@ -1728,6 +1835,19 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			private OrderedSegment(Deque<TupleExpr> orderedArgs, Map<Integer, Integer> filterPlacementSteps) {
 				this.orderedArgs = orderedArgs;
 				this.filterPlacementSteps = filterPlacementSteps;
+			}
+		}
+
+		private static final class DelayedExtension {
+			private final List<TupleExpr> segmentArgs;
+			private final List<ExtensionElem> elements;
+			private final Set<String> bindingNames;
+
+			private DelayedExtension(List<TupleExpr> segmentArgs, List<ExtensionElem> elements,
+					Set<String> bindingNames) {
+				this.segmentArgs = segmentArgs;
+				this.elements = elements;
+				this.bindingNames = bindingNames;
 			}
 		}
 

@@ -110,6 +110,13 @@ final class TupleSketchOps {
 		return scaleByTheta(count, sketch);
 	}
 
+	static double estimateDistinct(ArrayOfDoublesSketch sketch) {
+		if (sketch == null || sketch.getRetainedEntries() == 0) {
+			return 0.0d;
+		}
+		return sketch.getEstimate();
+	}
+
 	static double estimateIntersectionProductSum(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
 		return intersectProductStats(left, right, k).positiveSum();
 	}

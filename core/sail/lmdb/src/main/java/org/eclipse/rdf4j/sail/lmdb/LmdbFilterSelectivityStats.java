@@ -88,6 +88,7 @@ class LmdbFilterSelectivityStats
 	private final Map<PatternKey, LearnedCounts> learnedByPattern = new HashMap<>();
 	private final Map<PatternFilterKey, SampledPassRatio> sampledByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, BackgroundSamplingRequest> backgroundSamplingRequests = new HashMap<>();
+	private final Map<RuntimeRowsKey, Double> expectedRuntimeRowsByPattern = new HashMap<>();
 
 	private boolean dirty;
 	private long backgroundSamplingSequence;
@@ -121,7 +122,8 @@ class LmdbFilterSelectivityStats
 	public synchronized void reset() {
 		boolean hasPersistedStats = !learnedByFilter.isEmpty() || !learnedByTemplate.isEmpty()
 				|| !learnedByPattern.isEmpty() || !sampledByFilter.isEmpty();
-		if (!hasPersistedStats && backgroundSamplingRequests.isEmpty()) {
+		boolean hasVolatileStats = !backgroundSamplingRequests.isEmpty() || !expectedRuntimeRowsByPattern.isEmpty();
+		if (!hasPersistedStats && !hasVolatileStats) {
 			return;
 		}
 		learnedByFilter.clear();
@@ -129,6 +131,7 @@ class LmdbFilterSelectivityStats
 		learnedByPattern.clear();
 		sampledByFilter.clear();
 		backgroundSamplingRequests.clear();
+		expectedRuntimeRowsByPattern.clear();
 		if (hasPersistedStats) {
 			dirty = true;
 		}
@@ -586,9 +589,21 @@ class LmdbFilterSelectivityStats
 	}
 
 	private double expectedRuntimeRows(long subjId, long predId, long objId, long contextId) {
+		RuntimeRowsKey key = new RuntimeRowsKey(subjId, predId, objId, contextId);
+		synchronized (this) {
+			Double cached = expectedRuntimeRowsByPattern.get(key);
+			if (cached != null) {
+				return cached;
+			}
+		}
+
 		try {
 			double rows = tripleStore.cardinality(subjId, predId, objId, contextId);
-			return Double.isFinite(rows) && rows > 0.0d ? rows : 0.0d;
+			double sanitizedRows = Double.isFinite(rows) && rows > 0.0d ? rows : 0.0d;
+			synchronized (this) {
+				Double cached = expectedRuntimeRowsByPattern.putIfAbsent(key, sanitizedRows);
+				return cached == null ? sanitizedRows : cached;
+			}
 		} catch (IOException | RuntimeException e) {
 			return optimizerSamplingMaxRows;
 		}
@@ -908,6 +923,38 @@ class LmdbFilterSelectivityStats
 
 		boolean foregroundNeeded() {
 			return foregroundNeeded;
+		}
+	}
+
+	private static final class RuntimeRowsKey {
+		private final long subjId;
+		private final long predId;
+		private final long objId;
+		private final long contextId;
+
+		private RuntimeRowsKey(long subjId, long predId, long objId, long contextId) {
+			this.subjId = subjId;
+			this.predId = predId;
+			this.objId = objId;
+			this.contextId = contextId;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof RuntimeRowsKey)) {
+				return false;
+			}
+			RuntimeRowsKey that = (RuntimeRowsKey) other;
+			return subjId == that.subjId && predId == that.predId && objId == that.objId
+					&& contextId == that.contextId;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(subjId, predId, objId, contextId);
 		}
 	}
 

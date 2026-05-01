@@ -99,6 +99,11 @@ if [[ "${JFR_OUTPUT}" != *"-XX:StartFlightRecording=settings=profile\\,dumponexi
         exit 1
 fi
 
+if [[ "${JFR_OUTPUT}" != *"-Drdf4j.benchmark.profiling=true"* ]]; then
+        echo "Expected JFR run to mark benchmark profiling mode" >&2
+        exit 1
+fi
+
 if [[ "${JFR_OUTPUT}" != *"testsuites/benchmark/target/ReasoningBenchmark.forwardChainingSchemaCachingRDFSInferencer.jfr"* ]]; then
         echo "Expected JFR run to emit recording into the module target directory" >&2
         exit 1
@@ -122,6 +127,32 @@ fi
 
 if [[ "${JFR_CPU_OUTPUT}" != *"report-on-exit=cpu-time-hot-methods"* ]]; then
         echo "Expected CPU time report to be enabled when requested" >&2
+        exit 1
+fi
+
+set +e
+JMH_JFR_OUTPUT="$(bash "${SCRIPT}" --dry-run --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer --enable-jmh-jfr 2>&1)"
+JMH_JFR_STATUS=$?
+set -e
+
+echo "${JMH_JFR_OUTPUT}"
+
+if [[ ${JMH_JFR_STATUS} -ne 0 ]]; then
+        exit ${JMH_JFR_STATUS}
+fi
+
+if [[ "${JMH_JFR_OUTPUT}" != *"JMH JFR profiling enabled:"* ]]; then
+        echo "Expected JMH JFR guidance banner when profiling is enabled" >&2
+        exit 1
+fi
+
+if [[ "${JMH_JFR_OUTPUT}" != *"-prof jfr:dir="* ]]; then
+        echo "Expected JMH JFR run to enable the JMH JFR profiler" >&2
+        exit 1
+fi
+
+if [[ "${JMH_JFR_OUTPUT}" != *"-Drdf4j.benchmark.profiling=true"* ]]; then
+        echo "Expected JMH JFR run to mark benchmark profiling mode" >&2
         exit 1
 fi
 

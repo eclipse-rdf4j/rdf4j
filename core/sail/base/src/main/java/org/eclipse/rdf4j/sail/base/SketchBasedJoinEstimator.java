@@ -1291,6 +1291,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/** True when persisted index metadata changed and index rewrite is pending. */
 	private final AtomicBoolean indexDirty = new AtomicBoolean(false);
 	private final Map<EstimateCacheKey, EstimateCacheEntry> estimateCache = new ConcurrentHashMap<>();
+	private static final PositiveReadinessCache NO_POSITIVE_READINESS_CACHE = new PositiveReadinessCache(
+			Long.MIN_VALUE, null, (byte) -1, -1L);
+	private volatile PositiveReadinessCache positiveReadinessCache = NO_POSITIVE_READINESS_CACHE;
 
 	private volatile BooleanSupplier rebuildAllowedSupplier;
 	private final Object persistLock = new Object();
@@ -1523,25 +1526,55 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	public boolean isReady() {
 		OptimizationScopeState scope = optimizationScope.get();
-		if (scope == null) {
-			return isReadyUnscoped(null);
-		}
 		long epoch = rebuildEpoch.get();
 		boolean rebuildRequiredNow = rebuildRequired.get();
 		boolean sketchesLoadedNow = sketchesLoaded;
-		if (scope.readyKnown && scope.readyEpoch == epoch && scope.readyRebuildRequired == rebuildRequiredNow
+		if (scope != null && scope.readyKnown && scope.readyEpoch == epoch
+				&& scope.readyRebuildRequired == rebuildRequiredNow
 				&& scope.readySketchesLoaded == sketchesLoadedNow) {
 			return scope.ready;
 		}
+		State readyState = current;
+		byte readySlot = slotByte(slotOf(readyState));
+		PositiveReadinessCache cache = positiveReadinessCache;
+		if (cache.matches(epoch, rebuildRequiredNow, sketchesLoadedNow, readyState, readySlot,
+				slotGenerations[readySlot])) {
+			if (scope != null) {
+				cacheScopeReadiness(scope, epoch, true);
+			}
+			return true;
+		}
 		boolean ready = isReadyUnscoped(scope);
 		if (rebuildEpoch.get() == epoch) {
-			scope.readyEpoch = epoch;
-			scope.readyRebuildRequired = rebuildRequired.get();
-			scope.readySketchesLoaded = sketchesLoaded;
-			scope.ready = ready;
-			scope.readyKnown = true;
+			if (scope != null) {
+				cacheScopeReadiness(scope, epoch, ready);
+			}
+			if (ready) {
+				rememberPositiveReadiness(epoch);
+			}
 		}
 		return ready;
+	}
+
+	private void cacheScopeReadiness(OptimizationScopeState scope, long epoch, boolean ready) {
+		scope.readyEpoch = epoch;
+		scope.readyRebuildRequired = rebuildRequired.get();
+		scope.readySketchesLoaded = sketchesLoaded;
+		scope.ready = ready;
+		scope.readyKnown = true;
+	}
+
+	private void rememberPositiveReadiness(long epoch) {
+		if ((epoch & 1L) != 0L || rebuildRequired.get() || !sketchesLoaded) {
+			return;
+		}
+		State readyState = current;
+		byte readySlot = slotByte(slotOf(readyState));
+		positiveReadinessCache = new PositiveReadinessCache(epoch, readyState, readySlot, slotGenerations[readySlot]);
+	}
+
+	private void clearPositiveReadinessCache() {
+		positiveReadinessCache = NO_POSITIVE_READINESS_CACHE;
 	}
 
 	int scopedReadinessScansForTesting() {
@@ -1899,6 +1932,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public synchronized long rebuild() {
 		flushPendingIncremental();
 		clearEstimateCacheIfPopulated();
+		clearPositiveReadinessCache();
 
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
@@ -2570,13 +2604,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			synchronized (snap) {
 				PatternStats st = statsOf(snap, joinVar, s, p, o, c);
 				ArrayOfDoublesSketch bindings = st.sketch == null ? EMPTY : st.sketch;
-				return new JoinEstimate(snap, joinVar, bindings, TupleSketchOps.estimatePositiveDistinct(bindings),
-						st.card);
+				return new JoinEstimate(snap, joinVar, bindings, st.distinct, st.card);
 			}
 		}
 		PatternStats st = patternStats(snap, joinVar, s, p, o, c);
 		ArrayOfDoublesSketch bindings = st.sketch == null ? EMPTY : st.sketch;
-		return new JoinEstimate(snap, joinVar, bindings, TupleSketchOps.estimatePositiveDistinct(bindings), st.card);
+		return new JoinEstimate(snap, joinVar, bindings, st.distinct, st.card);
 	}
 
 	public double estimateCount(Component joinVar, String s, String p, String o, String c) {
@@ -2657,7 +2690,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		PatternStats(ArrayOfDoublesSketch s, double card) {
 			this.sketch = s;
-			this.distinct = TupleSketchOps.estimatePositiveDistinct(s);
+			this.distinct = TupleSketchOps.estimateDistinct(s);
 			this.card = card;
 		}
 	}
@@ -2985,7 +3018,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					if (candidate == null) {
 						continue;
 					}
-					double candidateDistinct = TupleSketchOps.estimatePositiveDistinct(candidate);
+					double candidateDistinct = TupleSketchOps.estimateDistinct(candidate);
 					if (candidateDistinct < best) {
 						best = candidateDistinct;
 						candidateForBest = BindingSketchResult.of(candidate, pr);
@@ -3775,7 +3808,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			Component component = getComponent(pattern, var);
 			ArrayOfDoublesSketch sketch = getSketchForRead(snap,
 					new SketchAddress(REC_GLOBAL_COMPONENT, false, (byte) component.ordinal(), (byte) 0, 0, 0));
-			double distinct = clampDistinct(TupleSketchOps.estimatePositiveDistinct(sketch), rows);
+			double distinct = clampDistinct(TupleSketchOps.estimateDistinct(sketch), rows);
 			if (!(Double.isFinite(distinct) && distinct > 0.0d)) {
 				distinct = clampDistinct(rows, rows);
 				sketch = null;
@@ -3786,6 +3819,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private TuplePlanEstimate estimateBindingSetAssignment(BindingSetAssignment assignment) {
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope != null) {
+			BindingSetAssignmentEstimateCacheKey key = new BindingSetAssignmentEstimateCacheKey(assignment);
+			Optional<TuplePlanEstimate> cached = scope.bindingSetAssignmentEstimateCache.get(key);
+			if (cached != null) {
+				return cached.orElse(null);
+			}
+			TuplePlanEstimate estimate = computeBindingSetAssignmentEstimate(assignment);
+			scope.bindingSetAssignmentEstimateCache.put(key, Optional.ofNullable(estimate));
+			return estimate;
+		}
+		return computeBindingSetAssignmentEstimate(assignment);
+	}
+
+	private TuplePlanEstimate computeBindingSetAssignmentEstimate(BindingSetAssignment assignment) {
 		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 		double rows = 0.0d;
 		Map<String, Set<Value>> valueSets = new HashMap<>();
@@ -4999,7 +5047,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private final VariableDictionary variableDictionary = new VariableDictionary();
 		private final JoinOrderingSketchIntersectionCache sketchIntersectionCache = new JoinOrderingSketchIntersectionCache();
 		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
+		private final Map<BindingSetAssignmentEstimateCacheKey, Optional<TuplePlanEstimate>> bindingSetAssignmentEstimateCache = new HashMap<>();
 		private final Map<AccessShapeCacheKey, AccessShape> accessShapeCache = new HashMap<>();
+	}
+
+	private static final class PositiveReadinessCache {
+		private final long epoch;
+		private final State state;
+		private final byte slot;
+		private final long slotGeneration;
+
+		private PositiveReadinessCache(long epoch, State state, byte slot, long slotGeneration) {
+			this.epoch = epoch;
+			this.state = state;
+			this.slot = slot;
+			this.slotGeneration = slotGeneration;
+		}
+
+		private boolean matches(long currentEpoch, boolean rebuildRequired, boolean sketchesLoaded, State currentState,
+				byte currentSlot, long currentSlotGeneration) {
+			return !rebuildRequired
+					&& sketchesLoaded
+					&& epoch == currentEpoch
+					&& state == currentState
+					&& slot == currentSlot
+					&& slotGeneration == currentSlotGeneration;
+		}
 	}
 
 	private static final class TuplePlanEstimateCacheKey {
@@ -5023,6 +5096,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 			TuplePlanEstimateCacheKey that = (TuplePlanEstimateCacheKey) other;
 			return tupleExpr == that.tupleExpr && boundVarMask == that.boundVarMask;
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
+	}
+
+	private static final class BindingSetAssignmentEstimateCacheKey {
+		private final Iterable<BindingSet> bindingSets;
+		private final Set<String> bindingNames;
+		private final int hashCode;
+
+		private BindingSetAssignmentEstimateCacheKey(BindingSetAssignment assignment) {
+			this.bindingSets = assignment.getBindingSets();
+			this.bindingNames = Set.copyOf(assignment.getBindingNames());
+			this.hashCode = 31 * System.identityHashCode(bindingSets) + bindingNames.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof BindingSetAssignmentEstimateCacheKey)) {
+				return false;
+			}
+			BindingSetAssignmentEstimateCacheKey that = (BindingSetAssignmentEstimateCacheKey) other;
+			return bindingSets == that.bindingSets && bindingNames.equals(that.bindingNames);
 		}
 
 		@Override
@@ -5328,14 +5430,28 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private TuplePlanEstimate estimateTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
 			long initiallyBoundVarMask) {
-		TuplePlanEstimateCacheKey key = new TuplePlanEstimateCacheKey(tupleExpr, initiallyBoundVarMask);
+		long cacheBoundVarMask = canonicalTupleEstimateBoundMask(tupleExpr, scope, initiallyBoundVarMask);
+		TuplePlanEstimateCacheKey key = new TuplePlanEstimateCacheKey(tupleExpr, cacheBoundVarMask);
 		Optional<TuplePlanEstimate> cached = scope.tupleEstimateCache.get(key);
 		if (cached != null) {
 			return cached.orElse(null);
 		}
-		TuplePlanEstimate estimate = computeTupleExprPlan(tupleExpr, scope, initiallyBoundVarMask);
+		TuplePlanEstimate estimate = computeTupleExprPlan(tupleExpr, scope, cacheBoundVarMask);
 		scope.tupleEstimateCache.put(key, Optional.ofNullable(estimate));
 		return estimate;
+	}
+
+	private long canonicalTupleEstimateBoundMask(TupleExpr tupleExpr, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		if (initiallyBoundVarMask == 0L || initiallyBoundVarMask == BOUND_VAR_MASK_OVERFLOW
+				|| !(tupleExpr instanceof BindingSetAssignment)) {
+			return initiallyBoundVarMask;
+		}
+		long assignmentMask = scope.variableDictionary.maskOf(((BindingSetAssignment) tupleExpr).getBindingNames());
+		if (assignmentMask == BOUND_VAR_MASK_OVERFLOW) {
+			return initiallyBoundVarMask;
+		}
+		return initiallyBoundVarMask & assignmentMask;
 	}
 
 	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, Set<String> initiallyBoundVars) {
@@ -7912,6 +8028,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void unloadInternal(boolean markRebuildRequired) {
 		clearEstimateCache();
+		clearPositiveReadinessCache();
 		if (persistenceEnabled && persistenceStore != null) {
 			if ((dirty.get() || indexDirty.get()) && !persistIfDirty()) {
 				return;
@@ -8001,6 +8118,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (store == null || !store.hasMetadata()) {
 			return;
 		}
+		clearPositiveReadinessCache();
 		SketchEstimatorMetadata metadata = store.readMetadata();
 		if (metadata.subjectBucketCount != subjectBucketCount || metadata.predicateBucketCount != predicateBucketCount
 				|| metadata.objectBucketCount != objectBucketCount
@@ -8101,6 +8219,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 			indexDirty.set(false);
 		}
+		clearPositiveReadinessCache();
 	}
 
 	private boolean isRebuildAllowed() {

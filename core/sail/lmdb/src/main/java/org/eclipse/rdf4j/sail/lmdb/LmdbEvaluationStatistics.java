@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -52,6 +53,12 @@ class LmdbEvaluationStatistics
 	private static final Logger log = LoggerFactory.getLogger(LmdbEvaluationStatistics.class);
 	private static final long JOIN_SUPPORT_CACHE_TTL_MS = 100;
 	private static final double DIRECT_LOOKUP_WORK_ROW_FLOOR = 1.0d;
+	private static final int BOUNDED_GREEDY_MIN_ACTIONS = 7;
+	private static final double BOUNDED_GREEDY_MAX_WORK_ROWS = 10_000.0d;
+	private static final double BOUNDED_GREEDY_MAX_FINAL_ROWS = 1_024.0d;
+	private static final double BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS = 50_000.0d;
+	private static final double BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS = 4_096.0d;
+	private static final int BOUNDED_GREEDY_MIN_DIRECT_LOOKUP_STEPS = 2;
 
 	private final ValueStore valueStore;
 
@@ -63,6 +70,7 @@ class LmdbEvaluationStatistics
 	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
 	private volatile boolean joinSupportCacheValue = false;
 	private volatile boolean statementPatternCardinalityFailureLogged;
+	private final ThreadLocal<OptimizationCostScope> optimizationCostScope = new ThreadLocal<>();
 
 	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator sketchBasedJoinEstimator) {
@@ -115,7 +123,31 @@ class LmdbEvaluationStatistics
 		if (sketchBasedJoinEstimator == null) {
 			return QueryOptimizationScopeProvider.NO_OP_SCOPE;
 		}
-		return sketchBasedJoinEstimator.beginQueryOptimizationScope();
+		QueryOptimizationScope sketchScope = sketchBasedJoinEstimator.beginQueryOptimizationScope();
+		OptimizationCostScope costScope = optimizationCostScope.get();
+		if (costScope == null) {
+			costScope = new OptimizationCostScope();
+			optimizationCostScope.set(costScope);
+		}
+		costScope.depth++;
+		return () -> {
+			try {
+				sketchScope.close();
+			} finally {
+				closeOptimizationCostScope();
+			}
+		};
+	}
+
+	private void closeOptimizationCostScope() {
+		OptimizationCostScope costScope = optimizationCostScope.get();
+		if (costScope == null) {
+			return;
+		}
+		costScope.depth--;
+		if (costScope.depth <= 0) {
+			optimizationCostScope.remove();
+		}
 	}
 
 	@Override
@@ -138,14 +170,85 @@ class LmdbEvaluationStatistics
 					"ROBUST_NOT_READY", null,
 					List.of("rejected: sketch estimator not ready"));
 		}
-		PlanningAttempt attempt = sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars, algorithm,
-				this, deferredFilters);
+		PlanningAttempt attempt = boundedGreedyPlanningAttempt(args, initiallyBoundVars, algorithm, deferredFilters)
+				.orElseGet(() -> sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars, algorithm,
+						this, deferredFilters));
+		return toLmdbPlanningAttempt(attempt);
+	}
+
+	private Optional<PlanningAttempt> boundedGreedyPlanningAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
+			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+		if (!shouldTryBoundedGreedyFirst(args, algorithm, deferredFilters)) {
+			return Optional.empty();
+		}
+		PlanningAttempt attempt = sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars,
+				Algorithm.GREEDY, this, deferredFilters);
+		if (!isBoundedGreedyPlan(attempt)) {
+			return Optional.empty();
+		}
+		return Optional.of(attempt);
+	}
+
+	private boolean shouldTryBoundedGreedyFirst(List<TupleExpr> args, Algorithm algorithm,
+			List<FilterConstraint> deferredFilters) {
+		if (algorithm != Algorithm.DYNAMIC_PROGRAMMING || args == null || args.isEmpty()) {
+			return false;
+		}
+		int filterCount = deferredFilters == null ? 0 : deferredFilters.size();
+		return args.size() + filterCount >= BOUNDED_GREEDY_MIN_ACTIONS;
+	}
+
+	private boolean isBoundedGreedyPlan(PlanningAttempt attempt) {
+		if (attempt.getAlgorithm() != Algorithm.GREEDY || attempt.getPlan().isEmpty()) {
+			return false;
+		}
+		JoinOrderPlan plan = enrichPlanWithAccessMetrics(attempt.getPlan().get());
+		return isSmallBoundedGreedyPlan(plan) || isFiniteDirectLookupGreedyPlan(plan);
+	}
+
+	private boolean isSmallBoundedGreedyPlan(JoinOrderPlan plan) {
+		return isFiniteNonNegative(plan.getEstimatedTotalWork())
+				&& plan.getEstimatedTotalWork() <= BOUNDED_GREEDY_MAX_WORK_ROWS
+				&& isFiniteNonNegative(plan.getEstimatedFinalRows())
+				&& plan.getEstimatedFinalRows() <= BOUNDED_GREEDY_MAX_FINAL_ROWS;
+	}
+
+	private boolean isFiniteDirectLookupGreedyPlan(JoinOrderPlan plan) {
+		if (!isFiniteNonNegative(plan.getEstimatedTotalWork())
+				|| plan.getEstimatedTotalWork() > BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS
+				|| !isFiniteNonNegative(plan.getEstimatedFinalRows())
+				|| plan.getEstimatedFinalRows() > BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS
+				|| plan.getSteps().size() != plan.getOrderedArgs().size()) {
+			return false;
+		}
+		int directLookupSteps = 0;
+		double maxPrefixRows = 0.0d;
+		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
+			JoinOrderPlanner.PlanStep step = plan.getSteps().get(i);
+			if (!isFiniteNonNegative(step.getStepWorkRows()) || !isFiniteNonNegative(step.getPrefixOutputRows())) {
+				return false;
+			}
+			maxPrefixRows = Math.max(maxPrefixRows, step.getPrefixOutputRows());
+			if (LmdbJoinPlanSupport.collectPatternIdentities(plan.getOrderedArgs().get(i)).isEmpty()) {
+				continue;
+			}
+			String accessMode = step.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+			if (!"directLookup".equals(accessMode)) {
+				return false;
+			}
+			directLookupSteps++;
+		}
+		return directLookupSteps >= BOUNDED_GREEDY_MIN_DIRECT_LOOKUP_STEPS
+				&& maxPrefixRows <= BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS;
+	}
+
+	private PlanningAttempt toLmdbPlanningAttempt(PlanningAttempt attempt) {
 		if (attempt.getPlan().isEmpty()) {
-			return PlanningAttempt.rejected("lmdb-sketch", algorithm, attempt.getPlannerPath(),
+			return PlanningAttempt.rejected("lmdb-sketch", attempt.getAlgorithm(), attempt.getPlannerPath(),
 					attempt.getRejectedFactor(), attempt.getDiagnostics());
 		}
 		JoinOrderPlan enrichedPlan = enrichPlanWithAccessMetrics(attempt.getPlan().get());
-		return PlanningAttempt.planned(enrichedPlan, "lmdb-sketch", algorithm, attempt.getPlannerPath(),
+		return PlanningAttempt.planned(enrichedPlan, "lmdb-sketch", attempt.getAlgorithm(), attempt.getPlannerPath(),
 				enrichedPlan.getDiagnostics());
 	}
 
@@ -351,6 +454,14 @@ class LmdbEvaluationStatistics
 		if (factor == null) {
 			return Optional.empty();
 		}
+		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundVars(factor, currentlyBoundVars, knownOutputRows,
+				collectMetrics);
+		return estimateScopedFactorCost(cacheKey,
+				() -> estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics));
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor,
+			Set<String> currentlyBoundVars, double knownOutputRows, boolean collectMetrics) {
 		Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
 		if (factor instanceof Join join) {
 			return estimateJoinFactorCost(join, boundVars);
@@ -381,6 +492,15 @@ class LmdbEvaluationStatistics
 		if (factor == null) {
 			return Optional.empty();
 		}
+		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundMask(factor, variableNames, boundVarMask,
+				knownOutputRows, collectMetrics);
+		return estimateScopedFactorCost(cacheKey,
+				() -> estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows,
+						collectMetrics));
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor, String[] variableNames,
+			long boundVarMask, double knownOutputRows, boolean collectMetrics) {
 		if (factor instanceof Join join) {
 			return estimateJoinFactorCost(join, boundVariableMaskSet(variableNames, boundVarMask));
 		}
@@ -393,6 +513,21 @@ class LmdbEvaluationStatistics
 		SketchBasedJoinEstimator.AccessShape accessShape = sketchBasedJoinEstimator
 				.accessShapeForJoinOrdering(factor, variableNames, boundVarMask);
 		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics);
+	}
+
+	private Optional<FactorCostEstimate> estimateScopedFactorCost(FactorCostCacheKey cacheKey,
+			Supplier<Optional<FactorCostEstimate>> estimateSupplier) {
+		OptimizationCostScope scope = optimizationCostScope.get();
+		if (scope == null) {
+			return estimateSupplier.get();
+		}
+		Optional<FactorCostEstimate> estimate = scope.factorCostCache.get(cacheKey);
+		if (estimate != null) {
+			return estimate;
+		}
+		estimate = estimateSupplier.get();
+		scope.factorCostCache.put(cacheKey, estimate);
+		return estimate;
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(double outputRows,
@@ -821,6 +956,85 @@ class LmdbEvaluationStatistics
 
 	private int componentBit(Component component) {
 		return 1 << component.ordinal();
+	}
+
+	private static final class OptimizationCostScope {
+		private final Map<FactorCostCacheKey, Optional<FactorCostEstimate>> factorCostCache = new HashMap<>();
+		private int depth;
+	}
+
+	private static final class FactorCostCacheKey {
+		private final TupleExpr factor;
+		private final Set<String> boundVars;
+		private final long knownOutputRowsBits;
+		private final boolean collectMetrics;
+		private final int hashCode;
+
+		private FactorCostCacheKey(TupleExpr factor, Set<String> boundVars, double knownOutputRows,
+				boolean collectMetrics) {
+			this.factor = factor;
+			this.boundVars = immutableBoundVars(boundVars);
+			this.knownOutputRowsBits = Double.doubleToLongBits(knownOutputRows);
+			this.collectMetrics = collectMetrics;
+			int result = System.identityHashCode(factor);
+			result = 31 * result + this.boundVars.hashCode();
+			result = 31 * result + Long.hashCode(knownOutputRowsBits);
+			result = 31 * result + Boolean.hashCode(collectMetrics);
+			this.hashCode = result;
+		}
+
+		private static FactorCostCacheKey forBoundVars(TupleExpr factor, Set<String> boundVars,
+				double knownOutputRows, boolean collectMetrics) {
+			return new FactorCostCacheKey(factor, boundVars, knownOutputRows, collectMetrics);
+		}
+
+		private static FactorCostCacheKey forBoundMask(TupleExpr factor, String[] variableNames, long boundVarMask,
+				double knownOutputRows, boolean collectMetrics) {
+			return new FactorCostCacheKey(factor, immutableBoundVars(variableNames, boundVarMask), knownOutputRows,
+					collectMetrics);
+		}
+
+		private static Set<String> immutableBoundVars(Set<String> boundVars) {
+			if (boundVars == null || boundVars.isEmpty()) {
+				return Set.of();
+			}
+			return Set.copyOf(boundVars);
+		}
+
+		private static Set<String> immutableBoundVars(String[] variableNames, long boundVarMask) {
+			if (variableNames == null || boundVarMask == 0L) {
+				return Set.of();
+			}
+			Set<String> boundVars = new HashSet<>();
+			long remaining = boundVarMask;
+			while (remaining != 0L) {
+				int id = Long.numberOfTrailingZeros(remaining);
+				remaining &= ~(1L << id);
+				if (id >= 0 && id < variableNames.length && variableNames[id] != null) {
+					boundVars.add(variableNames[id]);
+				}
+			}
+			return boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof FactorCostCacheKey that)) {
+				return false;
+			}
+			return factor == that.factor
+					&& knownOutputRowsBits == that.knownOutputRowsBits
+					&& collectMetrics == that.collectMetrics
+					&& boundVars.equals(that.boundVars);
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
 	}
 
 	private static final class AccessPathEstimate {
