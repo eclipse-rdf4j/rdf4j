@@ -930,7 +930,7 @@ class ValueStore extends AbstractValueFactory {
 				if (attempt > 0) {
 					throw e;
 				}
-				closeReadTransactions();
+				closeInactiveReadTransactions();
 			}
 		}
 	}
@@ -1404,6 +1404,18 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private void closeInactiveReadTransactions() {
+		txnLock.writeLock().lock();
+		try {
+			ReadTxn.State[] snapshot = activeReadTransactions.toArray(new ReadTxn.State[0]);
+			for (ReadTxn.State readTxn : snapshot) {
+				readTxn.closeInactiveTxn();
+			}
+		} finally {
+			txnLock.writeLock().unlock();
+		}
+	}
+
 	/**
 	 * Closes the ValueStore, releasing any file references, etc. Once closed, the ValueStore can no longer be used.
 	 *
@@ -1538,6 +1550,12 @@ class ValueStore extends AbstractValueFactory {
 					}
 				} finally {
 					activeReadTransactions.remove(this);
+				}
+			}
+
+			synchronized void closeInactiveTxn() {
+				if (initialized && depth == 0) {
+					closeTxn();
 				}
 			}
 		}
