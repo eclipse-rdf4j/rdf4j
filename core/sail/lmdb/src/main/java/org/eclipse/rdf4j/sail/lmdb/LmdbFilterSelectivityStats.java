@@ -241,7 +241,7 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public double estimateFilterPassRatio(Filter filter, StatementPattern pattern) {
-		return estimateFilterPass(filter, pattern).getPassRatio();
+		return estimateFilterPass(filter, pattern).passRatio();
 	}
 
 	@Override

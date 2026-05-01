@@ -1730,7 +1730,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			List<DeferredFilter> segmentFilters = new ArrayList<>();
 			for (DeferredFilter filter : filters) {
 				if (!filter.applied && segmentBindings.containsAll(filter.requiredVars)
-						&& segmentLocalBindings.containsAll(filter.requiredVars)) {
+						&& !Collections.disjoint(segmentLocalBindings, filter.requiredVars)) {
 					segmentFilters.add(filter);
 				}
 			}
@@ -1777,10 +1777,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (segment.size() < 2 || !(statistics instanceof JoinOrderPlanner)) {
 				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
 			}
-			Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
-					boundBeforeSegment, plannerFilters);
-			if (canonicalFiniteAnchorOrder.isPresent()) {
-				return new OrderedSegment(new ArrayDeque<>(canonicalFiniteAnchorOrder.get()), Map.of(), true);
+			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation();
+			if (preferFiniteAnchorFastPath) {
+				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
+						boundBeforeSegment, plannerFilters);
+				if (canonicalFiniteAnchorOrder.isPresent()) {
+					return new OrderedSegment(new ArrayDeque<>(canonicalFiniteAnchorOrder.get()), Map.of(), true);
+				}
 			}
 			JoinOrderPlanner planner = (JoinOrderPlanner) statistics;
 			JoinOrderPlanner.Algorithm algorithm = plannerAlgorithm(segment.size());
@@ -1788,6 +1791,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					new HashSet<>(boundBeforeSegment), algorithm, plannerFilters);
 			Optional<JoinOrderPlanner.JoinOrderPlan> plan = attempt.getPlan();
 			if (plan.isEmpty() || !isValidPlannerOrder(segment, plan.get())) {
+				if (!preferFiniteAnchorFastPath) {
+					Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
+							boundBeforeSegment, plannerFilters);
+					if (canonicalFiniteAnchorOrder.isPresent()) {
+						return new OrderedSegment(new ArrayDeque<>(canonicalFiniteAnchorOrder.get()), Map.of(), true);
+					}
+				}
 				return locallySelectiveFallbackOrder(segment);
 			}
 			List<TupleExpr> orderedArgs = plan.get()
