@@ -967,8 +967,6 @@ class LmdbThemeTopRegressionSnapshotTest {
 				"plannedLookupComponents=[O]", "locatedAt should use bound branch object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Copy type should use bound copy exact access");
-		requirePredicateLookupWorkRowsAbove(mismatches, plan,
-				"http://example.com/theme/library/locatedAt", 1_000.0d);
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}

@@ -71,6 +71,7 @@ final class SketchJoinOrderPlanner {
 	private static final double FINITE_DOMAIN_GUARD_MAX_STEP_WORK_RATIO = 6.0d;
 	private static final double FILTERED_SEED_MAX_STEP_WORK_RATIO = 12.0d;
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
+	private static final double NESTED_NOT_EXISTS_MIN_PASS_RATIO = 0.05d;
 	private static final double BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO = 3.0d;
 	private static final double FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS = 1_000.0d;
 	private static final int FINITE_DOMAIN_FILTER_MAX_ENUMERATED_BINDINGS = 4096;
@@ -1317,6 +1318,13 @@ final class SketchJoinOrderPlanner {
 
 	private double filterPassRatio(JoinOrderPlanner.FilterConstraint filter,
 			SketchBasedJoinEstimator.TuplePlanEstimate estimate, long boundVarMask, long factorMask) {
+		if (filter.hasNestedTupleExpression()) {
+			double nestedPassRatio = nestedTupleFilterPassRatio(filter, estimate);
+			if (isValidPassRatio(nestedPassRatio)) {
+				return nestedPassRatio;
+			}
+			return 1.0d;
+		}
 		if (!canApplyPassRatioToOutputRows(filter)) {
 			return 1.0d;
 		}
@@ -1335,8 +1343,8 @@ final class SketchJoinOrderPlanner {
 		if (isValidPassRatio(finiteDomainFilterPassRatio(filter, factorMask))) {
 			return 0.0d;
 		}
-		if (!isValidPassRatio(filter.getEstimatedPassRatio()) && !isValidPassRatio(nestedExistsPassRatio(filter,
-				estimate))) {
+		if (!isValidPassRatio(filter.getEstimatedPassRatio())
+				&& !isValidPassRatio(nestedTupleFilterPassRatio(filter, estimate))) {
 			return estimate.outputRows();
 		}
 		return 0.0d;
@@ -5225,9 +5233,21 @@ final class SketchJoinOrderPlanner {
 		return isFiniteNonNegative(rows) ? rows : Double.NaN;
 	}
 
+	private double nestedTupleFilterPassRatio(JoinOrderPlanner.FilterConstraint filter,
+			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
+		double existsPassRatio = nestedExistsPassRatio(filter, rowsEnteringEstimate);
+		if (!isValidPassRatio(existsPassRatio)) {
+			return Double.NaN;
+		}
+		if (!filter.isNotExists()) {
+			return existsPassRatio;
+		}
+		return Math.max(NESTED_NOT_EXISTS_MIN_PASS_RATIO, 1.0d - existsPassRatio);
+	}
+
 	private double nestedExistsPassRatio(JoinOrderPlanner.FilterConstraint filter,
 			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
-		if (!filter.hasNestedTupleExpression() || filter.isNotExists() || rowsEnteringEstimate == null
+		if (!filter.hasNestedTupleExpression() || rowsEnteringEstimate == null
 				|| !isFiniteNonNegative(rowsEnteringEstimate.outputRows())
 				|| rowsEnteringEstimate.outputRows() == 0.0d) {
 			return Double.NaN;
@@ -6183,10 +6203,10 @@ final class SketchJoinOrderPlanner {
 		String label = singleLineMetricValue(filter.getDebugLabel());
 		double passRatio = filter.getEstimatedPassRatio();
 		String selectivitySource = filter.getSelectivitySource();
-		double nestedExistsPassRatio = nestedExistsPassRatio(filter, rowsEnteringEstimate);
-		if (isValidPassRatio(nestedExistsPassRatio)) {
-			passRatio = nestedExistsPassRatio;
-			selectivitySource = "sketch_nested_exists";
+		double nestedPassRatio = nestedTupleFilterPassRatio(filter, rowsEnteringEstimate);
+		if (isValidPassRatio(nestedPassRatio)) {
+			passRatio = nestedPassRatio;
+			selectivitySource = filter.isNotExists() ? "sketch_nested_not_exists" : "sketch_nested_exists";
 		}
 		if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
 			label += " passRatio=" + passRatio;

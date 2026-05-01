@@ -22,14 +22,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class LmdbDeferredFilterPlacer {
 
@@ -295,17 +299,25 @@ final class LmdbDeferredFilterPlacer {
 		if (LmdbJoinPlanSupport.containsExists(deferredFilter.condition)) {
 			return false;
 		}
-		return !deferredFilter.requiredVars.isEmpty()
+		Set<String> conditionBindingNames = conditionBindingNames(deferredFilter);
+		return !conditionBindingNames.isEmpty()
 				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
-						|| !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars))
-				&& !prefixBindingNames.containsAll(deferredFilter.requiredVars)
-				&& availableNames.containsAll(deferredFilter.requiredVars)
-				&& !Collections.disjoint(assignmentBindingNames, deferredFilter.requiredVars)
-				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames);
+						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
+				&& !prefixBindingNames.containsAll(conditionBindingNames)
+				&& availableNames.containsAll(conditionBindingNames)
+				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
+				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
 	}
 
-	private boolean canApplySplitPrefixFilter(DeferredFilter deferredFilter, Set<String> assignmentBindingNames) {
-		return assignmentBindingNames.containsAll(deferredFilter.requiredVars)
+	private Set<String> conditionBindingNames(DeferredFilter deferredFilter) {
+		Set<String> bindingNames = new HashSet<>(VarNameCollector.process(deferredFilter.condition));
+		bindingNames.removeIf(bindingName -> bindingName == null || bindingName.startsWith("_const_"));
+		return bindingNames;
+	}
+
+	private boolean canApplySplitPrefixFilter(DeferredFilter deferredFilter, Set<String> assignmentBindingNames,
+			Set<String> conditionBindingNames) {
+		return assignmentBindingNames.containsAll(conditionBindingNames)
 				|| !containsNotEquals(deferredFilter.condition);
 	}
 
@@ -382,6 +394,9 @@ final class LmdbDeferredFilterPlacer {
 		}
 		if (window == null && isCorrelatedNotExistsFilter(filter)) {
 			window = smallestBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
+			if (window != null) {
+				window = expandCorrelatedNotExistsWindowOverCheapGuards(factors, filter, window);
+			}
 		}
 		if (window == null) {
 			if (filter.originPatterns.isEmpty()) {
@@ -397,6 +412,66 @@ final class LmdbDeferredFilterPlacer {
 			}
 		}
 		return groupDeferredFilterOnWindow(factors, filter, window);
+	}
+
+	private int[] expandCorrelatedNotExistsWindowOverCheapGuards(List<SegmentFactor> factors, DeferredFilter filter,
+			int[] window) {
+		int end = window[1];
+		while (end + 1 < factors.size() && isCheapGuardForCorrelatedFilter(factors.get(end + 1), filter)) {
+			end++;
+		}
+		return end == window[1] ? window : new int[] { window[0], end };
+	}
+
+	private boolean isCheapGuardForCorrelatedFilter(SegmentFactor factor, DeferredFilter filter) {
+		Set<String> bindingNames = plannerBindingNames(factor.bindingNames);
+		if (bindingNames.isEmpty() || !filter.requiredVars.containsAll(bindingNames)
+				|| factor.containedPatterns.size() != 1) {
+			return false;
+		}
+		StatementPattern pattern = factor.containedPatterns.iterator()
+				.next();
+		return isSubjectTypeGuardForRequiredBinding(pattern, filter.requiredVars) || isExactDirectLookup(pattern);
+	}
+
+	private Set<String> plannerBindingNames(Set<String> bindingNames) {
+		if (bindingNames == null || bindingNames.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> plannerNames = new HashSet<>();
+		for (String bindingName : bindingNames) {
+			if (bindingName != null && !bindingName.startsWith("_const_")) {
+				plannerNames.add(bindingName);
+			}
+		}
+		return plannerNames;
+	}
+
+	private boolean isSubjectTypeGuardForRequiredBinding(StatementPattern statementPattern, Set<String> requiredVars) {
+		Var subject = statementPattern.getSubjectVar();
+		Var predicate = statementPattern.getPredicateVar();
+		Var object = statementPattern.getObjectVar();
+		return subject != null
+				&& !subject.hasValue()
+				&& requiredVars.contains(subject.getName())
+				&& predicate != null
+				&& predicate.hasValue()
+				&& RDF.TYPE.equals(predicate.getValue())
+				&& object != null
+				&& object.hasValue();
+	}
+
+	private boolean isExactDirectLookup(StatementPattern statementPattern) {
+		if (!"directLookup".equals(
+				statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
+			return false;
+		}
+		String lookupComponents = statementPattern
+				.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS);
+		return lookupComponents != null
+				&& lookupComponents.contains("S")
+				&& lookupComponents.contains("P")
+				&& lookupComponents.contains("O");
 	}
 
 	private boolean groupDeferredFilterOnPlannerWindow(List<SegmentFactor> factors, DeferredFilter filter,

@@ -176,6 +176,56 @@ class LmdbUnionFilterDistributorTest {
 	}
 
 	@Test
+	void placesBranchFilterUsingConditionVarsWhenRequiredVarsAreScoped() {
+		StatementPattern typePattern = statementPattern("entity", "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"kind");
+		StatementPattern namePattern = statementPattern("entity", "http://example.com/theme/engineering/name", "name");
+		BindingSetAssignment targetValues = values("target", "REQ-1000", "REQ-1001");
+		DeferredFilter filter = new DeferredFilter(
+				new Or(new Compare(new Var("name"), new Var("target"), Compare.CompareOp.EQ),
+						new Compare(new Var("name"), new ValueConstant(VF.createLiteral("REQ-1002")),
+								Compare.CompareOp.EQ)),
+				Set.of("name"), 1, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, ignored) -> tupleExpr, Join::new,
+				LmdbUnionFilterDistributorTest::wrapFilters);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(typePattern, namePattern, targetValues)),
+				List.of(filter), Set.of());
+
+		Join rootJoin = assertInstanceOf(Join.class, root);
+		Filter assignmentFilter = assertInstanceOf(Filter.class, rootJoin.getRightArg());
+		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+	}
+
+	@Test
+	void placesBranchFilterAfterScopedUnionBranchJoin() {
+		StatementPattern typePattern = statementPattern("entity", "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"kind");
+		StatementPattern namePattern = statementPattern("entity", "http://example.com/theme/engineering/name", "name");
+		Join scopedBranch = new Join(typePattern, namePattern);
+		scopedBranch.setVariableScopeChange(true);
+		BindingSetAssignment targetValues = values("target", "REQ-1000", "REQ-1001");
+		DeferredFilter filter = new DeferredFilter(
+				new Or(new Compare(new Var("name"), new Var("target"), Compare.CompareOp.EQ),
+						new Compare(new Var("name"), new ValueConstant(VF.createLiteral("REQ-1002")),
+								Compare.CompareOp.EQ)),
+				Set.of("name", "target"), 1, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, ignored) -> tupleExpr, Join::new,
+				LmdbUnionFilterDistributorTest::wrapFilters);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(scopedBranch, targetValues)),
+				List.of(filter), Set.of());
+
+		Join rootJoin = assertInstanceOf(Join.class, root);
+		Filter assignmentFilter = assertInstanceOf(Filter.class, rootJoin.getRightArg());
+		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+	}
+
+	@Test
 	void keepsSplitFiniteInequalityOnBindingWindow() {
 		BindingSetAssignment userValues = values("u", "user0", "user1", "user2");
 		BindingSetAssignment peerValues = values("v", "user0", "user1", "user2");
