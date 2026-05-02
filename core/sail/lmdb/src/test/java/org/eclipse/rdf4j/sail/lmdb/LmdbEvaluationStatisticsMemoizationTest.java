@@ -400,7 +400,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	@Test
 	void optimizerVotesUnlearnedFilterForBackgroundSamplingWhenForegroundSamplingDisabled() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-vote").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingEnabled(false);
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -436,9 +438,81 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void backgroundRawSamplingDisabledPreventsQueueingAndSampling() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-disabled").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Disabled background raw sampling should not produce sampled estimates");
+			assertEquals(0, backingStore.runBackgroundFilterSamplingCycle(50L),
+					"Disabled background raw sampling should make the store cycle inert");
+			assertTrue(drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10).isEmpty(),
+					"Disabled background raw sampling should prevent queueing");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void backgroundCycleSamplesQueuedFilterWhenForegroundSamplingDisabled() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-cycle").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter(
+					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+
+			EvaluationStatistics.FilterPassEstimate before = statistics.estimateFilterPass(filter);
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, before.getSource(),
+					"Foreground optimizer sampling is disabled for this test");
+
+			assertEquals(1, backingStore.runBackgroundFilterSamplingCycle(50L),
+					"Expected background cycle to sample the queued filter");
+
+			EvaluationStatistics.FilterPassEstimate after = statistics.estimateFilterPass(filter);
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, after.getSource(),
+					"Expected background sampling to populate the sampled pass-ratio cache");
+			assertTrue(after.getPassRatio() >= 0.0d && after.getPassRatio() <= 1.0d,
+					"Expected background sampling to record a valid pass ratio");
+			assertTrue(after.getEvidenceCount() > 0L,
+					"Expected background sampling to retain sample evidence");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void repeatedOptimizerNeedPromotesBackgroundSamplingRequestToFront() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-promotion").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingEnabled(false);
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);

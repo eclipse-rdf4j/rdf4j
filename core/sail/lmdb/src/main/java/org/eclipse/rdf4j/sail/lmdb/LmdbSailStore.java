@@ -104,7 +104,9 @@ class LmdbSailStore implements SailStore {
 	});
 	private final AtomicBoolean persistScheduled = new AtomicBoolean(false);
 	private volatile ScheduledFuture<?> persistFuture;
+	private volatile ScheduledFuture<?> backgroundSamplingFuture;
 	private final long estimatorPersistDelayMillis = 1000L;
+	private final long backgroundRawSamplingMaxMillisPerCycle;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.
@@ -296,6 +298,7 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
+		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
 				? new SketchBasedJoinEstimator(this, sketchEstimatorConfig(config))
 				: null;
@@ -331,6 +334,7 @@ class LmdbSailStore implements SailStore {
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 				}
 				sketchBasedJoinEstimator.startBackgroundRefresh(3);
+				startBackgroundFilterSampling();
 			}
 		} finally {
 			if (!initialized) {
@@ -400,6 +404,7 @@ class LmdbSailStore implements SailStore {
 	public void close() throws SailException {
 		try {
 			try {
+				cancelAndDrainScheduledBackgroundSampling();
 				cancelAndDrainScheduledEstimatorPersist();
 				if (sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.close();
@@ -459,6 +464,26 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void cancelAndDrainScheduledBackgroundSampling() {
+		ScheduledFuture<?> future = backgroundSamplingFuture;
+		if (future == null) {
+			return;
+		}
+		if (future.cancel(false)) {
+			return;
+		}
+		try {
+			future.get();
+		} catch (CancellationException e) {
+			// Already cancelled by the scheduler or another close path.
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException(e);
+		} catch (ExecutionException e) {
+			logger.warn("Scheduled background filter sampling failed during close", e.getCause());
+		}
+	}
+
 	private void cancelAndDrainScheduledEstimatorPersist() {
 		ScheduledFuture<?> future = persistFuture;
 		if (future == null) {
@@ -479,12 +504,58 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void startBackgroundFilterSampling() {
+		if (filterSelectivityStats == null || backgroundRawSamplingMaxMillisPerCycle <= 0L) {
+			return;
+		}
+		backgroundSamplingFuture = estimatorPersistExec.scheduleWithFixedDelay(() -> {
+			try {
+				runBackgroundFilterSamplingCycle(backgroundRawSamplingMaxMillisPerCycle);
+			} catch (RuntimeException e) {
+				logger.warn("Background filter sampling cycle failed", e);
+			}
+		}, estimatorPersistDelayMillis, estimatorPersistDelayMillis, TimeUnit.MILLISECONDS);
+	}
+
+	int runBackgroundFilterSamplingCycle(long maxMillis) {
+		if (filterSelectivityStats == null || maxMillis <= 0L || storeTxnStarted.get()) {
+			return 0;
+		}
+		if (!sinkStoreAccessLock.tryLock()) {
+			return 0;
+		}
+		try {
+			if (storeTxnStarted.get()) {
+				return 0;
+			}
+			int sampled = filterSelectivityStats.runBackgroundSamplingCycle(maxMillis);
+			if (sampled > 0) {
+				scheduleEstimatorPersist();
+			}
+			return sampled;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
 	private void persistEstimatorState() {
 		if (sketchBasedJoinEstimator != null) {
 			sketchBasedJoinEstimator.persistIfDirty();
 		}
 		if (filterSelectivityStats != null) {
 			filterSelectivityStats.persistIfDirty();
+		}
+	}
+
+	private void scheduleEstimatorPersist() {
+		if (persistScheduled.compareAndSet(false, true)) {
+			persistFuture = estimatorPersistExec.schedule(() -> {
+				try {
+					LmdbSailStore.this.persistEstimatorState();
+				} finally {
+					persistScheduled.set(false);
+				}
+			}, estimatorPersistDelayMillis, TimeUnit.MILLISECONDS);
 		}
 	}
 
@@ -704,18 +775,6 @@ class LmdbSailStore implements SailStore {
 			logger.warn("Discarded join estimator state after failure while {}; store data remains authoritative",
 					action,
 					e);
-		}
-
-		private void scheduleEstimatorPersist() {
-			if (persistScheduled.compareAndSet(false, true)) {
-				persistFuture = estimatorPersistExec.schedule(() -> {
-					try {
-						LmdbSailStore.this.persistEstimatorState();
-					} finally {
-						persistScheduled.set(false);
-					}
-				}, estimatorPersistDelayMillis, TimeUnit.MILLISECONDS);
-			}
 		}
 
 		@Override

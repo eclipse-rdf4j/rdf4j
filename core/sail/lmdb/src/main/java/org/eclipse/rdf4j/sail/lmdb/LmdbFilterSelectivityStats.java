@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -271,7 +272,7 @@ class LmdbFilterSelectivityStats
 			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
-		SampledPassRatio sampled = sampleFilterPassRatio(filter, pattern, candidate);
+		SampledPassRatio sampled = sampleFilterPassRatio(candidate, true, 0L);
 		if (!isUsableSampledPassRatio(sampled)) {
 			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
@@ -298,6 +299,31 @@ class LmdbFilterSelectivityStats
 			drained.add(request.snapshot());
 		}
 		return drained;
+	}
+
+	int runBackgroundSamplingCycle(long maxMillis) {
+		if (!backgroundRawSamplingEnabled || maxMillis <= 0L) {
+			return 0;
+		}
+		long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxMillis);
+		int sampledCount = 0;
+		while (!samplingDeadlineExceeded(deadlineNanos)) {
+			List<BackgroundSamplingRequest> requests = drainBackgroundSamplingRequests(1);
+			if (requests.isEmpty()) {
+				break;
+			}
+			SampledPassRatio sampled = sampleFilterPassRatio(requests.getFirst().toSamplingCandidate(), false,
+					deadlineNanos);
+			if (!isUsableSampledPassRatio(sampled)) {
+				continue;
+			}
+			synchronized (this) {
+				sampledByFilter.put(requests.getFirst().key, sampled);
+				dirty = true;
+			}
+			sampledCount++;
+		}
+		return sampledCount;
 	}
 
 	synchronized void persistIfDirty() {
@@ -449,32 +475,35 @@ class LmdbFilterSelectivityStats
 
 		double expectedRuntimeRows = expectedRuntimeRows(subjId, predId, objId, contextId);
 		double expectedBenefitRows = expectedBenefitRows(filter, expectedRuntimeRows);
-		return new SamplingCandidate(key, subjId, predId, objId, contextId, expectedRuntimeRows, expectedBenefitRows);
+		return new SamplingCandidate(key, pattern.clone(), filter.getCondition().clone(), subjId, predId, objId,
+				contextId, expectedRuntimeRows, expectedBenefitRows);
 	}
 
-	private SampledPassRatio sampleFilterPassRatio(Filter filter, StatementPattern pattern,
-			SamplingCandidate candidate) {
+	private SampledPassRatio sampleFilterPassRatio(SamplingCandidate candidate, boolean foregroundSampling,
+			long deadlineNanos) {
 		if (candidate == null) {
 			return null;
 		}
 
-		int scanBudget = optimizerSamplingRowBudget(candidate.expectedRuntimeRows, candidate.expectedBenefitRows,
-				1.0d);
+		int scanBudget = samplingRowBudget(candidate.expectedRuntimeRows, candidate.expectedBenefitRows, 1.0d,
+				foregroundSampling);
 		if (scanBudget <= 0) {
 			return null;
 		}
 
 		DefaultEvaluationStrategy strategy = samplingStrategy();
-		QueryValueEvaluationStep condition = prepareCondition(strategy, filter);
+		QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
 		if (condition == null) {
 			return null;
+		}
+		if (foregroundSampling) {
+			deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(optimizerSamplingMaxMillis);
 		}
 
 		int reservoirSize = Math.min(SAMPLE_RESERVOIR_SIZE, scanBudget);
 		List<BindingSet> samples = new ArrayList<>(reservoirSize);
 		int eligibleRows = 0;
 		int scannedRows = 0;
-		long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(optimizerSamplingMaxMillis);
 
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			for (boolean explicit : new boolean[] { true, false }) {
@@ -484,10 +513,10 @@ class LmdbFilterSelectivityStats
 					while (scannedRows < scanBudget && !samplingDeadlineExceeded(deadlineNanos)
 							&& (row = triples.next()) != null) {
 						scannedRows++;
-						if (!matchesRepeatedVarEquality(pattern, row)) {
+						if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
 							continue;
 						}
-						BindingSet bindingSet = toBindingSet(pattern, row);
+						BindingSet bindingSet = toBindingSet(candidate.pattern, row);
 						eligibleRows++;
 						if (samples.size() < reservoirSize) {
 							samples.add(bindingSet);
@@ -540,11 +569,10 @@ class LmdbFilterSelectivityStats
 
 		BackgroundSamplingRequest request = backgroundSamplingRequests.get(candidate.key);
 		if (request == null) {
-			request = new BackgroundSamplingRequest(candidate.key);
+			request = new BackgroundSamplingRequest(candidate);
 			backgroundSamplingRequests.put(candidate.key, request);
 		}
-		request.vote(candidate.expectedRuntimeRows, candidate.expectedBenefitRows, foregroundNeeded,
-				++backgroundSamplingSequence);
+		request.vote(candidate, foregroundNeeded, ++backgroundSamplingSequence);
 		trimBackgroundSamplingRequests();
 	}
 
@@ -565,7 +593,13 @@ class LmdbFilterSelectivityStats
 
 	int optimizerSamplingRowBudget(double expectedRuntimeRows, double expectedBenefitRows,
 			double decisionUncertainty) {
-		if (!optimizerSamplingEnabled || optimizerSamplingMaxMillis <= 0L || optimizerSamplingMaxRows <= 0
+		return samplingRowBudget(expectedRuntimeRows, expectedBenefitRows, decisionUncertainty, true);
+	}
+
+	private int samplingRowBudget(double expectedRuntimeRows, double expectedBenefitRows, double decisionUncertainty,
+			boolean foregroundSampling) {
+		if ((foregroundSampling && (!optimizerSamplingEnabled || optimizerSamplingMaxMillis <= 0L))
+				|| optimizerSamplingMaxRows <= 0
 				|| !Double.isFinite(expectedRuntimeRows) || !Double.isFinite(expectedBenefitRows)
 				|| expectedRuntimeRows <= 0.0d || expectedBenefitRows <= 0.0d) {
 			return 0;
@@ -678,10 +712,9 @@ class LmdbFilterSelectivityStats
 		return Math.max(min, Math.min(max, value));
 	}
 
-	private QueryValueEvaluationStep prepareCondition(DefaultEvaluationStrategy strategy, Filter filter) {
+	private QueryValueEvaluationStep prepareCondition(DefaultEvaluationStrategy strategy, ValueExpr condition) {
 		try {
-			return strategy.precompile(filter.getCondition(),
-					new QueryEvaluationContext.Minimal(null, valueStore, null));
+			return strategy.precompile(condition, new QueryEvaluationContext.Minimal(null, valueStore, null));
 		} catch (RuntimeException e) {
 			return null;
 		}
@@ -837,25 +870,39 @@ class LmdbFilterSelectivityStats
 		return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
 	}
 
-	private record SamplingCandidate(PatternFilterKey key, long subjId, long predId, long objId, long contextId,
-			double expectedRuntimeRows, double expectedBenefitRows) {
+	private record SamplingCandidate(PatternFilterKey key, StatementPattern pattern, ValueExpr condition, long subjId,
+			long predId, long objId, long contextId, double expectedRuntimeRows, double expectedBenefitRows) {
 	}
 
 	static final class BackgroundSamplingRequest {
 		private final PatternFilterKey key;
+		private StatementPattern pattern;
+		private ValueExpr condition;
+		private long subjId;
+		private long predId;
+		private long objId;
+		private long contextId;
 		private long voteCount;
 		private double expectedRuntimeRows;
 		private double expectedBenefitRows;
 		private boolean foregroundNeeded;
 		private long lastRequestedSequence;
 
-		private BackgroundSamplingRequest(PatternFilterKey key) {
-			this.key = Objects.requireNonNull(key, "key");
+		private BackgroundSamplingRequest(SamplingCandidate candidate) {
+			this.key = Objects.requireNonNull(candidate.key, "key");
+			refreshSamplingPayload(candidate);
 		}
 
-		private BackgroundSamplingRequest(PatternFilterKey key, long voteCount, double expectedRuntimeRows,
+		private BackgroundSamplingRequest(PatternFilterKey key, StatementPattern pattern, ValueExpr condition,
+				long subjId, long predId, long objId, long contextId, long voteCount, double expectedRuntimeRows,
 				double expectedBenefitRows, boolean foregroundNeeded, long lastRequestedSequence) {
 			this.key = Objects.requireNonNull(key, "key");
+			this.pattern = Objects.requireNonNull(pattern, "pattern");
+			this.condition = Objects.requireNonNull(condition, "condition");
+			this.subjId = subjId;
+			this.predId = predId;
+			this.objId = objId;
+			this.contextId = contextId;
 			this.voteCount = voteCount;
 			this.expectedRuntimeRows = expectedRuntimeRows;
 			this.expectedBenefitRows = expectedBenefitRows;
@@ -863,18 +910,36 @@ class LmdbFilterSelectivityStats
 			this.lastRequestedSequence = lastRequestedSequence;
 		}
 
-		private void vote(double expectedRuntimeRows, double expectedBenefitRows, boolean foregroundNeeded,
-				long sequence) {
+		private void vote(SamplingCandidate candidate, boolean foregroundNeeded, long sequence) {
+			boolean refreshPayload = candidate.expectedBenefitRows > expectedBenefitRows;
 			voteCount++;
-			this.expectedRuntimeRows = Math.max(this.expectedRuntimeRows, expectedRuntimeRows);
-			this.expectedBenefitRows = Math.max(this.expectedBenefitRows, expectedBenefitRows);
+			this.expectedRuntimeRows = Math.max(this.expectedRuntimeRows, candidate.expectedRuntimeRows);
+			this.expectedBenefitRows = Math.max(this.expectedBenefitRows, candidate.expectedBenefitRows);
+			if (refreshPayload) {
+				refreshSamplingPayload(candidate);
+			}
 			this.foregroundNeeded |= foregroundNeeded;
 			lastRequestedSequence = sequence;
 		}
 
 		private BackgroundSamplingRequest snapshot() {
-			return new BackgroundSamplingRequest(key, voteCount, expectedRuntimeRows, expectedBenefitRows,
-					foregroundNeeded, lastRequestedSequence);
+			return new BackgroundSamplingRequest(key, pattern.clone(), condition.clone(), subjId, predId, objId,
+					contextId, voteCount, expectedRuntimeRows, expectedBenefitRows, foregroundNeeded,
+					lastRequestedSequence);
+		}
+
+		private SamplingCandidate toSamplingCandidate() {
+			return new SamplingCandidate(key, pattern.clone(), condition.clone(), subjId, predId, objId, contextId,
+					expectedRuntimeRows, expectedBenefitRows);
+		}
+
+		private void refreshSamplingPayload(SamplingCandidate candidate) {
+			this.pattern = candidate.pattern.clone();
+			this.condition = candidate.condition.clone();
+			this.subjId = candidate.subjId;
+			this.predId = candidate.predId;
+			this.objId = candidate.objId;
+			this.contextId = candidate.contextId;
 		}
 
 		private static int compareForQueue(BackgroundSamplingRequest left, BackgroundSamplingRequest right) {
