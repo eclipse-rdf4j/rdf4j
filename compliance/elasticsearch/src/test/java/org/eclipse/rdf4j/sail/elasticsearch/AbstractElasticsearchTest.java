@@ -12,14 +12,15 @@
 package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.hc.core5.http.HttpHost;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.opentest4j.TestAbortedException;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
@@ -30,13 +31,15 @@ import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
 import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 
-@Testcontainers(disabledWithoutDocker = true)
 public abstract class AbstractElasticsearchTest {
 
 	protected static final String CLUSTER_NAME = "test";
 
-	@Container
-	public static final GenericContainer<?> elasticsearch = new GenericContainer<>(dockerImageName())
+	private static final long DOCKER_PING_TIMEOUT_MILLIS = 5_000;
+	private static volatile boolean dockerResponsive;
+	private static volatile TestAbortedException dockerUnavailable;
+
+	public static final GenericContainer<?> elasticsearch = new SkippingElasticsearchContainer(dockerImageName())
 			.withEnv("discovery.type", "single-node")
 			.withEnv("cluster.name", CLUSTER_NAME)
 			.withEnv("xpack.security.enabled", "false")
@@ -61,6 +64,7 @@ public abstract class AbstractElasticsearchTest {
 			return;
 		}
 
+		elasticsearch.start();
 		Assumptions.assumeTrue(elasticsearch.isRunning(),
 				"Elasticsearch test container failed to start:\n" + safeLogs());
 
@@ -86,6 +90,13 @@ public abstract class AbstractElasticsearchTest {
 			transport = null;
 			lowLevelClient = null;
 		}
+		try {
+			if (elasticsearch.isRunning()) {
+				elasticsearch.stop();
+			}
+		} catch (Exception e) {
+			// ignore during shutdown
+		}
 	}
 
 	private static DockerImageName dockerImageName() {
@@ -95,6 +106,61 @@ public abstract class AbstractElasticsearchTest {
 		return DockerImageName
 				.parse("docker.elastic.co/elasticsearch/elasticsearch:" + esVersion)
 				.asCompatibleSubstituteFor("docker.elastic.co/elasticsearch/elasticsearch");
+	}
+
+	private static final class SkippingElasticsearchContainer extends GenericContainer<SkippingElasticsearchContainer> {
+
+		private SkippingElasticsearchContainer(DockerImageName dockerImageName) {
+			super(dockerImageName);
+		}
+
+		@Override
+		public void start() {
+			requireResponsiveDocker();
+			try {
+				super.start();
+			} catch (IllegalStateException e) {
+				throw new TestAbortedException("Docker is required to run Elasticsearch compliance tests. Logs:\n"
+						+ safeLogs(), e);
+			}
+		}
+	}
+
+	private static synchronized void requireResponsiveDocker() {
+		if (dockerResponsive) {
+			return;
+		}
+		if (dockerUnavailable != null) {
+			throw dockerUnavailable;
+		}
+
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread ping = new Thread(() -> {
+			try {
+				DockerClientFactory.instance().client().pingCmd().exec();
+			} catch (Throwable t) {
+				failure.set(t);
+			}
+		}, "elasticsearch-test-docker-ping");
+		ping.setDaemon(true);
+		ping.start();
+		try {
+			ping.join(DOCKER_PING_TIMEOUT_MILLIS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new TestAbortedException("Interrupted while checking Docker availability", e);
+		}
+		if (ping.isAlive()) {
+			dockerUnavailable = new TestAbortedException(
+					"Docker did not respond within " + DOCKER_PING_TIMEOUT_MILLIS + " ms");
+			throw dockerUnavailable;
+		}
+		Throwable t = failure.get();
+		if (t != null) {
+			dockerUnavailable = new TestAbortedException("Docker is required to run Elasticsearch compliance tests", t);
+			throw dockerUnavailable;
+		}
+		dockerResponsive = true;
 	}
 
 	private static void waitForClusterReady(ElasticsearchClient client) {

@@ -44,7 +44,9 @@ public class ElasticsearchSailGeoSPARQLTest extends AbstractElasticsearchTest {
 	@AfterAll
 	public static void tearDownClass() throws Exception {
 		try {
-			delegateTest.tearDown();
+			if (delegateTest != null) {
+				delegateTest.tearDown();
+			}
 		} finally {
 			delegateTest = null;
 		}
