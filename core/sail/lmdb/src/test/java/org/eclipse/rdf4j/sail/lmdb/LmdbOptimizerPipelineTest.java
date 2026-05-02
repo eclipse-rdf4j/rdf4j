@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
@@ -116,6 +118,25 @@ class LmdbOptimizerPipelineTest {
 
 			assertTrue(estimator.isReadyNonBlocking());
 			assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void automaticFactoryPreservesConfiguredPipelineAfterSketchesBecomeReady(@TempDir File dataDir) throws Exception {
+		QueryOptimizerPipeline customPipeline = List::of;
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.getEvaluationStrategyFactory().setOptimizerPipeline(customPipeline);
+		store.init();
+		try {
+			addSingleStatement(store, "urn:configured-pipeline");
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+
+			assertTrue(estimator.isReadyNonBlocking());
+			assertSame(customPipeline, store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null));
 		} finally {
 			store.shutDown();
 		}

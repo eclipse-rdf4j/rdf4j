@@ -203,7 +203,8 @@ public class TripleStoreAutoGrowTest {
 
 			forceRecordCache(cachedStore);
 			cachedStore.startTransaction();
-			cachedStore.storeTriple(subject, predicate, object, context, true);
+			assertFalse(cachedStore.storeTriple(subject, predicate, object, context, true),
+					"Cached duplicate explicit add should not report a new statement");
 			cachedStore.commit();
 
 			cachedStore.startTransaction();

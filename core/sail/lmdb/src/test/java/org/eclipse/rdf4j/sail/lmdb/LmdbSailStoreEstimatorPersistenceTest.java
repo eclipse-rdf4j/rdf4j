@@ -440,6 +440,52 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
+	void noneIsolationRollbackDiscardsEagerEstimatorUpdates(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var s = vf.createIRI("urn:rollback:s");
+		var p = vf.createIRI("urn:rollback:p");
+		var o = vf.createIRI("urn:rollback:o");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			backingStore.enableMultiThreading = false;
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(vf.createIRI("urn:rollback:seed"), p, vf.createIRI("urn:rollback:seed-o"));
+				conn.commit();
+			}
+			estimator.stop();
+			estimator.rebuild();
+			estimator.setRebuildAllowedSupplier(() -> false);
+			assertTrue(estimator.isReady());
+
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(s, p, o);
+				assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
+						0.0d,
+						"NONE isolation applies estimator deltas eagerly before commit");
+				conn.rollback();
+			}
+
+			assertFalse(estimator.isReadyNonBlocking(),
+					"Rollback must discard eager non-isolated estimator state");
+			assertEquals(0.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
+					0.0d,
+					"Rolled-back statement must not remain visible to estimator sketches");
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				assertFalse(conn.hasStatement(s, p, o, false),
+						"Rolled-back statement must not remain visible in the store");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void commitsAndQueriesSucceedWhileEstimatorIsNotReady(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s = vf.createIRI("urn:notready:s");

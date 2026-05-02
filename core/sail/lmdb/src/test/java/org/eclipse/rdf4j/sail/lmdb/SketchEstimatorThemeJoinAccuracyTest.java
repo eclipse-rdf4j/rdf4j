@@ -369,6 +369,9 @@ class SketchEstimatorThemeJoinAccuracyTest {
 				connection.commit();
 			}
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			if (!estimator.isReadyNonBlocking()) {
+				estimator.rebuild();
+			}
 			double leftRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.O, null,
 					LIBRARY_LOCATED_AT.stringValue(), null, null);
 			double rightRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null,

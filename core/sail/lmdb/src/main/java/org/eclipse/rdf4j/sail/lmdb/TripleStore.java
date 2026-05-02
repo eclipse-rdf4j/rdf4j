@@ -1243,15 +1243,20 @@ class TripleStore implements Closeable {
 				long[] quad = new long[] { subj, pred, obj, context };
 				boolean mainExplicitExists = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == MDB_SUCCESS;
 				boolean mainInferredExists = mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
+				boolean statementAdded = !recordExistsInCacheOrMain(recordCache.getRecordState(quad, explicit),
+						explicit ? mainExplicitExists : mainInferredExists);
+				if (!statementAdded) {
+					return false;
+				}
 				if (explicit) {
 					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
-					if (inferredCacheState == TxnRecordCache.RecordState.ADD
-							|| inferredCacheState == TxnRecordCache.RecordState.ABSENT && mainInferredExists) {
+					if (recordExistsInCacheOrMain(inferredCacheState, mainInferredExists)) {
 						recordCache.removeRecord(quad, false, true);
 					}
 				}
 				// put record in cache and return immediately
-				return recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
+				recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
+				return true;
 			}
 
 			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
@@ -1289,6 +1294,11 @@ class TripleStore implements Closeable {
 		logAddedStatements(stAdded ? 1 : 0);
 
 		return stAdded;
+	}
+
+	private boolean recordExistsInCacheOrMain(TxnRecordCache.RecordState cacheState, boolean mainExists) {
+		return cacheState == TxnRecordCache.RecordState.ADD
+				|| cacheState == TxnRecordCache.RecordState.ABSENT && mainExists;
 	}
 
 	@Experimental

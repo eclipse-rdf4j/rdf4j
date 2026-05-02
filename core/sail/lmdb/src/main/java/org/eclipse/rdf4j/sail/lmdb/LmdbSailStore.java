@@ -779,7 +779,9 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// do nothing
+			if (nonIsolated && storeTxnStarted.get()) {
+				clearEstimatorUpdates();
+			}
 		}
 
 		@Override

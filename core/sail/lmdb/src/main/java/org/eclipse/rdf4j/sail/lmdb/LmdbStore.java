@@ -484,19 +484,46 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	private DefaultEvaluationStrategyFactory getAutomaticDefaultEvaluationStrategyFactory() {
+		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
 		if (defaultEvalStratFactory == null) {
 			defaultEvalStratFactory = new DefaultEvaluationStrategyFactory(getFederatedServiceResolver());
-			defaultEvalStratFactory.setOptimizerPipeline(automaticOptimizerPipeline);
+		}
+		if (optimizerPipeline != null) {
+			defaultEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
 		}
 		return defaultEvalStratFactory;
 	}
 
 	private LmdbEvaluationStrategyFactory getAutomaticLmdbEvaluationStrategyFactory() {
+		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
 		if (lmdbEvalStratFactory == null) {
 			lmdbEvalStratFactory = new LmdbEvaluationStrategyFactory(getFederatedServiceResolver());
-			lmdbEvalStratFactory.setOptimizerPipeline(automaticOptimizerPipeline);
+		}
+		if (optimizerPipeline != null) {
+			lmdbEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
 		}
 		return lmdbEvalStratFactory;
+	}
+
+	private QueryOptimizerPipeline getAutomaticOptimizerPipeline() {
+		if (automaticOptimizerPipeline != null) {
+			return automaticOptimizerPipeline;
+		}
+		if (defaultEvalStratFactory != null) {
+			Optional<QueryOptimizerPipeline> optimizerPipeline = defaultEvalStratFactory.getOptimizerPipeline();
+			if (optimizerPipeline.isPresent()) {
+				automaticOptimizerPipeline = optimizerPipeline.get();
+				return automaticOptimizerPipeline;
+			}
+		}
+		if (lmdbEvalStratFactory != null) {
+			Optional<QueryOptimizerPipeline> optimizerPipeline = lmdbEvalStratFactory.getOptimizerPipeline();
+			if (optimizerPipeline.isPresent()) {
+				automaticOptimizerPipeline = optimizerPipeline.get();
+				return automaticOptimizerPipeline;
+			}
+		}
+		return null;
 	}
 
 	private void configureEvaluationStrategyFactory(EvaluationStrategyFactory factory) {
