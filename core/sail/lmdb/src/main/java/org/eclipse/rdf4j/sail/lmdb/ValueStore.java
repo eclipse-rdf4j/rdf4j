@@ -25,6 +25,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.MDB_READERS_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -914,14 +915,23 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
-		txnLock.readLock().lock();
-		try {
-			if (writeTxn != 0) {
-				return LmdbUtil.readTransaction(env, writeTxn, transaction);
+		for (int attempt = 0;; attempt++) {
+			try {
+				txnLock.readLock().lock();
+				try {
+					if (writeTxn != 0) {
+						return LmdbUtil.readTransaction(env, writeTxn, transaction);
+					}
+					return threadLocalReadTxn.get().execute(transaction, env);
+				} finally {
+					txnLock.readLock().unlock();
+				}
+			} catch (ReadersFullException e) {
+				if (attempt > 0) {
+					throw e;
+				}
+				closeInactiveReadTransactions();
 			}
-			return threadLocalReadTxn.get().execute(transaction, env);
-		} finally {
-			txnLock.readLock().unlock();
 		}
 	}
 
@@ -1394,6 +1404,18 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private void closeInactiveReadTransactions() {
+		txnLock.writeLock().lock();
+		try {
+			ReadTxn.State[] snapshot = activeReadTransactions.toArray(new ReadTxn.State[0]);
+			for (ReadTxn.State readTxn : snapshot) {
+				readTxn.closeInactiveTxn();
+			}
+		} finally {
+			txnLock.writeLock().unlock();
+		}
+	}
+
 	/**
 	 * Closes the ValueStore, releasing any file references, etc. Once closed, the ValueStore can no longer be used.
 	 *
@@ -1530,6 +1552,12 @@ class ValueStore extends AbstractValueFactory {
 					activeReadTransactions.remove(this);
 				}
 			}
+
+			synchronized void closeInactiveTxn() {
+				if (initialized && depth == 0) {
+					closeTxn();
+				}
+			}
 		}
 
 		public ReadTxn(Set<State> activeReadTransactions, ConcurrentCleaner cleaner) {
@@ -1547,6 +1575,8 @@ class ValueStore extends AbstractValueFactory {
 					} finally {
 						releaseTxn();
 					}
+				} catch (ReadersFullException e) {
+					throw e;
 				} catch (Exception e) {
 					// Retry once
 					try {
@@ -1589,7 +1619,11 @@ class ValueStore extends AbstractValueFactory {
 		private void startTxn(long env) throws IOException {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+				int rc = mdb_txn_begin(env, NULL, MDB_RDONLY, pp);
+				if (rc == MDB_READERS_FULL) {
+					throw new ReadersFullException();
+				}
+				E(rc);
 				state.initialize(pp.get(0));
 			}
 		}
@@ -1606,6 +1640,15 @@ class ValueStore extends AbstractValueFactory {
 
 		void close() {
 			state.closeTxn();
+		}
+	}
+
+	private static final class ReadersFullException extends IOException {
+
+		private static final long serialVersionUID = 1L;
+
+		private ReadersFullException() {
+			super("MDB_READERS_FULL: Environment maxreaders limit reached");
 		}
 	}
 
