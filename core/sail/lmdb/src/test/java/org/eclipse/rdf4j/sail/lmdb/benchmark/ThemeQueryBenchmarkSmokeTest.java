@@ -167,6 +167,8 @@ class ThemeQueryBenchmarkSmokeTest {
 
 		benchmark.setup();
 		try {
+			assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+					"Theme benchmark setup should wait for LMDB sketches before plan assertions");
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
 			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
@@ -190,6 +192,8 @@ class ThemeQueryBenchmarkSmokeTest {
 
 		benchmark.setup();
 		try {
+			assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+					"Theme benchmark setup should wait for LMDB sketches before plan assertions");
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
 			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
 			int biomarkerIndex = mandatoryLeafOrder.indexOf(PHARMA_BIOMARKER_LABEL);

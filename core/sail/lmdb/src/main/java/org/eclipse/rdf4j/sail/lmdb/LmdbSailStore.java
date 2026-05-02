@@ -328,7 +328,7 @@ class LmdbSailStore implements SailStore {
 				sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
 				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 				if (!snapshotExists) {
-					sketchBasedJoinEstimator.rebuild();
+					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 				}
 				sketchBasedJoinEstimator.startBackgroundRefresh(3);
 			}
@@ -401,9 +401,11 @@ class LmdbSailStore implements SailStore {
 		try {
 			try {
 				cancelAndDrainScheduledEstimatorPersist();
-				persistEstimatorState();
 				if (sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.close();
+				}
+				if (filterSelectivityStats != null) {
+					filterSelectivityStats.persistIfDirty();
 				}
 			} finally {
 				try {

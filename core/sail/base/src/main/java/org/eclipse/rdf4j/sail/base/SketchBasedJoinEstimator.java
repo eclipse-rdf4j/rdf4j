@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
@@ -43,6 +44,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
@@ -1226,10 +1228,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 * until it rebuilds from store contents.
 	 */
 	private final AtomicBoolean rebuildRequired = new AtomicBoolean(false);
+	private final AtomicLong rebuildRequestVersion = new AtomicLong();
 	/**
 	 * Even value means no rebuild in progress. Odd value means rebuild in progress.
 	 */
-	private final java.util.concurrent.atomic.AtomicLong rebuildEpoch = new java.util.concurrent.atomic.AtomicLong();
+	private final AtomicLong rebuildEpoch = new AtomicLong();
 
 	/** True when in-memory state changed and should be snapshotted at the next scheduled persist point. */
 	private final AtomicBoolean dirty = new AtomicBoolean(false);
@@ -1243,6 +1246,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private volatile BooleanSupplier rebuildAllowedSupplier;
 	private final Object persistLock = new Object();
 	private final Object loadLock = new Object();
+	private final Object readyMonitor = new Object();
 	private final Object sketchCacheLock = new Object();
 	private final CacheDirectory cacheDirectory = new CacheDirectory();
 	private final ThreadLocal<OptimizationScopeState> optimizationScope = new ThreadLocal<>();
@@ -1486,6 +1490,65 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return ready;
 	}
 
+	public boolean isReadyNonBlocking() {
+		long epoch = rebuildEpoch.get();
+		boolean rebuildRequiredNow = rebuildRequired.get();
+		boolean sketchesLoadedNow = sketchesLoaded;
+		State readyState = current;
+		byte readySlot = slotByte(slotOf(readyState));
+		PositiveReadinessCache cachedPositive = positiveReadinessCache;
+		if (cachedPositive.matches(epoch, rebuildRequiredNow, sketchesLoadedNow, readyState, readySlot,
+				slotGenerations[readySlot])
+				&& positiveReadinessStillAvailable(cachedPositive, readyState)) {
+			return true;
+		}
+		if ((epoch & 1L) != 0L || rebuildRequiredNow || !sketchesLoadedNow) {
+			return false;
+		}
+		synchronized (readyState) {
+			boolean ready = hasRequiredActiveSketchGroups(readyState);
+			if (ready && rebuildEpoch.get() == epoch) {
+				rememberPositiveReadiness(epoch);
+			}
+			return ready;
+		}
+	}
+
+	public boolean awaitReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		long remainingNanos = unit.toNanos(timeout);
+		long deadlineNanos = System.nanoTime() + remainingNanos;
+		synchronized (readyMonitor) {
+			while (!isReadyNonBlocking()) {
+				flushPendingIncrementalForAwait();
+				if (isReadyNonBlocking()) {
+					return true;
+				}
+				if (remainingNanos <= 0L) {
+					return false;
+				}
+				TimeUnit.NANOSECONDS.timedWait(readyMonitor,
+						Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(100L)));
+				remainingNanos = deadlineNanos - System.nanoTime();
+			}
+			return true;
+		}
+	}
+
+	private void flushPendingIncrementalForAwait() {
+		if ((rebuildEpoch.get() & 1L) != 0L || rebuildRequired.get() || !sketchesLoaded) {
+			return;
+		}
+		flushPendingIncremental();
+		notifyReadyWaiters();
+	}
+
+	private void notifyReadyWaiters() {
+		synchronized (readyMonitor) {
+			readyMonitor.notifyAll();
+		}
+	}
+
 	private void cacheScopeReadiness(OptimizationScopeState scope, long epoch, boolean ready) {
 		scope.readyEpoch = epoch;
 		scope.readyRebuildRequired = rebuildRequired.get();
@@ -1520,12 +1583,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private boolean isReadyUnscoped(OptimizationScopeState scope) {
 		if (rebuildRequired.get()) {
 			return false;
-		}
-
-		if (!sketchesLoaded && persistenceEnabled && hasSnapshotAvailable(persistenceFile)) {
-			if (!tryLoadFromDisk()) {
-				return false;
-			}
 		}
 
 		if (!sketchesLoaded) {
@@ -1652,7 +1709,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			this.persistenceStore = store;
 			if (store.hasMetadata()) {
 				try {
+					long requestVersion = rebuildRequestVersion.get();
 					loadDirectoryStore(!lazyLoad);
+					clearRebuildRequiredIfUnchanged(requestVersion);
+					notifyReadyWaiters();
 				} catch (IOException | RuntimeException e) {
 					logger.warn("Ignoring incompatible join estimator snapshot at {}; rebuilding greenfield store",
 							normalizedFile, e);
@@ -1751,10 +1811,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		refresher = new Thread(() -> {
 			while (running) {
 				if (!isRebuildAllowed()) {
-					try {
-						Thread.sleep(refreshSleepMillis);
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
+					if (!waitForRefreshDelay()) {
 						break;
 					}
 					continue;
@@ -1764,33 +1821,43 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					try {
 						rebuild();
 					} catch (Throwable t) {
+						if (!running || wasInterrupted(t)) {
+							notifyReadyWaiters();
+							logger.debug("Interrupted while rebuilding join estimator", t);
+							break;
+						}
 						logger.error("Error while rebuilding join estimator", t);
 					}
-					try {
-						Thread.sleep(refreshSleepMillis);
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
+					if (!waitForRefreshDelay()) {
 						break;
 					}
 					continue;
 				}
 
-				if (!sketchesLoaded && lazyLoadEnabled) {
+				if (!sketchesLoaded && persistenceEnabled && hasSnapshotAvailable(persistenceFile)) {
 					try {
-						Thread.sleep(refreshSleepMillis);
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
+						tryLoadFromDisk();
+					} catch (Throwable t) {
+						logger.error("Error while loading join estimator snapshot", t);
+					}
+					if (!waitForRefreshDelay()) {
 						break;
 					}
 					continue;
+				}
+
+				if (sketchesLoaded) {
+					try {
+						flushPendingIncremental();
+						notifyReadyWaiters();
+					} catch (Throwable t) {
+						logger.error("Error while flushing incremental join estimator updates", t);
+					}
 				}
 
 				boolean stale = isStale(stalenessThreshold);
 				if (!stale) {
-					try {
-						Thread.sleep(refreshSleepMillis);
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
+					if (!waitForRefreshDelay()) {
 						break;
 					}
 					continue;
@@ -1801,14 +1868,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				try {
 					rebuild();
 				} catch (Throwable t) {
-
+					if (!running || wasInterrupted(t)) {
+						notifyReadyWaiters();
+						logger.debug("Interrupted while rebuilding join estimator", t);
+						break;
+					}
 					logger.error("Error while rebuilding join estimator", t);
 				}
 
-				try {
-					Thread.sleep(refreshSleepMillis);
-				} catch (InterruptedException ie) {
-					Thread.currentThread().interrupt();
+				if (!waitForRefreshDelay()) {
 					break;
 				}
 
@@ -1818,6 +1886,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		refresher.setDaemon(true);
 		refresher.start();
+	}
+
+	private boolean waitForRefreshDelay() {
+		if (refreshSleepMillis <= 0L) {
+			Thread.yield();
+			return true;
+		}
+		synchronized (readyMonitor) {
+			try {
+				readyMonitor.wait(refreshSleepMillis);
+				return true;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return false;
+			}
+		}
 	}
 
 	public void stop() {
@@ -1887,6 +1971,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		flushPendingIncremental();
 		clearEstimateCacheIfPopulated();
 		clearPositiveReadinessCache();
+		long requestVersion = rebuildRequestVersion.get();
 
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
@@ -1970,7 +2055,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			seenTriples = seen;
 			approxStoreSize.set(seen);
 			sketchesLoaded = true;
-			rebuildRequired.set(false);
+			clearRebuildRequiredIfUnchanged(requestVersion);
 			dirty.set(true);
 			indexDirty.set(true);
 			usingA = !usingA;
@@ -1990,6 +2075,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if ((rebuildEpoch.get() & 1L) != 0L) {
 				rebuildEpoch.incrementAndGet(); // mark rebuild complete (even epoch)
 			}
+			notifyReadyWaiters();
 		}
 	}
 
@@ -2000,12 +2086,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public void addStatement(Statement st) {
 		Objects.requireNonNull(st);
 		clearEstimateCacheIfPopulated();
-		if (!rebuildRequired.get() && !sketchesLoaded && persistenceEnabled && hasSnapshotAvailable(persistenceFile)) {
-			tryLoadFromDisk();
-		}
-		if (!sketchesLoaded) {
+		if (!isReadyForIncrementalUpdates()) {
 			approxStoreSize.incrementAndGet();
-			rebuildRequired.set(true);
+			markRebuildRequired();
+			notifyReadyWaiters();
 			return;
 		}
 
@@ -2038,12 +2122,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public void deleteStatement(Statement st) {
 		Objects.requireNonNull(st);
 		clearEstimateCacheIfPopulated();
-		if (!rebuildRequired.get() && !sketchesLoaded && persistenceEnabled && hasSnapshotAvailable(persistenceFile)) {
-			tryLoadFromDisk();
-		}
-		if (!sketchesLoaded) {
+		if (!isReadyForIncrementalUpdates()) {
 			approxStoreSize.updateAndGet(v -> Math.max(0, v - 1));
-			rebuildRequired.set(true);
+			markRebuildRequired();
+			notifyReadyWaiters();
 			return;
 		}
 
@@ -2062,6 +2144,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return;
 		}
 		dirty.set(true);
+	}
+
+	private boolean isReadyForIncrementalUpdates() {
+		return sketchesLoaded && !rebuildRequired.get() && (rebuildEpoch.get() & 1L) == 0L;
 	}
 
 	private IngestEvent ingestIncremental(String s, String p, String o, String c, boolean isDelete) {
@@ -7871,8 +7957,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		sketchesLoaded = false;
 		if (markRebuildRequired) {
-			rebuildRequired.set(true);
+			markRebuildRequired();
 		}
+		notifyReadyWaiters();
 	}
 
 	private void discardPendingIncremental() {
@@ -7919,13 +8006,20 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return false;
 			}
 			try {
+				long requestVersion = rebuildRequestVersion.get();
 				loadDirectoryStore(true);
 				sketchesLoaded = true;
-				rebuildRequired.set(false);
+				clearRebuildRequiredIfUnchanged(requestVersion);
 				dirty.set(false);
 				indexDirty.set(false);
+				notifyReadyWaiters();
 				return true;
 			} catch (Throwable t) {
+				if (wasInterrupted(t)) {
+					notifyReadyWaiters();
+					logger.debug("Interrupted while loading join estimator state from {}", persistenceFile, t);
+					return false;
+				}
 				discardAndMarkForRebuild();
 				logger.warn("Failed to load join estimator state from {}", persistenceFile, t);
 				return false;
@@ -7933,8 +8027,29 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
+	private static boolean wasInterrupted(Throwable throwable) {
+		for (Throwable cursor = throwable; cursor != null; cursor = cursor.getCause()) {
+			if (cursor instanceof InterruptedException || cursor instanceof ClosedByInterruptException) {
+				Thread.currentThread().interrupt();
+				return true;
+			}
+		}
+		return Thread.currentThread().isInterrupted();
+	}
+
 	private static boolean hasSnapshotAvailable(Path file) {
 		return file != null && Files.isRegularFile(file.toAbsolutePath().normalize().resolve("metadata.bin"));
+	}
+
+	private void markRebuildRequired() {
+		rebuildRequired.set(true);
+		rebuildRequestVersion.incrementAndGet();
+	}
+
+	private void clearRebuildRequiredIfUnchanged(long requestVersion) {
+		if (rebuildRequestVersion.get() == requestVersion) {
+			rebuildRequired.set(false);
+		}
 	}
 
 	private void loadDirectoryStore(boolean markLoaded) throws IOException {
@@ -7987,9 +8102,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		lastRebuildPublishMs = metadata.lastPublishTime;
 		churnSampler.reset();
 		sketchesLoaded = markLoaded;
-		rebuildRequired.set(false);
 		dirty.set(false);
 		indexDirty.set(false);
+		notifyReadyWaiters();
 	}
 
 	private void loadDirectoryIndexEntries(List<SketchEstimatorPersistenceStore.IndexEntry> entries) {
@@ -8135,7 +8250,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				address.axisA, address.axisB,
 				address.x, address.y);
 		if (sketch != null) {
-			touchResidentSketch(state, address, sketch, false);
 			return sketch;
 		}
 		return loadPersistedSketch(state, address);
@@ -8240,10 +8354,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch,
 			boolean enforceBudget) {
 		setResidentSketch(state, address, sketch);
-	}
-
-	private void touchResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch,
-			boolean enforceBudget) {
 	}
 
 	private long initialSingletonSketchBytesHint(State state, ArrayOfDoublesUpdatableSketch sketch, int valueCount) {

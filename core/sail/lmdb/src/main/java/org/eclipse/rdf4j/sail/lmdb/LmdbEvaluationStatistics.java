@@ -105,8 +105,7 @@ class LmdbEvaluationStatistics
 			return joinSupportCacheValue;
 		}
 
-		boolean ready = sketchBasedJoinEstimator.isReady();
-//		boolean ready = ensureRobustJoinEstimationReady();
+		boolean ready = sketchBasedJoinEstimator.isReadyNonBlocking();
 		joinSupportCacheValue = ready;
 		joinSupportCacheRevisionId = revisionId;
 		joinSupportCacheExpiryMs = now + JOIN_SUPPORT_CACHE_TTL_MS;

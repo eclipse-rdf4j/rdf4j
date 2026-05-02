@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -136,6 +137,9 @@ class LmdbThemeFastestRunSnapshotTest {
 		store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
 		repository = new SailRepository(store);
 		try {
+			repository.init();
+			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "PHARMA:0 benchmark lifecycle", 60,
+					TimeUnit.SECONDS);
 			OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
 			assertCanonicalFiniteAnchorFastPath(query0.plan(), "PHARMA:0 benchmark lifecycle");
 			OptimizerSnapshot telemetryQuery0 = explain(repository, Theme.PHARMA, 0, Explanation.Level.Telemetry);

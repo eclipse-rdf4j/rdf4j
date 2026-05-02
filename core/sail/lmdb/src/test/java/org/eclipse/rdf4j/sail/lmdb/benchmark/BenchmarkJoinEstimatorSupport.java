@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 public final class BenchmarkJoinEstimatorSupport {
 
 	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(1);
-	private static final long ROBUST_READY_POLL_MILLIS = 1000L;
 	private static final long QUERY_REGRESSION_PASS_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
 	private static final long QUERY_REGRESSION_PASS_POLL_MILLIS = 100L;
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
@@ -197,26 +196,32 @@ public final class BenchmarkJoinEstimatorSupport {
 		return (SketchBasedJoinEstimator) invoke(getSketchBasedJoinEstimator, backingStore);
 	}
 
+	public static void awaitEstimatorReady(LmdbStore store, String phase, long timeout, TimeUnit unit)
+			throws IOException {
+		awaitEstimatorReady(resolveEstimator(store), phase, timeout, unit);
+	}
+
 	private static void persistReusableEstimatorSnapshot(SketchBasedJoinEstimator estimator) throws IOException {
 		estimator.persistIfDirty();
 		estimator.unload();
+		estimator.startBackgroundRefresh(3);
 		awaitEstimatorReady(estimator, "persisted snapshot reload");
 	}
 
 	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase) throws IOException {
-		long deadlineNanos = System.nanoTime() + ROBUST_READY_TIMEOUT_NANOS;
-		while (System.nanoTime() < deadlineNanos) {
-			if (estimator.isReady()) {
-				return;
+		awaitEstimatorReady(estimator, phase, ROBUST_READY_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
+	}
+
+	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase, long timeout,
+			TimeUnit unit) throws IOException {
+		try {
+			if (!estimator.awaitReady(timeout, unit)) {
+				throw new IOException("Join estimator was not ready after " + phase);
 			}
-			try {
-				Thread.sleep(ROBUST_READY_POLL_MILLIS);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while waiting for join estimator readiness after " + phase, e);
-			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for join estimator readiness after " + phase, e);
 		}
-		throw new IOException("Join estimator was not ready after " + phase);
 	}
 
 	private static void writeExpectedDbFileSizes(File storeDirectory) throws IOException {

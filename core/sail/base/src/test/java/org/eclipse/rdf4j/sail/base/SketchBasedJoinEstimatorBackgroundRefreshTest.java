@@ -12,8 +12,13 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -29,6 +34,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SketchBasedJoinEstimatorBackgroundRefreshTest {
 
@@ -55,8 +61,43 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		}
 	}
 
+	@Test
+	void backgroundRefreshLoadsPersistedSnapshotWithoutCallerReadyLazyLoad(@TempDir Path dataDir) throws Exception {
+		CountingEmptyStore store = new CountingEmptyStore(VF.createStatement(VF.createIRI("urn:s"),
+				VF.createIRI("urn:p"), VF.createIRI("urn:o")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(10));
+		estimator.configurePersistence(dataDir.resolve("join-estimator.rjes"), false);
+		try {
+			estimator.rebuild();
+			assertTrue(estimator.isReadyNonBlocking());
+			assertTrue(estimator.persistIfDirty());
+			estimator.unload();
+
+			assertFalse(estimator.isReadyNonBlocking(), "Nonblocking readiness should not load persisted sketches");
+			assertEquals(1, store.rebuildCount());
+
+			estimator.startBackgroundRefresh(3);
+
+			assertTrue(estimator.awaitReady(5, TimeUnit.SECONDS),
+					"Background refresh should load the persisted snapshot");
+			assertEquals(1, store.rebuildCount(), "Background snapshot load should not rebuild the store");
+		} finally {
+			estimator.close();
+		}
+	}
+
 	private static final class CountingEmptyStore implements SailStore {
 		private final AtomicInteger rebuildCount = new AtomicInteger();
+		private final List<Statement> statements;
+
+		CountingEmptyStore(Statement... statements) {
+			this.statements = List.of(statements);
+		}
 
 		int rebuildCount() {
 			return rebuildCount.get();
@@ -115,7 +156,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 						public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 								Resource... contexts) {
 							rebuildCount.incrementAndGet();
-							return new CloseableIteratorIteration<>(java.util.Collections.<Statement>emptyIterator());
+							return new CloseableIteratorIteration<>(statements.iterator());
 						}
 					};
 				}

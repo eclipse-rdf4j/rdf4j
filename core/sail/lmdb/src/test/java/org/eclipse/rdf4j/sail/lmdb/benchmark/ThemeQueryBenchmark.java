@@ -98,8 +98,11 @@ public class ThemeQueryBenchmark {
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
+	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
 	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
+	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 
 	@Param({
 			"0",
@@ -167,6 +170,7 @@ public class ThemeQueryBenchmark {
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
+		waitForSketchesIfEnabled();
 		if (QueryPlanCapture.isCaptureEnabled()) {
 			captureQueryPlanSnapshot();
 		}
@@ -213,6 +217,17 @@ public class ThemeQueryBenchmark {
 		if (!expectedDbFileSizeFile().isFile()) {
 			writeExpectedDbFileSizes(expectedDbFileSizes);
 		}
+	}
+
+	private void waitForSketchesIfEnabled() throws IOException {
+		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "true"))) {
+			return;
+		}
+		repository.init();
+		long timeoutSeconds = Long.getLong(WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY,
+				DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS);
+		BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark setup", timeoutSeconds,
+				TimeUnit.SECONDS);
 	}
 
 	private void rebuildStoreFromScratch() throws IOException {

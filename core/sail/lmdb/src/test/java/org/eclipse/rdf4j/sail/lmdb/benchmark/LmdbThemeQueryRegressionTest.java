@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -950,6 +951,7 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q2", 60, TimeUnit.SECONDS);
 				JoinOrderPlanner planner = joinOrderPlanner(store);
 				StatementPattern targetType = pharmaTargetTypePattern();
 				StatementPattern inPathway = pharmaInPathwayPattern();
@@ -992,6 +994,7 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q10", 60, TimeUnit.SECONDS);
 				JoinOrderPlanner planner = joinOrderPlanner(store);
 				BindingSetAssignment markerBindings = pharmaMarkerBindings();
 				StatementPattern drugType = pharmaDrugTypePattern();
@@ -1055,6 +1058,7 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "library-q9", 60, TimeUnit.SECONDS);
 				JoinOrderPlanner planner = joinOrderPlanner(store);
 				BindingSetAssignment targetBindings = libraryTargetBindings();
 				StatementPattern nameLookup = libraryAuthorNamePattern();

@@ -62,7 +62,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	@Test
 	void memoizesSupportsJoinEstimationAndInvalidatesAfterCacheWindow() throws Exception {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
-		when(estimator.isReady()).thenReturn(true, false, false);
+		when(estimator.isReadyNonBlocking()).thenReturn(true, false, false);
 		ValueStore valueStore = mock(ValueStore.class);
 		ValueStoreRevision revision = mock(ValueStoreRevision.class);
 		when(valueStore.getRevision()).thenReturn(revision);
@@ -75,18 +75,18 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertTrue(statistics.supportsJoinEstimation(), "Expected initial readiness probe");
 		assertTrue(statistics.supportsJoinEstimation(), "Expected second probe to use cached readiness");
-		verify(estimator, times(1)).isReady();
+		verify(estimator, times(1)).isReadyNonBlocking();
 
 		Thread.sleep(300);
 
 		assertFalse(statistics.supportsJoinEstimation(), "Expected readiness cache invalidation after cache window");
-		verify(estimator, times(2)).isReady();
+		verify(estimator, times(2)).isReadyNonBlocking();
 	}
 
 	@Test
 	void supportsJoinEstimationDoesNotForceRobustRebuildWhenBaseSketchesAreReady() throws Exception {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
-		when(estimator.isReady()).thenReturn(true);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
 
 		ValueStore valueStore = mock(ValueStore.class);
 		ValueStoreRevision revision = mock(ValueStoreRevision.class);
@@ -98,7 +98,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		assertTrue(statistics.supportsJoinEstimation(),
 				"Ready base sketches should remain usable even when the robust synopsis is unavailable");
-		verify(estimator).isReady();
+		verify(estimator).isReadyNonBlocking();
 	}
 
 	@Test
@@ -180,7 +180,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	@Test
 	void joinCardinalityUsesSingleSketchProbeWhenReady() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
-		when(estimator.isReady()).thenReturn(true);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
 		when(estimator.cardinality(any(Join.class))).thenReturn(7.0d);
 		ValueStore valueStore = mock(ValueStore.class);
 		ValueStoreRevision revision = mock(ValueStoreRevision.class);

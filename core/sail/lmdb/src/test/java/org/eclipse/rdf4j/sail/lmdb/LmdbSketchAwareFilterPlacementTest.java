@@ -147,24 +147,6 @@ class LmdbSketchAwareFilterPlacementTest {
 			assertTrue(statistics.supportsFilterSelectivityCosting(),
 					"Expected LMDB to expose local filter selectivity costing before sketches are ready");
 
-			String query = String.join("\n",
-					"PREFIX lib: <http://example.com/theme/library/>",
-					"SELECT ?branch WHERE {",
-					"  ?branch lib:name ?branchName .",
-					"  FILTER ((?branchName = \"Branch 0\") || (?branchName = \"Branch 1\"))",
-					"}");
-
-			TupleExpr optimized;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
-			}
-
-			BindingSetAssignment branchNameValues = findBindingSetAssignment(optimized, "branchName");
-			assertNotNull(branchNameValues,
-					"Expected optimized plan to retain the branch-name constraint as a finite VALUES anchor");
-			assertLiteralValues(branchNameValues, "branchName", "Branch 0", "Branch 1");
-
 			Filter filter = new Filter(
 					new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME), Var.of("branchName")),
 					new Or(

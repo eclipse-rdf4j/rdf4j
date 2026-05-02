@@ -16,9 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.lang.reflect.Field;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -30,6 +33,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -40,8 +44,12 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -56,16 +64,61 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LmdbOptimizerPipelineTest {
 
 	@Test
-	void defaultLmdbStoreUsesLmdbEvaluationStrategyFactory() {
+	void automaticLmdbStoreUsesDefaultEvaluationStrategyFactoryUntilSketchesAreReady() {
 		LmdbStore store = new LmdbStore();
 
-		assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+	}
+
+	@Test
+	void automaticLmdbStoreSwitchesToLmdbEvaluationStrategyFactoryAfterSketchesAreReady(@TempDir File dataDir)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			addSingleStatement(store, "urn:ready");
+
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+
+			assertTrue(estimator.isReadyNonBlocking());
+			assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
+			assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void longLivedConnectionsChooseCurrentAutomaticFactoryPerQueryCreation(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
+
+			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+
+			addSingleStatement(store, "urn:adaptive");
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+
+			assertTrue(estimator.isReadyNonBlocking());
+			assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory));
+		} finally {
+			store.shutDown();
+		}
 	}
 
 	@Test
@@ -173,6 +226,27 @@ class LmdbOptimizerPipelineTest {
 	private static TupleExpr parseTupleExpr(String query) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		return parsedQuery.getTupleExpr();
+	}
+
+	private static void addSingleStatement(LmdbStore store, String prefix) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(vf.createIRI(prefix + ":s"), vf.createIRI(prefix + ":p"),
+					vf.createIRI(prefix + ":o"));
+			connection.commit();
+		}
+	}
+
+	private static EvaluationStrategyFactory capturedEvaluationStrategyFactory(NotifyingSailConnection connection)
+			throws Exception {
+		Field field = SailSourceConnection.class.getDeclaredField("evalStratFactory");
+		field.setAccessible(true);
+		return (EvaluationStrategyFactory) field.get(connection);
+	}
+
+	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory) {
+		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), new EvaluationStatistics());
 	}
 
 	private static void assertRetainedEngineeringNameFilter(TupleExpr tupleExpr, String stage) {

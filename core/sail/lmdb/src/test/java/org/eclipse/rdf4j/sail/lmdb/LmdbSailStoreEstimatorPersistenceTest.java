@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,6 +26,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -121,6 +124,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				conn.addStatement(s, p, o);
 				conn.commit();
 			}
+			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS),
+					"Expected background rebuild to finish before snapshot persistence");
 		} finally {
 			store.shutDown();
 		}
@@ -136,8 +141,14 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
 			loadedField.setAccessible(true);
-			assertFalse(loadedField.getBoolean(estimator), "Expected lazy startup with unloaded sketches");
-			assertDoesNotThrow(estimator::isReady);
+			if (!loadedField.getBoolean(estimator)) {
+				assertFalse(estimator.isReadyNonBlocking(), "Nonblocking readiness should not load sketches");
+				assertFalse(loadedField.getBoolean(estimator), "Nonblocking readiness must leave sketches unloaded");
+			}
+			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS),
+					"Expected background refresh to load the persisted estimator snapshot");
+			assertTrue(loadedField.getBoolean(estimator), "Expected background refresh to load sketches");
+			assertTrue(estimator.isReadyNonBlocking(), "Expected nonblocking readiness after background load");
 		} finally {
 			reopened.shutDown();
 		}
@@ -153,6 +164,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		double learnedPassRatioBeforeShutdown;
 		try {
 			loadNameData(repository);
+			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
 			recordLearnedFilterPassRatio(store, learnedFilter);
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
@@ -169,6 +181,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		LmdbStore reopened = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		reopened.init();
 		try {
+			assertTrue(reopened.awaitSketchesReady(10, TimeUnit.SECONDS));
 			EvaluationStatistics statistics = reopened.getBackingStore().getEvaluationStatistics();
 			assertEquals(learnedPassRatioBeforeShutdown, statistics.estimateFilterPassRatio(learnedFilter), 0.00001d,
 					"Expected learned filter selectivity to survive LMDB restart");
@@ -227,8 +240,9 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			Field loadedField = SketchBasedJoinEstimator.class.getDeclaredField("sketchesLoaded");
 			loadedField.setAccessible(true);
-			assertTrue(loadedField.getBoolean(estimator), "Commit must keep estimator state available");
-			assertTrue(estimator.isReady());
+			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS), "Commit must allow background estimator readiness");
+			assertTrue(loadedField.getBoolean(estimator), "Background rebuild should publish estimator state");
+			assertTrue(estimator.isReadyNonBlocking());
 		} finally {
 			store.shutDown();
 		}
@@ -242,7 +256,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		reopened.init();
 		try {
 			SketchBasedJoinEstimator estimator = reopened.getBackingStore().getSketchBasedJoinEstimator();
-			assertTrue(estimator.isReady(), "Expected estimator to recover from persisted snapshots");
+			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS),
+					"Expected estimator to recover from persisted snapshots");
 		} finally {
 			reopened.shutDown();
 		}
@@ -269,6 +284,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				conn.addStatement(s1, p2, o2, c1);
 				conn.commit();
 			}
+			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS),
+					"Expected background rebuild to finish before snapshot persistence");
 		} finally {
 			store.shutDown();
 		}
@@ -277,7 +294,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		reopened.init();
 		try {
 			SketchBasedJoinEstimator estimator = reopened.getBackingStore().getSketchBasedJoinEstimator();
-			assertTrue(estimator.isReady(), "Expected estimator to lazy-load persisted snapshot");
+			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS),
+					"Expected estimator to load persisted snapshot in the background");
 			assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()),
 					0.0d,
 					"Predicate sketch should survive LMDB restart");
@@ -324,6 +342,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				connection.add(s1, p2, o2, c1);
 				connection.commit();
 			}
+			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS),
+					"Expected background rebuild to finish before snapshot persistence");
 		} finally {
 			repository.shutDown();
 		}
@@ -334,7 +354,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 		try {
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			assertTrue(estimator.isReady(), "Expected estimator to remain loadable across repeated init/shutdown");
+			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS),
+					"Expected estimator to remain loadable across repeated init/shutdown");
 			assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()),
 					0.0d,
 					"Predicate sketch should survive repeated repository lifecycle");
@@ -371,6 +392,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 			estimator.stop();
+			estimator.rebuild();
 			estimator.setRebuildAllowedSupplier(() -> false);
 
 			try (NotifyingSailConnection conn = store.getConnection()) {
@@ -399,6 +421,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 			estimator.stop();
+			estimator.rebuild();
 			estimator.setRebuildAllowedSupplier(() -> false);
 
 			try (NotifyingSailConnection conn = store.getConnection()) {
@@ -413,6 +436,46 @@ class LmdbSailStoreEstimatorPersistenceTest {
 					"Estimator should receive queued updates even when NONE transactions flush through another sink");
 		} finally {
 			store.shutDown();
+		}
+	}
+
+	@Test
+	void commitsAndQueriesSucceedWhileEstimatorIsNotReady(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var s = vf.createIRI("urn:notready:s");
+		var p = vf.createIRI("urn:notready:p");
+		var o = vf.createIRI("urn:notready:o");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.setRebuildAllowedSupplier(() -> false);
+			estimator.discardAndMarkForRebuild();
+
+			assertFalse(estimator.isReadyNonBlocking());
+			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.add(s, p, o);
+				connection.commit();
+			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertTrue(connection.hasStatement(s, p, o, false));
+				try (var result = connection.prepareTupleQuery(
+						"SELECT ?o WHERE { <urn:notready:s> <urn:notready:p> ?o }").evaluate()) {
+					assertEquals(1L, result.stream().count());
+				}
+			}
+
+			assertFalse(estimator.isReadyNonBlocking());
+			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		} finally {
+			repository.shutDown();
 		}
 	}
 
