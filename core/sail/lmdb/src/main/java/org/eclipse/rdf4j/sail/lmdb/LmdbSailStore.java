@@ -939,6 +939,7 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
+				clearEstimatorUpdates();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {

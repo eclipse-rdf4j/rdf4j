@@ -265,7 +265,7 @@ class LmdbStoreConfigTest {
 				Values.literal(enabled),
 				"getSketchEstimatorContextPairSketchesEnabled",
 				enabled,
-				!enabled
+				enabled
 		);
 	}
 

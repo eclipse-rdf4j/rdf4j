@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -404,6 +405,51 @@ public class LmdbSailStoreTest {
 				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
 						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void approveAllBulkFailureDiscardsNonIsolatedEstimatorUpdates() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			try (SailSink seedSink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				seedSink.approveAll(sampleStatements(5), Set.of());
+				seedSink.flush();
+			}
+			estimator.rebuild();
+			assertTrue("Expected estimator to be ready before the failed bulk add", estimator.isReady());
+
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			doAnswer(invocation -> {
+				IntConsumer addedIndexConsumer = invocation.getArgument(6);
+				addedIndexConsumer.accept(0);
+				throw new IOException("expected aligned bulk failure after estimator update");
+			}).when(tripleStoreSpy)
+					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				assertThrows(SailException.class, () -> sink.approveAll(sampleStatements(2), Set.of()));
+
+				assertFalse("Expected rollback to discard estimator state after an eager non-isolated update",
+						estimator.isReady());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
 			}

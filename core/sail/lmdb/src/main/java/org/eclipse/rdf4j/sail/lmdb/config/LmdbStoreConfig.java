@@ -436,9 +436,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT,
 					vf.createLiteral(sketchEstimatorContextBucketCount));
 		}
-		if (!sketchEstimatorContextPairSketchesEnabled) {
+		if (sketchEstimatorContextPairSketchesEnabled) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
-					vf.createLiteral(false));
+					vf.createLiteral(true));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
