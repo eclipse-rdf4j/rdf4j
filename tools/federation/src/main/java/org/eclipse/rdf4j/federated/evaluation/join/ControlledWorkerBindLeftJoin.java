@@ -15,7 +15,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 
 	public ControlledWorkerBindLeftJoin(ControlledWorkerScheduler<BindingSet> scheduler,
-			FederationEvalStrategy strategy, CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
+			FederationEvaluationStrategy strategy, CloseableIteration<BindingSet> leftIter, TupleExpr rightArg,
 			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
 		super(scheduler, strategy, leftIter, rightArg, bindings, queryInfo);
 	}
@@ -54,11 +54,11 @@ public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 	}
 
 	static protected class LeftBoundJoinTaskCreator implements TaskCreator {
-		protected final FederationEvalStrategy _strategy;
+		protected final FederationEvaluationStrategy _strategy;
 		protected final StatementTupleExpr _expr;
 
 		public LeftBoundJoinTaskCreator(
-				FederationEvalStrategy strategy, StatementTupleExpr expr) {
+				FederationEvaluationStrategy strategy, StatementTupleExpr expr) {
 			super();
 			_strategy = strategy;
 			_expr = expr;
@@ -71,11 +71,11 @@ public class ControlledWorkerBindLeftJoin extends ControlledWorkerBindJoinBase {
 	}
 
 	static protected class EmptyLeftBoundJoinTaskCreator implements TaskCreator {
-		protected final FederationEvalStrategy _strategy;
+		protected final FederationEvaluationStrategy _strategy;
 		protected final EmptyStatementPattern _expr;
 
 		public EmptyLeftBoundJoinTaskCreator(
-				FederationEvalStrategy strategy, EmptyStatementPattern expr) {
+				FederationEvaluationStrategy strategy, EmptyStatementPattern expr) {
 			super();
 			_strategy = strategy;
 			_expr = expr;

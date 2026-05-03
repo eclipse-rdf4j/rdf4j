@@ -21,7 +21,6 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -29,6 +28,7 @@ import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -192,12 +192,12 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	@Override
-	public final HttpClient getHttpClient() {
+	public final RDF4JHttpClient getHttpClient() {
 		return client.getHttpClient();
 	}
 
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		client.setHttpClient(httpClient);
 	}
 

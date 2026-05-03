@@ -66,13 +66,13 @@ class ExportServletCoverageTest {
 		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		javax.servlet.http.HttpServletResponse response = mock(javax.servlet.http.HttpServletResponse.class);
+		jakarta.servlet.http.HttpServletResponse response = mock(jakarta.servlet.http.HttpServletResponse.class);
 
 		servlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(request.isParameterPresent("Accept")).thenReturn(true);
 		when(request.getParameter("Accept")).thenReturn(RDFFormat.BINARY.getDefaultMIMEType());
-		when(response.getOutputStream()).thenReturn(mock(javax.servlet.ServletOutputStream.class));
+		when(response.getOutputStream()).thenReturn(mock(jakarta.servlet.ServletOutputStream.class));
 
 		servlet.service(request, response, "/transform");
 

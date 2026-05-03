@@ -29,8 +29,6 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -44,6 +42,8 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 class QueryEvaluatorTest {
 

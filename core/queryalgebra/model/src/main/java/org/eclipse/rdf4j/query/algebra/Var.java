@@ -15,6 +15,8 @@ import java.util.ServiceLoader;
 
 import org.eclipse.rdf4j.model.Value;
 
+import com.google.common.annotations.VisibleForTesting;
+
 /**
  * A variable that can contain a Value.
  *
@@ -312,10 +314,33 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		return constant;
 	}
 
+	/**
+	 * Installs a custom {@link Provider} to be used by {@link Var#of} and {@link Var#clone}. Intended for test use
+	 * only. Always call {@link #resetProvider()} in a corresponding teardown.
+	 */
+	@VisibleForTesting
+	/* package */ static void setProvider(Provider provider) {
+		Holder.PROVIDER = provider;
+	}
+
+	/**
+	 * Resets the {@link Provider} to the one resolved from the system property and {@link ServiceLoader}. Intended for
+	 * test use only to undo a prior {@link #setProvider} call.
+	 */
+	@VisibleForTesting
+	/* package */ static void resetProvider() {
+		Holder.reset();
+	}
+
 	private static final class Holder {
 		private static final Provider DEFAULT = Var::new;
 
-		static final Provider PROVIDER = initProvider();
+		// Not final so that Var.setProvider() can replace it during tests
+		static Provider PROVIDER = initProvider();
+
+		private static void reset() {
+			PROVIDER = initProvider();
+		}
 
 		private static Provider initProvider() {
 			// 1) Explicit override via system property (FQCN of Var.Provider)
