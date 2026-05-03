@@ -133,7 +133,7 @@ public final class QueryCircuitBreakerHandle {
 		cancellationReason = reason;
 
 		Thread activeWorker = workerThread;
-		if (activeWorker != null) {
+		if (activeWorker != null && activeWorker != Thread.currentThread()) {
 			activeWorker.interrupt();
 		}
 

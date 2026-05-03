@@ -118,6 +118,22 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
+	void shouldNotLeaveCurrentThreadInterruptedWhenSelfCancelling() {
+		QueryCircuitBreakerHandle handle = new QueryCircuitBreakerHandle("self-cancel",
+				QueryCircuitBreakerHandle.Source.SERVER, "repo", "query", 0L, null);
+
+		try {
+			handle.attach(Thread.currentThread(), null);
+
+			assertTrue(handle.requestCancel(QueryPressureState.CRITICAL, "self-cancel"));
+			assertFalse(Thread.currentThread().isInterrupted());
+		} finally {
+			Thread.interrupted();
+			handle.finish();
+		}
+	}
+
+	@Test
 	void shouldIgnoreCheckpointStrideOnlyAtHighOrAbove() throws Exception {
 		PropertiesScope properties = new PropertiesScope()
 				.with(QueryCircuitBreaker.ENABLED_PROPERTY, "true")
