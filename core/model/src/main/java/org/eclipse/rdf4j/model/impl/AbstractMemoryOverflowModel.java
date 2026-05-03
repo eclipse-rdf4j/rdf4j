@@ -243,9 +243,13 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		return add;
 	}
 
+	long count = 0;
+
 	@Override
 	public boolean add(Statement st) {
-		checkMemoryOverflow();
+		if (count++ % BATCH_SIZE == 0) {
+			checkMemoryOverflow();
+		}
 		boolean add = getDelegate().add(st);
 		if (add && memory instanceof DynamicModel) {
 			((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);

@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -122,6 +123,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private volatile boolean statementCleared;
 
 	private boolean closed;
+	private IsolationLevel sinkIsolationLevel = IsolationLevels.NONE;
 
 	public static boolean isOrderIndependent(Changeset changeset1, Changeset changeset2) {
 		Objects.requireNonNull(changeset1, "changeset1");
@@ -539,6 +541,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		assert !from.closed;
 
+		this.sinkIsolationLevel = from.sinkIsolationLevel;
 		this.observed = from.observed;
 		this.approved = from.approved;
 		this.approvedEmpty = from.approvedEmpty;
@@ -550,6 +553,14 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		this.removedPrefixes = from.removedPrefixes;
 		this.namespaceCleared = from.namespaceCleared;
 		this.statementCleared = from.statementCleared;
+	}
+
+	IsolationLevel getSinkIsolationLevel() {
+		return sinkIsolationLevel;
+	}
+
+	void setSinkIsolationLevel(IsolationLevel sinkIsolationLevel) {
+		this.sinkIsolationLevel = Objects.requireNonNull(sinkIsolationLevel);
 	}
 
 	/**

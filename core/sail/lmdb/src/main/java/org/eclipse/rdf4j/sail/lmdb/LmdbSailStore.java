@@ -773,7 +773,11 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final boolean nonIsolated;
-		private final List<Runnable> pendingEstimatorUpdates = new ArrayList<>();
+		private final Object pendingEstimatorLock = new Object();
+		private final List<Statement> pendingEstimatorAddStatements = new ArrayList<>();
+		private final List<Statement> pendingEstimatorRemoveStatements = new ArrayList<>();
+		private long pendingEstimatorSizeAdditions;
+		private long pendingEstimatorSizeDeletions;
 		private boolean nonIsolatedUpdatesApplied;
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
@@ -785,6 +789,10 @@ class LmdbSailStore implements SailStore {
 			if (!explicit || sketchBasedJoinEstimator == null) {
 				return;
 			}
+			if (!sketchBasedJoinEstimator.canAcceptIncrementalUpdatesNonBlocking()) {
+				queueEstimatorSizeDelta(1L, 0L);
+				return;
+			}
 			if (nonIsolated) {
 				try {
 					sketchBasedJoinEstimator.addStatement(st);
@@ -794,13 +802,17 @@ class LmdbSailStore implements SailStore {
 				}
 				return;
 			}
-			synchronized (pendingEstimatorUpdates) {
-				pendingEstimatorUpdates.add(() -> sketchBasedJoinEstimator.addStatement(st));
+			synchronized (pendingEstimatorLock) {
+				pendingEstimatorAddStatements.add(st);
 			}
 		}
 
 		private void queueEstimatorRemove(Statement st) {
 			if (!explicit || sketchBasedJoinEstimator == null) {
+				return;
+			}
+			if (!sketchBasedJoinEstimator.canAcceptIncrementalUpdatesNonBlocking()) {
+				queueEstimatorSizeDelta(0L, 1L);
 				return;
 			}
 			if (nonIsolated) {
@@ -812,8 +824,24 @@ class LmdbSailStore implements SailStore {
 				}
 				return;
 			}
-			synchronized (pendingEstimatorUpdates) {
-				pendingEstimatorUpdates.add(() -> sketchBasedJoinEstimator.deleteStatement(st));
+			synchronized (pendingEstimatorLock) {
+				pendingEstimatorRemoveStatements.add(st);
+			}
+		}
+
+		private void queueEstimatorSizeDelta(long additions, long deletions) {
+			if (nonIsolated) {
+				try {
+					sketchBasedJoinEstimator.recordStoreSizeDelta(additions, deletions);
+					nonIsolatedUpdatesApplied = true;
+				} catch (RuntimeException e) {
+					recoverEstimatorAfterFailure("recording non-isolated estimator size delta", e);
+				}
+				return;
+			}
+			synchronized (pendingEstimatorLock) {
+				pendingEstimatorSizeAdditions += additions;
+				pendingEstimatorSizeDeletions += deletions;
 			}
 		}
 
@@ -821,16 +849,28 @@ class LmdbSailStore implements SailStore {
 			if (!explicit || nonIsolated) {
 				return;
 			}
-			List<Runnable> updates;
-			synchronized (pendingEstimatorUpdates) {
-				if (pendingEstimatorUpdates.isEmpty()) {
+			List<Statement> addedStatements;
+			List<Statement> removals;
+			long sizeAdditions;
+			long sizeDeletions;
+			synchronized (pendingEstimatorLock) {
+				if (pendingEstimatorAddStatements.isEmpty() && pendingEstimatorRemoveStatements.isEmpty()
+						&& pendingEstimatorSizeAdditions == 0L && pendingEstimatorSizeDeletions == 0L) {
 					return;
 				}
-				updates = new ArrayList<>(pendingEstimatorUpdates);
-				pendingEstimatorUpdates.clear();
+				addedStatements = new ArrayList<>(pendingEstimatorAddStatements);
+				removals = new ArrayList<>(pendingEstimatorRemoveStatements);
+				sizeAdditions = pendingEstimatorSizeAdditions;
+				sizeDeletions = pendingEstimatorSizeDeletions;
+				pendingEstimatorAddStatements.clear();
+				pendingEstimatorRemoveStatements.clear();
+				pendingEstimatorSizeAdditions = 0L;
+				pendingEstimatorSizeDeletions = 0L;
 			}
 			try {
-				updates.forEach(Runnable::run);
+				sketchBasedJoinEstimator.addStatements(addedStatements);
+				sketchBasedJoinEstimator.deleteStatements(removals);
+				sketchBasedJoinEstimator.recordStoreSizeDelta(sizeAdditions, sizeDeletions);
 			} catch (RuntimeException e) {
 				recoverEstimatorAfterFailure("applying committed estimator updates", e);
 			}
@@ -846,14 +886,20 @@ class LmdbSailStore implements SailStore {
 				}
 				return;
 			}
-			synchronized (pendingEstimatorUpdates) {
-				pendingEstimatorUpdates.clear();
+			synchronized (pendingEstimatorLock) {
+				pendingEstimatorAddStatements.clear();
+				pendingEstimatorRemoveStatements.clear();
+				pendingEstimatorSizeAdditions = 0L;
+				pendingEstimatorSizeDeletions = 0L;
 			}
 		}
 
 		private void recoverEstimatorAfterFailure(String action, RuntimeException e) {
-			synchronized (pendingEstimatorUpdates) {
-				pendingEstimatorUpdates.clear();
+			synchronized (pendingEstimatorLock) {
+				pendingEstimatorAddStatements.clear();
+				pendingEstimatorRemoveStatements.clear();
+				pendingEstimatorSizeAdditions = 0L;
+				pendingEstimatorSizeDeletions = 0L;
 			}
 			if (sketchBasedJoinEstimator != null) {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();

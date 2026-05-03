@@ -26,7 +26,10 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -461,6 +464,36 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
+	void readCommittedCommitUsesBulkEstimatorUpdates(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var p = vf.createIRI("urn:bulk-estimator:p");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+			estimator.setRebuildAllowedSupplier(() -> false);
+
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.READ_COMMITTED);
+				for (int i = 0; i < 8; i++) {
+					conn.addStatement(vf.createIRI("urn:bulk-estimator:s:" + i), p,
+							vf.createIRI("urn:bulk-estimator:o:" + i));
+				}
+				conn.commit();
+			}
+
+			assertEquals(0, pendingIncrementalStatementQueueSize(estimator),
+					"READ_COMMITTED commits should hand statements to the estimator as one committed bulk batch");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void noneIsolationAppliesEstimatorUpdatesAcrossSinkFlushes(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s = vf.createIRI("urn:s");
@@ -562,6 +595,12 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				connection.commit();
 			}
 
+			AtomicLong approxStoreSize = (AtomicLong) objectField(estimator, "approxStoreSize");
+			AtomicBoolean rebuildRequired = (AtomicBoolean) objectField(estimator, "rebuildRequired");
+			assertEquals(1L, approxStoreSize.get(),
+					"Not-ready estimator should record committed additions as a coarse size delta");
+			assertTrue(rebuildRequired.get(), "Not-ready estimator should remain marked for rebuild");
+
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				assertTrue(connection.hasStatement(s, p, o, false));
 				try (var result = connection.prepareTupleQuery(
@@ -621,6 +660,15 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.get(target);
+	}
+
+	private static int pendingIncrementalStatementQueueSize(SketchBasedJoinEstimator estimator) throws Exception {
+		Object[] queues = (Object[]) objectField(estimator, "incrementalStatementQueues");
+		int pending = 0;
+		for (Object queue : queues) {
+			pending += ((List<?>) objectField(queue, "updates")).size();
+		}
+		return pending;
 	}
 
 	private static Object component(Object stateComponents, String component) throws Exception {

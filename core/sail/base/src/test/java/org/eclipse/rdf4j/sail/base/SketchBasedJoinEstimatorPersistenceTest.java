@@ -40,7 +40,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -680,34 +679,35 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	void incrementalIngestBuffersUntilBatchThenFlushesOnDemand(@TempDir Path tempDir) throws Exception {
 		IRI predicate = VF.createIRI("urn:p");
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		int queueLimit = 4;
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(),
+				smallConfig().withIncrementalQueueInitialLimit(queueLimit));
 		estimator.configurePersistence(snapshot, false);
-		int batchSize = incrementalBatchSize();
 
-		for (int i = 0; i < batchSize - 1; i++) {
+		for (int i = 0; i < queueLimit - 1; i++) {
 			estimator.addStatement(st(VF.createIRI("urn:s" + i), predicate, VF.createIRI("urn:o" + i)));
 		}
 		assertTrue(estimator.debugResidentSketches().isEmpty(),
-				"Expected no resident sketch updates before incremental batch threshold");
+				"Expected no resident sketch updates before incremental queue threshold");
 
-		estimator.addStatement(st(VF.createIRI("urn:s" + (batchSize - 1)), predicate,
-				VF.createIRI("urn:o" + (batchSize - 1))));
+		estimator.addStatement(st(VF.createIRI("urn:s" + (queueLimit - 1)), predicate,
+				VF.createIRI("urn:o" + (queueLimit - 1))));
 		assertEquals(0, estimator.debugPendingIncrementalCount(),
-				"Expected full incremental batch to leave the caller-side buffer");
+				"Expected full incremental queue to leave the caller-side buffer");
 		flushIncrementalBuffer(estimator);
-		assertFalse(estimator.debugResidentSketches().isEmpty(),
-				"Expected incremental batch flush to apply queued updates when requested");
+		assertFalse(estimator.debugResidentSketches().isEmpty(), "Expected flush to apply queued updates");
 	}
 
 	@Test
 	void fullIncrementalBatchDoesNotWaitForStateLock(@TempDir Path tempDir) throws Exception {
 		IRI predicate = VF.createIRI("urn:async:p");
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
+		int queueLimit = 4;
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(),
+				smallConfig().withIncrementalQueueInitialLimit(queueLimit));
 		estimator.configurePersistence(snapshot, false);
-		int batchSize = incrementalBatchSize();
 
-		for (int i = 0; i < batchSize - 1; i++) {
+		for (int i = 0; i < queueLimit - 1; i++) {
 			estimator.addStatement(st(VF.createIRI("urn:async:s" + i), predicate, VF.createIRI("urn:async:o" + i)));
 		}
 
@@ -727,8 +727,8 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		CountDownLatch addReturned = new CountDownLatch(1);
 		Thread addThread = new Thread(() -> {
 			try {
-				estimator.addStatement(st(VF.createIRI("urn:async:s" + (batchSize - 1)), predicate,
-						VF.createIRI("urn:async:o" + (batchSize - 1))));
+				estimator.addStatement(st(VF.createIRI("urn:async:s" + (queueLimit - 1)), predicate,
+						VF.createIRI("urn:async:o" + (queueLimit - 1))));
 			} catch (Throwable t) {
 				addFailure.set(t);
 			} finally {
@@ -755,56 +755,21 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	@SuppressWarnings("unchecked")
 	@Test
-	void fullQueueRechecksAsyncFailureWhileEnqueueing(@TempDir Path tempDir) throws Exception {
+	void incrementalAddSurfacesAsyncFailureBeforeBuffering(@TempDir Path tempDir) throws Exception {
 		IRI predicate = VF.createIRI("urn:async:p");
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), smallConfig());
 		estimator.configurePersistence(snapshot, false);
-		int batchSize = incrementalBatchSize();
-
-		for (int i = 0; i < batchSize - 1; i++) {
-			estimator.addStatement(st(VF.createIRI("urn:async:s" + i), predicate, VF.createIRI("urn:async:o" + i)));
-		}
-
-		ExecutorService asyncExecutor = (ExecutorService) privateFieldValue(estimator, "asyncIncrementalExecutor");
-		Future<?> asyncWorker = (Future<?>) privateFieldValue(estimator, "asyncIncrementalWorker");
-		asyncExecutor.shutdownNow();
-		asyncWorker.get(2, TimeUnit.SECONDS);
-
-		BlockingQueue<Object> asyncQueue = (BlockingQueue<Object>) privateFieldValue(estimator,
-				"asyncIncrementalBatches");
-		while (asyncQueue.offer(new Object[0])) {
-			// Fill the bounded queue so the final add has to wait for capacity.
-		}
-		assertFalse(asyncQueue.offer(new Object[0]), "Expected async ingestion queue to be full");
 
 		AtomicReference<Throwable> asyncFailure = (AtomicReference<Throwable>) privateFieldValue(estimator,
 				"asyncIncrementalFailure");
 		IllegalStateException failure = new IllegalStateException("forced async failure");
-		AtomicReference<Throwable> addFailure = new AtomicReference<>();
-		CountDownLatch addReturned = new CountDownLatch(1);
-		Thread addThread = new Thread(() -> {
-			try {
-				estimator.addStatement(st(VF.createIRI("urn:async:s" + (batchSize - 1)), predicate,
-						VF.createIRI("urn:async:o" + (batchSize - 1))));
-			} catch (Throwable t) {
-				addFailure.set(t);
-			} finally {
-				addReturned.countDown();
-			}
-		}, "SketchEstimator-FullQueueFailureAdd");
-		addThread.start();
+		asyncFailure.set(failure);
 
-		try {
-			Thread.sleep(50);
-			asyncFailure.set(failure);
-			assertTrue(addReturned.await(500, TimeUnit.MILLISECONDS),
-					"Full queue should not hide an async ingestion failure");
-			assertSame(failure, addFailure.get(), "Expected queued add to surface the async ingestion failure");
-		} finally {
-			asyncQueue.poll();
-			addThread.join(TimeUnit.SECONDS.toMillis(2));
-		}
+		RuntimeException thrown = assertThrows(RuntimeException.class,
+				() -> estimator.addStatement(st(VF.createIRI("urn:async:s"), predicate, VF.createIRI("urn:async:o"))),
+				"Incremental add should surface a previous async ingestion failure");
+		assertSame(failure, thrown);
 	}
 
 	@Test
@@ -976,12 +941,6 @@ class SketchBasedJoinEstimatorPersistenceTest {
 
 	private static void flushIncrementalBuffer(SketchBasedJoinEstimator estimator) {
 		estimator.debugFlushPendingIncremental();
-	}
-
-	private static int incrementalBatchSize() throws Exception {
-		Field field = SketchBasedJoinEstimator.class.getDeclaredField("INCREMENTAL_BATCH_SIZE");
-		field.setAccessible(true);
-		return field.getInt(null);
 	}
 
 	@Test
