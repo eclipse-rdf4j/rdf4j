@@ -13,12 +13,12 @@ package org.eclipse.rdf4j.common.webapp.system;
 
 import java.util.Objects;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.Controller;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 public class QueryCircuitBreakerStatusController implements Controller {
 
