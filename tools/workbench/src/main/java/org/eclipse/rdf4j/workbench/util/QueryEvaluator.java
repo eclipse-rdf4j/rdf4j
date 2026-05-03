@@ -550,10 +550,10 @@ public final class QueryEvaluator {
 	private List<BindingSet> collectBindingSets(TupleQueryResult result) throws QueryEvaluationException {
 		List<BindingSet> bindings = new ArrayList<>();
 		while (result.hasNext()) {
-			if (bindings.size() % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
-				QueryExecutionContext.checkpoint("WORKBENCH_TUPLE_RESULT");
-			}
 			bindings.add(result.next());
+			if (bindings.size() % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+				checkpointMaterialization("WORKBENCH_TUPLE_RESULT");
+			}
 		}
 		return bindings;
 	}
@@ -562,13 +562,20 @@ public final class QueryEvaluator {
 		List<Statement> statements = new ArrayList<>();
 		try (var result = query.evaluate()) {
 			while (result.hasNext()) {
-				if (statements.size() % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
-					QueryExecutionContext.checkpoint("WORKBENCH_GRAPH_RESULT");
-				}
 				statements.add(result.next());
+				if (statements.size() % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+					checkpointMaterialization("WORKBENCH_GRAPH_RESULT");
+				}
 			}
 		}
 		return statements;
+	}
+
+	private void checkpointMaterialization(String operator) throws QueryEvaluationException {
+		QueryCircuitBreakerHandle handle = QueryExecutionContext.getHandle();
+		if (handle != null) {
+			QUERY_CIRCUIT_BREAKER.checkpoint(handle, operator);
+		}
 	}
 
 	private String extractRepositoryId(RepositoryConnection connection) {
