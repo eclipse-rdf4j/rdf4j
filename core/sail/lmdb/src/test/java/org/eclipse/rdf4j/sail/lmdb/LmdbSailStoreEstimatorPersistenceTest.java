@@ -160,6 +160,35 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
+	void persistIfDirtyReopensDefaultDirectoryBackedSketchStore(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var s = vf.createIRI("urn:default-store:s");
+		var p = vf.createIRI("urn:default-store:p");
+		var o = vf.createIRI("urn:default-store:o");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+
+			AutoCloseable persistenceStore = (AutoCloseable) objectField(estimator, "persistenceStore");
+			persistenceStore.close();
+			setObjectField(estimator, "persistenceStore", null);
+
+			estimator.addStatement(vf.createStatement(s, p, o));
+
+			assertTrue(estimator.persistIfDirty(),
+					"Estimator persistence should reopen the default directory-backed sketch store");
+		} finally {
+			store.shutDown();
+		}
+
+		assertTrue(estimatorMetadata(dataDir).isFile(), "Expected estimator metadata in the default store directory");
+	}
+
+	@Test
 	void closeWritesFilterSelectivitySidecarAndReloadsItAfterRestart(@TempDir File dataDir) throws Exception {
 		Filter learnedFilter = firstFilter(LEARNED_FILTER_QUERY);
 
@@ -660,6 +689,12 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.get(target);
+	}
+
+	private static void setObjectField(Object target, String name, Object value) throws Exception {
+		Field field = target.getClass().getDeclaredField(name);
+		field.setAccessible(true);
+		field.set(target, value);
 	}
 
 	private static int pendingIncrementalStatementQueueSize(SketchBasedJoinEstimator estimator) throws Exception {

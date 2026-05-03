@@ -1934,8 +1934,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					}
 					continue;
 				}
-//				Staleness staleness = staleness();
-//				System.out.println(staleness.toString());
 
 				try {
 					rebuild();
@@ -3259,11 +3257,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (sketch == null || !Double.isFinite(cardinality)) {
 			return cardinality;
 		}
-//		if(cardinality < sketch.getEstimate()){
-//			System.out.println("Cardinality " + cardinality + " is lower than sketch estimate " + sketch.getEstimate());
-//		}else if(cardinality > sketch.getEstimate()) {
-//			System.out.println("Cardinality " + cardinality + " is higher than sketch estimate " + sketch.getEstimate());
-//		}
 
 		// Cardinality cannot be lower than the estimated number of distinct join bindings.
 //		return Math.max(cardinality, sketch.getEstimate());
@@ -3547,10 +3540,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
 				boolean contextPairSketchesEnabled) {
-			System.out.println("Initializing state: k=" + k + ", subjectBuckets=" + subjectBuckets
-					+ ", predicateBuckets="
-					+ predicateBuckets + ", objectBuckets=" + objectBuckets + ", contextBuckets=" + contextBuckets
-					+ ", contextPairSketchesEnabled=" + contextPairSketchesEnabled);
+			logger.info(
+					"Initializing state: k={}, subjectBuckets={}, predicateBuckets={}, objectBuckets={}, contextBuckets={}, contextPairSketchesEnabled={}",
+					k, subjectBuckets, predicateBuckets, objectBuckets, contextBuckets, contextPairSketchesEnabled);
 			this.k = k;
 			this.subjectBuckets = subjectBuckets;
 			this.predicateBuckets = predicateBuckets;
@@ -8207,7 +8199,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 */
 	public boolean persistIfDirty() {
 		flushPendingIncremental();
-		SketchEstimatorPersistenceStore store = persistenceStore;
+		SketchEstimatorPersistenceStore store;
+		try {
+			store = ensurePersistenceStore();
+		} catch (Throwable t) {
+			logger.warn("Failed to open join estimator persistence store at {}", persistenceFile, t);
+			return false;
+		}
 		if (!persistenceEnabled || persistenceFile == null || store == null) {
 			return false;
 		}
@@ -8935,7 +8933,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void appendNativeSketchPayload(State state, int entryId, SketchAddress address, byte[] payload)
 			throws IOException {
-		SketchEstimatorPersistenceStore store = persistenceStore;
+		SketchEstimatorPersistenceStore store = ensurePersistenceStore();
 		if (store != null) {
 			byte slot = slotByte(slotOf(state));
 			int slotBytes = shouldPersistCompactly(address) ? payload.length : state.maxSketchBytes;
@@ -8958,6 +8956,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return;
 		}
 		throw new IOException("No directory-backed sketch store configured");
+	}
+
+	private SketchEstimatorPersistenceStore ensurePersistenceStore() throws IOException {
+		if (!persistenceEnabled || persistenceFile == null) {
+			return null;
+		}
+		SketchEstimatorPersistenceStore store = persistenceStore;
+		if (store != null) {
+			return store;
+		}
+		synchronized (persistLock) {
+			store = persistenceStore;
+			if (store == null && persistenceEnabled && persistenceFile != null) {
+				logger.info("RdfJoinEstimator: Opening default directory-backed sketch store at {}", persistenceFile);
+				store = SketchEstimatorPersistenceStore.open(persistenceFile, logger, sketchFileChunks());
+				persistenceStore = store;
+			}
+			return store;
+		}
 	}
 
 	private void clearDirtyMappedSketch(int entryId, byte slot) {
