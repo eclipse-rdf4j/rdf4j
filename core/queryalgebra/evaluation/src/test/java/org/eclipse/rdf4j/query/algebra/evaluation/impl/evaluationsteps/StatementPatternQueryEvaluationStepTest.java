@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
 class StatementPatternQueryEvaluationStepTest {
@@ -142,9 +143,168 @@ class StatementPatternQueryEvaluationStepTest {
 		}
 	}
 
+	@Test
+	void repeatedFullyBoundEvaluateReusesDirectStatementLookup() {
+		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
+		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
+		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		MutableBindingSet firstBindings = context.createBindingSet();
+		firstBindings.addBinding("s", tripleSource.statement.getSubject());
+		firstBindings.addBinding("p", tripleSource.statement.getPredicate());
+		firstBindings.addBinding("o", tripleSource.statement.getObject());
+		firstBindings.addBinding("tag", tripleSource.valueFactory.createLiteral("first"));
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(firstBindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			BindingSet result = iteration.next();
+			assertThat(result.getValue("tag")).isEqualTo(tripleSource.valueFactory.createLiteral("first"));
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		MutableBindingSet secondBindings = context.createBindingSet();
+		secondBindings.addBinding("s", tripleSource.statement.getSubject());
+		secondBindings.addBinding("p", tripleSource.statement.getPredicate());
+		secondBindings.addBinding("o", tripleSource.statement.getObject());
+		secondBindings.addBinding("tag", tripleSource.valueFactory.createLiteral("second"));
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(secondBindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			BindingSet result = iteration.next();
+			assertThat(result.getValue("tag")).isEqualTo(tripleSource.valueFactory.createLiteral("second"));
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		assertThat(tripleSource.lookupCount.get()).isOne();
+	}
+
+	@Test
+	void cachedFullyBoundEvaluateDoesNotCopyUnchangedBindings() {
+		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
+		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
+		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		MutableBindingSet bindings = context.createBindingSet();
+		bindings.addBinding("s", tripleSource.statement.getSubject());
+		bindings.addBinding("p", tripleSource.statement.getPredicate());
+		bindings.addBinding("o", tripleSource.statement.getObject());
+		bindings.addBinding("tag", tripleSource.valueFactory.createLiteral("unchanged"));
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next().getValue("tag"))
+					.isEqualTo(tripleSource.valueFactory.createLiteral("unchanged"));
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		context.bindingSetCopies.set(0);
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next().getValue("tag"))
+					.isEqualTo(tripleSource.valueFactory.createLiteral("unchanged"));
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		assertThat(context.bindingSetCopies.get()).isZero();
+		assertThat(tripleSource.lookupCount.get()).isOne();
+	}
+
+	@Test
+	void firstFullyBoundEvaluateDoesNotCopyUnchangedBindings() {
+		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
+		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
+		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		MutableBindingSet bindings = context.createBindingSet();
+		bindings.addBinding("s", tripleSource.statement.getSubject());
+		bindings.addBinding("p", tripleSource.statement.getPredicate());
+		bindings.addBinding("o", tripleSource.statement.getObject());
+		bindings.addBinding("tag", tripleSource.valueFactory.createLiteral("first"));
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			BindingSet result = iteration.next();
+			assertThat(result).isSameAs(bindings);
+			assertThat(result.getValue("tag"))
+					.isEqualTo(tripleSource.valueFactory.createLiteral("first"));
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		assertThat(context.bindingSetCopies.get()).isZero();
+		assertThat(tripleSource.lookupCount.get()).isOne();
+	}
+
+	@Test
+	void normalFullyBoundEvaluateSkipsIndexLookupMetricReadWhenTelemetryDisabled() {
+		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
+		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
+		MetricCountingStatementPattern statementPattern = new MetricCountingStatementPattern(
+				new Var("s"), new Var("p"), new Var("o"));
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		MutableBindingSet bindings = context.createBindingSet();
+		bindings.addBinding("s", tripleSource.statement.getSubject());
+		bindings.addBinding("p", tripleSource.statement.getPredicate());
+		bindings.addBinding("o", tripleSource.statement.getObject());
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		assertThat(statementPattern.metricReads.get()).isZero();
+		assertThat(tripleSource.lookupCount.get()).isOne();
+	}
+
+	@Test
+	void telemetryFullyBoundEvaluateRecordsIndexLookupMetricWhenEnabled() {
+		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
+		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
+		MetricCountingStatementPattern statementPattern = new MetricCountingStatementPattern(
+				new Var("s"), new Var("p"), new Var("o"));
+		statementPattern.setRuntimeTelemetryEnabled(true);
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		MutableBindingSet bindings = context.createBindingSet();
+		bindings.addBinding("s", tripleSource.statement.getSubject());
+		bindings.addBinding("p", tripleSource.statement.getPredicate());
+		bindings.addBinding("o", tripleSource.statement.getObject());
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		assertThat(statementPattern.metricReads.get()).isOne();
+		assertThat(statementPattern.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)).isOne();
+		assertThat(tripleSource.lookupCount.get()).isOne();
+	}
+
 	private static final class InstrumentedQueryEvaluationContext implements QueryEvaluationContext {
 
 		private final AtomicInteger bindingChecks = new AtomicInteger();
+		private final AtomicInteger bindingSetCopies = new AtomicInteger();
 
 		@Override
 		public Predicate<BindingSet> hasBinding(String variableName) {
@@ -157,6 +317,14 @@ class StatementPatternQueryEvaluationStepTest {
 		@Override
 		public MutableBindingSet createBindingSet() {
 			return new InstrumentedBindingSet();
+		}
+
+		@Override
+		public MutableBindingSet createBindingSet(BindingSet bindings) {
+			bindingSetCopies.incrementAndGet();
+			MutableBindingSet copy = createBindingSet();
+			bindings.forEach(binding -> copy.addBinding(binding.getName(), binding.getValue()));
+			return copy;
 		}
 
 		@Override
@@ -206,6 +374,48 @@ class StatementPatternQueryEvaluationStepTest {
 		@Override
 		public ValueFactory getValueFactory() {
 			return valueFactory;
+		}
+	}
+
+	private static final class CountingFullyBoundTripleSource implements TripleSource {
+
+		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		private final AtomicInteger lookupCount = new AtomicInteger();
+		private final Statement statement = valueFactory.createStatement(
+				valueFactory.createIRI("urn:subj"),
+				valueFactory.createIRI("urn:pred"),
+				valueFactory.createLiteral("obj"));
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws QueryEvaluationException {
+			lookupCount.incrementAndGet();
+			if (statement.getSubject().equals(subj)
+					&& statement.getPredicate().equals(pred)
+					&& statement.getObject().equals(obj)) {
+				return new CloseableIteratorIteration<>(List.of(statement).iterator());
+			}
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return valueFactory;
+		}
+	}
+
+	private static final class MetricCountingStatementPattern extends StatementPattern {
+
+		private final AtomicInteger metricReads = new AtomicInteger();
+
+		private MetricCountingStatementPattern(Var subjectVar, Var predicateVar, Var objectVar) {
+			super(subjectVar, predicateVar, objectVar);
+		}
+
+		@Override
+		public long getLongMetricActual(String metricName) {
+			metricReads.incrementAndGet();
+			return super.getLongMetricActual(metricName);
 		}
 	}
 

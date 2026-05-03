@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 final class CollectedJoinArgs {
 
@@ -34,6 +36,7 @@ final class DeferredFilter {
 
 	final ValueExpr condition;
 	final Set<String> requiredVars;
+	final Set<String> conditionVars;
 	final int conditionCost;
 	final int originalIndex;
 	final StatementPattern patternLocalBase;
@@ -44,13 +47,30 @@ final class DeferredFilter {
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars,
 			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
 			Set<StatementPattern> originPatterns, EvaluationStatistics.FilterPassEstimate passEstimate) {
+		this(condition, requiredVars, conditionBindingNames(condition), conditionCost, originalIndex, patternLocalBase,
+				originPatterns, passEstimate);
+	}
+
+	DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
+			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
+			Set<StatementPattern> originPatterns, EvaluationStatistics.FilterPassEstimate passEstimate) {
 		this.condition = condition;
 		this.requiredVars = Set.copyOf(requiredVars);
+		this.conditionVars = Set.copyOf(conditionVars);
 		this.conditionCost = conditionCost;
 		this.originalIndex = originalIndex;
 		this.patternLocalBase = patternLocalBase;
 		this.originPatterns = identityCopy(originPatterns);
 		this.passEstimate = passEstimate;
+	}
+
+	static Set<String> conditionBindingNames(ValueExpr condition) {
+		if (condition == null) {
+			return Set.of();
+		}
+		Set<String> bindingNames = new HashSet<>(VarNameCollector.process(condition));
+		bindingNames.removeIf(bindingName -> bindingName == null || bindingName.startsWith("_const_"));
+		return bindingNames;
 	}
 
 	static Set<StatementPattern> identityCopy(Set<StatementPattern> patterns) {

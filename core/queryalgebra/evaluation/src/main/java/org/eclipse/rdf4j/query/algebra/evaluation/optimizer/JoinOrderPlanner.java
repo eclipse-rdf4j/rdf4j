@@ -389,8 +389,9 @@ public interface JoinOrderPlanner {
 	default PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
 			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
 		Optional<JoinOrderPlan> plan = planJoinOrder(args, initiallyBoundVars, algorithm, deferredFilters);
+		List<String> diagnostics = plan.isPresent() ? plan.get().getDiagnostics() : List.of();
 		return new PlanningAttempt(plan, null, algorithm, null, null,
-				plan.map(JoinOrderPlan::getDiagnostics).orElse(List.of()));
+				diagnostics);
 	}
 
 	default Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,

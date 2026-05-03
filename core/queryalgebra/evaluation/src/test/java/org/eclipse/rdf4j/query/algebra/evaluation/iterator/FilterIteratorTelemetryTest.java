@@ -18,13 +18,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -56,6 +61,38 @@ class FilterIteratorTelemetryTest {
 		assertThat(iterator.getSourceRowsScannedActual()).isZero();
 		assertThat(iterator.getSourceRowsMatchedActual()).isZero();
 		assertThat(iterator.getSourceRowsFilteredActual()).isZero();
+	}
+
+	@Test
+	void simpleFilterConditionUsesInputBindingsWithoutScopeCopy() throws Exception {
+		BindingSetAssignment arg = new BindingSetAssignment();
+		arg.setBindingSets(List.of(singleBindingSet("x", "1")));
+		Filter filter = new Filter(arg, new Compare(new Var("x"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("1")), CompareOp.EQ));
+
+		QueryValueEvaluationStep condition = mock(QueryValueEvaluationStep.class);
+		AtomicReference<BindingSet> conditionBindings = new AtomicReference<>();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.isTrue(eq(condition), any(BindingSet.class))).thenAnswer(invocation -> {
+			conditionBindings.set(invocation.getArgument(1));
+			return true;
+		});
+
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", SimpleValueFactory.getInstance().createLiteral("1"));
+		row.addBinding("outsideFilterScope", SimpleValueFactory.getInstance().createLiteral("ignored"));
+
+		FilterIterator iterator = new FilterIterator(filter,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator()),
+				condition,
+				strategy);
+		try (iterator) {
+			assertThat(iterator.hasNext()).isTrue();
+			assertThat(iterator.next()).isSameAs(row);
+			assertThat(iterator.hasNext()).isFalse();
+		}
+
+		assertThat(conditionBindings.get()).isSameAs(row);
 	}
 
 	private static BindingSet singleBindingSet(String name, String value) {

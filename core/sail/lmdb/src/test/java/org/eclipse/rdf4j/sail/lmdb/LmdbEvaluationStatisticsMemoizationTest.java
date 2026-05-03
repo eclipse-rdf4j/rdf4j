@@ -29,6 +29,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -44,9 +45,11 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -234,6 +237,63 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void fixedOrderEstimateEnrichesPlannerMetrics() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, mock(TripleStore.class),
+				estimator);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		JoinOrderPlanner.PlanStep step = new JoinOrderPlanner.PlanStep(Set.of(), 1.0d, 1.0d, 1.0d,
+				Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"), Map.of(), List.of());
+		JoinOrderPlanner.JoinOrderPlan plan = new JoinOrderPlanner.JoinOrderPlan(List.of(pattern), 1.0d, 1.0d,
+				List.of("fixed-order"), Map.of(), Map.of(), List.of(step));
+		when(estimator.estimateJoinOrder(any(), any(), any(), any(), any())).thenReturn(Optional.of(plan));
+
+		JoinOrderPlanner.JoinOrderPlan enriched = statistics
+				.estimateJoinOrder(List.of(pattern), Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						List.of())
+				.orElseThrow();
+
+		assertEquals("lmdb-sketch",
+				enriched.getSummaryStringMetrics().get(TelemetryMetricNames.PLANNER_ID));
+		assertTrue(enriched.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT)
+				.contains("accessPathSelection=per-step"));
+	}
+
+	@Test
+	void nestedFactorCostAccountsRepeatedInvocations() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of());
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of("s"),
+				Var.of("p", vf.createIRI("urn:test:follows")),
+				Var.of("o"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(1 << SketchBasedJoinEstimator.Component.S.ordinal());
+		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("s"))).thenReturn(12.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("s"))).thenReturn(accessShape);
+
+		JoinFactorCostModel.CostContext context = new JoinFactorCostModel.CostContext(Set.of("s"),
+				4.0d, 2.0d, true);
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(pattern, context)
+				.orElseThrow();
+
+		assertTrue(estimate.getWorkRows() > 12.0d);
+		assertEquals(4.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"));
+	}
+
+	@Test
 	void usesSketchEstimatorForLeftJoinCardinalityWhenReady() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-leftjoin").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
@@ -365,6 +425,40 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected sampling fallback to estimate a selective pass ratio for CONTAINS over a single pattern");
 			assertTrue(filterCardinality < patternCardinality,
 					"Expected sampled filter selectivity to reduce estimated filter cardinality below the base pattern");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void samplesZeroHitPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-zero-sampled-filter").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingMaxMillis(100L);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadNameData(repository, 300);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter("""
+					SELECT * WHERE {
+						?s <urn:test:name> ?name .
+						FILTER(?name = "missing")
+					}
+					""");
+
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Expected zero-hit pattern-local sampling to stay usable instead of falling back to unknown");
+			assertEquals(0.0d, estimate.getPassRatio(), 0.0d,
+					"Expected a fully sampled miss to plan as a zero pass-ratio");
+			assertTrue(estimate.getEvidenceCount() > 0L,
+					"Expected zero-hit sampling to retain evidence");
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -674,6 +768,19 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				IRI object = vf.createIRI("urn:test:user:" + ((i + 1) % 8));
 				connection.add(subject, follows, object);
 				connection.add(subject, name, vf.createLiteral("u" + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadNameData(SailRepository repository, int count) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI name = vf.createIRI("urn:test:name");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < count; i++) {
+				IRI subject = vf.createIRI("urn:test:sample-user:" + i);
+				connection.add(subject, name, vf.createLiteral("sample-" + i));
 			}
 			connection.commit();
 		}

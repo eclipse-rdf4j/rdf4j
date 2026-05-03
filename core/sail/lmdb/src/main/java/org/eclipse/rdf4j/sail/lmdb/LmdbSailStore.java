@@ -652,6 +652,65 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	long countStatementIterator(
+			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		if (!explicit && !mayHaveInferred) {
+			// there are no inferred statements and the iterator should only return inferred statements
+			return 0;
+		}
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return 0;
+			}
+		}
+
+		long predID = LmdbValue.UNKNOWN_ID;
+		if (pred != null) {
+			predID = valueStore.getId(pred);
+			if (predID == LmdbValue.UNKNOWN_ID) {
+				return 0;
+			}
+		}
+
+		long objID = LmdbValue.UNKNOWN_ID;
+		if (obj != null) {
+			objID = valueStore.getId(obj);
+
+			if (objID == LmdbValue.UNKNOWN_ID) {
+				return 0;
+			}
+		}
+
+		List<Long> contextIDList = new ArrayList<>(contexts.length);
+		if (contexts.length == 0) {
+			contextIDList.add(LmdbValue.UNKNOWN_ID);
+		} else {
+			for (Resource context : contexts) {
+				if (context == null) {
+					contextIDList.add(0L);
+				} else if (!context.isTriple()) {
+					long contextID = valueStore.getId(context);
+
+					if (contextID != LmdbValue.UNKNOWN_ID) {
+						contextIDList.add(contextID);
+					}
+				}
+			}
+		}
+
+		long count = 0;
+		for (long contextID : contextIDList) {
+			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit)) {
+				while (records.next() != null) {
+					count++;
+				}
+			}
+		}
+		return count;
+	}
+
 	private final class LmdbSailSource extends BackingSailSource {
 
 		private final boolean explicit;
@@ -1480,6 +1539,22 @@ class LmdbSailStore implements SailStore {
 					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
+				}
+			}
+		}
+
+		@Override
+		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			try {
+				return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+			} catch (IOException e) {
+				try {
+					logger.warn("Failed to count statements, retrying", e);
+					// try once more before giving up
+					Thread.yield();
+					return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				} catch (IOException e2) {
+					throw new SailException("Unable to count statements", e);
 				}
 			}
 		}

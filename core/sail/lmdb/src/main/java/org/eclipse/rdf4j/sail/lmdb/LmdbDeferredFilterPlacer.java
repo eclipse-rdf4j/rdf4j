@@ -17,27 +17,37 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbDeferredFilterPlacer {
 
+	private static final int MAX_MATERIALIZED_BINDING_WINDOW_ROWS = 64;
 	private final LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer;
 	private final LmdbUnionFilterDistributor.JoinFactory joinFactory;
 	private final LmdbUnionFilterDistributor.FilterWrapper filterWrapper;
@@ -190,28 +200,25 @@ final class LmdbDeferredFilterPlacer {
 		if (assignmentNames.isEmpty()) {
 			return tupleExpr;
 		}
-		Set<String> availableNames = new HashSet<>(prefixBindingNames);
 		Set<String> assignmentBindingNames = assignmentNames.get();
-		availableNames.addAll(assignmentBindingNames);
 		List<DeferredFilter> prefixFilters = new ArrayList<>();
 		for (int i = 0; i < deferredFilters.size();) {
 			DeferredFilter deferredFilter = deferredFilters.get(i);
-			if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, availableNames,
-					assignmentBindingNames)
-					&& !hasPendingSplitExistsFilter(deferredFilters, deferredFilter, availableNames,
+			if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, assignmentBindingNames)
+					&& !hasPendingSplitExistsFilter(deferredFilters, deferredFilter, prefixBindingNames,
 							assignmentBindingNames)) {
 				prefixFilters.add(deferredFilter);
 				deferredFilters.remove(i);
 				continue;
 			}
 			if (prefixBindingNames.containsAll(deferredFilter.requiredVars)
-					|| !availableNames.containsAll(deferredFilter.requiredVars)
+					|| !containsAllInUnion(prefixBindingNames, assignmentBindingNames, deferredFilter.requiredVars)
 					|| !assignmentBindingNames.containsAll(deferredFilter.requiredVars)
 					|| deferredFilter.patternLocalBase != null
 					|| deferredFilter.originPatterns.isEmpty()
 					|| !currentPatterns.containsAll(deferredFilter.originPatterns)
 					|| !Collections.disjoint(remainingPatterns, deferredFilter.originPatterns)
-					|| hasPendingSplitExistsFilter(deferredFilters, deferredFilter, availableNames,
+					|| hasPendingSplitExistsFilter(deferredFilters, deferredFilter, prefixBindingNames,
 							assignmentBindingNames)
 					|| (!assignmentBindingNames.containsAll(deferredFilter.requiredVars)
 							&& LmdbJoinPlanSupport.containsExists(deferredFilter.condition))) {
@@ -240,15 +247,13 @@ final class LmdbDeferredFilterPlacer {
 			return;
 		}
 		Set<String> assignmentBindingNames = assignmentNames.get();
-		Set<String> availableNames = new HashSet<>(prefixBindingNames);
-		availableNames.addAll(assignmentBindingNames);
 		List<DeferredFilter> windowFilters = new ArrayList<>();
 		Set<String> requiredVars = new HashSet<>();
 		for (int i = 0; i < deferredFilters.size();) {
 			DeferredFilter deferredFilter = deferredFilters.get(i);
-			if (!canGroupDeferredFilterOnCurrentBindingWindow(deferredFilter, prefixBindingNames, availableNames,
+			if (!canGroupDeferredFilterOnCurrentBindingWindow(deferredFilter, prefixBindingNames,
 					assignmentBindingNames)
-					|| hasPendingSplitExistsFilter(deferredFilters, deferredFilter, availableNames,
+					|| hasPendingSplitExistsFilter(deferredFilters, deferredFilter, prefixBindingNames,
 							assignmentBindingNames)) {
 				i++;
 				continue;
@@ -270,14 +275,14 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private boolean canGroupDeferredFilterOnCurrentBindingWindow(DeferredFilter deferredFilter,
-			Set<String> prefixBindingNames, Set<String> availableNames, Set<String> assignmentBindingNames) {
+			Set<String> prefixBindingNames, Set<String> assignmentBindingNames) {
 		return deferredFilter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP
 				&& !LmdbJoinPlanSupport.containsExists(deferredFilter.condition)
 				&& deferredFilter.patternLocalBase == null
 				&& deferredFilter.originPatterns.isEmpty()
 				&& !deferredFilter.requiredVars.isEmpty()
 				&& !prefixBindingNames.containsAll(deferredFilter.requiredVars)
-				&& availableNames.containsAll(deferredFilter.requiredVars)
+				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, deferredFilter.requiredVars)
 				&& !Collections.disjoint(prefixBindingNames, deferredFilter.requiredVars)
 				&& !Collections.disjoint(assignmentBindingNames, deferredFilter.requiredVars)
 				&& !assignmentBindingNames.containsAll(deferredFilter.requiredVars);
@@ -296,30 +301,37 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private boolean canApplyDeferredFilterToBindingPrefix(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
-			Set<String> availableNames, Set<String> assignmentBindingNames) {
+			Set<String> assignmentBindingNames) {
 		if (LmdbJoinPlanSupport.containsExists(deferredFilter.condition)) {
 			return false;
 		}
 		Set<String> conditionBindingNames = conditionBindingNames(deferredFilter);
-		return canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, availableNames,
-				assignmentBindingNames, conditionBindingNames);
+		return canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, assignmentBindingNames,
+				conditionBindingNames);
 	}
 
 	private boolean canApplyDeferredFilterToBindingPrefix(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
-			Set<String> availableNames, Set<String> assignmentBindingNames, Set<String> conditionBindingNames) {
+			Set<String> assignmentBindingNames, Set<String> conditionBindingNames) {
 		return !conditionBindingNames.isEmpty()
 				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
 						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
 				&& !prefixBindingNames.containsAll(conditionBindingNames)
-				&& availableNames.containsAll(conditionBindingNames)
+				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
 				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
 				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
 	}
 
+	private boolean containsAllInUnion(Set<String> firstNames, Set<String> secondNames, Set<String> requiredNames) {
+		for (String requiredName : requiredNames) {
+			if (!firstNames.contains(requiredName) && !secondNames.contains(requiredName)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private Set<String> conditionBindingNames(DeferredFilter deferredFilter) {
-		Set<String> bindingNames = new HashSet<>(VarNameCollector.process(deferredFilter.condition));
-		bindingNames.removeIf(bindingName -> bindingName == null || bindingName.startsWith("_const_"));
-		return bindingNames;
+		return deferredFilter.conditionVars;
 	}
 
 	private boolean canApplySplitPrefixFilter(DeferredFilter deferredFilter, Set<String> assignmentBindingNames,
@@ -367,13 +379,13 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private boolean hasPendingSplitExistsFilter(List<DeferredFilter> deferredFilters, DeferredFilter candidate,
-			Set<String> availableNames, Set<String> assignmentBindingNames) {
+			Set<String> prefixBindingNames, Set<String> assignmentBindingNames) {
 		if (LmdbJoinPlanSupport.containsExists(candidate.condition)) {
 			return false;
 		}
 		for (DeferredFilter deferredFilter : deferredFilters) {
 			if (deferredFilter == candidate || !LmdbJoinPlanSupport.containsExists(deferredFilter.condition)
-					|| !availableNames.containsAll(deferredFilter.requiredVars)
+					|| !containsAllInUnion(prefixBindingNames, assignmentBindingNames, deferredFilter.requiredVars)
 					|| Collections.disjoint(candidate.requiredVars, deferredFilter.requiredVars)
 					|| assignmentBindingNames.containsAll(deferredFilter.requiredVars)
 					|| assignmentBindingNames.containsAll(candidate.requiredVars)) {
@@ -449,11 +461,7 @@ final class LmdbDeferredFilterPlacer {
 			return Set.of();
 		}
 		Set<String> plannerNames = new HashSet<>();
-		for (String bindingName : bindingNames) {
-			if (bindingName != null && !bindingName.startsWith("_const_")) {
-				plannerNames.add(bindingName);
-			}
-		}
+		addPlannerBindingNames(plannerNames, bindingNames);
 		return plannerNames;
 	}
 
@@ -609,8 +617,9 @@ final class LmdbDeferredFilterPlacer {
 			firstFactorOrder = Math.min(firstFactorOrder, factor.firstFactorOrder);
 			lastFactorOrder = Math.max(lastFactorOrder, factor.lastFactorOrder);
 		}
-		TupleExpr filteredRoot = filterWrapper.wrap(buildJoinRoot(selectedRoots), List.of(deferredFilter),
-				"bindingAssignments");
+		TupleExpr filteredRoot = materializeFiniteBindingWindow(selectedRoots, List.of(deferredFilter))
+				.orElseGet(() -> filterWrapper.wrap(buildJoinRoot(selectedRoots), List.of(deferredFilter),
+						"bindingAssignments"));
 		SegmentFactor groupedFactor = new SegmentFactor(filteredRoot, containedPatterns, firstFactorOrder,
 				lastFactorOrder);
 		int insertionIndex = window.startIndex;
@@ -634,11 +643,9 @@ final class LmdbDeferredFilterPlacer {
 		for (int i = 0; i < factors.size(); i++) {
 			SegmentFactor factor = factors.get(i);
 			if (LmdbJoinPlanSupport.isBindingOnlyFactor(factor)) {
-				Set<String> assignmentBindingNames = plannerBindingNames(factor.bindingNames);
-				Set<String> availableNames = new HashSet<>(prefixBindingNames);
-				availableNames.addAll(assignmentBindingNames);
-				if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, availableNames,
-						assignmentBindingNames, conditionBindingNames)) {
+				Set<String> assignmentBindingNames = factor.bindingNames;
+				if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, assignmentBindingNames,
+						conditionBindingNames)) {
 					TupleExpr filteredRoot = filterWrapper.wrap(factor.tupleExpr, List.of(deferredFilter),
 							"bindingPrefix");
 					factors.set(i, new SegmentFactor(filteredRoot, factor.containedPatterns, factor.firstFactorOrder,
@@ -646,17 +653,27 @@ final class LmdbDeferredFilterPlacer {
 					return true;
 				}
 			}
-			prefixBindingNames.addAll(prefixVisibleBindingNames(factor));
+			addPrefixVisibleBindingNames(prefixBindingNames, factor);
 		}
 		return false;
 	}
 
-	private Set<String> prefixVisibleBindingNames(SegmentFactor factor) {
-		Set<String> bindingNames = new HashSet<>(plannerBindingNames(factor.bindingNames));
+	private void addPrefixVisibleBindingNames(Set<String> prefixBindingNames, SegmentFactor factor) {
+		addPlannerBindingNames(prefixBindingNames, factor.bindingNames);
 		for (StatementPattern pattern : factor.containedPatterns) {
-			bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
+			addPlannerBindingNames(prefixBindingNames, pattern.getBindingNames());
 		}
-		return bindingNames;
+	}
+
+	private void addPlannerBindingNames(Set<String> targetBindingNames, Set<String> bindingNames) {
+		if (bindingNames == null || bindingNames.isEmpty()) {
+			return;
+		}
+		for (String bindingName : bindingNames) {
+			if (bindingName != null && !bindingName.startsWith("_const_")) {
+				targetBindingNames.add(bindingName);
+			}
+		}
 	}
 
 	private boolean selectedIndexesAreContiguous(List<Integer> selectedIndexes) {
@@ -769,12 +786,193 @@ final class LmdbDeferredFilterPlacer {
 			windowRoots.addLast(factor.tupleExpr);
 			containedPatterns.addAll(factor.containedPatterns);
 		}
-		TupleExpr filteredRoot = filterWrapper.wrap(buildJoinRoot(windowRoots), filters, placement);
+		TupleExpr filteredRoot = materializeFiniteBindingWindow(windowRoots, filters)
+				.orElseGet(() -> filterWrapper.wrap(buildJoinRoot(windowRoots), filters, placement));
 		for (int i = window[1]; i >= window[0]; i--) {
 			factors.remove(i);
 		}
 		factors.add(window[0], new SegmentFactor(filteredRoot, containedPatterns, firstFactorOrder, lastFactorOrder));
 		return true;
+	}
+
+	private Optional<TupleExpr> materializeFiniteBindingWindow(Deque<TupleExpr> roots, List<DeferredFilter> filters) {
+		if (roots.isEmpty() || filters.isEmpty()) {
+			return Optional.empty();
+		}
+
+		List<BindingSetAssignment> assignments = new ArrayList<>(roots.size());
+		LinkedHashSet<String> bindingNames = new LinkedHashSet<>();
+		for (TupleExpr root : roots) {
+			if (!(root instanceof BindingSetAssignment assignment)) {
+				return Optional.empty();
+			}
+			assignments.add(assignment);
+			bindingNames.addAll(assignment.getAssuredBindingNames());
+		}
+
+		Map<DeferredFilter, Set<String>> filterBindingNames = new IdentityHashMap<>();
+		for (DeferredFilter filter : filters) {
+			if (!isMaterializableFiniteCondition(filter.condition)) {
+				return Optional.empty();
+			}
+			Set<String> conditionNames = conditionBindingNames(filter);
+			if (!bindingNames.containsAll(conditionNames)) {
+				return Optional.empty();
+			}
+			filterBindingNames.put(filter, conditionNames);
+		}
+
+		List<BindingSet> rows = new ArrayList<>(1);
+		rows.add(new MapBindingSet(0));
+		List<DeferredFilter> pendingFilters = new ArrayList<>(filters);
+		Set<String> availableNames = new HashSet<>();
+		for (BindingSetAssignment assignment : assignments) {
+			List<BindingSet> assignmentRows = bindingRows(assignment);
+			rows = joinFiniteBindingRows(rows, assignmentRows, bindingNames.size());
+			if (rows == null) {
+				return Optional.empty();
+			}
+			if (rows.isEmpty()) {
+				break;
+			}
+			availableNames.addAll(assignment.getAssuredBindingNames());
+			rows = applyMaterializedFilters(rows, pendingFilters, filterBindingNames, availableNames);
+			if (exceedsMaterializedRowLimit(rows)) {
+				return Optional.empty();
+			}
+		}
+		if (!pendingFilters.isEmpty()) {
+			rows = applyMaterializedFilters(rows, pendingFilters, filterBindingNames, bindingNames);
+			if (!pendingFilters.isEmpty() || exceedsMaterializedRowLimit(rows)) {
+				return Optional.empty();
+			}
+		}
+
+		BindingSetAssignment materialized = new BindingSetAssignment();
+		materialized.setBindingNames(bindingNames);
+		materialized.setBindingSets(rows);
+		return Optional.of(materialized);
+	}
+
+	private List<BindingSet> bindingRows(BindingSetAssignment assignment) {
+		if (assignment.getBindingSets() == null) {
+			return List.of();
+		}
+		List<BindingSet> rows = new ArrayList<>();
+		for (BindingSet row : assignment.getBindingSets()) {
+			rows.add(row);
+		}
+		return rows;
+	}
+
+	private List<BindingSet> joinFiniteBindingRows(List<BindingSet> leftRows, List<BindingSet> rightRows,
+			int bindingNameCount) {
+		List<BindingSet> joinedRows = new ArrayList<>();
+		for (BindingSet left : leftRows) {
+			for (BindingSet right : rightRows) {
+				BindingSet joined = joinFiniteBindingRow(left, right, bindingNameCount);
+				if (joined == null) {
+					continue;
+				}
+				if (joinedRows.size() >= MAX_MATERIALIZED_BINDING_WINDOW_ROWS) {
+					return null;
+				}
+				joinedRows.add(joined);
+			}
+		}
+		return joinedRows;
+	}
+
+	private boolean exceedsMaterializedRowLimit(List<BindingSet> rows) {
+		return rows.size() > MAX_MATERIALIZED_BINDING_WINDOW_ROWS;
+	}
+
+	private BindingSet joinFiniteBindingRow(BindingSet left, BindingSet right, int bindingNameCount) {
+		MapBindingSet joined = new MapBindingSet(bindingNameCount);
+		for (Binding binding : left) {
+			joined.addBinding(binding);
+		}
+		for (Binding binding : right) {
+			String bindingName = binding.getName();
+			if (joined.hasBinding(bindingName)) {
+				if (!Objects.equals(joined.getValue(bindingName), binding.getValue())) {
+					return null;
+				}
+				continue;
+			}
+			joined.addBinding(binding);
+		}
+		return joined;
+	}
+
+	private List<BindingSet> applyMaterializedFilters(List<BindingSet> rows, List<DeferredFilter> pendingFilters,
+			Map<DeferredFilter, Set<String>> filterBindingNames, Set<String> availableNames) {
+		if (rows.isEmpty() || pendingFilters.isEmpty()) {
+			return rows;
+		}
+		for (int i = 0; i < pendingFilters.size();) {
+			DeferredFilter filter = pendingFilters.get(i);
+			if (!availableNames.containsAll(filterBindingNames.get(filter))) {
+				i++;
+				continue;
+			}
+			rows = filterFiniteBindingRows(rows, filter.condition);
+			pendingFilters.remove(i);
+		}
+		return rows;
+	}
+
+	private List<BindingSet> filterFiniteBindingRows(List<BindingSet> rows, ValueExpr condition) {
+		List<BindingSet> filteredRows = new ArrayList<>(rows.size());
+		for (BindingSet row : rows) {
+			if (evaluateFiniteCondition(condition, row)) {
+				filteredRows.add(row);
+			}
+		}
+		return filteredRows;
+	}
+
+	private boolean isMaterializableFiniteCondition(ValueExpr condition) {
+		if (condition instanceof And and) {
+			return isMaterializableFiniteCondition(and.getLeftArg())
+					&& isMaterializableFiniteCondition(and.getRightArg());
+		}
+		if (!(condition instanceof Compare compare)) {
+			return false;
+		}
+		return (compare.getOperator() == Compare.CompareOp.EQ || compare.getOperator() == Compare.CompareOp.NE)
+				&& isFiniteConditionOperand(compare.getLeftArg())
+				&& isFiniteConditionOperand(compare.getRightArg());
+	}
+
+	private boolean isFiniteConditionOperand(ValueExpr valueExpr) {
+		return valueExpr instanceof Var || valueExpr instanceof ValueConstant;
+	}
+
+	private boolean evaluateFiniteCondition(ValueExpr condition, BindingSet row) {
+		if (condition instanceof And and) {
+			return evaluateFiniteCondition(and.getLeftArg(), row) && evaluateFiniteCondition(and.getRightArg(), row);
+		}
+		Compare compare = (Compare) condition;
+		Value leftValue = finiteConditionValue(compare.getLeftArg(), row);
+		Value rightValue = finiteConditionValue(compare.getRightArg(), row);
+		if (leftValue == null || rightValue == null) {
+			return false;
+		}
+		return QueryEvaluationUtility.compare(leftValue, rightValue, compare.getOperator(),
+				true) == QueryEvaluationUtility.Result._true;
+	}
+
+	private Value finiteConditionValue(ValueExpr valueExpr, BindingSet row) {
+		if (valueExpr instanceof ValueConstant valueConstant) {
+			return valueConstant.getValue();
+		}
+		Var var = (Var) valueExpr;
+		if (var.hasValue()) {
+			return var.getValue();
+		}
+		String bindingName = var.getName();
+		return bindingName == null ? null : row.getValue(bindingName);
 	}
 
 	private int[] smallestBindingCoveringWindow(List<SegmentFactor> factors, Set<String> requiredVars,

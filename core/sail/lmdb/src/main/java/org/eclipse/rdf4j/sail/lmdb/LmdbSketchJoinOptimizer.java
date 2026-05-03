@@ -141,14 +141,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					}
 					if (!dependentCostingFilters.isEmpty()) {
 						visitLeftJoin(leftJoin, dependentCostingFilters);
-						optimizeConditionSubqueries(filter.getCondition(), filterConditionBindings(filter.getArg()),
+						optimizeConditionSubqueries(filter.getCondition(), filter.getArg(),
 								estimatedSubplanInvocationRows(filter.getArg()), filter.getArg());
 						return;
 					}
 				}
 			}
 			filter.getArg().visit(this);
-			optimizeConditionSubqueries(filter.getCondition(), filterConditionBindings(filter.getArg()),
+			optimizeConditionSubqueries(filter.getCondition(), filter.getArg(),
 					estimatedSubplanInvocationRows(filter.getArg()), filter.getArg());
 		}
 
@@ -357,10 +357,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						&& nonOptionalSimpleVarsAreAssured(compare, optionalBindings, leftAssuredBindings);
 			}
 			if (expression instanceof ListMemberOperator list) {
-				return list.getArguments()
-						.stream()
-						.allMatch(this::isSimpleFilterOperand)
-						&& referencesAnyOptionalBinding(expression, optionalBindings)
+				List<ValueExpr> arguments = list.getArguments();
+				for (int i = 0; i < arguments.size(); i++) {
+					if (!isSimpleFilterOperand(arguments.get(i))) {
+						return false;
+					}
+				}
+				return referencesAnyOptionalBinding(expression, optionalBindings)
 						&& nonOptionalSimpleVarsAreAssured(expression, optionalBindings, leftAssuredBindings);
 			}
 			return false;
@@ -1855,7 +1858,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (LmdbJoinPlanSupport.containsExists(filter.condition)) {
 				return filter.requiredVars;
 			}
-			Set<String> conditionBindings = plannerBindingNames(VarNameCollector.process(filter.condition));
+			Set<String> conditionBindings = filter.conditionVars;
 			return conditionBindings.isEmpty() ? filter.requiredVars : conditionBindings;
 		}
 
@@ -1941,39 +1944,60 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return Optional.empty();
 			}
 
-			List<TupleExpr> connectedPatterns = new ArrayList<>(patterns.size());
-			while (!patterns.isEmpty()) {
-				int selectedIndex = selectCanonicalFiniteAnchorPattern(patterns, bound, plannerFilters,
-						connectedPatterns.size());
+			int connectedPatternCount = 0;
+			while (connectedPatternCount < patterns.size()) {
+				int selectedIndex = selectCanonicalFiniteAnchorPattern(patterns, connectedPatternCount, bound,
+						plannerFilters, connectedPatternCount);
 				if (selectedIndex < 0) {
 					return Optional.empty();
 				}
-				TupleExpr tupleExpr = patterns.remove(selectedIndex);
+				TupleExpr tupleExpr = patterns.get(selectedIndex);
+				movePatternToConnectedPrefix(patterns, connectedPatternCount, selectedIndex);
 				bound.addAll(tupleExpr.getBindingNames());
-				connectedPatterns.add(tupleExpr);
+				connectedPatternCount++;
 			}
-			Set<String> anchorBound = new HashSet<>(boundBeforeSegment);
-			for (TupleExpr anchor : anchors) {
-				anchorBound.addAll(anchor.getBindingNames());
+			promoteSubjectTypeGuardsBeforeUnanchoredFanout(patterns, connectedPatternCount, boundBeforeSegment, anchors,
+					plannerFilters);
+			int leadingPatternCount = 0;
+			while (leadingPatternCount < connectedPatternCount
+					&& shouldLeadBeforeFilterOnlyAnchors(patterns.get(leadingPatternCount), anchors,
+							boundBeforeSegment, plannerFilters)) {
+				leadingPatternCount++;
 			}
-			promoteSubjectTypeGuardsBeforeUnanchoredFanout(connectedPatterns, anchorBound, plannerFilters);
 			List<TupleExpr> ordered = new ArrayList<>(segment.size());
-			while (!connectedPatterns.isEmpty()
-					&& shouldLeadBeforeFilterOnlyAnchors(connectedPatterns.getFirst(), anchors, boundBeforeSegment,
-							plannerFilters)) {
-				ordered.add(connectedPatterns.removeFirst());
+			for (int i = 0; i < leadingPatternCount; i++) {
+				ordered.add(patterns.get(i));
 			}
 			ordered.addAll(anchors);
-			ordered.addAll(connectedPatterns);
-			return Optional.of(List.copyOf(ordered));
+			for (int i = leadingPatternCount; i < connectedPatternCount; i++) {
+				ordered.add(patterns.get(i));
+			}
+			return Optional.of(ordered);
+		}
+
+		private void movePatternToConnectedPrefix(List<TupleExpr> patterns, int connectedPatternCount,
+				int selectedIndex) {
+			if (selectedIndex == connectedPatternCount) {
+				return;
+			}
+			TupleExpr selected = patterns.get(selectedIndex);
+			for (int i = selectedIndex; i > connectedPatternCount; i--) {
+				patterns.set(i, patterns.get(i - 1));
+			}
+			patterns.set(connectedPatternCount, selected);
 		}
 
 		private void promoteSubjectTypeGuardsBeforeUnanchoredFanout(List<TupleExpr> connectedPatterns,
-				Set<String> anchorBound, List<JoinOrderPlanner.FilterConstraint> plannerFilters) {
-			for (int i = 1; i < connectedPatterns.size(); i++) {
+				int connectedPatternCount, Set<String> boundBeforeSegment, List<TupleExpr> anchors,
+				List<JoinOrderPlanner.FilterConstraint> plannerFilters) {
+			Set<String> anchorBound = null;
+			for (int i = 1; i < connectedPatternCount; i++) {
 				TupleExpr tupleExpr = connectedPatterns.get(i);
 				if (!isSubjectTypeGuardPattern(tupleExpr)) {
 					continue;
+				}
+				if (anchorBound == null) {
+					anchorBound = canonicalFiniteAnchorBound(boundBeforeSegment, anchors);
 				}
 				Set<String> typeBindings = plannerBindingNames(tupleExpr.getBindingNames());
 				if (!hasCorrelatedNotExistsFilterForTuple(typeBindings, anchorBound, plannerFilters)) {
@@ -1995,6 +2019,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					target--;
 				}
 			}
+		}
+
+		private Set<String> canonicalFiniteAnchorBound(Set<String> boundBeforeSegment, List<TupleExpr> anchors) {
+			Set<String> anchorBound = new HashSet<>(boundBeforeSegment);
+			for (TupleExpr anchor : anchors) {
+				anchorBound.addAll(anchor.getBindingNames());
+			}
+			return anchorBound;
 		}
 
 		private boolean shouldLeadBeforeFilterOnlyAnchors(TupleExpr tupleExpr, List<TupleExpr> anchors,
@@ -2034,12 +2066,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return bestScore;
 		}
 
-		private int selectCanonicalFiniteAnchorPattern(List<TupleExpr> patterns, Set<String> bound,
+		private int selectCanonicalFiniteAnchorPattern(List<TupleExpr> patterns, int firstCandidateIndex,
+				Set<String> bound,
 				List<JoinOrderPlanner.FilterConstraint> plannerFilters, int connectedPatternCount) {
 			int selectedIndex = -1;
 			int selectedScore = Integer.MIN_VALUE;
 			boolean selectedSubjectTypeGuard = false;
-			for (int i = 0; i < patterns.size(); i++) {
+			for (int i = firstCandidateIndex; i < patterns.size(); i++) {
 				Set<String> tupleBindings = plannerBindingNames(patterns.get(i)
 						.getBindingNames());
 				if (tupleBindings.isEmpty()) {
@@ -2054,7 +2087,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				if (bound.containsAll(tupleBindings)) {
 					return i;
 				}
-				int score = downstreamBindingReuseScore(patterns, i, tupleBindings, bound);
+				int score = downstreamBindingReuseScore(patterns, firstCandidateIndex, i, tupleBindings, bound);
 				boolean subjectTypeGuard = isSubjectTypeGuardPattern(patterns.get(i));
 				boolean correlatedTypeGuard = subjectTypeGuard
 						&& hasCorrelatedNotExistsFilterForTuple(tupleBindings, bound, plannerFilters);
@@ -2093,9 +2126,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						&& tupleBindings.containsAll(requiredVarsOutsideBound(requiredVars, bound))) {
 					return true;
 				}
-				if (filter.getCondition()
-						.map(condition -> conditionConnectsBoundToTuple(condition, tupleBindings, bound))
-						.orElse(false)) {
+				Optional<ValueExpr> condition = filter.getCondition();
+				if (condition.isPresent()
+						&& conditionConnectsBoundToTuple(condition.get(), tupleBindings, bound)) {
 					return true;
 				}
 			}
@@ -2111,10 +2144,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean isNotExistsFilterConstraint(JoinOrderPlanner.FilterConstraint filter) {
-			return filter.isNotExists()
-					|| filter.getCondition()
-							.map(this::conditionContainsNotExists)
-							.orElse(false);
+			if (filter.isNotExists()) {
+				return true;
+			}
+			Optional<ValueExpr> condition = filter.getCondition();
+			return condition.isPresent() && conditionContainsNotExists(condition.get());
 		}
 
 		private boolean conditionContainsNotExists(ValueExpr condition) {
@@ -2123,8 +2157,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 				@Override
 				public void meet(Not node) {
+					if (containsNotExists[0]) {
+						return;
+					}
 					if (node.getArg() instanceof Exists) {
 						containsNotExists[0] = true;
+						return;
 					}
 					super.meet(node);
 				}
@@ -2163,9 +2201,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& passRatio <= CANONICAL_FINITE_ANCHOR_SELECTIVE_FILTER_PASS_RATIO) {
 				return Math.max(1, (int) Math.round((1.0d - passRatio) * 1_000.0d));
 			}
-			if (filter.getCondition()
-					.map(this::conditionContainsLiteralConstant)
-					.orElse(false)) {
+			Optional<ValueExpr> condition = filter.getCondition();
+			if (condition.isPresent() && conditionContainsLiteralConstant(condition.get())) {
 				return CANONICAL_FINITE_ANCHOR_LITERAL_FILTER_SCORE;
 			}
 			return 0;
@@ -2199,7 +2236,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& object.hasValue();
 		}
 
-		private int downstreamBindingReuseScore(List<TupleExpr> patterns, int candidateIndex,
+		private int downstreamBindingReuseScore(List<TupleExpr> patterns, int firstCandidateIndex, int candidateIndex,
 				Set<String> candidateBindings, Set<String> bound) {
 			Set<String> introducedBindings = new HashSet<>(candidateBindings);
 			introducedBindings.removeAll(bound);
@@ -2207,7 +2244,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return 0;
 			}
 			int score = 0;
-			for (int i = 0; i < patterns.size(); i++) {
+			for (int i = firstCandidateIndex; i < patterns.size(); i++) {
 				if (i == candidateIndex) {
 					continue;
 				}
@@ -2296,16 +2333,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private void optimizeConditionSubqueries(ValueExpr condition, Set<String> conditionBoundVars,
+		private void optimizeConditionSubqueries(ValueExpr condition, TupleExpr conditionBindingSource,
 				double conditionInvocations, TupleExpr conditionSource) {
 			if (condition == null) {
 				return;
 			}
 			condition.visit(new AbstractSimpleQueryModelVisitor<>(trackResultSize) {
 
+				private Set<String> conditionBoundVars;
+
 				@Override
 				public void meet(Exists exists) {
-					Set<String> existsBoundVars = exists.isVariableScopeChange() ? Set.of() : conditionBoundVars;
+					Set<String> existsBoundVars = exists.isVariableScopeChange() ? Set.of() : conditionBoundVars();
 					double originalRepeatedSubplanInvocations = repeatedSubplanInvocations;
 					try {
 						double scopedInvocations = scopedConditionInvocations(conditionInvocations, conditionSource,
@@ -2316,6 +2355,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					} finally {
 						repeatedSubplanInvocations = originalRepeatedSubplanInvocations;
 					}
+				}
+
+				private Set<String> conditionBoundVars() {
+					if (conditionBoundVars == null) {
+						conditionBoundVars = filterConditionBindings(conditionBindingSource);
+					}
+					return conditionBoundVars;
 				}
 			});
 		}
@@ -2403,8 +2449,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private Set<String> filterConditionBindings(TupleExpr filterArg) {
-			HashSet<String> conditionBoundVars = new HashSet<>(boundVars);
-			conditionBoundVars.addAll(filterArg.getAssuredBindingNames());
+			Set<String> assuredBindingNames = filterArg.getAssuredBindingNames();
+			if (assuredBindingNames.isEmpty()) {
+				return boundVars;
+			}
+			HashSet<String> conditionBoundVars = new HashSet<>(boundVars.size() + assuredBindingNames.size());
+			conditionBoundVars.addAll(boundVars);
+			conditionBoundVars.addAll(assuredBindingNames);
 			return conditionBoundVars;
 		}
 
@@ -2444,7 +2495,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			Filter filter = new Filter(root, deferredFilter.condition.clone());
-			optimizeConditionSubqueries(filter.getCondition(), filterConditionBindings(root),
+			optimizeConditionSubqueries(filter.getCondition(), root,
 					estimatedSubplanInvocationRows(root), root);
 			double passRatio = deferredFilter.passEstimate.getPassRatio();
 			if (LmdbJoinPlanSupport.isValidPassRatio(passRatio)) {
@@ -2470,7 +2521,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (assignmentNames.isEmpty()) {
 				return null;
 			}
-			Set<String> conditionBindingNames = plannerBindingNames(VarNameCollector.process(deferredFilter.condition));
+			Set<String> conditionBindingNames = deferredFilter.conditionVars;
 			if (conditionBindingNames.isEmpty()) {
 				return null;
 			}

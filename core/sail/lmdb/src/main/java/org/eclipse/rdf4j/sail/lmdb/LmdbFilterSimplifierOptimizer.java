@@ -38,7 +38,6 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -160,10 +159,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				continue;
 			}
 			if (anchor != null && canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings)) {
-				if (equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)) {
-					remainingConditions.add(condition);
-				} else {
+				if (!equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)) {
 					anchors.add(anchor);
+				}
+				if (isSelectiveSmallLiteralAnchor(filter, condition)) {
 					remainingConditions.add(condition);
 				}
 			} else {
@@ -233,9 +232,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (hoisted != null) {
 			return new MandatoryOptionalRewrite(hoisted, aliasFilterIsRedundant);
 		}
-		if (finiteLeftBindingsCoverOptionalProbeInput(leftJoin, bindingName)) {
-			return MandatoryOptionalRewrite.unchanged(arg);
-		}
 		return new MandatoryOptionalRewrite(
 				new Join(leftJoin.getLeftArg(), new Join(placementAnchor, leftJoin.getRightArg())),
 				aliasFilterIsRedundant);
@@ -298,60 +294,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 		renamed.setBindingSets(bindingSets);
 		return renamed;
-	}
-
-	private static boolean finiteLeftBindingsCoverOptionalProbeInput(LeftJoin leftJoin, String optionalBinding) {
-		Set<StatementPattern> optionalPatterns = LmdbJoinPlanSupport.collectPatternIdentities(leftJoin.getRightArg());
-		if (optionalPatterns.size() != 1) {
-			return false;
-		}
-
-		Set<String> requiredInputBindings = unboundPatternBindingNames(optionalPatterns.iterator().next());
-		requiredInputBindings.remove(optionalBinding);
-		if (requiredInputBindings.isEmpty()) {
-			return false;
-		}
-
-		return finiteAssignmentBindingNames(leftJoin.getLeftArg()).containsAll(requiredInputBindings);
-	}
-
-	private static Set<String> finiteAssignmentBindingNames(TupleExpr tupleExpr) {
-		Set<String> bindingNames = new HashSet<>();
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(BindingSetAssignment assignment) {
-				bindingNames.addAll(plannerBindingNames(assignment.getAssuredBindingNames()));
-			}
-		});
-		return bindingNames;
-	}
-
-	private static Set<String> unboundPatternBindingNames(StatementPattern pattern) {
-		Set<String> bindingNames = new HashSet<>();
-		addUnboundPatternBindingName(pattern.getSubjectVar(), bindingNames);
-		addUnboundPatternBindingName(pattern.getPredicateVar(), bindingNames);
-		addUnboundPatternBindingName(pattern.getObjectVar(), bindingNames);
-		addUnboundPatternBindingName(pattern.getContextVar(), bindingNames);
-		return bindingNames;
-	}
-
-	private static void addUnboundPatternBindingName(Var var, Set<String> bindingNames) {
-		if (var != null && !var.hasValue() && var.getName() != null && !var.getName().startsWith("_const_")) {
-			bindingNames.add(var.getName());
-		}
-	}
-
-	private static Set<String> plannerBindingNames(Set<String> bindingNames) {
-		if (bindingNames == null || bindingNames.isEmpty()) {
-			return Set.of();
-		}
-		Set<String> plannerNames = new HashSet<>();
-		for (String bindingName : bindingNames) {
-			if (bindingName != null && !bindingName.startsWith("_const_")) {
-				plannerNames.add(bindingName);
-			}
-		}
-		return plannerNames;
 	}
 
 	private static TupleExpr hoistMandatoryRightArgAheadOfScopedFanout(TupleExpr leftArg, BindingSetAssignment anchor,

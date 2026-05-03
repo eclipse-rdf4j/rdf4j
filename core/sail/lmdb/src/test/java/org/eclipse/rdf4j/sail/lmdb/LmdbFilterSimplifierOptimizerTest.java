@@ -142,25 +142,24 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void anchorsUnknownSafeFilterInAsValuesAndRetainsFilterEvidence() {
+	void anchorsUnknownSafeFilterInAsValuesAndDropsRedundantFilter() {
 		Filter filter = new Filter(statementPatternWithPredicate("substation", "http://example.com/theme/grid/name",
 				"name"), listMember("name", "Substation 0", "Substation 1", "Substation 2"));
 		QueryRoot root = new QueryRoot(filter);
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		Join anchored = assertInstanceOf(Join.class, retainedFilter.getArg());
+		Join anchored = assertInstanceOf(Join.class, root.getArg());
 		BindingSetAssignment nameValues = assertInstanceOf(BindingSetAssignment.class, anchored.getLeftArg());
 		assertIterableEquals(Set.of("name"), nameValues.getBindingNames());
 		assertIterableEquals(List.of(VF.createLiteral("Substation 0"), VF.createLiteral("Substation 1"),
 				VF.createLiteral("Substation 2")), bindingValues(nameValues, "name"));
 		assertInstanceOf(StatementPattern.class, anchored.getRightArg());
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
 	}
 
 	@Test
-	void keepsFilterWhenEquivalentValuesAlreadyAnchorVariable() {
+	void dropsRedundantFilterWhenEquivalentValuesAlreadyAnchorVariable() {
 		BindingSetAssignment nameValues = values("name", "Component 1", "Component 2");
 		StatementPattern componentName = statementPatternWithPredicate("component",
 				"http://example.com/theme/engineering/name", "name");
@@ -169,6 +168,21 @@ class LmdbFilterSimplifierOptimizerTest {
 		QueryRoot root = new QueryRoot(filter);
 
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertFalse(containsFilter(root.getArg()));
+		assertTrue(containsBindingSetAssignmentFor(root.getArg(), "name"));
+	}
+
+	@Test
+	void retainsLearnedFilterWhenEquivalentValuesAlreadyAnchorVariable() {
+		BindingSetAssignment nameValues = values("name", "Component 1", "Component 2");
+		StatementPattern componentName = statementPatternWithPredicate("component",
+				"http://example.com/theme/engineering/name", "name");
+		Filter filter = new Filter(new Join(nameValues, componentName),
+				new Or(compareLiteral("name", "Component 1"), compareLiteral("name", "Component 2")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedFilterPassStatistics(0.0d)).optimize(root, null, null);
 
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(Or.class, retainedFilter.getCondition());
@@ -280,7 +294,7 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	void keepsFiniteInputOptionalLiteralFilterAsLeftJoinPrefixProbe() {
+	void rewritesFiniteInputOptionalLiteralFilterToMandatoryAnchor() {
 		BindingSetAssignment users = values("e", "user7", "user8");
 		TupleExpr required = new Join(users, statementPattern("a", "follows", "e"));
 		StatementPattern optional = statementPatternWithPredicate("e", "http://example.com/theme/social/name",
@@ -291,8 +305,9 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
 
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(LeftJoin.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
+		assertTrue(containsBindingSetAssignmentFor(retainedFilter.getArg(), "optName"));
+		assertTrue(containsStatementPatternWithObject(retainedFilter.getArg(), "optName"));
+		assertFalse(containsLeftJoin(retainedFilter.getArg()));
 	}
 
 	@Test

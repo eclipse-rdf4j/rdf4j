@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -38,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -139,6 +142,16 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
 
 		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(10.0d, 100.0d, 20.0d, 1.0d));
+	}
+
+	@Test
+	public void keepsFilterAtJoinWhenCostModelShowsJoinWorkCheaper() {
+		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
+		WorkEstimatingStatistics statistics = new WorkEstimatingStatistics();
+
+		testOptimizer(query, query, statistics);
+
+		assertThat(statistics.estimateFactorCostRequests).isGreaterThan(0);
 	}
 
 	@Test
@@ -365,6 +378,27 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		@Override
 		public double estimateFilterPassRatio(Filter filter) {
 			return -1.0d;
+		}
+	}
+
+	private static final class WorkEstimatingStatistics extends SelectiveJoinStatistics implements JoinFactorCostModel {
+
+		private int estimateFactorCostRequests;
+
+		private WorkEstimatingStatistics() {
+			super(10.0d, 100.0d, 20.0d, Double.NaN);
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			estimateFactorCostRequests++;
+			if (factor instanceof Join) {
+				return Optional.of(new FactorCostEstimate(5.0d, 10.0d));
+			}
+			if (factor instanceof Filter) {
+				return Optional.of(new FactorCostEstimate(50.0d, 1.0d));
+			}
+			return Optional.empty();
 		}
 	}
 

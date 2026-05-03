@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -196,6 +197,25 @@ class LmdbSketchJoinOptimizerTest {
 		StatementPattern optional = statementPattern("person", "name", "optName");
 		Compare condition = new Compare(new Var("optName"), new ValueConstant(VF.createLiteral("person/42")),
 				Compare.CompareOp.EQ);
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(person, follows), optional), condition));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		TupleExpr optimized = root.getArg();
+		TupleExpr rewritten = optimized instanceof Filter ? ((Filter) optimized).getArg() : optimized;
+		assertInstanceOf(Join.class, rewritten);
+		assertTrue(!containsLeftJoin(root.getArg()));
+	}
+
+	@Test
+	void rewritesNullRejectingOptionalListMemberAgainstConstants() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		StatementPattern follows = statementPattern("person", "follows", "friend");
+		StatementPattern optional = statementPattern("person", "name", "optName");
+		ListMemberOperator condition = new ListMemberOperator();
+		condition.addArgument(new Var("optName"));
+		condition.addArgument(new ValueConstant(VF.createLiteral("person/42")));
+		condition.addArgument(new ValueConstant(VF.createLiteral("person/43")));
 		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(person, follows), optional), condition));
 
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);

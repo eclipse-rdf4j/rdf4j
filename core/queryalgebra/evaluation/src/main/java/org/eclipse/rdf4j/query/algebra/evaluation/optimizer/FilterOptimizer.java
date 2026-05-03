@@ -498,10 +498,12 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		private OptionalWorkRows estimateWorkRows(JoinFactorCostModel costModel, TupleExpr tupleExpr) {
-			return costModel.estimateFactorCost(tupleExpr, Set.of())
-					.filter(estimate -> isFiniteNonNegative(estimate.getWorkRows()))
-					.map(estimate -> new OptionalWorkRows(true, estimate.getWorkRows()))
-					.orElseGet(() -> new OptionalWorkRows(false, -1.0d));
+			JoinFactorCostModel.FactorCostEstimate estimate = costModel.estimateFactorCost(tupleExpr, Set.of())
+					.orElse(null);
+			if (estimate != null && isFiniteNonNegative(estimate.getWorkRows())) {
+				return new OptionalWorkRows(true, estimate.getWorkRows());
+			}
+			return new OptionalWorkRows(false, -1.0d);
 		}
 
 		private double estimateFilteredInputRows(TupleExpr candidateArg) {

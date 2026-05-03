@@ -212,12 +212,13 @@ if ${enable_jfr}; then
 
         if ${enable_jfr_cpu_times}; then
                 start_flight_recording_options+=("jdk.CPUTimeSample#enabled=true")
+                start_flight_recording_options+=("method-profiling=max")
                 start_flight_recording_options+=("report-on-exit=cpu-time-hot-methods")
         fi
 
         start_flight_recording_option="$(printf '%s,' "${start_flight_recording_options[@]}")"
         start_flight_recording_option="${start_flight_recording_option%,}"
-        jvm_args+=("-XX:StartFlightRecording=${start_flight_recording_option}")
+        jvm_args+=("-XX:StartFlightRecording:${start_flight_recording_option}")
         profiling_jvm_args+=("-Drdf4j.benchmark.profiling=true")
 
         jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."

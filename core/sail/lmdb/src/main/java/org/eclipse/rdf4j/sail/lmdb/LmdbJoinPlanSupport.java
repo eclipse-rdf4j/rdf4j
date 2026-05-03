@@ -77,12 +77,14 @@ final class LmdbJoinPlanSupport {
 		int originalIndex = 0;
 		for (Filter filter : filters) {
 			for (ValueExpr condition : splitConjuncts(filter.getCondition())) {
-				Set<String> requiredVars = new HashSet<>(VarNameCollector.process(condition));
+				Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+				Set<String> requiredVars = new HashSet<>(conditionVars);
 				requiredVars.retainAll(scopeBindingNames);
-				deferredFilters.add(new DeferredFilter(condition, requiredVars, filterConditionCost(condition),
-						originalIndex++, patternLocalBaseForFilterCondition(filter, condition),
-						FilterSelectivityKeys.originPatternsForFilter(filter),
-						estimateFilterPass(statistics, filter, condition)));
+				deferredFilters
+						.add(new DeferredFilter(condition, requiredVars, conditionVars, filterConditionCost(condition),
+								originalIndex++, patternLocalBaseForFilterCondition(filter, condition),
+								FilterSelectivityKeys.originPatternsForFilter(filter),
+								estimateFilterPass(statistics, filter, condition)));
 			}
 		}
 		return deferredFilters;
@@ -217,9 +219,14 @@ final class LmdbJoinPlanSupport {
 			return isLookupCompatibleFilter(or.getLeftArg()) && isLookupCompatibleFilter(or.getRightArg());
 		}
 		if (condition instanceof ListMemberOperator list) {
-			return list.getArguments()
-					.stream()
-					.allMatch(argument -> argument instanceof Var || argument instanceof ValueConstant);
+			List<ValueExpr> arguments = list.getArguments();
+			for (int i = 0; i < arguments.size(); i++) {
+				ValueExpr argument = arguments.get(i);
+				if (!(argument instanceof Var || argument instanceof ValueConstant)) {
+					return false;
+				}
+			}
+			return true;
 		}
 		if (condition instanceof SameTerm sameTerm) {
 			return isLookupCompatibleEquality(sameTerm.getLeftArg(), sameTerm.getRightArg());

@@ -881,13 +881,17 @@ public class GenericPlanNode {
 		}
 
 		if (!metrics.isEmpty()) {
-			sb.append(" (")
-					.append(metrics.entrySet()
-							.stream()
-							.map(e -> e.getKey() + "=" + e.getValue())
-							.reduce((a, b) -> a + ", " + b)
-							.orElse(""))
-					.append(")");
+			sb.append(" (");
+			boolean first = true;
+			for (Map.Entry<String, String> metric : metrics.entrySet()) {
+				if (first) {
+					first = false;
+				} else {
+					sb.append(", ");
+				}
+				sb.append(metric.getKey()).append('=').append(metric.getValue());
+			}
+			sb.append(")");
 		}
 	}
 

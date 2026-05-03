@@ -257,9 +257,12 @@ class LmdbEvaluationStatistics
 		if (!supportsJoinEstimation()) {
 			return Optional.empty();
 		}
-		return sketchBasedJoinEstimator
-				.estimateJoinOrder(orderedArgs, initiallyBoundVars, algorithm, this, deferredFilters)
-				.map(this::enrichPlanWithAccessMetrics);
+		Optional<JoinOrderPlan> plan = sketchBasedJoinEstimator.estimateJoinOrder(orderedArgs, initiallyBoundVars,
+				algorithm, this, deferredFilters);
+		if (plan.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(enrichPlanWithAccessMetrics(plan.get()));
 	}
 
 	private JoinOrderPlan enrichPlanWithAccessMetrics(JoinOrderPlan plan) {
@@ -319,7 +322,7 @@ class LmdbEvaluationStatistics
 		if (estimate.isEmpty() || !context.isNestedIteratorInvocation() || factor instanceof BindingSetAssignment) {
 			return estimate;
 		}
-		return estimate.map(factorCostEstimate -> accountNestedInvocationWork(factor, factorCostEstimate, context));
+		return Optional.of(accountNestedInvocationWork(factor, estimate.get(), context));
 	}
 
 	private Optional<FactorCostEstimate> estimatePageWalkingFactorCost(TupleExpr factor) {

@@ -33,12 +33,14 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -79,7 +81,36 @@ public final class FilterSelectivityKeys {
 		if (condition == null) {
 			return "<null>";
 		}
-		return condition.toString().replaceAll("\\s+", " ").trim();
+		StringBuilder key = new StringBuilder(64);
+		appendStructuralKey(condition, key);
+		return key.toString();
+	}
+
+	private static void appendStructuralKey(QueryModelNode node, StringBuilder key) {
+		if (node == null) {
+			key.append("<null>");
+			return;
+		}
+		key.append(node.getSignature());
+		int childStart = key.length();
+		key.append('[');
+		boolean[] first = { true };
+		node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode child) {
+				if (first[0]) {
+					first[0] = false;
+				} else {
+					key.append(',');
+				}
+				appendStructuralKey(child, key);
+			}
+		});
+		if (first[0]) {
+			key.setLength(childStart);
+		} else {
+			key.append(']');
+		}
 	}
 
 	public static String filterTemplateKeyFor(ValueExpr condition, StatementPattern patternLocalBase) {

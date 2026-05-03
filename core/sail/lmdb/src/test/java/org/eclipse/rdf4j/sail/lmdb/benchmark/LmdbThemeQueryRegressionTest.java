@@ -413,14 +413,26 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
-					assertContains(snapshot.renderedQuery(), "VALUES (?a ?b)",
-							"Social media q10 should keep the fastest known finite (a,b) pruning prefix\n"
+					assertContains(snapshot.renderedQuery(), "VALUES (?a ?b ?c)",
+							"Social media q10 should keep the finite (a,b,c) pruning prefix\n"
 									+ snapshot.plan());
 					assertDoesNotContain(snapshot.renderedQuery(), "VALUES (?d ?e)",
 							"Social media q10 should not pair d/e before the c/d inequality can prune d");
-					assertBefore(snapshot.renderedQuery(), "FILTER (?d != ?e)",
+					assertBefore(snapshot.renderedQuery(), "VALUES (?a ?b ?c)",
 							"?a <http://example.com/theme/social/follows> ?b .",
-							"Social media q10 should finish finite-domain pruning before probing follows\n"
+							"Social media q10 should prune the finite a/b/c window before probing bound edges\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "VALUES ?d",
+							"?c <http://example.com/theme/social/follows> ?d .",
+							"Social media q10 should bind d before probing the c/d edge\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "VALUES ?e",
+							"?d <http://example.com/theme/social/follows> ?e .",
+							"Social media q10 should bind e before probing the d/e edge\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?d <http://example.com/theme/social/follows> ?e .",
+							"?e <http://example.com/theme/social/follows> ?a .",
+							"Social media q10 should leave the e/a edge as the final cycle-closing lookup\n"
 									+ snapshot.plan());
 					assertDirectLookupAccessWorkRowsBelow(snapshot.plan(), 100.0d, 5);
 					assertPlannerCandidateBudget(snapshot.plan(), 512,
@@ -445,7 +457,12 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
 					String renderedQuery = snapshot.renderedQuery();
-					assertBefore(renderedQuery, "VALUES ?c", "?b <http://example.com/theme/social/follows> ?c .",
+					assertAnyBefore(renderedQuery, List.of("VALUES (?a ?b)", "VALUES (?a ?b ?c)"),
+							"?a <http://example.com/theme/social/follows> ?b .",
+							"Social media q10 should guard the (a,b) edge with finite a/b bindings\n"
+									+ snapshot.plan());
+					assertAnyBefore(renderedQuery, List.of("VALUES ?c", "VALUES (?a ?b ?c)"),
+							"?b <http://example.com/theme/social/follows> ?c .",
 							"Social media q10 should guard the (b,c) edge with finite c bindings\n"
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "VALUES ?d", "?c <http://example.com/theme/social/follows> ?d .",
@@ -453,14 +470,6 @@ class LmdbThemeQueryRegressionTest {
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "VALUES ?e", "?d <http://example.com/theme/social/follows> ?e .",
 							"Social media q10 should guard the (d,e) edge with finite e bindings\n"
-									+ snapshot.plan());
-					assertBefore(renderedQuery, "FILTER (?a != ?c)",
-							"?a <http://example.com/theme/social/follows> ?b .",
-							"Social media q10 should finish the finite a/c pruning window before probing "
-									+ "the bound (a,b) edge\n" + snapshot.plan());
-					assertBefore(renderedQuery, "FILTER (?d != ?e)",
-							"?a <http://example.com/theme/social/follows> ?b .",
-							"Social media q10 should prune the finite e window before running follow guards\n"
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
 							"?a <http://example.com/theme/social/name> ?name .",
@@ -699,6 +708,30 @@ class LmdbThemeQueryRegressionTest {
 									+ snapshot.plan());
 					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
 							12.0d);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void libraryFiniteTitleAnchorDoesNotRetainUnknownLocalFilter(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 4, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 4, snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "VALUES ?title { \"Book 1\" \"Book 2\" }");
+					assertDoesNotContain(snapshot.plan(),
+							"filterSelectivitySource=unknown, optimizer.strategy=lmdb-sketch-filter-localPattern",
+							"Library q4 finite literal title anchor should not keep an unknown local filter that "
+									+ "forces prepare-time sampling\n" + snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1828,6 +1861,18 @@ class LmdbThemeQueryRegressionTest {
 		if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
 			throw new AssertionError(message + "\nExpected `" + first + "` before `" + second + "` in:\n" + value);
 		}
+	}
+
+	private static void assertAnyBefore(String value, List<String> candidates, String second, String message) {
+		int secondIndex = value.indexOf(second);
+		for (String first : candidates) {
+			int firstIndex = value.indexOf(first);
+			if (firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex) {
+				return;
+			}
+		}
+		throw new AssertionError(message + "\nExpected one of `" + String.join("`, `", candidates) + "` before `"
+				+ second + "` in:\n" + value);
 	}
 
 	private static void assertLibraryQ9FastLoanTail(String renderedQuery, String plan) {

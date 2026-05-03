@@ -69,7 +69,7 @@ class LmdbFilterSelectivityStats
 	private static final String SIDECAR_SUFFIX = ".filters";
 	private static final int PERSIST_VERSION = 3;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
-	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = 1024;
+	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
 	private static final double LOW_BENEFIT_ROWS_THRESHOLD = 32.0d;
 	private static final double LOW_BENEFIT_RATIO_THRESHOLD = 0.25d;
 	private static final double FULL_SCAN_ROW_BUDGET = 1_000_000.0d;
