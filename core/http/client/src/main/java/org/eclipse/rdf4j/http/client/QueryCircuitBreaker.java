@@ -152,7 +152,7 @@ public final class QueryCircuitBreaker {
 		}
 
 		if (state.rejectsNewQueries()) {
-			System.gc();
+			maybeRunCheckpointGc();
 			rejectCount.incrementAndGet();
 			if (state == QueryPressureState.CRITICAL) {
 				cancelOneHeavyQueryIfNeeded(configuration, snapshot, "critical-admission");
@@ -270,8 +270,9 @@ public final class QueryCircuitBreaker {
 			LOGGER.info(
 					"Query circuit breaker transition previous={} current={} freeMb={} rollingGcMs={} reason={}",
 					previous, next, snapshot.getFreeMemoryMb(), snapshot.getRollingGcMs(), reason);
-			if (!isCheckpointReason(reason) && shouldRequestTransitionGc(currentState, configuration, snapshot)) {
-				System.gc();
+			if (!isCheckpointReason(reason) && !isMonitorReason(reason)
+					&& shouldRequestTransitionGc(currentState, configuration, snapshot)) {
+				maybeRunCheckpointGc();
 			}
 		}
 		if (!throttlesNewQueriesAtEntry(currentState, configuration)) {
@@ -313,6 +314,10 @@ public final class QueryCircuitBreaker {
 
 	private boolean isCheckpointReason(String reason) {
 		return reason.startsWith("checkpoint:");
+	}
+
+	private boolean isMonitorReason(String reason) {
+		return "monitor".equals(reason);
 	}
 
 	private boolean shouldRequestTransitionGc(QueryPressureState state, Configuration configuration,

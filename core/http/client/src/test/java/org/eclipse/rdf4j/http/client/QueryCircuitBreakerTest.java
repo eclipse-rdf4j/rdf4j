@@ -263,6 +263,30 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
+	void shouldThrottleGcRequestsForRejectedAdmissions() {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
+				7), 1000, () -> fixture.gcInvocations.add(fixture.clock.get()));
+
+		fixture.freeMemoryMb.set(250);
+		QueryCircuitBreakerHandle firstHandle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"first-rejected-query");
+		QueryCircuitBreakerHandle secondHandle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"second-rejected-query");
+
+		try {
+			assertThrows(QueryCircuitBreaker.CircuitBreakerException.class, () -> breaker.beforeExecution(firstHandle));
+			assertThrows(QueryCircuitBreaker.CircuitBreakerException.class,
+					() -> breaker.beforeExecution(secondHandle));
+
+			assertEquals(List.of(0L), fixture.gcInvocations);
+		} finally {
+			breaker.complete(firstHandle);
+			breaker.complete(secondHandle);
+		}
+	}
+
+	@Test
 	void shouldBackOffCheckpointGcRequestsAndResetAfterLongPause() {
 		Fixture fixture = new Fixture();
 		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 0, 1000,
@@ -439,6 +463,12 @@ class QueryCircuitBreakerTest {
 		breaker.complete(thirdAdmission);
 	}
 
+	@Test
+	void shouldSafelyPublishBreakerExecutionFlagsAcrossThreads() throws Exception {
+		assertTrue(isVolatile("heavyOperatorExecutionEnabled"));
+		assertTrue(isVolatile("ignoreCheckpointStride"));
+	}
+
 	private static QueryCircuitBreaker.Configuration configuration(boolean enabled, int warnGcMs, int highGcMs,
 			int criticalGcMs, int warnFreeMb, int highFreeMb, int criticalFreeMb, int warnAdmissionDelayMs,
 			int checkpointDelayMs, int cancelCooldownMs, int retryAfterSeconds) {
@@ -488,6 +518,11 @@ class QueryCircuitBreakerTest {
 		Field field = QueryExecutionContext.class.getDeclaredField("checkpointCalls");
 		field.setAccessible(true);
 		field.setInt(null, 0);
+	}
+
+	private static boolean isVolatile(String fieldName) throws Exception {
+		Field field = QueryExecutionContext.class.getDeclaredField(fieldName);
+		return java.lang.reflect.Modifier.isVolatile(field.getModifiers());
 	}
 
 	private static Set<Long> threadIds(String threadName) {

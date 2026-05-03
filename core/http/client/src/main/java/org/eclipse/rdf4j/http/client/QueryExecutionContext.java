@@ -20,12 +20,12 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
  */
 public final class QueryExecutionContext {
 
-	private static boolean ignoreCheckpointStride = false;
+	private static volatile boolean ignoreCheckpointStride = false;
 	private static final int CHECKPOINT_STRIDE = 1024;
 	private static final int CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1;
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
-	private static boolean heavyOperatorExecutionEnabled = true;
-	private static int checkpointCalls;
+	private static volatile boolean heavyOperatorExecutionEnabled = true;
+	private static volatile int checkpointCalls;
 
 	private QueryExecutionContext() {
 	}
