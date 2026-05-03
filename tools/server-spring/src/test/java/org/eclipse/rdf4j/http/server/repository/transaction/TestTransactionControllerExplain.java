@@ -240,10 +240,10 @@ class TestTransactionControllerExplain {
 			withBreakerProperties(
 					() -> assertThatThrownBy(() -> transactionController.handleRequestInternal(queryRequest,
 							response))
-							.isInstanceOfSatisfying(ServerHTTPException.class, error -> {
-								assertThat(error.getStatusCode()).isEqualTo(503);
-								assertThat(error.getMessage()).contains("circuit breaker");
-							}));
+									.isInstanceOfSatisfying(ServerHTTPException.class, error -> {
+										assertThat(error.getStatusCode()).isEqualTo(503);
+										assertThat(error.getMessage()).contains("circuit breaker");
+									}));
 
 			assertThat(response.getHeader("Retry-After")).isEqualTo("17");
 		} finally {

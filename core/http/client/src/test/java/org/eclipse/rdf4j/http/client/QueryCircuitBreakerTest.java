@@ -518,8 +518,8 @@ class QueryCircuitBreakerTest {
 				"-D" + QueryCircuitBreaker.WARN_FREE_MB_PROPERTY + "=",
 				"-D" + QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY + "=",
 				"-cp", classpath, DefaultThresholdProbe.class.getName())
-				.redirectErrorStream(true)
-				.start();
+						.redirectErrorStream(true)
+						.start();
 		String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
 		int exitCode = process.waitFor();
 		assertEquals(0, exitCode, output);
