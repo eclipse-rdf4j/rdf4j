@@ -506,8 +506,14 @@ class LmdbSailStore implements SailStore {
 
 	private void startBackgroundFilterSampling() {
 		if (filterSelectivityStats == null || backgroundRawSamplingMaxMillisPerCycle <= 0L) {
+			logger.info(
+					"LMDB background filter sampling not scheduled: filterStatsPresent={}, maxMillisPerCycle={}",
+					filterSelectivityStats != null, backgroundRawSamplingMaxMillisPerCycle);
 			return;
 		}
+		logger.info(
+				"LMDB background filter sampling scheduled: initialDelayMillis={}, delayMillis={}, maxMillisPerCycle={}",
+				estimatorPersistDelayMillis, estimatorPersistDelayMillis, backgroundRawSamplingMaxMillisPerCycle);
 		backgroundSamplingFuture = estimatorPersistExec.scheduleWithFixedDelay(() -> {
 			try {
 				runBackgroundFilterSamplingCycle(backgroundRawSamplingMaxMillisPerCycle);
@@ -518,14 +524,36 @@ class LmdbSailStore implements SailStore {
 	}
 
 	int runBackgroundFilterSamplingCycle(long maxMillis) {
-		if (filterSelectivityStats == null || maxMillis <= 0L || storeTxnStarted.get()) {
+		if (filterSelectivityStats == null || maxMillis <= 0L) {
+			logger.info(
+					"LMDB background filter sampling cycle skipped: filterStatsPresent={}, maxMillis={}",
+					filterSelectivityStats != null, maxMillis);
+			return 0;
+		}
+		int pendingRequests = filterSelectivityStats.pendingBackgroundSamplingRequests();
+		if (storeTxnStarted.get()) {
+			if (pendingRequests > 0) {
+				logger.info(
+						"LMDB background filter sampling cycle skipped: store transaction active, pendingRequests={}",
+						pendingRequests);
+			}
 			return 0;
 		}
 		if (!sinkStoreAccessLock.tryLock()) {
+			if (pendingRequests > 0) {
+				logger.info(
+						"LMDB background filter sampling cycle skipped: sink store access lock unavailable, pendingRequests={}",
+						pendingRequests);
+			}
 			return 0;
 		}
 		try {
 			if (storeTxnStarted.get()) {
+				if (pendingRequests > 0) {
+					logger.info(
+							"LMDB background filter sampling cycle skipped: store transaction started after lock, pendingRequests={}",
+							pendingRequests);
+				}
 				return 0;
 			}
 			int sampled = filterSelectivityStats.runBackgroundSamplingCycle(maxMillis);

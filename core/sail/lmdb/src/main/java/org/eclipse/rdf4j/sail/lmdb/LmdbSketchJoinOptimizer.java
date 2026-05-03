@@ -2503,13 +2503,22 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			filter.setStringMetricPlanned(TelemetryMetricNames.DEFERRED_FILTER_SCOPE, placement);
 			filter.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_STRATEGY, "lmdb-sketch-filter-" + placement);
-			filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE,
-					deferredFilter.passEstimate.getSource().name().toLowerCase());
+			String source = filterSelectivitySource(deferredFilter.passEstimate);
+			if (source != null) {
+				filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, source);
+			}
 			if (deferredFilter.passEstimate.getEvidenceCount() >= 0L) {
 				filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
 						deferredFilter.passEstimate.getEvidenceCount());
 			}
 			return filter;
+		}
+
+		private String filterSelectivitySource(EvaluationStatistics.FilterPassEstimate estimate) {
+			if (estimate == null || estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN) {
+				return null;
+			}
+			return estimate.getSource().name().toLowerCase();
 		}
 
 		private TupleExpr relocateRootFilterToRightBindingPrefix(TupleExpr root, DeferredFilter deferredFilter) {

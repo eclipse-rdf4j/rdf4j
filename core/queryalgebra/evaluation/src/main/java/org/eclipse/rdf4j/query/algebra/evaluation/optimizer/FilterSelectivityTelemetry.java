@@ -46,7 +46,7 @@ final class FilterSelectivityTelemetry {
 		String source = filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
 		if (!isValidPassRatio(passRatio)) {
 			passRatio = estimate == null ? -1.0d : estimate.getPassRatio();
-			source = estimate == null ? null : estimate.getSource().name().toLowerCase();
+			source = sourceName(estimate);
 		}
 		if (!isValidPassRatio(passRatio)) {
 			double cardinalityPassRatio = estimateCardinalityPassRatio(filter, statistics);
@@ -70,6 +70,13 @@ final class FilterSelectivityTelemetry {
 		if (source != null) {
 			filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, source);
 		}
+	}
+
+	private static String sourceName(EvaluationStatistics.FilterPassEstimate estimate) {
+		if (estimate == null || estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN) {
+			return null;
+		}
+		return estimate.getSource().name().toLowerCase();
 	}
 
 	private static double confidenceScore(EvaluationStatistics.FilterPassEstimate estimate, String source) {

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -42,6 +43,8 @@ class FilterSelectivityTelemetryTest {
 		assertEquals(0, statistics.cardinalityCalls,
 				"Telemetry should not recursively estimate full cardinality for complex filter inputs");
 		assertEquals(-1.0d, filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO));
+		assertNull(filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+				"Unsupported filter estimates should not render as an explicit unknown selectivity source");
 	}
 
 	@Test

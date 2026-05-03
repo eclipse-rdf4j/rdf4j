@@ -125,7 +125,6 @@ final class SketchJoinOrderPlanner {
 	private final double[][] localFilterPassRatioByVarMask;
 	private final boolean[][] localFilterPassRatioLoadedByVarMask;
 	private final Set<Value>[][] finiteBindingVariableValuesByState;
-	private final Map<Long, Long> variablesMaskMemo = new HashMap<>();
 	private final Map<Long, Long> boundVariableMaskMemo = new HashMap<>();
 	private final Map<Long, Set<String>> variableMaskSetMemo = new HashMap<>();
 	private final Map<AccessShapeKey, SketchBasedJoinEstimator.AccessShape> accessShapeMemo = new HashMap<>();
@@ -3303,29 +3302,6 @@ final class SketchJoinOrderPlanner {
 			return 1.0d - finiteDomainPassRatio;
 		}
 		return deferredFilterOrderingWeight(filter);
-	}
-
-	private long variablesMask(long mask) {
-		int stateIndex = stateMemoIndex(mask);
-		if (stateIndex >= 0) {
-			long variables = variablesMaskByState[stateIndex];
-			if (variables == UNCOMPUTED_MASK) {
-				variables = computeVariablesMask(mask);
-				variablesMaskByState[stateIndex] = variables;
-			}
-			return variables;
-		}
-		return variablesMaskMemo.computeIfAbsent(mask, this::computeVariablesMask);
-	}
-
-	private long computeVariablesMask(long mask) {
-		long variables = 0L;
-		while (mask != 0L) {
-			int i = Long.numberOfTrailingZeros(mask);
-			mask &= mask - 1L;
-			variables |= joinVarMasks[i];
-		}
-		return variables;
 	}
 
 	private Set<String> boundVariables(long mask) {

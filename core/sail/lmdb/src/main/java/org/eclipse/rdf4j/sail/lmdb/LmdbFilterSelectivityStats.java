@@ -61,9 +61,13 @@ import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class LmdbFilterSelectivityStats
 		implements JoinStatsProvider, SketchBasedJoinEstimator.PatternFilterSamplingEstimator {
+
+	private static final Logger logger = LoggerFactory.getLogger(LmdbFilterSelectivityStats.class);
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String SIDECAR_SUFFIX = ".filters";
@@ -305,25 +309,51 @@ class LmdbFilterSelectivityStats
 		if (!backgroundRawSamplingEnabled || maxMillis <= 0L) {
 			return 0;
 		}
+		int pendingBefore = pendingBackgroundSamplingRequests();
+		if (pendingBefore == 0) {
+			return 0;
+		}
+		long startNanos = System.nanoTime();
+		logger.info("LMDB background filter sampling cycle started: pendingRequests={}, maxMillis={}", pendingBefore,
+				maxMillis);
 		long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(maxMillis);
+		int attemptedCount = 0;
 		int sampledCount = 0;
 		while (!samplingDeadlineExceeded(deadlineNanos)) {
 			List<BackgroundSamplingRequest> requests = drainBackgroundSamplingRequests(1);
 			if (requests.isEmpty()) {
 				break;
 			}
-			SampledPassRatio sampled = sampleFilterPassRatio(requests.getFirst().toSamplingCandidate(), false,
-					deadlineNanos);
+			BackgroundSamplingRequest request = requests.getFirst();
+			attemptedCount++;
+			SampledPassRatio sampled = sampleFilterPassRatio(request.toSamplingCandidate(), false, deadlineNanos);
 			if (!isUsableSampledPassRatio(sampled)) {
+				logger.info(
+						"LMDB background filter sampling skipped request: predicate={}, filterKey={}, votes={}, foregroundNeeded={}, expectedRuntimeRows={}, expectedBenefitRows={}",
+						request.predicateIri(), request.filterKey(), request.voteCount(), request.foregroundNeeded(),
+						request.expectedRuntimeRows(), request.expectedBenefitRows());
 				continue;
 			}
 			synchronized (this) {
-				sampledByFilter.put(requests.getFirst().key, sampled);
+				sampledByFilter.put(request.key, sampled);
 				dirty = true;
 			}
+			logger.info(
+					"LMDB background filter sampling sampled request: predicate={}, filterKey={}, passRatio={}, sampleSize={}, votes={}, foregroundNeeded={}, expectedRuntimeRows={}, expectedBenefitRows={}",
+					request.predicateIri(), request.filterKey(), sampled.passRatio, sampled.sampleSize,
+					request.voteCount(), request.foregroundNeeded(), request.expectedRuntimeRows(),
+					request.expectedBenefitRows());
 			sampledCount++;
 		}
+		logger.info(
+				"LMDB background filter sampling cycle finished: attemptedRequests={}, sampledRequests={}, remainingRequests={}, elapsedMillis={}",
+				attemptedCount, sampledCount, pendingBackgroundSamplingRequests(),
+				TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
 		return sampledCount;
+	}
+
+	synchronized int pendingBackgroundSamplingRequests() {
+		return backgroundSamplingRequests.size();
 	}
 
 	synchronized void persistIfDirty() {
@@ -571,6 +601,10 @@ class LmdbFilterSelectivityStats
 		if (request == null) {
 			request = new BackgroundSamplingRequest(candidate);
 			backgroundSamplingRequests.put(candidate.key, request);
+			logger.info(
+					"LMDB background filter sampling queued request: predicate={}, filterKey={}, expectedRuntimeRows={}, expectedBenefitRows={}",
+					request.predicateIri(), request.filterKey(), request.expectedRuntimeRows(),
+					request.expectedBenefitRows());
 		}
 		request.vote(candidate, foregroundNeeded, ++backgroundSamplingSequence);
 		trimBackgroundSamplingRequests();
@@ -588,6 +622,10 @@ class LmdbFilterSelectivityStats
 				return;
 			}
 			backgroundSamplingRequests.remove(lowest.key);
+			logger.info(
+					"LMDB background filter sampling dropped queued request: predicate={}, filterKey={}, votes={}, expectedRuntimeRows={}, expectedBenefitRows={}",
+					lowest.predicateIri(), lowest.filterKey(), lowest.voteCount(), lowest.expectedRuntimeRows(),
+					lowest.expectedBenefitRows());
 		}
 	}
 

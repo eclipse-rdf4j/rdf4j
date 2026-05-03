@@ -56,6 +56,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	private static final String FILTER_SNAPSHOT_FILE = SNAPSHOT_FILE + ".filters";
 	private static final String LEARNED_FILTER_QUERY = "SELECT * WHERE { VALUES ?target { \"u0\" \"u1\" } "
 			+ "?s <urn:test:name> ?name . FILTER(?name = ?target) }";
+	private static final String SAMPLED_FILTER_QUERY = "SELECT * WHERE { ?s <urn:test:name> ?name . "
+			+ "FILTER(?name IN (\"u0\", \"u1\")) }";
 
 	@Test
 	void customEvaluationStrategyFactoryDisablesSketchEstimatorAndKeepsPageCardinality(@TempDir File dataDir)
@@ -185,6 +187,56 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			EvaluationStatistics statistics = reopened.getBackingStore().getEvaluationStatistics();
 			assertEquals(learnedPassRatioBeforeShutdown, statistics.estimateFilterPassRatio(learnedFilter), 0.00001d,
 					"Expected learned filter selectivity to survive LMDB restart");
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void closeWritesSampledFilterSelectivitySidecarAndReloadsItAfterRestart(@TempDir File dataDir)
+			throws Exception {
+		Filter sampledFilter = firstFilter(SAMPLED_FILTER_QUERY);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		double sampledPassRatioBeforeShutdown;
+		try {
+			loadNameData(repository);
+			assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
+
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			statistics.estimateFilterPass(sampledFilter);
+			assertEquals(1, store.getBackingStore().runBackgroundFilterSamplingCycle(50L),
+					"Expected background sampling to populate the sampled filter selectivity cache");
+
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(sampledFilter);
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Expected sampled filter selectivity before shutdown");
+			sampledPassRatioBeforeShutdown = estimate.getPassRatio();
+		} finally {
+			repository.shutDown();
+		}
+
+		assertTrue(new File(dataDir, FILTER_SNAPSHOT_FILE).isFile(),
+				"Expected filter selectivity sidecar after LMDB shutdown");
+
+		LmdbStoreConfig reopenedConfig = new LmdbStoreConfig("spoc")
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		LmdbStore reopened = new LmdbStore(dataDir, reopenedConfig);
+		reopened.init();
+		try {
+			assertTrue(reopened.awaitSketchesReady(10, TimeUnit.SECONDS));
+			EvaluationStatistics.FilterPassEstimate estimate = reopened.getBackingStore()
+					.getEvaluationStatistics()
+					.estimateFilterPass(sampledFilter);
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Expected sampled filter selectivity to survive LMDB restart");
+			assertEquals(sampledPassRatioBeforeShutdown, estimate.getPassRatio(), 0.00001d);
 		} finally {
 			reopened.shutDown();
 		}

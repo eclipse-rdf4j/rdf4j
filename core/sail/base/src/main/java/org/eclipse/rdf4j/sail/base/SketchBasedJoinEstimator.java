@@ -1983,8 +1983,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		tgt.clear(); // wipe everything (add + del)
 		rebuildEpoch.incrementAndGet(); // mark rebuild in progress (odd epoch)
 		long seen = 0L;
-		long l = System.currentTimeMillis();
+		long startMillis = System.currentTimeMillis();
+		long startNanos = System.nanoTime();
 		long lastLoggedRebuildMillion = -1L;
+		boolean stoppedEarly = false;
+		String targetBuffer = rebuildIntoA ? "bufA" : "bufB";
+		logger.info(
+				"RdfJoinEstimator: Rebuilding sketches started: targetBuffer={}, targetSlot={}, previousCurrentSlot={}, rebuildRequestVersion={}",
+				targetBuffer, targetSlot, previousCurrentSlot, requestVersion);
 		try {
 			try (
 					SailDataset ds = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
@@ -1994,6 +2000,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 				while (it.hasNext()) {
 					if (Thread.currentThread().isInterrupted() || !running && Thread.currentThread() == refresher) {
+						stoppedEarly = true;
 						break;
 					}
 					Statement st = it.next();
@@ -2015,15 +2022,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 									lastLoggedRebuildMillion = seenMillion;
 									logger.debug(
 											"RdfJoinEstimator: Rebuilding {}, seen {} million triples so far. Elapsed: {} s.",
-											rebuildIntoA ? "bufA" : "bufB",
+											targetBuffer,
 											seenMillion,
-											(System.currentTimeMillis() - l) / 1000);
+											(System.currentTimeMillis() - startMillis) / 1000);
 								}
 							}
 
 						}
 					} catch (OutOfMemoryError pressureFailure) {
-
+						logger.info(
+								"RdfJoinEstimator: Rebuilding sketches stopped under memory pressure: targetBuffer={}, targetSlot={}, scannedTriples={}, elapsedMillis={}",
+								targetBuffer, targetSlot, seen,
+								TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
 						return seen;
 					} catch (Throwable e) {
 						throw e;
@@ -2067,9 +2077,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			lastRebuildPublishMs = System.currentTimeMillis();
 			churnSampler.reset();
 
+			logger.info(
+					"RdfJoinEstimator: Rebuilding sketches finished: targetBuffer={}, targetSlot={}, previousCurrentSlot={}, scannedTriples={}, stoppedEarly={}, elapsedMillis={}",
+					targetBuffer, targetSlot, previousCurrentSlot, seen, stoppedEarly,
+					TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
 			return seen;
 		} catch (OutOfMemoryError pressureFailure) {
-
+			logger.info(
+					"RdfJoinEstimator: Rebuilding sketches stopped under memory pressure: targetBuffer={}, targetSlot={}, scannedTriples={}, elapsedMillis={}",
+					targetBuffer, targetSlot, seen,
+					TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
 			return seen;
 		} finally {
 			if ((rebuildEpoch.get() & 1L) != 0L) {

@@ -428,6 +428,47 @@ class LmdbSketchAwareFilterPlacementTest {
 	}
 
 	@Test
+	void backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled(
+			@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadThemeData(repository, Theme.MEDICAL_RECORDS);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			}
+
+			assertEquals(1, store.getBackingStore()
+					.runBackgroundFilterSamplingCycle(LmdbStoreConfig.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE),
+					"Expected background sampling to process the recordedOn IN-filter vote");
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			Filter recordedOnFilter = findFirstRecordedOnFilter(optimized);
+			assertNotNull(recordedOnFilter,
+					"Expected sampled optimized plan to retain the recordedOn date constraint");
+			assertEquals("sampled", recordedOnFilter.getStringMetricPlanned(
+					TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+					"Expected optimized plan telemetry to show sampled background selectivity");
+			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset(
 			@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
@@ -525,6 +566,20 @@ class LmdbSketchAwareFilterPlacementTest {
 						&& predicate.equals(node.getPredicateVar().getValue())
 						&& node.getObjectVar() != null
 						&& objectBindingName.equals(node.getObjectVar().getName())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static Filter findFirstRecordedOnFilter(TupleExpr optimized) {
+		List<Filter> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (matches.isEmpty() && isRecordedOnFilter(node)) {
 					matches.add(node);
 				}
 				super.meet(node);

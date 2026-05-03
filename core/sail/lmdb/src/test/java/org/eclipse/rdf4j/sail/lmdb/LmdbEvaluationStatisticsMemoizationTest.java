@@ -27,6 +27,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,12 +36,14 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -49,6 +52,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -532,6 +537,95 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void medicalAggregateInFilterUsesBackgroundSampledRecordedOnSelectivityWhenForegroundSamplingDisabled()
+			throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-medical-background-vote").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadMedicalEncounterData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			String query = """
+					SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
+						?enc <http://example.com/theme/medical/recordedOn> ?date .
+						FILTER (?date IN ("2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>,
+							"2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>))
+						?enc a <http://example.com/theme/medical/Encounter> .
+						?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+						OPTIONAL {
+							?enc <http://example.com/theme/medical/hasCondition> ?cond .
+						}
+					}
+					GROUP BY ?practitioner
+					HAVING (COUNT(?enc) > 0)
+					""";
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			List<?> requests = peekBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore));
+			assertTrue(requests.stream()
+					.anyMatch(request -> {
+						try {
+							return "http://example.com/theme/medical/recordedOn"
+									.equals(invokeString(request, "predicateIri"));
+						} catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+					}),
+					"Expected optimizer to queue background sampling for the recordedOn IN filter; requests="
+							+ requests);
+
+			assertEquals(1, backingStore.runBackgroundFilterSamplingCycle(50L),
+					"Expected background cycle to sample the queued recordedOn filter");
+
+			Filter recordedOnFilter = findRecordedOnFilter(optimized);
+			assertNotNull(recordedOnFilter,
+					"Expected optimized plan to retain the recordedOn date constraint as a local filter");
+			EvaluationStatistics.FilterPassEstimate estimate = backingStore.getEvaluationStatistics()
+					.estimateFilterPass(recordedOnFilter);
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Expected background sampling to make the recordedOn IN filter available to planning");
+			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.5d,
+					"Expected Jan-Feb date filter to be more selective than handledBy/rdf:type scans");
+
+			TupleExpr optimizedAfterSampling;
+			String optimizedTextAfterSampling;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
+						.explain(Explanation.Level.Optimized);
+				optimizedAfterSampling = (TupleExpr) explanation.tupleExpr();
+				optimizedTextAfterSampling = explanation.toString();
+			}
+			Filter recordedOnFilterAfterSampling = findRecordedOnFilter(optimizedAfterSampling);
+			assertNotNull(recordedOnFilterAfterSampling,
+					"Expected sampled optimized plan to retain the recordedOn date constraint");
+			assertEquals("sampled",
+					recordedOnFilterAfterSampling
+							.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+					"Expected optimized plan telemetry to show sampled background selectivity");
+			assertTrue(optimizedTextAfterSampling.contains("filterSelectivitySource=sampled"),
+					"Expected Workbench text explain to show sampled selectivity for recordedOn\n"
+							+ optimizedTextAfterSampling);
+			assertFalse(optimizedTextAfterSampling.contains("Filter (filterSelectivitySource=unknown)"),
+					"Unsupported filters should not make Workbench text explain look like sampled selectivity was missed\n"
+							+ optimizedTextAfterSampling);
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void backgroundRawSamplingDisabledPreventsQueueingAndSampling() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
@@ -786,6 +880,31 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 	}
 
+	private static void loadMedicalEncounterData(SailRepository repository) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		String medical = "http://example.com/theme/medical/";
+		IRI recordedOn = vf.createIRI(medical, "recordedOn");
+		IRI encounterType = vf.createIRI(medical, "Encounter");
+		IRI handledBy = vf.createIRI(medical, "handledBy");
+		IRI hasCondition = vf.createIRI(medical, "hasCondition");
+		IRI rdfType = vf.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 40; i++) {
+				IRI encounter = vf.createIRI(medical, "encounter/" + i);
+				IRI practitioner = vf.createIRI(medical, "practitioner/" + (i % 4));
+				connection.add(encounter, rdfType, encounterType);
+				connection.add(encounter, handledBy, practitioner);
+				connection.add(encounter, recordedOn,
+						vf.createLiteral(String.format("2024-%02d-01", (i % 12) + 1), XMLSchema.DATE));
+				if ((i & 1) == 0) {
+					connection.add(encounter, hasCondition, vf.createIRI(medical, "condition/" + i));
+				}
+			}
+			connection.commit();
+		}
+	}
+
 	private static EvaluationStatistics extractEvaluationStatistics(SailRepository repository) throws Exception {
 		Object sail = repository.getSail();
 		Method getSailStoreMethod = sail.getClass().getDeclaredMethod("getSailStore");
@@ -845,6 +964,33 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				int.class);
 		method.setAccessible(true);
 		return (List<?>) method.invoke(stats, maxCount);
+	}
+
+	private static List<?> peekBackgroundSamplingRequests(LmdbFilterSelectivityStats stats) throws Exception {
+		Field field = LmdbFilterSelectivityStats.class.getDeclaredField("backgroundSamplingRequests");
+		field.setAccessible(true);
+		Map<?, ?> requests = (Map<?, ?>) field.get(stats);
+		return new ArrayList<>(requests.values());
+	}
+
+	private static Filter findRecordedOnFilter(TupleExpr tupleExpr) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI recordedOn = vf.createIRI("http://example.com/theme/medical/recordedOn");
+		List<Filter> filters = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (filters.isEmpty()
+						&& node.getArg()instanceof StatementPattern statementPattern
+						&& statementPattern.getPredicateVar() != null
+						&& recordedOn.equals(statementPattern.getPredicateVar().getValue())
+						&& VarNameCollector.process(node.getCondition()).contains("date")) {
+					filters.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return filters.isEmpty() ? null : filters.getFirst();
 	}
 
 	private static String invokeString(Object target, String methodName) throws Exception {
