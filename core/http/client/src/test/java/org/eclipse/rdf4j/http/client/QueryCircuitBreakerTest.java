@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 
@@ -115,6 +116,42 @@ class QueryCircuitBreakerTest {
 		fixture.freeMemoryMb.set(1024);
 		assertEquals("NORMAL", breaker.snapshotStatus().getState());
 		assertTrue(readHeavyOperatorExecutionEnabled());
+	}
+
+	@Test
+	void shouldClearCriticalKillSwitchImmediatelyWhenBreakerIsDisabled() throws Exception {
+		Fixture fixture = new Fixture();
+		AtomicReference<QueryCircuitBreaker.Configuration> configuration = new AtomicReference<>(
+				configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000, 7));
+		QueryCircuitBreaker breaker = new QueryCircuitBreaker(fixture.monitor, configuration::get, fixture.clock::get,
+				fixture.sleeps::add, () -> {
+				}, 1000, 1, false);
+
+		try {
+			fixture.freeMemoryMb.set(150);
+			assertEquals("CRITICAL", breaker.snapshotStatus().getState());
+			assertFalse(readHeavyOperatorExecutionEnabled());
+
+			configuration.set(configuration(false, 100, 200, 300, 400, 300, 200, 25, 10, 1000, 7));
+
+			assertEquals("NORMAL", breaker.snapshotStatus().getState());
+			assertTrue(readHeavyOperatorExecutionEnabled());
+		} finally {
+			QueryExecutionContext.setHeavyOperatorExecutionEnabled(true);
+			QueryExecutionContext.setIgnoreCheckpointStride(false);
+		}
+	}
+
+	@Test
+	void shouldNotRunGcFromStatusSnapshotTransition() {
+		Fixture fixture = new Fixture();
+		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000,
+				7), 1000, () -> fixture.gcInvocations.add(fixture.clock.get()));
+
+		fixture.freeMemoryMb.set(250);
+
+		assertEquals("HIGH", breaker.snapshotStatus().getState());
+		assertEquals(List.of(), fixture.gcInvocations);
 	}
 
 	@Test

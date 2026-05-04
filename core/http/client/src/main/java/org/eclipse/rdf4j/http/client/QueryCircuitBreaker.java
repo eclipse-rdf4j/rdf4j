@@ -260,7 +260,8 @@ public final class QueryCircuitBreaker {
 		QueryPressureState previous = currentState;
 		long now = clock.getAsLong();
 
-		if (next.ordinal() < previous.ordinal() && now - lastTransition.getTimestampMillis() < recoveryCooldownMs) {
+		if (configuration.isEnabled() && next.ordinal() < previous.ordinal()
+				&& now - lastTransition.getTimestampMillis() < recoveryCooldownMs) {
 			next = previous;
 		}
 
@@ -270,7 +271,7 @@ public final class QueryCircuitBreaker {
 			LOGGER.info(
 					"Query circuit breaker transition previous={} current={} freeMb={} rollingGcMs={} reason={}",
 					previous, next, snapshot.getFreeMemoryMb(), snapshot.getRollingGcMs(), reason);
-			if (!isCheckpointReason(reason) && !isMonitorReason(reason)
+			if (!isCheckpointReason(reason) && !isMonitorReason(reason) && !isStatusReason(reason)
 					&& shouldRequestTransitionGc(currentState, configuration, snapshot)) {
 				maybeRunCheckpointGc();
 			}
@@ -318,6 +319,10 @@ public final class QueryCircuitBreaker {
 
 	private boolean isMonitorReason(String reason) {
 		return "monitor".equals(reason);
+	}
+
+	private boolean isStatusReason(String reason) {
+		return "status".equals(reason);
 	}
 
 	private boolean shouldRequestTransitionGc(QueryPressureState state, Configuration configuration,
