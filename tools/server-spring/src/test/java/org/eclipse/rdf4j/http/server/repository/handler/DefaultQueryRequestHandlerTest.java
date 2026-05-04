@@ -26,6 +26,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
@@ -311,6 +314,56 @@ class DefaultQueryRequestHandlerTest {
 		}
 	}
 
+	@Test
+	void breakerCancellationShouldForwardTrackedExplainCancelToProxyRepository() throws Exception {
+		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		CountDownLatch explainStarted = new CountDownLatch(1);
+		CountDownLatch explainInterrupted = new CountDownLatch(1);
+
+		MockHttpServletRequest explainRequest = newAsyncExplainRequest("req-breaker");
+		MockHttpServletResponse explainResponse = new MockHttpServletResponse();
+
+		when(repositoryResolver.getRepository(explainRequest)).thenReturn(repository);
+		when(repositoryResolver.getRepositoryConnection(explainRequest, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
+			QueryCircuitBreakerHandle handle = QueryExecutionContext.getHandle();
+			assertThat(handle).isNotNull();
+			QueryCircuitBreaker.getInstance().markHeavy(handle, "GROUP_BY");
+			explainStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return mock(Explanation.class);
+			} catch (InterruptedException e) {
+				explainInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		try {
+			withBreakerDisabled(() -> {
+				Future<ModelAndView> explainFuture = executor
+						.submit(() -> handler.handleQueryRequest(explainRequest, RequestMethod.POST, explainResponse));
+
+				assertThat(explainStarted.await(5, TimeUnit.SECONDS)).isTrue();
+				withCriticalBreakerProperties(this::triggerCriticalBreakerCancellation);
+
+				assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+				assertThatThrownBy(() -> explainFuture.get(5, TimeUnit.SECONDS))
+						.hasCauseInstanceOf(org.eclipse.rdf4j.http.server.ServerHTTPException.class);
+				verify(repository).cancelQueryExplanation("req-breaker");
+			});
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
 	private static MockHttpServletRequest newAsyncExplainRequest(String explainRequestId) {
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod(RequestMethod.POST.name());
@@ -328,6 +381,47 @@ class DefaultQueryRequestHandlerTest {
 		request.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, "true");
 		request.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
 		return request;
+	}
+
+	private void triggerCriticalBreakerCancellation() {
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"critical-admission");
+		try {
+			assertThatThrownBy(() -> breaker.beforeExecution(handle))
+					.isInstanceOf(QueryCircuitBreaker.CircuitBreakerException.class);
+		} finally {
+			breaker.complete(handle);
+		}
+	}
+
+	private void withBreakerDisabled(ThrowingRunnable action) throws Exception {
+		String previousEnabled = System.getProperty(BREAKER_ENABLED);
+		try {
+			System.setProperty(BREAKER_ENABLED, "false");
+			action.run();
+		} finally {
+			restoreProperty(BREAKER_ENABLED, previousEnabled);
+		}
+	}
+
+	private void withCriticalBreakerProperties(ThrowingRunnable action) throws Exception {
+		String previousEnabled = System.getProperty(BREAKER_ENABLED);
+		String previousWarnFreeMb = System.getProperty(BREAKER_WARN_FREE_MB);
+		String previousHighFreeMb = System.getProperty(BREAKER_HIGH_FREE_MB);
+		String previousCriticalFreeMb = System.getProperty(BREAKER_CRITICAL_FREE_MB);
+		try {
+			System.setProperty(BREAKER_ENABLED, "true");
+			System.setProperty(BREAKER_WARN_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_HIGH_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			System.setProperty(BREAKER_CRITICAL_FREE_MB, Integer.toString(Integer.MAX_VALUE));
+			action.run();
+		} finally {
+			restoreProperty(BREAKER_ENABLED, previousEnabled);
+			restoreProperty(BREAKER_WARN_FREE_MB, previousWarnFreeMb);
+			restoreProperty(BREAKER_HIGH_FREE_MB, previousHighFreeMb);
+			restoreProperty(BREAKER_CRITICAL_FREE_MB, previousCriticalFreeMb);
+		}
 	}
 
 	private void withBreakerProperties(ThrowingRunnable action) throws Exception {

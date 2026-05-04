@@ -100,10 +100,17 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			repositoryCon = repositoryResolver.getRepositoryConnection(request, repository);
 
 			String queryString = getQueryString(request, requestMethod);
+			boolean headersOnly = requestMethod == RequestMethod.HEAD;
+			final Optional<String> explainRequestId = getExplainRequestId(request);
+			Runnable remoteCancel = null;
+			if (!headersOnly && request.getParameter(Protocol.EXPLAIN_PARAM_NAME) != null
+					&& explainRequestId.isPresent()) {
+				remoteCancel = createRemoteCancelAction(repository, explainRequestId.get());
+			}
 
 			logQuery(requestMethod, queryString);
 			breakerHandle = queryCircuitBreaker.register(QueryCircuitBreakerHandle.Source.SERVER,
-					repositoryResolver.getRepositoryID(request), queryString);
+					repositoryResolver.getRepositoryID(request), queryString, remoteCancel);
 			breakerHandle.attachCurrentThread(repositoryCon);
 			try {
 				queryCircuitBreaker.beforeExecution(breakerHandle);
@@ -114,12 +121,10 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 			Query query = getQuery(request, repositoryCon, queryString);
 
-			boolean headersOnly = requestMethod == RequestMethod.HEAD;
 			long limit = getLimit(request);
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
-			final Optional<String> explainRequestId = getExplainRequestId(request);
 
 			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
 				return handleRegisteredExplainRequest(request, response, repository, repositoryCon, query,
