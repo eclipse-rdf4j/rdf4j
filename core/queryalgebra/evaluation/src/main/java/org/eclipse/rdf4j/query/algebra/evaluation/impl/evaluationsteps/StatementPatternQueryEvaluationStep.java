@@ -531,18 +531,20 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return new DirectLookupResult(iteration, -1);
 		}
 
-		List<Statement> statements = new ArrayList<>(DIRECT_LOOKUP_CACHE_MAX_STATEMENTS);
-		while (iteration.hasNext()) {
-			if (statements.size() == DIRECT_LOOKUP_CACHE_MAX_STATEMENTS) {
-				iteration.close();
-				return new DirectLookupResult(reopenUncachedIteration(subject, predicate, object, contexts), -1);
+		try (iteration) {
+			List<Statement> statements = new ArrayList<>(DIRECT_LOOKUP_CACHE_MAX_STATEMENTS);
+			while (iteration.hasNext()) {
+				if (statements.size() == DIRECT_LOOKUP_CACHE_MAX_STATEMENTS) {
+					return new DirectLookupResult(reopenUncachedIteration(subject, predicate, object, contexts), -1);
+				}
+				statements.add(iteration.next());
 			}
-			statements.add(iteration.next());
-		}
 
-		statements = List.copyOf(statements);
-		putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(statements));
-		return new DirectLookupResult(new CloseableIteratorIteration<>(statements.iterator()), statements.size());
+			statements = List.copyOf(statements);
+
+			putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(statements));
+			return new DirectLookupResult(new CloseableIteratorIteration<>(statements.iterator()), statements.size());
+		}
 	}
 
 	private CloseableIteration<? extends Statement> reopenUncachedIteration(Resource subject, IRI predicate,
