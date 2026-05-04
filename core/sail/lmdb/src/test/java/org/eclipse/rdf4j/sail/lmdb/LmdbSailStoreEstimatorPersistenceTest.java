@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -52,14 +53,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSink;
-import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbSailStoreEstimatorPersistenceTest {
 
-	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.";
+	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
 	private static final String SNAPSHOT_FILE = "join-estimator.rjes";
 	private static final String SNAPSHOT_METADATA_FILE = "metadata.bin";
 	private static final String FILTER_SNAPSHOT_FILE = SNAPSHOT_FILE + ".filters";

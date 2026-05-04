@@ -11,6 +11,11 @@
 	<description>Evaluation strategy API and implementations for the query algebra model.</description>
 	<dependencies>
 		<dependency>
+			<groupId>org.apache.datasketches</groupId>
+			<artifactId>datasketches-java</artifactId>
+			<version>9.0.0</version>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryalgebra-model</artifactId>
 			<version>${project.version}</version>

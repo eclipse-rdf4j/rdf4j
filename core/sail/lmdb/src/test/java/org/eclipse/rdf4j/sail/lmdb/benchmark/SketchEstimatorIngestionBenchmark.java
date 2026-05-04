@@ -22,21 +22,14 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.base.SailDataset;
-import org.eclipse.rdf4j.sail.base.SailSink;
-import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.base.SailStore;
-import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -98,7 +91,7 @@ public class SketchEstimatorIngestionBenchmark {
 
 		@Setup(Level.Invocation)
 		public void setupEstimator() {
-			estimator = new SketchBasedJoinEstimator(new BenchmarkSailStore(List.of()), CONFIG);
+			estimator = new SketchBasedJoinEstimator(new BenchmarkStatementSource(List.of()), CONFIG);
 		}
 
 		@TearDown(Level.Invocation)
@@ -113,7 +106,7 @@ public class SketchEstimatorIngestionBenchmark {
 
 		@Setup(Level.Invocation)
 		public void setupEstimator() {
-			estimator = new SketchBasedJoinEstimator(new BenchmarkSailStore(statements), CONFIG);
+			estimator = new SketchBasedJoinEstimator(new BenchmarkStatementSource(statements), CONFIG);
 		}
 
 		@TearDown(Level.Invocation)
@@ -130,7 +123,7 @@ public class SketchEstimatorIngestionBenchmark {
 		@Setup(Level.Invocation)
 		public void setupEstimator() throws Exception {
 			tempDir = Files.createTempDirectory("rdf4j-sketch-ingest-bench");
-			estimator = new SketchBasedJoinEstimator(new BenchmarkSailStore(statements), CONFIG);
+			estimator = new SketchBasedJoinEstimator(new BenchmarkStatementSource(statements), CONFIG);
 			estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
 		}
 
@@ -171,8 +164,8 @@ public class SketchEstimatorIngestionBenchmark {
 		return state.estimator.rebuild();
 	}
 
-	private record BenchmarkSailStore(List<Statement> data) implements SailStore {
-		private BenchmarkSailStore(List<Statement> data) {
+	private record BenchmarkStatementSource(List<Statement> data) implements SketchStatementSource {
+		private BenchmarkStatementSource(List<Statement> data) {
 			this.data = List.copyOf(data);
 		}
 
@@ -182,79 +175,8 @@ public class SketchEstimatorIngestionBenchmark {
 		}
 
 		@Override
-		public EvaluationStatistics getEvaluationStatistics() {
-			return null;
-		}
-
-		@Override
-		public SailSource getExplicitSailSource() {
-			return new BenchmarkSailSource(data);
-		}
-
-		@Override
-		public SailSource getInferredSailSource() {
-			return null;
-		}
-
-		@Override
-		public void close() throws SailException {
-		}
-	}
-
-	private record BenchmarkSailSource(List<Statement> data) implements SailSource {
-
-		@Override
-		public void close() {
-		}
-
-		@Override
-		public SailSource fork() {
-			return null;
-		}
-
-		@Override
-		public SailSink sink(IsolationLevel level) throws SailException {
-			return null;
-		}
-
-		@Override
-		public SailDataset dataset(IsolationLevel level) throws SailException {
-			return new BenchmarkSailDataset(data);
-		}
-
-		@Override
-		public void prepare() throws SailException {
-		}
-
-		@Override
-		public void flush() throws SailException {
-		}
-	}
-
-	private record BenchmarkSailDataset(List<Statement> data) implements SailDataset {
-
-		@Override
-		public void close() {
-		}
-
-		@Override
-		public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
-			return null;
-		}
-
-		@Override
-		public String getNamespace(String prefix) throws SailException {
-			return null;
-		}
-
-		@Override
-		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
-			return null;
-		}
-
-		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) throws SailException {
+				Resource... contexts) {
 			List<Statement> matches = new ArrayList<>(data.size());
 			for (Statement statement : data) {
 				if (subj != null && !subj.equals(statement.getSubject())) {

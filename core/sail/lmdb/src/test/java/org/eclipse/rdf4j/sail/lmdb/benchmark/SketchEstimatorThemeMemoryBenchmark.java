@@ -29,11 +29,11 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Pair;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
-import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Component;
-import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.Pair;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -60,7 +60,7 @@ import org.openjdk.jmh.annotations.Warmup;
 public class SketchEstimatorThemeMemoryBenchmark {
 
 	private static final String BENCHMARK_DIRECTORY = "target/lmdb-sketch-theme-memory-benchmark";
-	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.";
+	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
 	private static final String LIBRARY = "http://example.com/theme/library/";
 	private static final String MEDICAL = "http://example.com/theme/medical/";
 	private static final int STANDARD_BUCKET_COUNT = 4096;
