@@ -244,6 +244,20 @@ class LmdbSketchJoinOptimizerTest {
 
 	@Test
 	void removesNoNewBindingOptionalDirectProbe() {
+		BindingSetAssignment graph = values("graph", "ctx");
+		StatementPattern type = statementPattern("node", "type", "nodeType");
+		StatementPattern connects = statementPattern("node", "connectsTo", "neighbor");
+		StatementPattern reverseProbe = statementPattern("neighbor", "connectsTo", "node", "graph");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(graph, new Join(type, connects)), reverseProbe));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertTrue(!containsLeftJoin(root.getArg()));
+		assertEquals(List.of(graph, type, connects), joinArgs(root.getArg()));
+	}
+
+	@Test
+	void keepsNoNewBindingOptionalProbeWithoutFixedContext() {
 		StatementPattern type = statementPattern("node", "type", "nodeType");
 		StatementPattern connects = statementPattern("node", "connectsTo", "neighbor");
 		StatementPattern reverseProbe = statementPattern("neighbor", "connectsTo", "node");
@@ -251,8 +265,7 @@ class LmdbSketchJoinOptimizerTest {
 
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
-		assertTrue(!containsLeftJoin(root.getArg()));
-		assertEquals(List.of(type, connects), joinArgs(root.getArg()));
+		assertTrue(containsLeftJoin(root.getArg()));
 	}
 
 	@Test
@@ -260,7 +273,8 @@ class LmdbSketchJoinOptimizerTest {
 		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
 		StatementPattern trackType = new StatementPattern(new Var("track"),
 				new Var("_const_type", VF.createIRI("urn:type")),
-				new Var("_const_trackType", VF.createIRI("urn:TrackSection")));
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")),
+				new Var("_const_context", VF.createIRI("urn:ctx")));
 		QueryRoot root = new QueryRoot(new Filter(hasTrack, new Exists(trackType)));
 
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
@@ -270,7 +284,42 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void keepsNoNewBindingExistsProbeWithoutFixedContext() {
+		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
+		StatementPattern trackType = new StatementPattern(new Var("track"),
+				new Var("_const_type", VF.createIRI("urn:type")),
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")));
+		QueryRoot root = new QueryRoot(new Filter(hasTrack, new Exists(trackType)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertTrue(containsExistsFilter(root.getArg()));
+	}
+
+	@Test
 	void rewritesNoNewBindingExistsProbeAboveOptionalFilterToJoinFactor() {
+		StatementPattern sectionType = statementPattern("section", "type", "sectionType");
+		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
+		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
+				new ExtensionElem(new Var("op"), "optOp"));
+		Compare optionalFilter = new Compare(new Var("optOp"), new Var("section"), Compare.CompareOp.NE);
+		StatementPattern trackType = new StatementPattern(new Var("track"),
+				new Var("_const_type", VF.createIRI("urn:type")),
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")),
+				new Var("_const_context", VF.createIRI("urn:ctx")));
+		QueryRoot root = new QueryRoot(
+				new Filter(new Filter(new LeftJoin(new Join(sectionType, hasTrack), optional), optionalFilter),
+						new Exists(trackType)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertTrue(!containsExistsFilter(root.getArg()));
+		assertTrue(containsLeftJoin(root.getArg()));
+		assertTrue(joinArgs(root.getArg()).contains(trackType));
+	}
+
+	@Test
+	void keepsNoNewBindingExistsProbeAboveOptionalFilterWithoutFixedContext() {
 		StatementPattern sectionType = statementPattern("section", "type", "sectionType");
 		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
 		Extension optional = new Extension(statementPattern("section", "connectsOperationalPoint", "op"),
@@ -285,9 +334,8 @@ class LmdbSketchJoinOptimizerTest {
 
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
-		assertTrue(!containsExistsFilter(root.getArg()));
+		assertTrue(containsExistsFilter(root.getArg()));
 		assertTrue(containsLeftJoin(root.getArg()));
-		assertTrue(joinArgs(root.getArg()).contains(trackType));
 	}
 
 	@Test
@@ -414,6 +462,12 @@ class LmdbSketchJoinOptimizerTest {
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
+	}
+
+	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName,
+			String contextName) {
+		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
+				new Var(objectName), new Var(contextName));
 	}
 
 	private static BindingSetAssignment values(String bindingName, String... values) {

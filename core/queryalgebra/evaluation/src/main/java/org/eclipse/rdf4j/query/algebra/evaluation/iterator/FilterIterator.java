@@ -24,6 +24,7 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -132,7 +133,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		}
 		FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition = directCondition(
 				filter.getCondition(),
-				context);
+				context,
+				strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 
 		List<BindingSet> assignmentRows = bindingRows(assignment);
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
@@ -155,7 +157,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	}
 
 	private static FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition(ValueExpr condition,
-			QueryEvaluationContext context) {
+			QueryEvaluationContext context, boolean strict) {
 		if (!(condition instanceof Compare)) {
 			return null;
 		}
@@ -172,7 +174,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			if (leftValue == null || rightValue == null) {
 				return false;
 			}
-			return QueryEvaluationUtil.compare(leftValue, rightValue, operator);
+			return QueryEvaluationUtil.compare(leftValue, rightValue, operator, strict);
 		};
 	}
 

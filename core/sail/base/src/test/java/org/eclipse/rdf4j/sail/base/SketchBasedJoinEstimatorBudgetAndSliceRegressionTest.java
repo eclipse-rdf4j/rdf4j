@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
@@ -128,7 +129,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		@SuppressWarnings("unchecked")
 		Map<?, ?> pairs = (Map<?, ?>) field(activeState(estimator), "pairs");
 		for (Object pairBuild : pairs.values()) {
-			((Map<?, ?>) field(pairBuild, "rows")).clear();
+			invokeNoArg(pairBuild, "clear");
 		}
 	}
 
@@ -150,6 +151,12 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return field.get(target);
+	}
+
+	private static void invokeNoArg(Object target, String name) throws Exception {
+		Method method = target.getClass().getDeclaredMethod(name);
+		method.setAccessible(true);
+		method.invoke(target);
 	}
 
 	private static void clearSketchArray(AtomicReferenceArray<?> sketches) {

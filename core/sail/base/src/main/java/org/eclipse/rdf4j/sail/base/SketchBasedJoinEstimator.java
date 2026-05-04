@@ -2061,6 +2061,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		clearEstimateCacheIfPopulated();
 		clearPositiveReadinessCache();
 		long requestVersion = rebuildRequestVersion.get();
+		long sizeBeforeRebuild = approxStoreSize.get();
 
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
@@ -2148,8 +2149,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				markRebuiltSketchesDirty(tgt);
 			}
 			current = tgt; // single volatile write → visible to all readers
-			seenTriples = seen;
-			approxStoreSize.set(seen);
+			long rebuiltRows = seen;
+			seenTriples = approxStoreSize.updateAndGet(
+					currentSize -> storeSizeAfterRebuild(rebuiltRows, sizeBeforeRebuild, currentSize));
 			sketchesLoaded = true;
 			clearRebuildRequiredIfUnchanged(requestVersion);
 			dirty.set(true);
@@ -2259,12 +2261,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return Math.max(0L, afterAdditions - Math.min(afterAdditions, deletions));
 	}
 
+	private static long storeSizeAfterRebuild(long rebuiltRows, long sizeBeforeRebuild, long currentSize) {
+		if (currentSize >= sizeBeforeRebuild) {
+			return applyStoreSizeDelta(rebuiltRows, currentSize - sizeBeforeRebuild, 0L);
+		}
+		return applyStoreSizeDelta(rebuiltRows, 0L, sizeBeforeRebuild - currentSize);
+	}
+
 	private boolean isReadyForIncrementalUpdates() {
-		if (rebuildRequired.get() || (rebuildEpoch.get() & 1L) != 0L) {
+		if (rebuildRequired.get()) {
 			return false;
 		}
 		if (sketchesLoaded) {
+			// applyIncrementalBatch mirrors exact deltas into both buffers while rebuildEpoch is odd.
 			return true;
+		}
+		if ((rebuildEpoch.get() & 1L) != 0L) {
+			return false;
 		}
 		State snap = current;
 		synchronized (snap) {

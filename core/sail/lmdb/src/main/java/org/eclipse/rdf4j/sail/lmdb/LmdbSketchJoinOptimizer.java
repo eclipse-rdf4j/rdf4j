@@ -200,7 +200,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				if (!LmdbJoinPlanSupport.containsExists(condition)) {
 					continue;
 				}
-				Set<String> conditionVars = VarNameCollector.process(condition);
+				Set<String> conditionVars = new HashSet<>(VarNameCollector.process(condition));
 				conditionVars.retainAll(leftBindingNames);
 				if (!conditionVars.isEmpty()) {
 					costingFilters.add(new Filter(leftJoin.getLeftArg().clone(), condition.clone()));
@@ -488,14 +488,16 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (!(tupleExpr instanceof StatementPattern statementPattern)) {
 				return false;
 			}
-			return isFixedOrBoundPatternVar(statementPattern.getSubjectVar(), boundNames)
+			Var contextVar = statementPattern.getContextVar();
+			return contextVar != null
+					&& isFixedOrBoundPatternVar(statementPattern.getSubjectVar(), boundNames)
 					&& isFixedOrBoundPatternVar(statementPattern.getPredicateVar(), boundNames)
 					&& isFixedOrBoundPatternVar(statementPattern.getObjectVar(), boundNames)
-					&& isFixedOrBoundPatternVar(statementPattern.getContextVar(), boundNames);
+					&& isFixedOrBoundPatternVar(contextVar, boundNames);
 		}
 
 		private boolean isFixedOrBoundPatternVar(Var var, Set<String> boundNames) {
-			return var == null || var.hasValue() || boundNames.contains(var.getName());
+			return var.hasValue() || boundNames.contains(var.getName());
 		}
 
 		@Override
