@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.http.client;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
@@ -39,14 +40,12 @@ public final class QueryCircuitBreakerHandle {
 	private final long startTimeMillis;
 	private final Runnable remoteCancel;
 	private final AtomicBoolean active = new AtomicBoolean(true);
-	private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
+	private final AtomicReference<Cancellation> cancellation = new AtomicReference<>();
 	private final AtomicLong lastHeavyCheckpointMillis = new AtomicLong(-1);
 
 	private volatile Thread workerThread;
 	private volatile RepositoryConnection repositoryConnection;
 	private volatile String lastHeavyOperator;
-	private volatile QueryPressureState cancellationState = QueryPressureState.NORMAL;
-	private volatile String cancellationReason;
 
 	QueryCircuitBreakerHandle(String executionId, Source source, String repositoryId, String queryHash,
 			long startTimeMillis, Runnable remoteCancel) {
@@ -83,7 +82,7 @@ public final class QueryCircuitBreakerHandle {
 	}
 
 	public boolean isCancelRequested() {
-		return cancelRequested.get();
+		return cancellation.get() != null;
 	}
 
 	public long getLastHeavyCheckpointMillis() {
@@ -95,11 +94,13 @@ public final class QueryCircuitBreakerHandle {
 	}
 
 	public QueryPressureState getCancellationState() {
-		return cancellationState;
+		Cancellation current = cancellation.get();
+		return current != null ? current.state : QueryPressureState.NORMAL;
 	}
 
 	public String getCancellationReason() {
-		return cancellationReason;
+		Cancellation current = cancellation.get();
+		return current != null ? current.reason : null;
 	}
 
 	public boolean hasHeavyCheckpoint() {
@@ -125,12 +126,9 @@ public final class QueryCircuitBreakerHandle {
 	}
 
 	boolean requestCancel(QueryPressureState state, String reason) {
-		if (!active.get() || !cancelRequested.compareAndSet(false, true)) {
+		if (!active.get() || !cancellation.compareAndSet(null, new Cancellation(state, reason))) {
 			return false;
 		}
-
-		cancellationState = state;
-		cancellationReason = reason;
 
 		Thread activeWorker = workerThread;
 		if (activeWorker != null && activeWorker != Thread.currentThread()) {
@@ -166,6 +164,17 @@ public final class QueryCircuitBreakerHandle {
 			remoteCancel.run();
 		} catch (Exception e) {
 			LOGGER.debug("Error while forwarding breaker-triggered cancellation", e);
+		}
+	}
+
+	private static final class Cancellation {
+
+		private final QueryPressureState state;
+		private final String reason;
+
+		private Cancellation(QueryPressureState state, String reason) {
+			this.state = state;
+			this.reason = reason;
 		}
 	}
 }

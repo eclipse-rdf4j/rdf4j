@@ -134,6 +134,12 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
+	void shouldPublishCancellationDetailsAndCancelRequestAsSingleState() {
+		assertThrows(NoSuchFieldException.class,
+				() -> QueryCircuitBreakerHandle.class.getDeclaredField("cancelRequested"));
+	}
+
+	@Test
 	void shouldIgnoreCheckpointStrideOnlyAtHighOrAbove() throws Exception {
 		PropertiesScope properties = new PropertiesScope()
 				.with(QueryCircuitBreaker.ENABLED_PROPERTY, "true")

@@ -30,8 +30,10 @@ class QueryCircuitBreakerStatusControllerTest {
 	void shouldMapSystemBreakerStatusEndpoint() throws Exception {
 		String servletConfig = Files.readString(
 				Path.of("..", "server", "src", "main", "webapp", "WEB-INF", "common-webapp-system-servlet.xml"));
+		String webXml = Files.readString(Path.of("..", "server", "src", "main", "webapp", "WEB-INF", "web.xml"));
 
-		assertThat(servletConfig).contains("/system/breaker/status");
+		assertThat(servletConfig).contains("/system/breaker/status.view");
+		assertThat(webXml).contains("<url-pattern>*.view</url-pattern>");
 	}
 
 	@Test
