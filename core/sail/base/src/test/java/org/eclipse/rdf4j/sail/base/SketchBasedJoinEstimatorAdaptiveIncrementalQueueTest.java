@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -96,7 +98,7 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 	}
 
 	@Test
-	void bulkStatementAddsBypassPerStatementQueueAndApplyExactly() {
+	void bulkStatementAddsUseEstimatorOwnedStatementQueue() {
 		SketchBasedJoinEstimator estimator = newEstimator();
 		IRI predicate = VF.createIRI("urn:adaptive:bulk:p");
 		List<Statement> statements = new ArrayList<>();
@@ -106,8 +108,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 
 		estimator.addStatements(statements);
 
-		assertEquals(0, estimator.debugPendingIncrementalCount(),
-				"Bulk committed adds should not fill the caller-side per-statement queue");
+		assertEquals(512, estimator.debugPendingIncrementalCount(),
+				"Bulk committed adds should use the same estimator-owned per-statement queue");
 		estimator.debugFlushPendingIncremental();
 		assertTrue(estimator.isReadyNonBlocking(), "Bulk exact ingest should leave the estimator ready");
 		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 100.0,
@@ -134,6 +136,66 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 	}
 
 	@Test
+	void bulkStatementAddsUsePeriodicMemoryMonitoringBeforeExactRetain() throws Exception {
+		SketchBasedJoinEstimator estimator = newEstimator(SketchBasedJoinEstimator.Config.defaults()
+				.withNominalEntries(64)
+				.withThrottleEveryN(1)
+				.withThrottleMillis(0)
+				.withRefreshSleepMillis(5)
+				.withMemoryMonitorCheckInterval(1)
+				.withMemoryMonitorEstimatedOperationBytes(Long.MAX_VALUE / 2));
+		IRI predicate = VF.createIRI("urn:adaptive:bulk-memory:p");
+		List<Statement> statements = new ArrayList<>();
+		for (int i = 0; i < 512; i++) {
+			statements.add(statement("urn:adaptive:bulk-memory:" + i, predicate,
+					"urn:adaptive:bulk-memory:o:" + i));
+		}
+
+		estimator.addStatements(statements);
+
+		assertFalse(estimator.isReadyNonBlocking(),
+				"Bulk memory monitor fallback should mark the estimator for rebuild");
+		assertEquals(0, estimator.debugPendingIncrementalCount(),
+				"Bulk fallback should not retain exact statement updates");
+		assertEquals(0.0,
+				estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
+				"Bulk fallback should not publish partial exact sketch updates");
+	}
+
+	@Test
+	void rebuildUsesPeriodicMemoryMonitoringInsteadOfPublishingPartialSketches() throws Exception {
+		StubSailStore store = new StubSailStore();
+		IRI predicate = VF.createIRI("urn:adaptive:rebuild-memory:p");
+		for (int i = 0; i < 8; i++) {
+			store.add(statement("urn:adaptive:rebuild-memory:" + i, predicate,
+					"urn:adaptive:rebuild-memory:o:" + i));
+		}
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withNominalEntries(64)
+						.withRefreshSleepMillis(5)
+						.withMemoryMonitorCheckInterval(1)
+						.withMemoryMonitorEstimatedOperationBytes(Long.MAX_VALUE / 2));
+
+		estimator.rebuild();
+
+		assertFalse(estimator.isReadyNonBlocking(),
+				"Rebuild memory monitor fallback should leave the estimator awaiting a later rebuild");
+		assertEquals(0.0,
+				estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
+				"Rebuild memory fallback should not publish partial sketches");
+	}
+
+	@Test
+	void estimatorDoesNotCatchOutOfMemoryError() throws Exception {
+		String source = Files.readString(Path.of(
+				"src/main/java/org/eclipse/rdf4j/sail/base/SketchBasedJoinEstimator.java"));
+
+		assertFalse(source.contains("catch (OutOfMemoryError"),
+				"Estimator should use proactive memory monitoring instead of catching OutOfMemoryError");
+	}
+
+	@Test
 	void idleMonitorFlushesPartialQueueAndResetsGrowth() throws Exception {
 		withProperty("incrementalQueueInitialLimit", "4",
 				() -> withProperty("incrementalQueueIdleResetMillis", "25", () -> {
@@ -153,11 +215,15 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 	}
 
 	private static SketchBasedJoinEstimator newEstimator() {
-		return new SketchBasedJoinEstimator(new StubSailStore(), SketchBasedJoinEstimator.Config.defaults()
+		return newEstimator(SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(64)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5));
+	}
+
+	private static SketchBasedJoinEstimator newEstimator(SketchBasedJoinEstimator.Config config) {
+		return new SketchBasedJoinEstimator(new StubSailStore(), config);
 	}
 
 	private static Statement statement(String subject, IRI predicate, String object) {

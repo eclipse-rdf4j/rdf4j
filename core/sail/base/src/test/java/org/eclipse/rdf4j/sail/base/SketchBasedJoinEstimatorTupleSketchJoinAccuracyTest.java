@@ -13,10 +13,21 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
@@ -75,9 +86,90 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 				"Deleting one row for a repeated join binding should reduce multiplicity from 3 to 2");
 	}
 
+	@Test
+	void randomTombstoneDeletesKeepJoinEstimatesAlignedWithTruthDataJoin() {
+		IRI leftPredicate = VF.createIRI("urn:tuple:tombstone:left");
+		IRI rightPredicate = VF.createIRI("urn:tuple:tombstone:right");
+		IRI leftPairPredicate = VF.createIRI("urn:tuple:tombstone:leftPair");
+		IRI rightPairPredicate = VF.createIRI("urn:tuple:tombstone:rightPair");
+		Resource leftPairObject = VF.createIRI("urn:tuple:tombstone:leftPairObject");
+		Resource rightPairObject = VF.createIRI("urn:tuple:tombstone:rightPairObject");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSailStore(), largeExactConfig());
+		List<Statement> statements = new ArrayList<>();
+
+		for (int i = 0; i < 1_600; i++) {
+			Resource objectJoinKey = VF.createIRI("urn:tuple:tombstone:key:" + (i % 113));
+			statements.add(statement("urn:tuple:tombstone:left:" + i, leftPredicate, objectJoinKey));
+			statements.add(statement("urn:tuple:tombstone:right:" + i, rightPredicate, objectJoinKey));
+
+			Resource subjectJoinKey = VF.createIRI("urn:tuple:tombstone:entity:" + i);
+			statements.add(VF.createStatement(subjectJoinKey, leftPairPredicate, leftPairObject));
+			if ((i & 3) != 0) {
+				statements.add(VF.createStatement(subjectJoinKey, rightPairPredicate, rightPairObject));
+			}
+		}
+
+		for (Statement statement : statements) {
+			estimator.addStatement(statement);
+		}
+		estimator.debugFlushPendingIncremental();
+
+		Set<Integer> removedIndexes = randomHalfIndexes(statements.size());
+		List<Statement> remaining = new ArrayList<>(statements.size() - removedIndexes.size());
+		for (int i = 0; i < statements.size(); i++) {
+			Statement statement = statements.get(i);
+			if (removedIndexes.contains(i)) {
+				estimator.deleteStatement(statement);
+			} else {
+				remaining.add(statement);
+			}
+		}
+		estimator.debugFlushPendingIncremental();
+
+		assertTrue(
+				estimator.debugResidentSketches()
+						.stream()
+						.anyMatch(SketchBasedJoinEstimator.DebugSketchAddress::isDelete),
+				"Incremental deletes should create resident tombstone sketches");
+
+		long objectJoinTruth = truthJoinOnObjectByPredicates(remaining, leftPredicate, rightPredicate);
+		double objectJoinEstimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
+				SketchBasedJoinEstimator.Component.P, leftPredicate.stringValue(),
+				SketchBasedJoinEstimator.Component.P, rightPredicate.stringValue());
+		assertEstimateEqualsTruth(objectJoinTruth, objectJoinEstimate, "object join");
+		double fluentObjectJoinEstimate = estimator
+				.estimate(SketchBasedJoinEstimator.Component.O, null, leftPredicate.stringValue(), null, null)
+				.join(SketchBasedJoinEstimator.Component.O, null, rightPredicate.stringValue(), null, null)
+				.estimate();
+		assertEstimateEqualsTruth(objectJoinTruth, fluentObjectJoinEstimate, "fluent object join");
+
+		long subjectPairJoinTruth = truthJoinOnSubjectByPredicateObject(remaining, leftPairPredicate, leftPairObject,
+				rightPairPredicate, rightPairObject);
+		double subjectPairJoinEstimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
+				SketchBasedJoinEstimator.Pair.PO, leftPairPredicate.stringValue(), leftPairObject.stringValue(),
+				SketchBasedJoinEstimator.Pair.PO, rightPairPredicate.stringValue(), rightPairObject.stringValue());
+		assertEstimateEqualsTruth(subjectPairJoinTruth, subjectPairJoinEstimate, "subject pair join");
+		double fluentSubjectPairJoinEstimate = estimator
+				.estimate(SketchBasedJoinEstimator.Component.S, null, leftPairPredicate.stringValue(),
+						leftPairObject.stringValue(), null)
+				.join(SketchBasedJoinEstimator.Component.S, null, rightPairPredicate.stringValue(),
+						rightPairObject.stringValue(), null)
+				.estimate();
+		assertEstimateEqualsTruth(subjectPairJoinTruth, fluentSubjectPairJoinEstimate, "fluent subject pair join");
+	}
+
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(1024)
+				.withThrottleEveryN(1)
+				.withThrottleMillis(0)
+				.withRefreshSleepMillis(5);
+	}
+
+	private static SketchBasedJoinEstimator.Config largeExactConfig() {
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withNominalEntries(16_384)
+				.withSketchK(16_384)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
@@ -91,5 +183,55 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 
 	private static Statement statement(String subject, IRI predicate, Resource object) {
 		return VF.createStatement(VF.createIRI(subject), predicate, object);
+	}
+
+	private static Set<Integer> randomHalfIndexes(int size) {
+		List<Integer> indexes = new ArrayList<>(size);
+		for (int i = 0; i < size; i++) {
+			indexes.add(i);
+		}
+		Collections.shuffle(indexes, new Random(0x5EED5EEDL));
+		return new HashSet<>(indexes.subList(0, size / 2));
+	}
+
+	private static long truthJoinOnObjectByPredicates(List<Statement> statements, IRI leftPredicate,
+			IRI rightPredicate) {
+		Map<Value, Integer> leftCounts = new HashMap<>();
+		Map<Value, Integer> rightCounts = new HashMap<>();
+		for (Statement statement : statements) {
+			if (leftPredicate.equals(statement.getPredicate())) {
+				leftCounts.merge(statement.getObject(), 1, Integer::sum);
+			} else if (rightPredicate.equals(statement.getPredicate())) {
+				rightCounts.merge(statement.getObject(), 1, Integer::sum);
+			}
+		}
+		return joinCount(leftCounts, rightCounts);
+	}
+
+	private static long truthJoinOnSubjectByPredicateObject(List<Statement> statements, IRI leftPredicate,
+			Resource leftObject, IRI rightPredicate, Resource rightObject) {
+		Map<Resource, Integer> leftCounts = new HashMap<>();
+		Map<Resource, Integer> rightCounts = new HashMap<>();
+		for (Statement statement : statements) {
+			if (leftPredicate.equals(statement.getPredicate()) && leftObject.equals(statement.getObject())) {
+				leftCounts.merge(statement.getSubject(), 1, Integer::sum);
+			} else if (rightPredicate.equals(statement.getPredicate()) && rightObject.equals(statement.getObject())) {
+				rightCounts.merge(statement.getSubject(), 1, Integer::sum);
+			}
+		}
+		return joinCount(leftCounts, rightCounts);
+	}
+
+	private static <T> long joinCount(Map<T, Integer> leftCounts, Map<T, Integer> rightCounts) {
+		long rows = 0;
+		for (Map.Entry<T, Integer> left : leftCounts.entrySet()) {
+			rows += (long) left.getValue() * rightCounts.getOrDefault(left.getKey(), 0);
+		}
+		return rows;
+	}
+
+	private static void assertEstimateEqualsTruth(long truth, double estimate, String label) {
+		assertEquals((double) truth, estimate, Math.max(1.0d, truth * 0.01d),
+				label + " estimate should match the join performed against remaining statements");
 	}
 }

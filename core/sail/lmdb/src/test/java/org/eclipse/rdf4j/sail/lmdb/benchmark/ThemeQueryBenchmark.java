@@ -71,7 +71,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
 @State(Scope.Benchmark)
 @Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 30)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx32G" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx4G" })
 @Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
@@ -337,7 +337,7 @@ public class ThemeQueryBenchmark {
 	private void loadData() throws IOException {
 		StopWatch started = StopWatch.createStarted();
 		try (var connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.begin(IsolationLevels.NONE);
 			var inserter = new RDFInserter(connection);
 //			System.out.println("Loading theme dataset: " + theme);
 //			ThemeDataSetGenerator.generate(theme, inserter);

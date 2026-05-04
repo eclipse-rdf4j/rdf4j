@@ -284,6 +284,7 @@ class LmdbSailStore implements SailStore {
 	 * Boolean indicating whether any {@link LmdbSailSink} has started a transaction on the {@link TripleStore}.
 	 */
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
+	private final AtomicBoolean estimatorTouchedSinceStoreTxnStart = new AtomicBoolean(false);
 
 	/**
 	 * Creates a new {@link LmdbSailStore}.
@@ -396,7 +397,15 @@ class LmdbSailStore implements SailStore {
 			throw e instanceof SailException ? (SailException) e : new SailException(e);
 		} finally {
 			tripleStoreException = null;
+			discardEstimatorStateTouchedByOpenTransaction();
+			storeTxnStarted.set(false);
 			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	private void discardEstimatorStateTouchedByOpenTransaction() {
+		if (estimatorTouchedSinceStoreTxnStart.getAndSet(false) && sketchBasedJoinEstimator != null) {
+			sketchBasedJoinEstimator.discardAndMarkForRebuild();
 		}
 	}
 
@@ -772,38 +781,22 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
-		private final boolean nonIsolated;
-		private final Object pendingEstimatorLock = new Object();
-		private final List<Statement> pendingEstimatorAddStatements = new ArrayList<>();
-		private final List<Statement> pendingEstimatorRemoveStatements = new ArrayList<>();
-		private long pendingEstimatorSizeAdditions;
-		private long pendingEstimatorSizeDeletions;
-		private boolean nonIsolatedUpdatesApplied;
+		private volatile boolean estimatorTouchedInTransaction;
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
 			this.explicit = explicit;
-			this.nonIsolated = IsolationLevels.NONE.isCompatibleWith(level);
 		}
 
 		private void queueEstimatorAdd(Statement st) {
 			if (!explicit || sketchBasedJoinEstimator == null) {
 				return;
 			}
-			if (!sketchBasedJoinEstimator.canAcceptIncrementalUpdatesNonBlocking()) {
-				queueEstimatorSizeDelta(1L, 0L);
-				return;
-			}
-			if (nonIsolated) {
-				try {
-					sketchBasedJoinEstimator.addStatement(st);
-					nonIsolatedUpdatesApplied = true;
-				} catch (RuntimeException e) {
-					recoverEstimatorAfterFailure("applying non-isolated add", e);
-				}
-				return;
-			}
-			synchronized (pendingEstimatorLock) {
-				pendingEstimatorAddStatements.add(st);
+			try {
+				sketchBasedJoinEstimator.addStatement(st);
+				estimatorTouchedInTransaction = true;
+				estimatorTouchedSinceStoreTxnStart.set(true);
+			} catch (RuntimeException e) {
+				recoverEstimatorAfterFailure("applying add", e);
 			}
 		}
 
@@ -811,100 +804,31 @@ class LmdbSailStore implements SailStore {
 			if (!explicit || sketchBasedJoinEstimator == null) {
 				return;
 			}
-			if (!sketchBasedJoinEstimator.canAcceptIncrementalUpdatesNonBlocking()) {
-				queueEstimatorSizeDelta(0L, 1L);
-				return;
-			}
-			if (nonIsolated) {
-				try {
-					sketchBasedJoinEstimator.deleteStatement(st);
-					nonIsolatedUpdatesApplied = true;
-				} catch (RuntimeException e) {
-					recoverEstimatorAfterFailure("applying non-isolated delete", e);
-				}
-				return;
-			}
-			synchronized (pendingEstimatorLock) {
-				pendingEstimatorRemoveStatements.add(st);
-			}
-		}
-
-		private void queueEstimatorSizeDelta(long additions, long deletions) {
-			if (nonIsolated) {
-				try {
-					sketchBasedJoinEstimator.recordStoreSizeDelta(additions, deletions);
-					nonIsolatedUpdatesApplied = true;
-				} catch (RuntimeException e) {
-					recoverEstimatorAfterFailure("recording non-isolated estimator size delta", e);
-				}
-				return;
-			}
-			synchronized (pendingEstimatorLock) {
-				pendingEstimatorSizeAdditions += additions;
-				pendingEstimatorSizeDeletions += deletions;
-			}
-		}
-
-		private void applyEstimatorUpdates() {
-			if (!explicit || nonIsolated) {
-				return;
-			}
-			List<Statement> addedStatements;
-			List<Statement> removals;
-			long sizeAdditions;
-			long sizeDeletions;
-			synchronized (pendingEstimatorLock) {
-				if (pendingEstimatorAddStatements.isEmpty() && pendingEstimatorRemoveStatements.isEmpty()
-						&& pendingEstimatorSizeAdditions == 0L && pendingEstimatorSizeDeletions == 0L) {
-					return;
-				}
-				addedStatements = new ArrayList<>(pendingEstimatorAddStatements);
-				removals = new ArrayList<>(pendingEstimatorRemoveStatements);
-				sizeAdditions = pendingEstimatorSizeAdditions;
-				sizeDeletions = pendingEstimatorSizeDeletions;
-				pendingEstimatorAddStatements.clear();
-				pendingEstimatorRemoveStatements.clear();
-				pendingEstimatorSizeAdditions = 0L;
-				pendingEstimatorSizeDeletions = 0L;
-			}
 			try {
-				sketchBasedJoinEstimator.addStatements(addedStatements);
-				sketchBasedJoinEstimator.deleteStatements(removals);
-				sketchBasedJoinEstimator.recordStoreSizeDelta(sizeAdditions, sizeDeletions);
+				sketchBasedJoinEstimator.deleteStatement(st);
+				estimatorTouchedInTransaction = true;
+				estimatorTouchedSinceStoreTxnStart.set(true);
 			} catch (RuntimeException e) {
-				recoverEstimatorAfterFailure("applying committed estimator updates", e);
+				recoverEstimatorAfterFailure("applying delete", e);
 			}
 		}
 
-		private void clearEstimatorUpdates() {
-			if (nonIsolated) {
-				// In NONE isolation updates are applied eagerly; rollback cannot replay inverse deltas safely.
-				// Discard the derived state and rebuild it from authoritative store data.
-				if (nonIsolatedUpdatesApplied && sketchBasedJoinEstimator != null) {
-					sketchBasedJoinEstimator.discardAndMarkForRebuild();
-					nonIsolatedUpdatesApplied = false;
-				}
+		private void discardEstimatorUpdatesIfTouched() {
+			if (estimatorTouchedInTransaction && estimatorTouchedSinceStoreTxnStart.getAndSet(false)
+					&& sketchBasedJoinEstimator != null) {
+				sketchBasedJoinEstimator.discardAndMarkForRebuild();
+				estimatorTouchedInTransaction = false;
 				return;
 			}
-			synchronized (pendingEstimatorLock) {
-				pendingEstimatorAddStatements.clear();
-				pendingEstimatorRemoveStatements.clear();
-				pendingEstimatorSizeAdditions = 0L;
-				pendingEstimatorSizeDeletions = 0L;
-			}
+			estimatorTouchedInTransaction = false;
 		}
 
 		private void recoverEstimatorAfterFailure(String action, RuntimeException e) {
-			synchronized (pendingEstimatorLock) {
-				pendingEstimatorAddStatements.clear();
-				pendingEstimatorRemoveStatements.clear();
-				pendingEstimatorSizeAdditions = 0L;
-				pendingEstimatorSizeDeletions = 0L;
-			}
 			if (sketchBasedJoinEstimator != null) {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();
 			}
-			nonIsolatedUpdatesApplied = false;
+			estimatorTouchedInTransaction = false;
+			estimatorTouchedSinceStoreTxnStart.set(false);
 			logger.warn("Discarded join estimator state after failure while {}; store data remains authoritative",
 					action,
 					e);
@@ -912,8 +836,8 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			if (nonIsolated && storeTxnStarted.get()) {
-				clearEstimatorUpdates();
+			if (storeTxnStarted.get()) {
+				discardEstimatorUpdatesIfTouched();
 			}
 		}
 
@@ -980,11 +904,11 @@ class LmdbSailStore implements SailStore {
 						valueStore.commit();
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
-						applyEstimatorUpdates();
+						estimatorTouchedInTransaction = false;
+						estimatorTouchedSinceStoreTxnStart.set(false);
 						if (filterSelectivityStats != null) {
 							filterSelectivityStats.recordStoreMutation();
 						}
-						nonIsolatedUpdatesApplied = false;
 						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null) {
 							try {
 								scheduleEstimatorPersist();
@@ -996,13 +920,13 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
@@ -1135,7 +1059,7 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
@@ -1237,7 +1161,7 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
@@ -1374,11 +1298,11 @@ class LmdbSailStore implements SailStore {
 				submitOperation(q);
 			} catch (IOException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
 			} finally {
@@ -1522,11 +1446,11 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				rollback();
-				clearEstimatorUpdates();
+				discardEstimatorUpdatesIfTouched();
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
 			} finally {

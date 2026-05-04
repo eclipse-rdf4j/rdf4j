@@ -534,8 +534,13 @@ class ValueStore extends AbstractValueFactory {
 			return;
 		}
 		if (writeTxn != 0) {
+			int size = 0;
 			synchronized (pendingHashUpdates) {
 				pendingHashUpdates.put(id, hash);
+				size = pendingHashUpdates.size();
+			}
+			if (size > 1024 * 64) {
+				flushPendingHashUpdates();
 			}
 			return;
 		}

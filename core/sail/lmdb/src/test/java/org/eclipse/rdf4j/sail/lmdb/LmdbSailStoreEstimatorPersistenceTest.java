@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.DataOutputStream;
@@ -26,7 +27,9 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -34,6 +37,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -47,6 +51,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -54,6 +59,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbSailStoreEstimatorPersistenceTest {
 
+	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator.";
 	private static final String SNAPSHOT_FILE = "join-estimator.rjes";
 	private static final String SNAPSHOT_METADATA_FILE = "metadata.bin";
 	private static final String FILTER_SNAPSHOT_FILE = SNAPSHOT_FILE + ".filters";
@@ -493,30 +499,37 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
-	void readCommittedCommitUsesBulkEstimatorUpdates(@TempDir File dataDir) throws Exception {
+	void readCommittedAddQueuesEstimatorBeforeSinkFlush(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
-		var p = vf.createIRI("urn:bulk-estimator:p");
+		var p = vf.createIRI("urn:direct-estimator:p");
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 3; i++) {
+			statements.add(vf.createStatement(vf.createIRI("urn:direct-estimator:s:" + i), p,
+					vf.createIRI("urn:direct-estimator:o:" + i)));
+		}
 
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
+			backingStore.enableMultiThreading = false;
 			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
 			estimator.setRebuildAllowedSupplier(() -> false);
 
-			try (NotifyingSailConnection conn = store.getConnection()) {
-				conn.begin(IsolationLevels.READ_COMMITTED);
-				for (int i = 0; i < 8; i++) {
-					conn.addStatement(vf.createIRI("urn:bulk-estimator:s:" + i), p,
-							vf.createIRI("urn:bulk-estimator:o:" + i));
-				}
-				conn.commit();
-			}
+			SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
+			try {
+				sink.approveAll(statements, Set.of());
 
-			assertEquals(0, pendingIncrementalStatementQueueSize(estimator),
-					"READ_COMMITTED commits should hand statements to the estimator as one committed bulk batch");
+				assertNoDeclaredField(sink, "pendingEstimatorAddStatements");
+				assertNoDeclaredField(sink, "pendingEstimatorRemoveStatements");
+				assertEquals(3, pendingIncrementalStatementQueueSize(estimator),
+						"READ_COMMITTED adds should go straight to estimator-owned queues before sink flush");
+			} finally {
+				sink.flush();
+				sink.close();
+			}
 		} finally {
 			store.shutDown();
 		}
@@ -600,6 +613,68 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
+	void readCommittedRollbackDiscardsEagerEstimatorUpdates(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var s = vf.createIRI("urn:read-committed-rollback:s");
+		var p = vf.createIRI("urn:read-committed-rollback:p");
+		var o = vf.createIRI("urn:read-committed-rollback:o");
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			backingStore.enableMultiThreading = false;
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(vf.createIRI("urn:read-committed-rollback:seed"), p,
+						vf.createIRI("urn:read-committed-rollback:seed-o"));
+				conn.commit();
+			}
+			estimator.stop();
+			estimator.rebuild();
+			estimator.setRebuildAllowedSupplier(() -> false);
+			assertTrue(estimator.isReady());
+
+			SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
+			boolean sinkClosed = false;
+			try {
+				sink.approve(s, p, o, null);
+				assertEquals(1, pendingIncrementalStatementQueueSize(estimator),
+						"READ_COMMITTED adds should touch estimator queues before commit");
+				backingStore.rollback();
+			} finally {
+				if (!sinkClosed) {
+					sink.close();
+					sinkClosed = true;
+				}
+			}
+
+			assertFalse(estimator.isReadyNonBlocking(),
+					"Rollback after eager estimator updates must discard derived state");
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				assertFalse(conn.hasStatement(s, p, o, false),
+						"Rolled-back statement must not remain visible in the store");
+			}
+
+			var committedAfterRollback = vf.createIRI("urn:read-committed-rollback:committed-after-rollback");
+			SailSink commitSink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
+			try {
+				commitSink.approve(committedAfterRollback, p, o, null);
+				commitSink.flush();
+			} finally {
+				commitSink.close();
+			}
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				assertTrue(conn.hasStatement(committedAfterRollback, p, o, false),
+						"Rollback must leave LMDB able to start and commit the next transaction");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void commitsAndQueriesSucceedWhileEstimatorIsNotReady(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var s = vf.createIRI("urn:notready:s");
@@ -643,6 +718,58 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	void readCommittedEstimatorQueueUsesCoarseDeltaUnderMemoryPressure(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var p = vf.createIRI("urn:memory-pressure:p");
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 3; i++) {
+			statements.add(vf.createStatement(vf.createIRI("urn:memory-pressure:s:" + i), p,
+					vf.createIRI("urn:memory-pressure:o:" + i)));
+		}
+
+		withEstimatorProperty("memoryMonitorCheckInterval", "1",
+				() -> withEstimatorProperty("memoryMonitorEstimatedOperationBytes", "1",
+						() -> withEstimatorProperty("incrementalQueueEstimatedStatementBytes",
+								Long.toString(Long.MAX_VALUE / 2), () -> {
+									LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+									store.init();
+									try {
+										LmdbSailStore backingStore = store.getBackingStore();
+										backingStore.enableMultiThreading = false;
+										try (NotifyingSailConnection conn = store.getConnection()) {
+											conn.begin(IsolationLevels.NONE);
+											conn.addStatement(vf.createIRI("urn:memory-pressure:seed"), p,
+													vf.createIRI("urn:memory-pressure:seed-o"));
+											conn.commit();
+										}
+										SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+										estimator.stop();
+										estimator.rebuild();
+										estimator.setRebuildAllowedSupplier(() -> false);
+										assertTrue(estimator.isReadyNonBlocking());
+
+										SailSink sink = backingStore.getExplicitSailSource()
+												.sink(IsolationLevels.READ_COMMITTED);
+										try {
+											sink.approveAll(statements, Set.of());
+
+											assertNoDeclaredField(sink, "pendingEstimatorAddStatements");
+											assertNoDeclaredField(sink, "pendingEstimatorSizeAdditions");
+											assertFalse(estimator.isReadyNonBlocking(),
+													"Memory pressure should be handled immediately by the estimator");
+											assertEquals(0, pendingIncrementalStatementQueueSize(estimator),
+													"Memory pressure should make the estimator stop retaining exact statement updates");
+										} finally {
+											sink.flush();
+											sink.close();
+										}
+									} finally {
+										store.shutDown();
+									}
+								})));
 	}
 
 	@Test
@@ -691,6 +818,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		return field.get(target);
 	}
 
+	private static void assertNoDeclaredField(Object target, String name) {
+		assertThrows(NoSuchFieldException.class, () -> target.getClass().getDeclaredField(name),
+				"LMDB sinks should not retain estimator-owned state in field " + name);
+	}
+
 	private static void setObjectField(Object target, String name, Object value) throws Exception {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
@@ -717,8 +849,23 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	private static int configuredBucketCount(String propertyName, int configValue) {
-		String value = System.getProperty("org.eclipse.rdf4j.sail.base.SketchBasedJoinEstimator." + propertyName);
+		String value = System.getProperty(ESTIMATOR_PROPERTY_PREFIX + propertyName);
 		return value == null ? configValue : Integer.parseInt(value);
+	}
+
+	private static void withEstimatorProperty(String name, String value, ThrowingRunnable runnable) throws Exception {
+		String key = ESTIMATOR_PROPERTY_PREFIX + name;
+		String previous = System.getProperty(key);
+		System.setProperty(key, value);
+		try {
+			runnable.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
 	}
 
 	private static File estimatorStore(File dataDir) {
@@ -794,6 +941,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			out.write(new byte[] { 'R', 'J', 'E', 'S' });
 			out.writeByte(1);
 		}
+	}
+
+	@FunctionalInterface
+	private interface ThrowingRunnable {
+		void run() throws Exception;
 	}
 
 }

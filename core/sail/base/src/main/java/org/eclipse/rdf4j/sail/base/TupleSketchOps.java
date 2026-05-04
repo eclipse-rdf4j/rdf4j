@@ -109,6 +109,30 @@ final class TupleSketchOps {
 		return intersectMinStats(left, right, k).sketch();
 	}
 
+	static ArrayOfDoublesSketch subtractPositive(ArrayOfDoublesSketch additions, ArrayOfDoublesSketch deletions,
+			int k) {
+		if (additions == null || additions.getRetainedEntries() == 0) {
+			return newSketch(k).compact();
+		}
+		if (deletions == null || deletions.getRetainedEntries() == 0) {
+			return additions;
+		}
+		DirectLookupTable deletionLookup = buildLookupTable(deletions);
+		ArrayOfDoublesUpdatableSketch result = newSketch(k);
+		double[] scratch = new double[1];
+		ArrayOfDoublesSketchIterator iterator = additions.iterator();
+		while (iterator.next()) {
+			double value = Math.max(0.0d, iterator.getValues()[0])
+					- Math.max(0.0d, deletionLookup.find(iterator.getKey()));
+			if (value <= 0.0d) {
+				continue;
+			}
+			scratch[0] = value;
+			result.update(iterator.getKey(), scratch);
+		}
+		return result.compact();
+	}
+
 	static IntersectionStats intersectProductStats(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
 		return intersect(left, right, k, MULTIPLY_POSITIVE_SUMMARIES, true);
 	}
