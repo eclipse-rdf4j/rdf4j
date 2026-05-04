@@ -36,6 +36,9 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -211,6 +214,22 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignment(root.getArg()));
+	}
+
+	@Test
+	void keepsLiteralAnchorOutsideVariableScopeChangeArg() {
+		Projection scopedProjection = new Projection(statementPatternWithPredicate("book",
+				"http://example.com/theme/library/name", "name"),
+				new ProjectionElemList(new ProjectionElem("name")));
+		scopedProjection.setVariableScopeChange(true);
+		Filter filter = new Filter(scopedProjection, listMember("name", "Book 2"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Projection.class, retainedFilter.getArg());
 		assertFalse(containsBindingSetAssignment(root.getArg()));
 	}
 

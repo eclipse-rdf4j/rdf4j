@@ -463,8 +463,29 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		String bindingName = anchor.getBindingNames().iterator().next();
 		return assuredBindings.contains(bindingName)
 				&& !extensionElementNames(filter.getArg()).contains(bindingName)
+				&& !containsVariableScopeChangeBinding(filter.getArg(), bindingName)
 				&& !LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)
 				&& LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
+	}
+
+	private static boolean containsVariableScopeChangeBinding(TupleExpr tupleExpr, String bindingName) {
+		boolean[] contains = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (contains[0]) {
+					return;
+				}
+				if (node instanceof TupleExpr candidate && node instanceof VariableScopeChange
+						&& ((VariableScopeChange) node).isVariableScopeChange()
+						&& candidate.getBindingNames().contains(bindingName)) {
+					contains[0] = true;
+					return;
+				}
+				super.meetNode(node);
+			}
+		});
+		return contains[0];
 	}
 
 	private static Set<String> extensionElementNames(TupleExpr tupleExpr) {
