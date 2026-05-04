@@ -96,6 +96,36 @@ public class TxnManagerTest {
 		}
 	}
 
+	@Test
+	public void resetSkipsUntrackedReadTxn(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 2);
+		TxnManager.Txn trackedTxn = null;
+		TxnManager.Txn untrackedTxn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			trackedTxn = txnManager.createReadTxn();
+			untrackedTxn = txnManager.createReadTxnUntracked();
+			long trackedVersion = trackedTxn.version();
+			long version = untrackedTxn.version();
+
+			txnManager.reset();
+
+			assertEquals(trackedVersion + 1, trackedTxn.version(),
+					"Reset must still renew regular tracked transactions");
+			assertEquals(version, untrackedTxn.version(),
+					"Reset must not renew untracked transactions owned by long-running refresh readers");
+		} finally {
+			if (trackedTxn != null) {
+				trackedTxn.close();
+			}
+			if (untrackedTxn != null) {
+				untrackedTxn.close();
+			}
+			mdb_env_close(env);
+		}
+	}
+
 	private static long openEnv(Path dataDir, int maxReaders) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);

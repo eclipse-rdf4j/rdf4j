@@ -45,6 +45,9 @@ class TxnManager {
 	private static final long READERS_FULL_WAIT_MILLIS = 10L;
 
 	private final Mode mode;
+	/**
+	 * Live transactions keyed by reference. The value controls whether {@link #reset()} should renew the transaction.
+	 */
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
 	private final long[] pool;
 	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
@@ -228,7 +231,7 @@ class TxnManager {
 	}
 
 	void reset() throws IOException {
-		for (Txn txn : activeTransactions()) {
+		for (Txn txn : resettableActiveTransactions()) {
 			txn.reset();
 		}
 	}
@@ -239,12 +242,21 @@ class TxnManager {
 		}
 	}
 
+	private List<Txn> resettableActiveTransactions() {
+		synchronized (active) {
+			List<Txn> transactions = new ArrayList<>();
+			active.forEach((txn, resetOnWrite) -> {
+				if (Boolean.TRUE.equals(resetOnWrite)) {
+					transactions.add(txn);
+				}
+			});
+			return transactions;
+		}
+	}
+
 	private void updateActiveState(Txn txn, boolean isActive) {
 		synchronized (active) {
-			if (active.containsKey(txn)) {
-				active.put(txn, isActive);
-			}
-			if (!isActive) {
+			if (active.containsKey(txn) && !isActive) {
 				active.notifyAll();
 			}
 		}
