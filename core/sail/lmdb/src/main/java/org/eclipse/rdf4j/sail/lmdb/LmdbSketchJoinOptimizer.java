@@ -554,11 +554,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private TupleExpr rewriteSafeCorrelatedMinusAsNotExists(Difference difference) {
 			TupleExpr leftArg = difference.getLeftArg();
 			TupleExpr rightArg = difference.getRightArg();
-			if (!isSafeMinusNotExistsRightArg(rightArg)) {
+			Set<String> leftBindingNames = leftArg.getBindingNames();
+			if (!isSafeMinusNotExistsRightArg(rightArg, leftBindingNames)) {
 				return null;
 			}
 
-			Set<String> leftBindingNames = leftArg.getBindingNames();
 			Set<String> leftAssuredBindingNames = leftArg.getAssuredBindingNames();
 			Set<String> rightBindingNames = rightArg.getBindingNames();
 			Set<String> sharedBindingNames = new HashSet<>(rightBindingNames);
@@ -704,30 +704,31 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return Optional.empty();
 		}
 
-		private boolean isSafeMinusNotExistsRightArg(TupleExpr tupleExpr) {
+		private boolean isSafeMinusNotExistsRightArg(TupleExpr tupleExpr, Set<String> leftBindingNames) {
 			if (tupleExpr instanceof StatementPattern) {
 				return true;
 			}
 			if (tupleExpr instanceof Join join) {
-				return isSafeMinusNotExistsRightArg(join.getLeftArg())
-						&& isSafeMinusNotExistsRightArg(join.getRightArg());
+				return isSafeMinusNotExistsRightArg(join.getLeftArg(), leftBindingNames)
+						&& isSafeMinusNotExistsRightArg(join.getRightArg(), leftBindingNames);
 			}
 			if (tupleExpr instanceof Filter filter) {
 				return filter.getArg().getBindingNames().containsAll(VarNameCollector.process(filter.getCondition()))
-						&& isSafeMinusNotExistsRightArg(filter.getArg());
+						&& isSafeMinusNotExistsRightArg(filter.getArg(), leftBindingNames);
 			}
 			if (tupleExpr instanceof Extension extension) {
 				Set<String> argBindingNames = extension.getArg().getBindingNames();
 				for (ExtensionElem element : extension.getElements()) {
-					if (argBindingNames.contains(element.getName())
+					if (leftBindingNames.contains(element.getName())
+							|| argBindingNames.contains(element.getName())
 							|| !argBindingNames.containsAll(VarNameCollector.process(element.getExpr()))) {
 						return false;
 					}
 				}
-				return isSafeMinusNotExistsRightArg(extension.getArg());
+				return isSafeMinusNotExistsRightArg(extension.getArg(), leftBindingNames);
 			}
 			if (tupleExpr instanceof UnaryTupleOperator && !TupleExprs.isVariableScopeChange(tupleExpr)) {
-				return isSafeMinusNotExistsRightArg(((UnaryTupleOperator) tupleExpr).getArg());
+				return isSafeMinusNotExistsRightArg(((UnaryTupleOperator) tupleExpr).getArg(), leftBindingNames);
 			}
 			return false;
 		}

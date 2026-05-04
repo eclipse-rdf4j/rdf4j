@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -459,6 +461,18 @@ class LmdbSketchJoinOptimizerTest {
 		assertEquals("optName", assertInstanceOf(StatementPattern.class, args.get(2)).getObjectVar().getName());
 	}
 
+	@Test
+	void keepsMinusWhenRhsExtensionCreatesLeftBindingName() {
+		StatementPattern left = statementPattern("x", "p", "v");
+		Extension right = new Extension(statementPattern("x", "q", "rv"), new ExtensionElem(new Var("rv"), "v"));
+		QueryRoot root = new QueryRoot(new Difference(left, right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.cheapCorrelatedAntiJoin(), false).optimize(root, null, null);
+
+		assertInstanceOf(Difference.class, root.getArg(),
+				"RHS BIND to a left-side variable must keep MINUS compatibility semantics");
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
@@ -612,12 +626,14 @@ class LmdbSketchJoinOptimizerTest {
 		assertTrue(containsBindingSetAssignment(join.getRightArg(), "target"));
 	}
 
-	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner {
+	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner,
+			JoinFactorCostModel {
 
 		private final List<TupleExpr> plan;
 		private int planningAttempts;
 		private int joinCardinalityRequests;
 		private boolean supportsJoinEstimation;
+		private boolean cheapCorrelatedAntiJoin;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -634,6 +650,12 @@ class LmdbSketchJoinOptimizerTest {
 		static PlanningStatistics supportingJoinEstimation() {
 			PlanningStatistics statistics = new PlanningStatistics(null);
 			statistics.supportsJoinEstimation = true;
+			return statistics;
+		}
+
+		static PlanningStatistics cheapCorrelatedAntiJoin() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.cheapCorrelatedAntiJoin = true;
 			return statistics;
 		}
 
@@ -658,6 +680,20 @@ class LmdbSketchJoinOptimizerTest {
 				return Optional.empty();
 			}
 			return Optional.of(new JoinOrderPlan(plan, 1.0d, 1.0d));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (!cheapCorrelatedAntiJoin) {
+				return Optional.empty();
+			}
+			if (factor.getBindingNames().contains("rv")) {
+				if (currentlyBoundVars.containsAll(Set.of("x", "v"))) {
+					return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
+				}
+				return Optional.of(new FactorCostEstimate(1_000.0d, 1_000.0d));
+			}
+			return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
 		}
 	}
 }
