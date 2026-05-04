@@ -254,9 +254,9 @@ class TxnManager {
 		}
 	}
 
-	private void updateActiveState(Txn txn, boolean isActive) {
+	private void notifyReaderInactive(Txn txn) {
 		synchronized (active) {
-			if (active.containsKey(txn) && !isActive) {
+			if (active.containsKey(txn)) {
 				active.notifyAll();
 			}
 		}
@@ -342,7 +342,7 @@ class TxnManager {
 			if (txnActive) {
 				mdb_txn_reset(txn);
 				txnActive = false;
-				updateActiveState(this, false);
+				notifyReaderInactive(this);
 				activate();
 			}
 			version++;
@@ -371,7 +371,6 @@ class TxnManager {
 					renewReadTxn(txn, this);
 				}
 				txnActive = true;
-				updateActiveState(this, true);
 			}
 		}
 
@@ -380,7 +379,7 @@ class TxnManager {
 				mdb_txn_reset(txn);
 			}
 			txnActive = false;
-			updateActiveState(this, false);
+			notifyReaderInactive(this);
 		}
 
 		long version() {
