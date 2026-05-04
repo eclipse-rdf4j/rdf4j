@@ -17,6 +17,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 final class ParetoFrontier<T> {
 
 	private final int limit;

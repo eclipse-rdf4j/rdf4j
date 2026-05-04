@@ -12,6 +12,9 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 final class JoinPlanningState {
 
 	private static final int ORDER_SLOT_BITS = 6;

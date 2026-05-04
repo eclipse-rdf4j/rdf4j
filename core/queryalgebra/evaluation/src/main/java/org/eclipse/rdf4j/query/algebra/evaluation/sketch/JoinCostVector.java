@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 final class JoinCostVector implements Comparable<JoinCostVector> {
 
 	private final double totalWorkRows;

@@ -12,11 +12,17 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import java.io.Serial;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Runtime failure while reading statements for sketch estimation.
  */
+@Experimental
 public class SketchStatementSourceException extends RuntimeException {
 
+	@Serial
 	private static final long serialVersionUID = -4992850717269141299L;
 
 	public SketchStatementSourceException(Throwable cause) {
