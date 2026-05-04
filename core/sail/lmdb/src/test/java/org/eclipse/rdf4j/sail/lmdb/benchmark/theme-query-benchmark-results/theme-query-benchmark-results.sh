@@ -4,8 +4,8 @@ set -euo pipefail
 usage() {
 	cat <<'USAGE'
 Usage:
-  scripts/theme-query-benchmark-results.sh clean [options] [file ...]
-  scripts/theme-query-benchmark-results.sh capture [options] [file]
+  ./theme-query-benchmark-results.sh clean [options] [file ...]
+  ./theme-query-benchmark-results.sh capture [options] [file]
 
 Modes:
   clean    Remove known benchmark noise from stdin or files.
@@ -20,10 +20,9 @@ Options:
   --help, -h           Show this help text.
 
 Examples:
-  pbpaste | scripts/theme-query-benchmark-results.sh capture
-  scripts/theme-query-benchmark-results.sh capture raw-jmh.txt
-  scripts/theme-query-benchmark-results.sh clean --in-place \
-    core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-04-24-2.md
+  pbpaste | ./theme-query-benchmark-results.sh capture
+  ./theme-query-benchmark-results.sh capture raw-jmh.txt
+  ./theme-query-benchmark-results.sh clean --in-place results-2026-04-24-2.md
 USAGE
 }
 
@@ -33,8 +32,7 @@ die() {
 }
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_RESULTS_DIR="${REPO_ROOT}/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results"
+DEFAULT_RESULTS_DIR="${SCRIPT_DIR}"
 
 mode="${1:-}"
 if [[ -z "${mode}" ]]; then

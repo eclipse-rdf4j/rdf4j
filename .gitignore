@@ -56,8 +56,7 @@ e2e/test-results
 .serena/
 .vscode
 /.codex/environments/environment.toml
-improved-optimizers-query-rewrite-sketch-based-lmdb-page-walking/
 /.m2_repo_linux_j25/
 /.m2_repo_linux_j26/
 /core/sail/lmdb/persistent-lmdb-theme-store/
-core/sail/lmdb/persistent-lmdb-theme-store
+/persistent-lmdb-theme-store/
