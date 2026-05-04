@@ -416,6 +416,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				cancelAndDrainScheduledBackgroundSampling();
 				cancelAndDrainScheduledEstimatorPersist();
+				shutdownAndAwaitEstimatorPersistExecutor();
 				if (sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.close();
 				}
@@ -447,15 +448,7 @@ class LmdbSailStore implements SailStore {
 										throw new InterruptedSailException(e);
 									}
 								} finally {
-									estimatorPersistExec.shutdown();
-									try {
-										while (!estimatorPersistExec.awaitTermination(1, TimeUnit.SECONDS)) {
-											logger.warn("Waiting for join estimator persist executor to terminate");
-										}
-									} catch (InterruptedException e) {
-										Thread.currentThread().interrupt();
-										throw new InterruptedSailException(e);
-									}
+									shutdownAndAwaitEstimatorPersistExecutor();
 									tripleStore.close();
 								}
 							}
@@ -471,6 +464,18 @@ class LmdbSailStore implements SailStore {
 		} catch (IOException e) {
 			logger.warn("Failed to close store", e);
 			throw new SailException(e);
+		}
+	}
+
+	private void shutdownAndAwaitEstimatorPersistExecutor() {
+		estimatorPersistExec.shutdown();
+		try {
+			while (!estimatorPersistExec.awaitTermination(1, TimeUnit.SECONDS)) {
+				logger.warn("Waiting for join estimator persist executor to terminate");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException(e);
 		}
 	}
 
