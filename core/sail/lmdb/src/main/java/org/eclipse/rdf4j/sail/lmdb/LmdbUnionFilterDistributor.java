@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 final class LmdbUnionFilterDistributor {
 
@@ -134,11 +135,44 @@ final class LmdbUnionFilterDistributor {
 	}
 
 	private static TupleExpr prependPrefix(TupleExpr branch, List<TupleExpr> prefixFactors, JoinFactory joinFactory) {
+		if (prependPrefixIntoScopedFilter(branch, prefixFactors, joinFactory)) {
+			return branch;
+		}
 		if (branch instanceof Extension extension) {
 			extension.setArg(joinPrefix(prefixFactors, extension.getArg(), joinFactory));
 			return extension;
 		}
 		return joinPrefix(prefixFactors, branch, joinFactory);
+	}
+
+	private static boolean prependPrefixIntoScopedFilter(TupleExpr tupleExpr, List<TupleExpr> prefixFactors,
+			JoinFactory joinFactory) {
+		if (tupleExpr instanceof Filter filter) {
+			if (filter.isVariableScopeChange()) {
+				if (!conditionBindingsAvailableAfterPrefix(filter, prefixFactors)) {
+					return false;
+				}
+				filter.setArg(joinPrefix(prefixFactors, filter.getArg(), joinFactory));
+				return true;
+			}
+			return prependPrefixIntoScopedFilter(filter.getArg(), prefixFactors, joinFactory);
+		}
+		if (tupleExpr instanceof Join join) {
+			return prependPrefixIntoScopedFilter(join.getLeftArg(), prefixFactors, joinFactory)
+					|| prependPrefixIntoScopedFilter(join.getRightArg(), prefixFactors, joinFactory);
+		}
+		if (tupleExpr instanceof Extension extension && !extension.isVariableScopeChange()) {
+			return prependPrefixIntoScopedFilter(extension.getArg(), prefixFactors, joinFactory);
+		}
+		return false;
+	}
+
+	private static boolean conditionBindingsAvailableAfterPrefix(Filter filter, List<TupleExpr> prefixFactors) {
+		Set<String> bindingNames = new HashSet<>(filter.getArg().getBindingNames());
+		for (TupleExpr prefixFactor : prefixFactors) {
+			bindingNames.addAll(prefixFactor.getBindingNames());
+		}
+		return bindingNames.containsAll(VarNameCollector.process(filter.getCondition()));
 	}
 
 	private static TupleExpr joinPrefix(List<TupleExpr> prefixFactors, TupleExpr branch, JoinFactory joinFactory) {

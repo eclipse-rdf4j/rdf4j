@@ -37,19 +37,31 @@ import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -349,49 +361,283 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private boolean isNullRejectingOptionalExpression(ValueExpr expression, Set<String> optionalBindings,
 				Set<String> leftAssuredBindings) {
+			if (expression instanceof And and) {
+				return isNullRejectingOptionalExpression(and.getLeftArg(), optionalBindings, leftAssuredBindings)
+						|| isNullRejectingOptionalExpression(and.getRightArg(), optionalBindings,
+								leftAssuredBindings);
+			}
+			if (expression instanceof Or or) {
+				return isNullRejectingOptionalExpression(or.getLeftArg(), optionalBindings, leftAssuredBindings)
+						&& isNullRejectingOptionalExpression(or.getRightArg(), optionalBindings,
+								leftAssuredBindings);
+			}
+			if (expression instanceof Not not) {
+				return isNullRejectingOptionalExpression(not.getArg(), optionalBindings, leftAssuredBindings);
+			}
 			if (expression instanceof Compare compare) {
-				return isSimpleFilterOperand(compare.getLeftArg())
-						&& isSimpleFilterOperand(compare.getRightArg())
-						&& referencesAnyOptionalBinding(compare, optionalBindings)
-						&& referencesConstantOperand(compare)
-						&& nonOptionalSimpleVarsAreAssured(compare, optionalBindings, leftAssuredBindings);
+				return isNullRejectingOptionalCompare(compare, optionalBindings, leftAssuredBindings);
+			}
+			if (expression instanceof SameTerm sameTerm) {
+				return isNullRejectingOptionalSameTerm(sameTerm, optionalBindings, leftAssuredBindings);
+			}
+			if (expression instanceof Bound bound) {
+				return optionalBindings.contains(bound.getArg().getName());
+			}
+			if (isTermKindPredicateOnOptionalBinding(expression, optionalBindings)) {
+				return true;
+			}
+			if (expression instanceof LangMatches langMatches) {
+				return isNullRejectingOptionalLangMatches(langMatches, optionalBindings, leftAssuredBindings);
+			}
+			if (expression instanceof FunctionCall functionCall) {
+				return isNullRejectingOptionalStringFunction(functionCall, optionalBindings, leftAssuredBindings);
+			}
+			if (expression instanceof Regex regex) {
+				return isNullRejectingOptionalRegex(regex, optionalBindings, leftAssuredBindings);
 			}
 			if (expression instanceof ListMemberOperator list) {
-				List<ValueExpr> arguments = list.getArguments();
-				for (int i = 0; i < arguments.size(); i++) {
-					if (!isSimpleFilterOperand(arguments.get(i))) {
-						return false;
-					}
-				}
-				return referencesAnyOptionalBinding(expression, optionalBindings)
-						&& nonOptionalSimpleVarsAreAssured(expression, optionalBindings, leftAssuredBindings);
+				return isNullRejectingOptionalListMember(list, optionalBindings, leftAssuredBindings);
 			}
 			return false;
+		}
+
+		private boolean isNullRejectingOptionalCompare(Compare compare, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			return isSupportedNullRejectingCompareOperand(compare.getLeftArg(), optionalBindings)
+					&& isSupportedNullRejectingCompareOperand(compare.getRightArg(), optionalBindings)
+					&& referencesAnyOptionalBinding(compare, optionalBindings)
+					&& nonOptionalCompareOperandIsAssured(compare.getLeftArg(), optionalBindings, leftAssuredBindings)
+					&& nonOptionalCompareOperandIsAssured(compare.getRightArg(), optionalBindings,
+							leftAssuredBindings);
+		}
+
+		private boolean isNullRejectingOptionalSameTerm(SameTerm sameTerm, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			return isSupportedNullRejectingCompareOperand(sameTerm.getLeftArg(), optionalBindings)
+					&& isSupportedNullRejectingCompareOperand(sameTerm.getRightArg(), optionalBindings)
+					&& referencesAnyOptionalBinding(sameTerm, optionalBindings)
+					&& nonOptionalCompareOperandIsAssured(sameTerm.getLeftArg(), optionalBindings,
+							leftAssuredBindings)
+					&& nonOptionalCompareOperandIsAssured(sameTerm.getRightArg(), optionalBindings,
+							leftAssuredBindings);
+		}
+
+		private boolean isNullRejectingOptionalListMember(ListMemberOperator list, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			for (ValueExpr argument : list.getArguments()) {
+				if (!isSupportedNullRejectingCompareOperand(argument, optionalBindings)
+						|| !nonOptionalCompareOperandIsAssured(argument, optionalBindings, leftAssuredBindings)) {
+					return false;
+				}
+			}
+			return referencesAnyOptionalBinding(list, optionalBindings);
+		}
+
+		private boolean isSupportedNullRejectingCompareOperand(ValueExpr expression, Set<String> optionalBindings) {
+			return isSimpleFilterOperand(expression)
+					|| isOptionalLangArg(expression, optionalBindings)
+					|| isOptionalDatatypeArg(expression, optionalBindings)
+					|| isOptionalStrArg(expression, optionalBindings)
+					|| isSupportedNullRejectingScalarFunction(expression, optionalBindings);
+		}
+
+		private boolean nonOptionalCompareOperandIsAssured(ValueExpr expression, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			if (isOptionalLangArg(expression, optionalBindings)
+					|| isOptionalDatatypeArg(expression, optionalBindings)
+					|| isOptionalStrArg(expression, optionalBindings)) {
+				return true;
+			}
+			if (isSupportedNullRejectingScalarFunction(expression, optionalBindings)) {
+				return scalarFunctionExpressionIsAssured(expression, optionalBindings, leftAssuredBindings);
+			}
+			return nonOptionalSimpleVarsAreAssured(expression, optionalBindings, leftAssuredBindings);
+		}
+
+		private boolean isTermKindPredicateOnOptionalBinding(ValueExpr expression, Set<String> optionalBindings) {
+			ValueExpr argument;
+			if (expression instanceof IsLiteral isLiteral) {
+				argument = isLiteral.getArg();
+			} else if (expression instanceof IsResource isResource) {
+				argument = isResource.getArg();
+			} else if (expression instanceof IsURI isURI) {
+				argument = isURI.getArg();
+			} else if (expression instanceof IsBNode isBNode) {
+				argument = isBNode.getArg();
+			} else if (expression instanceof IsNumeric isNumeric) {
+				argument = isNumeric.getArg();
+			} else {
+				return false;
+			}
+			return argument instanceof Var var && !var.hasValue() && optionalBindings.contains(var.getName());
+		}
+
+		private boolean isNullRejectingOptionalLangMatches(LangMatches langMatches, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			return isOptionalLangArg(langMatches.getLeftArg(), optionalBindings)
+					&& isSimpleFilterOperand(langMatches.getRightArg())
+					&& nonOptionalSimpleVarsAreAssured(langMatches.getRightArg(), optionalBindings,
+							leftAssuredBindings);
+		}
+
+		private boolean isOptionalLangArg(ValueExpr expression, Set<String> optionalBindings) {
+			if (expression instanceof Lang lang) {
+				ValueExpr argument = lang.getArg();
+				return argument instanceof Var var && !var.hasValue() && optionalBindings.contains(var.getName());
+			}
+			return false;
+		}
+
+		private boolean isOptionalDatatypeArg(ValueExpr expression, Set<String> optionalBindings) {
+			if (expression instanceof Datatype datatype) {
+				ValueExpr argument = datatype.getArg();
+				return argument instanceof Var var && !var.hasValue() && optionalBindings.contains(var.getName());
+			}
+			return false;
+		}
+
+		private boolean isOptionalStrArg(ValueExpr expression, Set<String> optionalBindings) {
+			if (expression instanceof Str str) {
+				ValueExpr argument = str.getArg();
+				return argument instanceof Var var && !var.hasValue() && optionalBindings.contains(var.getName());
+			}
+			return false;
+		}
+
+		private boolean isSupportedNullRejectingScalarFunction(ValueExpr expression, Set<String> optionalBindings) {
+			if (expression instanceof FunctionCall functionCall
+					&& functionCall.getArgs().size() == 1) {
+				ValueExpr argument = functionCall.getArgs().get(0);
+				if (FN.STRING_LENGTH.stringValue().equals(functionCall.getURI())) {
+					return isSupportedNullRejectingStringExpression(argument, optionalBindings);
+				}
+				if (isStrictUnaryNumericFunction(functionCall)) {
+					return isSupportedNullRejectingNumericExpression(argument, optionalBindings);
+				}
+			}
+			return false;
+		}
+
+		private boolean scalarFunctionExpressionIsAssured(ValueExpr expression, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			if (expression instanceof FunctionCall functionCall
+					&& functionCall.getArgs().size() == 1) {
+				ValueExpr argument = functionCall.getArgs().get(0);
+				if (FN.STRING_LENGTH.stringValue().equals(functionCall.getURI())) {
+					return stringExpressionIsAssured(argument, optionalBindings, leftAssuredBindings);
+				}
+				if (isStrictUnaryNumericFunction(functionCall)) {
+					return numericExpressionIsAssured(argument, optionalBindings, leftAssuredBindings);
+				}
+			}
+			return false;
+		}
+
+		private boolean isStrictUnaryNumericFunction(FunctionCall functionCall) {
+			return FN.NUMERIC_ABS.stringValue().equals(functionCall.getURI())
+					|| FN.NUMERIC_CEIL.stringValue().equals(functionCall.getURI())
+					|| FN.NUMERIC_FLOOR.stringValue().equals(functionCall.getURI())
+					|| FN.NUMERIC_ROUND.stringValue().equals(functionCall.getURI());
+		}
+
+		private boolean isSupportedNullRejectingNumericExpression(ValueExpr expression, Set<String> optionalBindings) {
+			if (isSimpleFilterOperand(expression)) {
+				return true;
+			}
+			if (expression instanceof FunctionCall functionCall
+					&& functionCall.getArgs().size() == 1
+					&& isStrictUnaryNumericFunction(functionCall)) {
+				return isSupportedNullRejectingNumericExpression(functionCall.getArgs().get(0), optionalBindings);
+			}
+			return false;
+		}
+
+		private boolean numericExpressionIsAssured(ValueExpr expression, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			if (expression instanceof FunctionCall functionCall
+					&& functionCall.getArgs().size() == 1
+					&& isStrictUnaryNumericFunction(functionCall)) {
+				return numericExpressionIsAssured(functionCall.getArgs().get(0), optionalBindings,
+						leftAssuredBindings);
+			}
+			return nonOptionalSimpleVarsAreAssured(expression, optionalBindings, leftAssuredBindings);
+		}
+
+		private boolean isNullRejectingOptionalStringFunction(FunctionCall functionCall, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			List<ValueExpr> arguments = functionCall.getArgs();
+			return isStrictBooleanStringFunction(functionCall)
+					&& arguments.size() == 2
+					&& isSupportedNullRejectingStringExpression(arguments.get(0), optionalBindings)
+					&& isSupportedNullRejectingStringExpression(arguments.get(1), optionalBindings)
+					&& referencesAnyOptionalBinding(functionCall, optionalBindings)
+					&& stringExpressionIsAssured(arguments.get(0), optionalBindings, leftAssuredBindings)
+					&& stringExpressionIsAssured(arguments.get(1), optionalBindings, leftAssuredBindings);
+		}
+
+		private boolean isStrictBooleanStringFunction(FunctionCall functionCall) {
+			return FN.CONTAINS.stringValue().equals(functionCall.getURI())
+					|| FN.STARTS_WITH.stringValue().equals(functionCall.getURI())
+					|| FN.ENDS_WITH.stringValue().equals(functionCall.getURI());
+		}
+
+		private boolean isSupportedNullRejectingStringExpression(ValueExpr expression, Set<String> optionalBindings) {
+			if (isSimpleFilterOperand(expression) || isOptionalStrArg(expression, optionalBindings)) {
+				return true;
+			}
+			if (isUnaryStringTransform(expression)) {
+				FunctionCall functionCall = (FunctionCall) expression;
+				return isSupportedNullRejectingStringExpression(functionCall.getArgs().get(0), optionalBindings);
+			}
+			return false;
+		}
+
+		private boolean stringExpressionIsAssured(ValueExpr expression, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			if (isOptionalStrArg(expression, optionalBindings)) {
+				return true;
+			}
+			if (isUnaryStringTransform(expression)) {
+				FunctionCall functionCall = (FunctionCall) expression;
+				return stringExpressionIsAssured(functionCall.getArgs().get(0), optionalBindings, leftAssuredBindings);
+			}
+			return nonOptionalSimpleVarsAreAssured(expression, optionalBindings, leftAssuredBindings);
+		}
+
+		private boolean isUnaryStringTransform(ValueExpr expression) {
+			if (expression instanceof FunctionCall functionCall && functionCall.getArgs().size() == 1) {
+				return FN.LOWER_CASE.stringValue().equals(functionCall.getURI())
+						|| FN.UPPER_CASE.stringValue().equals(functionCall.getURI());
+			}
+			return false;
+		}
+
+		private boolean isNullRejectingOptionalRegex(Regex regex, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			return isOptionalRegexTextArg(regex.getArg(), optionalBindings)
+					&& isAssuredRegexOperand(regex.getPatternArg(), optionalBindings, leftAssuredBindings)
+					&& isAssuredRegexOperand(regex.getFlagsArg(), optionalBindings, leftAssuredBindings);
+		}
+
+		private boolean isOptionalRegexTextArg(ValueExpr expression, Set<String> optionalBindings) {
+			if (expression instanceof Str str) {
+				return isOptionalRegexTextArg(str.getArg(), optionalBindings);
+			}
+			if (expression instanceof Var var) {
+				return !var.hasValue() && optionalBindings.contains(var.getName());
+			}
+			return false;
+		}
+
+		private boolean isAssuredRegexOperand(ValueExpr expression, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
+			return expression == null
+					|| (isSimpleFilterOperand(expression)
+							&& nonOptionalSimpleVarsAreAssured(expression, optionalBindings, leftAssuredBindings));
 		}
 
 		private boolean isSimpleFilterOperand(ValueExpr expression) {
 			return expression instanceof Var || expression instanceof ValueConstant;
-		}
-
-		private boolean referencesConstantOperand(ValueExpr expression) {
-			if (expression instanceof ValueConstant) {
-				return true;
-			}
-			if (expression instanceof Var) {
-				return ((Var) expression).hasValue();
-			}
-			if (expression instanceof Compare compare) {
-				return referencesConstantOperand(compare.getLeftArg())
-						|| referencesConstantOperand(compare.getRightArg());
-			}
-			if (expression instanceof ListMemberOperator) {
-				for (ValueExpr argument : ((ListMemberOperator) expression).getArguments()) {
-					if (referencesConstantOperand(argument)) {
-						return true;
-					}
-				}
-			}
-			return false;
 		}
 
 		private boolean referencesAnyOptionalBinding(ValueExpr expression, Set<String> optionalBindings) {
@@ -417,6 +663,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (expression instanceof Compare compare) {
 				return nonOptionalSimpleVarsAreAssured(compare.getLeftArg(), optionalBindings, leftAssuredBindings)
 						&& nonOptionalSimpleVarsAreAssured(compare.getRightArg(), optionalBindings,
+								leftAssuredBindings);
+			}
+			if (expression instanceof SameTerm sameTerm) {
+				return nonOptionalSimpleVarsAreAssured(sameTerm.getLeftArg(), optionalBindings, leftAssuredBindings)
+						&& nonOptionalSimpleVarsAreAssured(sameTerm.getRightArg(), optionalBindings,
 								leftAssuredBindings);
 			}
 			if (expression instanceof ListMemberOperator) {

@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.lang.reflect.Field;
@@ -196,6 +197,24 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbPreSketchFilterOptimizerDoesNotAskSketchStatsForBroadFilterTelemetry() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		List<QueryOptimizer> optimizers = optimizers(
+				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new FailingFilterPassStatistics())
+						.getOptimizers());
+		TupleExpr tupleExpr = parseTupleExpr(ENGINEERING_Q4);
+
+		for (QueryOptimizer optimizer : optimizers) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			if (optimizer instanceof FilterOptimizer) {
+				return;
+			}
+		}
+		fail("LMDB pipeline should include a pre-sketch FilterOptimizer");
+	}
+
+	@Test
 	void lmdbSketchPipelineRetainsSmallLiteralFilterEvidenceAfterPlanning() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -346,6 +365,19 @@ class LmdbOptimizerPipelineTest {
 			  }
 			}
 			""";
+
+	private static final class FailingFilterPassStatistics extends EvaluationStatistics {
+
+		@Override
+		public FilterPassEstimate estimateFilterPass(Filter filter) {
+			throw new AssertionError("Pre-sketch LMDB FilterOptimizer must not estimate broad filter telemetry");
+		}
+
+		@Override
+		public double estimateFilterPassRatio(Filter filter) {
+			throw new AssertionError("Pre-sketch LMDB FilterOptimizer must not estimate broad filter telemetry");
+		}
+	}
 
 	private static final class EmptyTripleSource implements TripleSource {
 

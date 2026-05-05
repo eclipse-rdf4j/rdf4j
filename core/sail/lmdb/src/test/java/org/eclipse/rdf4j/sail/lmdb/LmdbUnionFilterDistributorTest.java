@@ -30,11 +30,13 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -106,6 +108,47 @@ class LmdbUnionFilterDistributorTest {
 		assertFalse(containsStatementPatternWithObject(distributedUnion, "optName"));
 		assertTrue(containsBindingSetAssignmentFor(root.getRightArg(), "optName"));
 		assertTrue(containsStatementPatternWithObject(root.getRightArg(), "optName"));
+	}
+
+	@Test
+	void distributesFinitePrefixInsideScopedBranchFilter() {
+		Filter leftFilter = scopedFilter(variablePredicatePattern("subj", "pMatch", "m"));
+		Filter rightFilter = scopedFilter(variablePredicatePattern("subj", "pMatch", "m"));
+		Union union = new Union(new Join(values("score", "0.9"), leftFilter),
+				new Join(values("score", "0.8"), rightFilter));
+		union.setVariableScopeChange(true);
+
+		TupleExpr distributed = LmdbUnionFilterDistributor.tryDistribute(
+				List.of(values("pMatch", "http://example.com/prefLabel", "http://example.com/altLabel"), union),
+				List.of(), Set.of(), (tupleExpr, ignored) -> tupleExpr, Join::new,
+				(root, ignored, placement) -> root);
+
+		Union distributedUnion = assertInstanceOf(Union.class, distributed);
+		assertTrue(containsScopedFilterWithPrefix(distributedUnion.getLeftArg(), "pMatch"));
+		assertTrue(containsScopedFilterWithPrefix(distributedUnion.getRightArg(), "pMatch"));
+	}
+
+	@Test
+	void keepsFinitePrefixOutsideScopedFilterThatNeedsBranchBindings() {
+		Filter leftFilter = scopedFilter(values("marker", "left"), new Or(
+				new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
+				new Compare(new Var("code"), new ValueConstant(VF.createLiteral("DX-202")), Compare.CompareOp.EQ)));
+		Filter rightFilter = scopedFilter(values("marker", "right"), new Or(
+				new Compare(new Var("code"), new Var("target"), Compare.CompareOp.EQ),
+				new Compare(new Var("code"), new ValueConstant(VF.createLiteral("DX-202")), Compare.CompareOp.EQ)));
+		Union union = new Union(new Join(statementPattern("entity", "http://example.com/type", "code"), leftFilter),
+				new Join(statementPattern("entity", "http://example.com/type", "code"), rightFilter));
+		union.setVariableScopeChange(true);
+
+		TupleExpr distributed = LmdbUnionFilterDistributor.tryDistribute(
+				List.of(values("target", "DX-200", "DX-201"), union), List.of(), Set.of(),
+				(tupleExpr, ignored) -> tupleExpr, Join::new, (root, ignored, placement) -> root);
+
+		Union distributedUnion = assertInstanceOf(Union.class, distributed);
+		assertFalse(containsScopedFilterWithBindingSetAssignmentFor(distributedUnion.getLeftArg(), "target"));
+		assertFalse(containsScopedFilterWithBindingSetAssignmentFor(distributedUnion.getRightArg(), "target"));
+		assertTrue(containsBindingSetAssignmentFor(distributedUnion.getLeftArg(), "target"));
+		assertTrue(containsBindingSetAssignmentFor(distributedUnion.getRightArg(), "target"));
 	}
 
 	@Test
@@ -252,6 +295,34 @@ class LmdbUnionFilterDistributorTest {
 	}
 
 	@Test
+	void materializesSplitFiniteListMemberBindingWindow() {
+		BindingSetAssignment userValues = values("u", "user0", "user1", "user2");
+		BindingSetAssignment peerValues = values("v", "user0", "user2");
+		BindingSetAssignment fallbackValues = values("w", "user1");
+		DeferredFilter filter = new DeferredFilter(
+				listMember("u", "v", "w"),
+				Set.of("u", "v", "w"), 1, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, ignored) -> tupleExpr, Join::new,
+				LmdbUnionFilterDistributorTest::wrapFilters);
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(userValues, peerValues, fallbackValues)),
+				List.of(filter), Set.of());
+
+		BindingSetAssignment materialized = assertInstanceOf(BindingSetAssignment.class, root);
+		assertEquals(Set.of("u", "v", "w"), materialized.getBindingNames());
+		List<BindingSet> rows = new ArrayList<>();
+		for (BindingSet row : materialized.getBindingSets()) {
+			rows.add(row);
+		}
+		assertEquals(4, rows.size());
+		assertTrue(rows.stream()
+				.allMatch(row -> row.getValue("u").equals(row.getValue("v"))
+						|| row.getValue("u").equals(row.getValue("w"))));
+	}
+
+	@Test
 	void keepsLargerSplitFiniteInequalityOnRuntimeFilter() {
 		BindingSetAssignment userValues = values("u", "user0", "user1", "user2", "user3", "user4", "user5",
 				"user6", "user7", "user8");
@@ -292,6 +363,24 @@ class LmdbUnionFilterDistributorTest {
 				new Var(objectName));
 	}
 
+	private static StatementPattern variablePredicatePattern(String subjectName, String predicateName,
+			String objectName) {
+		return new StatementPattern(new Var(subjectName), new Var(predicateName), new Var(objectName));
+	}
+
+	private static Filter scopedFilter(TupleExpr arg) {
+		Filter filter = new Filter(arg,
+				new Compare(new Var("m"), new ValueConstant(VF.createLiteral("match")), Compare.CompareOp.EQ));
+		filter.setVariableScopeChange(true);
+		return filter;
+	}
+
+	private static Filter scopedFilter(TupleExpr arg, ValueExpr condition) {
+		Filter filter = new Filter(arg, condition);
+		filter.setVariableScopeChange(true);
+		return filter;
+	}
+
 	private static BindingSetAssignment values(String bindingName, String... values) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
@@ -303,6 +392,15 @@ class LmdbUnionFilterDistributorTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static ListMemberOperator listMember(String leftBindingName, String... memberBindingNames) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(new Var(leftBindingName));
+		for (String bindingName : memberBindingNames) {
+			operator.addArgument(new Var(bindingName));
+		}
+		return operator;
 	}
 
 	private static TupleExpr wrapFilters(TupleExpr root, List<DeferredFilter> filters, String placement) {
@@ -331,6 +429,43 @@ class LmdbUnionFilterDistributorTest {
 		return false;
 	}
 
+	private static boolean containsScopedFilterWithPrefix(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof Filter filter) {
+			if (filter.isVariableScopeChange() && containsBindingSetAssignmentFor(filter.getArg(), bindingName)
+					&& containsStatementPatternWithPredicate(filter.getArg(), bindingName)) {
+				return true;
+			}
+			return containsScopedFilterWithPrefix(filter.getArg(), bindingName);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsScopedFilterWithPrefix(leftJoin.getLeftArg(), bindingName)
+					|| containsScopedFilterWithPrefix(leftJoin.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsScopedFilterWithPrefix(join.getLeftArg(), bindingName)
+					|| containsScopedFilterWithPrefix(join.getRightArg(), bindingName);
+		}
+		return false;
+	}
+
+	private static boolean containsScopedFilterWithBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {
+		if (tupleExpr instanceof Filter filter) {
+			if (filter.isVariableScopeChange() && containsBindingSetAssignmentFor(filter.getArg(), bindingName)) {
+				return true;
+			}
+			return containsScopedFilterWithBindingSetAssignmentFor(filter.getArg(), bindingName);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsScopedFilterWithBindingSetAssignmentFor(leftJoin.getLeftArg(), bindingName)
+					|| containsScopedFilterWithBindingSetAssignmentFor(leftJoin.getRightArg(), bindingName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsScopedFilterWithBindingSetAssignmentFor(join.getLeftArg(), bindingName)
+					|| containsScopedFilterWithBindingSetAssignmentFor(join.getRightArg(), bindingName);
+		}
+		return false;
+	}
+
 	private static boolean containsStatementPatternWithObject(TupleExpr tupleExpr, String objectName) {
 		if (tupleExpr instanceof StatementPattern) {
 			return objectName.equals(((StatementPattern) tupleExpr).getObjectVar().getName());
@@ -345,6 +480,24 @@ class LmdbUnionFilterDistributorTest {
 		if (tupleExpr instanceof Join join) {
 			return containsStatementPatternWithObject(join.getLeftArg(), objectName)
 					|| containsStatementPatternWithObject(join.getRightArg(), objectName);
+		}
+		return false;
+	}
+
+	private static boolean containsStatementPatternWithPredicate(TupleExpr tupleExpr, String predicateName) {
+		if (tupleExpr instanceof StatementPattern) {
+			return predicateName.equals(((StatementPattern) tupleExpr).getPredicateVar().getName());
+		}
+		if (tupleExpr instanceof Filter) {
+			return containsStatementPatternWithPredicate(((Filter) tupleExpr).getArg(), predicateName);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsStatementPatternWithPredicate(leftJoin.getLeftArg(), predicateName)
+					|| containsStatementPatternWithPredicate(leftJoin.getRightArg(), predicateName);
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsStatementPatternWithPredicate(join.getLeftArg(), predicateName)
+					|| containsStatementPatternWithPredicate(join.getRightArg(), predicateName);
 		}
 		return false;
 	}

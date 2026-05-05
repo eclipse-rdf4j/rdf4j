@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -83,15 +84,18 @@ final class LmdbDeferredFilterPlacer {
 				.remainingPatternsAfterFactors(orderedJoinArgs);
 		List<SegmentFactor> factors = new ArrayList<>(orderedJoinArgs.size());
 		Set<String> prefixBindingNames = new HashSet<>(boundBeforeSegment);
+		Set<String> finitePrefixBindingNames = new HashSet<>();
 		for (int i = 0; i < orderedJoinArgs.size(); i++) {
 			TupleExpr optimized = factorOptimizer.optimize(orderedJoinArgs.get(i), prefixBindingNames);
 			optimized = applyCompatibleLocalDeferredFilters(optimized, pendingFilters);
 			Set<StatementPattern> currentPatterns = LmdbJoinPlanSupport.collectPatternIdentities(optimized);
 			optimized = applyPrefixBindingDeferredFilters(optimized, pendingFilters, prefixBindingNames,
+					finitePrefixBindingNames,
 					currentPatterns, remainingPatternsAfterFactor.get(i));
 			factors.add(new SegmentFactor(optimized, currentPatterns, i));
 			groupSafePrefixBindingWindowFilters(factors, pendingFilters, boundBeforeSegment, prefixBindingNames);
 			prefixBindingNames.addAll(optimized.getBindingNames());
+			updateFinitePrefixBindingNames(finitePrefixBindingNames, optimized);
 		}
 		List<DeferredFilter> unresolvedFilters = new ArrayList<>();
 		List<DeferredFilter> sortedFilters = LmdbJoinPlanSupport.sortDeferredFilters(pendingFilters);
@@ -192,7 +196,8 @@ final class LmdbDeferredFilterPlacer {
 
 	private TupleExpr applyPrefixBindingDeferredFilters(TupleExpr tupleExpr,
 			List<DeferredFilter> deferredFilters, Set<String> prefixBindingNames,
-			Set<StatementPattern> currentPatterns, Set<StatementPattern> remainingPatterns) {
+			Set<String> finitePrefixBindingNames, Set<StatementPattern> currentPatterns,
+			Set<StatementPattern> remainingPatterns) {
 		if (deferredFilters.isEmpty()) {
 			return tupleExpr;
 		}
@@ -204,6 +209,12 @@ final class LmdbDeferredFilterPlacer {
 		List<DeferredFilter> prefixFilters = new ArrayList<>();
 		for (int i = 0; i < deferredFilters.size();) {
 			DeferredFilter deferredFilter = deferredFilters.get(i);
+			if (tupleExpr instanceof BindingSetAssignment
+					&& canMaterializeWithFinitePrefix(deferredFilter, finitePrefixBindingNames,
+							assignmentBindingNames)) {
+				i++;
+				continue;
+			}
 			if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, assignmentBindingNames)
 					&& !hasPendingSplitExistsFilter(deferredFilters, deferredFilter, prefixBindingNames,
 							assignmentBindingNames)) {
@@ -233,6 +244,26 @@ final class LmdbDeferredFilterPlacer {
 		}
 		TupleExpr filtered = tupleExpr;
 		return filterWrapper.wrap(filtered, prefixFilters, "bindingPrefix");
+	}
+
+	private void updateFinitePrefixBindingNames(Set<String> finitePrefixBindingNames, TupleExpr tupleExpr) {
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			finitePrefixBindingNames.addAll(assignment.getAssuredBindingNames());
+			return;
+		}
+		finitePrefixBindingNames.clear();
+	}
+
+	private boolean canMaterializeWithFinitePrefix(DeferredFilter deferredFilter, Set<String> finitePrefixBindingNames,
+			Set<String> assignmentBindingNames) {
+		if (!isMaterializableFiniteCondition(deferredFilter.condition)) {
+			return false;
+		}
+		Set<String> conditionBindingNames = conditionBindingNames(deferredFilter);
+		return !conditionBindingNames.isEmpty()
+				&& containsAllInUnion(finitePrefixBindingNames, assignmentBindingNames, conditionBindingNames)
+				&& !Collections.disjoint(finitePrefixBindingNames, conditionBindingNames)
+				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames);
 	}
 
 	private void groupSafePrefixBindingWindowFilters(List<SegmentFactor> factors, List<DeferredFilter> deferredFilters,
@@ -937,12 +968,16 @@ final class LmdbDeferredFilterPlacer {
 			return isMaterializableFiniteCondition(and.getLeftArg())
 					&& isMaterializableFiniteCondition(and.getRightArg());
 		}
-		if (!(condition instanceof Compare compare)) {
-			return false;
+		if (condition instanceof Compare compare) {
+			return (compare.getOperator() == Compare.CompareOp.EQ || compare.getOperator() == Compare.CompareOp.NE)
+					&& isFiniteConditionOperand(compare.getLeftArg())
+					&& isFiniteConditionOperand(compare.getRightArg());
 		}
-		return (compare.getOperator() == Compare.CompareOp.EQ || compare.getOperator() == Compare.CompareOp.NE)
-				&& isFiniteConditionOperand(compare.getLeftArg())
-				&& isFiniteConditionOperand(compare.getRightArg());
+		if (condition instanceof ListMemberOperator listMember) {
+			return listMember.getArguments().size() > 1
+					&& listMember.getArguments().stream().allMatch(this::isFiniteConditionOperand);
+		}
+		return false;
 	}
 
 	private boolean isFiniteConditionOperand(ValueExpr valueExpr) {
@@ -953,7 +988,16 @@ final class LmdbDeferredFilterPlacer {
 		if (condition instanceof And and) {
 			return evaluateFiniteCondition(and.getLeftArg(), row) && evaluateFiniteCondition(and.getRightArg(), row);
 		}
-		Compare compare = (Compare) condition;
+		if (condition instanceof Compare compare) {
+			return evaluateFiniteCompare(compare, row);
+		}
+		if (condition instanceof ListMemberOperator listMember) {
+			return evaluateFiniteListMember(listMember, row);
+		}
+		return false;
+	}
+
+	private boolean evaluateFiniteCompare(Compare compare, BindingSet row) {
 		Value leftValue = finiteConditionValue(compare.getLeftArg(), row);
 		Value rightValue = finiteConditionValue(compare.getRightArg(), row);
 		if (leftValue == null || rightValue == null) {
@@ -961,6 +1005,25 @@ final class LmdbDeferredFilterPlacer {
 		}
 		return QueryEvaluationUtility.compare(leftValue, rightValue, compare.getOperator(),
 				true) == QueryEvaluationUtility.Result._true;
+	}
+
+	private boolean evaluateFiniteListMember(ListMemberOperator listMember, BindingSet row) {
+		List<ValueExpr> arguments = listMember.getArguments();
+		if (arguments.size() <= 1) {
+			return false;
+		}
+		Value leftValue = finiteConditionValue(arguments.get(0), row);
+		if (leftValue == null) {
+			return false;
+		}
+		for (int i = 1; i < arguments.size(); i++) {
+			Value memberValue = finiteConditionValue(arguments.get(i), row);
+			if (memberValue != null && QueryEvaluationUtility.compare(leftValue, memberValue, Compare.CompareOp.EQ,
+					true) == QueryEvaluationUtility.Result._true) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private Value finiteConditionValue(ValueExpr valueExpr, BindingSet row) {

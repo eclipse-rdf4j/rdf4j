@@ -512,7 +512,36 @@ final class LmdbJoinPlanSupport {
 		if (condition instanceof SameTerm sameTerm) {
 			return collectOrEqualityAnchorValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), collector);
 		}
+		if (condition instanceof ListMemberOperator list) {
+			return collectListMemberAnchorValues(list, collector);
+		}
 		return false;
+	}
+
+	private static boolean collectListMemberAnchorValues(ListMemberOperator list,
+			OrEqualityAnchorCollector collector) {
+		List<ValueExpr> arguments = list.getArguments();
+		if (arguments.size() < 2) {
+			return false;
+		}
+		ValueExpr filterArgument = arguments.getFirst();
+		if (!(filterArgument instanceof Var filterVar)) {
+			return false;
+		}
+		String bindingName = filterVar.getName();
+		if (bindingName == null || filterVar.hasValue()) {
+			return false;
+		}
+		for (int i = 1; i < arguments.size(); i++) {
+			ValueExpr argument = arguments.get(i);
+			if (!(argument instanceof ValueConstant)) {
+				return false;
+			}
+			if (!collectOrEqualityAnchorValue(filterVar, ((ValueConstant) argument).getValue(), collector)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static boolean collectOrEqualityAnchorValue(ValueExpr leftArg, ValueExpr rightArg,

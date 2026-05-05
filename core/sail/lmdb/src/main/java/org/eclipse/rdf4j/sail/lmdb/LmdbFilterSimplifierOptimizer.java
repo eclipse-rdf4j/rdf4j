@@ -34,10 +34,12 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -162,7 +164,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				if (!equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)) {
 					anchors.add(anchor);
 				}
-				if (isSelectiveSmallLiteralAnchor(filter, condition)) {
+				if (shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
 					remainingConditions.add(condition);
 				}
 			} else {
@@ -259,7 +261,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static String directExtensionSourceName(TupleExpr tupleExpr, String extensionName) {
 		Set<String> sourceNames = new LinkedHashSet<>();
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Extension extension) {
 				for (ExtensionElem element : extension.getElements()) {
@@ -437,7 +439,35 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (condition instanceof SameTerm sameTerm) {
 			return collectValuesVariableAnchorValue(sameTerm.getLeftArg(), sameTerm.getRightArg(), collector);
 		}
+		if (condition instanceof ListMemberOperator list) {
+			return collectValuesVariableAnchorValues(list, collector);
+		}
 		return false;
+	}
+
+	private static boolean collectValuesVariableAnchorValues(ListMemberOperator list,
+			ValuesVariableAnchorCollector collector) {
+		List<ValueExpr> arguments = list.getArguments();
+		if (arguments.size() < 2 || !(arguments.get(0)instanceof Var filterVar)) {
+			return false;
+		}
+		for (int i = 1; i < arguments.size(); i++) {
+			ValueExpr argument = arguments.get(i);
+			if (argument instanceof ValueConstant valueConstant) {
+				if (!collector.addLiteral(filterVar, valueConstant.getValue())) {
+					return false;
+				}
+				continue;
+			}
+			if (argument instanceof Var memberVar) {
+				if (!collector.addMemberValues(filterVar, memberVar)) {
+					return false;
+				}
+				continue;
+			}
+			return false;
+		}
+		return true;
 	}
 
 	private static boolean collectValuesVariableAnchorValue(ValueExpr leftArg, ValueExpr rightArg,
@@ -490,7 +520,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static Set<String> extensionElementNames(TupleExpr tupleExpr) {
 		Set<String> names = new HashSet<>();
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Extension extension) {
 				for (ExtensionElem element : extension.getElements()) {
@@ -504,6 +534,50 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private boolean isSelectiveSmallLiteralAnchor(Filter filter, ValueExpr condition) {
 		return LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(statistics, filter, condition);
+	}
+
+	private boolean shouldRetainSmallLiteralAnchorFilter(Filter filter, ValueExpr condition) {
+		return isSelectiveSmallLiteralAnchor(filter, condition) || containsMultipleStatementPatterns(filter);
+	}
+
+	private static boolean containsMultipleStatementPatterns(Filter filter) {
+		TupleExpr scope = filter.getArg();
+		QueryModelNode node = filter;
+		QueryModelNode parent = node.getParentNode();
+		while (parent instanceof Join || parent instanceof LeftJoin || parent instanceof Filter) {
+			scope = (TupleExpr) parent;
+			node = parent;
+			parent = node.getParentNode();
+		}
+		return containsMultipleStatementPatterns(scope);
+	}
+
+	private static boolean containsMultipleStatementPatterns(TupleExpr tupleExpr) {
+		int[] count = { 0 };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				node.getArg().visit(this);
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (count[0] >= 2) {
+					return;
+				}
+				if (node != tupleExpr && node instanceof TupleExpr && node instanceof VariableScopeChange
+						&& ((VariableScopeChange) node).isVariableScopeChange()) {
+					return;
+				}
+				super.meetNode(node);
+			}
+
+			@Override
+			public void meet(StatementPattern node) {
+				count[0]++;
+			}
+		});
+		return count[0] >= 2;
 	}
 
 	private static TupleExpr prependAnchors(TupleExpr arg, List<BindingSetAssignment> anchors) {
@@ -569,6 +643,15 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			}
 			values.add(value);
 			return true;
+		}
+
+		private boolean addMemberValues(Var filterVar, Var memberVar) {
+			String bindingName = unboundName(filterVar);
+			String memberName = unboundName(memberVar);
+			if (bindingName == null || memberName == null) {
+				return false;
+			}
+			return addValues(bindingName, assignmentValues.get(memberName));
 		}
 
 		private boolean addVariableEquality(Var left, Var right) {

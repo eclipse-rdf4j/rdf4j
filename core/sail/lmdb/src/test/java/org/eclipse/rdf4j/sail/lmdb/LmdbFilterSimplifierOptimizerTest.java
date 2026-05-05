@@ -106,6 +106,23 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void rewritesMixedInAndEqualityDisjunctionToBindingSetAssignment() {
+		Filter filter = new Filter(statementPatternWithPredicate("s", "http://example.com/theme/library/name", "o"),
+				new Or(listMember("o", "A", "B"), compareLiteral("o", "C")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedFilterPassStatistics(0.50d)).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		Join join = assertInstanceOf(Join.class, retainedFilter.getArg());
+		BindingSetAssignment values = assertInstanceOf(BindingSetAssignment.class, join.getLeftArg());
+		assertIterableEquals(Set.of("o"), values.getBindingNames());
+		assertIterableEquals(List.of(VF.createLiteral("A"), VF.createLiteral("B"), VF.createLiteral("C")),
+				bindingValues(values, "o"));
+		assertInstanceOf(Or.class, retainedFilter.getCondition());
+	}
+
+	@Test
 	void anchorsFilterEqualToValuesVariableWithoutRemovingFilter() {
 		BindingSetAssignment targetValues = values("target", "Author 1", "Author 2");
 		StatementPattern authorName = statementPatternWithPredicate("author", "http://example.com/theme/library/name",
@@ -123,6 +140,27 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertIterableEquals(List.of(VF.createLiteral("Author 1"), VF.createLiteral("Author 2"),
 				VF.createLiteral("Author 3")), bindingValues(authorNameValues, "authorName"));
 		assertInstanceOf(Or.class, retainedFilter.getCondition());
+		assertFalse(authorNameValues == targetValues);
+	}
+
+	@Test
+	void anchorsFilterInValuesVariableWithoutRemovingFilter() {
+		BindingSetAssignment targetValues = values("target", "Author 1", "Author 2");
+		StatementPattern authorName = statementPatternWithPredicate("author", "http://example.com/theme/library/name",
+				"authorName");
+		Filter filter = new Filter(new Join(targetValues, authorName),
+				listMemberWithVariable("authorName", "target", "Author 3"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedFilterPassStatistics(0.50d)).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		Join anchored = assertInstanceOf(Join.class, retainedFilter.getArg());
+		BindingSetAssignment authorNameValues = assertInstanceOf(BindingSetAssignment.class, anchored.getLeftArg());
+		assertIterableEquals(Set.of("authorName"), authorNameValues.getBindingNames());
+		assertIterableEquals(List.of(VF.createLiteral("Author 1"), VF.createLiteral("Author 2"),
+				VF.createLiteral("Author 3")), bindingValues(authorNameValues, "authorName"));
+		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
 		assertFalse(authorNameValues == targetValues);
 	}
 
@@ -364,6 +402,16 @@ class LmdbFilterSimplifierOptimizerTest {
 	private static ListMemberOperator listMember(String variable, String... values) {
 		ListMemberOperator operator = new ListMemberOperator();
 		operator.addArgument(new Var(variable));
+		for (String value : values) {
+			operator.addArgument(new ValueConstant(VF.createLiteral(value)));
+		}
+		return operator;
+	}
+
+	private static ListMemberOperator listMemberWithVariable(String variable, String memberVariable, String... values) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(new Var(variable));
+		operator.addArgument(new Var(memberVariable));
 		for (String value : values) {
 			operator.addArgument(new ValueConstant(VF.createLiteral(value)));
 		}
