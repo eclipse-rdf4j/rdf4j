@@ -656,6 +656,21 @@ class TripleStore implements Closeable {
 		return caughtException;
 	}
 
+	private long writeLockUninterruptibly(StampedLongAdderLockManager lockManager) {
+		boolean interrupted = false;
+		while (true) {
+			try {
+				long stamp = lockManager.writeLock();
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
+				return stamp;
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
+	}
+
 	/**
 	 * Returns an iterator of all registered contexts.
 	 *
@@ -1647,11 +1662,7 @@ class TripleStore implements Closeable {
 						if (recordCache != null) {
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
 							long writeStamp;
-							try {
-								writeStamp = lockManager.writeLock();
-							} catch (InterruptedException e) {
-								throw new SailException(e);
-							}
+							writeStamp = writeLockUninterruptibly(lockManager);
 							try {
 								txnManager.deactivate();
 								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
@@ -1679,11 +1690,7 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
 							long writeStamp;
-							try {
-								writeStamp = lockManager.writeLock();
-							} catch (InterruptedException e) {
-								throw new SailException(e);
-							}
+							writeStamp = writeLockUninterruptibly(lockManager);
 							try {
 								txnManager.reset();
 							} finally {

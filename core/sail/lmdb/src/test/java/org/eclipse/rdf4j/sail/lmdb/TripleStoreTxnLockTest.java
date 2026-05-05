@@ -119,6 +119,57 @@ class TripleStoreTxnLockTest {
 	}
 
 	@Test
+	void committedWriteResetIsNotReportedFailedWhenInterruptedWaitingForOpenIterator(@TempDir File dataDir)
+			throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 0, true);
+			tripleStore.endTransaction(true);
+
+			try (Txn readTxn = tripleStore.getTxnManager().createReadTxn();
+					RecordIterator iterator = tripleStore.getTriples(readTxn, 0, 0, 0, 0, true)) {
+				assertThat(iterator.next()).isNotNull();
+
+				CountDownLatch commitAttempting = new CountDownLatch(1);
+				CountDownLatch writerFinished = new CountDownLatch(1);
+				AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+
+				Thread writer = new Thread(() -> {
+					try {
+						tripleStore.startTransaction();
+						tripleStore.storeTriple(4, 5, 6, 0, true);
+						commitAttempting.countDown();
+						tripleStore.endTransaction(true);
+					} catch (Throwable throwable) {
+						writerFailure.compareAndSet(null, throwable);
+					} finally {
+						writerFinished.countDown();
+					}
+				}, "lmdb-interrupted-commit-reset-lock-test-writer");
+
+				writer.start();
+
+				assertThat(commitAttempting.await(10, TimeUnit.SECONDS)).isTrue();
+				assertThat(writerFinished.await(200, TimeUnit.MILLISECONDS))
+						.as("commit reset must wait while an LMDB record cursor is open")
+						.isFalse();
+
+				writer.interrupt();
+
+				assertThat(writerFinished.await(200, TimeUnit.MILLISECONDS))
+						.as("interrupting the post-commit reset wait must not report the committed write as failed")
+						.isFalse();
+
+				iterator.close();
+
+				writer.join(TimeUnit.SECONDS.toMillis(10));
+				assertThat(writer.isAlive()).isFalse();
+				assertThat(writerFailure.get()).isNull();
+			}
+		}
+	}
+
+	@Test
 	void recordIteratorCanCloseFromDifferentThread(@TempDir File dataDir) throws Exception {
 		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
 			tripleStore.startTransaction();
