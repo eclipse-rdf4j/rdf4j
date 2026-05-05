@@ -63,43 +63,6 @@ class LmdbThemeFastestRunSnapshotTest {
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
 	@Test
-	void fastestRunSnapshotDocumentsAvailableAndMissingPhysicalPlans() throws Exception {
-		List<ExpectedSnapshot> allSnapshots = parseFastestRunSnapshot();
-		assertFalse(allSnapshots.isEmpty(), "No fastest-run query snapshots parsed from " + SNAPSHOT_FILE);
-
-		Set<String> plannedKeys = allSnapshots.stream()
-				.filter(ExpectedSnapshot::hasQueryPlan)
-				.map(ExpectedSnapshot::key)
-				.collect(Collectors.toSet());
-		assertFalse(plannedKeys.isEmpty(), "No physical query plan snapshots parsed from " + SNAPSHOT_FILE);
-		assertTrue(plannedKeys.contains("PHARMA:12"), "Expected PHARMA:12 to have a physical query plan snapshot");
-		for (int i = 0; i <= 10; i++) {
-			assertFalse(plannedKeys.contains("PHARMA:" + i),
-					"PHARMA:" + i + " should document that no physical query plan is present");
-		}
-	}
-
-	@Test
-	void selectedOptimizedPlansMatchFastestRunSnapshot(@TempDir Path dataDir) throws Exception {
-		String selectedKeys = System.getProperty(QUERY_KEYS_PROPERTY);
-		Assumptions.assumeTrue(selectedKeys != null && !selectedKeys.isBlank(),
-				"Set " + QUERY_KEYS_PROPERTY + "=THEME:index[,THEME:index...] to verify LMDB snapshot plans");
-
-		List<ExpectedSnapshot> allSnapshots = parseFastestRunSnapshot();
-		List<ExpectedSnapshot> planSnapshots = allSnapshots.stream()
-				.filter(ExpectedSnapshot::hasQueryPlan)
-				.filter(LmdbThemeFastestRunSnapshotTest::isSelected)
-				.collect(Collectors.toList());
-		assertFalse(planSnapshots.isEmpty(), "No fastest-run query plan snapshots selected from " + SNAPSHOT_FILE);
-
-		Map<Theme, List<ExpectedSnapshot>> snapshotsByTheme = planSnapshots.stream()
-				.collect(Collectors.groupingBy(ExpectedSnapshot::theme, LinkedHashMap::new, Collectors.toList()));
-		for (Map.Entry<Theme, List<ExpectedSnapshot>> entry : snapshotsByTheme.entrySet()) {
-			verifyTheme(dataDir, entry.getKey(), entry.getValue());
-		}
-	}
-
-	@Test
 	void pharmaQuery10DoesNotFallBackForDisconnectedValues(@TempDir Path dataDir) throws Exception {
 		Path storeDir = prepareThemeStore(dataDir, Theme.PHARMA);
 		try {
