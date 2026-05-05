@@ -656,17 +656,89 @@ class TripleStore implements Closeable {
 		return caughtException;
 	}
 
-	private long writeLockUninterruptibly(StampedLongAdderLockManager lockManager) {
+	private long writeLockInterruptibly(StampedLongAdderLockManager lockManager) {
+		try {
+			return lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
+		}
+	}
+
+	private void throwIfInterruptedBeforeNativeCommit() throws InterruptedException {
+		if (Thread.interrupted()) {
+			throw new InterruptedException();
+		}
+	}
+
+	private void checkInterruptBeforeNativeCommit() {
+		try {
+			throwIfInterruptedBeforeNativeCommit();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
+		}
+	}
+
+	private void runUninterruptibly(IOOperation operation) throws IOException {
 		boolean interrupted = false;
-		while (true) {
-			try {
-				long stamp = lockManager.writeLock();
-				if (interrupted) {
-					Thread.currentThread().interrupt();
+		try {
+			while (true) {
+				try {
+					operation.run();
+					if (Thread.interrupted()) {
+						interrupted = true;
+					}
+					return;
+				} catch (IOException e) {
+					if (!hasInterruptedCause(e)) {
+						throw e;
+					}
+					interrupted = true;
+					Thread.interrupted();
+				} catch (SailException e) {
+					if (!hasInterruptedCause(e)) {
+						throw e;
+					}
+					interrupted = true;
+					Thread.interrupted();
 				}
-				return stamp;
-			} catch (InterruptedException e) {
-				interrupted = true;
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	private void abortOpenWriteTxn() {
+		if (writeTxn != 0) {
+			mdb_txn_abort(writeTxn);
+			writeTxn = 0;
+		}
+	}
+
+	private boolean hasInterruptedCause(Throwable throwable) {
+		Throwable current = throwable;
+		while (current != null) {
+			if (current instanceof InterruptedException) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
+	}
+
+	private interface IOOperation {
+		void run() throws IOException;
+	}
+
+	private void closeRecordCache() throws IOException {
+		if (recordCache != null) {
+			try {
+				recordCache.close();
+			} finally {
+				recordCache = null;
 			}
 		}
 	}
@@ -1604,6 +1676,7 @@ class TripleStore implements Closeable {
 					if (requiresResize()) {
 						// resize map if required
 						E(mdb_txn_commit(writeTxn));
+						writeTxn = 0;
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
 						logger.debug("resized map to {}", mapSize);
@@ -1636,7 +1709,7 @@ class TripleStore implements Closeable {
 				}
 			}
 		}
-		recordCache.close();
+		closeRecordCache();
 	}
 
 	public void startTransaction() throws IOException {
@@ -1657,64 +1730,58 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
-					try {
-						E(mdb_txn_commit(writeTxn));
-						if (recordCache != null) {
-							StampedLongAdderLockManager lockManager = txnManager.lockManager();
-							long writeStamp;
-							writeStamp = writeLockUninterruptibly(lockManager);
-							try {
-								txnManager.deactivate();
-								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-								E(mdb_env_set_mapsize(env, mapSize));
-								logger.debug("resized map to {}", mapSize);
-								// restart write transaction
-								try (MemoryStack stack = stackPush()) {
-									PointerBuffer pp = stack.mallocPointer(1);
-									mdb_txn_begin(env, NULL, 0, pp);
-									writeTxn = pp.get(0);
-								}
-								updateFromCache();
-								// finally, commit write transaction
-								E(mdb_txn_commit(writeTxn));
-							} finally {
-								recordCache = null;
-								try {
-									txnManager.activate();
-								} finally {
-									lockManager.unlockWrite(writeStamp);
-								}
-							}
-						} else {
-							// invalidate open read transaction so that they are not re-used
-							// otherwise iterators won't see the updated data
-							StampedLongAdderLockManager lockManager = txnManager.lockManager();
-							long writeStamp;
-							writeStamp = writeLockUninterruptibly(lockManager);
-							try {
-								txnManager.reset();
-							} finally {
-								lockManager.unlockWrite(writeStamp);
-							}
-						}
-					} catch (IOException e) {
-						// abort transaction if exception occurred while committing
-						mdb_txn_abort(writeTxn);
-						throw e;
-					}
+					commitWriteTransaction();
 				} else {
-					mdb_txn_abort(writeTxn);
+					abortOpenWriteTxn();
+				}
+			} catch (IOException | RuntimeException | Error e) {
+				// Abort only while the native write transaction is still open. Once LMDB
+				// accepts the commit, writeTxn is cleared and post-commit maintenance must complete.
+				abortOpenWriteTxn();
+				throw e;
+			} finally {
+				// ensure that record cache is always reset
+				closeRecordCache();
+			}
+		}
+	}
+
+	private void commitWriteTransaction() throws IOException {
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long writeStamp = writeLockInterruptibly(lockManager);
+		boolean readTxnsDeactivated = false;
+		try {
+			checkInterruptBeforeNativeCommit();
+			E(mdb_txn_commit(writeTxn));
+			writeTxn = 0;
+			if (recordCache != null) {
+				txnManager.deactivate();
+				readTxnsDeactivated = true;
+				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+				E(mdb_env_set_mapsize(env, mapSize));
+				logger.debug("resized map to {}", mapSize);
+				// restart write transaction
+				try (MemoryStack stack = stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					E(mdb_txn_begin(env, NULL, 0, pp));
+					writeTxn = pp.get(0);
+				}
+				updateFromCache();
+				// finally, commit write transaction
+				E(mdb_txn_commit(writeTxn));
+				writeTxn = 0;
+			} else {
+				// invalidate open read transactions so that they are not re-used
+				// otherwise iterators won't see the updated data
+				runUninterruptibly(txnManager::reset);
+			}
+		} finally {
+			try {
+				if (readTxnsDeactivated) {
+					runUninterruptibly(txnManager::activate);
 				}
 			} finally {
-				writeTxn = 0;
-				// ensure that record cache is always reset
-				if (recordCache != null) {
-					try {
-						recordCache.close();
-					} finally {
-						recordCache = null;
-					}
-				}
+				lockManager.unlockWrite(writeStamp);
 			}
 		}
 	}

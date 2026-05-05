@@ -21,6 +21,8 @@ import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -74,6 +76,56 @@ class PersistentSetTest {
 			}
 		} finally {
 			closeIteratorForCleanup(iterator);
+			factory.close();
+		}
+	}
+
+	@Test
+	void idleIteratorDoesNotBlockResizeAndCanContinue(@TempDir File dataDir) throws Exception {
+		int previousResizeThreshold = LmdbUtil.PERCENTAGE_FULL_TRIGGERS_RESIZE;
+		PersistentSetFactory<Long> factory = new PersistentSetFactory<>(dataDir);
+		Iterator<Long> iterator = null;
+		Thread writer = null;
+
+		try {
+			PersistentSet<Long> set = factory.createSet("ids", PersistentSetTest::encodeLong,
+					PersistentSetTest::decodeLong);
+			assertTrue(set.add(1L));
+			assertTrue(set.add(3L));
+
+			iterator = set.iterator();
+			assertTrue(iterator.hasNext());
+			assertEquals(1L, iterator.next());
+			LmdbUtil.PERCENTAGE_FULL_TRIGGERS_RESIZE = 0;
+
+			CountDownLatch writeAttempting = new CountDownLatch(1);
+			CountDownLatch writerFinished = new CountDownLatch(1);
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			writer = new Thread(() -> {
+				writeAttempting.countDown();
+				try {
+					set.add(2L);
+				} catch (Throwable throwable) {
+					failure.compareAndSet(null, throwable);
+				} finally {
+					writerFinished.countDown();
+				}
+			}, "lmdb-persistent-set-idle-iterator-resize-test");
+
+			writer.start();
+
+			assertTrue(writeAttempting.await(10, TimeUnit.SECONDS));
+			assertTrue(writerFinished.await(2, TimeUnit.SECONDS),
+					"idle PersistentSet iterators must not block map resize");
+			assertNull(failure.get());
+			assertTrue(iterator.hasNext(), "iterator should renew and continue after the resize");
+		} finally {
+			LmdbUtil.PERCENTAGE_FULL_TRIGGERS_RESIZE = previousResizeThreshold;
+			closeIteratorForCleanup(iterator);
+			if (writer != null) {
+				writer.join(10_000);
+				assertFalse(writer.isAlive());
+			}
 			factory.close();
 		}
 	}

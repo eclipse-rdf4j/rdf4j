@@ -69,7 +69,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private volatile boolean closed = false;
 	private boolean cursorClosed = false;
-	private long cursorReadStamp;
 	private volatile Thread cursorUser;
 
 	private final MDBVal keyData;
@@ -86,8 +85,6 @@ class LmdbRecordIterator implements RecordIterator {
 	private boolean fetchNext = false;
 
 	private final StampedLongAdderLockManager txnLockManager;
-
-	private final Thread ownerThread = Thread.currentThread();
 
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -136,7 +133,6 @@ class LmdbRecordIterator implements RecordIterator {
 		boolean cursorRegistered = false;
 		try {
 			this.txnRefVersion = txnRef.version();
-			this.cursorReadStamp = readStamp;
 			this.cursorRegistration = txnRef.registerCursor();
 			this.txn = cursorRegistration.txn();
 			cursorRegistered = true;
@@ -154,8 +150,8 @@ class LmdbRecordIterator implements RecordIterator {
 					cursorRegistration.initialized(null);
 					txnRef.unregisterCursor(cursorRegistration);
 				}
-				txnLockManager.unlockRead(readStamp);
 			}
+			txnLockManager.unlockRead(readStamp);
 		}
 	}
 
@@ -165,9 +161,14 @@ class LmdbRecordIterator implements RecordIterator {
 			log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
 			return null;
 		}
-		cursorUser = Thread.currentThread();
+		long readStamp;
 		try {
-			if (closed) {
+			readStamp = txnLockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
+		}
+		try {
+			if (!startCursorUse()) {
 				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
 				return null;
 			}
@@ -192,7 +193,7 @@ class LmdbRecordIterator implements RecordIterator {
 						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					}
 					if (lastResult != MDB_SUCCESS) {
-						closeInternal(false);
+						closeInternal(false, true);
 						return null;
 					}
 				}
@@ -233,10 +234,11 @@ class LmdbRecordIterator implements RecordIterator {
 					return quad;
 				}
 			}
-			closeInternal(false);
+			closeInternal(false, true);
 			return null;
 		} finally {
-			cursorUser = null;
+			finishCursorUse();
+			txnLockManager.unlockRead(readStamp);
 		}
 	}
 
@@ -253,12 +255,12 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
+		closeInternal(maybeCalledAsync, false);
+	}
+
+	private void closeInternal(boolean maybeCalledAsync, boolean readLockHeld) {
 		if (!closed) {
-			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
-				closed = true;
-				waitForCursorUser();
-			}
-			closeCursor();
+			closeCursor(readLockHeld);
 		}
 	}
 
@@ -266,33 +268,91 @@ class LmdbRecordIterator implements RecordIterator {
 		closeInternal(true);
 	}
 
-	private void waitForCursorUser() {
-		while (cursorUser != null) {
-			Thread.onSpinWait();
+	private synchronized boolean startCursorUse() {
+		if (closed || cursorClosed) {
+			return false;
+		}
+		cursorUser = Thread.currentThread();
+		return true;
+	}
+
+	private synchronized void finishCursorUse() {
+		if (cursorUser == Thread.currentThread()) {
+			cursorUser = null;
+			notifyAll();
 		}
 	}
 
-	private synchronized void closeCursor() {
-		if (!cursorClosed) {
+	private synchronized void waitForCursorUser() {
+		boolean interrupted = false;
+		Thread currentThread = Thread.currentThread();
+		while (cursorUser != null && cursorUser != currentThread) {
 			try {
-				mdb_cursor_close(cursor);
-				pool.free(keyData);
-				pool.free(valueData);
-				if (minKeyBuf != null) {
-					pool.free(minKeyBuf);
-				}
-				if (maxKey != null) {
-					pool.free(maxKeyBuf);
-					pool.free(maxKey);
-				}
+				wait();
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
+			currentThread.interrupt();
+		}
+	}
+
+	private void closeCursor(boolean readLockHeld) {
+		if (!beginCloseCursor()) {
+			return;
+		}
+		long readStamp = readLockHeld ? 0 : readLockUninterruptibly();
+		waitForCursorUser();
+		try {
+			mdb_cursor_close(cursor);
+			pool.free(keyData);
+			pool.free(valueData);
+			if (minKeyBuf != null) {
+				pool.free(minKeyBuf);
+			}
+			if (maxKey != null) {
+				pool.free(maxKeyBuf);
+				pool.free(maxKey);
+			}
+		} finally {
+			finishCloseCursor();
+			try {
+				txnRef.unregisterCursor(cursorRegistration);
 			} finally {
-				closed = true;
-				cursorClosed = true;
-				try {
-					txnRef.unregisterCursor(cursorRegistration);
-				} finally {
-					txnLockManager.unlockRead(cursorReadStamp);
+				if (!readLockHeld) {
+					txnLockManager.unlockRead(readStamp);
 				}
+			}
+		}
+	}
+
+	private synchronized boolean beginCloseCursor() {
+		if (closed || cursorClosed) {
+			return false;
+		}
+		closed = true;
+		return true;
+	}
+
+	private synchronized void finishCloseCursor() {
+		cursorClosed = true;
+		notifyAll();
+	}
+
+	private long readLockUninterruptibly() {
+		boolean interrupted = false;
+		try {
+			while (true) {
+				try {
+					return txnLockManager.readLock();
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
 			}
 		}
 	}

@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.File;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -75,24 +77,27 @@ class TripleStoreTxnLockTest {
 	}
 
 	@Test
-	void commitResetWaitsForOpenRecordIteratorUntilClose(@TempDir File dataDir) throws Exception {
+	void idleRecordIteratorDoesNotBlockCommitAndResumesAfterReset(@TempDir File dataDir) throws Exception {
 		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(1, 2, 3, 0, true);
+			tripleStore.storeTriple(10, 2, 3, 0, true);
 			tripleStore.endTransaction(true);
 
-			try (Txn readTxn = tripleStore.getTxnManager().createReadTxn();
-					RecordIterator iterator = tripleStore.getTriples(readTxn, 0, 0, 0, 0, true)) {
-				assertThat(iterator.next()).isNotNull();
+			Txn readTxn = tripleStore.getTxnManager().createReadTxn();
+			RecordIterator iterator = tripleStore.getTriples(readTxn, -1, -1, -1, -1, true);
+			Thread writer = null;
+			try {
+				assertThat(iterator.next()).containsExactly(1, 2, 3, 0);
 
 				CountDownLatch commitAttempting = new CountDownLatch(1);
 				CountDownLatch writerFinished = new CountDownLatch(1);
 				AtomicReference<Throwable> writerFailure = new AtomicReference<>();
 
-				Thread writer = new Thread(() -> {
+				writer = new Thread(() -> {
 					try {
 						tripleStore.startTransaction();
-						tripleStore.storeTriple(4, 5, 6, 0, true);
+						tripleStore.storeTriple(20, 2, 3, 0, true);
 						commitAttempting.countDown();
 						tripleStore.endTransaction(true);
 					} catch (Throwable throwable) {
@@ -105,39 +110,46 @@ class TripleStoreTxnLockTest {
 				writer.start();
 
 				assertThat(commitAttempting.await(10, TimeUnit.SECONDS)).isTrue();
-				assertThat(writerFinished.await(200, TimeUnit.MILLISECONDS))
-						.as("commit reset must wait while an LMDB record cursor is open")
-						.isFalse();
-
-				iterator.close();
-
-				writer.join(TimeUnit.SECONDS.toMillis(10));
-				assertThat(writer.isAlive()).isFalse();
+				assertThat(writerFinished.await(2, TimeUnit.SECONDS))
+						.as("idle LMDB record cursors must not block commit reset")
+						.isTrue();
 				assertThat(writerFailure.get()).isNull();
+				assertThat(iterator.next()).containsExactly(10, 2, 3, 0);
+			} finally {
+				iterator.close();
+				readTxn.close();
+				if (writer != null) {
+					writer.join(TimeUnit.SECONDS.toMillis(10));
+					assertThat(writer.isAlive()).isFalse();
+				}
 			}
 		}
 	}
 
 	@Test
-	void committedWriteResetIsNotReportedFailedWhenInterruptedWaitingForOpenIterator(@TempDir File dataDir)
-			throws Exception {
-		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+	void idleRecordIteratorDoesNotBlockResizeAndResumesAfterRenew(@TempDir File dataDir) throws Exception {
+		int previousResizeThreshold = LmdbUtil.PERCENTAGE_FULL_TRIGGERS_RESIZE;
+		try (TripleStore tripleStore = new TripleStore(dataDir, smallTripleStoreConfig(), null)) {
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(1, 2, 3, 0, true);
+			tripleStore.storeTriple(10, 2, 3, 0, true);
 			tripleStore.endTransaction(true);
 
-			try (Txn readTxn = tripleStore.getTxnManager().createReadTxn();
-					RecordIterator iterator = tripleStore.getTriples(readTxn, 0, 0, 0, 0, true)) {
-				assertThat(iterator.next()).isNotNull();
+			Txn readTxn = tripleStore.getTxnManager().createReadTxn();
+			RecordIterator iterator = tripleStore.getTriples(readTxn, -1, -1, -1, -1, true);
+			Thread writer = null;
+			try {
+				assertThat(iterator.next()).containsExactly(1, 2, 3, 0);
+				LmdbUtil.PERCENTAGE_FULL_TRIGGERS_RESIZE = 0;
 
 				CountDownLatch commitAttempting = new CountDownLatch(1);
 				CountDownLatch writerFinished = new CountDownLatch(1);
 				AtomicReference<Throwable> writerFailure = new AtomicReference<>();
 
-				Thread writer = new Thread(() -> {
+				writer = new Thread(() -> {
 					try {
 						tripleStore.startTransaction();
-						tripleStore.storeTriple(4, 5, 6, 0, true);
+						tripleStore.storeTriple(20, 2, 3, 0, true);
 						commitAttempting.countDown();
 						tripleStore.endTransaction(true);
 					} catch (Throwable throwable) {
@@ -150,21 +162,41 @@ class TripleStoreTxnLockTest {
 				writer.start();
 
 				assertThat(commitAttempting.await(10, TimeUnit.SECONDS)).isTrue();
-				assertThat(writerFinished.await(200, TimeUnit.MILLISECONDS))
-						.as("commit reset must wait while an LMDB record cursor is open")
-						.isFalse();
-
-				writer.interrupt();
-
-				assertThat(writerFinished.await(200, TimeUnit.MILLISECONDS))
-						.as("interrupting the post-commit reset wait must not report the committed write as failed")
-						.isFalse();
-
-				iterator.close();
-
-				writer.join(TimeUnit.SECONDS.toMillis(10));
-				assertThat(writer.isAlive()).isFalse();
+				assertThat(writerFinished.await(2, TimeUnit.SECONDS))
+						.as("idle LMDB record cursors must not block map resize")
+						.isTrue();
 				assertThat(writerFailure.get()).isNull();
+				assertThat(iterator.next()).containsExactly(10, 2, 3, 0);
+			} finally {
+				LmdbUtil.PERCENTAGE_FULL_TRIGGERS_RESIZE = previousResizeThreshold;
+				iterator.close();
+				readTxn.close();
+				if (writer != null) {
+					writer.join(TimeUnit.SECONDS.toMillis(10));
+					assertThat(writer.isAlive()).isFalse();
+				}
+			}
+		}
+	}
+
+	@Test
+	void interruptedBeforeNativeCommitAbortsAndLeavesNoStatement(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			assertThat(tripleStore.storeTriple(1, 2, 3, 0, true)).isTrue();
+
+			Throwable thrown;
+			try {
+				Thread.currentThread().interrupt();
+				thrown = catchThrowable(() -> tripleStore.endTransaction(true));
+			} finally {
+				Thread.interrupted();
+			}
+
+			assertThat(thrown).isInstanceOf(SailException.class).hasCauseInstanceOf(InterruptedException.class);
+			try (Txn readTxn = tripleStore.getTxnManager().createReadTxn();
+					RecordIterator iterator = tripleStore.getTriples(readTxn, -1, -1, -1, -1, true)) {
+				assertThat(iterator.next()).isNull();
 			}
 		}
 	}
@@ -201,6 +233,57 @@ class TripleStoreTxnLockTest {
 				assertThat(closeFinished.await(10, TimeUnit.SECONDS))
 						.as("async record iterator close must not deadlock")
 						.isTrue();
+				assertThat(closeFailure.get()).isNull();
+			}
+		}
+	}
+
+	@Test
+	void concurrentRecordIteratorCloseWhileReadLockBlockedIsIdempotent(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 0, true);
+			tripleStore.endTransaction(true);
+
+			for (int attempt = 0; attempt < 100; attempt++) {
+				Txn readTxn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator iterator = tripleStore.getTriples(readTxn, 0, 0, 0, 0, true);
+				long writeStamp = tripleStore.getTxnManager().lockManager().writeLock();
+				Thread[] closers = new Thread[8];
+				CountDownLatch closeReady = new CountDownLatch(closers.length);
+				CountDownLatch closeStart = new CountDownLatch(1);
+				CountDownLatch closeFinished = new CountDownLatch(closers.length);
+				AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+				try {
+					for (int i = 0; i < closers.length; i++) {
+						closers[i] = new Thread(() -> {
+							closeReady.countDown();
+							try {
+								assertThat(closeStart.await(10, TimeUnit.SECONDS)).isTrue();
+								iterator.close();
+							} catch (Throwable throwable) {
+								closeFailure.compareAndSet(null, throwable);
+							} finally {
+								closeFinished.countDown();
+							}
+						}, "lmdb-record-iterator-concurrent-close-" + attempt + "-" + i);
+						closers[i].start();
+					}
+
+					assertThat(closeReady.await(10, TimeUnit.SECONDS)).isTrue();
+					closeStart.countDown();
+					assertThat(closeFinished.await(200, TimeUnit.MILLISECONDS))
+							.as("at least one close must wait while the txn-manager write lock is active")
+							.isFalse();
+				} finally {
+					tripleStore.getTxnManager().lockManager().unlockWrite(writeStamp);
+				}
+
+				for (Thread closer : closers) {
+					closer.join(TimeUnit.SECONDS.toMillis(10));
+					assertThat(closer.isAlive()).isFalse();
+				}
+				readTxn.close();
 				assertThat(closeFailure.get()).isNull();
 			}
 		}
@@ -363,5 +446,11 @@ class TripleStoreTxnLockTest {
 				readTxn.close();
 			}
 		}
+	}
+
+	private static LmdbStoreConfig smallTripleStoreConfig() {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setTripleDBSize(4096 * 10);
+		return config;
 	}
 }

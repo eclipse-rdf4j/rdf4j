@@ -583,8 +583,8 @@ class TxnManager {
 				mdb_txn_reset(txn);
 				txnActive = false;
 				updateActiveState(this, false);
-				activate();
 			}
+			activate();
 			version++;
 		}
 

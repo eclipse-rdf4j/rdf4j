@@ -192,7 +192,6 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
 		private StampedLongAdderLockManager txnLockManager;
 		private long cursor;
-		private long cursorReadStamp;
 		private TxnManager.CursorRegistration cursorRegistration;
 		private Txn txnRef;
 		private long txnRefVersion;
@@ -225,7 +224,6 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				this.txnRef = txn;
 				this.txnLockManager = lockManager;
 				this.cursorRegistration = registration;
-				this.cursorReadStamp = readStamp;
 				this.cursor = openedCursor;
 				registration.initialized(this::closeFromTxnClose);
 				initialized = true;
@@ -246,6 +244,8 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 					if (txn != null) {
 						txn.close();
 					}
+				} else {
+					lockManager.unlockRead(readStamp);
 				}
 			}
 		}
@@ -277,25 +277,33 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
 		private T computeNext() throws IOException {
 			boolean close = false;
-			cursorUser = Thread.currentThread();
+			long readStamp;
+			try {
+				readStamp = txnLockManager.readLock();
+			} catch (InterruptedException e) {
+				throw new SailException(e);
+			}
 			try {
 				Txn txn = txnRef;
-				if (closed || txn == null) {
+				if (txn == null || !startCursorUse()) {
 					return null;
 				}
 				if (txnRefVersion != txnRef.version()) {
 					// cursor must be renewed
 					mdb_cursor_renew(txnRef.get(), cursor);
 
-					try (MemoryStack stack = MemoryStack.stackPush()) {
-						keyData.mv_data(stack.bytes(write(current)));
-						if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != MDB_SUCCESS) {
-							// use MDB_SET_RANGE if key was deleted
-							if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == MDB_SUCCESS) {
-								return read(keyData.mv_data());
+					if (current != null) {
+						try (MemoryStack stack = MemoryStack.stackPush()) {
+							keyData.mv_data(stack.bytes(write(current)));
+							if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != MDB_SUCCESS) {
+								// use MDB_SET_RANGE if key was deleted
+								if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == MDB_SUCCESS) {
+									return read(keyData.mv_data());
+								}
 							}
 						}
 					}
+					this.txnRefVersion = txnRef.version();
 				}
 
 				if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
@@ -305,9 +313,10 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				return null;
 			} finally {
 				if (close) {
-					close();
+					closeInternal(false, true);
 				}
-				cursorUser = null;
+				finishCursorUse();
+				txnLockManager.unlockRead(readStamp);
 			}
 		}
 
@@ -321,22 +330,32 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 
 		private void closeInternal(boolean calledFromTxnClose) {
-			Txn txnToClose = closeCursor();
+			closeInternal(calledFromTxnClose, false);
+		}
+
+		private void closeInternal(boolean calledFromTxnClose, boolean readLockHeld) {
+			Txn txnToClose = closeCursor(readLockHeld);
 			if (!calledFromTxnClose && txnToClose != null) {
 				txnToClose.close();
 			}
 		}
 
-		private Txn closeCursor() {
+		private Txn closeCursor(boolean readLockHeld) {
+			if (!beginCloseCursor()) {
+				return null;
+			}
+			long readStamp = readLockHeld ? 0 : readLockUninterruptibly();
 			waitForCursorUser();
 			Txn txnToClose;
 
 			synchronized (this) {
 				txnToClose = txnRef;
-				if (closed || txnToClose == null) {
+				if (txnToClose == null) {
+					if (!readLockHeld) {
+						txnLockManager.unlockRead(readStamp);
+					}
 					return null;
 				}
-				closed = true;
 				txnRef = null;
 			}
 
@@ -346,24 +365,70 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				} finally {
 					keyData.close();
 					valueData.close();
-					txnToClose.unregisterCursor(cursorRegistration);
-					txnLockManager.unlockRead(cursorReadStamp);
+					try {
+						txnToClose.unregisterCursor(cursorRegistration);
+					} finally {
+						if (!readLockHeld) {
+							txnLockManager.unlockRead(readStamp);
+						}
+					}
 				}
 			}
 			return txnToClose;
 		}
 
-		private void waitForCursorUser() {
+		private synchronized boolean startCursorUse() {
+			if (closed || txnRef == null) {
+				return false;
+			}
+			cursorUser = Thread.currentThread();
+			return true;
+		}
+
+		private synchronized void finishCursorUse() {
+			if (cursorUser == Thread.currentThread()) {
+				cursorUser = null;
+				notifyAll();
+			}
+		}
+
+		private synchronized boolean beginCloseCursor() {
+			if (closed) {
+				return false;
+			}
+			closed = true;
+			return true;
+		}
+
+		private synchronized void waitForCursorUser() {
 			boolean interrupted = false;
 			Thread thread;
 			while ((thread = cursorUser) != null && thread != Thread.currentThread()) {
-				Thread.onSpinWait();
-				if (Thread.interrupted()) {
+				try {
+					wait();
+				} catch (InterruptedException e) {
 					interrupted = true;
 				}
 			}
 			if (interrupted) {
 				Thread.currentThread().interrupt();
+			}
+		}
+
+		private long readLockUninterruptibly() {
+			boolean interrupted = false;
+			try {
+				while (true) {
+					try {
+						return txnLockManager.readLock();
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
+				}
+			} finally {
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
 			}
 		}
 
