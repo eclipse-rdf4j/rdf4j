@@ -95,6 +95,24 @@ class LmdbEngineeringThemeQueryRegressionTest {
 	}
 
 	@Test
+	void assemblyComponentCountsKeepsFastValuesFilterPlanShape(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ENGINEERING;
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 2,
+						snapshot -> assertEngineeringQ2FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan()));
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void componentRequirementAggregationKeepsBoundLookupCardinality(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 8);
@@ -247,6 +265,44 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		assertContains(renderedQuery, "MINUS");
 	}
 
+	private static void assertEngineeringQ2FastPlanShape(String renderedQuery, String plan) {
+		assertContains(renderedQuery, "VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }");
+		assertContains(renderedQuery, "FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))");
+		assertBefore(renderedQuery,
+				"VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }",
+				"?assembly <http://example.com/theme/engineering/name> ?assemblyName .",
+				"Engineering q2 should bind the finite assembly-name set before the name lookup\n" + plan);
+		assertBefore(renderedQuery,
+				"?assembly <http://example.com/theme/engineering/name> ?assemblyName .",
+				"?assembly a <http://example.com/theme/engineering/Assembly> .",
+				"Engineering q2 should use the assembly name lookup before the rdf:type direct lookup\n" + plan);
+		assertBefore(renderedQuery,
+				"?assembly a <http://example.com/theme/engineering/Assembly> .",
+				"OPTIONAL",
+				"Engineering q2 should resolve assemblies before optional component expansion\n" + plan);
+
+		assertContains(plan,
+				"BindingSetAssignment ([[assemblyName=\"Assembly 1\"], [assemblyName=\"Assembly 2\"], [assemblyName=\"Assembly 3\"]])");
+		assertContains(plan, "plannerId=lmdb-finite-anchor");
+		assertContains(plan, "plannerPath=CANONICAL_FINITE_ANCHOR");
+		assertContains(plan, "Join (BoundStatementPatternJoinIteration)");
+		assertFalse(plan.contains("BoundStatementPatternLeftJoinIteration"),
+				"Engineering q2 should not drift back to the slower left-join statement pattern path:\n" + plan);
+		assertBefore(plan,
+				"BindingSetAssignment ([[assemblyName=\"Assembly 1\"], [assemblyName=\"Assembly 2\"], [assemblyName=\"Assembly 3\"]])",
+				"value=http://example.com/theme/engineering/name",
+				"Engineering q2 should anchor the finite assembly-name set before the name access");
+		assertBefore(plan,
+				"value=http://example.com/theme/engineering/name",
+				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"Engineering q2 should use the assembly name lookup before the rdf:type direct lookup");
+		assertBefore(plan,
+				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"value=http://example.com/theme/engineering/partOf",
+				"Engineering q2 should resolve assemblies before optional partOf expansion");
+		assertAssemblyNameLookupUsesLocalValuesFilter(plan);
+	}
+
 	private static void assertEngineeringQ4FastPlanShape(String renderedQuery, String plan) {
 		assertContains(renderedQuery, "VALUES ?name { \"Component 1\" \"Component 2\" }");
 		assertBefore(renderedQuery,
@@ -262,6 +318,33 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"value=http://example.com/theme/engineering/name",
 				"Engineering q4 should anchor the finite name set before the name access");
 		assertNamePatternUsesBoundValue(plan, "Engineering q4", false);
+	}
+
+	private static void assertAssemblyNameLookupUsesLocalValuesFilter(String plan) {
+		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
+		if (predicateIndex < 0) {
+			throw new AssertionError("Engineering q2 plan should include the assembly name pattern:\n" + plan);
+		}
+
+		String pattern = statementPatternWindow(plan, predicateIndex, "StatementPattern");
+		assertContains(pattern, "o: Var (name=assemblyName) (bindingState=bound)");
+		assertContains(pattern, "plannedLookupComponents=[P, O]");
+		assertContains(pattern, "plannedIndexAccessMode=directLookup");
+
+		int filterIndex = plan.lastIndexOf("Filter (", predicateIndex);
+		int typeIndex = plan.indexOf("value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type", predicateIndex);
+		if (filterIndex < 0 || typeIndex < 0 || filterIndex >= typeIndex) {
+			throw new AssertionError("Engineering q2 name lookup should be wrapped by a local VALUES filter:\n" + plan);
+		}
+
+		String filteredLookup = plan.substring(filterIndex, typeIndex);
+		assertContains(filteredLookup, "ListMemberOperator");
+		assertContains(filteredLookup, "Var (name=assemblyName) (bindingState=bound)");
+		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 1\")");
+		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 2\")");
+		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 3\")");
+		assertContains(filteredLookup, "deferredFilterScope=localPattern");
+		assertContains(filteredLookup, "filterSelectivitySource=learned_filter");
 	}
 
 	private static void assertEngineeringQ8FastPlanShape(String renderedQuery, String plan) {
