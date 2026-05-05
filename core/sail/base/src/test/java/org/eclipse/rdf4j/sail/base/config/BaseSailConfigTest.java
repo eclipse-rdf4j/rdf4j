@@ -92,7 +92,7 @@ public class BaseSailConfigTest {
 		var implNode = bnode();
 		var config = new BaseSailConfig("stub") {
 		};
-		
+
 		var model = new ModelBuilder()
 				.add(implNode, CONFIG.Sail.slowQueryLogThresholdSeconds, literal(5L))
 				.add(implNode, CONFIG.Sail.slowQueryLogFile, literal("logs/slow-query.log"))
