@@ -24,7 +24,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -868,13 +870,16 @@ final class LmdbDeferredFilterPlacer {
 			}
 			availableNames.addAll(assignment.getAssuredBindingNames());
 			rows = applyMaterializedFilters(rows, pendingFilters, filterBindingNames, availableNames);
+			if (rows == null) {
+				return Optional.empty();
+			}
 			if (exceedsMaterializedRowLimit(rows)) {
 				return Optional.empty();
 			}
 		}
 		if (!pendingFilters.isEmpty()) {
 			rows = applyMaterializedFilters(rows, pendingFilters, filterBindingNames, bindingNames);
-			if (!pendingFilters.isEmpty() || exceedsMaterializedRowLimit(rows)) {
+			if (rows == null || !pendingFilters.isEmpty() || exceedsMaterializedRowLimit(rows)) {
 				return Optional.empty();
 			}
 		}
@@ -947,6 +952,9 @@ final class LmdbDeferredFilterPlacer {
 				i++;
 				continue;
 			}
+			if (containsModeSensitiveFiniteValue(filter.condition, rows)) {
+				return null;
+			}
 			rows = filterFiniteBindingRows(rows, filter.condition);
 			pendingFilters.remove(i);
 		}
@@ -982,6 +990,50 @@ final class LmdbDeferredFilterPlacer {
 
 	private boolean isFiniteConditionOperand(ValueExpr valueExpr) {
 		return valueExpr instanceof Var || valueExpr instanceof ValueConstant;
+	}
+
+	private boolean containsModeSensitiveFiniteValue(ValueExpr condition, List<BindingSet> rows) {
+		for (BindingSet row : rows) {
+			if (containsModeSensitiveFiniteValue(condition, row)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean containsModeSensitiveFiniteValue(ValueExpr condition, BindingSet row) {
+		if (condition instanceof And and) {
+			return containsModeSensitiveFiniteValue(and.getLeftArg(), row)
+					|| containsModeSensitiveFiniteValue(and.getRightArg(), row);
+		}
+		if (condition instanceof Compare compare) {
+			return isModeSensitiveFiniteValue(compare.getLeftArg(), row)
+					|| isModeSensitiveFiniteValue(compare.getRightArg(), row);
+		}
+		if (condition instanceof ListMemberOperator listMember) {
+			for (ValueExpr argument : listMember.getArguments()) {
+				if (isModeSensitiveFiniteValue(argument, row)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private boolean isModeSensitiveFiniteValue(ValueExpr valueExpr, BindingSet row) {
+		return isModeSensitiveFiniteValue(finiteConditionValue(valueExpr, row));
+	}
+
+	private boolean isModeSensitiveFiniteValue(Value value) {
+		if (!(value instanceof Literal literal)) {
+			return false;
+		}
+		CoreDatatype coreDatatype = literal.getCoreDatatype();
+		if (!coreDatatype.isXSDDatatype()) {
+			return false;
+		}
+		CoreDatatype.XSD xsdDatatype = coreDatatype.asXSDDatatypeOrNull();
+		return xsdDatatype != null && (xsdDatatype.isCalendarDatatype() || xsdDatatype.isDurationDatatype());
 	}
 
 	private boolean evaluateFiniteCondition(ValueExpr condition, BindingSet row) {

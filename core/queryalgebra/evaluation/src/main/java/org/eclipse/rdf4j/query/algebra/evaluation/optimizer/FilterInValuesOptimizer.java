@@ -158,6 +158,6 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		}
 		CoreDatatype.XSD xsdDatatype = coreDatatype.asXSDDatatypeOrNull();
 		return xsdDatatype.isNumericDatatype() || xsdDatatype.isCalendarDatatype()
-				|| xsdDatatype == CoreDatatype.XSD.BOOLEAN;
+				|| xsdDatatype.isDurationDatatype() || xsdDatatype == CoreDatatype.XSD.BOOLEAN;
 	}
 }

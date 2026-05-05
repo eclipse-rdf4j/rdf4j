@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -514,6 +515,26 @@ class LmdbSketchAwareFilterPlacementTest {
 		assertEquals(List.of(forward, reverse), collectJoinArgs(root));
 	}
 
+	@Test
+	void deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter() {
+		BindingSetAssignment left = bindingAssignment("left", VF.createLiteral("P1D", XSD.DAYTIMEDURATION));
+		BindingSetAssignment right = bindingAssignment("right", VF.createLiteral("P1D", XSD.DURATION));
+		Compare condition = new Compare(Var.of("left"), Var.of("right"), Compare.CompareOp.EQ);
+		DeferredFilter filter = new DeferredFilter(condition, Set.of("left", "right"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
+				new EvaluationStatistics.FilterPassEstimate(-1.0d,
+						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr, Join::new,
+				(root, filters, scope) -> new Filter(root, LmdbJoinPlanSupport.combinedCondition(filters.stream()
+						.map(deferredFilter -> deferredFilter.condition)
+						.toList())));
+
+		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(left, right)), List.of(filter), Set.of());
+
+		assertTrue(containsFilter(root),
+				"Duration subtype equality depends on STANDARD query mode and must stay as a runtime filter");
+	}
+
 	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, TupleExpr optimized) {
 		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
 		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
@@ -682,6 +703,19 @@ class LmdbSketchAwareFilterPlacementTest {
 		return assignment;
 	}
 
+	private static BindingSetAssignment bindingAssignment(String bindingName, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new ArrayList<>(values.length);
+		for (Value value : values) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
 	private static ListMemberOperator listMember(String variable, String... values) {
 		ListMemberOperator operator = new ListMemberOperator();
 		operator.addArgument(Var.of(variable));
@@ -706,6 +740,10 @@ class LmdbSketchAwareFilterPlacementTest {
 		List<TupleExpr> args = new ArrayList<>();
 		collectJoinArgs(tupleExpr, args);
 		return args;
+	}
+
+	private static boolean containsFilter(TupleExpr tupleExpr) {
+		return findFirst(tupleExpr, Filter.class) != null;
 	}
 
 	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {

@@ -22,6 +22,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -256,6 +257,20 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void keepsDurationFilterInAsLocalFilter() {
+		Filter filter = new Filter(statementPatternWithPredicate("sensor",
+				"http://example.com/theme/grid/measuredValue", "duration"),
+				listMemberValues("duration", VF.createLiteral("P1D", XSD.DURATION)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignment(root.getArg()));
+	}
+
+	@Test
 	void keepsLiteralAnchorOutsideVariableScopeChangeArg() {
 		Projection scopedProjection = new Projection(statementPatternWithPredicate("book",
 				"http://example.com/theme/library/name", "name"),
@@ -414,6 +429,15 @@ class LmdbFilterSimplifierOptimizerTest {
 		operator.addArgument(new Var(memberVariable));
 		for (String value : values) {
 			operator.addArgument(new ValueConstant(VF.createLiteral(value)));
+		}
+		return operator;
+	}
+
+	private static ListMemberOperator listMemberValues(String variable, Value... values) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(new Var(variable));
+		for (Value value : values) {
+			operator.addArgument(new ValueConstant(value));
 		}
 		return operator;
 	}

@@ -405,7 +405,19 @@ public class FilterInValuesRewriteRegressionTest {
 						  ?s ex:n ?v .
 						  FILTER(?v IN (1/0, 2))
 						}
-						""", "", rows("s=http://example/s"))));
+						""", "", rows("s=http://example/s")), c("N12", """
+						@prefix ex: <http://example/> .
+						@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+						ex:s1 ex:d "P1D"^^xsd:dayTimeDuration .
+						ex:s2 ex:d "P1D"^^xsd:duration .
+						ex:s3 ex:d "P2D"^^xsd:duration .
+						""", """
+						SELECT ?s ?d WHERE {
+						  ?s ex:d ?d .
+						  FILTER(?d IN ("P1D"^^xsd:duration))
+						}
+						ORDER BY ?s
+						""", "", rows("s=http://example/s2|d=\"P1D\"^^<http://www.w3.org/2001/XMLSchema#duration>"))));
 	}
 
 	private static RewriteCase c(String id, String data, String original, String rewrite,
