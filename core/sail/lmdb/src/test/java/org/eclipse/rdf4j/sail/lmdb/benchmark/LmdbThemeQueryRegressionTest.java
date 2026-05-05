@@ -186,6 +186,25 @@ class LmdbThemeQueryRegressionTest {
 			"    ?entity <http://example.com/theme/grid/feeds> ?substation2 .",
 			"  }",
 			"}");
+	private static final String LIBRARY_Q1_FASTEST_RENDERED_QUERY = String.join("\n",
+			"SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {",
+			"  {",
+			"    ?entity a <http://example.com/theme/library/Member> .",
+			"    ?entity <http://example.com/theme/library/name> ?name .",
+			"    VALUES ?target { \"Member 1\" \"Member 2\" }",
+			"    FILTER ((?name = ?target) || (?name = \"Member 3\"))",
+			"  }",
+			"  UNION",
+			"  {",
+			"    ?entity <http://example.com/theme/library/title> ?name .",
+			"    ?entity a <http://example.com/theme/library/Book> .",
+			"    VALUES ?target { \"Member 1\" \"Member 2\" }",
+			"    FILTER ((?name = ?target) || (?name = \"Member 3\"))",
+			"  }",
+			"  OPTIONAL {",
+			"    ?entity <http://example.com/theme/library/hasCopy> ?copy .",
+			"  }",
+			"}");
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("highValueThemes")
@@ -648,6 +667,73 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void trainQ7KeepsDependentAntiNameFilterBeforePassesThroughExists(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.TRAIN;
+		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 7, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
+					assertContains(renderedQuery, "FILTER NOT EXISTS");
+					assertDoesNotContain(renderedQuery, "MINUS",
+							"Train q7 should keep the correlated anti-name probe as a dependent anti-join; "
+									+ "materializing it as MINUS regressed the May 5 latest run\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "FILTER NOT EXISTS", "FILTER EXISTS",
+							"Train q7 should reject OP 0 names before the passesThrough existence probe\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?op <http://example.com/theme/train/name> ?name2",
+							"?service <http://example.com/theme/train/passesThrough> ?op",
+							"Train q7 anti-name lookup should remain before passesThrough EXISTS\n" + snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void trainQ8KeepsServiceBridgeBeforeOperationalPointExists(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.TRAIN;
+		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertPlannerDiagnosticsPresent(theme, 8, snapshot.plan());
+					assertBefore(renderedQuery, "?s1 <http://example.com/theme/train/partOfLine> ?line",
+							"?service <http://example.com/theme/train/runsOnSection> ?s1",
+							"Train q8 should bind the first line section before service bridge expansion\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s1",
+							"?service a <http://example.com/theme/train/TrainService>",
+							"Train q8 should use the first bound section before the cheap service type guard\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?service a <http://example.com/theme/train/TrainService>",
+							"?service <http://example.com/theme/train/runsOnSection> ?s2",
+							"Train q8 should complete the service bridge before probing operational-point "
+									+ "connectivity\n" + snapshot.plan());
+					assertBefore(renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s2",
+							"FILTER EXISTS",
+							"Train q8 should not promote the no-new-binding operational-point EXISTS ahead of "
+									+ "the selective service bridge\n" + snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void socialMediaReciprocalMinusUsesDependentAntiJoin(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -774,6 +860,31 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void libraryEntitiesByNameKeepsFastestKnownUnionShape(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = prepareThemeStore(dataDir, theme, 1);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 1, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 1, snapshot.plan());
+					if (!LIBRARY_Q1_FASTEST_RENDERED_QUERY.equals(snapshot.renderedQuery().trim())) {
+						throw new AssertionError(
+								"Library q1 should match the May 4 fastest branch-local entity/name shape\n"
+										+ "Expected:\n" + LIBRARY_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
+										+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
+					}
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void libraryLoanDateAntiJoinKeepsLoanTypeBeforeNotExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 5);
@@ -840,6 +951,38 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void pharmaCombinationSynergyScorePrecedesCombinationType(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme, 1);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 1, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertPlannerDiagnosticsPresent(theme, 1, snapshot.plan());
+					assertBefore(renderedQuery, "?combo <http://example.com/theme/pharma/synergyScore> ?score",
+							"FILTER (?score > 0.7)",
+							"Pharma q1 should keep the synergy score scalar filter attached to the score lookup\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "FILTER (?score > 0.7)",
+							"?combo a <http://example.com/theme/pharma/Combination>",
+							"Pharma q1 should apply the synergy threshold before the Combination type guard\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?combo a <http://example.com/theme/pharma/Combination>",
+							"?combo <http://example.com/theme/pharma/combinationOf> ?drug",
+							"Pharma q1 should keep combination member expansion after the score/type prefix\n"
+									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void pharmaTargetsWithOptionalDiseaseKeepsBoundTargetLookupBeforeDrugType(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -849,6 +992,10 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?target a <http://example.com/theme/pharma/Target>",
+							"?target <http://example.com/theme/pharma/inPathway> ?pathway",
+							"Pharma q2 should apply the Target type guard before pathway expansion\n"
+									+ snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "?target a <http://example.com/theme/pharma/Target>",
 							"?drug <http://example.com/theme/pharma/targets> ?target",
 							"Pharma q2 should bind the target type guard before target drug expansion\n"
@@ -1009,6 +1156,7 @@ class LmdbThemeQueryRegressionTest {
 						+ "\nPathway-first fixed order:\n"
 						+ describeFixedOrder(planner, List.of(inPathway, targetType, targets, drugType));
 				Assertions.assertTrue(orderedArgs.indexOf(targetType) < orderedArgs.indexOf(targets)
+						&& orderedArgs.indexOf(targetType) < orderedArgs.indexOf(inPathway)
 						&& orderedArgs.indexOf(inPathway) < orderedArgs.indexOf(targets)
 						&& orderedArgs.indexOf(targets) < orderedArgs.indexOf(drugType), diagnostics);
 			} finally {
@@ -1215,6 +1363,13 @@ class LmdbThemeQueryRegressionTest {
 							"?transformer <http://example.com/theme/grid/feeds> ?substation .",
 							"Electrical grid q7 should keep the bound name lookup before feeds fanout\n"
 									+ snapshot.plan());
+					assertDoesNotContain(renderedQuery, "MINUS",
+							"Electrical grid q7 RHS filter references ?substation outside the MINUS scope, "
+									+ "so the materialized anti-join would only scan grid:measures rows that "
+									+ "filter rejects\n" + snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "antiJoinRewrite=materialized-minus",
+							"Electrical grid q7 should not retain a materialized MINUS after the RHS is proven "
+									+ "vacuous\n" + snapshot.plan());
 					assertElectricalGridQ7NameLookupHasNoRedundantLocalFilter(snapshot.plan());
 				});
 			} finally {
@@ -1405,6 +1560,42 @@ class LmdbThemeQueryRegressionTest {
 	@Test
 	void medicalOptionalNotExistsQueryCompletes(@TempDir Path dataDir) throws Exception {
 		assertThemeQueryCompletesWithinThirtySeconds(dataDir, Theme.MEDICAL_RECORDS, 10);
+	}
+
+	@Test
+	void medicalMedicationCodeMinusUsesCorrelatedNotExists(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 7, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
+					assertBefore(renderedQuery, "?med a <http://example.com/theme/medical/Medication>",
+							"?med <http://example.com/theme/medical/code> ?code",
+							"Medical q7 should keep medication type before the code lookup\n" + snapshot.plan());
+					assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code",
+							"FILTER EXISTS",
+							"Medical q7 should narrow medication codes before the patient-medication probe\n"
+									+ snapshot.plan());
+					assertContains(renderedQuery, "FILTER NOT EXISTS",
+							"Medical q7 should use a bound-medication dosage probe instead of materializing "
+									+ "the dosage side of MINUS\n" + snapshot.plan());
+					assertDoesNotContain(renderedQuery, "MINUS",
+							"Medical q7 should avoid the retained materialized anti-join shape\n"
+									+ snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "antiJoinRewrite=materialized-minus",
+							"Medical q7 should not retain a materialized MINUS once the correlated dosage probe "
+									+ "is cheaper\n" + snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
 	}
 
 	@Test

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -473,6 +474,53 @@ class LmdbSketchJoinOptimizerTest {
 				"RHS BIND to a left-side variable must keep MINUS compatibility semantics");
 	}
 
+	@Test
+	void removesMinusWhenRhsFilterRequiresUnavailableBinding() {
+		StatementPattern left = statementPattern("x", "p", "v");
+		Filter right = new Filter(statementPattern("meter", "measures", "load"),
+				new Compare(new Var("load"), new Var("substation"), Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Difference(left, right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		StatementPattern replacement = assertInstanceOf(StatementPattern.class, root.getArg(),
+				"MINUS RHS filter cannot match when it needs a binding outside the RHS and outside initial bindings");
+		assertEquals("p", replacement.getPredicateVar().getName());
+	}
+
+	@Test
+	void keepsMinusWhenRhsFilterUnavailableBindingIsInitiallyBound() {
+		StatementPattern left = statementPattern("x", "p", "v");
+		Filter right = new Filter(statementPattern("meter", "measures", "load"),
+				new Compare(new Var("load"), new Var("substation"), Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Difference(left, right));
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("substation", VF.createIRI("urn:substation"));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, bindings);
+
+		assertInstanceOf(Difference.class, root.getArg(),
+				"Initial bindings can make the RHS filter match, so MINUS must retain compatibility semantics");
+	}
+
+	@Test
+	void rewritesBoundKeyPatternMinusFilterWhenCorrelatedProbeIsCheaper() {
+		StatementPattern medicationType = statementPattern("med", "type", "medication");
+		StatementPattern medicationCode = statementPattern("med", "code", "code");
+		Filter right = new Filter(statementPattern("med", "dosage", "dose"),
+				new Compare(new Var("dose"), new ValueConstant(VF.createLiteral("10x")), Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Difference(new Join(medicationType, medicationCode), right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.cheapCorrelatedPatternFilterMinus(), false)
+				.optimize(root, null, null);
+
+		TupleExpr replacement = root.getArg();
+		assertFalse(containsDifference(replacement),
+				"Assured left key plus cheap single-pattern RHS should not retain materialized MINUS");
+		assertTrue(containsNotExistsFilter(replacement),
+				"Assured left key plus cheap single-pattern RHS should use correlated NOT EXISTS");
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
@@ -580,6 +628,50 @@ class LmdbSketchJoinOptimizerTest {
 		return false;
 	}
 
+	private static boolean containsNotExistsFilter(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Filter filter) {
+			if (filter.getCondition()instanceof Not not && not.getArg() instanceof Exists) {
+				return true;
+			}
+			return containsNotExistsFilter(filter.getArg());
+		}
+		if (tupleExpr instanceof Extension) {
+			return containsNotExistsFilter(((Extension) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsNotExistsFilter(leftJoin.getLeftArg()) || containsNotExistsFilter(leftJoin.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsNotExistsFilter(union.getLeftArg()) || containsNotExistsFilter(union.getRightArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsNotExistsFilter(join.getLeftArg()) || containsNotExistsFilter(join.getRightArg());
+		}
+		return false;
+	}
+
+	private static boolean containsDifference(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof Difference) {
+			return true;
+		}
+		if (tupleExpr instanceof Filter) {
+			return containsDifference(((Filter) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof Extension) {
+			return containsDifference(((Extension) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return containsDifference(leftJoin.getLeftArg()) || containsDifference(leftJoin.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return containsDifference(union.getLeftArg()) || containsDifference(union.getRightArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			return containsDifference(join.getLeftArg()) || containsDifference(join.getRightArg());
+		}
+		return false;
+	}
+
 	private static boolean containsLeftJoin(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof LeftJoin) {
 			return true;
@@ -634,6 +726,7 @@ class LmdbSketchJoinOptimizerTest {
 		private int joinCardinalityRequests;
 		private boolean supportsJoinEstimation;
 		private boolean cheapCorrelatedAntiJoin;
+		private boolean cheapCorrelatedPatternFilterMinus;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -656,6 +749,12 @@ class LmdbSketchJoinOptimizerTest {
 		static PlanningStatistics cheapCorrelatedAntiJoin() {
 			PlanningStatistics statistics = new PlanningStatistics(null);
 			statistics.cheapCorrelatedAntiJoin = true;
+			return statistics;
+		}
+
+		static PlanningStatistics cheapCorrelatedPatternFilterMinus() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.cheapCorrelatedPatternFilterMinus = true;
 			return statistics;
 		}
 
@@ -684,6 +783,18 @@ class LmdbSketchJoinOptimizerTest {
 
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (cheapCorrelatedPatternFilterMinus) {
+				if (factor.getBindingNames().contains("dose")) {
+					if (currentlyBoundVars.contains("med")) {
+						return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
+					}
+					return Optional.of(new FactorCostEstimate(16_700.0d, 16_700.0d));
+				}
+				if (factor.getBindingNames().contains("med")) {
+					return Optional.of(new FactorCostEstimate(82_950.0d, 13_800.0d));
+				}
+				return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+			}
 			if (!cheapCorrelatedAntiJoin) {
 				return Optional.empty();
 			}

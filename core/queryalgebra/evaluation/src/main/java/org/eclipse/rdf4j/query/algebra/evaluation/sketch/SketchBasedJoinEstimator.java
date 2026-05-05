@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -198,6 +199,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long DEFAULT_ZERO_INTERSECTION_ROW_BUDGET = 1_000_000L;
 	private static final int DEFAULT_ZERO_INTERSECTION_SAMPLE_SIZE = 128;
 	private static final int FINITE_UNIQUE_JOIN_CAP_MAX_ROWS = 4096;
+	private static final double FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT = 1.25d;
 	private static final Object FINITE_FILTER_UNSUPPORTED = new Object();
 	private static final Object FINITE_FILTER_UNBOUND = new Object();
 	/* ────────────────────────────────────────────────────────────── */
@@ -4910,13 +4912,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private boolean isFiniteUniqueSketchDomain(double rows, double distinct, StatementPattern pattern) {
-		return pattern == null
-				&& Double.isFinite(rows)
+		if (!(Double.isFinite(rows)
 				&& rows > 0.0d
 				&& rows <= FINITE_UNIQUE_JOIN_CAP_MAX_ROWS
 				&& Double.isFinite(distinct)
-				&& distinct > 0.0d
-				&& Math.abs(rows - distinct) <= Math.max(1.0e-9d, rows * 1.0e-9d);
+				&& distinct > 0.0d)) {
+			return false;
+		}
+		if (pattern != null && !isConstantTypePattern(pattern)) {
+			return false;
+		}
+		return Math.abs(rows - distinct) <= Math.max(1.0e-9d, rows * 1.0e-9d)
+				|| rows <= distinct * FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT;
+	}
+
+	private boolean isConstantTypePattern(StatementPattern pattern) {
+		Var predicate = pattern.getPredicateVar();
+		Var object = pattern.getObjectVar();
+		return predicate != null && RDF.TYPE.equals(predicate.getValue()) && object != null && object.hasValue();
 	}
 
 	private double estimateStatsSharedVarJoinRows(double leftRows, double rightRows, double leftDistinct,

@@ -860,23 +860,16 @@ class LmdbThemeTopRegressionSnapshotTest {
 		requireBefore(mismatches, renderedQuery, "FILTER EXISTS",
 				"?transformer <http://example.com/theme/grid/hasMeter> ?meter .",
 				"meter EXISTS should retain its bound transformer probe");
-		requireBefore(mismatches, renderedQuery, "FILTER EXISTS", "MINUS",
-				"bounded meter EXISTS should run before the materialized anti-join");
-		requireContains(mismatches, renderedQuery, "MINUS",
-				"meter/substation exclusion should remain a materialized anti-join");
-		requireBefore(mismatches, renderedQuery, "?meter <http://example.com/theme/grid/measures> ?load .",
-				"FILTER (?load = ?substation)",
-				"MINUS filter should stay attached to the meter measure probe");
+		requireDoesNotContain(mismatches, renderedQuery, "MINUS",
+				"meter/substation exclusion should be elided when the RHS filter is outside MINUS scope");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/grid/name", "grid name");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/feeds",
 				"plannedLookupComponents=[O]", "feeds should use bound substation object access");
 		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Transformer type");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/hasMeter",
 				"plannedLookupComponents=[S, P]", "hasMeter EXISTS should use bound transformer subject access");
-		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/measures",
-				"plannedLookupComponents=[P]", "MINUS measure probe should remain predicate anchored");
-		requireContains(mismatches, plan, "antiJoinRewrite=materialized-minus",
-				"MINUS should remain materialized instead of correlated filter-not-exists");
+		requireDoesNotContain(mismatches, plan, "antiJoinRewrite=materialized-minus",
+				"vacuous MINUS should not be retained as a materialized anti-join");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}

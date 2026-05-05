@@ -948,7 +948,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference difference) {
-			TupleExpr replacement = rewriteRedundantPatternMinusFilter(difference);
+			TupleExpr replacement = rewriteVacuousPatternMinusFilter(difference);
+			if (replacement != null) {
+				replacement.visit(this);
+				return;
+			}
+			replacement = rewriteRedundantPatternMinusFilter(difference);
 			if (replacement != null) {
 				replacement.visit(this);
 				return;
@@ -972,6 +977,28 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Join join) {
 			optimizeJoinReplacement(join, join, List.of());
+		}
+
+		private TupleExpr rewriteVacuousPatternMinusFilter(Difference difference) {
+			if (!(difference.getRightArg()instanceof Filter rightFilter)) {
+				return null;
+			}
+			if (!(rightFilter.getArg() instanceof StatementPattern)) {
+				return null;
+			}
+
+			Set<String> availableBindings = new HashSet<>(rightFilter.getArg().getBindingNames());
+			availableBindings.addAll(boundVars);
+			Set<String> unavailableConditionVars = new HashSet<>(VarNameCollector.process(rightFilter.getCondition()));
+			unavailableConditionVars.removeAll(availableBindings);
+			if (unavailableConditionVars.isEmpty()
+					|| !isStrictlyFalseWhenUnavailable(rightFilter.getCondition(), unavailableConditionVars)) {
+				return null;
+			}
+
+			TupleExpr replacement = difference.getLeftArg().clone();
+			difference.replaceWith(replacement);
+			return replacement;
 		}
 
 		private TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {
@@ -1062,6 +1089,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (finiteLeftCorrelatedAntiProbeIsBounded(leftArg, rightCorrelatedCost.get())) {
 				return true;
 			}
+			if (cheapSinglePatternCorrelatedAntiProbe(rightArg, rightCorrelatedCost.get())) {
+				return correlatedWork < materializedWork;
+			}
 			double threshold = rightArg instanceof StatementPattern ? 0.75d : 0.10d;
 			return correlatedWork < materializedWork * threshold;
 		}
@@ -1071,6 +1101,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return LmdbJoinPlanSupport.isFiniteNonNegative(finiteLeftRows)
 					&& finiteLeftRows <= FINITE_BINDING_GUARD_PRODUCT_LIMIT
 					&& rightCorrelatedCost.workRows() <= Math.max(1.0d, finiteLeftRows);
+		}
+
+		private boolean cheapSinglePatternCorrelatedAntiProbe(TupleExpr rightArg, AntiJoinCost rightCorrelatedCost) {
+			return singleStatementPattern(rightArg) != null && rightCorrelatedCost.workRows() <= 2.0d;
 		}
 
 		private boolean correlatedRewriteWouldRepeatComplexLocalSuffix(TupleExpr leftArg, TupleExpr rightArg,
@@ -1175,6 +1209,29 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			if (tupleExpr instanceof UnaryTupleOperator && !TupleExprs.isVariableScopeChange(tupleExpr)) {
 				return isSafeMinusNotExistsRightArg(((UnaryTupleOperator) tupleExpr).getArg(), leftBindingNames);
+			}
+			return false;
+		}
+
+		private boolean isStrictlyFalseWhenUnavailable(ValueExpr condition, Set<String> unavailableVars) {
+			if (condition instanceof And and) {
+				return isStrictlyFalseWhenUnavailable(and.getLeftArg(), unavailableVars)
+						|| isStrictlyFalseWhenUnavailable(and.getRightArg(), unavailableVars);
+			}
+			if (condition instanceof Compare compare) {
+				return strictlyRequiresAvailableBinding(compare.getLeftArg(), unavailableVars)
+						|| strictlyRequiresAvailableBinding(compare.getRightArg(), unavailableVars);
+			}
+			if (condition instanceof SameTerm sameTerm) {
+				return strictlyRequiresAvailableBinding(sameTerm.getLeftArg(), unavailableVars)
+						|| strictlyRequiresAvailableBinding(sameTerm.getRightArg(), unavailableVars);
+			}
+			return false;
+		}
+
+		private boolean strictlyRequiresAvailableBinding(ValueExpr expression, Set<String> unavailableVars) {
+			if (expression instanceof Var var) {
+				return !var.hasValue() && unavailableVars.contains(var.getName());
 			}
 			return false;
 		}
