@@ -502,6 +502,7 @@ class LmdbThemeQueryRegressionTest {
 							"Highly connected q2 should remove the no-new-binding reverse optional probe; "
 									+ "it only repeats already-bound edge existence checks before grouping\n"
 									+ snapshot.plan());
+					assertNoConnectedReverseOptionalProbe(snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1181,6 +1182,78 @@ class LmdbThemeQueryRegressionTest {
 							"Electrical grid q2 should keep the selective substation-name anchor before feeds\n"
 									+ snapshot.plan());
 					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/grid/name", 10.0d);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void electricalGridQ7NameValuesDoNotKeepRedundantLocalFilter(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ELECTRICAL_GRID;
+		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 7, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
+					assertContains(renderedQuery, "VALUES ?name { \"Substation 0\" \"Substation 1\" }");
+					assertDoesNotContain(renderedQuery,
+							"FILTER ((?name = \"Substation 0\") || (?name = \"Substation 1\"))",
+							"Electrical grid q7 VALUES already enumerates the full name domain; the extra local "
+									+ "filter adds work without changing rows\n" + snapshot.plan());
+					assertBefore(renderedQuery, "VALUES ?name { \"Substation 0\" \"Substation 1\" }",
+							"?substation <http://example.com/theme/grid/name> ?name .",
+							"Electrical grid q7 should bind the finite substation names before name lookup\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?substation <http://example.com/theme/grid/name> ?name .",
+							"?transformer <http://example.com/theme/grid/feeds> ?substation .",
+							"Electrical grid q7 should keep the bound name lookup before feeds fanout\n"
+									+ snapshot.plan());
+					assertElectricalGridQ7NameLookupHasNoRedundantLocalFilter(snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void electricalGridQ10KeepsOptionalLoadValueCombinedAntiFilter(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ELECTRICAL_GRID;
+		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertPlannerDiagnosticsPresent(theme, 10, snapshot.plan());
+					assertContains(renderedQuery, "OPTIONAL {");
+					assertBefore(renderedQuery,
+							"OPTIONAL {",
+							"?load <http://example.com/theme/grid/loadValue> ?optValue .",
+							"Electrical grid q10 should keep load-value probing inside OPTIONAL\n"
+									+ snapshot.plan());
+					assertContains(renderedQuery,
+							"FILTER ((?optValue > 200) && NOT EXISTS { ?load <http://example.com/theme/grid/loadValue> ?low . FILTER (?low < 50) })");
+					assertDoesNotContain(renderedQuery,
+							"FILTER NOT EXISTS {\n?load <http://example.com/theme/grid/loadValue> ?low .",
+							"Electrical grid q10 should not pull the anti-filter ahead of the optional load value "
+									+ "lookup\n" + snapshot.plan());
+					assertBefore(renderedQuery,
+							"?load <http://example.com/theme/grid/loadValue> ?optValue .",
+							"FILTER ((?optValue > 200) && NOT EXISTS",
+							"Electrical grid q10 should filter the optional load value after the optional lookup\n"
+									+ snapshot.plan());
+					assertElectricalGridQ10CombinedOptionalAntiFilterPlan(snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1994,6 +2067,20 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
+	private static void assertNoConnectedReverseOptionalProbe(String plan) {
+		int predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo");
+		while (predicateIndex >= 0) {
+			String pattern = statementPatternWindow(plan, predicateIndex);
+			if (pattern.contains("s: Var (name=neighbor) (bindingState=bound)")
+					&& pattern.contains("o: Var (name=node) (bindingState=bound)")) {
+				throw new AssertionError(
+						"Highly connected q2 should remove the no-new-binding reverse optional probe:\n"
+								+ pattern + "\nFull plan:\n" + plan);
+			}
+			predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo", predicateIndex + 1);
+		}
+	}
+
 	private static void assertEngineeringAssemblyNameFilterDoesNotScanAllNames(String plan) {
 		int assignmentIndex = plan.indexOf("BindingSetAssignment ([[assemblyName=\"Assembly 1\"], "
 				+ "[assemblyName=\"Assembly 2\"], [assemblyName=\"Assembly 3\"]])");
@@ -2039,6 +2126,42 @@ class LmdbThemeQueryRegressionTest {
 			throw new AssertionError("Engineering q2 engineering/name lookup should bind the object literal values, "
 					+ "not scan the whole predicate prefix:\n" + patternHeader + "\nFull plan:\n" + plan);
 		}
+	}
+
+	private static void assertElectricalGridQ7NameLookupHasNoRedundantLocalFilter(String plan) {
+		String assignment = "BindingSetAssignment ([[name=\"Substation 0\"], [name=\"Substation 1\"]])";
+		assertContains(plan, assignment);
+		assertBefore(plan, assignment, "value=http://example.com/theme/grid/name",
+				"Electrical grid q7 should anchor the finite name set before the name access");
+
+		int namePatternIndex = plan.indexOf("value=http://example.com/theme/grid/name");
+		if (namePatternIndex < 0) {
+			throw new AssertionError("Electrical grid q7 plan should include the grid/name pattern:\n" + plan);
+		}
+		String namePattern = statementPatternWindow(plan, namePatternIndex);
+		assertContains(namePattern, "o: Var (name=name) (bindingState=bound)");
+		assertContains(namePattern, "plannedLookupComponents=[P, O]");
+		assertContains(namePattern, "plannedIndexAccessMode=directLookup");
+
+		int assignmentIndex = plan.indexOf(assignment);
+		int feedsPatternIndex = plan.indexOf("value=http://example.com/theme/grid/feeds", namePatternIndex);
+		if (assignmentIndex < 0 || feedsPatternIndex < 0 || assignmentIndex >= feedsPatternIndex) {
+			throw new AssertionError("Unable to isolate electrical grid q7 finite-name prefix:\n" + plan);
+		}
+		String finiteNamePrefix = plan.substring(assignmentIndex, feedsPatternIndex);
+		assertDoesNotContain(finiteNamePrefix, "Filter (",
+				"Electrical grid q7 should not wrap the name lookup in a redundant local finite-value filter:\n"
+						+ finiteNamePrefix + "\nFull plan:\n" + plan);
+	}
+
+	private static void assertElectricalGridQ10CombinedOptionalAntiFilterPlan(String plan) {
+		assertContains(plan, "LeftJoin");
+		assertContains(plan, "Compare (>)");
+		assertContains(plan, "Not");
+		assertContains(plan, "Exists");
+		assertDoesNotContain(plan, "deferredFilterScope=smallestWindow",
+				"Electrical grid q10 should keep optValue > 200 combined with NOT EXISTS above the optional "
+						+ "loadValue lookup, not push the anti-filter ahead of it:\n" + plan);
 	}
 
 	private static void assertElectricalGridGeneratorCapacityThresholdShape(OptimizerSnapshot snapshot) {

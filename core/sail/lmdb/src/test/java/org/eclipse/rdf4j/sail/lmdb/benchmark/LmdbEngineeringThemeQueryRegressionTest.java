@@ -131,6 +131,26 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		}
 	}
 
+	@Test
+	void engineeringQ9KeepsOptionalNameExistsCombinedFilterShape(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ENGINEERING;
+		Path themeDir = prepareThemeStore(dataDir, theme, 9);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
+					assertEngineeringQ9FastRenderedShape(snapshot.renderedQuery().trim(), snapshot.plan());
+					assertEngineeringQ9FastPlanShape(snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
 	private static Path prepareThemeStore(Path dataDir, Theme theme, int queryIndexToPrime) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
@@ -303,6 +323,38 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		assertAssemblyNameLookupUsesLocalValuesFilter(plan);
 	}
 
+	private static void assertEngineeringQ9FastRenderedShape(String renderedQuery, String plan) {
+		assertContains(renderedQuery, "OPTIONAL {");
+		assertBefore(renderedQuery,
+				"OPTIONAL {",
+				"?component <http://example.com/theme/engineering/name> ?optName .",
+				"Engineering q9 should keep component-name probing inside OPTIONAL\n" + plan);
+		assertContains(renderedQuery,
+				"FILTER ((?optName != \"\") && EXISTS { ?requirement <http://example.com/theme/engineering/satisfies> ?component . })");
+		assertBefore(renderedQuery,
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"OPTIONAL",
+				"Engineering q9 should complete requirement verification before optional component-name probing\n"
+						+ plan);
+		assertDoesNotContain(renderedQuery,
+				"?component <http://example.com/theme/engineering/name> ?optName .\nFILTER (?optName != \"\")\nFILTER EXISTS",
+				"Engineering q9 should not split the optional name filter from the correlated EXISTS filter\n"
+						+ plan);
+	}
+
+	private static void assertEngineeringQ9FastPlanShape(String plan) {
+		assertContains(plan, "LeftJoin");
+		assertContains(plan, "Compare (!=)");
+		assertContains(plan, "Exists");
+		assertBefore(plan,
+				"value=http://example.com/theme/engineering/verifiedBy",
+				"value=http://example.com/theme/engineering/name",
+				"Engineering q9 should keep verification joins before the optional name lookup");
+		assertDoesNotContain(plan, "deferredFilterScope=plannerWindow",
+				"Engineering q9 should keep optName != \"\" and EXISTS in one filter above the optional lookup:\n"
+						+ plan);
+	}
+
 	private static void assertEngineeringQ4FastPlanShape(String renderedQuery, String plan) {
 		assertContains(renderedQuery, "VALUES ?name { \"Component 1\" \"Component 2\" }");
 		assertBefore(renderedQuery,
@@ -445,6 +497,12 @@ class LmdbEngineeringThemeQueryRegressionTest {
 	private static void assertContains(String value, String expected) {
 		if (!value.contains(expected)) {
 			throw new AssertionError("Expected to find `" + expected + "` in:\n" + value);
+		}
+	}
+
+	private static void assertDoesNotContain(String value, String unexpected, String message) {
+		if (value.contains(unexpected)) {
+			throw new AssertionError(message + "\nDid not expect to find `" + unexpected + "` in:\n" + value);
 		}
 	}
 

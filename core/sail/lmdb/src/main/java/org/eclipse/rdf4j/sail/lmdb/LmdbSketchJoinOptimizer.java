@@ -424,6 +424,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 							leftJoin.getLeftArg().getAssuredBindingNames())) {
 				return null;
 			}
+			if (LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
+				return null;
+			}
 			if (finiteLeftBindingsCoverOptionalProbeInput(leftJoin, optionalBindings)) {
 				return null;
 			}
@@ -933,11 +936,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return false;
 			}
 			Var contextVar = statementPattern.getContextVar();
-			return contextVar != null
-					&& isFixedOrBoundPatternVar(statementPattern.getSubjectVar(), boundNames)
+			return isFixedOrBoundPatternVar(statementPattern.getSubjectVar(), boundNames)
 					&& isFixedOrBoundPatternVar(statementPattern.getPredicateVar(), boundNames)
 					&& isFixedOrBoundPatternVar(statementPattern.getObjectVar(), boundNames)
-					&& isFixedOrBoundPatternVar(contextVar, boundNames);
+					&& (contextVar == null || isFixedOrBoundPatternVar(contextVar, boundNames));
 		}
 
 		private boolean isFixedOrBoundPatternVar(Var var, Set<String> boundNames) {
@@ -1787,6 +1789,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private TupleExpr buildOrderedRoot(CollectedJoinArgs collected, Set<String> outerBoundVars) {
 			rewriteSmallLiteralDeferredFilterAnchors(collected);
+			dropNonSelectiveFiltersCoveredByAssignments(collected);
 			deduplicateEquivalentBindingSetAssignments(collected.joinArgs);
 			moveUnionIndependentFiniteSuffixAfterScopedUnion(collected.joinArgs, outerBoundVars);
 			Set<String> scopeBindingNames = new HashSet<>(outerBoundVars);
@@ -2031,6 +2034,68 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			collected.deferredFilters.clear();
 			collected.deferredFilters.addAll(remainingFilters);
+		}
+
+		private void dropNonSelectiveFiltersCoveredByAssignments(CollectedJoinArgs collected) {
+			Map<String, LinkedHashSet<Value>> assignmentValues = smallLiteralAssignmentValues(collected.joinArgs);
+			if (assignmentValues.isEmpty()) {
+				return;
+			}
+			List<Filter> remainingFilters = new ArrayList<>();
+			for (Filter filter : collected.deferredFilters) {
+				List<ValueExpr> remainingConditions = new ArrayList<>();
+				for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
+					if (smallLiteralAssignmentCovers(condition, assignmentValues)
+							&& !LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(statistics, filter,
+									condition)) {
+						continue;
+					}
+					remainingConditions.add(condition);
+				}
+				if (remainingConditions.isEmpty()) {
+					continue;
+				}
+				if (remainingConditions.size() != 1 || remainingConditions.getFirst() != filter.getCondition()) {
+					filter.setCondition(LmdbJoinPlanSupport.combinedCondition(remainingConditions));
+				}
+				remainingFilters.add(filter);
+			}
+			collected.deferredFilters.clear();
+			collected.deferredFilters.addAll(remainingFilters);
+		}
+
+		private Map<String, LinkedHashSet<Value>> smallLiteralAssignmentValues(List<TupleExpr> joinArgs) {
+			Map<String, LinkedHashSet<Value>> valuesByBindingName = new LinkedHashMap<>();
+			Set<String> ambiguousBindingNames = new HashSet<>();
+			for (TupleExpr joinArg : joinArgs) {
+				BindingAssignmentSignature signature = bindingAssignmentSignature(joinArg);
+				if (signature == null || ambiguousBindingNames.contains(signature.bindingName())) {
+					continue;
+				}
+				LinkedHashSet<Value> values = new LinkedHashSet<>(signature.values());
+				LinkedHashSet<Value> existing = valuesByBindingName.get(signature.bindingName());
+				if (existing == null) {
+					valuesByBindingName.put(signature.bindingName(), values);
+				} else if (!existing.equals(values)) {
+					valuesByBindingName.remove(signature.bindingName());
+					ambiguousBindingNames.add(signature.bindingName());
+				}
+			}
+			return valuesByBindingName;
+		}
+
+		private boolean smallLiteralAssignmentCovers(ValueExpr condition,
+				Map<String, LinkedHashSet<Value>> assignmentValues) {
+			if (condition instanceof ListMemberOperator) {
+				return false;
+			}
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
+			BindingAssignmentSignature signature = bindingAssignmentSignature(anchor);
+			if (signature == null) {
+				return false;
+			}
+			LinkedHashSet<Value> existingValues = assignmentValues.get(signature.bindingName());
+			return existingValues != null && existingValues.equals(new LinkedHashSet<>(signature.values()));
 		}
 
 		private boolean insertSmallLiteralFilterAnchor(List<TupleExpr> joinArgs, TupleExpr filterArg,
