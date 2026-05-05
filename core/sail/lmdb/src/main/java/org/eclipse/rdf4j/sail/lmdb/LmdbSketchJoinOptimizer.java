@@ -166,12 +166,21 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			TupleExpr replacement = rewriteNoNewBindingOptionalProbe(leftJoin);
+			TupleExpr replacement = rewriteOverlappingOptional(leftJoin);
+			if (replacement != null) {
+				replacement.visit(this);
+				return;
+			}
+			replacement = rewriteNoNewBindingOptionalProbe(leftJoin);
 			if (replacement != null) {
 				replacement.visit(this);
 				return;
 			}
 			visitLeftJoin(leftJoin, List.of());
+			replacement = rewriteOverlappingOptional(leftJoin);
+			if (replacement != null) {
+				replacement.visit(this);
+			}
 		}
 
 		private void visitLeftJoin(LeftJoin leftJoin, List<Filter> leftCostingFilters) {
@@ -219,6 +228,190 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return costingFilters;
+		}
+
+		private TupleExpr rewriteOverlappingOptional(LeftJoin leftJoin) {
+			TupleExpr leftArg = leftJoin.getLeftArg();
+			if (!(leftArg instanceof LeftJoin previousOptional)) {
+				return null;
+			}
+			TupleExpr replacement = rewriteMutuallyExclusiveOptionalsAsUnion(leftJoin, previousOptional);
+			if (replacement == null) {
+				replacement = rewriteDependentOptionalAsNested(leftJoin, previousOptional);
+			}
+			return replacement;
+		}
+
+		private TupleExpr rewriteDependentOptionalAsNested(LeftJoin leftJoin, LeftJoin previousOptional) {
+			if (!leftJoin.hasCondition()) {
+				return null;
+			}
+			Set<String> dependencyNames = plannerBindingNames(VarNameCollector.process(leftJoin.getCondition()));
+			Set<String> previousRightProducedNames = optionalProducedBindingNames(previousOptional);
+			if (Collections.disjoint(dependencyNames, previousRightProducedNames)) {
+				return null;
+			}
+			Set<String> visibleNames = new HashSet<>(
+					plannerBindingNames(previousOptional.getLeftArg().getBindingNames()));
+			visibleNames.addAll(previousRightProducedNames);
+			visibleNames.addAll(plannerBindingNames(leftJoin.getRightArg().getBindingNames()));
+			if (!visibleNames.containsAll(dependencyNames)) {
+				return null;
+			}
+
+			LeftJoin nestedOptional = new LeftJoin(previousOptional.getRightArg().clone(),
+					leftJoin.getRightArg().clone(), leftJoin.getCondition().clone());
+			LeftJoin replacement = new LeftJoin(previousOptional.getLeftArg().clone(), nestedOptional,
+					previousOptional.hasCondition() ? previousOptional.getCondition().clone() : null);
+			leftJoin.replaceWith(replacement);
+			return replacement;
+		}
+
+		private TupleExpr rewriteMutuallyExclusiveOptionalsAsUnion(LeftJoin leftJoin, LeftJoin previousOptional) {
+			if (containsLeftJoin(previousOptional.getLeftArg())) {
+				return null;
+			}
+			List<OptionalBranch> branches = collectOptionalUnionBranches(previousOptional.getRightArg(),
+					previousOptional.hasCondition() ? previousOptional.getCondition() : null);
+			branches.add(new OptionalBranch(leftJoin.getRightArg(), leftJoin.hasCondition()
+					? leftJoin.getCondition()
+					: null));
+			Set<String> baseNames = plannerBindingNames(previousOptional.getLeftArg().getBindingNames());
+			if (!hasMutuallyExclusiveBaseDiscriminator(branches, baseNames)) {
+				return null;
+			}
+			for (OptionalBranch branch : branches) {
+				if (!branchConditionIsLocalToBaseAndBranch(branch, baseNames)) {
+					return null;
+				}
+			}
+
+			TupleExpr union = optionalUnion(branches);
+			LeftJoin replacement = new LeftJoin(previousOptional.getLeftArg().clone(), union);
+			leftJoin.replaceWith(replacement);
+			return replacement;
+		}
+
+		private List<OptionalBranch> collectOptionalUnionBranches(TupleExpr tupleExpr, ValueExpr condition) {
+			if (condition == null && tupleExpr instanceof Union union) {
+				List<OptionalBranch> branches = new ArrayList<>();
+				branches.addAll(collectOptionalUnionBranches(union.getLeftArg(), null));
+				branches.addAll(collectOptionalUnionBranches(union.getRightArg(), null));
+				return branches;
+			}
+			if (condition == null && tupleExpr instanceof Filter filter) {
+				return List.of(new OptionalBranch(filter.getArg(), filter.getCondition()));
+			}
+			return new ArrayList<>(List.of(new OptionalBranch(tupleExpr, condition)));
+		}
+
+		private boolean hasMutuallyExclusiveBaseDiscriminator(List<OptionalBranch> branches, Set<String> baseNames) {
+			if (branches.size() < 2) {
+				return false;
+			}
+			Map<String, Set<Value>> discriminatorValues = new LinkedHashMap<>();
+			Set<String> candidateNames = null;
+			for (OptionalBranch branch : branches) {
+				if (branch.condition() == null) {
+					return false;
+				}
+				Map<String, Value> branchDiscriminators = baseConstantEqualities(branch.condition(), baseNames);
+				if (branchDiscriminators.isEmpty()) {
+					return false;
+				}
+				if (candidateNames == null) {
+					candidateNames = new LinkedHashSet<>(branchDiscriminators.keySet());
+				} else {
+					candidateNames.retainAll(branchDiscriminators.keySet());
+				}
+				for (Map.Entry<String, Value> entry : branchDiscriminators.entrySet()) {
+					discriminatorValues.computeIfAbsent(entry.getKey(), key -> new LinkedHashSet<>())
+							.add(entry.getValue());
+				}
+			}
+			if (candidateNames == null || candidateNames.isEmpty()) {
+				return false;
+			}
+			for (String candidateName : candidateNames) {
+				Set<Value> values = discriminatorValues.get(candidateName);
+				if (values != null && values.size() == branches.size()) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private Map<String, Value> baseConstantEqualities(ValueExpr condition, Set<String> baseNames) {
+			Map<String, Value> equalities = new LinkedHashMap<>();
+			for (ValueExpr conjunct : LmdbJoinPlanSupport.splitConjuncts(condition)) {
+				recordBaseConstantEquality(conjunct, baseNames, equalities);
+			}
+			return equalities;
+		}
+
+		private void recordBaseConstantEquality(ValueExpr expression, Set<String> baseNames,
+				Map<String, Value> equalities) {
+			if (expression instanceof SameTerm sameTerm) {
+				recordBaseConstantEquality(sameTerm.getLeftArg(), sameTerm.getRightArg(), baseNames, equalities);
+				return;
+			}
+			if (expression instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
+				recordBaseConstantEquality(compare.getLeftArg(), compare.getRightArg(), baseNames, equalities);
+			}
+		}
+
+		private void recordBaseConstantEquality(ValueExpr left, ValueExpr right, Set<String> baseNames,
+				Map<String, Value> equalities) {
+			if (left instanceof Var var && !var.hasValue() && baseNames.contains(var.getName())
+					&& right instanceof ValueConstant constant) {
+				equalities.put(var.getName(), constant.getValue());
+				return;
+			}
+			if (right instanceof Var var && !var.hasValue() && baseNames.contains(var.getName())
+					&& left instanceof ValueConstant constant) {
+				equalities.put(var.getName(), constant.getValue());
+			}
+		}
+
+		private boolean branchConditionIsLocalToBaseAndBranch(OptionalBranch branch, Set<String> baseNames) {
+			if (branch.condition() == null) {
+				return false;
+			}
+			Set<String> visibleNames = new HashSet<>(baseNames);
+			visibleNames.addAll(plannerBindingNames(branch.tupleExpr().getBindingNames()));
+			return visibleNames.containsAll(plannerBindingNames(VarNameCollector.process(branch.condition())));
+		}
+
+		private TupleExpr optionalUnion(List<OptionalBranch> branches) {
+			TupleExpr union = optionalUnionBranch(branches.getFirst());
+			for (int i = 1; i < branches.size(); i++) {
+				union = new Union(union, optionalUnionBranch(branches.get(i)));
+			}
+			return union;
+		}
+
+		private TupleExpr optionalUnionBranch(OptionalBranch branch) {
+			TupleExpr arg = branch.tupleExpr().clone();
+			if (branch.condition() == null) {
+				return arg;
+			}
+			return new Filter(arg, branch.condition().clone());
+		}
+
+		private boolean containsLeftJoin(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof LeftJoin) {
+				return true;
+			}
+			if (tupleExpr instanceof Join join) {
+				return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
+			}
+			if (tupleExpr instanceof Union union) {
+				return containsLeftJoin(union.getLeftArg()) || containsLeftJoin(union.getRightArg());
+			}
+			if (tupleExpr instanceof UnaryTupleOperator unary && !TupleExprs.isVariableScopeChange(unary)) {
+				return containsLeftJoin(unary.getArg());
+			}
+			return false;
 		}
 
 		private TupleExpr rewriteNullRejectingOptionalFilter(Filter filter, LeftJoin leftJoin) {
@@ -2963,6 +3156,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			return Objects.equals(bindingName, that.bindingName) && Objects.equals(values, that.values);
 		}
+
+	}
+
+	private record OptionalBranch(TupleExpr tupleExpr, ValueExpr condition) {
 
 	}
 
