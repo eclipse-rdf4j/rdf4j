@@ -107,7 +107,7 @@ class SailSourceModel extends AbstractModel {
 			if (last == null) {
 				throw new IllegalStateException("next() not yet called");
 			}
-			SailSourceModel.this.remove(last);
+			SailSourceModel.this.deprecateFromIterator(last);
 			last = null;
 		}
 
@@ -452,6 +452,15 @@ class SailSourceModel extends AbstractModel {
 			} finally {
 				stmts.close();
 			}
+			size = -1;
+		} catch (SailException e) {
+			throw new ModelException(e);
+		}
+	}
+
+	private synchronized void deprecateFromIterator(Statement statement) {
+		try {
+			sink().deprecate(statement);
 			size = -1;
 		} catch (SailException e) {
 			throw new ModelException(e);
