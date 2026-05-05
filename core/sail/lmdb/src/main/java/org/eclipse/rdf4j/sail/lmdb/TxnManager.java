@@ -48,6 +48,7 @@ class TxnManager {
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
 	private final long[] pool;
 	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
+	private final IdentityHashMap<Txn, Boolean> deferredCloses = new IdentityHashMap<>();
 	private final long env;
 	private volatile int poolIndex = -1;
 
@@ -143,11 +144,22 @@ class TxnManager {
 	 * @throws IOException if the transaction cannot be started for some reason
 	 */
 	Txn createReadTxn() throws IOException {
-		Txn txnRef = new Txn(createReadTxnInternal());
-		synchronized (active) {
-			active.put(txnRef, Boolean.TRUE);
+		drainDeferredCloses();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			throw new SailException(e);
 		}
-		return txnRef;
+		try {
+			Txn txnRef = new Txn(createReadTxnInternal());
+			synchronized (active) {
+				active.put(txnRef, Boolean.TRUE);
+			}
+			return txnRef;
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
 	}
 
 	long createReadTxnInternal() throws IOException {
@@ -175,21 +187,25 @@ class TxnManager {
 	}
 
 	<T> T doWith(Transaction<T> transaction) throws IOException {
-		long readStamp;
-		try {
-			readStamp = lockManager.readLock();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
-		}
-		T ret;
+		drainDeferredCloses();
 		try (MemoryStack stack = stackPush()) {
-			try (Txn txn = createReadTxn()) {
-				ret = transaction.exec(stack, txn.get());
+			Txn txn = createReadTxn();
+			try {
+				long readStamp;
+				try {
+					readStamp = lockManager.readLock();
+				} catch (InterruptedException e) {
+					throw new SailException(e);
+				}
+				try {
+					return transaction.exec(stack, txn.get());
+				} finally {
+					lockManager.unlockRead(readStamp);
+				}
+			} finally {
+				txn.close();
 			}
-		} finally {
-			lockManager.unlockRead(readStamp);
 		}
-		return ret;
 	}
 
 	/**
@@ -200,20 +216,38 @@ class TxnManager {
 	}
 
 	void activate() throws IOException {
+		drainDeferredClosesIfNoWriter();
 		for (Txn txn : activeTransactions()) {
 			txn.setActive(true);
 		}
 	}
 
 	void deactivate() throws IOException {
+		drainDeferredClosesIfNoWriter();
 		for (Txn txn : activeTransactions()) {
 			txn.setActive(false);
 		}
 	}
 
 	void reset() throws IOException {
+		drainDeferredClosesIfNoWriter();
 		for (Txn txn : activeTransactions()) {
 			txn.reset();
+		}
+	}
+
+	void close() throws IOException {
+		IOException failure = null;
+
+		failure = collectCloseFailure(failure, this::drainDeferredCloses);
+		for (Txn txn : activeTransactions()) {
+			failure = collectCloseFailure(failure, txn::close);
+		}
+		failure = collectCloseFailure(failure, this::drainDeferredCloses);
+		closePooledReaders();
+
+		if (failure != null) {
+			throw failure;
 		}
 	}
 
@@ -234,10 +268,124 @@ class TxnManager {
 		}
 	}
 
+	private void deferClose(Txn txn) {
+		if (txn.isClosed()) {
+			return;
+		}
+		synchronized (deferredCloses) {
+			if (!txn.isClosed()) {
+				deferredCloses.put(txn, Boolean.TRUE);
+			}
+		}
+		synchronized (active) {
+			active.notifyAll();
+		}
+	}
+
+	private void removeDeferredClose(Txn txn) {
+		synchronized (deferredCloses) {
+			deferredCloses.remove(txn);
+		}
+	}
+
+	private List<Txn> deferredTransactions() {
+		synchronized (deferredCloses) {
+			List<Txn> txns = new ArrayList<>(deferredCloses.keySet());
+			deferredCloses.clear();
+			return txns;
+		}
+	}
+
+	private void drainDeferredCloses() throws IOException {
+		IOException failure = null;
+		for (Txn txn : deferredTransactions()) {
+			failure = collectCloseFailure(failure, txn::close);
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private void drainDeferredClosesIfNoWriter() throws IOException {
+		if (!lockManager.isWriterActive()) {
+			drainDeferredCloses();
+		}
+	}
+
+	private IOException collectCloseFailure(IOException failure, ThrowingRunnable runnable) {
+		try {
+			runnable.run();
+			return failure;
+		} catch (Throwable throwable) {
+			return addSuppressed(failure, throwable);
+		}
+	}
+
+	private IOException addSuppressed(IOException failure, Throwable throwable) {
+		IOException exception;
+		if (throwable instanceof IOException) {
+			exception = (IOException) throwable;
+		} else {
+			exception = new IOException(throwable);
+		}
+		if (failure == null) {
+			return exception;
+		}
+		failure.addSuppressed(exception);
+		return failure;
+	}
+
+	private interface ThrowingRunnable {
+		void run() throws Exception;
+	}
+
 	enum Mode {
 		RESET,
 		ABORT,
 		NONE
+	}
+
+	interface Cursor {
+		void close();
+	}
+
+	final class CursorRegistration {
+
+		private final long txn;
+		private Cursor cursor;
+		private boolean initialized;
+
+		CursorRegistration(long txn) {
+			this.txn = txn;
+		}
+
+		long txn() {
+			return txn;
+		}
+
+		synchronized void initialized(Cursor cursor) {
+			this.cursor = cursor;
+			initialized = true;
+			notifyAll();
+		}
+
+		void closeCursor() {
+			Cursor cursor;
+			synchronized (this) {
+				try {
+					while (!initialized) {
+						wait();
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new SailException(e);
+				}
+				cursor = this.cursor;
+			}
+			if (cursor != null) {
+				cursor.close();
+			}
+		}
 	}
 
 	class Txn implements Closeable, AutoCloseable {
@@ -246,6 +394,8 @@ class TxnManager {
 		private long version;
 		private boolean txnActive = true;
 		private boolean closed;
+		private boolean closeInProgress;
+		private final List<CursorRegistration> openCursors = new ArrayList<>();
 
 		Txn(long txn) {
 			this.txn = txn;
@@ -253,6 +403,54 @@ class TxnManager {
 
 		long get() {
 			return txn;
+		}
+
+		synchronized CursorRegistration registerCursor() {
+			if (closed || closeInProgress || txn == 0) {
+				throw new SailException("Cannot open an LMDB cursor on a closed transaction");
+			}
+			CursorRegistration registration = new CursorRegistration(txn);
+			openCursors.add(registration);
+			return registration;
+		}
+
+		synchronized void unregisterCursor(CursorRegistration registration) {
+			if (!openCursors.remove(registration)) {
+				throw new IllegalStateException("Cannot unregister an LMDB cursor that was not registered");
+			}
+			if (openCursors.isEmpty()) {
+				notifyAll();
+			}
+		}
+
+		private synchronized void waitForOpenCursors() throws InterruptedException {
+			while (!openCursors.isEmpty()) {
+				wait();
+			}
+		}
+
+		private synchronized List<CursorRegistration> getOpenCursors() {
+			return new ArrayList<>(openCursors);
+		}
+
+		private synchronized boolean isClosed() {
+			return closed;
+		}
+
+		private synchronized boolean beginClose() throws InterruptedException {
+			while (closeInProgress && !closed) {
+				wait();
+			}
+			if (closed) {
+				return false;
+			}
+			closeInProgress = true;
+			return true;
+		}
+
+		private synchronized void endClose() {
+			closeInProgress = false;
+			notifyAll();
 		}
 
 		StampedLongAdderLockManager lockManager() {
@@ -287,19 +485,89 @@ class TxnManager {
 		}
 
 		@Override
-		public synchronized void close() {
-			if (closed) {
-				return;
-			}
-			closed = true;
-			synchronized (TxnManager.this.active) {
-				TxnManager.this.active.remove(this);
-			}
+		public void close() {
+			boolean interruptedBeforeClose = Thread.interrupted();
+			boolean closeStarted = false;
+
 			try {
-				free(txnActive);
+				try {
+					closeStarted = beginClose();
+				} catch (InterruptedException e) {
+					deferClose(this);
+					Thread.currentThread().interrupt();
+					throw new SailException(e);
+				}
+				if (!closeStarted) {
+					return;
+				}
+
+				Throwable failure = closeOpenCursors();
+				if (!interruptedBeforeClose && Thread.currentThread().isInterrupted()) {
+					failure = addSuppressed(failure, new InterruptedException());
+				}
+
+				if (failure != null) {
+					deferClose(this);
+					throw asSailException(failure);
+				}
+
+				try {
+					closeNativeTxn();
+					removeDeferredClose(this);
+				} catch (InterruptedException e) {
+					deferClose(this);
+					Thread.currentThread().interrupt();
+					throw new SailException(e);
+				}
 			} finally {
+				if (closeStarted) {
+					endClose();
+				}
+				if (interruptedBeforeClose) {
+					Thread.currentThread().interrupt();
+				}
 				synchronized (TxnManager.this.active) {
 					TxnManager.this.active.notifyAll();
+				}
+			}
+		}
+
+		private Throwable closeOpenCursors() {
+			Throwable failure = null;
+			for (CursorRegistration cursor : getOpenCursors()) {
+				try {
+					cursor.closeCursor();
+				} catch (Throwable throwable) {
+					failure = addSuppressed(failure, throwable);
+				}
+			}
+			return failure;
+		}
+
+		private Throwable addSuppressed(Throwable failure, Throwable throwable) {
+			if (failure == null) {
+				return throwable;
+			}
+			failure.addSuppressed(throwable);
+			return failure;
+		}
+
+		private SailException asSailException(Throwable throwable) {
+			if (throwable instanceof SailException) {
+				return (SailException) throwable;
+			}
+			return new SailException(throwable);
+		}
+
+		private void closeNativeTxn() throws InterruptedException {
+			synchronized (this) {
+				if (mode != Mode.NONE && txn != 0) {
+					waitForOpenCursors();
+				}
+				free(txnActive);
+				closed = true;
+				synchronized (TxnManager.this.active) {
+					TxnManager.this.active.remove(this);
 				}
 			}
 		}

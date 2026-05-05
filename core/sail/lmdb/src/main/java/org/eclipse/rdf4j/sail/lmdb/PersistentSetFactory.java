@@ -86,9 +86,15 @@ class PersistentSetFactory<T extends Serializable> {
 	}
 
 	public synchronized void close() throws IOException {
+		IOException caughtException = null;
 		if (writeTxn != 0) {
 			mdb_txn_abort(writeTxn);
 			writeTxn = 0;
+		}
+		try {
+			txnManager.close();
+		} catch (IOException e) {
+			caughtException = e;
 		}
 
 		// We don't need to free the pointer because it was allocated
@@ -96,7 +102,18 @@ class PersistentSetFactory<T extends Serializable> {
 		// writeTxnPp.free();
 
 		mdb_env_close(env);
-		FileUtils.deleteDirectory(dbDir.toFile());
+		try {
+			FileUtils.deleteDirectory(dbDir.toFile());
+		} catch (IOException e) {
+			if (caughtException == null) {
+				caughtException = e;
+			} else {
+				caughtException.addSuppressed(e);
+			}
+		}
+		if (caughtException != null) {
+			throw caughtException;
+		}
 	}
 
 	synchronized void commit() throws IOException {

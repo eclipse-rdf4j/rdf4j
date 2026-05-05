@@ -394,9 +394,12 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			protected void handleClose() throws SailException {
-				// correctly close read txn
-				txn.close();
-				super.handleClose();
+				try {
+					super.handleClose();
+				} finally {
+					// correctly close read txn after dependent iterators and cursors
+					txn.close();
+				}
 			}
 		};
 	}

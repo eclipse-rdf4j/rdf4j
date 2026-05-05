@@ -618,25 +618,42 @@ class TripleStore implements Closeable {
 	@Override
 	public void close() throws IOException {
 		if (env != 0) {
-			endTransaction(false);
-
-			List<Throwable> caughtExceptions = new ArrayList<>();
+			IOException caughtException = null;
+			try {
+				endTransaction(false);
+			} catch (Throwable e) {
+				caughtException = addCloseException(caughtException, e);
+			}
+			try {
+				txnManager.close();
+			} catch (Throwable e) {
+				caughtException = addCloseException(caughtException, e);
+			}
 			for (TripleIndex index : indexes) {
 				try {
 					index.close();
 				} catch (Throwable e) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
-					caughtExceptions.add(e);
+					caughtException = addCloseException(caughtException, e);
 				}
 			}
 
 			mdb_env_close(env);
 			env = 0;
 
-			if (!caughtExceptions.isEmpty()) {
-				throw new IOException(caughtExceptions.get(0));
+			if (caughtException != null) {
+				throw caughtException;
 			}
 		}
+	}
+
+	private IOException addCloseException(IOException caughtException, Throwable throwable) {
+		IOException exception = throwable instanceof IOException ? (IOException) throwable : new IOException(throwable);
+		if (caughtException == null) {
+			return exception;
+		}
+		caughtException.addSuppressed(exception);
+		return caughtException;
 	}
 
 	/**
@@ -1559,8 +1576,8 @@ class TripleStore implements Closeable {
 	protected void updateFromCache() throws IOException {
 		recordCache.commit();
 		for (boolean explicit : new boolean[] { true, false }) {
-			RecordCacheIterator it = recordCache.getRecords(explicit);
-			try (MemoryStack stack = MemoryStack.stackPush()) {
+			try (RecordCacheIterator it = recordCache.getRecords(explicit);
+					MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
 				MDBVal keyVal = MDBVal.malloc(stack);
 				// use calloc to get an empty data value
@@ -1629,9 +1646,9 @@ class TripleStore implements Closeable {
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
-							long readStamp;
+							long writeStamp;
 							try {
-								readStamp = lockManager.readLock();
+								writeStamp = lockManager.writeLock();
 							} catch (InterruptedException e) {
 								throw new SailException(e);
 							}
@@ -1654,13 +1671,24 @@ class TripleStore implements Closeable {
 								try {
 									txnManager.activate();
 								} finally {
-									lockManager.unlockRead(readStamp);
+									lockManager.unlockWrite(writeStamp);
 								}
 							}
 						} else {
 							// invalidate open read transaction so that they are not re-used
 							// otherwise iterators won't see the updated data
-							txnManager.reset();
+							StampedLongAdderLockManager lockManager = txnManager.lockManager();
+							long writeStamp;
+							try {
+								writeStamp = lockManager.writeLock();
+							} catch (InterruptedException e) {
+								throw new SailException(e);
+							}
+							try {
+								txnManager.reset();
+							} finally {
+								lockManager.unlockWrite(writeStamp);
+							}
 						}
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
