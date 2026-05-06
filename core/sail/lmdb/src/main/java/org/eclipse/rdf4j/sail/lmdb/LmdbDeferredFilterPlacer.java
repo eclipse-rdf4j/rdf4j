@@ -51,7 +51,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 final class LmdbDeferredFilterPlacer {
 
 	private static final int MAX_MATERIALIZED_BINDING_WINDOW_ROWS = 64;
-	private static final double CORRELATED_ANTI_PROBE_SELECTIVE_FILTER_MAX_PASS_RATIO = 0.95d;
+	private static final double CORRELATED_ANTI_PROBE_SELECTIVE_FILTER_MAX_PASS_RATIO = 0.50d;
 	private final LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer;
 	private final LmdbUnionFilterDistributor.JoinFactory joinFactory;
 	private final LmdbUnionFilterDistributor.FilterWrapper filterWrapper;
@@ -100,6 +100,7 @@ final class LmdbDeferredFilterPlacer {
 			prefixBindingNames.addAll(optimized.getBindingNames());
 			updateFinitePrefixBindingNames(finitePrefixBindingNames, optimized);
 		}
+		sortBindingAssignmentRunsByOriginalOrder(factors);
 		List<DeferredFilter> unresolvedFilters = new ArrayList<>();
 		List<DeferredFilter> sortedFilters = LmdbJoinPlanSupport.sortDeferredFilters(pendingFilters);
 		while (!sortedFilters.isEmpty()) {
@@ -304,8 +305,37 @@ final class LmdbDeferredFilterPlacer {
 			deferredFilters.addAll(windowFilters);
 			return;
 		}
+		if (bindingWindowStartsAfterOriginalSegmentStart(factors, startIndex, factors.size() - 1)) {
+			deferredFilters.addAll(windowFilters);
+			return;
+		}
 		groupDeferredFiltersOnWindow(factors, windowFilters, new int[] { startIndex, factors.size() - 1 },
 				"bindingWindow");
+	}
+
+	private void sortBindingAssignmentRunsByOriginalOrder(List<SegmentFactor> factors) {
+		int runStart = -1;
+		for (int i = 0; i <= factors.size(); i++) {
+			boolean bindingOnly = i < factors.size() && LmdbJoinPlanSupport.isBindingOnlyFactor(factors.get(i));
+			if (bindingOnly && runStart < 0) {
+				runStart = i;
+				continue;
+			}
+			if (bindingOnly) {
+				continue;
+			}
+			if (runStart >= 0 && i - runStart > 1) {
+				factors.subList(runStart, i)
+						.sort((left, right) -> Integer.compare(left.firstFactorOrder, right.firstFactorOrder));
+			}
+			runStart = -1;
+		}
+	}
+
+	private boolean bindingWindowStartsAfterOriginalSegmentStart(List<SegmentFactor> factors, int startIndex,
+			int endIndex) {
+		return isBindingOnlySpan(factors, startIndex, endIndex)
+				&& factors.get(startIndex).firstFactorOrder > 0;
 	}
 
 	private boolean canGroupDeferredFilterOnCurrentBindingWindow(DeferredFilter deferredFilter,
@@ -898,6 +928,9 @@ final class LmdbDeferredFilterPlacer {
 			}
 			filterBindingNames.put(filter, conditionNames);
 		}
+		if (!filtersCoverTouchedAssignmentBindings(assignments, filterBindingNames)) {
+			return Optional.empty();
+		}
 
 		List<BindingSet> rows = new ArrayList<>(1);
 		rows.add(new MapBindingSet(0));
@@ -932,6 +965,20 @@ final class LmdbDeferredFilterPlacer {
 		materialized.setBindingNames(bindingNames);
 		materialized.setBindingSets(rows);
 		return Optional.of(materialized);
+	}
+
+	private boolean filtersCoverTouchedAssignmentBindings(List<BindingSetAssignment> assignments,
+			Map<DeferredFilter, Set<String>> filterBindingNames) {
+		for (Set<String> conditionNames : filterBindingNames.values()) {
+			for (BindingSetAssignment assignment : assignments) {
+				Set<String> assignmentNames = assignment.getAssuredBindingNames();
+				if (!Collections.disjoint(assignmentNames, conditionNames)
+						&& !conditionNames.containsAll(assignmentNames)) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private List<BindingSet> bindingRows(BindingSetAssignment assignment) {

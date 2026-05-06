@@ -413,6 +413,9 @@ class LmdbThemeQueryRegressionTest {
 							"Social media q9 should leave the d/a edge as the exact closing lookup\n"
 									+ snapshot.plan());
 					assertDirectLookupWorkRowsBelow(snapshot.plan(), 100.0d, 1);
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Social media q9 should not add failed left bound-statement guards to the cycle "
+									+ "expansion");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -431,31 +434,49 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
-					assertContains(snapshot.renderedQuery(), "VALUES (?a ?b ?c)",
-							"Social media q10 should keep the finite (a,b,c) pruning prefix\n"
-									+ snapshot.plan());
-					assertDoesNotContain(snapshot.renderedQuery(), "VALUES (?d ?e)",
+					String plan = snapshot.plan();
+					String abAssignment = "BindingSetAssignment ([[a=http://example.com/theme/social/user/7;"
+							+ "b=http://example.com/theme/social/user/8]";
+					String abcAssignment = "BindingSetAssignment ([[a=http://example.com/theme/social/user/7;"
+							+ "b=http://example.com/theme/social/user/8;c=http://example.com/theme/social/user/7]";
+					String cAssignment = "BindingSetAssignment ([[c=http://example.com/theme/social/user/7]";
+					String dAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7]";
+					String eAssignment = "BindingSetAssignment ([[e=http://example.com/theme/social/user/7]";
+					String deAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7;"
+							+ "e=http://example.com/theme/social/user/7]";
+					String followsPredicate = "value=http://example.com/theme/social/follows";
+					assertContains(plan, abAssignment,
+							"Social media q10 should keep the historical finite (a,b) pruning prefix\n"
+									+ plan);
+					assertDoesNotContain(plan, abcAssignment,
+							"Social media q10 should not collapse c into the initial finite pair; "
+									+ "the separate c domain was the strict fastest May shape\n"
+									+ plan);
+					assertDoesNotContain(plan, deAssignment,
 							"Social media q10 should not pair d/e before the c/d inequality can prune d");
-					assertBefore(snapshot.renderedQuery(), "VALUES (?a ?b ?c)",
-							"?a <http://example.com/theme/social/follows> ?b .",
+					assertBefore(plan, abAssignment, followsPredicate,
 							"Social media q10 should prune the finite a/b/c window before probing bound edges\n"
-									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "VALUES ?d",
-							"?c <http://example.com/theme/social/follows> ?d .",
+									+ plan);
+					assertBefore(plan, abAssignment, cAssignment,
+							"Social media q10 should keep c as a separate finite domain after pruning a/b\n"
+									+ plan);
+					assertBefore(plan, dAssignment, followsPredicate,
 							"Social media q10 should bind d before probing the c/d edge\n"
-									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "VALUES ?e",
-							"?d <http://example.com/theme/social/follows> ?e .",
+									+ plan);
+					assertBefore(plan, eAssignment, followsPredicate,
 							"Social media q10 should bind e before probing the d/e edge\n"
-									+ snapshot.plan());
+									+ plan);
 					assertBefore(snapshot.renderedQuery(), "?d <http://example.com/theme/social/follows> ?e .",
 							"?e <http://example.com/theme/social/follows> ?a .",
 							"Social media q10 should leave the e/a edge as the final cycle-closing lookup\n"
-									+ snapshot.plan());
-					assertDirectLookupAccessWorkRowsBelow(snapshot.plan(), 100.0d, 5);
-					assertPlannerCandidateBudget(snapshot.plan(), 512,
+									+ plan);
+					assertDirectLookupAccessWorkRowsBelow(plan, 100.0d, 5);
+					assertPlannerCandidateBudget(plan, 512,
 							"Social media q10 should avoid a full memo search when finite VALUES make all follows "
 									+ "probes cheap direct lookups");
+					assertNoUnboundLeftStatementGuard(plan,
+							"Social media q10 should not add failed left bound-statement guards to the finite "
+									+ "cycle-pruning plan");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -475,11 +496,11 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
 					String renderedQuery = snapshot.renderedQuery();
-					assertAnyBefore(renderedQuery, List.of("VALUES (?a ?b)", "VALUES (?a ?b ?c)"),
+					assertBefore(renderedQuery, "VALUES (?a ?b)",
 							"?a <http://example.com/theme/social/follows> ?b .",
 							"Social media q10 should guard the (a,b) edge with finite a/b bindings\n"
 									+ snapshot.plan());
-					assertAnyBefore(renderedQuery, List.of("VALUES ?c", "VALUES (?a ?b ?c)"),
+					assertBefore(renderedQuery, "VALUES ?c",
 							"?b <http://example.com/theme/social/follows> ?c .",
 							"Social media q10 should guard the (b,c) edge with finite c bindings\n"
 									+ snapshot.plan());
@@ -849,10 +870,17 @@ class LmdbThemeQueryRegressionTest {
 							"<http://example.com/theme/library/locatedAt> ?branch",
 							"Library q7 should keep the selective branch-name anchor before copy location expansion");
 					assertLibraryMinusBranchExclusionDoesNotScanAllLocatedAt(snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "BoundStatementPatternJoinIteration",
+							"Library q7 historical fast plans keep the copy type guard as a regular join; "
+									+ "per-copy bound-statement count guards doubled the strict May runtime\n"
+									+ snapshot.plan());
 					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
 							12.0d);
 					assertPredicateLookupWorkRowsAtMost(snapshot.plan(),
 							"http://example.com/theme/library/locatedAt", 12.0d);
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Library q7 should not route an unbound branch/location scan through the left "
+									+ "bound-statement guard");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -878,6 +906,9 @@ class LmdbThemeQueryRegressionTest {
 										+ "Expected:\n" + LIBRARY_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
 										+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
 					}
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Library q1 should keep union branch probes as ordinary joins unless the left "
+									+ "statement is already fully bound");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -944,6 +975,9 @@ class LmdbThemeQueryRegressionTest {
 							"Library q8 should apply the cheap Loan type guard before copy/book fanout\n"
 									+ snapshot.plan());
 					assertDirectLookupWorkRowsBelow(snapshot.plan(), 200.0d, 6);
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Library q8 should not add a failed left bound-statement count probe before the "
+									+ "member/loan expansion");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1543,6 +1577,36 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void engineeringRequirementsSatisfyBeforeTypeGuard(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.ENGINEERING;
+		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 8, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(),
+							"?requirement <http://example.com/theme/engineering/satisfies> ?component",
+							"?component a <http://example.com/theme/engineering/Component>",
+							"Engineering q8 should keep the develop satisfies/component bridge before "
+									+ "component type validation\n"
+									+ snapshot.plan());
+					assertDoesNotContain(snapshot.plan(),
+							"Join (BoundStatementPatternJoinIteration) (resultSizeEstimate=520)",
+							"Engineering q8 should not run the component type guard through a per-row "
+									+ "bound-statement count after the satisfies bridge\n"
+									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void trainLineNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -1720,8 +1784,14 @@ class LmdbThemeQueryRegressionTest {
 					String renderedQuery = snapshot.renderedQuery();
 					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
 					assertBefore(renderedQuery, "?med a <http://example.com/theme/medical/Medication>",
+							"FILTER NOT EXISTS",
+							"Medical q7 should run the historically fast dosage anti-probe before the code lookup\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "FILTER NOT EXISTS",
 							"?med <http://example.com/theme/medical/code> ?code",
-							"Medical q7 should keep medication type before the code lookup\n" + snapshot.plan());
+							"Medical q7 should keep the dosage anti-probe before the code lookup; "
+									+ "the reverse order is the strict May 6 regression\n"
+									+ snapshot.plan());
 					assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code",
 							"FILTER EXISTS",
 							"Medical q7 should narrow medication codes before the patient-medication probe\n"
@@ -1735,6 +1805,50 @@ class LmdbThemeQueryRegressionTest {
 					assertDoesNotContain(snapshot.plan(), "antiJoinRewrite=materialized-minus",
 							"Medical q7 should not retain a materialized MINUS once the correlated dosage probe "
 									+ "is cheaper\n" + snapshot.plan());
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Medical q7 should keep the correlated medication anti-probe, but avoid failed "
+									+ "left bound-statement guards around unbound medication scans");
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalPatientsWithMedsOrObservationsExcludingCodeAvoidsUnboundLeftGuards(@TempDir Path dataDir)
+			throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?enc a <http://example.com/theme/medical/Encounter>",
+							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
+							"Medical q9 should keep the develop encounter-type anchor before condition fanout\n"
+									+ snapshot.plan());
+					assertBefore(snapshot.renderedQuery(), "?enc <http://example.com/theme/medical/hasCondition> ?cond",
+							"?cond <http://example.com/theme/medical/code> ?condCode",
+							"Medical q9 should bind encounter conditions before scanning condition codes\n"
+									+ snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "MINUS",
+							"Medical q9 should keep the develop materialized anti-join; the correlated rewrite "
+									+ "repeats the filtered observation/value suffix per encounter\n"
+									+ snapshot.plan());
+					assertDoesNotContain(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"Medical q9 should not rewrite the multi-pattern observation exclusion into a "
+									+ "correlated probe\n"
+									+ snapshot.plan());
+					assertContains(snapshot.plan(), "plannerPath=ANTI_JOIN_RETAINED");
+					assertContains(snapshot.plan(), "antiJoinRewrite=materialized-minus");
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Medical q9 should not wrap broad patient/encounter branch scans in a failed left "
+									+ "bound-statement guard");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1843,6 +1957,9 @@ class LmdbThemeQueryRegressionTest {
 										+ "Expected:\n" + ELECTRICAL_GRID_Q1_FASTEST_RENDERED_QUERY + "\nActual:\n"
 										+ snapshot.renderedQuery() + "\nPlan:\n" + snapshot.plan());
 					}
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Electrical grid q1 should not route unbound type/name union branches through the "
+									+ "left bound-statement guard");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1881,6 +1998,8 @@ class LmdbThemeQueryRegressionTest {
 					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
 							30.0d);
 					assertDirectLookupWorkRowsBelow(snapshot.plan(), 200.0d, 4);
+					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+							"Library q9 should not add failed left bound-statement probes to the author/book tail");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -2303,6 +2422,40 @@ class LmdbThemeQueryRegressionTest {
 		if (value.contains(unexpected)) {
 			throw new AssertionError(message + "\nDid not expect to find `" + unexpected + "` in:\n" + value);
 		}
+	}
+
+	private static void assertNoUnboundLeftStatementGuard(String plan, String message) {
+		String[] lines = plan.split("\\R");
+		for (int i = 0; i < lines.length; i++) {
+			if (!lines[i].contains("BoundStatementPatternLeftJoinIteration")) {
+				continue;
+			}
+
+			for (int j = i + 1; j < lines.length; j++) {
+				if (!lines[j].contains("StatementPattern")) {
+					continue;
+				}
+
+				String firstStatementPattern = firstStatementPatternBlock(lines, j);
+				if (firstStatementPattern.contains("(bindingState=unbound)")) {
+					throw new AssertionError(message
+							+ "\nLeft bound-statement guard requires a fully-bound statement pattern, but found:\n"
+							+ firstStatementPattern + "\nFull plan:\n" + plan);
+				}
+				break;
+			}
+		}
+	}
+
+	private static String firstStatementPatternBlock(String[] lines, int start) {
+		StringBuilder block = new StringBuilder();
+		for (int i = start; i < lines.length; i++) {
+			if (i > start && lines[i].contains("StatementPattern")) {
+				break;
+			}
+			block.append(lines[i]).append('\n');
+		}
+		return block.toString();
 	}
 
 	private static void assertContainsAny(String value, String... expectedValues) {

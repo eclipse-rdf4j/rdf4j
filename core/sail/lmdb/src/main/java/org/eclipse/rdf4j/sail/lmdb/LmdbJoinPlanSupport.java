@@ -63,6 +63,7 @@ final class LmdbJoinPlanSupport {
 
 	private static final int SMALL_LITERAL_FILTER_ANCHOR_LIMIT = 32;
 	private static final double SMALL_LITERAL_FILTER_ANCHOR_MAX_PASS_RATIO = 0.75d;
+	private static final long SAMPLED_PLANNER_SELECTIVITY_MIN_EVIDENCE = 1024L;
 
 	private LmdbJoinPlanSupport() {
 	}
@@ -191,7 +192,7 @@ final class LmdbJoinPlanSupport {
 		for (DeferredFilter deferredFilter : deferredFilters) {
 			NestedTupleExpression nestedTupleExpression = nestedTupleExpression(deferredFilter.condition);
 			constraints.add(new JoinOrderPlanner.FilterConstraint(deferredFilter.requiredVars,
-					deferredFilter.passEstimate.getPassRatio(), deferredFilter.conditionCost,
+					plannerPassRatio(deferredFilter.passEstimate), deferredFilter.conditionCost,
 					deferredFilter.condition.toString(),
 					deferredFilter.passEstimate.getSource().name().toLowerCase(),
 					deferredFilter.passEstimate.getEvidenceCount(),
@@ -202,6 +203,14 @@ final class LmdbJoinPlanSupport {
 					costOnly));
 		}
 		return constraints;
+	}
+
+	private static double plannerPassRatio(EvaluationStatistics.FilterPassEstimate passEstimate) {
+		if (passEstimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED
+				&& passEstimate.getEvidenceCount() < SAMPLED_PLANNER_SELECTIVITY_MIN_EVIDENCE) {
+			return Double.NaN;
+		}
+		return passEstimate.getPassRatio();
 	}
 
 	private static NestedTupleExpression nestedTupleExpression(ValueExpr condition) {

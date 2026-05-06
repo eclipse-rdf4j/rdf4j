@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
+	private static final double MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS = 512.0d;
+
 	private final Function<BindingSet, CloseableIteration<BindingSet>> eval;
 	private final BoundStatementPatternGuardJoinIteration.GuardCounter guardCounter;
 
@@ -67,21 +69,23 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else if (!runtimeTelemetryTrackingActive
 				&& leftRaw instanceof StatementPatternQueryEvaluationStep
-				&& isBoundStatementPatternGuardCandidate(join.getLeftArg())) {
+				&& isFullyBoundLeftStatementGuardCandidate(join.getLeftArg())) {
 			StatementPatternQueryEvaluationStep leftStatementPattern = (StatementPatternQueryEvaluationStep) leftRaw;
 			eval = bindings -> new BoundStatementPatternLeftJoinIteration(leftStatementPattern, rightPrepared,
 					bindings);
 			join.setAlgorithm(BoundStatementPatternLeftJoinIteration.class.getSimpleName());
 		} else if (!runtimeTelemetryTrackingActive
 				&& rightRaw instanceof StatementPatternQueryEvaluationStep
-				&& isNoNewBindingStatementGuard(join)) {
+				&& isNoNewBindingStatementGuard(join)
+				&& isBoundStatementGuardInvocationBudgetReasonable(join)) {
 			StatementPatternQueryEvaluationStep rightStatementPattern = (StatementPatternQueryEvaluationStep) rightRaw;
 			eval = bindings -> new BoundStatementPatternJoinIteration(leftPrepared.evaluate(bindings),
 					rightStatementPattern);
 			join.setAlgorithm(BoundStatementPatternJoinIteration.class.getSimpleName());
 		} else if (!runtimeTelemetryTrackingActive
 				&& rightGuardCounter != null
-				&& isNoNewBindingGuard(join)) {
+				&& isNoNewBindingGuard(join)
+				&& isBoundStatementGuardInvocationBudgetReasonable(join)) {
 			eval = bindings -> new BoundStatementPatternGuardJoinIteration(leftPrepared.evaluate(bindings),
 					rightGuardCounter, rightPrepared);
 			join.setAlgorithm(BoundStatementPatternGuardJoinIteration.class.getSimpleName());
@@ -106,9 +110,22 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				&& isNoNewBindingGuard(join);
 	}
 
+	private static boolean isBoundStatementGuardInvocationBudgetReasonable(Join join) {
+		double leftRows = join.getLeftArg()
+				.getResultSizeEstimate();
+		return !Double.isFinite(leftRows)
+				|| leftRows < 0.0d
+				|| leftRows <= MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS;
+	}
+
 	private static boolean isBoundStatementPatternGuardCandidate(TupleExpr expr) {
 		return expr instanceof StatementPattern
 				&& !isOutOfScopeForLeftArgBindings(expr);
+	}
+
+	private static boolean isFullyBoundLeftStatementGuardCandidate(TupleExpr expr) {
+		return isBoundStatementPatternGuardCandidate(expr)
+				&& requiredBindingNames(expr).isEmpty();
 	}
 
 	private static boolean isNoNewBindingGuard(Join join) {

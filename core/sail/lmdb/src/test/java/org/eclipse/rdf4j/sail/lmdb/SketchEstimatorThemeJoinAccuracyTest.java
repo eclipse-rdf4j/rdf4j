@@ -94,19 +94,13 @@ class SketchEstimatorThemeJoinAccuracyTest {
 			double totalRelativeError = 0.0d;
 			for (int i = 0; i < REQUIRED_JOIN_SCENARIOS; i++) {
 				JoinScenario scenario = scenarios.get(i);
-				double estimate = statistics.getCardinality(asJoinNode(scenario));
+				double estimate = estimateScenarioJoin(estimator, scenario);
 
 				if (estimate <= 0.0d) {
 					System.out.println(
 							"Estimator returned zero for scenario left=" + scenario.left + ", right=" + scenario.right
 									+ ", actual=" + scenario.actualJoinCount());
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
+					estimateScenarioJoin(estimator, scenario);
 
 				}
 
@@ -122,14 +116,7 @@ class SketchEstimatorThemeJoinAccuracyTest {
 					printDirectPairCounts(repository, scenario);
 				}
 				if (relativeError > MAX_RELATIVE_ERROR) {
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
-					statistics.getCardinality(asJoinNode(scenario));
+					estimateScenarioJoin(estimator, scenario);
 				} else {
 					System.out.println("Join estimate within per-scenario sketch bound. left=" + scenario.left
 							+ ", right=" + scenario.right + ", estimate=" + estimate + ", actual="
@@ -316,24 +303,18 @@ class SketchEstimatorThemeJoinAccuracyTest {
 				+ rightSubjects.size());
 	}
 
-	private static boolean awaitJoinEstimationReady(SketchBasedJoinEstimator estimator) throws InterruptedException {
-		return estimator.awaitReady(60, TimeUnit.SECONDS);
+	private static double estimateScenarioJoin(SketchBasedJoinEstimator estimator, JoinScenario scenario) {
+		return estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
+				SketchBasedJoinEstimator.Pair.PO,
+				scenario.left.predicate().stringValue(),
+				scenario.left.object().stringValue(),
+				SketchBasedJoinEstimator.Pair.PO,
+				scenario.right.predicate().stringValue(),
+				scenario.right.object().stringValue());
 	}
 
-	private static Join asJoinNode(JoinScenario scenario) {
-		StatementPattern left = new StatementPattern(
-				Var.of("s"),
-				Var.of("leftPredicate", scenario.left.predicate()),
-				Var.of("leftObject", scenario.left.object()),
-				Var.of("leftContext", THEME_GRAPH));
-
-		StatementPattern right = new StatementPattern(
-				Var.of("s"),
-				Var.of("rightPredicate", scenario.right.predicate()),
-				Var.of("rightObject", scenario.right.object()),
-				Var.of("rightContext", THEME_GRAPH));
-
-		return new Join(left, right);
+	private static boolean awaitJoinEstimationReady(SketchBasedJoinEstimator estimator) throws InterruptedException {
+		return estimator.awaitReady(60, TimeUnit.SECONDS);
 	}
 
 	private static void loadAllThemesInSingleGraph(SailRepository repository) {
