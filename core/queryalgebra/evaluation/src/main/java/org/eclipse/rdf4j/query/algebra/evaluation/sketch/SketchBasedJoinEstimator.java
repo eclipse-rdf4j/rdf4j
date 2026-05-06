@@ -1942,6 +1942,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 						flushPendingIncremental();
 						notifyReadyWaiters();
 					} catch (Throwable t) {
+						if (!running || wasInterrupted(t)) {
+							notifyReadyWaiters();
+							logger.debug("Interrupted while flushing incremental join estimator updates", t);
+							break;
+						}
 						logger.error("Error while flushing incremental join estimator updates", t);
 					}
 				}
@@ -2066,6 +2071,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		clearPositiveReadinessCache();
 		long requestVersion = rebuildRequestVersion.get();
 		long sizeBeforeRebuild = approxStoreSize.get();
+		boolean keepRebuildRequiredOnEarlyStop = rebuildRequired.get() || !isReadyNonBlocking();
 
 		boolean rebuildIntoA = !usingA; // remember before toggling
 
@@ -2092,7 +2098,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				int rebuildMemoryCheckCountdown = memoryMonitorCheckInterval;
 
 				while (it.hasNext()) {
-					if (Thread.currentThread().isInterrupted() || !running && Thread.currentThread() == refresher) {
+					if (Thread.currentThread().isInterrupted() || !running && Thread.currentThread() == refresher
+							|| Thread.currentThread() == refresher && !isRebuildAllowed()) {
 						stoppedEarly = true;
 						break;
 					}
@@ -2145,6 +2152,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 						ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
 					}
 				}
+			} catch (SketchStatementSourceException e) {
+				if (Thread.currentThread() == refresher) {
+					stoppedEarly = true;
+				} else {
+					throw e;
+				}
+			}
+
+			if (stoppedEarly) {
+				return stopRebuildEarly(tgt, targetBuffer, targetSlot, seen, startNanos,
+						keepRebuildRequiredOnEarlyStop);
 			}
 
 			synchronized (tgt) {
@@ -2182,6 +2200,20 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 			notifyReadyWaiters();
 		}
+	}
+
+	private long stopRebuildEarly(State target, String targetBuffer, byte targetSlot, long seen, long startNanos,
+			boolean keepRebuildRequired) {
+		synchronized (target) {
+			target.clear();
+		}
+		if (keepRebuildRequired) {
+			markRebuildRequired();
+		}
+		logger.debug(
+				"RdfJoinEstimator: Rebuilding sketches deferred: targetBuffer={}, targetSlot={}, scannedTriples={}, elapsedMillis={}",
+				targetBuffer, targetSlot, seen, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
+		return seen;
 	}
 
 	private long stopRebuildUnderMemoryPressure(State target, String targetBuffer, byte targetSlot, long seen,

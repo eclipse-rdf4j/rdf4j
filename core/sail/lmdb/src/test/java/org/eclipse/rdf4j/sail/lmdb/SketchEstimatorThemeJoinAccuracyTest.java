@@ -80,9 +80,11 @@ class SketchEstimatorThemeJoinAccuracyTest {
 			long rebuiltStatements = estimator.rebuild();
 			assertTrue(rebuiltStatements > 0L,
 					"Expected explicit test-data rebuild to scan the loaded theme statements");
+			assertTrue(awaitJoinEstimationReady(estimator),
+					"LMDB join estimator should finish draining test-data updates after rebuild");
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-			assertTrue(awaitJoinEstimationReady(statistics),
+			assertTrue(statistics.supportsJoinEstimation(),
 					"LMDB evaluation statistics should expose join estimation after test-data load");
 
 			List<JoinScenario> scenarios = selectJoinScenarios(repository);
@@ -166,8 +168,12 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		try {
 			loadPathologicalChainData(repository, hasArm, hasResult, biomarker, targetMarker);
 
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			assertTrue(awaitJoinEstimationReady(estimator),
+					"LMDB join estimator should finish draining pathological-data updates");
+
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-			assertTrue(awaitJoinEstimationReady(statistics),
+			assertTrue(statistics.supportsJoinEstimation(),
 					"LMDB evaluation statistics should expose join estimation after pathological-data load");
 
 			StatementPattern trialArmPattern = new StatementPattern(
@@ -216,8 +222,12 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		repository.init();
 
 		try {
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			assertTrue(awaitJoinEstimationReady(estimator),
+					"LMDB join estimator should finish loading the persisted library-theme snapshot");
+
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-			assertTrue(awaitJoinEstimationReady(statistics),
+			assertTrue(statistics.supportsJoinEstimation(),
 					"LMDB evaluation statistics should expose join estimation after library-theme reload");
 
 			StatementPattern locatedAtPattern = new StatementPattern(
@@ -230,7 +240,6 @@ class SketchEstimatorThemeJoinAccuracyTest {
 					Var.of("branchName"));
 			Join join = new Join(locatedAtPattern, branchNamePattern);
 
-			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			double leftRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.O, null,
 					LIBRARY_LOCATED_AT.stringValue(), null, null);
 			double rightRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null,
@@ -307,25 +316,8 @@ class SketchEstimatorThemeJoinAccuracyTest {
 				+ rightSubjects.size());
 	}
 
-	private static boolean awaitJoinEstimationReady(EvaluationStatistics statistics) throws InterruptedException {
-		long now = System.currentTimeMillis();
-		long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10);
-		while (System.currentTimeMillis() < deadline) {
-			if (statistics.supportsJoinEstimation()) {
-				return true;
-			}
-			Thread.sleep(100);
-		}
-		deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(50);
-		while (System.currentTimeMillis() < deadline) {
-			if (statistics.supportsJoinEstimation()) {
-				return true;
-			}
-			System.out.println("Waiting for join estimation to become available, waited "
-					+ (System.currentTimeMillis() - now) / 1000 + " seconds...");
-			Thread.sleep(1000);
-		}
-		return statistics.supportsJoinEstimation();
+	private static boolean awaitJoinEstimationReady(SketchBasedJoinEstimator estimator) throws InterruptedException {
+		return estimator.awaitReady(60, TimeUnit.SECONDS);
 	}
 
 	private static Join asJoinNode(JoinScenario scenario) {
@@ -372,8 +364,10 @@ class SketchEstimatorThemeJoinAccuracyTest {
 				connection.commit();
 			}
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-			if (!estimator.isReadyNonBlocking()) {
+			if (!awaitJoinEstimationReady(estimator)) {
 				estimator.rebuild();
+				assertTrue(awaitJoinEstimationReady(estimator),
+						"Expected library-theme estimator rebuild to finish before persistence");
 			}
 			double leftRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.O, null,
 					LIBRARY_LOCATED_AT.stringValue(), null, null);

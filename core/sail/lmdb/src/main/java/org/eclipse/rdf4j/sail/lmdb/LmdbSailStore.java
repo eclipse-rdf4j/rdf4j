@@ -50,6 +50,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
@@ -302,7 +304,7 @@ class LmdbSailStore implements SailStore {
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
-				? new SketchBasedJoinEstimator(new SailStoreStatementSource(this), sketchEstimatorConfig(config))
+				? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config))
 				: null;
 		Function<Long, byte[]> encode = element -> {
 			ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
@@ -341,6 +343,84 @@ class LmdbSailStore implements SailStore {
 		} finally {
 			if (!initialized) {
 				close();
+			}
+		}
+	}
+
+	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
+
+		private final SketchStatementSource delegate = new SailStoreStatementSource(LmdbSailStore.this);
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			boolean refreshThread = SketchBasedJoinEstimator.REFRESH_THREAD_NAME
+					.equals(Thread.currentThread().getName());
+			boolean locked = refreshThread ? sinkStoreAccessLock.tryLock() : lockEstimatorStatementSource();
+			if (!locked) {
+				throw deferredEstimatorStatementSource();
+			}
+			if (storeTxnStarted.get()) {
+				sinkStoreAccessLock.unlock();
+				throw deferredEstimatorStatementSource();
+			}
+			try {
+				return new GuardedEstimatorStatementIteration(delegate.getStatements(subject, predicate, object,
+						contexts));
+			} catch (RuntimeException e) {
+				sinkStoreAccessLock.unlock();
+				throw e;
+			}
+		}
+
+		private boolean lockEstimatorStatementSource() {
+			sinkStoreAccessLock.lock();
+			return true;
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return delegate.getValueFactory();
+		}
+	}
+
+	private SketchStatementSourceException deferredEstimatorStatementSource() {
+		return new SketchStatementSourceException(new SailException("LMDB store transaction active"));
+	}
+
+	private final class GuardedEstimatorStatementIteration implements CloseableIteration<Statement> {
+
+		private final CloseableIteration<? extends Statement> delegate;
+		private boolean closed;
+
+		private GuardedEstimatorStatementIteration(CloseableIteration<? extends Statement> delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return delegate.hasNext();
+		}
+
+		@Override
+		public Statement next() {
+			return delegate.next();
+		}
+
+		@Override
+		public void remove() {
+			delegate.remove();
+		}
+
+		@Override
+		public void close() {
+			try {
+				delegate.close();
+			} finally {
+				if (!closed) {
+					closed = true;
+					sinkStoreAccessLock.unlock();
+				}
 			}
 		}
 	}

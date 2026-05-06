@@ -87,6 +87,38 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		}
 	}
 
+	@Test
+	void deferredBackgroundRebuildKeepsPublishedSnapshotReady() throws Exception {
+		DeferringAfterInitialRebuildStore store = new DeferringAfterInitialRebuildStore(
+				VF.createStatement(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(10));
+
+		try {
+			estimator.rebuild();
+			assertTrue(estimator.isReadyNonBlocking(), "Initial rebuild should publish a ready snapshot");
+			double before = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, "urn:p", "urn:o",
+					null);
+			assertTrue(before > 0.0d, "Expected initial snapshot to estimate the loaded statement");
+
+			estimator.startBackgroundRefresh(-1);
+			assertTrue(store.awaitDeferredAttempt(),
+					"Expected background refresh to attempt and defer a later rebuild");
+
+			assertTrue(estimator.isReadyNonBlocking(),
+					"Deferred background rebuild should not make the published snapshot unavailable");
+			assertEquals(before,
+					estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, "urn:p", "urn:o", null),
+					0.0d);
+		} finally {
+			estimator.close();
+		}
+	}
+
 	private static final class CountingEmptyStore implements SketchStatementSource {
 		private final AtomicInteger rebuildCount = new AtomicInteger();
 		private final List<Statement> statements;
@@ -108,6 +140,40 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) {
 			rebuildCount.incrementAndGet();
+			return new CloseableIteratorIteration<>(statements.iterator());
+		}
+	}
+
+	private static final class DeferringAfterInitialRebuildStore implements SketchStatementSource {
+		private final AtomicInteger rebuildCount = new AtomicInteger();
+		private final List<Statement> statements;
+
+		DeferringAfterInitialRebuildStore(Statement... statements) {
+			this.statements = List.of(statements);
+		}
+
+		boolean awaitDeferredAttempt() throws InterruptedException {
+			long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			while (System.nanoTime() - deadlineNanos < 0L) {
+				if (rebuildCount.get() >= 2) {
+					return true;
+				}
+				Thread.sleep(10);
+			}
+			return false;
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return VF;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			if (rebuildCount.incrementAndGet() > 1) {
+				throw new SketchStatementSourceException(new IllegalStateException("deferred"));
+			}
 			return new CloseableIteratorIteration<>(statements.iterator());
 		}
 	}
