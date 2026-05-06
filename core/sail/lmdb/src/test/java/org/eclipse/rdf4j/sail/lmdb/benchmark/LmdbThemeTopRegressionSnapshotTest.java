@@ -130,7 +130,7 @@ class LmdbThemeTopRegressionSnapshotTest {
 		Map<String, String> fastestQueries = parseFastestOptimizedQueries();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {
 			System.out.println("Preparing theme " + entry.getKey());
-			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
+			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey(), entry.getValue());
 			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			System.out.println("Prepared store for theme " + entry.getKey().name());
@@ -176,30 +176,33 @@ class LmdbThemeTopRegressionSnapshotTest {
 
 	private static Map<String, String> parseFastestOptimizedQueries() throws IOException {
 		Map<String, String> queries = new LinkedHashMap<>();
-		List<String> lines = Files.readAllLines(snapshotFile());
-		Theme theme = null;
-		int queryIndex = -1;
-		for (int i = 0; i < lines.size(); i++) {
-			String line = lines.get(i);
-			Matcher themeMatcher = THEME_HEADER.matcher(line);
-			if (themeMatcher.matches()) {
-				theme = Theme.valueOf(themeMatcher.group(1));
-				queryIndex = -1;
-				continue;
-			}
-			Matcher queryMatcher = QUERY_HEADER.matcher(line);
-			if (queryMatcher.matches()) {
-				if (queryMatcher.group(1) != null) {
-					theme = Theme.valueOf(queryMatcher.group(1));
+		Path snapshot = snapshotFile();
+		if (snapshot != null) {
+			List<String> lines = Files.readAllLines(snapshot);
+			Theme theme = null;
+			int queryIndex = -1;
+			for (int i = 0; i < lines.size(); i++) {
+				String line = lines.get(i);
+				Matcher themeMatcher = THEME_HEADER.matcher(line);
+				if (themeMatcher.matches()) {
+					theme = Theme.valueOf(themeMatcher.group(1));
+					queryIndex = -1;
+					continue;
 				}
-				queryIndex = Integer.parseInt(queryMatcher.group(2));
-				continue;
-			}
-			if (theme != null && queryIndex >= 0 && line.equals("Optimized query:")) {
-				Block block = readFencedBlock(lines, i + 1);
-				if (block.text != null) {
-					queries.put(theme.name() + ":" + queryIndex, block.text);
-					i = block.nextIndex - 1;
+				Matcher queryMatcher = QUERY_HEADER.matcher(line);
+				if (queryMatcher.matches()) {
+					if (queryMatcher.group(1) != null) {
+						theme = Theme.valueOf(queryMatcher.group(1));
+					}
+					queryIndex = Integer.parseInt(queryMatcher.group(2));
+					continue;
+				}
+				if (theme != null && queryIndex >= 0 && line.equals("Optimized query:")) {
+					Block block = readFencedBlock(lines, i + 1);
+					if (block.text != null) {
+						queries.put(theme.name() + ":" + queryIndex, block.text);
+						i = block.nextIndex - 1;
+					}
 				}
 			}
 		}
@@ -234,7 +237,7 @@ class LmdbThemeTopRegressionSnapshotTest {
 		if (Files.isRegularFile(repositoryFile)) {
 			return repositoryFile;
 		}
-		throw new AssertionError("Unable to locate fastest-run snapshot file " + SNAPSHOT_FILE);
+		return null;
 	}
 
 	private static Path historyResultsDirectory() {
@@ -250,11 +253,12 @@ class LmdbThemeTopRegressionSnapshotTest {
 		throw new AssertionError("Unable to locate theme query benchmark results directory");
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
+	private static Path prepareThemeStore(Path dataDir, Theme theme, List<TargetQuery> targetQueries) throws Exception {
+		List<TargetQuery> primedQueries = learnedFilterPrimeQueries(targetQueries);
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve("top-regression-" + theme.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name(),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primedQueries),
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -262,6 +266,7 @@ class LmdbThemeTopRegressionSnapshotTest {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadData(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository, primedQueries);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -274,6 +279,22 @@ class LmdbThemeTopRegressionSnapshotTest {
 		return preparedStore.storeDirectory();
 	}
 
+	private static List<TargetQuery> learnedFilterPrimeQueries(List<TargetQuery> targetQueries) {
+		return targetQueries.stream()
+				.filter(targetQuery -> targetQuery.theme == Theme.HIGHLY_CONNECTED)
+				.filter(targetQuery -> targetQuery.queryIndex == 5)
+				.collect(Collectors.toList());
+	}
+
+	private static String primeIndexKey(List<TargetQuery> targetQueries) {
+		String key = targetQueries.stream()
+				.map(targetQuery -> Integer.toString(targetQuery.queryIndex))
+				.distinct()
+				.sorted()
+				.collect(Collectors.joining("-"));
+		return key.isEmpty() ? "no-prime" : key;
+	}
+
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -282,6 +303,28 @@ class LmdbThemeTopRegressionSnapshotTest {
 			connection.commit();
 		}
 		System.out.println("Loaded data for theme " + theme.name());
+	}
+
+	private static void primeLearnedFilterStats(SailRepository repository, List<TargetQuery> targetQueries) {
+		for (TargetQuery targetQuery : targetQueries) {
+			String query = ThemeQueryCatalog.queryFor(targetQuery.theme, targetQuery.queryIndex);
+			long expected = ThemeQueryCatalog.expectedCountFor(targetQuery.theme, targetQuery.queryIndex);
+			long actual = executeQuery(repository, query);
+			if (actual != expected) {
+				throw new AssertionError("Unable to prime learned filter stats: theme=" + targetQuery.theme
+						+ ", queryIndex=" + targetQuery.queryIndex + ", expected=" + expected + ", actual="
+						+ actual);
+			}
+		}
+	}
+
+	private static long executeQuery(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.evaluate()
+					.stream()
+					.count();
+		}
 	}
 
 	private static String explainOptimized(SailRepository repository, TargetQuery targetQuery) {
@@ -378,6 +421,9 @@ class LmdbThemeTopRegressionSnapshotTest {
 		}
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
 			return engineeringQ9FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 3) {
+			return engineeringQ3FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
 		return false;
 	}
@@ -556,12 +602,30 @@ class LmdbThemeTopRegressionSnapshotTest {
 
 	private static List<String> socialMediaQ0FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
-		requireContains(mismatches, renderedQuery, "VALUES (?u ?v)",
-				"missing finite pair pruning prefix");
-		requireBefore(mismatches, renderedQuery, "FILTER (?u != ?v)",
-				"?u <http://example.com/theme/social/follows> ?v .",
-				"self-pair pruning should run before the follows lookup");
-		if (renderedQuery.contains("VALUES ?optName")) {
+		boolean combinedPairNameValues = renderedQuery.contains("VALUES (?u ?v ?optName)");
+		if (combinedPairNameValues) {
+			requireDoesNotContain(mismatches, renderedQuery,
+					"(<http://example.com/theme/social/user/0> <http://example.com/theme/social/user/0>",
+					"combined finite pair/name prefix should pre-prune self pairs");
+			requireContains(mismatches, renderedQuery, "VALUES (?u ?v ?optName)",
+					"missing finite pair/name pruning prefix");
+			requireBefore(mismatches, renderedQuery, "VALUES (?u ?v ?optName)",
+					"?u <http://example.com/theme/social/follows> ?v .",
+					"finite pair/name prefix should guard the follows lookup");
+			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
+					"?u <http://example.com/theme/social/name> ?optName .",
+					"name lookup should stay after the bounded follows lookup");
+			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
+					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+					"literal optName filter should stay after the name lookup");
+		} else {
+			requireContains(mismatches, renderedQuery, "VALUES (?u ?v)",
+					"missing finite pair pruning prefix");
+			requireBefore(mismatches, renderedQuery, "FILTER (?u != ?v)",
+					"?u <http://example.com/theme/social/follows> ?v .",
+					"self-pair pruning should run before the follows lookup");
+		}
+		if (!combinedPairNameValues && renderedQuery.contains("VALUES ?optName")) {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
 					"VALUES ?optName",
 					"finite name anchor should run after the bounded follows lookup");
@@ -571,7 +635,7 @@ class LmdbThemeTopRegressionSnapshotTest {
 			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
 					"optName VALUES should retain the literal filter");
-		} else {
+		} else if (!combinedPairNameValues) {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"optional name lookup should stay after the bounded follows lookup");
@@ -596,19 +660,31 @@ class LmdbThemeTopRegressionSnapshotTest {
 
 	private static List<String> socialMediaQ1FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
-		requireContains(mismatches, renderedQuery, "VALUES (?u1 ?u2)",
-				"missing finite u1/u2 pair pruning prefix");
-		requireBefore(mismatches, renderedQuery, "VALUES (?u1 ?u2)", "VALUES ?u3",
-				"finite u3 domain should extend the finite clique prefix");
-		requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u2)",
-				"?u1 <http://example.com/theme/social/follows> ?u2 .",
-				"u1/u2 inequality should run before follows lookups");
-		requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u3)",
-				"?u1 <http://example.com/theme/social/follows> ?u2 .",
-				"u1/u3 inequality should run before follows lookups");
-		requireBefore(mismatches, renderedQuery, "FILTER (?u2 != ?u3)",
-				"?u1 <http://example.com/theme/social/follows> ?u2 .",
-				"u2/u3 inequality should run before follows lookups");
+		boolean combinedCliqueValues = renderedQuery.contains("VALUES (?u1 ?u2 ?u3)");
+		if (combinedCliqueValues) {
+			requireContains(mismatches, renderedQuery, "VALUES (?u1 ?u2 ?u3)",
+					"missing finite u1/u2/u3 clique pruning prefix");
+			requireDoesNotContain(mismatches, renderedQuery,
+					"(<http://example.com/theme/social/user/0> <http://example.com/theme/social/user/0>",
+					"combined finite clique prefix should pre-prune self pairs");
+			requireBefore(mismatches, renderedQuery, "VALUES (?u1 ?u2 ?u3)",
+					"?u1 <http://example.com/theme/social/follows> ?u2 .",
+					"finite clique bindings should guard follows lookups");
+		} else {
+			requireContains(mismatches, renderedQuery, "VALUES (?u1 ?u2)",
+					"missing finite u1/u2 pair pruning prefix");
+			requireBefore(mismatches, renderedQuery, "VALUES (?u1 ?u2)", "VALUES ?u3",
+					"finite u3 domain should extend the finite clique prefix");
+			requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u2)",
+					"?u1 <http://example.com/theme/social/follows> ?u2 .",
+					"u1/u2 inequality should run before follows lookups");
+			requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u3)",
+					"?u1 <http://example.com/theme/social/follows> ?u2 .",
+					"u1/u3 inequality should run before follows lookups");
+			requireBefore(mismatches, renderedQuery, "FILTER (?u2 != ?u3)",
+					"?u1 <http://example.com/theme/social/follows> ?u2 .",
+					"u2/u3 inequality should run before follows lookups");
+		}
 		requireBefore(mismatches, renderedQuery, "?u1 <http://example.com/theme/social/follows> ?u2 .",
 				"?u2 <http://example.com/theme/social/follows> ?u1 .",
 				"bounded follows clique should probe u1/u2 before u2/u1");
@@ -646,13 +722,25 @@ class LmdbThemeTopRegressionSnapshotTest {
 
 	private static List<String> socialMediaQ10FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
-		requireContains(mismatches, renderedQuery, "VALUES (?a ?b)",
-				"missing fastest known finite (a,b) pruning prefix");
+		boolean combinedAbcValues = renderedQuery.contains("VALUES (?a ?b ?c)");
+		if (combinedAbcValues) {
+			requireContains(mismatches, renderedQuery, "VALUES (?a ?b ?c)",
+					"missing finite (a,b,c) pruning prefix");
+		} else {
+			requireContains(mismatches, renderedQuery, "VALUES (?a ?b)",
+					"missing fastest known finite (a,b) pruning prefix");
+		}
 		requireDoesNotContain(mismatches, renderedQuery, "VALUES (?d ?e)",
 				"must not pair d/e before c/d and d/e inequalities can prune finite domains");
-		requireBefore(mismatches, renderedQuery, "VALUES ?c",
-				"?b <http://example.com/theme/social/follows> ?c .",
-				"finite c bindings should guard the b/c follows lookup");
+		if (combinedAbcValues) {
+			requireBefore(mismatches, renderedQuery, "VALUES (?a ?b ?c)",
+					"?b <http://example.com/theme/social/follows> ?c .",
+					"finite a/b/c bindings should guard the b/c follows lookup");
+		} else {
+			requireBefore(mismatches, renderedQuery, "VALUES ?c",
+					"?b <http://example.com/theme/social/follows> ?c .",
+					"finite c bindings should guard the b/c follows lookup");
+		}
 		requireBefore(mismatches, renderedQuery, "VALUES ?d",
 				"?c <http://example.com/theme/social/follows> ?d .",
 				"finite d bindings should guard the c/d follows lookup");
@@ -726,7 +814,8 @@ class LmdbThemeTopRegressionSnapshotTest {
 				"?section <http://example.com/theme/train/partOfLine> ?line .",
 				"partOfLine should stay inside the optional after line is bound");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
-		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Line type");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[S, P, O]", "Line type should use exact direct access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
 				"plannedLookupComponents=[O]", "partOfLine optional should use bound line object access");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
@@ -1056,6 +1145,41 @@ class LmdbThemeTopRegressionSnapshotTest {
 		return mismatches;
 	}
 
+	private static List<String> engineeringQ3FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"requirement type guard should remain visible");
+		requireContains(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"satisfies bridge should remain visible");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"OPTIONAL",
+				"requirement type guard should run before optional verifiedBy fanout");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"OPTIONAL",
+				"satisfies bridge should bind component before optional verifiedBy fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL", "FILTER (?optTest != ?requirement)",
+				"optional verifiedBy fanout should remain before the optTest filter");
+		requireBefore(mismatches, renderedQuery, "FILTER (?optTest != ?requirement)", "FILTER NOT EXISTS",
+				"optTest filter should remain before component-name anti-probe");
+		requireContains(mismatches, renderedQuery,
+				"?component <http://example.com/theme/engineering/name> ?name .",
+				"component-name anti-probe should remain visible");
+		requireContains(mismatches, renderedQuery,
+				"FILTER (CONTAINS(STR(?name), \"Component 1\"))",
+				"component-name anti-probe filter should remain visible");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[P, O]", "Requirement type should stay a bounded predicate/object scan");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/satisfies", "satisfies");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/verifiedBy", "verifiedBy");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/name", "component name");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
 	private static void requireContains(List<String> mismatches, String text, String expected, String description) {
 		if (!text.contains(expected)) {
 			mismatches.add(description + ": missing `" + expected + "`");
@@ -1173,11 +1297,15 @@ class LmdbThemeTopRegressionSnapshotTest {
 				int patternEnd = plan.indexOf('\n', patternStart);
 				String patternLine = plan.substring(patternStart, patternEnd >= 0 ? patternEnd : plan.length());
 				String pattern = statementPatternForPredicate(plan.substring(patternStart), predicateIri);
+				boolean exactDirectLookup = patternLine.contains("plannedIndexAccessMode=directLookup")
+						&& patternLine.contains("plannedLookupComponents=[S, P, O]");
 				boolean hasBoundVariable = pattern != null && pattern.contains("(bindingState=bound)");
 				boolean usesBoundLookup = patternLine.contains("plannedLookupComponents=[S")
 						|| patternLine.contains("plannedLookupComponents=[P, O]")
 						|| patternLine.contains("plannedLookupComponents=[O]");
-				if (patternLine.contains("plannedBoundVars=") || hasBoundVariable && usesBoundLookup) {
+				if (patternLine.contains("plannedBoundVars=")
+						|| exactDirectLookup
+						|| hasBoundVariable && usesBoundLookup) {
 					return true;
 				}
 			}

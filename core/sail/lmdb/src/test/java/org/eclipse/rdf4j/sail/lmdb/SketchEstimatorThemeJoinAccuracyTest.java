@@ -77,6 +77,9 @@ class SketchEstimatorThemeJoinAccuracyTest {
 		try {
 			loadAllThemesInSingleGraph(repository);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			long rebuiltStatements = estimator.rebuild();
+			assertTrue(rebuiltStatements > 0L,
+					"Expected explicit test-data rebuild to scan the loaded theme statements");
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			assertTrue(awaitJoinEstimationReady(statistics),

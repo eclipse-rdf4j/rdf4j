@@ -404,16 +404,24 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
 				"?component a <http://example.com/theme/engineering/Component> .",
 				"Engineering q8 should start from satisfies before bound component type lookup\n" + plan);
-		assertBefore(renderedQuery,
-				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
-				"?requirement a <http://example.com/theme/engineering/Requirement> .",
-				"Engineering q8 should start from satisfies before bound requirement type lookup\n" + plan);
 		assertContains(plan, "plannerId=lmdb-sketch");
 		assertContains(plan, "value=http://example.com/theme/engineering/satisfies");
-		assertContains(plan, "plannedWorkRows=520");
+		assertSatisfiesUsesBoundRequirement(plan);
 		assertFalse(plan.contains("Join (JoinIterator) (resultSizeEstimate=1.00) [left]"),
 				"Engineering q8 must not collapse the main joined prefix to a single row after a bound lookup:\n"
 						+ plan);
+	}
+
+	private static void assertSatisfiesUsesBoundRequirement(String plan) {
+		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/satisfies");
+		if (predicateIndex < 0) {
+			throw new AssertionError("Engineering q8 plan should include the satisfies pattern:\n" + plan);
+		}
+		String pattern = statementPatternWindow(plan, predicateIndex, "StatementPattern");
+		assertContains(pattern, "plannedIndexAccessMode=directLookup");
+		assertContains(pattern, "plannedLookupComponents=[S, P]");
+		assertContains(pattern, "plannedBoundVars=requirement");
+		assertContains(pattern, "plannedAccessWorkRows=520");
 	}
 
 	private static void assertDevelopOperatorSkeleton(String plan) {

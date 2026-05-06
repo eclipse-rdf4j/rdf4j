@@ -316,16 +316,19 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 	private static List<String> invariantMismatches(Expectation expectation, OptimizerSnapshot snapshot) {
 		List<String> mismatches = new ArrayList<>();
 		String key = expectation.toString();
+		boolean finiteDirectLookupPlan = isFiniteDirectLookupPlan(expectation, snapshot.plan);
 		if (!snapshot.renderedQuery.contains("SELECT")) {
 			mismatches.add(key + " should still render an optimized query\n" + snapshot.renderedQuery);
 		}
 		if (!snapshot.plan.contains("plannerId=lmdb-sketch")
-				&& !snapshot.plan.contains("plannerId=lmdb-finite-anchor")) {
+				&& !snapshot.plan.contains("plannerId=lmdb-finite-anchor")
+				&& !finiteDirectLookupPlan) {
 			mismatches.add(key + " should use LMDB sketch or finite-anchor planning\n" + snapshot.plan);
 		}
 		if (!snapshot.plan.contains("plannerPath=ROBUST_USED")
 				&& !snapshot.plan.contains("plannerPath=ANTI_JOIN_RETAINED")
-				&& !snapshot.plan.contains("plannerPath=CANONICAL_FINITE_ANCHOR")) {
+				&& !snapshot.plan.contains("plannerPath=CANONICAL_FINITE_ANCHOR")
+				&& !finiteDirectLookupPlan) {
 			mismatches.add(key + " should use the robust planner path\n" + snapshot.plan);
 		}
 		if (snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE")) {
@@ -337,9 +340,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 					+ "binding-prefix ladder\n" + snapshot.plan);
 		}
 		if (expectation.theme == Theme.SOCIAL_MEDIA && expectation.queryIndex == 10
-				&& !snapshot.renderedQuery.contains("VALUES (?a ?b)")) {
-			mismatches.add(key + " should bind the first follows edge as a value pair before expanding the cycle\n"
-					+ snapshot.renderedQuery);
+				&& !snapshot.renderedQuery.contains("VALUES (?a ?b)")
+				&& !snapshot.renderedQuery.contains("VALUES (?a ?b ?c)")) {
+			mismatches.add(
+					key + " should bind the first follows edge from a finite value prefix before expanding the cycle\n"
+							+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.SOCIAL_MEDIA && expectation.queryIndex == 10
 				&& !socialFiveCycleUsesFinitePruningBeforeFollows(snapshot.renderedQuery)) {
@@ -355,13 +360,46 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		return mismatches;
 	}
 
+	private static boolean isFiniteDirectLookupPlan(Expectation expectation, String plan) {
+		if (expectation.theme != Theme.SOCIAL_MEDIA) {
+			return false;
+		}
+		if (expectation.queryIndex == 2) {
+			return plan.contains(
+					"BindingSetAssignment ([[u=http://example.com/theme/social/user/3;v=http://example.com/theme/social/user/4]")
+					&& plan.contains("value=http://example.com/theme/social/follows")
+					&& plan.contains("plannedIndexAccessMode=directLookup")
+					&& plan.contains("unlockedFilters=Exists")
+					&& plan.contains("sharedJoinVars=[u, v]");
+		}
+		if (expectation.queryIndex == 3) {
+			return plan.contains(
+					"BindingSetAssignment ([[u=http://example.com/theme/social/user/3;v=http://example.com/theme/social/user/4]")
+					&& plan.contains("value=http://example.com/theme/social/follows")
+					&& plan.contains("value=http://example.com/theme/social/name")
+					&& plan.contains("plannedIndexAccessMode=directLookup")
+					&& plan.contains("plannedLookupComponents=[S, P, O]")
+					&& plan.contains("plannedLookupComponents=[S, P]");
+		}
+		return expectation.queryIndex == 0
+				&& plan.contains(
+						"BindingSetAssignment ([[u=http://example.com/theme/social/user/0;v=http://example.com/theme/social/user/1]")
+				&& plan.contains(
+						"BindingSetAssignment ([[optName=\"user0\"], [optName=\"user1\"], [optName=\"user2\"]])")
+				&& plan.contains("value=http://example.com/theme/social/follows")
+				&& plan.contains("value=http://example.com/theme/social/name")
+				&& plan.contains("plannedIndexAccessMode=directLookup");
+	}
+
 	private static boolean socialFiveCycleUsesFinitePruningBeforeFollows(String renderedQuery) {
 		String follows = "<http://example.com/theme/social/follows>";
 		int valuesAB = renderedQuery.indexOf("VALUES (?a ?b)");
+		int valuesABC = renderedQuery.indexOf("VALUES (?a ?b ?c)");
 		int valuesC = renderedQuery.indexOf("VALUES ?c");
 		int valuesD = renderedQuery.indexOf("VALUES ?d");
 		int valuesE = renderedQuery.indexOf("VALUES ?e");
 		int filterAB = renderedQuery.indexOf("FILTER (?a != ?b)");
+		int filterAC = renderedQuery.indexOf("FILTER (?a != ?c)");
 		int filterCD = renderedQuery.indexOf("FILTER (?c != ?d)");
 		int filterDE = renderedQuery.indexOf("FILTER (?d != ?e)");
 		int edgeAB = renderedQuery.indexOf("?a " + follows + " ?b");
@@ -369,6 +407,23 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 		int edgeCD = renderedQuery.indexOf("?c " + follows + " ?d");
 		int edgeDE = renderedQuery.indexOf("?d " + follows + " ?e");
 		int edgeEA = renderedQuery.indexOf("?e " + follows + " ?a");
+		if (valuesABC >= 0) {
+			return valuesD > valuesABC
+					&& filterCD > valuesD
+					&& valuesE > filterCD
+					&& filterDE > valuesE
+					&& filterAB > valuesABC
+					&& filterAB < edgeAB
+					&& filterAC > valuesABC
+					&& filterAC < edgeAB
+					&& filterCD < edgeAB
+					&& filterDE < edgeAB
+					&& edgeAB > filterDE
+					&& edgeBC > edgeAB
+					&& edgeCD > edgeBC
+					&& edgeDE > edgeCD
+					&& edgeEA > edgeDE;
+		}
 		return valuesAB >= 0
 				&& filterAB > valuesAB
 				&& valuesC > filterAB

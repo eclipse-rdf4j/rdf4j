@@ -1633,14 +1633,19 @@ class LmdbThemeQueryRegressionTest {
 					assertDoesNotContain(renderedQuery, "VALUES ?code",
 							"Medical q4 should not turn the local code filter into a driving VALUES factor\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "?enc a <http://example.com/theme/medical/Encounter>",
-							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"Medical q4 should keep the Encounter type anchor before hasCondition fanout\n"
-									+ snapshot.plan());
-					assertBefore(renderedQuery, "?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"?cond <http://example.com/theme/medical/code> ?code",
-							"Medical q4 should bind condition from encounter before probing code\n"
-									+ snapshot.plan());
+					if (appearsBefore(renderedQuery, "?enc a <http://example.com/theme/medical/Encounter>",
+							"?enc <http://example.com/theme/medical/hasCondition> ?cond")) {
+						assertBefore(renderedQuery, "?enc <http://example.com/theme/medical/hasCondition> ?cond",
+								"?cond <http://example.com/theme/medical/code> ?code",
+								"Medical q4 should bind condition from encounter before probing code\n"
+										+ snapshot.plan());
+					} else {
+						assertBefore(renderedQuery, "?cond <http://example.com/theme/medical/code> ?code",
+								"?enc <http://example.com/theme/medical/hasCondition> ?cond",
+								"Medical q4 should keep the selective code filter attached before condition fanout\n"
+										+ snapshot.plan());
+						assertMedicalQ4CodeFirstPlanShape(snapshot.plan());
+					}
 					assertBefore(renderedQuery, "?cond <http://example.com/theme/medical/code> ?code",
 							"OPTIONAL",
 							"Medical q4 should defer handledBy optional work until after the condition/code join\n"
@@ -1652,6 +1657,25 @@ class LmdbThemeQueryRegressionTest {
 		} finally {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
+	}
+
+	private static void assertMedicalQ4CodeFirstPlanShape(String plan) {
+		int codePredicateIndex = plan.indexOf("value=http://example.com/theme/medical/code");
+		if (codePredicateIndex < 0) {
+			throw new AssertionError("Medical q4 plan should include the code pattern:\n" + plan);
+		}
+		String codePattern = statementPatternWindow(plan, codePredicateIndex);
+		assertContains(codePattern, "unlockedFilters=Or");
+		assertContains(codePattern, "source=sampled");
+
+		int conditionPredicateIndex = plan.indexOf("value=http://example.com/theme/medical/hasCondition");
+		if (conditionPredicateIndex < 0) {
+			throw new AssertionError("Medical q4 plan should include the hasCondition pattern:\n" + plan);
+		}
+		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
+		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
+		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
+		assertContains(conditionPattern, "plannedBoundVars=code,cond");
 	}
 
 	@Test

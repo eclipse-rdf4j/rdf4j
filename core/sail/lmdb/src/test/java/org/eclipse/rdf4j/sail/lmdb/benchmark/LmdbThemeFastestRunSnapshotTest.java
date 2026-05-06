@@ -462,7 +462,7 @@ class LmdbThemeFastestRunSnapshotTest {
 			return value.contains("LeftJoinIterator") ? "LeftJoin (LeftJoinIterator)" : "LeftJoin";
 		}
 		if (value.startsWith("Join")) {
-			return value.contains("JoinIterator") ? "Join (JoinIterator)" : "Join";
+			return isJoinIteratorFamily(value) ? "Join (JoinIterator)" : "Join";
 		}
 		if (value.startsWith("Group ")) {
 			return stripTrailingMetadata(value);
@@ -483,6 +483,12 @@ class LmdbThemeFastestRunSnapshotTest {
 			return "Difference";
 		}
 		return "";
+	}
+
+	private static boolean isJoinIteratorFamily(String value) {
+		return value.contains("JoinIterator")
+				|| value.contains("BoundStatementPatternJoinIteration")
+				|| value.contains("BoundStatementPatternLeftJoinIteration");
 	}
 
 	private static String stripTreePrefix(String line) {
