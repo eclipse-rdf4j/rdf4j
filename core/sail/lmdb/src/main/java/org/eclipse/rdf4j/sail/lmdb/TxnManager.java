@@ -29,6 +29,7 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -390,11 +391,15 @@ class TxnManager {
 
 	class Txn implements Closeable, AutoCloseable {
 
+		private static final int CURSOR_TXN_TRANSITION = Integer.MIN_VALUE;
+		private static final int CURSOR_USERS_MASK = Integer.MAX_VALUE;
+
 		private long txn;
 		private long version;
 		private boolean txnActive = true;
-		private boolean closed;
+		private volatile boolean closed;
 		private boolean closeInProgress;
+		private final AtomicInteger cursorUseState = new AtomicInteger();
 		private final List<CursorRegistration> openCursors = new ArrayList<>();
 
 		Txn(long txn) {
@@ -403,6 +408,55 @@ class TxnManager {
 
 		long get() {
 			return txn;
+		}
+
+		CursorUse beginCursorUse() {
+			enterCursorUse();
+			return new CursorUse();
+		}
+
+		void enterCursorUse() {
+			try {
+				while (true) {
+					if (closed || txn == 0) {
+						throw new SailException("Cannot use an LMDB cursor on a closed transaction");
+					}
+					int state = cursorUseState.getAndIncrement();
+					if ((state & CURSOR_TXN_TRANSITION) == 0) {
+						if ((state & CURSOR_USERS_MASK) == CURSOR_USERS_MASK) {
+							exitCursorUse();
+							throw new SailException("Too many concurrent LMDB cursor users");
+						}
+						if (closed || txn == 0) {
+							exitCursorUse();
+							throw new SailException("Cannot use an LMDB cursor on a closed transaction");
+						}
+						return;
+					}
+					exitCursorUse();
+					synchronized (this) {
+						while ((cursorUseState.get() & CURSOR_TXN_TRANSITION) != 0 && !closed) {
+							wait();
+						}
+					}
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new SailException(e);
+			}
+		}
+
+		final class CursorUse implements AutoCloseable {
+
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (!closed) {
+					closed = true;
+					exitCursorUse();
+				}
+			}
 		}
 
 		synchronized CursorRegistration registerCursor() {
@@ -451,6 +505,40 @@ class TxnManager {
 		private synchronized void endClose() {
 			closeInProgress = false;
 			notifyAll();
+		}
+
+		void exitCursorUse() {
+			int state = cursorUseState.decrementAndGet();
+			if ((state & CURSOR_TXN_TRANSITION) != 0 && (state & CURSOR_USERS_MASK) == 0) {
+				synchronized (this) {
+					notifyAll();
+				}
+			}
+		}
+
+		private void beginNativeTxnTransition() throws InterruptedException {
+			while (true) {
+				int state = cursorUseState.get();
+				if ((state & CURSOR_TXN_TRANSITION) == 0
+						&& !cursorUseState.compareAndSet(state, state | CURSOR_TXN_TRANSITION)) {
+					continue;
+				}
+				synchronized (this) {
+					while ((cursorUseState.get() & CURSOR_USERS_MASK) != 0) {
+						wait();
+					}
+				}
+				return;
+			}
+		}
+
+		private void finishNativeTxnTransition(boolean allowCursorUse) {
+			if (allowCursorUse) {
+				cursorUseState.addAndGet(CURSOR_TXN_TRANSITION);
+			}
+			synchronized (this) {
+				notifyAll();
+			}
 		}
 
 		StampedLongAdderLockManager lockManager() {
@@ -564,10 +652,15 @@ class TxnManager {
 				if (mode != Mode.NONE && txn != 0) {
 					waitForOpenCursors();
 				}
-				free(txnActive);
-				closed = true;
-				synchronized (TxnManager.this.active) {
-					TxnManager.this.active.remove(this);
+				beginNativeTxnTransition();
+				try {
+					free(txnActive);
+					closed = true;
+					synchronized (TxnManager.this.active) {
+						TxnManager.this.active.remove(this);
+					}
+				} finally {
+					finishNativeTxnTransition(true);
 				}
 			}
 		}
@@ -579,13 +672,20 @@ class TxnManager {
 			if (closed) {
 				return;
 			}
-			if (txnActive) {
-				mdb_txn_reset(txn);
-				txnActive = false;
-				updateActiveState(this, false);
+			try {
+				beginNativeTxnTransition();
+				if (txnActive) {
+					mdb_txn_reset(txn);
+					txnActive = false;
+					updateActiveState(this, false);
+				}
+				activate();
+				version++;
+			} catch (InterruptedException e) {
+				throw new IOException(e);
+			} finally {
+				finishNativeTxnTransition(txnActive || closed);
 			}
-			activate();
-			version++;
 		}
 
 		/**
@@ -595,11 +695,18 @@ class TxnManager {
 			if (closed) {
 				return;
 			}
-			if (active) {
-				activate();
-				version++;
-			} else {
-				deactivate();
+			try {
+				beginNativeTxnTransition();
+				if (active) {
+					activate();
+					version++;
+				} else {
+					deactivate();
+				}
+			} catch (InterruptedException e) {
+				throw new IOException(e);
+			} finally {
+				finishNativeTxnTransition(active && (txnActive || closed));
 			}
 		}
 

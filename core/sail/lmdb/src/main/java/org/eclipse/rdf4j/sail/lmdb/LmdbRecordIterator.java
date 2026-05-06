@@ -67,9 +67,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final int dbi;
 
-	private volatile boolean closed = false;
-	private boolean cursorClosed = false;
-	private volatile Thread cursorUser;
+	private final CursorUseState cursorUseState = new CursorUseState();
 
 	private final MDBVal keyData;
 
@@ -83,8 +81,6 @@ class LmdbRecordIterator implements RecordIterator {
 	private final long[] originalQuad;
 
 	private boolean fetchNext = false;
-
-	private final StampedLongAdderLockManager txnLockManager;
 
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -121,7 +117,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;
-		this.txnLockManager = txnRef.lockManager();
+		StampedLongAdderLockManager txnLockManager = txnRef.lockManager();
 
 		long readStamp;
 		try {
@@ -157,88 +153,85 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public long[] next() {
-		if (closed) {
+		if (!cursorUseState.beginUse()) {
 			log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
 			return null;
 		}
-		long readStamp;
+		boolean closeWhenDone = false;
 		try {
-			readStamp = txnLockManager.readLock();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
-		}
-		try {
-			if (!startCursorUse()) {
-				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
-				return null;
-			}
+			txnRef.enterCursorUse();
+			try {
+				int lastResult;
+				if (txnRefVersion != txnRef.version()) {
+					// TODO: None of the tests in the LMDB Store cover this case!
+					// cursor must be renewed
+					mdb_cursor_renew(txn, cursor);
+					if (fetchNext) {
+						// cursor must be positioned on last item, reuse minKeyBuf if available
+						if (minKeyBuf == null) {
+							minKeyBuf = pool.getKeyBuffer();
+						}
+						minKeyBuf.clear();
+						index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
+						minKeyBuf.flip();
+						keyData.mv_data(minKeyBuf);
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+						if (lastResult != MDB_SUCCESS) {
+							// use MDB_SET_RANGE if key was deleted
+							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						}
+						if (lastResult != MDB_SUCCESS) {
+							closeWhenDone = true;
+							return null;
+						}
+					}
+					// update version of txn ref
+					this.txnRefVersion = txnRef.version();
+				}
 
-			int lastResult;
-			if (txnRefVersion != txnRef.version()) {
-				// TODO: None of the tests in the LMDB Store cover this case!
-				// cursor must be renewed
-				mdb_cursor_renew(txn, cursor);
 				if (fetchNext) {
-					// cursor must be positioned on last item, reuse minKeyBuf if available
-					if (minKeyBuf == null) {
-						minKeyBuf = pool.getKeyBuffer();
-					}
-					minKeyBuf.clear();
-					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
-					minKeyBuf.flip();
-					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
-					if (lastResult != MDB_SUCCESS) {
-						// use MDB_SET_RANGE if key was deleted
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					fetchNext = false;
+				} else {
+					if (minKeyBuf != null) {
+						// set cursor to min key
+						keyData.mv_data(minKeyBuf);
 						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					} else {
+						// set cursor to first item
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 					}
-					if (lastResult != MDB_SUCCESS) {
-						closeInternal(false, true);
-						return null;
+				}
+
+				while (lastResult == MDB_SUCCESS) {
+					sourceRowsScannedActual++;
+					// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
+					if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+						sourceRowsFilteredActual++;
+						lastResult = MDB_NOTFOUND;
+					} else if (matches()) {
+						sourceRowsFilteredActual++;
+						// value doesn't match search key/mask, fetch next value
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					} else {
+						// Matching value found
+						index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+						sourceRowsMatchedActual++;
+						// fetch next value
+						fetchNext = true;
+						return quad;
 					}
 				}
-				// update version of txn ref
-				this.txnRefVersion = txnRef.version();
+				closeWhenDone = true;
+				return null;
+			} finally {
+				txnRef.exitCursorUse();
 			}
-
-			if (fetchNext) {
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				fetchNext = false;
-			} else {
-				if (minKeyBuf != null) {
-					// set cursor to min key
-					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				} else {
-					// set cursor to first item
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				}
-			}
-
-			while (lastResult == MDB_SUCCESS) {
-				sourceRowsScannedActual++;
-				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
-				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
-					sourceRowsFilteredActual++;
-					lastResult = MDB_NOTFOUND;
-				} else if (matches()) {
-					sourceRowsFilteredActual++;
-					// value doesn't match search key/mask, fetch next value
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				} else {
-					// Matching value found
-					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
-					sourceRowsMatchedActual++;
-					// fetch next value
-					fetchNext = true;
-					return quad;
-				}
-			}
-			closeInternal(false, true);
-			return null;
 		} finally {
-			finishCursorUse();
-			txnLockManager.unlockRead(readStamp);
+			cursorUseState.finishUse();
+			if (closeWhenDone) {
+				closeInternal(false);
+			}
 		}
 	}
 
@@ -255,105 +248,35 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
-		closeInternal(maybeCalledAsync, false);
-	}
-
-	private void closeInternal(boolean maybeCalledAsync, boolean readLockHeld) {
-		if (!closed) {
-			closeCursor(readLockHeld);
-		}
+		closeCursor();
 	}
 
 	private void closeFromTxnClose() {
 		closeInternal(true);
 	}
 
-	private synchronized boolean startCursorUse() {
-		if (closed || cursorClosed) {
-			return false;
-		}
-		cursorUser = Thread.currentThread();
-		return true;
-	}
-
-	private synchronized void finishCursorUse() {
-		if (cursorUser == Thread.currentThread()) {
-			cursorUser = null;
-			notifyAll();
-		}
-	}
-
-	private synchronized void waitForCursorUser() {
-		boolean interrupted = false;
-		Thread currentThread = Thread.currentThread();
-		while (cursorUser != null && cursorUser != currentThread) {
-			try {
-				wait();
-			} catch (InterruptedException e) {
-				interrupted = true;
-			}
-		}
-		if (interrupted) {
-			currentThread.interrupt();
-		}
-	}
-
-	private void closeCursor(boolean readLockHeld) {
-		if (!beginCloseCursor()) {
+	private void closeCursor() {
+		if (!cursorUseState.beginClose()) {
 			return;
 		}
-		long readStamp = readLockHeld ? 0 : readLockUninterruptibly();
-		waitForCursorUser();
 		try {
-			mdb_cursor_close(cursor);
-			pool.free(keyData);
-			pool.free(valueData);
-			if (minKeyBuf != null) {
-				pool.free(minKeyBuf);
-			}
-			if (maxKey != null) {
-				pool.free(maxKeyBuf);
-				pool.free(maxKey);
-			}
-		} finally {
-			finishCloseCursor();
+			txnRef.enterCursorUse();
 			try {
-				txnRef.unregisterCursor(cursorRegistration);
+				mdb_cursor_close(cursor);
+				pool.free(keyData);
+				pool.free(valueData);
+				if (minKeyBuf != null) {
+					pool.free(minKeyBuf);
+				}
+				if (maxKey != null) {
+					pool.free(maxKeyBuf);
+					pool.free(maxKey);
+				}
 			} finally {
-				if (!readLockHeld) {
-					txnLockManager.unlockRead(readStamp);
-				}
-			}
-		}
-	}
-
-	private synchronized boolean beginCloseCursor() {
-		if (closed || cursorClosed) {
-			return false;
-		}
-		closed = true;
-		return true;
-	}
-
-	private synchronized void finishCloseCursor() {
-		cursorClosed = true;
-		notifyAll();
-	}
-
-	private long readLockUninterruptibly() {
-		boolean interrupted = false;
-		try {
-			while (true) {
-				try {
-					return txnLockManager.readLock();
-				} catch (InterruptedException e) {
-					interrupted = true;
-				}
+				txnRef.exitCursorUse();
 			}
 		} finally {
-			if (interrupted) {
-				Thread.currentThread().interrupt();
-			}
+			txnRef.unregisterCursor(cursorRegistration);
 		}
 	}
 

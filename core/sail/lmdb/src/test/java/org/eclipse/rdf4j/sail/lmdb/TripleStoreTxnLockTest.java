@@ -77,6 +77,55 @@ class TripleStoreTxnLockTest {
 	}
 
 	@Test
+	void commitResetWaitsForActiveCursorUseGuard(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 0, true);
+			tripleStore.endTransaction(true);
+
+			try (Txn readTxn = tripleStore.getTxnManager().createReadTxn()) {
+				Txn.CursorUse cursorUse = readTxn.beginCursorUse();
+				try {
+					CountDownLatch commitAttempting = new CountDownLatch(1);
+					CountDownLatch writerFinished = new CountDownLatch(1);
+					AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+
+					Thread writer = new Thread(() -> {
+						try {
+							tripleStore.startTransaction();
+							tripleStore.storeTriple(4, 5, 6, 0, true);
+							commitAttempting.countDown();
+							tripleStore.endTransaction(true);
+						} catch (Throwable throwable) {
+							writerFailure.compareAndSet(null, throwable);
+						} finally {
+							writerFinished.countDown();
+						}
+					}, "lmdb-commit-reset-cursor-use-test-writer");
+
+					writer.start();
+
+					assertThat(commitAttempting.await(10, TimeUnit.SECONDS)).isTrue();
+					assertThat(writerFinished.await(200, TimeUnit.MILLISECONDS))
+							.as("commit reset must wait while an LMDB cursor use guard is active")
+							.isFalse();
+
+					cursorUse.close();
+					cursorUse = null;
+
+					writer.join(TimeUnit.SECONDS.toMillis(10));
+					assertThat(writer.isAlive()).isFalse();
+					assertThat(writerFailure.get()).isNull();
+				} finally {
+					if (cursorUse != null) {
+						cursorUse.close();
+					}
+				}
+			}
+		}
+	}
+
+	@Test
 	void idleRecordIteratorDoesNotBlockCommitAndResumesAfterReset(@TempDir File dataDir) throws Exception {
 		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
 			tripleStore.startTransaction();
@@ -239,7 +288,7 @@ class TripleStoreTxnLockTest {
 	}
 
 	@Test
-	void concurrentRecordIteratorCloseWhileReadLockBlockedIsIdempotent(@TempDir File dataDir) throws Exception {
+	void concurrentRecordIteratorCloseIsIdempotent(@TempDir File dataDir) throws Exception {
 		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(1, 2, 3, 0, true);
@@ -248,37 +297,31 @@ class TripleStoreTxnLockTest {
 			for (int attempt = 0; attempt < 100; attempt++) {
 				Txn readTxn = tripleStore.getTxnManager().createReadTxn();
 				RecordIterator iterator = tripleStore.getTriples(readTxn, 0, 0, 0, 0, true);
-				long writeStamp = tripleStore.getTxnManager().lockManager().writeLock();
 				Thread[] closers = new Thread[8];
 				CountDownLatch closeReady = new CountDownLatch(closers.length);
 				CountDownLatch closeStart = new CountDownLatch(1);
 				CountDownLatch closeFinished = new CountDownLatch(closers.length);
 				AtomicReference<Throwable> closeFailure = new AtomicReference<>();
-				try {
-					for (int i = 0; i < closers.length; i++) {
-						closers[i] = new Thread(() -> {
-							closeReady.countDown();
-							try {
-								assertThat(closeStart.await(10, TimeUnit.SECONDS)).isTrue();
-								iterator.close();
-							} catch (Throwable throwable) {
-								closeFailure.compareAndSet(null, throwable);
-							} finally {
-								closeFinished.countDown();
-							}
-						}, "lmdb-record-iterator-concurrent-close-" + attempt + "-" + i);
-						closers[i].start();
-					}
-
-					assertThat(closeReady.await(10, TimeUnit.SECONDS)).isTrue();
-					closeStart.countDown();
-					assertThat(closeFinished.await(200, TimeUnit.MILLISECONDS))
-							.as("at least one close must wait while the txn-manager write lock is active")
-							.isFalse();
-				} finally {
-					tripleStore.getTxnManager().lockManager().unlockWrite(writeStamp);
+				for (int i = 0; i < closers.length; i++) {
+					closers[i] = new Thread(() -> {
+						closeReady.countDown();
+						try {
+							assertThat(closeStart.await(10, TimeUnit.SECONDS)).isTrue();
+							iterator.close();
+						} catch (Throwable throwable) {
+							closeFailure.compareAndSet(null, throwable);
+						} finally {
+							closeFinished.countDown();
+						}
+					}, "lmdb-record-iterator-concurrent-close-" + attempt + "-" + i);
+					closers[i].start();
 				}
 
+				assertThat(closeReady.await(10, TimeUnit.SECONDS)).isTrue();
+				closeStart.countDown();
+				assertThat(closeFinished.await(10, TimeUnit.SECONDS))
+						.as("concurrent record iterator close calls must be idempotent")
+						.isTrue();
 				for (Thread closer : closers) {
 					closer.join(TimeUnit.SECONDS.toMillis(10));
 					assertThat(closer.isAlive()).isFalse();

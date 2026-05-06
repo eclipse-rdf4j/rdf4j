@@ -42,7 +42,6 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -190,7 +189,6 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		private final MDBVal keyData = MDBVal.malloc();
 		private final MDBVal valueData = MDBVal.malloc();
 
-		private StampedLongAdderLockManager txnLockManager;
 		private long cursor;
 		private TxnManager.CursorRegistration cursorRegistration;
 		private Txn txnRef;
@@ -198,8 +196,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
 		private T next;
 		private T current;
-		private volatile Thread cursorUser;
-		private boolean closed;
+		private final CursorUseState cursorUseState = new CursorUseState();
 
 		private ElementIterator(int dbi) {
 			Txn txn = null;
@@ -222,7 +219,6 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				}
 
 				this.txnRef = txn;
-				this.txnLockManager = lockManager;
 				this.cursorRegistration = registration;
 				this.cursor = openedCursor;
 				registration.initialized(this::closeFromTxnClose);
@@ -276,47 +272,45 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 
 		private T computeNext() throws IOException {
-			boolean close = false;
-			long readStamp;
-			try {
-				readStamp = txnLockManager.readLock();
-			} catch (InterruptedException e) {
-				throw new SailException(e);
+			boolean closeWhenDone = false;
+			Txn txn = txnRef;
+			if (txn == null || !cursorUseState.beginUse()) {
+				return null;
 			}
 			try {
-				Txn txn = txnRef;
-				if (txn == null || !startCursorUse()) {
-					return null;
-				}
-				if (txnRefVersion != txnRef.version()) {
-					// cursor must be renewed
-					mdb_cursor_renew(txnRef.get(), cursor);
+				txn.enterCursorUse();
+				try {
+					if (txnRefVersion != txn.version()) {
+						// cursor must be renewed
+						mdb_cursor_renew(txn.get(), cursor);
 
-					if (current != null) {
-						try (MemoryStack stack = MemoryStack.stackPush()) {
-							keyData.mv_data(stack.bytes(write(current)));
-							if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != MDB_SUCCESS) {
-								// use MDB_SET_RANGE if key was deleted
-								if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == MDB_SUCCESS) {
-									return read(keyData.mv_data());
+						if (current != null) {
+							try (MemoryStack stack = MemoryStack.stackPush()) {
+								keyData.mv_data(stack.bytes(write(current)));
+								if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != MDB_SUCCESS) {
+									// use MDB_SET_RANGE if key was deleted
+									if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == MDB_SUCCESS) {
+										return read(keyData.mv_data());
+									}
 								}
 							}
 						}
+						this.txnRefVersion = txn.version();
 					}
-					this.txnRefVersion = txnRef.version();
-				}
 
-				if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
-					return read(keyData.mv_data());
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
+						return read(keyData.mv_data());
+					}
+					closeWhenDone = true;
+					return null;
+				} finally {
+					txn.exitCursorUse();
 				}
-				close = true;
-				return null;
 			} finally {
-				if (close) {
-					closeInternal(false, true);
+				cursorUseState.finishUse();
+				if (closeWhenDone) {
+					closeInternal(false);
 				}
-				finishCursorUse();
-				txnLockManager.unlockRead(readStamp);
 			}
 		}
 
@@ -330,30 +324,21 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 
 		private void closeInternal(boolean calledFromTxnClose) {
-			closeInternal(calledFromTxnClose, false);
-		}
-
-		private void closeInternal(boolean calledFromTxnClose, boolean readLockHeld) {
-			Txn txnToClose = closeCursor(readLockHeld);
+			Txn txnToClose = closeCursor();
 			if (!calledFromTxnClose && txnToClose != null) {
 				txnToClose.close();
 			}
 		}
 
-		private Txn closeCursor(boolean readLockHeld) {
-			if (!beginCloseCursor()) {
+		private Txn closeCursor() {
+			if (!cursorUseState.beginClose()) {
 				return null;
 			}
-			long readStamp = readLockHeld ? 0 : readLockUninterruptibly();
-			waitForCursorUser();
 			Txn txnToClose;
 
 			synchronized (this) {
 				txnToClose = txnRef;
 				if (txnToClose == null) {
-					if (!readLockHeld) {
-						txnLockManager.unlockRead(readStamp);
-					}
 					return null;
 				}
 				txnRef = null;
@@ -361,75 +346,19 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 
 			if (txnToClose != null) {
 				try {
-					mdb_cursor_close(cursor);
+					txnToClose.enterCursorUse();
+					try {
+						mdb_cursor_close(cursor);
+					} finally {
+						txnToClose.exitCursorUse();
+					}
 				} finally {
 					keyData.close();
 					valueData.close();
-					try {
-						txnToClose.unregisterCursor(cursorRegistration);
-					} finally {
-						if (!readLockHeld) {
-							txnLockManager.unlockRead(readStamp);
-						}
-					}
+					txnToClose.unregisterCursor(cursorRegistration);
 				}
 			}
 			return txnToClose;
-		}
-
-		private synchronized boolean startCursorUse() {
-			if (closed || txnRef == null) {
-				return false;
-			}
-			cursorUser = Thread.currentThread();
-			return true;
-		}
-
-		private synchronized void finishCursorUse() {
-			if (cursorUser == Thread.currentThread()) {
-				cursorUser = null;
-				notifyAll();
-			}
-		}
-
-		private synchronized boolean beginCloseCursor() {
-			if (closed) {
-				return false;
-			}
-			closed = true;
-			return true;
-		}
-
-		private synchronized void waitForCursorUser() {
-			boolean interrupted = false;
-			Thread thread;
-			while ((thread = cursorUser) != null && thread != Thread.currentThread()) {
-				try {
-					wait();
-				} catch (InterruptedException e) {
-					interrupted = true;
-				}
-			}
-			if (interrupted) {
-				Thread.currentThread().interrupt();
-			}
-		}
-
-		private long readLockUninterruptibly() {
-			boolean interrupted = false;
-			try {
-				while (true) {
-					try {
-						return txnLockManager.readLock();
-					} catch (InterruptedException e) {
-						interrupted = true;
-					}
-				}
-			} finally {
-				if (interrupted) {
-					Thread.currentThread().interrupt();
-				}
-			}
 		}
 
 		@Override
