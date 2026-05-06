@@ -204,12 +204,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	public void reorderJoinArgsUsesEstimatorForFirstPattern() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
-		StatementPattern expensive = new StatementPattern(new Var("s1"),
-				new Var("p1", vf.createIRI("ex:pExpensive")), new Var("o1"));
-		StatementPattern medium = new StatementPattern(new Var("s2"),
-				new Var("p2", vf.createIRI("ex:pMedium")), new Var("o2"));
-		StatementPattern cheap = new StatementPattern(new Var("s3"),
-				new Var("p3", vf.createIRI("ex:pCheap")), new Var("o3"));
+		StatementPattern expensive = new StatementPattern(Var.of("s1"),
+				Var.of("p1", vf.createIRI("ex:pExpensive")), Var.of("o1"));
+		StatementPattern medium = new StatementPattern(Var.of("s2"),
+				Var.of("p2", vf.createIRI("ex:pMedium")), Var.of("o2"));
+		StatementPattern cheap = new StatementPattern(Var.of("s3"),
+				Var.of("p3", vf.createIRI("ex:pCheap")), Var.of("o3"));
 
 		Deque<TupleExpr> ordered = new ArrayDeque<>();
 		ordered.add(expensive);
@@ -236,12 +236,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	public void reorderJoinArgsChoosesCheapestInitialJoinCombination() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
-		StatementPattern a = new StatementPattern(new Var("sa"), new Var("pa", vf.createIRI("ex:pA")),
-				new Var("oa"));
-		StatementPattern b = new StatementPattern(new Var("sb"), new Var("pb", vf.createIRI("ex:pB")),
-				new Var("ob"));
-		StatementPattern c = new StatementPattern(new Var("sc"), new Var("pc", vf.createIRI("ex:pC")),
-				new Var("oc"));
+		StatementPattern a = new StatementPattern(Var.of("sa"), Var.of("pa", vf.createIRI("ex:pA")),
+				Var.of("oa"));
+		StatementPattern b = new StatementPattern(Var.of("sb"), Var.of("pb", vf.createIRI("ex:pB")),
+				Var.of("ob"));
+		StatementPattern c = new StatementPattern(Var.of("sc"), Var.of("pc", vf.createIRI("ex:pC")),
+				Var.of("oc"));
 
 		Deque<TupleExpr> ordered = new ArrayDeque<>();
 		ordered.add(a);

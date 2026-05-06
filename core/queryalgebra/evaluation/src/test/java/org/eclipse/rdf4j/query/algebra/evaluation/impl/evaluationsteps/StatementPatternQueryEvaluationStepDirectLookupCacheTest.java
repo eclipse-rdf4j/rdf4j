@@ -40,7 +40,7 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 	void cachedFullyBoundEvaluateClosesDrainedSourceIteration() {
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 		TrackingFullyBoundTripleSource tripleSource = new TrackingFullyBoundTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,

@@ -80,7 +80,7 @@ class FilterIteratorTelemetryTest {
 	void simpleFilterConditionUsesInputBindingsWithoutScopeCopy() throws Exception {
 		BindingSetAssignment arg = new BindingSetAssignment();
 		arg.setBindingSets(List.of(singleBindingSet("x", "1")));
-		Filter filter = new Filter(arg, new Compare(new Var("x"),
+		Filter filter = new Filter(arg, new Compare(Var.of("x"),
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("1")), CompareOp.EQ));
 
 		QueryValueEvaluationStep condition = mock(QueryValueEvaluationStep.class);
@@ -114,7 +114,7 @@ class FilterIteratorTelemetryTest {
 		Value dateTime = SimpleValueFactory.getInstance().createLiteral("2009-01-01T20:20:20Z", XSD.DATETIME);
 		BindingSetAssignment left = assignment("left", year);
 		BindingSetAssignment right = assignment("right", dateTime);
-		Compare condition = new Compare(new Var("left"), new Var("right"), CompareOp.LT);
+		Compare condition = new Compare(Var.of("left"), Var.of("right"), CompareOp.LT);
 		Filter filter = new Filter(new Join(left, right), condition);
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
 		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(

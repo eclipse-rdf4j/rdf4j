@@ -44,8 +44,8 @@ class QueryJoinOptimizerReorderSafetyTest {
 //	@Test
 //	void reorderJoinArgsMovesBindingSetAssignmentDirectlyBeforeFirstUsingTupleExpr() throws Exception {
 //		StatementPattern unrelated = statementPattern("unrelated", "ex:pUnrelated");
-//		StatementPattern consumer = new StatementPattern(new Var("entity"),
-//				new Var("consumerPredicate", VF.createIRI("ex:pConsumer")), new Var("target"));
+//		StatementPattern consumer = new StatementPattern(Var.of("entity"),
+//				Var.of("consumerPredicate", VF.createIRI("ex:pConsumer")), Var.of("target"));
 //		BindingSetAssignment targets = bindingSetAssignment("target");
 //
 //		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(
@@ -373,8 +373,8 @@ class QueryJoinOptimizerReorderSafetyTest {
 //	}
 //
 //	private static StatementPattern statementPattern(String subjectVarName, String objectVarName, String predicateIri) {
-//		return new StatementPattern(new Var(subjectVarName),
-//				new Var(subjectVarName + "Predicate", VF.createIRI(predicateIri)), new Var(objectVarName));
+//		return new StatementPattern(Var.of(subjectVarName),
+//				Var.of(subjectVarName + "Predicate", VF.createIRI(predicateIri)), Var.of(objectVarName));
 //	}
 //
 //	private static String predicate(TupleExpr expr) {

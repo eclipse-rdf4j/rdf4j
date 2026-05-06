@@ -44,7 +44,7 @@ class StatementPatternQueryEvaluationStepTest {
 	void convertIterationSkipsBindingChecks() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		SingleStatementTripleSource tripleSource = new SingleStatementTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -71,7 +71,7 @@ class StatementPatternQueryEvaluationStepTest {
 	void wrappedUnionIterationPreservesIndexTelemetry() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		UnionIndexReportingTripleSource tripleSource = new UnionIndexReportingTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -97,7 +97,7 @@ class StatementPatternQueryEvaluationStepTest {
 	void wrappedUnionIterationPreservesMultipleIndexNames() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		MultiIndexUnionReportingTripleSource tripleSource = new MultiIndexUnionReportingTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -123,7 +123,7 @@ class StatementPatternQueryEvaluationStepTest {
 	void wrappedFilterIterationReportsLocalFilterTelemetry() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		FilterIndexReportingTripleSource tripleSource = new FilterIndexReportingTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("v"), new Var("p"), new Var("v"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("v"), Var.of("p"), Var.of("v"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -147,7 +147,7 @@ class StatementPatternQueryEvaluationStepTest {
 	void repeatedFullyBoundEvaluateReusesDirectStatementLookup() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -186,7 +186,7 @@ class StatementPatternQueryEvaluationStepTest {
 	void cachedFullyBoundEvaluateDoesNotCopyUnchangedBindings() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -222,7 +222,7 @@ class StatementPatternQueryEvaluationStepTest {
 	void firstFullyBoundEvaluateDoesNotCopyUnchangedBindings() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
-		StatementPattern statementPattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -252,7 +252,7 @@ class StatementPatternQueryEvaluationStepTest {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
 		MetricCountingStatementPattern statementPattern = new MetricCountingStatementPattern(
-				new Var("s"), new Var("p"), new Var("o"));
+				Var.of("s"), Var.of("p"), Var.of("o"));
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,
 				context,
@@ -278,7 +278,7 @@ class StatementPatternQueryEvaluationStepTest {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
 		CountingFullyBoundTripleSource tripleSource = new CountingFullyBoundTripleSource();
 		MetricCountingStatementPattern statementPattern = new MetricCountingStatementPattern(
-				new Var("s"), new Var("p"), new Var("o"));
+				Var.of("s"), Var.of("p"), Var.of("o"));
 		statementPattern.setRuntimeTelemetryEnabled(true);
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				statementPattern,

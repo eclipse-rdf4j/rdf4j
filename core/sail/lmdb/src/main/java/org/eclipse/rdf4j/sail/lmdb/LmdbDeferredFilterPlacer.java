@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 final class LmdbDeferredFilterPlacer {
 
 	private static final int MAX_MATERIALIZED_BINDING_WINDOW_ROWS = 64;
+	private static final double CORRELATED_ANTI_PROBE_SELECTIVE_FILTER_MAX_PASS_RATIO = 0.95d;
 	private final LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer;
 	private final LmdbUnionFilterDistributor.JoinFactory joinFactory;
 	private final LmdbUnionFilterDistributor.FilterWrapper filterWrapper;
@@ -534,7 +535,7 @@ final class LmdbDeferredFilterPlacer {
 		if (targetIndex < 0) {
 			return false;
 		}
-		targetIndex = expandCorrelatedExistsWindowOverLocalFilters(factors, filter, targetIndex);
+		targetIndex = expandCorrelatedFilterWindowOverLocalFilters(factors, filter, targetIndex);
 		Set<String> availableNames = new HashSet<>(boundBeforeSegment);
 		for (int i = 0; i <= targetIndex; i++) {
 			availableNames.addAll(factors.get(i).bindingNames);
@@ -556,16 +557,38 @@ final class LmdbDeferredFilterPlacer {
 		return -1;
 	}
 
+	private int expandCorrelatedFilterWindowOverLocalFilters(List<SegmentFactor> factors, DeferredFilter filter,
+			int targetIndex) {
+		if (isCorrelatedExistsFilter(filter)) {
+			return expandCorrelatedExistsWindowOverLocalFilters(factors, filter, targetIndex);
+		}
+		if (isCorrelatedNotExistsFilter(filter)) {
+			return expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(factors, targetIndex);
+		}
+		return targetIndex;
+	}
+
 	private int expandCorrelatedExistsWindowOverLocalFilters(List<SegmentFactor> factors, DeferredFilter filter,
 			int targetIndex) {
-		if (!isCorrelatedExistsFilter(filter)) {
-			return targetIndex;
-		}
 		int end = targetIndex;
 		while (end + 1 < factors.size() && isCheapLocalFilterForCorrelatedFilter(factors.get(end + 1), filter)) {
 			end++;
 		}
 		return end;
+	}
+
+	private int expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(List<SegmentFactor> factors,
+			int targetIndex) {
+		for (int i = targetIndex + 1; i < factors.size(); i++) {
+			TupleExpr tupleExpr = factors.get(i).tupleExpr;
+			if (containsExistsFilter(tupleExpr)) {
+				return targetIndex;
+			}
+			if (containsSelectiveNonExistsFilter(tupleExpr)) {
+				return i;
+			}
+		}
+		return targetIndex;
 	}
 
 	private boolean isCorrelatedExistsFilter(DeferredFilter filter) {
@@ -591,6 +614,27 @@ final class LmdbDeferredFilterPlacer {
 			}
 		});
 		return contains[0];
+	}
+
+	private boolean containsSelectiveNonExistsFilter(TupleExpr tupleExpr) {
+		boolean[] contains = { false };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (!LmdbJoinPlanSupport.containsExists(node.getCondition()) && hasSelectivePlannedPassRatio(node)) {
+					contains[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return contains[0];
+	}
+
+	private boolean hasSelectivePlannedPassRatio(Filter filter) {
+		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+		return LmdbJoinPlanSupport.isValidPassRatio(passRatio)
+				&& passRatio < CORRELATED_ANTI_PROBE_SELECTIVE_FILTER_MAX_PASS_RATIO;
 	}
 
 	private boolean isCorrelatedNotExistsFilter(DeferredFilter filter) {

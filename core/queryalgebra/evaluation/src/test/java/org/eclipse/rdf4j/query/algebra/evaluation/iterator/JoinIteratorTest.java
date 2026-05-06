@@ -102,7 +102,7 @@ public class JoinIteratorTest {
 		}
 		left.setBindingSets(rows);
 
-		Join join = new Join(left, new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
+		Join join = new Join(left, new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
 		CloseableIteration<BindingSet> result = evaluator
 				.precompile(join)
 				.evaluate(EmptyBindingSet.getInstance());
@@ -131,7 +131,7 @@ public class JoinIteratorTest {
 		}
 		right.setBindingSets(rows);
 
-		Join join = new Join(new StatementPattern(new Var("s"), new Var("p"), new Var("o")), right);
+		Join join = new Join(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")), right);
 		CloseableIteration<BindingSet> result = evaluator
 				.precompile(join)
 				.evaluate(bindings);
@@ -160,8 +160,8 @@ public class JoinIteratorTest {
 		left.setBindingSets(rows);
 
 		Join guardChain = new Join(
-				new StatementPattern(new Var("s"), new Var("p"), new Var("o")),
-				new StatementPattern(new Var("s"), new Var("p2"), new Var("o2")));
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
 		Join join = new Join(left, guardChain);
 		CloseableIteration<BindingSet> result = evaluator
 				.precompile(join)
@@ -188,10 +188,10 @@ public class JoinIteratorTest {
 		left.setBindingSets(List.of(row));
 
 		Filter filteredLeft = new Filter(left,
-				new Compare(new Var("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
+				new Compare(Var.of("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
 		Join guardChain = new Join(
-				new StatementPattern(new Var("s"), new Var("p"), new Var("o")),
-				new StatementPattern(new Var("s"), new Var("p2"), new Var("o2")));
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
 		Join join = new Join(filteredLeft, guardChain);
 		CloseableIteration<BindingSet> result = evaluator
 				.precompile(join)
@@ -216,12 +216,12 @@ public class JoinIteratorTest {
 		left.setBindingSets(List.of(row));
 
 		Filter filteredLeft = new Filter(left,
-				new Compare(new Var("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
+				new Compare(Var.of("tag"), Var.of("drop", vf.createLiteral("drop")), Compare.CompareOp.NE));
 		Join guardChain = new Join(
-				new StatementPattern(new Var("s"),
-						Var.of("p", tripleSource.statement.getPredicate(), true, true), new Var("o")),
-				new StatementPattern(new Var("s"),
-						Var.of("p2", tripleSource.secondStatement.getPredicate(), true, true), new Var("o2")));
+				new StatementPattern(Var.of("s"),
+						Var.of("p", tripleSource.statement.getPredicate(), true, true), Var.of("o")),
+				new StatementPattern(Var.of("s"),
+						Var.of("p2", tripleSource.secondStatement.getPredicate(), true, true), Var.of("o2")));
 		Join join = new Join(filteredLeft, guardChain);
 		CloseableIteration<BindingSet> result = evaluator
 				.precompile(join)
@@ -242,7 +242,7 @@ public class JoinIteratorTest {
 		right.setBindingSets(List.of(binding("b", "1"), binding("b", "2")));
 
 		Join join = new Join(left, right);
-		Filter filter = new Filter(join, new Compare(new Var("a"), new Var("b"), Compare.CompareOp.NE));
+		Filter filter = new Filter(join, new Compare(Var.of("a"), Var.of("b"), Compare.CompareOp.NE));
 		CloseableIteration<BindingSet> result = evaluator
 				.precompile(filter)
 				.evaluate(EmptyBindingSet.getInstance());

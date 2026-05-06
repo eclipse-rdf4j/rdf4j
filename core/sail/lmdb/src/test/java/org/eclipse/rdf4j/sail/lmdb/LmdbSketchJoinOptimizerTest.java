@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -521,6 +522,61 @@ class LmdbSketchJoinOptimizerTest {
 				"Assured left key plus cheap single-pattern RHS should use correlated NOT EXISTS");
 	}
 
+	@Test
+	void keepsMinusWhenRepeatedFiniteAntiProbeCostsMoreThanMaterialized() {
+		BindingSetAssignment boundMedications = values("med", "med-0", "med-1", "med-2", "med-3");
+		Filter right = new Filter(statementPattern("med", "dosage", "dose"),
+				new Compare(new Var("dose"), new ValueConstant(VF.createLiteral("10x")), Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Difference(boundMedications, right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.repeatedFiniteAntiProbeMoreExpensive(), false)
+				.optimize(root, null, null);
+
+		TupleExpr retained = root.getArg();
+		assertInstanceOf(Difference.class, retained,
+				"Finite left bindings alone should not justify repeating a filtered anti-probe when materializing "
+						+ "the MINUS RHS has lower estimated work");
+		assertFalse(containsNotExistsFilter(retained),
+				"Repeated filtered anti-probes should require stronger proof than a bounded left seed");
+	}
+
+	@Test
+	void keepsMinusWhenLowPassFilteredAntiProbeLacksRepeatedWorkProof() {
+		StatementPattern nodeType = statementPattern("node", "type", "nodeType");
+		StatementPattern nodeWeight = statementPattern("node", "weight", "weight");
+		Filter right = new Filter(statementPattern("node", "connectsTo", "neighbor"),
+				new Compare(new Var("neighbor"), new Var("node"), Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Difference(new Join(nodeType, nodeWeight), right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.lowPassFilteredAntiProbeLacksWorkProof(), false)
+				.optimize(root, null, null);
+
+		TupleExpr retained = root.getArg();
+		assertInstanceOf(Difference.class, retained,
+				"Low-pass filtered anti-probes should not use sampled selectivity as proof that repeated RHS "
+						+ "access work is cheaper than materializing MINUS");
+		assertFalse(containsNotExistsFilter(retained),
+				"Filtered anti-probe rewrite needs stronger evidence when RHS access repeats per left row");
+	}
+
+	@Test
+	void rewritesHighPassFilteredAntiProbeWhenCorrelatedWorkIsCheaper() {
+		StatementPattern medicationType = statementPattern("med", "type", "medication");
+		StatementPattern medicationCode = statementPattern("med", "code", "code");
+		Filter right = new Filter(statementPattern("med", "dosage", "dose"),
+				new Compare(new Var("dose"), new ValueConstant(VF.createLiteral("10x")), Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Difference(new Join(medicationType, medicationCode), right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.highPassFilteredAntiProbeCheaper(), false)
+				.optimize(root, null, null);
+
+		TupleExpr replacement = root.getArg();
+		assertFalse(containsDifference(replacement),
+				"High-pass filtered RHS should still use a correlated anti-probe when total correlated work is lower");
+		assertTrue(containsNotExistsFilter(replacement),
+				"Cheaper high-pass filtered anti-probe should not be forced into materialized MINUS");
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
@@ -727,6 +783,9 @@ class LmdbSketchJoinOptimizerTest {
 		private boolean supportsJoinEstimation;
 		private boolean cheapCorrelatedAntiJoin;
 		private boolean cheapCorrelatedPatternFilterMinus;
+		private boolean repeatedFiniteAntiProbeMoreExpensive;
+		private boolean lowPassFilteredAntiProbeLacksWorkProof;
+		private boolean highPassFilteredAntiProbeCheaper;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -758,6 +817,24 @@ class LmdbSketchJoinOptimizerTest {
 			return statistics;
 		}
 
+		static PlanningStatistics repeatedFiniteAntiProbeMoreExpensive() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.repeatedFiniteAntiProbeMoreExpensive = true;
+			return statistics;
+		}
+
+		static PlanningStatistics lowPassFilteredAntiProbeLacksWorkProof() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.lowPassFilteredAntiProbeLacksWorkProof = true;
+			return statistics;
+		}
+
+		static PlanningStatistics highPassFilteredAntiProbeCheaper() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.highPassFilteredAntiProbeCheaper = true;
+			return statistics;
+		}
+
 		@Override
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof Join) {
@@ -783,12 +860,48 @@ class LmdbSketchJoinOptimizerTest {
 
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (lowPassFilteredAntiProbeLacksWorkProof) {
+				if (factor.getBindingNames().contains("neighbor")) {
+					if (currentlyBoundVars.contains("node")) {
+						return Optional.of(accessPathEstimate(1.0d, 0.0d, 7.0d));
+					}
+					return Optional.of(accessPathEstimate(300_000.0d, 0.0d, 900_000.0d));
+				}
+				if (factor.getBindingNames().contains("node")) {
+					return Optional.of(new FactorCostEstimate(80_000.0d, 40_000.0d));
+				}
+				return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+			}
+			if (highPassFilteredAntiProbeCheaper) {
+				if (factor.getBindingNames().contains("dose")) {
+					if (currentlyBoundVars.contains("med")) {
+						return Optional.of(accessPathEstimate(1.0d, 1.0d, 1.0d));
+					}
+					return Optional.of(accessPathEstimate(16_700.0d, 16_700.0d, 16_700.0d));
+				}
+				if (factor.getBindingNames().contains("med")) {
+					return Optional.of(new FactorCostEstimate(82_950.0d, 13_800.0d));
+				}
+				return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+			}
+			if (repeatedFiniteAntiProbeMoreExpensive) {
+				if (factor.getBindingNames().contains("dose")) {
+					if (currentlyBoundVars.contains("med")) {
+						return Optional.of(new FactorCostEstimate(4.0d, 1.0d));
+					}
+					return Optional.of(new FactorCostEstimate(1_000.0d, 1_000.0d));
+				}
+				if (factor.getBindingNames().contains("med")) {
+					return Optional.of(new FactorCostEstimate(4_000.0d, 4_000.0d));
+				}
+				return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+			}
 			if (cheapCorrelatedPatternFilterMinus) {
 				if (factor.getBindingNames().contains("dose")) {
 					if (currentlyBoundVars.contains("med")) {
 						return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
 					}
-					return Optional.of(new FactorCostEstimate(16_700.0d, 16_700.0d));
+					return Optional.of(new FactorCostEstimate(250_000.0d, 250_000.0d));
 				}
 				if (factor.getBindingNames().contains("med")) {
 					return Optional.of(new FactorCostEstimate(82_950.0d, 13_800.0d));
@@ -805,6 +918,12 @@ class LmdbSketchJoinOptimizerTest {
 				return Optional.of(new FactorCostEstimate(1_000.0d, 1_000.0d));
 			}
 			return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+		}
+
+		private static FactorCostEstimate accessPathEstimate(double workRows, double outputRows,
+				double accessRowsBeforeFilter) {
+			return new FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(), true, false, 0, 0,
+					accessRowsBeforeFilter);
 		}
 	}
 }

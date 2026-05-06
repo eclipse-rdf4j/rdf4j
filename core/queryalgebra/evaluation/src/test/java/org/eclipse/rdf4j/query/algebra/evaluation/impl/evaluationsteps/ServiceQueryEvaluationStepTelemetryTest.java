@@ -43,7 +43,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 	@Test
 	void recordsLatencyQuantilesForAskRequests() {
 		Service service = new Service(
-				new Var("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
 				new SingletonSet(),
 				"{ VALUES ?x { 1 } }",
 				Collections.emptyMap(),
@@ -86,7 +86,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 	@Test
 	void recordsLatencyQuantilesForSelectRequests() {
 		Service service = new Service(
-				new Var("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				"{ ?s ?p ?o }",
 				Collections.emptyMap(),
@@ -126,7 +126,7 @@ class ServiceQueryEvaluationStepTelemetryTest {
 	@Test
 	void skipsRequestAndResponseByteAccountingWhenRuntimeTelemetryDisabled() {
 		Service service = new Service(
-				new Var("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				"{ ?s ?p ?o }",
 				Collections.emptyMap(),

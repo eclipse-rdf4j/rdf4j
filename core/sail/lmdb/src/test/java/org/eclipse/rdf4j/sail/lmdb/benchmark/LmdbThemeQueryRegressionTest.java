@@ -245,8 +245,9 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 1, snapshot -> {
 					assertContains(snapshot.plan(), "plannerPath=ROBUST_USED");
-					assertBefore(snapshot.renderedQuery(), "VALUES (?u1 ?u2)", "VALUES ?u3",
-							"Composite VALUES should unlock pair filters before the unary VALUES expansion\n"
+					assertAnyBefore(snapshot.renderedQuery(), List.of("VALUES (?u1 ?u2)", "VALUES (?u1 ?u2 ?u3)"),
+							"?u1 <http://example.com/theme/social/follows> ?u2",
+							"Composite VALUES should unlock pair filters before the bounded follow probes\n"
 									+ snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "MINUS");
 					assertDoesNotContain(snapshot.renderedQuery(), "FILTER NOT EXISTS",
@@ -305,8 +306,7 @@ class LmdbThemeQueryRegressionTest {
 							"?u <http://example.com/theme/social/follows> ?v",
 							"Social media q3 should keep the finite pair product before probing the follows edge\n"
 									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "FILTER (?u != ?v)",
-							"?u <http://example.com/theme/social/follows> ?v",
+					assertSelfPairsPrunedBeforeFollow(snapshot.renderedQuery(), snapshot.plan(),
 							"Social media q3 should prune self-pairs before direct follow lookups\n"
 									+ snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "?u <http://example.com/theme/social/follows> ?v",
@@ -369,8 +369,7 @@ class LmdbThemeQueryRegressionTest {
 							"?u <http://example.com/theme/social/follows> ?v",
 							"Social media q6 should keep the finite pair product before probing the follows edge\n"
 									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "FILTER (?u != ?v)",
-							"?u <http://example.com/theme/social/follows> ?v",
+					assertSelfPairsPrunedBeforeFollow(snapshot.renderedQuery(), snapshot.plan(),
 							"Social media q6 should prune self-pairs before direct follow lookups\n"
 									+ snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "?u <http://example.com/theme/social/follows> ?v",
@@ -562,17 +561,21 @@ class LmdbThemeQueryRegressionTest {
 	@Test
 	void highlyConnectedQ3KeepsMinusAntiJoin(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
-		Path themeDir = prepareThemeStore(dataDir, theme, 3);
+		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
+				String query = ThemeQueryCatalog.queryFor(theme, 3);
+				Assertions.assertEquals(ThemeQueryCatalog.expectedCountFor(theme, 3), executeQuery(repository, query));
 				assertQueryRegressionPasses(repository, theme, 3, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 3, snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "MINUS");
 					assertDoesNotContain(snapshot.renderedQuery(), "FILTER NOT EXISTS",
 							"Highly connected q3 should keep the materialized MINUS anti-join when it is cheaper "
 									+ "than probing the self-loop scope per row\n" + snapshot.plan());
+					assertContains(snapshot.plan(), "plannerPath=ANTI_JOIN_RETAINED");
+					assertContains(snapshot.plan(), "antiJoinRewrite=materialized-minus");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1010,6 +1013,100 @@ class LmdbThemeQueryRegressionTest {
 							"?drug a <http://example.com/theme/pharma/Drug>",
 							"Pharma q2 should probe targets from the bound target before scanning all drugs\n"
 									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void pharmaClinicalTrialResponsesKeepRateFilterBeforeAntiProbe(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme, IntStream.rangeClosed(0, 10)
+				.toArray());
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 3, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertPlannerDiagnosticsPresent(theme, 3, snapshot.plan());
+					assertBefore(renderedQuery, "?arm <http://example.com/theme/pharma/hasResult> ?result",
+							"FILTER NOT EXISTS",
+							"Pharma q3 should complete the result lookup before probing indications for each row\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?result <http://example.com/theme/pharma/responseRate> ?rate",
+							"FILTER NOT EXISTS",
+							"Pharma q3 should bind response-rate rows before probing indications for each row\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?result <http://example.com/theme/pharma/responseRate> ?rate",
+							"FILTER (?rate > 0.6)",
+							"Pharma q3 should keep the response-rate scalar filter attached to the rate lookup\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "FILTER (?rate > 0.6)",
+							"?trial <http://example.com/theme/pharma/studiesDisease> ?disease",
+							"Pharma q3 should narrow response rows before disease expansion\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "FILTER (?rate > 0.6)",
+							"?arm <http://example.com/theme/pharma/armDrug> ?drug",
+							"Pharma q3 should narrow response rows before drug expansion\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "FILTER (?rate > 0.6)", "FILTER NOT EXISTS",
+							"Pharma q3 should apply the response-rate filter before the indication anti-probe\n"
+									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void pharmaDrugClassExclusionKeepsMaterializedMinus(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme, 4);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 4, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 4, snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "MINUS");
+					assertDoesNotContain(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"Pharma q4 should retain materialized MINUS for sampled contraindication filters\n"
+									+ snapshot.plan());
+					assertContains(snapshot.plan(), "plannerPath=ANTI_JOIN_RETAINED");
+					assertContains(snapshot.plan(), "antiJoinRewrite=materialized-minus");
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void pharmaTargetContraindicationKeepsMaterializedMinus(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 8, snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "MINUS");
+					assertDoesNotContain(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"Pharma q8 should keep the target contraindication exclusion materialized\n"
+									+ snapshot.plan());
+					assertContains(snapshot.plan(), "plannerPath=ANTI_JOIN_RETAINED");
+					assertContains(snapshot.plan(), "antiJoinRewrite=materialized-minus");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1558,6 +1655,31 @@ class LmdbThemeQueryRegressionTest {
 	}
 
 	@Test
+	void medicalHighObservationValuesKeepMaterializedMinus(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareThemeStore(dataDir, theme, 3);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 3, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 3, snapshot.plan());
+					assertContains(snapshot.renderedQuery(), "MINUS");
+					assertDoesNotContain(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"Medical q3 should materialize the test-patient exclusion instead of repeating the "
+									+ "name filter per high observation row\n" + snapshot.plan());
+					assertContains(snapshot.plan(), "plannerPath=ANTI_JOIN_RETAINED");
+					assertContains(snapshot.plan(), "antiJoinRewrite=materialized-minus");
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void medicalOptionalNotExistsQueryCompletes(@TempDir Path dataDir) throws Exception {
 		assertThemeQueryCompletesWithinThirtySeconds(dataDir, Theme.MEDICAL_RECORDS, 10);
 	}
@@ -1826,6 +1948,45 @@ class LmdbThemeQueryRegressionTest {
 		return preparedStore.storeDirectory();
 	}
 
+	private static Path prepareFreshThemeStore(Path dataDir, Theme theme, int... primeIndexes) throws Exception {
+		List<Integer> indexes = IntStream.of(primeIndexes)
+				.boxed()
+				.collect(Collectors.toList());
+		Path themeDir = dataDir.resolve(theme.name() + "-" + primeIndexKey(indexes));
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData(repository, theme);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, indexes);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+		return themeDir;
+	}
+
+	private static Path prepareFreshBenchmarkThemeStore(Path dataDir, Theme theme, int... primeIndexes)
+			throws Exception {
+		List<Integer> indexes = IntStream.of(primeIndexes)
+				.boxed()
+				.collect(Collectors.toList());
+		Path themeDir = dataDir.resolve("benchmark-" + theme.name() + "-" + primeIndexKey(indexes));
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadBenchmarkData(repository);
+			persistEstimatorAfterBulkLoad(repository, store);
+			primeLearnedFilterStats(repository, theme, indexes);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+		return themeDir;
+	}
+
 	private static String primeIndexKey(List<Integer> primeIndexes) {
 		String key = primeIndexes.stream()
 				.distinct()
@@ -2007,6 +2168,17 @@ class LmdbThemeQueryRegressionTest {
 		}
 	}
 
+	private static void loadBenchmarkData(SailRepository repository) throws IOException {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			RDFInserter inserter = new RDFInserter(connection);
+			for (Theme themeDataset : Theme.values()) {
+				ThemeDataSetGenerator.generate(themeDataset, inserter);
+			}
+			connection.commit();
+		}
+	}
+
 	private static void persistEstimatorAfterBulkLoad(SailRepository repository, LmdbStore store) throws Exception {
 		Method method;
 		try {
@@ -2167,6 +2339,10 @@ class LmdbThemeQueryRegressionTest {
 				if ("FILTER EXISTS".equals(anchor.first()) && plan.contains("unlockedFilters=Exists")) {
 					continue;
 				}
+				if (socialCliqueAnchorSatisfiedByMaterializedValues(theme, queryIndex, anchor, renderedQuery,
+						plan)) {
+					continue;
+				}
 				assertBefore(renderedQuery, anchor.first(), anchor.second(),
 						"Expected theme=" + theme + ", queryIndex=" + queryIndex
 								+ " to retain the selective anchor before the broad scan");
@@ -2203,7 +2379,81 @@ class LmdbThemeQueryRegressionTest {
 					"plannedIndexAccessMode=");
 			return;
 		}
+		if (theme == Theme.SOCIAL_MEDIA) {
+			assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor",
+					"plannedIndexAccessMode=");
+			return;
+		}
 		assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor");
+	}
+
+	private static boolean socialCliqueAnchorSatisfiedByMaterializedValues(Theme theme, int queryIndex,
+			ShapeAnchor anchor, String renderedQuery, String plan) {
+		if (theme != Theme.SOCIAL_MEDIA) {
+			return false;
+		}
+		if (queryIndex == 1 && "VALUES (?u1 ?u2)".equals(anchor.first())) {
+			return appearsBefore(renderedQuery, "VALUES (?u1 ?u2 ?u3)", anchor.second());
+		}
+		if ((queryIndex == 3 || queryIndex == 6) && "FILTER (?u != ?v)".equals(anchor.first())) {
+			return selfPairsPrunedBefore(renderedQuery, anchor.second(), plan);
+		}
+		return false;
+	}
+
+	private static void assertSelfPairsPrunedBeforeFollow(String renderedQuery, String plan, String message) {
+		String followPattern = "?u <http://example.com/theme/social/follows> ?v";
+		if (appearsBefore(renderedQuery, "FILTER (?u != ?v)", followPattern)
+				|| selfPairsPrunedBefore(renderedQuery, followPattern, plan)) {
+			return;
+		}
+		throw new AssertionError(message + "\nExpected `FILTER (?u != ?v)` or a self-pruned `VALUES (?u ?v)` "
+				+ "before `" + followPattern + "` in:\n" + renderedQuery + "\nPlan:\n" + plan);
+	}
+
+	private static boolean selfPairsPrunedBefore(String renderedQuery, String second, String plan) {
+		String valuesHeader = "VALUES (?u ?v)";
+		return appearsBefore(renderedQuery, valuesHeader, second)
+				&& valuesBlockHasOnlyDistinctPairs(renderedQuery, valuesHeader, plan);
+	}
+
+	private static boolean appearsBefore(String value, String first, String second) {
+		int firstIndex = value.indexOf(first);
+		int secondIndex = value.indexOf(second);
+		return firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex;
+	}
+
+	private static boolean valuesBlockHasOnlyDistinctPairs(String renderedQuery, String valuesHeader, String plan) {
+		int start = renderedQuery.indexOf(valuesHeader);
+		if (start < 0) {
+			return false;
+		}
+		int openBrace = renderedQuery.indexOf('{', start);
+		if (openBrace < 0) {
+			return false;
+		}
+		int closeBrace = renderedQuery.indexOf("\n  }", openBrace);
+		if (closeBrace < 0) {
+			return false;
+		}
+		String body = renderedQuery.substring(openBrace + 1, closeBrace);
+		for (String line : body.split("\\R")) {
+			String trimmed = line.trim();
+			if (trimmed.isEmpty()) {
+				continue;
+			}
+			if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) {
+				throw new AssertionError("Unexpected VALUES row while checking self-pair pruning:\n" + renderedQuery
+						+ "\nPlan:\n" + plan);
+			}
+			String[] columns = trimmed.substring(1, trimmed.length() - 1)
+					.trim()
+					.split("\\s+");
+			if (columns.length < 2 || columns[0].equals(columns[1])) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static void assertReportedSocialCliqueUsesRobustPlanner(Theme theme, int queryIndex, String plan) {

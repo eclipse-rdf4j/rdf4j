@@ -21,7 +21,7 @@ class FilterSelectivityKeysTest {
 
 	@Test
 	void filterKeyUsesStructuralTraversal() {
-		Compare condition = new Compare(new Var("name"), new Var("target"), Compare.CompareOp.EQ);
+		Compare condition = new Compare(Var.of("name"), Var.of("target"), Compare.CompareOp.EQ);
 
 		assertEquals("Compare (=)[Var (name=name),Var (name=target)]",
 				FilterSelectivityKeys.filterKeyFor(condition));
