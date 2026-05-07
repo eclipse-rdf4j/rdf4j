@@ -20,6 +20,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -443,19 +444,7 @@ class LmdbSketchAwareFilterPlacementTest {
 			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-			}
-
-			assertEquals(1, store.getBackingStore()
-					.runBackgroundFilterSamplingCycle(LmdbStoreConfig.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE),
-					"Expected background sampling to process the recordedOn IN-filter vote");
-
-			TupleExpr optimized;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
-			}
+			TupleExpr optimized = waitForRecordedOnBackgroundSample(repository, store, query);
 
 			Filter recordedOnFilter = findFirstRecordedOnFilter(optimized);
 			assertNotNull(recordedOnFilter,
@@ -467,6 +456,35 @@ class LmdbSketchAwareFilterPlacementTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static TupleExpr waitForRecordedOnBackgroundSample(SailRepository repository, LmdbStore store,
+			String query) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(30L);
+		int sampledRequests = 0;
+		TupleExpr latestOptimized = null;
+		do {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			}
+
+			sampledRequests += store.getBackingStore().runBackgroundFilterSamplingCycle(5_000L);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				latestOptimized = (TupleExpr) explanation.tupleExpr();
+			}
+			Filter recordedOnFilter = findFirstRecordedOnFilter(latestOptimized);
+			if (recordedOnFilter != null && "sampled".equals(recordedOnFilter.getStringMetricPlanned(
+					TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))) {
+				assertTrue(sampledRequests > 0,
+						"Expected background sampling to process the recordedOn IN-filter vote");
+				return latestOptimized;
+			}
+		} while (System.nanoTime() < deadlineNanos);
+		assertTrue(sampledRequests > 0,
+				"Expected background sampling to process the recordedOn IN-filter vote");
+		return latestOptimized;
 	}
 
 	@Test

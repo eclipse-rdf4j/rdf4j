@@ -63,7 +63,7 @@ final class LmdbJoinPlanSupport {
 
 	private static final int SMALL_LITERAL_FILTER_ANCHOR_LIMIT = 32;
 	private static final double SMALL_LITERAL_FILTER_ANCHOR_MAX_PASS_RATIO = 0.75d;
-	private static final long SAMPLED_PLANNER_SELECTIVITY_MIN_EVIDENCE = 1024L;
+	private static final double SAMPLED_ZERO_PASS_RATIO_UPPER_BOUND_SUCCESSES = 3.0d;
 
 	private LmdbJoinPlanSupport() {
 	}
@@ -206,11 +206,14 @@ final class LmdbJoinPlanSupport {
 	}
 
 	private static double plannerPassRatio(EvaluationStatistics.FilterPassEstimate passEstimate) {
+		double passRatio = passEstimate.getPassRatio();
 		if (passEstimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED
-				&& passEstimate.getEvidenceCount() < SAMPLED_PLANNER_SELECTIVITY_MIN_EVIDENCE) {
-			return Double.NaN;
+				&& passEstimate.getEvidenceCount() > 0L
+				&& passRatio <= 0.0d) {
+			return SAMPLED_ZERO_PASS_RATIO_UPPER_BOUND_SUCCESSES
+					/ (passEstimate.getEvidenceCount() + SAMPLED_ZERO_PASS_RATIO_UPPER_BOUND_SUCCESSES);
 		}
-		return passEstimate.getPassRatio();
+		return passRatio;
 	}
 
 	private static NestedTupleExpression nestedTupleExpression(ValueExpr condition) {

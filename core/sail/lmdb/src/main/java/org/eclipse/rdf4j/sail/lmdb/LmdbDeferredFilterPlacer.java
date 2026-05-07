@@ -593,7 +593,7 @@ final class LmdbDeferredFilterPlacer {
 			return expandCorrelatedExistsWindowOverLocalFilters(factors, filter, targetIndex);
 		}
 		if (isCorrelatedNotExistsFilter(filter)) {
-			return expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(factors, targetIndex);
+			return expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(factors, filter, targetIndex);
 		}
 		return targetIndex;
 	}
@@ -608,8 +608,13 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private int expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(List<SegmentFactor> factors,
+			DeferredFilter filter,
 			int targetIndex) {
 		for (int i = targetIndex + 1; i < factors.size(); i++) {
+			Set<String> factorBindingNames = plannerBindingNames(factors.get(i).bindingNames);
+			if (!factorBindingNames.isEmpty() && !filter.requiredVars.containsAll(factorBindingNames)) {
+				return targetIndex;
+			}
 			TupleExpr tupleExpr = factors.get(i).tupleExpr;
 			if (containsExistsFilter(tupleExpr)) {
 				return targetIndex;

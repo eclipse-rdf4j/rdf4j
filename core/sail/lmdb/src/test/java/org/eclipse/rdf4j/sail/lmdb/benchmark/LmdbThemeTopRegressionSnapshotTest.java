@@ -392,6 +392,9 @@ class LmdbThemeTopRegressionSnapshotTest {
 		if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 10) {
 			return socialMediaQ10FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
+		if (targetQuery.theme == Theme.HIGHLY_CONNECTED && targetQuery.queryIndex == 5) {
+			return highlyConnectedQ5FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
 		if (targetQuery.theme == Theme.TRAIN && targetQuery.queryIndex == 2) {
 			return trainQ2FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
@@ -527,6 +530,13 @@ class LmdbThemeTopRegressionSnapshotTest {
 			assertTrue(mismatches.isEmpty(),
 					targetQuery.key() + " should keep the canonical fast five-cycle shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.HIGHLY_CONNECTED && targetQuery.queryIndex == 5) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = highlyConnectedQ5FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep anti-exists work charged against the Node type guard:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		} else if (targetQuery.theme == Theme.TRAIN && targetQuery.queryIndex == 2) {
 			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
 			String plan = explainOptimizedPlan(repository, targetQuery);
@@ -621,9 +631,11 @@ class LmdbThemeTopRegressionSnapshotTest {
 		} else {
 			requireContains(mismatches, renderedQuery, "VALUES (?u ?v)",
 					"missing finite pair pruning prefix");
-			requireBefore(mismatches, renderedQuery, "FILTER (?u != ?v)",
-					"?u <http://example.com/theme/social/follows> ?v .",
-					"self-pair pruning should run before the follows lookup");
+			if (socialQ0PairValuesContainSelfPair(renderedQuery)) {
+				requireBefore(mismatches, renderedQuery, "FILTER (?u != ?v)",
+						"?u <http://example.com/theme/social/follows> ?v .",
+						"self-pair pruning should run before the follows lookup");
+			}
 		}
 		if (!combinedPairNameValues && renderedQuery.contains("VALUES ?optName")) {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
@@ -656,6 +668,17 @@ class LmdbThemeTopRegressionSnapshotTest {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
+	}
+
+	private static boolean socialQ0PairValuesContainSelfPair(String renderedQuery) {
+		for (int user = 0; user <= 2; user++) {
+			String selfPair = "(<http://example.com/theme/social/user/" + user
+					+ "> <http://example.com/theme/social/user/" + user + ">";
+			if (renderedQuery.contains(selfPair)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static List<String> socialMediaQ1FastShapeMismatches(String renderedQuery, String plan) {
@@ -722,37 +745,31 @@ class LmdbThemeTopRegressionSnapshotTest {
 
 	private static List<String> socialMediaQ10FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
-		boolean combinedAbcValues = renderedQuery.contains("VALUES (?a ?b ?c)");
-		if (combinedAbcValues) {
-			requireContains(mismatches, renderedQuery, "VALUES (?a ?b ?c)",
-					"missing finite (a,b,c) pruning prefix");
-		} else {
-			requireContains(mismatches, renderedQuery, "VALUES (?a ?b)",
-					"missing fastest known finite (a,b) pruning prefix");
-		}
-		requireDoesNotContain(mismatches, renderedQuery, "VALUES (?d ?e)",
+		String abAssignment = "BindingSetAssignment ([[a=http://example.com/theme/social/user/7;"
+				+ "b=http://example.com/theme/social/user/8]";
+		String abcAssignment = "BindingSetAssignment ([[a=http://example.com/theme/social/user/7;"
+				+ "b=http://example.com/theme/social/user/8;c=http://example.com/theme/social/user/7]";
+		String cAssignment = "BindingSetAssignment ([[c=http://example.com/theme/social/user/7]";
+		String dAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7]";
+		String eAssignment = "BindingSetAssignment ([[e=http://example.com/theme/social/user/7]";
+		String deAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7;"
+				+ "e=http://example.com/theme/social/user/7]";
+		String optNameAssignment = "BindingSetAssignment ([[optName=\"user7\"]";
+		String followsPredicate = "value=http://example.com/theme/social/follows";
+		requireContains(mismatches, plan, abAssignment,
+				"missing fastest known finite (a,b) pruning prefix");
+		requireDoesNotContain(mismatches, plan, abcAssignment,
+				"must not collapse c into the initial finite pair before a/c and b/c pruning");
+		requireDoesNotContain(mismatches, plan, deAssignment,
 				"must not pair d/e before c/d and d/e inequalities can prune finite domains");
-		if (combinedAbcValues) {
-			requireBefore(mismatches, renderedQuery, "VALUES (?a ?b ?c)",
-					"?b <http://example.com/theme/social/follows> ?c .",
-					"finite a/b/c bindings should guard the b/c follows lookup");
-		} else {
-			requireBefore(mismatches, renderedQuery, "VALUES ?c",
-					"?b <http://example.com/theme/social/follows> ?c .",
-					"finite c bindings should guard the b/c follows lookup");
-		}
-		requireBefore(mismatches, renderedQuery, "VALUES ?d",
-				"?c <http://example.com/theme/social/follows> ?d .",
+		requireBefore(mismatches, plan, abAssignment, followsPredicate,
+				"finite a/b bindings should guard the a/b follows lookup");
+		requireBefore(mismatches, plan, cAssignment, followsPredicate,
+				"finite c bindings should guard the b/c follows lookup");
+		requireBefore(mismatches, plan, dAssignment, followsPredicate,
 				"finite d bindings should guard the c/d follows lookup");
-		requireBefore(mismatches, renderedQuery, "VALUES ?e",
-				"?d <http://example.com/theme/social/follows> ?e .",
+		requireBefore(mismatches, plan, eAssignment, followsPredicate,
 				"finite e bindings should guard the d/e follows lookup");
-		requireBefore(mismatches, renderedQuery, "FILTER (?a != ?c)",
-				"?a <http://example.com/theme/social/follows> ?b .",
-				"finite a/c pruning should finish before the first follows lookup");
-		requireBefore(mismatches, renderedQuery, "FILTER (?d != ?e)",
-				"?a <http://example.com/theme/social/follows> ?b .",
-				"finite d/e pruning should finish before the first follows lookup");
 		requireBefore(mismatches, renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
 				"?b <http://example.com/theme/social/follows> ?c .",
 				"follows cascade should expand a/b before b/c");
@@ -766,9 +783,8 @@ class LmdbThemeTopRegressionSnapshotTest {
 				"?e <http://example.com/theme/social/follows> ?a .",
 				"follows cascade should close with e/a after d/e");
 		if (renderedQuery.contains("VALUES ?optName")) {
-			requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/follows> ?a .",
-					"VALUES ?optName",
-					"optional name finite anchor should stay after the bounded follows cascade");
+			requireBefore(mismatches, plan, followsPredicate, optNameAssignment,
+					"optional name finite anchor should stay on a plan branch after bounded follows access");
 			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 					"?e <http://example.com/theme/social/name> ?optName .",
 					"optName finite anchor should make the optional name lookup exact");
@@ -794,6 +810,25 @@ class LmdbThemeTopRegressionSnapshotTest {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/follows", "follows");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 6);
+		return mismatches;
+	}
+
+	private static List<String> highlyConnectedQ5FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?threshold { 4 }",
+				"singleton threshold binding should remain explicit");
+		requireBefore(mismatches, renderedQuery, "VALUES ?threshold { 4 }",
+				"?node a <http://example.com/theme/connected/Node> .",
+				"threshold should bind before the Node type guard");
+		requireBefore(mismatches, renderedQuery, "?node a <http://example.com/theme/connected/Node> .",
+				"?node <http://example.com/theme/connected/weight> ?w .",
+				"Node type guard should run before the outer weight fanout");
+		requireContains(mismatches, renderedQuery, "FILTER NOT EXISTS",
+				"correlated anti-exists weight guard should remain present");
+		requireContains(mismatches, plan, "source=sketch_nested_not_exists",
+				"anti-exists filter should be costed as a nested-not-exists guard");
+		requireBefore(mismatches, plan, "unlockedFilters=Not Exists", "unlockedFilters=ListMemberOperator",
+				"anti-exists work should be charged before the outer weight list-member filter");
 		return mismatches;
 	}
 

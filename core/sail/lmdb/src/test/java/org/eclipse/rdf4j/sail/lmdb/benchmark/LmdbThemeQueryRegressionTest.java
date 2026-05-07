@@ -428,7 +428,7 @@ class LmdbThemeQueryRegressionTest {
 	@Test
 	void socialMediaFiveCycleKeepsFastestKnownFinitePruningShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
-		Path themeDir = prepareThemeStore(dataDir, theme);
+		Path themeDir = prepareFreshRuntimeThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -444,6 +444,7 @@ class LmdbThemeQueryRegressionTest {
 					String eAssignment = "BindingSetAssignment ([[e=http://example.com/theme/social/user/7]";
 					String deAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7;"
 							+ "e=http://example.com/theme/social/user/7]";
+					String optNameAssignment = "BindingSetAssignment ([[optName=\"user7\"]";
 					String followsPredicate = "value=http://example.com/theme/social/follows";
 					assertContains(plan, abAssignment,
 							"Social media q10 should keep the historical finite (a,b) pruning prefix\n"
@@ -470,7 +471,11 @@ class LmdbThemeQueryRegressionTest {
 							"?e <http://example.com/theme/social/follows> ?a .",
 							"Social media q10 should leave the e/a edge as the final cycle-closing lookup\n"
 									+ plan);
+					assertBefore(plan, followsPredicate, optNameAssignment,
+							"Social media q10 should run bounded follows probes before multiplying by optName\n"
+									+ plan);
 					assertDirectLookupAccessWorkRowsBelow(plan, 100.0d, 5);
+					assertDirectLookupWorkRowsBelow(plan, 100.0d, 5);
 					assertPlannerCandidateBudget(plan, 512,
 							"Social media q10 should avoid a full memo search when finite VALUES make all follows "
 									+ "probes cheap direct lookups");
@@ -495,25 +500,30 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
+					String plan = snapshot.plan();
 					String renderedQuery = snapshot.renderedQuery();
-					assertBefore(renderedQuery, "VALUES (?a ?b)",
-							"?a <http://example.com/theme/social/follows> ?b .",
+					String abAssignment = "BindingSetAssignment ([[a=http://example.com/theme/social/user/7;"
+							+ "b=http://example.com/theme/social/user/8]";
+					String cAssignment = "BindingSetAssignment ([[c=http://example.com/theme/social/user/7]";
+					String dAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7]";
+					String eAssignment = "BindingSetAssignment ([[e=http://example.com/theme/social/user/7]";
+					String followsPredicate = "value=http://example.com/theme/social/follows";
+					assertBefore(plan, abAssignment, followsPredicate,
 							"Social media q10 should guard the (a,b) edge with finite a/b bindings\n"
-									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES ?c",
-							"?b <http://example.com/theme/social/follows> ?c .",
+									+ plan);
+					assertBefore(plan, cAssignment, followsPredicate,
 							"Social media q10 should guard the (b,c) edge with finite c bindings\n"
-									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES ?d", "?c <http://example.com/theme/social/follows> ?d .",
+									+ plan);
+					assertBefore(plan, dAssignment, followsPredicate,
 							"Social media q10 should guard the (c,d) edge with finite d bindings\n"
-									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES ?e", "?d <http://example.com/theme/social/follows> ?e .",
+									+ plan);
+					assertBefore(plan, eAssignment, followsPredicate,
 							"Social media q10 should guard the (d,e) edge with finite e bindings\n"
-									+ snapshot.plan());
+									+ plan);
 					assertBefore(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
 							"?a <http://example.com/theme/social/name> ?name .",
 							"Social media q10 should still apply follow guards before probing the correlated "
-									+ "EXISTS name scope per prefix row\n" + snapshot.plan());
+									+ "EXISTS name scope per prefix row\n" + plan);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -615,27 +625,70 @@ class LmdbThemeQueryRegressionTest {
 			SailRepository repository = new SailRepository(store);
 			try {
 				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
+					String plan = snapshot.plan();
 					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "FILTER NOT EXISTS");
 					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 4 }",
 							"?node a <http://example.com/theme/connected/Node>",
 							"Highly connected q5 should bind the singleton threshold outside the typed-node loop "
-									+ "so the outer join subtree is not reopened once per node\n" + snapshot.plan());
+									+ "so the outer join subtree is not reopened once per node\n" + plan);
 					assertBefore(snapshot.renderedQuery(), "?node a <http://example.com/theme/connected/Node>",
 							"<http://example.com/theme/connected/weight> ?w",
 							"Highly connected q5 should apply the Node type guard before the weight scan so the "
-									+ "anti-exists scope is charged against the typed prefix\n" + snapshot.plan());
+									+ "anti-exists scope is charged against the typed prefix\n" + plan);
+					assertBefore(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q5 should evaluate the anti-exists guard after binding typed nodes "
+									+ "and before expanding the outer weight fanout\n" + plan);
 					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 4 }",
 							"<http://example.com/theme/connected/weight> ?w",
 							"Highly connected q5 should bind the singleton threshold before the outer weight fanout "
-									+ "so the anti-exists scope is not unlocked per candidate row\n" + snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "FILTER NOT EXISTS",
-							"<http://example.com/theme/connected/weight> ?w .\n  FILTER (?w IN",
+									+ "so the anti-exists scope is not unlocked per candidate row\n" + plan);
+					assertContains(plan, "source=sketch_nested_not_exists",
+							"Highly connected q5 should charge the correlated anti-exists weight scope against "
+									+ "the typed-node prefix\n" + plan);
+					assertBefore(plan, "unlockedFilters=Not Exists", "unlockedFilters=ListMemberOperator",
 							"Highly connected q5 should probe the anti-exists weight scope once per typed node "
 									+ "before expanding candidate rows through the outer weight fanout\n"
-									+ snapshot.plan());
-					assertPredicateLookupWorkRowsAbove(snapshot.plan(),
+									+ plan);
+					assertPredicateLookupWorkRowsAbove(plan,
 							"http://example.com/theme/connected/weight", 10_000.0d);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void highlyConnectedQ10RunsAntiExistsBeforeWeightFanout(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.HIGHLY_CONNECTED;
+		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
+					String plan = snapshot.plan();
+					assertPlannerDiagnosticsPresent(theme, 10, plan);
+					assertContains(snapshot.renderedQuery(), "FILTER NOT EXISTS");
+					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 3 }",
+							"?node a <http://example.com/theme/connected/Node>",
+							"Highly connected q10 should bind the singleton threshold before the typed-node loop\n"
+									+ plan);
+					assertBefore(snapshot.renderedQuery(), "?node a <http://example.com/theme/connected/Node>",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q10 should bind typed nodes before expanding the outer weight fanout\n"
+									+ plan);
+					assertBefore(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q10 should run correlated anti-exists probes once per typed node "
+									+ "before multiplying rows through the outer weight fanout\n" + plan);
+					assertContains(plan, "source=sketch_nested_not_exists",
+							"Highly connected q10 should charge the correlated anti-exists scope against "
+									+ "the typed-node prefix\n" + plan);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1828,14 +1881,15 @@ class LmdbThemeQueryRegressionTest {
 			try {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?enc a <http://example.com/theme/medical/Encounter>",
+					assertBefore(snapshot.renderedQuery(), "?cond <http://example.com/theme/medical/code> ?condCode",
 							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"Medical q9 should keep the develop encounter-type anchor before condition fanout\n"
+							"Medical q9 should bind the filtered condition code domain before hasCondition fanout\n"
 									+ snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"?cond <http://example.com/theme/medical/code> ?condCode",
-							"Medical q9 should bind encounter conditions before scanning condition codes\n"
+							"?enc a <http://example.com/theme/medical/Encounter>",
+							"Medical q9 should validate the Encounter type after hasCondition has bound enc exactly\n"
 									+ snapshot.plan());
+					assertMedicalQ9CodeFirstPlanShape(snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "MINUS",
 							"Medical q9 should keep the develop materialized anti-join; the correlated rewrite "
 									+ "repeats the filtered observation/value suffix per encounter\n"
@@ -1856,6 +1910,26 @@ class LmdbThemeQueryRegressionTest {
 		} finally {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
+	}
+
+	private static void assertMedicalQ9CodeFirstPlanShape(String plan) {
+		int conditionPredicateIndex = plan.indexOf("value=http://example.com/theme/medical/hasCondition");
+		if (conditionPredicateIndex < 0) {
+			throw new AssertionError("Medical q9 plan should include the hasCondition pattern:\n" + plan);
+		}
+		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
+		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
+		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
+		assertContains(conditionPattern, "plannedBoundVars=cond,condCode");
+
+		int encounterTypeIndex = plan.indexOf("value=http://example.com/theme/medical/Encounter");
+		if (encounterTypeIndex < 0) {
+			throw new AssertionError("Medical q9 plan should include the Encounter type pattern:\n" + plan);
+		}
+		String encounterPattern = statementPatternWindow(plan, encounterTypeIndex);
+		assertContains(encounterPattern, "plannedIndexAccessMode=directLookup");
+		assertContains(encounterPattern, "plannedLookupComponents=[S, P, O]");
+		assertContains(encounterPattern, "plannedBoundVars=cond,condCode,enc");
 	}
 
 	@Test
@@ -2123,6 +2197,22 @@ class LmdbThemeQueryRegressionTest {
 			loadBenchmarkData(repository);
 			persistEstimatorAfterBulkLoad(repository, store);
 			primeLearnedFilterStats(repository, theme, indexes);
+			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+		return themeDir;
+	}
+
+	private static Path prepareFreshRuntimeThemeStore(Path dataDir, Theme theme) throws Exception {
+		Path themeDir = dataDir.resolve("runtime-" + theme.name());
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			loadData(repository, theme);
+			repository.init();
+			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark regression setup", 60,
+					TimeUnit.SECONDS);
 			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 		} finally {
 			shutdownAndRelease(repository, store);

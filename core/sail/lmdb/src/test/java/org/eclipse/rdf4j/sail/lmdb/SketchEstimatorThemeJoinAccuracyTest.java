@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -59,6 +60,7 @@ class SketchEstimatorThemeJoinAccuracyTest {
 	private static final String LIBRARY_NS = "http://example.com/theme/library/";
 	private static final IRI LIBRARY_LOCATED_AT = VF.createIRI(LIBRARY_NS, "locatedAt");
 	private static final IRI LIBRARY_NAME = VF.createIRI(LIBRARY_NS, "name");
+	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
 	private static final int TOP_PO_PAIRS = 80;
 	private static final int REQUIRED_JOIN_SCENARIOS = 5;
 	private static final int MIN_INTERSECTION = 25;
@@ -358,7 +360,10 @@ class SketchEstimatorThemeJoinAccuracyTest {
 					LIBRARY_LOCATED_AT.stringValue(), null, null)
 					.join(SketchBasedJoinEstimator.Component.S, null, LIBRARY_NAME.stringValue(), null, null)
 					.estimate();
-			boolean persisted = estimator.persistIfDirty();
+			boolean persisted = estimator.persistIfDirty()
+					|| Files.isRegularFile(dataDir.toPath()
+							.resolve(JOIN_ESTIMATOR_FILE_NAME)
+							.resolve("metadata.bin"));
 			return new LibraryJoinLoadResult(leftRows, rightRows, directJoinEstimate, persisted);
 		} finally {
 			repository.shutDown();

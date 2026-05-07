@@ -347,7 +347,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 							+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.SOCIAL_MEDIA && expectation.queryIndex == 10
-				&& !socialFiveCycleUsesFinitePruningBeforeFollows(snapshot.renderedQuery)) {
+				&& !socialFiveCycleUsesFinitePruningBeforeFollows(snapshot.plan, snapshot.renderedQuery)) {
 			mismatches.add(key + " should finish finite-domain pruning before probing the follows cycle\n"
 					+ snapshot.renderedQuery);
 		}
@@ -391,51 +391,37 @@ class LmdbFlaggedThemeOptimizedQueryRegressionTest {
 				&& plan.contains("plannedIndexAccessMode=directLookup");
 	}
 
-	private static boolean socialFiveCycleUsesFinitePruningBeforeFollows(String renderedQuery) {
-		String follows = "<http://example.com/theme/social/follows>";
-		int valuesAB = renderedQuery.indexOf("VALUES (?a ?b)");
-		int valuesABC = renderedQuery.indexOf("VALUES (?a ?b ?c)");
-		int valuesC = renderedQuery.indexOf("VALUES ?c");
-		int valuesD = renderedQuery.indexOf("VALUES ?d");
-		int valuesE = renderedQuery.indexOf("VALUES ?e");
-		int filterAB = renderedQuery.indexOf("FILTER (?a != ?b)");
-		int filterAC = renderedQuery.indexOf("FILTER (?a != ?c)");
-		int filterCD = renderedQuery.indexOf("FILTER (?c != ?d)");
-		int filterDE = renderedQuery.indexOf("FILTER (?d != ?e)");
-		int edgeAB = renderedQuery.indexOf("?a " + follows + " ?b");
-		int edgeBC = renderedQuery.indexOf("?b " + follows + " ?c");
-		int edgeCD = renderedQuery.indexOf("?c " + follows + " ?d");
-		int edgeDE = renderedQuery.indexOf("?d " + follows + " ?e");
-		int edgeEA = renderedQuery.indexOf("?e " + follows + " ?a");
-		if (valuesABC >= 0) {
-			return valuesD > valuesABC
-					&& filterCD > valuesD
-					&& valuesE > filterCD
-					&& filterDE > valuesE
-					&& filterAB > valuesABC
-					&& filterAB < edgeAB
-					&& filterAC > valuesABC
-					&& filterAC < edgeAB
-					&& filterCD < edgeAB
-					&& filterDE < edgeAB
-					&& edgeAB > filterDE
-					&& edgeBC > edgeAB
-					&& edgeCD > edgeBC
-					&& edgeDE > edgeCD
-					&& edgeEA > edgeDE;
-		}
-		return valuesAB >= 0
-				&& filterAB > valuesAB
-				&& valuesC > filterAB
-				&& valuesD > valuesC
-				&& filterCD > valuesD
-				&& valuesE > filterCD
-				&& filterDE > valuesE
-				&& edgeAB > filterDE
-				&& edgeBC > edgeAB
-				&& edgeCD > edgeBC
-				&& edgeDE > edgeCD
-				&& edgeEA > edgeDE;
+	private static boolean socialFiveCycleUsesFinitePruningBeforeFollows(String plan, String renderedQuery) {
+		String abAssignment = "BindingSetAssignment ([[a=http://example.com/theme/social/user/7;"
+				+ "b=http://example.com/theme/social/user/8]";
+		String abcAssignment = "BindingSetAssignment ([[a=http://example.com/theme/social/user/7;"
+				+ "b=http://example.com/theme/social/user/8;c=http://example.com/theme/social/user/7]";
+		String cAssignment = "BindingSetAssignment ([[c=http://example.com/theme/social/user/7]";
+		String dAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7]";
+		String eAssignment = "BindingSetAssignment ([[e=http://example.com/theme/social/user/7]";
+		String deAssignment = "BindingSetAssignment ([[d=http://example.com/theme/social/user/7;"
+				+ "e=http://example.com/theme/social/user/7]";
+		String followsPredicate = "value=http://example.com/theme/social/follows";
+		return !plan.contains(abcAssignment)
+				&& !plan.contains(deAssignment)
+				&& before(plan, abAssignment, followsPredicate)
+				&& before(plan, cAssignment, followsPredicate)
+				&& before(plan, dAssignment, followsPredicate)
+				&& before(plan, eAssignment, followsPredicate)
+				&& before(renderedQuery, "?a <http://example.com/theme/social/follows> ?b .",
+						"?b <http://example.com/theme/social/follows> ?c .")
+				&& before(renderedQuery, "?b <http://example.com/theme/social/follows> ?c .",
+						"?c <http://example.com/theme/social/follows> ?d .")
+				&& before(renderedQuery, "?c <http://example.com/theme/social/follows> ?d .",
+						"?d <http://example.com/theme/social/follows> ?e .")
+				&& before(renderedQuery, "?d <http://example.com/theme/social/follows> ?e .",
+						"?e <http://example.com/theme/social/follows> ?a .");
+	}
+
+	private static boolean before(String text, String first, String second) {
+		int firstIndex = text.indexOf(first);
+		int secondIndex = text.indexOf(second);
+		return firstIndex >= 0 && secondIndex > firstIndex;
 	}
 
 	private static List<String> directLookupWorkMismatches(String plan, double maxWorkRows, String key) {
