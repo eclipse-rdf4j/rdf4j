@@ -60,6 +60,31 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 		assertThat(tripleSource.lastIteration.isClosed()).isTrue();
 	}
 
+	@Test
+	void directLookupConvertsValuedProjectedVariableBeforeReusingBindings() {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		TrackingFullyBoundTripleSource tripleSource = new TrackingFullyBoundTripleSource();
+		StatementPattern statementPattern = new StatementPattern(
+				Var.of("s", tripleSource.statement.getSubject(), false, true),
+				Var.of("p", tripleSource.statement.getPredicate(), false, true),
+				Var.of("o", tripleSource.statement.getObject(), false, false));
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				statementPattern,
+				context,
+				tripleSource);
+
+		MutableBindingSet bindings = context.createBindingSet();
+		bindings.addBinding("tag", tripleSource.valueFactory.createLiteral("left"));
+
+		try (CloseableIteration<BindingSet> iteration = evaluationStep.evaluate(bindings)) {
+			assertThat(iteration.hasNext()).isTrue();
+			BindingSet result = iteration.next();
+			assertThat(result.getValue("tag")).isEqualTo(tripleSource.valueFactory.createLiteral("left"));
+			assertThat(result.getValue("o")).isEqualTo(tripleSource.statement.getObject());
+			assertThat(iteration.hasNext()).isFalse();
+		}
+	}
+
 	private static final class TrackingFullyBoundTripleSource implements TripleSource {
 
 		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();

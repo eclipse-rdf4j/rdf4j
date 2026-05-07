@@ -196,6 +196,29 @@ class SketchBasedJoinEstimatorPersistenceTest {
 	}
 
 	@Test
+	void awaitReadyAcceptsLazySnapshotIndexesWithoutBackgroundRefresh(@TempDir Path tempDir) throws Exception {
+		Resource s = VF.createIRI("urn:await-lazy:s");
+		IRI p = VF.createIRI("urn:await-lazy:p");
+		Value o = VF.createIRI("urn:await-lazy:o");
+
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		sourceStore.add(st(s, p, o));
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
+		writer.rebuild();
+		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
+		writer.configurePersistence(storeDirectory, false);
+		assertTrue(writer.persistIfDirty(), "Expected writer snapshot");
+
+		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSketchStatementSource(), smallConfig());
+		reader.configurePersistence(storeDirectory, true);
+
+		assertFalse(sketchesLoaded(reader), "Lazy startup should not heap-load sketch payloads");
+		assertTrue(reader.isReady(), "Lazy snapshot indexes are enough for readiness");
+		assertTrue(reader.awaitReady(20, TimeUnit.MILLISECONDS),
+				"awaitReady should not require a background thread to heap-load a ready lazy snapshot");
+	}
+
+	@Test
 	void appendsReusePreallocatedMappedSketchPartFile(@TempDir Path tempDir) throws Exception {
 		Path storeDirectory = tempDir.resolve("join-estimator.rjes");
 		byte[] firstPayload = new byte[] { 1, 2, 3, 4 };

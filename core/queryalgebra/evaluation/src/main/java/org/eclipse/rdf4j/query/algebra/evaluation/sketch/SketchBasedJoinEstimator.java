@@ -1595,7 +1595,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				&& positiveReadinessStillAvailable(cachedPositive, readyState)) {
 			return true;
 		}
-		if ((epoch & 1L) != 0L || rebuildRequiredNow || !sketchesLoadedNow) {
+		if ((epoch & 1L) != 0L || rebuildRequiredNow) {
 			return false;
 		}
 		synchronized (readyState) {

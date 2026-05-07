@@ -344,7 +344,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			if (cachedDirectLookup.statementCount == 0) {
 				return null;
 			}
-			if (canReuseBindingsWithoutConversion(contextValue, subject, predicate, object)) {
+			if (canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
 				return new RepeatedBindingSetIteration(cachedDirectLookup.statementCount, bindings);
 			}
 			if (cachedDirectLookup.statements == null) {
@@ -382,7 +382,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			DirectLookupResult directLookupResult = cacheDirectLookupIfSmall(directLookupKey, (Resource) subject,
 					(IRI) predicate, object, contexts, iteration);
 			if (directLookupResult.cachedStatementCount >= 0
-					&& canReuseBindingsWithoutConversion(contextValue, subject, predicate, object)) {
+					&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
 				if (directLookupResult.cachedStatementCount == 0) {
 					return null;
 				}
@@ -433,7 +433,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
-		if (!canReuseBindingsWithoutConversion(contextValue, subject, predicate, object)) {
+		if (!canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
 			return -1;
 		}
 		if (filterContextOrEqualVariables(statementPattern, subject, predicate, object, contexts) != null) {
@@ -469,16 +469,19 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return new DirectLookupKey(subject, predicate, object, contexts);
 	}
 
-	private boolean canReuseBindingsWithoutConversion(Value contextValue, Value subject, Value predicate,
-			Value object) {
-		return alreadyBoundOrConstant(normalizedSubjectVar, subject)
-				&& alreadyBoundOrConstant(normalizedPredicateVar, predicate)
-				&& alreadyBoundOrConstant(normalizedObjectVar, object)
-				&& alreadyBoundOrConstant(normalizedContextVar, contextValue);
+	private boolean canReuseBindingsWithoutConversion(BindingSet bindings, Value contextValue, Value subject,
+			Value predicate, Value object) {
+		return alreadyBoundOrConstant(bindings, normalizedSubjectVar, subject)
+				&& alreadyBoundOrConstant(bindings, normalizedPredicateVar, predicate)
+				&& alreadyBoundOrConstant(bindings, normalizedObjectVar, object)
+				&& alreadyBoundOrConstant(bindings, normalizedContextVar, contextValue);
 	}
 
-	private static boolean alreadyBoundOrConstant(Var var, Value value) {
-		return var == null || var.isConstant() || value != null;
+	private static boolean alreadyBoundOrConstant(BindingSet bindings, Var var, Value value) {
+		if (var == null || var.isConstant()) {
+			return true;
+		}
+		return value != null && bindings.hasBinding(var.getName());
 	}
 
 	private DirectLookupCacheEntry getCachedDirectLookup(DirectLookupKey directLookupKey) {
