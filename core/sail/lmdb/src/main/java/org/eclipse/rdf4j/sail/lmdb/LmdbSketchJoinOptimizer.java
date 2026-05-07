@@ -2886,7 +2886,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					|| LmdbJoinPlanSupport.containsExists(filter.condition)
 					|| !LmdbJoinPlanSupport.isValidPassRatio(filter.passEstimate.getPassRatio())
 					|| filter.passEstimate.getPassRatio() > CORRELATED_NOT_EXISTS_FILTER_PREFIX_MAX_PASS_RATIO
-					|| filter.passEstimate.getEvidenceCount() < CORRELATED_NOT_EXISTS_FILTER_PREFIX_MIN_EVIDENCE) {
+					|| filter.passEstimate.getEvidenceCount() < CORRELATED_NOT_EXISTS_FILTER_PREFIX_MIN_EVIDENCE
+					|| filter.passEstimate.getConfidenceScore() < 0.50d) {
 				return false;
 			}
 			EvaluationStatistics.FilterPassEstimate.Source source = filter.passEstimate.getSource();
@@ -3289,7 +3290,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& !source.isBlank()
 					&& !"sampled".equals(source)
 					&& !"unknown".equals(source)
-					&& !"heuristic".equals(source);
+					&& !"heuristic".equals(source)
+					&& filter.getConfidenceScore() >= 0.50d;
 		}
 
 		private boolean conditionContainsLiteralConstant(ValueExpr condition) {
@@ -3625,15 +3627,26 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Filter filter = new Filter(root, deferredFilter.condition.clone());
 			optimizeConditionSubqueries(filter.getCondition(), root,
 					estimatedSubplanInvocationRows(root), root);
-			double passRatio = deferredFilter.passEstimate.getPassRatio();
+			double passRatio = deferredFilter.passEstimate.getPlanningPassRatio();
 			if (LmdbJoinPlanSupport.isValidPassRatio(passRatio)) {
 				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
 			}
+			if (LmdbJoinPlanSupport.isValidPassRatio(deferredFilter.passEstimate.getPassRatio())) {
+				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW,
+						deferredFilter.passEstimate.getPassRatio());
+			}
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_LOWER,
+					deferredFilter.passEstimate.getLower95PassRatio());
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_UPPER,
+					deferredFilter.passEstimate.getUpper95PassRatio());
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
+					deferredFilter.passEstimate.getConfidenceScore());
 			filter.setStringMetricPlanned(TelemetryMetricNames.DEFERRED_FILTER_SCOPE, placement);
 			filter.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_STRATEGY, "lmdb-sketch-filter-" + placement);
 			String source = filterSelectivitySource(deferredFilter.passEstimate);
 			if (source != null) {
 				filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, source);
+				filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, source);
 			}
 			if (deferredFilter.passEstimate.getEvidenceCount() >= 0L) {
 				filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,

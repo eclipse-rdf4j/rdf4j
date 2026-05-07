@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -73,10 +74,15 @@ class FilterSelectivityTelemetryTest {
 		FilterSelectivityTelemetry.annotate(filter, statistics);
 
 		assertEquals(0.25d, filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO));
+		assertEquals(0.25d, filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW));
+		assertTrue(filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_LOWER) < 0.25d);
+		assertTrue(filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_UPPER) > 0.25d);
 		assertEquals("learned_template",
 				filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE));
+		assertEquals("learned_template",
+				filter.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 		assertEquals(300L, filter.getLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT));
-		assertEquals(300.0d / 364.0d,
+		assertEquals((300.0d / 364.0d) * 0.85d,
 				filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE), 1.0e-12);
 	}
 

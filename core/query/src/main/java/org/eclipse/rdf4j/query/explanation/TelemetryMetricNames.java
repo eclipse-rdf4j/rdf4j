@@ -117,8 +117,13 @@ public final class TelemetryMetricNames {
 	public static final String PLANNED_WORK_ROWS = "plannedWorkRows";
 	public static final String PLANNED_ACCESS_WORK_ROWS = "plannedAccessWorkRows";
 	public static final String PLANNED_FILTER_PASS_RATIO = "plannedFilterPassRatio";
+	public static final String PLANNED_FILTER_PASS_RATIO_RAW = "plannedFilterPassRatioRaw";
+	public static final String PLANNED_FILTER_PASS_RATIO_LOWER = "plannedFilterPassRatioLower";
+	public static final String PLANNED_FILTER_PASS_RATIO_UPPER = "plannedFilterPassRatioUpper";
 	public static final String PLANNED_FILTER_EVIDENCE_COUNT = "plannedFilterEvidenceCount";
 	public static final String PLANNED_FILTER_CONFIDENCE = "plannedFilterConfidence";
+	public static final String PLANNED_ESTIMATE_SOURCE = "plannedEstimateSource";
+	public static final String PLANNED_UNCERTAINTY_ROWS = "plannedUncertaintyRows";
 	public static final String FILTER_SELECTIVITY_SOURCE = "filterSelectivitySource";
 	public static final String PLANNED_INDEX_ACCESS_MODE = "plannedIndexAccessMode";
 	public static final String PLANNED_ACCESS_ROWS = "plannedAccessRows";

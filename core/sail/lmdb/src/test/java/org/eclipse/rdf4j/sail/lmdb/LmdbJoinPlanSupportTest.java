@@ -50,7 +50,66 @@ class LmdbJoinPlanSupportTest {
 	}
 
 	@Test
-	void costsSampledZeroFilterAsConservativePositiveSelectivity() {
+	void sampledZeroFilterEstimateUsesWilsonUpperBoundForPlanning() {
+		EvaluationStatistics.FilterPassEstimate estimate = new EvaluationStatistics.FilterPassEstimate(0.0d,
+				EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, 256L);
+
+		assertEquals(0.0d, estimate.getPassRatio(), 1.0e-12d);
+		assertTrue(estimate.isSampledZero());
+		assertEquals(0.0d, estimate.getLower95PassRatio(), 1.0e-12d);
+		assertTrue(estimate.getUpper95PassRatio() > 0.0d);
+		assertTrue(estimate.getUpper95PassRatio() < 0.02d);
+		assertEquals(estimate.getUpper95PassRatio(), estimate.getPlanningPassRatio(), 1.0e-12d);
+		assertTrue(estimate.getConfidenceScore() > 0.5d);
+	}
+
+	@Test
+	void largerSampledZeroEvidenceNarrowsUpperBound() {
+		EvaluationStatistics.FilterPassEstimate smallSample = new EvaluationStatistics.FilterPassEstimate(0.0d,
+				EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, 256L);
+		EvaluationStatistics.FilterPassEstimate largeSample = new EvaluationStatistics.FilterPassEstimate(0.0d,
+				EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, 4_096L);
+
+		assertTrue(largeSample.getUpper95PassRatio() < smallSample.getUpper95PassRatio());
+		assertTrue(largeSample.getPlanningPassRatio() < smallSample.getPlanningPassRatio());
+	}
+
+	@Test
+	void learnedExactEvidenceOutranksTemplateAndPatternFallbacks() {
+		EvaluationStatistics.FilterPassEstimate exact = new EvaluationStatistics.FilterPassEstimate(0.10d,
+				EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+		EvaluationStatistics.FilterPassEstimate template = new EvaluationStatistics.FilterPassEstimate(0.10d,
+				EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, 1_000L);
+		EvaluationStatistics.FilterPassEstimate pattern = new EvaluationStatistics.FilterPassEstimate(0.10d,
+				EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN, 1_000L);
+
+		assertTrue(exact.getConfidenceScore() > template.getConfidenceScore());
+		assertTrue(template.getConfidenceScore() > pattern.getConfidenceScore());
+		assertTrue(exact.getUpper95PassRatio() < template.getUpper95PassRatio());
+		assertTrue(template.getUpper95PassRatio() < pattern.getUpper95PassRatio());
+		assertEquals(1.0d, exact.getCorrelationCoverage(), 1.0e-12d);
+		assertTrue(template.getCorrelationCoverage() < exact.getCorrelationCoverage());
+		assertTrue(pattern.getCorrelationCoverage() < template.getCorrelationCoverage());
+	}
+
+	@Test
+	void heuristicAndUnknownEstimatesSurfaceWideUncertainty() {
+		EvaluationStatistics.FilterPassEstimate heuristic = new EvaluationStatistics.FilterPassEstimate(0.20d,
+				EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC, -1L);
+		EvaluationStatistics.FilterPassEstimate unknown = new EvaluationStatistics.FilterPassEstimate(-1.0d,
+				EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN, -1L);
+
+		assertEquals(0.0d, heuristic.getLower95PassRatio(), 1.0e-12d);
+		assertEquals(1.0d, heuristic.getUpper95PassRatio(), 1.0e-12d);
+		assertEquals(0.25d, heuristic.getConfidenceScore(), 1.0e-12d);
+		assertEquals(0.0d, unknown.getLower95PassRatio(), 1.0e-12d);
+		assertEquals(1.0d, unknown.getUpper95PassRatio(), 1.0e-12d);
+		assertEquals(1.0d, unknown.getPlanningPassRatio(), 1.0e-12d);
+		assertEquals(0.0d, unknown.getConfidenceScore(), 1.0e-12d);
+	}
+
+	@Test
+	void sampledZeroConstraintSurfacesRawAndPlanningSelectivity() {
 		ListMemberOperator condition = new ListMemberOperator();
 		condition.addArgument(Var.of("name"));
 		condition.addArgument(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("Alice")));
@@ -63,7 +122,11 @@ class LmdbJoinPlanSupportTest {
 				.toPlannerFilterConstraints(List.of(deferredFilter))
 				.getFirst();
 
-		assertEquals(3.0d / 259.0d, constraint.getEstimatedPassRatio(), 1.0e-12d);
+		assertEquals(0.0d, constraint.getRawEstimatedPassRatio(), 1.0e-12d);
+		assertTrue(constraint.isSampledZero());
+		assertTrue(constraint.getEstimatedPassRatio() > 0.0d);
+		assertEquals(constraint.getEstimatedPassRatioUpperBound(), constraint.getEstimatedPassRatio(), 1.0e-12d);
+		assertTrue(constraint.getConfidenceScore() > 0.5d);
 	}
 
 	private static JoinOrderPlanner.FilterConstraint plannerConstraint(ListMemberOperator condition) {

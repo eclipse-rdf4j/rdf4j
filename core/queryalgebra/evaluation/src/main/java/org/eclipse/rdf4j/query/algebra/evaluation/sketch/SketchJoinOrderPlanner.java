@@ -417,6 +417,8 @@ final class SketchJoinOrderPlanner {
 		List<JoinOrderPlanner.PlanStep> steps = buildPlanSteps(result);
 		double totalWork = sumStepWorkRows(steps);
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalWork);
+		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS,
+				result.costVector().uncertaintyRows());
 		return new JoinOrderPlanner.JoinOrderPlan(List.copyOf(orderedArgs), result.estimate().outputRows(),
 				totalWork, List.copyOf(diagnostics), summaryStringMetrics, summaryDoubleMetrics, steps);
 	}
@@ -1290,7 +1292,13 @@ final class SketchJoinOrderPlanner {
 				&& !isValidPassRatio(nestedTupleFilterPassRatio(filter, estimate))) {
 			return estimate.outputRows();
 		}
-		return 0.0d;
+		double rawPassRatio = filter.getRawEstimatedPassRatio();
+		double upperPassRatio = filter.getEstimatedPassRatioUpperBound();
+		if (!isValidPassRatio(rawPassRatio) || !isValidPassRatio(upperPassRatio) || upperPassRatio <= rawPassRatio) {
+			return 0.0d;
+		}
+		double uncertaintyRows = estimate.outputRows() * (upperPassRatio - rawPassRatio);
+		return isFiniteNonNegative(uncertaintyRows) ? uncertaintyRows : 0.0d;
 	}
 
 	private double finiteDomainFilterPassRatio(JoinOrderPlanner.FilterConstraint filter, long factorMask) {
@@ -5109,6 +5117,11 @@ final class SketchJoinOrderPlanner {
 					draft.stepWorkRows += actionWorkRows;
 					draft.resultRows = node.estimate().outputRows();
 					draft.addUnlockedFilter(filterIndex, describeUnlockedFilter(filter, node.parent.estimate()));
+					double uncertaintyRows = uncertaintyDeltaRows(node);
+					if (uncertaintyRows > 0.0d) {
+						draft.doubleMetrics.merge(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, uncertaintyRows,
+								Double::sum);
+					}
 				}
 				continue;
 			}
@@ -5125,6 +5138,10 @@ final class SketchJoinOrderPlanner {
 			if (!sharedJoinVars.isEmpty()) {
 				stringMetrics.put(TelemetryMetricNames.SHARED_JOIN_VARS, sharedJoinVars.toString());
 			}
+			double uncertaintyRows = uncertaintyDeltaRows(node);
+			if (uncertaintyRows > 0.0d) {
+				doubleMetrics.put(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, uncertaintyRows);
+			}
 			drafts.add(new PlanStepDraft(boundBefore, physicalEstimate.factorOutputRows(),
 					node.estimate().outputRows(), actionWorkRows, stringMetrics, doubleMetrics));
 			mask = node.mask();
@@ -5140,6 +5157,15 @@ final class SketchJoinOrderPlanner {
 		double parentWorkRows = node.parent == null ? 0.0d : node.parent.totalWork();
 		double actionWorkRows = node.totalWork() - parentWorkRows;
 		return isFiniteNonNegative(actionWorkRows) ? actionWorkRows : 0.0d;
+	}
+
+	private double uncertaintyDeltaRows(StatePlan node) {
+		if (node == null || node.costVector() == null) {
+			return 0.0d;
+		}
+		double parentUncertaintyRows = node.parent == null ? 0.0d : node.parent.costVector().uncertaintyRows();
+		double uncertaintyRows = node.costVector().uncertaintyRows() - parentUncertaintyRows;
+		return isFiniteNonNegative(uncertaintyRows) ? uncertaintyRows : 0.0d;
 	}
 
 	private void addPhysicalMetrics(Map<String, String> stringMetrics, Map<String, Double> doubleMetrics,

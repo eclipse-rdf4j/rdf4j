@@ -69,7 +69,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else if (!runtimeTelemetryTrackingActive
 				&& leftRaw instanceof StatementPatternQueryEvaluationStep
-				&& isFullyBoundLeftStatementGuardCandidate(join.getLeftArg())) {
+				&& isBoundStatementPatternGuardCandidate(join.getLeftArg())) {
 			StatementPatternQueryEvaluationStep leftStatementPattern = (StatementPatternQueryEvaluationStep) leftRaw;
 			eval = bindings -> new BoundStatementPatternLeftJoinIteration(leftStatementPattern, rightPrepared,
 					bindings);
@@ -121,11 +121,6 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	private static boolean isBoundStatementPatternGuardCandidate(TupleExpr expr) {
 		return expr instanceof StatementPattern
 				&& !isOutOfScopeForLeftArgBindings(expr);
-	}
-
-	private static boolean isFullyBoundLeftStatementGuardCandidate(TupleExpr expr) {
-		return isBoundStatementPatternGuardCandidate(expr)
-				&& requiredBindingNames(expr).isEmpty();
 	}
 
 	private static boolean isNoNewBindingGuard(Join join) {

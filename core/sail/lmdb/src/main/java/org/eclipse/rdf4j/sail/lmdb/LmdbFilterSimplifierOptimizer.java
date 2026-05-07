@@ -610,8 +610,18 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				? null
 				: statistics.estimateFilterPass(filter);
 		if (estimate != null && isValidPassRatio(estimate.getPassRatio())) {
-			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, estimate.getPassRatio());
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO,
+					estimate.getPlanningPassRatio());
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW, estimate.getPassRatio());
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_LOWER,
+					estimate.getLower95PassRatio());
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_UPPER,
+					estimate.getUpper95PassRatio());
+			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
+					estimate.getConfidenceScore());
 			filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE,
+					estimate.getSource().name().toLowerCase());
+			filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
 					estimate.getSource().name().toLowerCase());
 			if (estimate.getEvidenceCount() >= 0L) {
 				filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,

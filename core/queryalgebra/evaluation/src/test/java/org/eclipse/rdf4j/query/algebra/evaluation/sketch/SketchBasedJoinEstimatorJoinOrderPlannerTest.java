@@ -274,6 +274,41 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void sampledZeroDeferredFilterContributesUncertaintyRows() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI label = VF.createIRI("urn:label");
+		for (int i = 0; i < 100; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:s" + i), label, VF.createLiteral("label-" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern labelPattern = pattern("s", label, "name");
+		JoinOrderPlanner.FilterConstraint sampledZeroFilter = new JoinOrderPlanner.FilterConstraint(Set.of("name"),
+				0.0d, JoinOrderPlanner.FILTER_COST_CHEAP, "?name IN ('missing')", "sampled", 256L);
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.estimateJoinOrder(List.of(labelPattern), Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						(factor, boundVars) -> Optional.empty(), List.of(sampledZeroFilter))
+				.orElseThrow();
+
+		assertEquals(0.0d, sampledZeroFilter.getRawEstimatedPassRatio(), 1.0e-12d);
+		assertTrue(sampledZeroFilter.isSampledZero());
+		assertTrue(sampledZeroFilter.getEstimatedPassRatio() > 0.0d);
+		assertTrue(sampledZeroFilter.getEstimatedPassRatioUpperBound() > sampledZeroFilter.getRawEstimatedPassRatio());
+		assertTrue(plan.getSummaryDoubleMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, 0.0d) > 0.0d,
+				"Sampled-zero filters should add risk rows to the plan summary: " + plan.getSummaryDoubleMetrics());
+		assertTrue(plan.getSteps()
+				.stream()
+				.flatMap(step -> step.getDoubleMetrics().entrySet().stream())
+				.anyMatch(entry -> TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS.equals(entry.getKey())
+						&& entry.getValue() > 0.0d),
+				"Sampled-zero uncertainty should be visible at the step that applies the filter");
+	}
+
+	@Test
 	void repeatedPrefixRowsDriveCorrelatedLookupWorkAcrossSameBinding() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI fanoutPredicate = VF.createIRI("urn:fanout");

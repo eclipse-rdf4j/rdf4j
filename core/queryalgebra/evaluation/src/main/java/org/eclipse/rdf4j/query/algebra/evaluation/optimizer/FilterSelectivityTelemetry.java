@@ -45,7 +45,7 @@ final class FilterSelectivityTelemetry {
 		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
 		String source = filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
 		if (!isValidPassRatio(passRatio)) {
-			passRatio = estimate == null ? -1.0d : estimate.getPassRatio();
+			passRatio = isUsableEstimate(estimate) ? estimate.getPlanningPassRatio() : -1.0d;
 			source = sourceName(estimate);
 		}
 		if (!isValidPassRatio(passRatio)) {
@@ -59,16 +59,31 @@ final class FilterSelectivityTelemetry {
 		if (isValidPassRatio(passRatio)) {
 			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
 		}
+		if (estimate != null) {
+			if (isValidPassRatio(estimate.getPassRatio())) {
+				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW,
+						estimate.getPassRatio());
+			}
+			if (isValidPassRatio(estimate.getLower95PassRatio())) {
+				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_LOWER,
+						estimate.getLower95PassRatio());
+			}
+			if (isValidPassRatio(estimate.getUpper95PassRatio())) {
+				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_UPPER,
+						estimate.getUpper95PassRatio());
+			}
+		}
 		if (estimate != null && estimate.getEvidenceCount() >= 0L) {
 			filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
 					estimate.getEvidenceCount());
 		}
-		double confidence = confidenceScore(estimate, source);
+		double confidence = estimate == null ? confidenceScore(null, source) : estimate.getConfidenceScore();
 		if (Double.isFinite(confidence)) {
 			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE, confidence);
 		}
 		if (source != null) {
 			filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, source);
+			filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, source);
 		}
 	}
 
@@ -77,6 +92,12 @@ final class FilterSelectivityTelemetry {
 			return null;
 		}
 		return estimate.getSource().name().toLowerCase();
+	}
+
+	private static boolean isUsableEstimate(EvaluationStatistics.FilterPassEstimate estimate) {
+		return estimate != null
+				&& estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN
+				&& isValidPassRatio(estimate.getPlanningPassRatio());
 	}
 
 	private static double confidenceScore(EvaluationStatistics.FilterPassEstimate estimate, String source) {

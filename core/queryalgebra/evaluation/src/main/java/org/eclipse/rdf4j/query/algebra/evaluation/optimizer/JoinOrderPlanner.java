@@ -18,6 +18,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 /**
  * Optional SPI for cost-based join-order planning over a flat list of join arguments.
@@ -112,6 +113,12 @@ public interface JoinOrderPlanner {
 		private final String debugLabel;
 		private final String selectivitySource;
 		private final long evidenceCount;
+		private final double rawEstimatedPassRatio;
+		private final double estimatedPassRatioLowerBound;
+		private final double estimatedPassRatioUpperBound;
+		private final double confidenceScore;
+		private final boolean sampledZero;
+		private final double correlationCoverage;
 		private final ValueExpr condition;
 		private final boolean hasNestedTupleExpression;
 		private final TupleExpr nestedTupleExpression;
@@ -176,11 +183,19 @@ public interface JoinOrderPlanner {
 				boolean hasNestedTupleExpression, TupleExpr nestedTupleExpression, boolean notExists,
 				boolean lookupCompatible, boolean costOnly) {
 			this.requiredVars = Set.copyOf(requiredVars);
-			this.estimatedPassRatio = estimatedPassRatio;
+			EvaluationStatistics.FilterPassEstimate estimate = new EvaluationStatistics.FilterPassEstimate(
+					estimatedPassRatio, sourceFromName(selectivitySource, estimatedPassRatio), evidenceCount);
+			this.estimatedPassRatio = estimate.getPlanningPassRatio();
 			this.conditionCost = conditionCost;
 			this.debugLabel = debugLabel;
 			this.selectivitySource = selectivitySource;
 			this.evidenceCount = evidenceCount;
+			this.rawEstimatedPassRatio = estimate.getPassRatio();
+			this.estimatedPassRatioLowerBound = estimate.getLower95PassRatio();
+			this.estimatedPassRatioUpperBound = estimate.getUpper95PassRatio();
+			this.confidenceScore = estimate.getConfidenceScore();
+			this.sampledZero = estimate.isSampledZero();
+			this.correlationCoverage = estimate.getCorrelationCoverage();
 			this.condition = condition == null ? null : condition.clone();
 			this.hasNestedTupleExpression = hasNestedTupleExpression;
 			this.nestedTupleExpression = nestedTupleExpression;
@@ -195,6 +210,30 @@ public interface JoinOrderPlanner {
 
 		public double getEstimatedPassRatio() {
 			return estimatedPassRatio;
+		}
+
+		public double getRawEstimatedPassRatio() {
+			return rawEstimatedPassRatio;
+		}
+
+		public double getEstimatedPassRatioLowerBound() {
+			return estimatedPassRatioLowerBound;
+		}
+
+		public double getEstimatedPassRatioUpperBound() {
+			return estimatedPassRatioUpperBound;
+		}
+
+		public double getConfidenceScore() {
+			return confidenceScore;
+		}
+
+		public boolean isSampledZero() {
+			return sampledZero;
+		}
+
+		public double getCorrelationCoverage() {
+			return correlationCoverage;
 		}
 
 		public int getConditionCost() {
@@ -235,6 +274,35 @@ public interface JoinOrderPlanner {
 
 		public boolean isCostOnly() {
 			return costOnly;
+		}
+
+		private static EvaluationStatistics.FilterPassEstimate.Source sourceFromName(String source,
+				double passRatio) {
+			if (source == null || source.isBlank()) {
+				return isValidPassRatio(passRatio)
+						? EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC
+						: EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN;
+			}
+			switch (source.toLowerCase()) {
+			case "exact":
+				return EvaluationStatistics.FilterPassEstimate.Source.EXACT;
+			case "learned_filter":
+				return EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER;
+			case "learned_template":
+				return EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE;
+			case "learned_pattern":
+				return EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN;
+			case "sampled":
+				return EvaluationStatistics.FilterPassEstimate.Source.SAMPLED;
+			case "heuristic":
+				return EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC;
+			default:
+				return EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN;
+			}
+		}
+
+		private static boolean isValidPassRatio(double value) {
+			return Double.isFinite(value) && value >= 0.0d && value <= 1.0d;
 		}
 	}
 

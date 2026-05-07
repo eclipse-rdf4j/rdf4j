@@ -209,7 +209,8 @@ class LmdbEvaluationStatistics
 		return isFiniteNonNegative(plan.getEstimatedTotalWork())
 				&& plan.getEstimatedTotalWork() <= BOUNDED_GREEDY_MAX_WORK_ROWS
 				&& isFiniteNonNegative(plan.getEstimatedFinalRows())
-				&& plan.getEstimatedFinalRows() <= BOUNDED_GREEDY_MAX_FINAL_ROWS;
+				&& plan.getEstimatedFinalRows() <= BOUNDED_GREEDY_MAX_FINAL_ROWS
+				&& boundedUncertaintyRows(plan, BOUNDED_GREEDY_MAX_WORK_ROWS);
 	}
 
 	private boolean isFiniteDirectLookupGreedyPlan(JoinOrderPlan plan) {
@@ -217,6 +218,7 @@ class LmdbEvaluationStatistics
 				|| plan.getEstimatedTotalWork() > BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS
 				|| !isFiniteNonNegative(plan.getEstimatedFinalRows())
 				|| plan.getEstimatedFinalRows() > BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS
+				|| !boundedUncertaintyRows(plan, BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS)
 				|| plan.getSteps().size() != plan.getOrderedArgs().size()) {
 			return false;
 		}
@@ -239,6 +241,13 @@ class LmdbEvaluationStatistics
 		}
 		return directLookupSteps >= BOUNDED_GREEDY_MIN_DIRECT_LOOKUP_STEPS
 				&& maxPrefixRows <= BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS;
+	}
+
+	private boolean boundedUncertaintyRows(JoinOrderPlan plan, double maxUncertaintyRows) {
+		double uncertaintyRows = plan.getSummaryDoubleMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, 0.0d);
+		return Double.isFinite(uncertaintyRows)
+				&& uncertaintyRows <= maxUncertaintyRows;
 	}
 
 	private PlanningAttempt toLmdbPlanningAttempt(PlanningAttempt attempt) {
