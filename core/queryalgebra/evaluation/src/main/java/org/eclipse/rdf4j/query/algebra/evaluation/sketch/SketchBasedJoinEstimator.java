@@ -1595,7 +1595,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				&& positiveReadinessStillAvailable(cachedPositive, readyState)) {
 			return true;
 		}
-		if ((epoch & 1L) != 0L || rebuildRequiredNow) {
+		if ((epoch & 1L) != 0L || rebuildRequiredNow || !sketchesLoadedNow) {
 			return false;
 		}
 		synchronized (readyState) {
@@ -1612,9 +1612,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		long remainingNanos = unit.toNanos(timeout);
 		long deadlineNanos = System.nanoTime() + remainingNanos;
 		synchronized (readyMonitor) {
-			while (!isReadyNonBlocking()) {
+			while (!isReadyForAwait()) {
 				flushPendingIncrementalForAwait();
-				if (isReadyNonBlocking()) {
+				if (isReadyForAwait()) {
 					return true;
 				}
 				if (remainingNanos <= 0L) {
@@ -1626,6 +1626,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 			return true;
 		}
+	}
+
+	private boolean isReadyForAwait() {
+		if (requiresResidentSketchesForAwait()) {
+			return isReadyNonBlocking();
+		}
+		return isReady();
+	}
+
+	private boolean requiresResidentSketchesForAwait() {
+		return running && !sketchesLoaded && persistenceEnabled && hasSnapshotAvailable(persistenceFile);
 	}
 
 	private void flushPendingIncrementalForAwait() {
