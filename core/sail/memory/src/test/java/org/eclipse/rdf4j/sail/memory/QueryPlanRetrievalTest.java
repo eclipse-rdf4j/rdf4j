@@ -1000,19 +1000,43 @@ public class QueryPlanRetrievalTest {
 				.isEqualToNormalizingNewlines(stripExplainDotAnnotations(expected));
 	}
 
+	private static final String EXPLAIN_TEXT_ANNOTATION_METRICS = String.join("|",
+			TelemetryMetricNames.BINDING_STATE,
+			TelemetryMetricNames.JOIN_TYPE,
+			TelemetryMetricNames.INDEX_NAME,
+			TelemetryMetricNames.INDEX_NAMES,
+			TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO,
+			TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW,
+			TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_LOWER,
+			TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_UPPER,
+			TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
+			TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
+			TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
+			TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS,
+			TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
+
+	private static final String EXPLAIN_DOT_ANNOTATION_LABELS = String.join("|",
+			"Binding state",
+			"Join type",
+			"Index",
+			"Indexes",
+			"Planned filter pass ratio",
+			"Planned filter pass ratio raw",
+			"Planned filter pass ratio lower",
+			"Planned filter pass ratio upper",
+			"Planned filter evidence count",
+			"Planned filter confidence",
+			"Planned estimate source",
+			"Planned uncertainty rows",
+			"Filter selectivity source");
+
 	private static String stripExplainTextAnnotations(String text) {
-		return text.replaceAll(
-				", (bindingState|joinType|indexName|indexNames|plannedFilterPassRatio|plannedFilterConfidence|filterSelectivitySource)=[^)]*",
-				"")
-				.replaceAll(
-						" \\((bindingState|joinType|indexName|indexNames|plannedFilterPassRatio|plannedFilterConfidence|filterSelectivitySource)=[^)]*\\)",
-						"");
+		return text.replaceAll(", (" + EXPLAIN_TEXT_ANNOTATION_METRICS + ")=[^)]*", "")
+				.replaceAll(" \\((" + EXPLAIN_TEXT_ANNOTATION_METRICS + ")=[^)]*\\)", "");
 	}
 
 	private static String stripExplainDotAnnotations(String dot) {
-		return dot.replaceAll(
-				" ?<tr><td>(Binding state|Join type|Index|Indexes|Planned filter pass ratio|Planned filter confidence|Filter selectivity source)</td><td>.*?</td></tr>",
-				"");
+		return dot.replaceAll(" ?<tr><td>(" + EXPLAIN_DOT_ANNOTATION_LABELS + ")</td><td>.*?</td></tr>", "");
 	}
 
 	private static void assertTelemetryFieldsPresentRecursively(JsonNode node) {
