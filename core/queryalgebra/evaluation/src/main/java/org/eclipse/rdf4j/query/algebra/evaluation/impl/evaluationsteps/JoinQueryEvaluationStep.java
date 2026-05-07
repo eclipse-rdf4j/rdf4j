@@ -69,11 +69,24 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else if (!runtimeTelemetryTrackingActive
 				&& leftRaw instanceof StatementPatternQueryEvaluationStep
-				&& isBoundStatementPatternGuardCandidate(join.getLeftArg())) {
+				&& isFullyBoundLeftStatementGuardCandidate(join.getLeftArg())) {
 			StatementPatternQueryEvaluationStep leftStatementPattern = (StatementPatternQueryEvaluationStep) leftRaw;
 			eval = bindings -> new BoundStatementPatternLeftJoinIteration(leftStatementPattern, rightPrepared,
 					bindings);
 			join.setAlgorithm(BoundStatementPatternLeftJoinIteration.class.getSimpleName());
+		} else if (!runtimeTelemetryTrackingActive
+				&& leftRaw instanceof StatementPatternQueryEvaluationStep
+				&& isBoundStatementPatternGuardCandidate(join.getLeftArg())) {
+			StatementPatternQueryEvaluationStep leftStatementPattern = (StatementPatternQueryEvaluationStep) leftRaw;
+			eval = bindings -> {
+				if (!bindings.isEmpty() && leftStatementPattern.getFullyBoundStatementCount(bindings) >= 0L) {
+					join.setAlgorithm(BoundStatementPatternLeftJoinIteration.class.getSimpleName());
+					return new BoundStatementPatternLeftJoinIteration(leftStatementPattern, rightPrepared, bindings);
+				}
+				join.setAlgorithm(JoinIterator.class.getSimpleName());
+				return JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+			};
+			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		} else if (!runtimeTelemetryTrackingActive
 				&& rightRaw instanceof StatementPatternQueryEvaluationStep
 				&& isNoNewBindingStatementGuard(join)
@@ -121,6 +134,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	private static boolean isBoundStatementPatternGuardCandidate(TupleExpr expr) {
 		return expr instanceof StatementPattern
 				&& !isOutOfScopeForLeftArgBindings(expr);
+	}
+
+	private static boolean isFullyBoundLeftStatementGuardCandidate(TupleExpr expr) {
+		return isBoundStatementPatternGuardCandidate(expr)
+				&& requiredBindingNames(expr).isEmpty();
 	}
 
 	private static boolean isNoNewBindingGuard(Join join) {
