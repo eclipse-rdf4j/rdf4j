@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -67,7 +68,7 @@ public abstract class MultithreadedTest {
 		ParentReferenceChecker.skip = false;
 	}
 
-	@Test
+	@RepeatedTest(2000)
 	@Timeout(value = 30, unit = TimeUnit.MINUTES)
 	public void testDataAndShapes() {
 		System.out.println("testDataAndShapes");

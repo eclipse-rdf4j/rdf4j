@@ -1610,6 +1610,9 @@ class ValueStore extends AbstractValueFactory {
 		bb.get();
 		long nsID = Varint.readUnsignedHeap(bb);
 		String namespace = getNamespace(nsID);
+		if (namespace == null) {
+			throw new IllegalStateException("Namespace not found for id " + nsID);
+		}
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
 		if (value == null) {

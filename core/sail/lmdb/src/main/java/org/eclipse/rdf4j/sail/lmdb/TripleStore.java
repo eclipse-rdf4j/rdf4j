@@ -1099,10 +1099,11 @@ class TripleStore implements Closeable {
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
-							long readStamp;
+							long writeStamp;
 							try {
-								readStamp = lockManager.readLock();
+								writeStamp = lockManager.writeLock();
 							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
 								throw new SailException(e);
 							}
 							try {
@@ -1124,13 +1125,25 @@ class TripleStore implements Closeable {
 								try {
 									txnManager.activate();
 								} finally {
-									lockManager.unlockRead(readStamp);
+									lockManager.unlockWrite(writeStamp);
 								}
 							}
 						} else {
 							// invalidate open read transaction so that they are not re-used
 							// otherwise iterators won't see the updated data
-							txnManager.reset();
+							StampedLongAdderLockManager lockManager = txnManager.lockManager();
+							long writeStamp;
+							try {
+								writeStamp = lockManager.writeLock();
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new SailException(e);
+							}
+							try {
+								txnManager.reset();
+							} finally {
+								lockManager.unlockWrite(writeStamp);
+							}
 						}
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing

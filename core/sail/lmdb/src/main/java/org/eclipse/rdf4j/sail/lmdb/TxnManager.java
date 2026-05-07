@@ -79,11 +79,22 @@ class TxnManager {
 	 * @throws IOException if the transaction cannot be started for some reason
 	 */
 	Txn createReadTxn() throws IOException {
-		Txn txnRef = new Txn(createReadTxnInternal());
-		synchronized (active) {
-			active.put(txnRef, Boolean.TRUE);
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException(e);
 		}
-		return txnRef;
+		try {
+			Txn txnRef = new Txn(createReadTxnInternal());
+			synchronized (active) {
+				active.put(txnRef, Boolean.TRUE);
+			}
+			return txnRef;
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
 	}
 
 	long createReadTxnInternal() throws IOException {
