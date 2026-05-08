@@ -205,8 +205,11 @@ class LmdbThemeFastestRunSnapshotTest {
 	}
 
 	private static void assertCanonicalFiniteAnchorFastPath(String plan, String key) {
-		assertFalse(plan.contains("plannerId=lmdb-sketch"),
-				key + " should keep the already finite-anchored chain out of sketch planning:\n" + plan);
+		assertTrue(plan.contains("plannerId=lmdb-finite-anchor")
+				|| plan.contains("plannerPath=CANONICAL_FINITE_ANCHOR"),
+				key + " should mark canonical finite-anchor planning:\n" + plan);
+		assertFalse(plan.contains("plannerPath=ROBUST_USED"),
+				key + " should keep the already finite-anchored chain out of robust sketch planning:\n" + plan);
 		assertFalse(plan.contains("optimizer.logicalExploration"),
 				key + " should not spend Pareto memo/beam work on a canonical finite-anchor chain:\n" + plan);
 		assertPlanBefore(plan, key, "BindingSetAssignment ([[disease=http://example.com/theme/pharma/disease/0]",

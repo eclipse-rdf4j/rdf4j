@@ -105,31 +105,31 @@ public class ThemeQueryBenchmark {
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 
 	@Param({
-			"0",
-			"1",
-			"2",
-			"3",
-			"4",
-			"5",
+//			"0",
+//			"1",
+//			"2",
+//			"3",
+//			"4",
+//			"5",
 			"6",
-			"7",
-			"8",
-			"9",
-			"10",
+//			"7",
+//			"8",
+//			"9",
+//			"10",
 //			"11",
 //			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
+//			"MEDICAL_RECORDS",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
 			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 
@@ -147,7 +147,7 @@ public class ThemeQueryBenchmark {
 				.measurementIterations(10)
 				.measurementBatchSize(1)
 				.measurementTime(TimeValue.milliseconds(1))
-				.warmupIterations(0)
+				.warmupIterations(10)
 				.build();
 		new Runner(opt).run();
 	}

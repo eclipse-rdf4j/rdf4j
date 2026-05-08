@@ -352,7 +352,7 @@ class LmdbSketchAwareFilterPlacementTest {
 					.stream()
 					.filter(step -> step.getAppliedFilterIndexes().contains(0))
 					.anyMatch(step -> step.getStepWorkRows() > step.getDoubleMetrics()
-							.getOrDefault(TelemetryMetricNames.PLANNED_WORK_ROWS, 0.0d)),
+							.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 0.0d)),
 					"Expected expensive deferred filter evaluation to add step work");
 		} finally {
 			repository.shutDown();

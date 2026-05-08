@@ -169,23 +169,21 @@ class LmdbEvaluationStatistics
 					"ROBUST_NOT_READY", null,
 					List.of("rejected: sketch estimator not ready"));
 		}
-		PlanningAttempt attempt = boundedGreedyPlanningAttempt(args, initiallyBoundVars, algorithm, deferredFilters)
-				.orElseGet(() -> sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars, algorithm,
-						this, deferredFilters));
-		return toLmdbPlanningAttempt(attempt);
-	}
-
-	private Optional<PlanningAttempt> boundedGreedyPlanningAttempt(List<TupleExpr> args, Set<String> initiallyBoundVars,
-			Algorithm algorithm, List<FilterConstraint> deferredFilters) {
-		if (!shouldTryBoundedGreedyFirst(args, algorithm, deferredFilters)) {
-			return Optional.empty();
+		if (shouldTryBoundedGreedyFirst(args, algorithm, deferredFilters)) {
+			PlanningAttempt boundedGreedyAttempt = toLmdbPlanningAttempt(sketchBasedJoinEstimator
+					.planJoinOrderAttempt(args, initiallyBoundVars, Algorithm.GREEDY, this, deferredFilters));
+			if (isBoundedGreedyPlan(boundedGreedyAttempt)) {
+				return withDecisionTrace(boundedGreedyAttempt, boundedGreedySelectedTrace(boundedGreedyAttempt));
+			}
+			PlanningAttempt selectedAttempt = toLmdbPlanningAttempt(sketchBasedJoinEstimator
+					.planJoinOrderAttempt(args, initiallyBoundVars, algorithm, this, deferredFilters));
+			return withDecisionTrace(selectedAttempt,
+					boundedGreedyRejectedTrace(boundedGreedyAttempt, selectedAttempt));
 		}
-		PlanningAttempt attempt = sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars,
-				Algorithm.GREEDY, this, deferredFilters);
-		if (!isBoundedGreedyPlan(attempt)) {
-			return Optional.empty();
-		}
-		return Optional.of(attempt);
+		PlanningAttempt attempt = sketchBasedJoinEstimator.planJoinOrderAttempt(args, initiallyBoundVars, algorithm,
+				this, deferredFilters);
+		PlanningAttempt selectedAttempt = toLmdbPlanningAttempt(attempt);
+		return withDecisionTrace(selectedAttempt, selectedPlannerTrace(selectedAttempt));
 	}
 
 	private boolean shouldTryBoundedGreedyFirst(List<TupleExpr> args, Algorithm algorithm,
@@ -201,8 +199,56 @@ class LmdbEvaluationStatistics
 		if (attempt.getAlgorithm() != Algorithm.GREEDY || attempt.getPlan().isEmpty()) {
 			return false;
 		}
-		JoinOrderPlan plan = enrichPlanWithAccessMetrics(attempt.getPlan().get());
+		JoinOrderPlan plan = attempt.getPlan().get();
 		return isSmallBoundedGreedyPlan(plan) || isFiniteDirectLookupGreedyPlan(plan);
+	}
+
+	private PlanningAttempt withDecisionTrace(PlanningAttempt attempt, String decisionTrace) {
+		if (attempt.getPlan().isEmpty() || decisionTrace == null || decisionTrace.isEmpty()) {
+			return attempt;
+		}
+		JoinOrderPlan plan = attempt.getPlan().get();
+		Map<String, String> summaryStringMetrics = new HashMap<>(plan.getSummaryStringMetrics());
+		summaryStringMetrics.merge(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE, decisionTrace,
+				(previous, ignored) -> previous + "; " + decisionTrace);
+		JoinOrderPlan tracedPlan = new JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(),
+				plan.getEstimatedTotalWork(), plan.getDiagnostics(), summaryStringMetrics,
+				plan.getSummaryDoubleMetrics(), plan.getSteps());
+		return PlanningAttempt.planned(tracedPlan, attempt.getPlannerId(), attempt.getAlgorithm(),
+				attempt.getPlannerPath(), attempt.getDiagnostics());
+	}
+
+	private String boundedGreedySelectedTrace(PlanningAttempt boundedGreedyAttempt) {
+		return "bounded-greedy selected (" + attemptEstimateSummary(boundedGreedyAttempt) + ")";
+	}
+
+	private String boundedGreedyRejectedTrace(PlanningAttempt boundedGreedyAttempt, PlanningAttempt selectedAttempt) {
+		return "bounded-greedy rejected (" + attemptEstimateSummary(boundedGreedyAttempt) + "); "
+				+ selectedPlannerLabel(selectedAttempt) + " selected (" + attemptEstimateSummary(selectedAttempt)
+				+ ")";
+	}
+
+	private String selectedPlannerTrace(PlanningAttempt selectedAttempt) {
+		return selectedPlannerLabel(selectedAttempt) + " selected (" + attemptEstimateSummary(selectedAttempt) + ")";
+	}
+
+	private String selectedPlannerLabel(PlanningAttempt attempt) {
+		if (attempt.getAlgorithm() == Algorithm.DYNAMIC_PROGRAMMING) {
+			return "pareto-memo";
+		}
+		if (attempt.getAlgorithm() == Algorithm.GREEDY) {
+			return "pareto-beam";
+		}
+		return String.valueOf(attempt.getAlgorithm()).toLowerCase();
+	}
+
+	private String attemptEstimateSummary(PlanningAttempt attempt) {
+		if (attempt.getPlan().isEmpty()) {
+			return "path=" + attempt.getPlannerPath() + ", no-plan";
+		}
+		JoinOrderPlan plan = attempt.getPlan().get();
+		return "workRows=" + plan.getEstimatedTotalWork() + ", finalRows=" + plan.getEstimatedFinalRows()
+				+ ", path=" + attempt.getPlannerPath();
 	}
 
 	private boolean isSmallBoundedGreedyPlan(JoinOrderPlan plan) {
@@ -386,6 +432,7 @@ class LmdbEvaluationStatistics
 		if (context.shouldCollectMetrics()) {
 			doubleMetrics = new HashMap<>(doubleMetrics);
 			doubleMetrics.put("plannedRepeatedInvocations", repeatedInvocations);
+			doubleMetrics.putIfAbsent(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, perInvocationWorkRows);
 			if (isFiniteNonNegative(distinctLookupBindings)) {
 				doubleMetrics.put("plannedDistinctLookupBindings", distinctLookupBindings);
 			}
@@ -582,6 +629,9 @@ class LmdbEvaluationStatistics
 		double workRows = accessPathEstimate == null ? outputRows : accessPathEstimate.workRowsPerInvocation();
 		double accessRowsBeforeFilter = accessPathEstimate == null ? Double.NaN
 				: accessPathEstimate.rowsBeforeFilterAtAccess();
+		if (collectMetrics) {
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, workRows);
+		}
 		return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics,
 				true, "directLookup".equals(indexAccessMode), lookupComponentMask,
 				missingLookupComponentMask, accessRowsBeforeFilter));
@@ -1162,6 +1212,7 @@ class LmdbEvaluationStatistics
 			if (supportsJoinEstimation()) {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
 				if (estimatedCardinality >= 0) {
+					node.setResultSizeEstimate(estimatedCardinality);
 					this.cardinality = estimatedCardinality;
 					return;
 				}
@@ -1175,6 +1226,7 @@ class LmdbEvaluationStatistics
 			if (supportsJoinEstimation()) {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
 				if (estimatedCardinality >= 0) {
+					node.setResultSizeEstimate(estimatedCardinality);
 					this.cardinality = estimatedCardinality;
 					return;
 				}
@@ -1188,6 +1240,7 @@ class LmdbEvaluationStatistics
 			if (supportsJoinEstimation()) {
 				double estimatedCardinality = sketchBasedJoinEstimator.cardinality(node);
 				if (estimatedCardinality >= 0) {
+					node.setResultSizeEstimate(estimatedCardinality);
 					this.cardinality = estimatedCardinality;
 					return;
 				}
@@ -1201,11 +1254,15 @@ class LmdbEvaluationStatistics
 					&& Double.isFinite(inputRows) && inputRows >= 0.0d) {
 				double filteredRows = inputRows * passRatio;
 				if (Double.isFinite(filteredRows) && filteredRows >= 0.0d) {
+					node.setResultSizeEstimate(filteredRows);
 					this.cardinality = filteredRows;
 					return;
 				}
 			}
 
+			if (Double.isFinite(inputRows) && inputRows >= 0.0d) {
+				node.setResultSizeEstimate(inputRows);
+			}
 			this.cardinality = inputRows;
 		}
 

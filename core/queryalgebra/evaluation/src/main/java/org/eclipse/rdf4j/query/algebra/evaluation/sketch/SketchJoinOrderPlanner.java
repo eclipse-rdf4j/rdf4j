@@ -149,6 +149,7 @@ final class SketchJoinOrderPlanner {
 	private int logicalDominatedCount;
 	private int logicalTrimmedCount;
 	private String logicalExplorationMode;
+	private String logicalFinalFrontierSummary = "[]";
 
 	SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
 			SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster,
@@ -365,6 +366,8 @@ final class SketchJoinOrderPlanner {
 		logicalAcceptedCount = factors.size();
 		logicalFinalFrontierWidth = 1;
 		logicalMaxFrontierWidth = 1;
+		logicalFinalFrontierSummary = "[{order=" + describeFactorOrder(result) + ", vector=" + result.costVector()
+				+ "}]";
 		recordDebug("fixed result: order=" + describeFactorOrder(result) + " estimate="
 				+ result.estimate().summary() + " workRows=" + result.totalWork());
 		return new PlanOutcome(Optional.of(toJoinOrderPlan(result, algorithm)),
@@ -2748,6 +2751,7 @@ final class SketchJoinOrderPlanner {
 		logicalExplorationMode = "pareto-beam";
 		ParetoJoinMemoPlanner.Result<StatePlan> result = memoPlanner().planBeam();
 		applyPlannerStats(result.stats());
+		captureFinalFrontierSummary(result);
 		recordDebug("pareto beam: finalWidth=" + logicalFinalFrontierWidth + " limit=" + GREEDY_BEAM_WIDTH
 				+ " bestOrder=" + (result.best() == null ? "<none>" : describeFactorOrder(result.best())));
 		recordFinalFrontierDiagnostics(result);
@@ -2758,10 +2762,36 @@ final class SketchJoinOrderPlanner {
 		logicalExplorationMode = "pareto-memo";
 		ParetoJoinMemoPlanner.Result<StatePlan> result = memoPlanner().planMemo();
 		applyPlannerStats(result.stats());
+		captureFinalFrontierSummary(result);
 		recordDebug("pareto memo: finalWidth=" + logicalFinalFrontierWidth + " limit=" + FRONTIER_LIMIT
 				+ " bestOrder=" + (result.best() == null ? "<none>" : describeFactorOrder(result.best())));
 		recordFinalFrontierDiagnostics(result);
 		return result.best();
+	}
+
+	private void captureFinalFrontierSummary(ParetoJoinMemoPlanner.Result<StatePlan> result) {
+		if (result == null || result.finalEntries().isEmpty()) {
+			logicalFinalFrontierSummary = "[]";
+			return;
+		}
+		StringBuilder builder = new StringBuilder("[");
+		int limit = Math.min(FRONTIER_LIMIT, result.finalEntries().size());
+		for (int i = 0; i < limit; i++) {
+			if (i > 0) {
+				builder.append(", ");
+			}
+			ParetoFrontier.Entry<StatePlan> entry = result.finalEntries().get(i);
+			builder.append("{order=")
+					.append(describeFactorOrder(entry.value()))
+					.append(", vector=")
+					.append(entry.costVector())
+					.append('}');
+		}
+		if (result.finalEntries().size() > limit) {
+			builder.append(", ...");
+		}
+		builder.append(']');
+		logicalFinalFrontierSummary = builder.toString();
 	}
 
 	private void recordFinalFrontierDiagnostics(ParetoJoinMemoPlanner.Result<StatePlan> result) {
@@ -5223,7 +5253,8 @@ final class SketchJoinOrderPlanner {
 				+ ", trimmed=" + logicalTrimmedCount
 				+ ", maxFrontierWidth=" + logicalMaxFrontierWidth
 				+ ", finalFrontierWidth=" + logicalFinalFrontierWidth
-				+ ", finalVector=" + finalVector;
+				+ ", finalVector=" + finalVector
+				+ ", finalFrontier=" + logicalFinalFrontierSummary;
 	}
 
 	private String runtimeCorrectionHints() {
@@ -5658,8 +5689,13 @@ final class SketchJoinOrderPlanner {
 		}
 
 		private JoinOrderPlanner.PlanStep toPlanStep() {
+			Map<String, Double> finalDoubleMetrics = doubleMetrics;
+			if (isFiniteNonNegative(stepWorkRows)) {
+				finalDoubleMetrics = new HashMap<>(doubleMetrics);
+				finalDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
+			}
 			return new JoinOrderPlanner.PlanStep(boundBefore, factorOutputRows, resultRows, stepWorkRows,
-					stringMetrics, doubleMetrics, appliedFilterIndexes);
+					stringMetrics, finalDoubleMetrics, appliedFilterIndexes);
 		}
 	}
 

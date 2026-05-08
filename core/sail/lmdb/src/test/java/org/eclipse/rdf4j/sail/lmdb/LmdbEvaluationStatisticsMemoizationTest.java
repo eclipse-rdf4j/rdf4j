@@ -38,14 +38,35 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -107,6 +128,86 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertTrue(statistics.supportsJoinEstimation(),
 				"Ready base sketches should remain usable even when the robust synopsis is unavailable");
 		verify(estimator).isReadyNonBlocking();
+	}
+
+	@Test
+	void statisticsStoresCurrentSketchJoinEstimateOnNode() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
+
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, mock(TripleStore.class),
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Join join = new Join(
+				new StatementPattern(
+						Var.of("s"),
+						Var.of("p1", vf.createIRI("urn:test:p1")),
+						Var.of("o")),
+				new StatementPattern(
+						Var.of("o"),
+						Var.of("p2", vf.createIRI("urn:test:p2")),
+						Var.of("name")));
+		join.setResultSizeEstimate(100.0d);
+		join.setCostEstimate(1000.0d);
+		when(estimator.cardinality(join)).thenReturn(12.0d);
+
+		double rows = statistics.getCardinality(join);
+
+		assertEquals(12.0d, rows);
+		assertEquals(rows, join.getResultSizeEstimate(),
+				"Current accepted sketch estimate should replace stale result-size estimates on the join node");
+	}
+
+	@Test
+	void rejectedBoundedGreedyAttemptAppearsInSelectedPlanTrace() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.isReadyNonBlocking()).thenReturn(true);
+
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, mock(TripleStore.class),
+				estimator);
+		List<TupleExpr> args = new ArrayList<>();
+		for (int i = 0; i < 7; i++) {
+			args.add(new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
+		}
+		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 100.0d, 50_001.0d);
+		JoinOrderPlanner.JoinOrderPlan rejectedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 100.0d,
+				50_001.0d, List.of("greedy too expensive"), Map.of(), Map.of(), greedySteps);
+		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 7.0d, 7.0d);
+		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 7.0d, 49.0d,
+				List.of("pareto selected"),
+				Map.of(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION,
+						"mode=pareto-memo, finalVector=JoinCostVector{}"),
+				Map.of(), selectedSteps);
+		when(estimator.planJoinOrderAttempt(any(), any(), any(), any(JoinFactorCostModel.class), any()))
+				.thenAnswer(invocation -> {
+					JoinOrderPlanner.Algorithm algorithm = invocation.getArgument(2);
+					if (algorithm == JoinOrderPlanner.Algorithm.GREEDY) {
+						return JoinOrderPlanner.PlanningAttempt.planned(rejectedGreedy, "sketch", algorithm,
+								"ROBUST_USED", rejectedGreedy.getDiagnostics());
+					}
+					return JoinOrderPlanner.PlanningAttempt.planned(selectedPareto, "sketch", algorithm,
+							"ROBUST_USED", selectedPareto.getDiagnostics());
+				});
+
+		JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of());
+
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
+		String decisionTrace = plan.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
+		assertNotNull(decisionTrace, "Selected plan should retain compact cascade decisions");
+		assertTrue(decisionTrace.contains("bounded-greedy rejected"), decisionTrace);
+		assertTrue(decisionTrace.contains("pareto-memo selected"), decisionTrace);
 	}
 
 	@Test
@@ -403,6 +504,212 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void optimizedPlanDumpShowsCurrentPlannerEstimatesForNodes() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-plan-estimate-dump").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			String query = """
+					SELECT * WHERE {
+						?s <urn:test:follows> ?o .
+						?o <urn:test:follows> ?x .
+						?x <urn:test:name> ?name .
+						FILTER(CONTAINS(STR(?name), "u"))
+					}
+					""";
+			String plan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
+						.explain(Explanation.Level.Optimized);
+				plan = explanation.toString();
+			}
+
+			assertTrue(plan.contains("resultSizeEstimate="), plan);
+			assertTrue(plan.contains("costEstimate="), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_WORK_ROWS + "="), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION + "="), plan);
+			assertTrue(plan.contains("finalFrontier=["), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE + "="), plan);
+			assertTrue(plan.lines()
+					.anyMatch(line -> line.contains("Join") && line.contains("resultSizeEstimate=")
+							&& line.contains("costEstimate=")),
+					"Expected materialized join nodes to carry current row and work estimates\n" + plan);
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void optimizedPlanDumpAnnotatesCompleteTupleExprCosting() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-plan-complete-cost-dump").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			String query = """
+					SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?neighborCount) WHERE {
+						{
+							?node <urn:test:name> ?nodeName .
+							?node <urn:test:follows> ?neighbor .
+						}
+						UNION
+						{
+							?neighbor <urn:test:follows> ?node .
+						}
+						OPTIONAL {
+							?node <urn:test:name> ?w .
+							BIND(?w AS ?optWeight)
+						}
+						FILTER (?optWeight != "missing")
+					}
+					GROUP BY ?node
+					HAVING (COUNT(?neighbor) > 0)
+					""";
+			String plan = optimizedPlanFor(repository, query);
+
+			assertOptimizedTupleNodeAnnotated(plan, "Projection");
+			assertOptimizedTupleNodeAnnotated(plan, "Extension");
+			assertOptimizedTupleNodeAnnotated(plan, "Filter");
+			assertOptimizedTupleNodeAnnotated(plan, "Group");
+			assertOptimizedTupleNodeAnnotated(plan, "LeftJoin");
+			assertOptimizedTupleNodeAnnotated(plan, "Union");
+			assertOptimizedTupleNodeAnnotated(plan, "Join");
+			assertOptimizedTupleNodeAnnotated(plan, "StatementPattern");
+			assertTrue(plan.lines()
+					.anyMatch(line -> isTupleNodeLine(line, "Filter")
+							&& (line.contains(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE + "=")
+									|| line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE
+											+ "=lmdb-synthetic"))),
+					"Expected filters to explain their selectivity source or synthetic fallback\n" + plan);
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void leftJoinNodeReceivesCurrentRowsAndSubtreeWork() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-plan-leftjoin-cost").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			String plan = optimizedPlanFor(repository, """
+					SELECT * WHERE {
+						?s <urn:test:follows> ?o .
+						OPTIONAL { ?s <urn:test:name> ?name . }
+					}
+					""");
+
+			assertOptimizedTupleNodeAnnotated(plan, "LeftJoin");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void unionNodeReceivesSummedRowsAndWork() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-plan-union-cost").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			String plan = optimizedPlanFor(repository, """
+					SELECT * WHERE {
+						{ ?s <urn:test:follows> ?o . }
+						UNION
+						{ ?s <urn:test:name> ?name . }
+					}
+					""");
+
+			assertOptimizedTupleNodeAnnotated(plan, "Union");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void groupNodeUsesDistinctGroupEstimateOrSyntheticUpperBound() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-plan-group-cost").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			loadData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.getSketchBasedJoinEstimator().rebuild();
+
+			String plan = optimizedPlanFor(repository, """
+					SELECT ?s (COUNT(?o) AS ?count) WHERE {
+						?s <urn:test:follows> ?o .
+					}
+					GROUP BY ?s
+					""");
+
+			assertOptimizedTupleNodeAnnotated(plan, "Group");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void allConcreteTupleExprTypesHaveAnnotationPolicy() {
+		List<Class<? extends TupleExpr>> tupleExprTypes = List.of(
+				StatementPattern.class,
+				Join.class,
+				LeftJoin.class,
+				Union.class,
+				Filter.class,
+				Projection.class,
+				MultiProjection.class,
+				Extension.class,
+				QueryRoot.class,
+				DescribeOperator.class,
+				Reduced.class,
+				Order.class,
+				Slice.class,
+				Distinct.class,
+				Group.class,
+				Difference.class,
+				Intersection.class,
+				BindingSetAssignment.class,
+				EmptySet.class,
+				SingletonSet.class,
+				ZeroLengthPath.class,
+				ArbitraryLengthPath.class,
+				TripleRef.class,
+				TupleFunctionCall.class,
+				Service.class);
+
+		for (Class<? extends TupleExpr> tupleExprType : tupleExprTypes) {
+			assertTrue(LmdbTupleExprEstimateAnnotator.hasAnnotationPolicy(tupleExprType),
+					() -> "Missing LMDB annotation policy for " + tupleExprType.getSimpleName());
 		}
 	}
 
@@ -849,6 +1156,64 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
+	}
+
+	private static List<JoinOrderPlanner.PlanStep> planSteps(List<TupleExpr> args, double outputRows,
+			double stepWorkRows) {
+		List<JoinOrderPlanner.PlanStep> steps = new ArrayList<>();
+		for (int i = 0; i < args.size(); i++) {
+			steps.add(new JoinOrderPlanner.PlanStep(Set.of(), outputRows, outputRows, stepWorkRows,
+					Map.of(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup"),
+					Map.of(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows), List.of()));
+		}
+		return steps;
+	}
+
+	private static String optimizedPlanFor(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
+					.explain(Explanation.Level.Optimized);
+			return explanation.toString();
+		}
+	}
+
+	private static void assertOptimizedTupleNodeAnnotated(String plan, String nodeName) {
+		String line = plan.lines()
+				.filter(candidate -> isTupleNodeLine(candidate, nodeName))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected plan to contain " + nodeName + "\n" + plan));
+		assertFiniteExplainMetric(plan, line, "resultSizeEstimate");
+		assertFiniteExplainMetric(plan, line, "costEstimate");
+		assertFiniteExplainMetric(plan, line, TelemetryMetricNames.PLANNED_WORK_ROWS);
+		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"),
+				"Expected " + nodeName + " to carry lmdb planner id\nline: " + line + "\n" + plan);
+		assertTrue(line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE + "="),
+				"Expected " + nodeName + " to carry estimate source\nline: " + line + "\n" + plan);
+	}
+
+	private static void assertFiniteExplainMetric(String plan, String line, String metricName) {
+		assertTrue(line.contains(metricName + "="),
+				"Expected metric " + metricName + " on line\nline: " + line + "\n" + plan);
+		assertFalse(line.contains(metricName + "=-"),
+				"Expected non-negative metric " + metricName + " on line\nline: " + line + "\n" + plan);
+		assertFalse(line.contains(metricName + "=NaN"),
+				"Expected finite metric " + metricName + " on line\nline: " + line + "\n" + plan);
+		assertFalse(line.contains(metricName + "=Infinity"),
+				"Expected finite metric " + metricName + " on line\nline: " + line + "\n" + plan);
+	}
+
+	private static boolean isTupleNodeLine(String line, String nodeName) {
+		String trimmed = line.replace("╠══", "")
+				.replace("╚══", "")
+				.replace("├──", "")
+				.replace("└──", "")
+				.replace("║", "")
+				.replace("│", "")
+				.trim();
+		return trimmed.equals(nodeName)
+				|| trimmed.startsWith(nodeName + " ")
+				|| trimmed.startsWith(nodeName + " (")
+				|| trimmed.startsWith(nodeName + "[");
 	}
 
 	private static void loadData(SailRepository repository) {

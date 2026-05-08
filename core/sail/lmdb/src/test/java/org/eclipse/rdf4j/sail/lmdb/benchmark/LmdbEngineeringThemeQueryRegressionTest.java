@@ -421,7 +421,8 @@ class LmdbEngineeringThemeQueryRegressionTest {
 		assertContains(pattern, "plannedIndexAccessMode=directLookup");
 		assertContains(pattern, "plannedLookupComponents=[S, P]");
 		assertContains(pattern, "plannedBoundVars=requirement");
-		assertContains(pattern, "plannedAccessWorkRows=520");
+		assertContains(pattern, "plannedAccessWorkRows=1.00");
+		assertContains(pattern, "plannedWorkRows=1.0K");
 	}
 
 	private static void assertDevelopOperatorSkeleton(String plan) {
@@ -441,7 +442,7 @@ class LmdbEngineeringThemeQueryRegressionTest {
 				"value=http://example.com/theme/engineering/name",
 				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"value=http://example.com/theme/engineering/Assembly",
-				"Extension [right]",
+				"Extension (",
 				"value=http://example.com/theme/engineering/partOf",
 				"ExtensionElem (optComponent)",
 				"StatementPattern (new scope)",

@@ -145,6 +145,92 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void paretoPlanSummaryIncludesCompactFinalFrontier() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI pA = VF.createIRI("urn:frontier:a");
+		IRI pB = VF.createIRI("urn:frontier:b");
+		IRI pC = VF.createIRI("urn:frontier:c");
+		for (int i = 0; i < 4; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:a:s" + i), pA, VF.createIRI("urn:a:o" + i)));
+			store.add(VF.createStatement(VF.createIRI("urn:b:s" + i), pB, VF.createIRI("urn:b:o" + i)));
+			store.add(VF.createStatement(VF.createIRI("urn:c:s" + i), pC, VF.createIRI("urn:c:o" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern a = pattern("aS", pA, "aO");
+		StatementPattern b = pattern("bS", pB, "bO");
+		StatementPattern c = pattern("cS", pC, "cO");
+		JoinFactorCostModel costModel = (factor, boundVars) -> Optional
+				.of(new JoinFactorCostModel.FactorCostEstimate(4.0d, 4.0d));
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(a, b, c), Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		String exploration = plan.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
+		assertTrue(exploration.contains("mode=pareto-memo"), exploration);
+		assertTrue(exploration.contains("finalVector="), exploration);
+		assertTrue(exploration.contains("finalFrontier=["),
+				"Expected compact Pareto frontier alternatives in logical exploration: " + exploration);
+		assertTrue(exploration.contains("order="),
+				"Expected frontier alternatives to include considered factor orders: " + exploration);
+	}
+
+	@Test
+	void planStepsRepresentCurrentPrefixRowsAndWork() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI firstPredicate = VF.createIRI("urn:step:first");
+		IRI secondPredicate = VF.createIRI("urn:step:second");
+		for (int i = 0; i < 6; i++) {
+			Resource subject = VF.createIRI("urn:step:s" + i);
+			Resource object = VF.createIRI("urn:step:o" + i);
+			store.add(VF.createStatement(subject, firstPredicate, object));
+			store.add(VF.createStatement(object, secondPredicate, VF.createIRI("urn:step:v" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern first = pattern("s", firstPredicate, "o");
+		StatementPattern second = pattern("o", secondPredicate, "v");
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == first) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(6.0d, 6.0d));
+			}
+			if (factor == second) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(boundVars.contains("o") ? 2.0d : 6.0d,
+						6.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(first, second), Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		assertEquals(2, plan.getSteps().size());
+		for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+			assertTrue(step.getFactorOutputRows() >= 0.0d, "Factor output rows should be current and finite");
+			assertTrue(step.getPrefixOutputRows() >= 0.0d, "Prefix output rows should be current and finite");
+			assertTrue(step.getStepWorkRows() >= 0.0d, "Step work rows should be current and finite");
+			assertTrue(step.getDoubleMetrics().containsKey(TelemetryMetricNames.PLANNED_WORK_ROWS),
+					"Plan step metrics should carry the same work rows used by plan dumps: " + step.getDoubleMetrics());
+			assertEquals(step.getStepWorkRows(),
+					step.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS),
+					1.0e-9d);
+		}
+		assertEquals(plan.getEstimatedFinalRows(), plan.getSteps().getLast().getPrefixOutputRows(), 1.0e-9d);
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void fixedOrderScorerRanksKnownFastOrderCheaperThanRepeatedLookupOrder() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI broadPredicate = VF.createIRI("urn:broad");

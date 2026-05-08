@@ -157,7 +157,8 @@ class LmdbPharmaOptimizedQueryRegressionTest {
 	private static void assertPlannerCostInvariants(int queryIndex, OptimizerSnapshot snapshot) {
 		String key = "PHARMA query " + queryIndex;
 		assertTrue(snapshot.renderedQuery.contains("SELECT"), key + " should still render an optimized query");
-		boolean sketchPlan = snapshot.plan.contains("plannerId=lmdb-sketch");
+		boolean sketchPlan = snapshot.plan.contains("plannerPath=ROBUST_USED")
+				|| snapshot.plan.contains("optimizer.logicalExploration");
 		boolean finiteAnchorPlan = snapshot.plan.contains("plannerId=lmdb-finite-anchor");
 		assertTrue(sketchPlan || finiteAnchorPlan, key + " should use LMDB planning:\n" + snapshot.plan);
 		if (sketchPlan) {

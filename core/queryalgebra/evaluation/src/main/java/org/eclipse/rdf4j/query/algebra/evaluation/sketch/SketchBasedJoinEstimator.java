@@ -65,9 +65,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -81,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -6004,6 +6008,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, initiallyBoundVars);
 			}
+			case Union union -> {
+				return estimateUnionTupleExprPlan(union, initiallyBoundVars);
+			}
+			case Difference difference -> {
+				return estimateDifferenceTupleExprPlan(difference, initiallyBoundVars);
+			}
+			case Intersection intersection -> {
+				return estimateIntersectionTupleExprPlan(intersection, initiallyBoundVars);
+			}
+			case Group group -> {
+				return estimateGroupTupleExprPlan(group, initiallyBoundVars);
+			}
 			case EmptySet emptySet -> {
 				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
 			}
@@ -6050,6 +6066,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 				return estimateJoinedTupleExprPlan(join.getLeftArg(), join.getRightArg(), true, scope,
 						initiallyBoundVarMask);
+			}
+			case Union union -> {
+				return estimateUnionTupleExprPlan(union, scope, initiallyBoundVarMask);
+			}
+			case Difference difference -> {
+				return estimateDifferenceTupleExprPlan(difference, scope, initiallyBoundVarMask);
+			}
+			case Intersection intersection -> {
+				return estimateIntersectionTupleExprPlan(intersection, scope, initiallyBoundVarMask);
+			}
+			case Group group -> {
+				return estimateGroupTupleExprPlan(group, scope, initiallyBoundVarMask);
 			}
 			case EmptySet emptySet -> {
 				return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
@@ -6151,6 +6179,174 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
 		double outputRows = leftJoin ? Math.max(leftEstimate.outputRows, step.outputRows) : step.outputRows;
 		return new TuplePlanEstimate(outputRows, outputRows, 1.0d, step.varStats);
+	}
+
+	private TuplePlanEstimate estimateUnionTupleExprPlan(Union union, Set<String> initiallyBoundVars) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(union.getLeftArg(), initiallyBoundVars);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(union.getRightArg(), initiallyBoundVars);
+		return estimateUnionTupleExprPlan(leftEstimate, rightEstimate);
+	}
+
+	private TuplePlanEstimate estimateUnionTupleExprPlan(Union union, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(union.getLeftArg(), scope, initiallyBoundVarMask);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(union.getRightArg(), scope, initiallyBoundVarMask);
+		return estimateUnionTupleExprPlan(leftEstimate, rightEstimate);
+	}
+
+	private TuplePlanEstimate estimateUnionTupleExprPlan(TuplePlanEstimate leftEstimate,
+			TuplePlanEstimate rightEstimate) {
+		if (leftEstimate == null || rightEstimate == null) {
+			return null;
+		}
+		double outputRows = normalizeRows(leftEstimate.outputRows + rightEstimate.outputRows);
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d,
+				unionVarStats(leftEstimate, rightEstimate, outputRows));
+	}
+
+	private TuplePlanEstimate estimateDifferenceTupleExprPlan(Difference difference, Set<String> initiallyBoundVars) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(difference.getLeftArg(), initiallyBoundVars);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(difference.getRightArg(), initiallyBoundVars);
+		return estimateDifferenceTupleExprPlan(leftEstimate, rightEstimate);
+	}
+
+	private TuplePlanEstimate estimateDifferenceTupleExprPlan(Difference difference, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(difference.getLeftArg(), scope, initiallyBoundVarMask);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(difference.getRightArg(), scope, initiallyBoundVarMask);
+		return estimateDifferenceTupleExprPlan(leftEstimate, rightEstimate);
+	}
+
+	private TuplePlanEstimate estimateDifferenceTupleExprPlan(TuplePlanEstimate leftEstimate,
+			TuplePlanEstimate rightEstimate) {
+		if (leftEstimate == null || rightEstimate == null) {
+			return null;
+		}
+		double outputRows = normalizeRows(leftEstimate.outputRows);
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d,
+				clampVarStatsToRows(leftEstimate.varStats, outputRows, false));
+	}
+
+	private TuplePlanEstimate estimateIntersectionTupleExprPlan(Intersection intersection,
+			Set<String> initiallyBoundVars) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(intersection.getLeftArg(), initiallyBoundVars);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(intersection.getRightArg(), initiallyBoundVars);
+		return estimateIntersectionTupleExprPlan(leftEstimate, rightEstimate);
+	}
+
+	private TuplePlanEstimate estimateIntersectionTupleExprPlan(Intersection intersection, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate leftEstimate = estimateTupleExprPlan(intersection.getLeftArg(), scope,
+				initiallyBoundVarMask);
+		TuplePlanEstimate rightEstimate = estimateTupleExprPlan(intersection.getRightArg(), scope,
+				initiallyBoundVarMask);
+		return estimateIntersectionTupleExprPlan(leftEstimate, rightEstimate);
+	}
+
+	private TuplePlanEstimate estimateIntersectionTupleExprPlan(TuplePlanEstimate leftEstimate,
+			TuplePlanEstimate rightEstimate) {
+		if (leftEstimate == null || rightEstimate == null) {
+			return null;
+		}
+		double outputRows = normalizeRows(Math.min(leftEstimate.outputRows, rightEstimate.outputRows));
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d,
+				intersectionVarStats(leftEstimate, rightEstimate, outputRows));
+	}
+
+	private TuplePlanEstimate estimateGroupTupleExprPlan(Group group, Set<String> initiallyBoundVars) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(group.getArg(), initiallyBoundVars);
+		return estimateGroupTupleExprPlan(group, argEstimate);
+	}
+
+	private TuplePlanEstimate estimateGroupTupleExprPlan(Group group, OptimizationScopeState scope,
+			long initiallyBoundVarMask) {
+		TuplePlanEstimate argEstimate = estimateTupleExprPlan(group.getArg(), scope, initiallyBoundVarMask);
+		return estimateGroupTupleExprPlan(group, argEstimate);
+	}
+
+	private TuplePlanEstimate estimateGroupTupleExprPlan(Group group, TuplePlanEstimate argEstimate) {
+		if (argEstimate == null) {
+			return null;
+		}
+		double outputRows = estimateGroupOutputRows(group, argEstimate);
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d,
+				groupVarStats(group, argEstimate.varStats, outputRows));
+	}
+
+	private double estimateGroupOutputRows(Group group, TuplePlanEstimate argEstimate) {
+		if (argEstimate.outputRows <= 0.0d) {
+			return 0.0d;
+		}
+		if (group.getGroupBindingNames().isEmpty()) {
+			return 1.0d;
+		}
+		double groups = 1.0d;
+		for (String bindingName : group.getGroupBindingNames()) {
+			VarPlanStats stats = argEstimate.varStats.get(bindingName);
+			if (stats == null || !Double.isFinite(stats.distinct) || stats.distinct <= 0.0d) {
+				return normalizeRows(argEstimate.outputRows);
+			}
+			groups *= Math.max(1.0d, stats.distinct);
+			if (!Double.isFinite(groups) || groups >= argEstimate.outputRows) {
+				return normalizeRows(argEstimate.outputRows);
+			}
+		}
+		return normalizeRows(Math.min(groups, argEstimate.outputRows));
+	}
+
+	private Map<String, VarPlanStats> unionVarStats(TuplePlanEstimate leftEstimate, TuplePlanEstimate rightEstimate,
+			double outputRows) {
+		Map<String, VarPlanStats> varStats = newVarStatsMap(
+				leftEstimate.varStats.size() + rightEstimate.varStats.size());
+		for (Map.Entry<String, VarPlanStats> entry : leftEstimate.varStats.entrySet()) {
+			VarPlanStats rightStats = rightEstimate.varStats.get(entry.getKey());
+			double distinct = entry.getValue().distinct;
+			if (rightStats != null) {
+				distinct += rightStats.distinct;
+			}
+			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(distinct, outputRows), null));
+		}
+		for (Map.Entry<String, VarPlanStats> entry : rightEstimate.varStats.entrySet()) {
+			if (!varStats.containsKey(entry.getKey())) {
+				varStats.put(entry.getKey(),
+						new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), null));
+			}
+		}
+		return varStats;
+	}
+
+	private Map<String, VarPlanStats> intersectionVarStats(TuplePlanEstimate leftEstimate,
+			TuplePlanEstimate rightEstimate, double outputRows) {
+		Map<String, VarPlanStats> varStats = newVarStatsMap(
+				leftEstimate.varStats.size() + rightEstimate.varStats.size());
+		for (Map.Entry<String, VarPlanStats> entry : leftEstimate.varStats.entrySet()) {
+			VarPlanStats rightStats = rightEstimate.varStats.get(entry.getKey());
+			double distinct = rightStats == null ? entry.getValue().distinct
+					: Math.min(entry.getValue().distinct, rightStats.distinct);
+			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(distinct, outputRows), null));
+		}
+		for (Map.Entry<String, VarPlanStats> entry : rightEstimate.varStats.entrySet()) {
+			if (!varStats.containsKey(entry.getKey())) {
+				varStats.put(entry.getKey(),
+						new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), null));
+			}
+		}
+		return varStats;
+	}
+
+	private Map<String, VarPlanStats> groupVarStats(Group group, Map<String, VarPlanStats> inputStats,
+			double outputRows) {
+		if (group.getGroupBindingNames().isEmpty()) {
+			return Collections.emptyMap();
+		}
+		Map<String, VarPlanStats> varStats = newVarStatsMap(group.getGroupBindingNames().size());
+		for (String bindingName : group.getGroupBindingNames()) {
+			VarPlanStats stats = inputStats.get(bindingName);
+			if (stats != null) {
+				varStats.put(bindingName, new VarPlanStats(clampDistinct(stats.distinct, outputRows), null));
+			}
+		}
+		return varStats;
 	}
 
 	private TuplePlanEstimate estimateBindingSetAssignmentJoinPlan(TupleExpr leftArg, TupleExpr rightArg,
