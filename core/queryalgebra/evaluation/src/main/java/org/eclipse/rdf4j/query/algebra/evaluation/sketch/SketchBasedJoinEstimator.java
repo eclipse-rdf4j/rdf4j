@@ -445,12 +445,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final String ZERO_INTERSECTION_SAMPLE_SIZE_PROPERTY = "zeroIntersectionSampleSize";
 	private static final long DEFAULT_ESTIMATE_CACHE_SECONDS = 60L;
 	private static final int MAX_ESTIMATE_CACHE_ENTRIES = 4096;
-	private static final long OBJECT_HEADER_BYTES = 16L;
-	private static final long ARRAY_HEADER_BYTES = 16L;
-	private static final long REFERENCE_BYTES = 8L;
-	private static final long BYTE_BYTES = 1L;
-	private static final long INT_BYTES = 4L;
-	private static final long LONG_BYTES = 8L;
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -996,27 +990,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private void refreshEstimatedHeapBytes() {
-			long estimatedHeapBytesCache = computeEstimatedHeapBytes();
 		}
 
-		private long computeEstimatedHeapBytes() {
-			return align(OBJECT_HEADER_BYTES + 2L * INT_BYTES + 16L * REFERENCE_BYTES)
-					+ estimateLongArrayBytes(buckets.length)
-					+ estimateByteArrayBytes(flags.length)
-					+ estimateIntArrayBytes(keyPrefixes.length)
-					+ estimateIntArrayBytes(xs.length)
-					+ estimateIntArrayBytes(ys.length)
-					+ estimateIntArrayBytes(persistedFileKindsA.length)
-					+ estimateLongArrayBytes(persistedOffsetsA.length)
-					+ estimateIntArrayBytes(persistedLengthsA.length)
-					+ estimateIntArrayBytes(persistedFileKindsB.length)
-					+ estimateLongArrayBytes(persistedOffsetsB.length)
-					+ estimateIntArrayBytes(persistedLengthsB.length)
-					+ estimateIntArrayBytes(dirtyPrevA.length)
-					+ estimateIntArrayBytes(dirtyNextA.length)
-					+ estimateIntArrayBytes(dirtyPrevB.length)
-					+ estimateIntArrayBytes(dirtyNextB.length);
-		}
 	}
 
 	static final class DebugSketchAddress {
@@ -1255,7 +1230,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private volatile Path persistenceFile;
 	private volatile SketchEstimatorPersistenceStore persistenceStore;
 	private volatile boolean persistenceEnabled;
-	private volatile boolean lazyLoadEnabled;
 	private volatile boolean sketchesLoaded = true;
 	private final long[] slotGenerations = new long[] { 1L, 1L };
 
@@ -1499,7 +1473,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.current = usingA ? bufA : bufB;
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
-		this.lazyLoadEnabled = false;
 		this.incrementalStatementQueues = new StatementUpdateQueue[] {
 				new StatementUpdateQueue(incrementalQueueInitialLimit),
 				new StatementUpdateQueue(incrementalQueueInitialLimit)
@@ -1799,7 +1772,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Path normalizedFile = file == null ? null : file.toAbsolutePath().normalize();
 		this.persistenceFile = normalizedFile;
 		this.persistenceEnabled = (file != null);
-		this.lazyLoadEnabled = lazyLoad;
 
 		if (!Objects.equals(previousPersistenceFile, this.persistenceFile)) {
 			closePersistenceStore();
@@ -2468,7 +2440,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private StatementUpdateBatch rotateFullStatementQueueLocked() {
-		StatementUpdateQueue active = activeStatementQueue();
 		StatementUpdateQueue other = otherStatementQueue();
 		if (!other.isReusable() && !waitForReusableStatementQueueLocked(other)) {
 			dropExactIncrementalUpdatesLocked();
@@ -2892,8 +2863,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		for (int i = 1; i < valueCount; i++) {
 			tupleUpdateRaw(sketch, overflowValues[i - 1], delta);
 		}
-		markDirtyAndTouchResidentSketch(slot, entryId, sketch,
-				initialSingletonSketchBytesHint(state, sketch, valueCount));
+		markDirtyAndTouchResidentSketch(slot, entryId);
 	}
 
 	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event, IngestPartition partition) {
@@ -3070,12 +3040,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			synchronized (snap) {
 				PatternStats st = statsOf(snap, joinVar, s, p, o, c);
 				ArrayOfDoublesSketch bindings = st.sketch == null ? EMPTY : st.sketch;
-				return new JoinEstimate(snap, joinVar, bindings, st.distinct, st.card);
+				return new JoinEstimate(snap, bindings, st.distinct, st.card);
 			}
 		}
 		PatternStats st = patternStats(snap, joinVar, s, p, o, c);
 		ArrayOfDoublesSketch bindings = st.sketch == null ? EMPTY : st.sketch;
-		return new JoinEstimate(snap, joinVar, bindings, st.distinct, st.card);
+		return new JoinEstimate(snap, bindings, st.distinct, st.card);
 	}
 
 	public double estimateCount(Component joinVar, String s, String p, String o, String c) {
@@ -3084,15 +3054,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	public final class JoinEstimate {
 		private final State snap;
-		private Component joinVar;
 		private ArrayOfDoublesSketch bindings;
 		private double distinct;
 		private double resultSize;
 
-		private JoinEstimate(State snap, Component joinVar, ArrayOfDoublesSketch bindings,
+		private JoinEstimate(State snap, ArrayOfDoublesSketch bindings,
 				double distinct, double size) {
 			this.snap = snap;
-			this.joinVar = joinVar;
 			this.bindings = bindings;
 			this.distinct = distinct;
 			this.resultSize = size;
@@ -3101,13 +3069,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		public JoinEstimate join(Component newJoinVar, String s, String p, String o, String c) {
 			if (estimateCacheTtlNanos <= 0L) {
 				synchronized (snap) {
-					return joinWithPatternStats(newJoinVar, statsOf(snap, newJoinVar, s, p, o, c));
+					return joinWithPatternStats(statsOf(snap, newJoinVar, s, p, o, c));
 				}
 			}
-			return joinWithPatternStats(newJoinVar, patternStats(snap, newJoinVar, s, p, o, c));
+			return joinWithPatternStats(patternStats(snap, newJoinVar, s, p, o, c));
 		}
 
-		private JoinEstimate joinWithPatternStats(Component newJoinVar, PatternStats rhs) {
+		private JoinEstimate joinWithPatternStats(PatternStats rhs) {
 			TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(this.bindings,
 					rhs.sketch, snap.k);
 			ArrayOfDoublesSketch inter = intersectionStats.sketch();
@@ -3117,7 +3085,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				this.bindings = inter;
 				this.distinct = 0.0;
 				this.resultSize = 0.0;
-				this.joinVar = newJoinVar;
 				return this;
 			}
 
@@ -3127,7 +3094,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			/* carry forward */
 			this.bindings = inter;
 			this.distinct = interDistinct;
-			this.joinVar = newJoinVar;
 			return this;
 		}
 
@@ -3535,16 +3501,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/* Pair & single wrappers (read‑only) */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private StateSingleWrapper singleWrapper(State st, Component fixed) {
-		return singleWrapper(st, fixed, false);
-	}
-
 	private StateSingleWrapper singleWrapper(State st, Component fixed, boolean isDelete) {
 		return new StateSingleWrapper(st, fixed, isDelete);
-	}
-
-	private StatePairWrapper pairWrapper(State st, Pair p) {
-		return pairWrapper(st, p, false);
 	}
 
 	private StatePairWrapper pairWrapper(State st, Pair p, boolean isDelete) {
@@ -3663,7 +3621,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static final class State {
 		final int k; // sketch nominal entries
-		final int buckets; // array bucket count (outer.nominalEntries)
 		final int subjectBuckets;
 		final int predicateBuckets;
 		final int objectBuckets;
@@ -3674,7 +3631,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		final StateComponents<AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> singleTriples;
 		final StateComponents<SingleBuild> singles;
 		final EnumMap<Pair, PairBuild> pairs = new EnumMap<>(Pair.class);
-		final long initialSketchBytes;
 		final int maxSketchBytes;
 
 		/* tombstone (delete) sketches */
@@ -3692,9 +3648,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			this.predicateBuckets = predicateBuckets;
 			this.objectBuckets = objectBuckets;
 			this.contextBuckets = contextBuckets;
-			this.buckets = maxBucketCount(subjectBuckets, predicateBuckets, objectBuckets, contextBuckets);
 			ArrayOfDoublesUpdatableSketch emptySketch = newSk(k);
-			this.initialSketchBytes = estimatedSketchBytes(emptySketch);
 			this.maxSketchBytes = emptySketch.getMaxBytes();
 
 			globalComponents = new StateComponents<>(
@@ -3716,21 +3670,21 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					new AtomicReferenceArray<>(contextBuckets));
 
 			singles = new StateComponents<>(
-					new SingleBuild(k, Component.S, subjectBuckets),
-					new SingleBuild(k, Component.P, predicateBuckets),
-					new SingleBuild(k, Component.O, objectBuckets),
-					new SingleBuild(k, Component.C, contextBuckets));
+					new SingleBuild(Component.S, subjectBuckets),
+					new SingleBuild(Component.P, predicateBuckets),
+					new SingleBuild(Component.O, objectBuckets),
+					new SingleBuild(Component.C, contextBuckets));
 
 			delSingles = new StateComponents<>(
-					new SingleBuild(k, Component.S, subjectBuckets),
-					new SingleBuild(k, Component.P, predicateBuckets),
-					new SingleBuild(k, Component.O, objectBuckets),
-					new SingleBuild(k, Component.C, contextBuckets));
+					new SingleBuild(Component.S, subjectBuckets),
+					new SingleBuild(Component.P, predicateBuckets),
+					new SingleBuild(Component.O, objectBuckets),
+					new SingleBuild(Component.C, contextBuckets));
 
 			for (Pair p : PAIR_VALUES) {
 				if (contextPairSketchesEnabled || !isContextPair(p)) {
-					pairs.put(p, new PairBuild(k, bucketCount(p.x), bucketCount(p.y)));
-					delPairs.put(p, new PairBuild(k, bucketCount(p.x), bucketCount(p.y)));
+					pairs.put(p, new PairBuild(bucketCount(p.y)));
+					delPairs.put(p, new PairBuild(bucketCount(p.y)));
 				}
 			}
 		}
@@ -3762,14 +3716,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static final class SingleBuild {
-		final int k;
-		final int buckets;
 		final EnumMap<Component, AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> cmpl = new EnumMap<>(
 				Component.class);
 
-		SingleBuild(int k, Component fixed, int buckets) {
-			this.k = k;
-			this.buckets = buckets;
+		SingleBuild(Component fixed, int buckets) {
 			for (Component c : COMPONENT_VALUES) {
 				if (c != fixed) {
 					cmpl.put(c, new AtomicReferenceArray<>(buckets));
@@ -3786,9 +3736,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private static final class PairBuild {
-		final int k;
-		final int xBuckets;
-		final int yBuckets;
 		final int yBits;
 		final long yMask;
 
@@ -3796,15 +3743,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		final SparseSketchArray comp1;
 		final SparseSketchArray comp2;
 
-		PairBuild(int k, int xBuckets, int yBuckets) {
-			this.k = k;
-			this.xBuckets = xBuckets;
-			this.yBuckets = yBuckets;
+		PairBuild(int yBuckets) {
 			this.yBits = bitsForBuckets(yBuckets);
 			this.yMask = (1L << yBits) - 1L;
-			this.triples = new SparseSketchArray(yBits);
-			this.comp1 = new SparseSketchArray(yBits);
-			this.comp2 = new SparseSketchArray(yBits);
+			this.triples = new SparseSketchArray();
+			this.comp1 = new SparseSketchArray();
+			this.comp2 = new SparseSketchArray();
 		}
 
 		void clear() {
@@ -3863,13 +3807,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private static final long[] EMPTY_KEYS = {};
 		private static final ArrayOfDoublesUpdatableSketch[] EMPTY_VALUES = {};
 
-		final int yBits;
 		long[] keys = EMPTY_KEYS;
 		ArrayOfDoublesUpdatableSketch[] values = EMPTY_VALUES;
 		int size;
 
-		SparseSketchArray(int yBits) {
-			this.yBits = yBits;
+		SparseSketchArray() {
 		}
 
 		ArrayOfDoublesUpdatableSketch get(long key) {
@@ -3947,10 +3889,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/* Utility */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private static double estimateSignedRows(ArrayOfDoublesSketch sketch) {
-		return TupleSketchOps.estimatePositiveSum(sketch);
-	}
-
 	private static double estimateNetRows(ArrayOfDoublesSketch additions, ArrayOfDoublesSketch deletions) {
 		return Math.max(0.0d,
 				TupleSketchOps.estimatePositiveSum(additions) - TupleSketchOps.estimatePositiveSum(deletions));
@@ -3975,10 +3913,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static void tupleUpdateRaw(ArrayOfDoublesUpdatableSketch sketch, long hash, double delta) {
 		TupleSketchOps.update(sketch, hash, delta);
-	}
-
-	private static long align(long bytes) {
-		return (bytes + 7L) & ~7L;
 	}
 
 	private int hash(Component component, String v) {
@@ -4706,7 +4640,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private JoinStepEstimate estimateJoinStep(TuplePlanEstimate left, TuplePlanEstimate right,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
 		if (left.outputRows <= 0.0d || right.baseRows <= 0.0d) {
-			return new JoinStepEstimate(0.0d, 0.0d, Collections.emptyMap());
+			return new JoinStepEstimate(0.0d, Collections.emptyMap());
 		}
 		SmallVarStatsMap leftSmall = asSmallVarStats(left.varStats);
 		SmallVarStatsMap rightSmall = asSmallVarStats(right.varStats);
@@ -4753,7 +4687,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		double outputRows = normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
-		double workRows = normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
+		normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
 
 		Map<String, VarPlanStats> mergedStats = newVarStatsMap(left.varStats.size() + right.varStats.size());
 		for (Map.Entry<String, VarPlanStats> entry : left.varStats.entrySet()) {
@@ -4779,7 +4713,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			mergedStats.put(entry.getKey(),
 					new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows), sketch, pattern));
 		}
-		return new JoinStepEstimate(outputRows, workRows, mergedStats);
+		return new JoinStepEstimate(outputRows, mergedStats);
 	}
 
 	private JoinStepEstimate estimateJoinStepSmall(TuplePlanEstimate left, TuplePlanEstimate right,
@@ -4849,7 +4783,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		double outputRows = normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
-		double workRows = normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
+		normalizeRows(applyFilterMultiplier(rawWorkRows, right.localFilterMultiplier));
 
 		SmallVarStatsMap mergedStats = newVarStatsMap(leftStatsMap.size() + rightStatsMap.size());
 		for (int i = 0; i < leftStatsMap.size(); i++) {
@@ -4878,7 +4812,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			StatementPattern pattern = useSketches && !conditionedWithoutSketch ? rightStatsMap.patternAt(i) : null;
 			mergedStats.putNew(key, id, clampDistinct(rightStatsMap.distinctAt(i), outputRows), sketch, pattern);
 		}
-		return new JoinStepEstimate(outputRows, workRows, mergedStats);
+		return new JoinStepEstimate(outputRows, mergedStats);
 	}
 
 	JoinStepEstimate estimateJoinStepForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right) {
@@ -5744,12 +5678,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	static final class JoinStepEstimate {
 		private final double outputRows;
-		private final double workRows;
 		private final Map<String, VarPlanStats> varStats;
 
-		private JoinStepEstimate(double outputRows, double workRows, Map<String, VarPlanStats> varStats) {
+		private JoinStepEstimate(double outputRows, Map<String, VarPlanStats> varStats) {
 			this.outputRows = outputRows;
-			this.workRows = workRows;
 			this.varStats = freezeVarStats(varStats);
 		}
 
@@ -9013,26 +8945,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return 1L + (dividend - 1L) / divisor;
 	}
 
-	private static long estimateByteArrayBytes(int length) {
-		return align(ARRAY_HEADER_BYTES + Math.max(0L, length) * BYTE_BYTES);
-	}
-
-	private static long estimateIntArrayBytes(int length) {
-		return align(ARRAY_HEADER_BYTES + Math.max(0L, length) * INT_BYTES);
-	}
-
-	private static long estimateLongArrayBytes(int length) {
-		return align(ARRAY_HEADER_BYTES + Math.max(0L, length) * LONG_BYTES);
-	}
-
 	/* ────────────────────────────────────────────────────────────── */
 	/* ArrayOfDoublesSketch cache + IO */
 	/* ────────────────────────────────────────────────────────────── */
-
-	private static long estimatedSketchBytes(ArrayOfDoublesUpdatableSketch sketch) {
-		// getCurrentBytes() is O(1) and avoids scanning retained entries on every cache touch.
-		return sketch.getCurrentBytes();
-	}
 
 	private BufferSlot slotOf(State state) {
 		return state == bufA ? BufferSlot.A : BufferSlot.B;
@@ -9067,17 +8982,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
 			byte axisB, int x,
 			int y, int entryId) {
-		return getSketchForWrite(state, recType, isDelete, axisA, axisB, x, y, entryId, true);
-	}
-
-	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
-			byte axisB, int x,
-			int y, int entryId, boolean enforceLoadBudget) {
 		ArrayOfDoublesUpdatableSketch sketch = getResidentSketch(state, recType, isDelete, axisA, axisB, x, y);
 		if (sketch == null) {
 			SketchAddress address = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
-			sketch = entryId >= 0 ? loadPersistedSketch(state, address, entryId, enforceLoadBudget)
-					: loadPersistedSketch(state, address, enforceLoadBudget);
+			sketch = entryId >= 0 ? loadPersistedSketch(state, address, entryId)
+					: loadPersistedSketch(state, address);
 			if (sketch != null) {
 				setResidentSketch(state, recType, isDelete, axisA, axisB, x, y, sketch);
 			}
@@ -9118,11 +9027,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address) {
-		return loadPersistedSketch(state, address, true);
-	}
-
-	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address,
-			boolean enforceBudget) {
 		int entryId;
 		synchronized (sketchCacheLock) {
 			entryId = cacheDirectory.find(address);
@@ -9130,11 +9034,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (entryId < 0) {
 			return null;
 		}
-		return loadPersistedSketch(state, address, entryId, enforceBudget);
+		return loadPersistedSketch(state, address, entryId);
 	}
 
-	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address, int entryId,
-			boolean enforceBudget) {
+	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address, int entryId) {
 		try {
 			ArrayOfDoublesUpdatableSketch loaded;
 			byte slot = slotByte(slotOf(state));
@@ -9152,7 +9055,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 				loaded = readSketchFromStore(state, store, persistedSketchRef, address, slot);
 			}
-			putResidentSketch(state, address, loaded, enforceBudget);
+			putResidentSketch(state, address, loaded);
 			return loaded;
 		} catch (IOException e) {
 			logger.warn("Failed to load persisted sketch {}", address, e);
@@ -9160,20 +9063,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch,
-			boolean enforceBudget) {
+	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch) {
 		setResidentSketch(state, address, sketch);
 	}
 
-	private long initialSingletonSketchBytesHint(State state, ArrayOfDoublesUpdatableSketch sketch, int valueCount) {
-		if (valueCount != 1 || sketch.getRetainedEntries() != 1) {
-			return -1L;
-		}
-		return state.initialSketchBytes;
-	}
-
-	private void markDirtyAndTouchResidentSketch(byte slot, int entryId, ArrayOfDoublesUpdatableSketch sketch,
-			long knownBytes) {
+	private void markDirtyAndTouchResidentSketch(byte slot, int entryId) {
 		synchronized (sketchCacheLock) {
 			cacheDirectory.markDirty(entryId, slot);
 			dirty.set(true);

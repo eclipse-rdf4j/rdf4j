@@ -499,10 +499,6 @@ public class ValueStoreTest {
 		}
 	}
 
-	private long storeValueAndReopen(Value value) throws Exception {
-		return storeValueAndReopen(value, new LmdbStoreConfig());
-	}
-
 	private long storeValueAndReopen(Value value, LmdbStoreConfig config) throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(config);
@@ -513,10 +509,6 @@ public class ValueStoreTest {
 		valueStore.commit();
 		reopenValueStore(config);
 		return id;
-	}
-
-	private void reopenValueStore() throws Exception {
-		reopenValueStore(new LmdbStoreConfig());
 	}
 
 	private void reopenValueStore(LmdbStoreConfig config) throws Exception {

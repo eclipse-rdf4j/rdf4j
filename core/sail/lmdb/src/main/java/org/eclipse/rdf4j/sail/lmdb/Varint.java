@@ -509,20 +509,6 @@ public final class Varint {
 		values[indexMap[3]] = readUnsigned(bb);
 	}
 
-	/**
-	 * Reads only the significant bytes of the given value in big-endian order.
-	 *
-	 * @param bb buffer for reading bytes
-	 * @param n  number of significant bytes
-	 */
-	private static long readSignificantBits(ByteBuffer bb, int n) {
-		if (bb.isDirect()) {
-			return readSignificantBitsDirect(bb, n);
-		} else {
-			return readSignificantBitsHeap(bb, n);
-		}
-	}
-
 	private static long readSignificantBitsDirect(ByteBuffer bb, int n) {
 		return SignificantBytesBE.readDirect(bb, n);
 	}

@@ -196,7 +196,6 @@ public interface JoinFactorCostModel {
 		private final int lookupComponentMask;
 		private final int missingLookupComponentMask;
 		private final double accessRowsBeforeFilter;
-		private final boolean nestedInvocationCosted;
 		private final boolean repeatedInvocationsCosted;
 
 		public FactorCostEstimate(double workRows, double outputRows) {
@@ -232,7 +231,6 @@ public interface JoinFactorCostModel {
 			this.lookupComponentMask = lookupComponentMask;
 			this.missingLookupComponentMask = missingLookupComponentMask;
 			this.accessRowsBeforeFilter = accessRowsBeforeFilter;
-			this.nestedInvocationCosted = nestedInvocationCosted;
 			this.repeatedInvocationsCosted = nestedInvocationCosted
 					|| (doubleMetrics != null && doubleMetrics.containsKey("plannedRepeatedInvocations"));
 		}

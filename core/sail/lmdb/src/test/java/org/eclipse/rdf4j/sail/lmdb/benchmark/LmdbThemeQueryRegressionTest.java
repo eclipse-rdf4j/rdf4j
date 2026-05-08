@@ -2165,25 +2165,6 @@ class LmdbThemeQueryRegressionTest {
 		return preparedStore.storeDirectory();
 	}
 
-	private static Path prepareFreshThemeStore(Path dataDir, Theme theme, int... primeIndexes) throws Exception {
-		List<Integer> indexes = IntStream.of(primeIndexes)
-				.boxed()
-				.collect(Collectors.toList());
-		Path themeDir = dataDir.resolve(theme.name() + "-" + primeIndexKey(indexes));
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadData(repository, theme);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, indexes);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
-		return themeDir;
-	}
-
 	private static Path prepareFreshBenchmarkThemeStore(Path dataDir, Theme theme, int... primeIndexes)
 			throws Exception {
 		List<Integer> indexes = IntStream.of(primeIndexes)
@@ -2916,23 +2897,6 @@ class LmdbThemeQueryRegressionTest {
 			if (accessRows > maxWorkRows) {
 				throw new AssertionError("Expected direct lookup plannedAccessRows <= " + maxWorkRows + " but got "
 						+ accessRows + " in:\n" + plan);
-			}
-		}
-		if (directLookupCount < minDirectLookups) {
-			throw new AssertionError(
-					"Expected at least " + minDirectLookups + " direct lookup factors in:\n" + plan);
-		}
-	}
-
-	private static void assertDirectLookupPlannedWorkRowsBelow(String plan, double maxWorkRows, int minDirectLookups) {
-		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
-		int directLookupCount = 0;
-		while (matcher.find()) {
-			directLookupCount++;
-			double workRows = parsePlanRows(matcher.group(1));
-			if (workRows > maxWorkRows) {
-				throw new AssertionError("Expected direct lookup plannedWorkRows <= " + maxWorkRows + " but got "
-						+ workRows + " in:\n" + plan);
 			}
 		}
 		if (directLookupCount < minDirectLookups) {

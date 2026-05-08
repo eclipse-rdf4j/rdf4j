@@ -41,7 +41,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -1569,10 +1568,6 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final Txn txn;
-
-		public LmdbSailDataset(boolean explicit) throws SailException {
-			this(explicit, true);
-		}
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;

@@ -1139,23 +1139,8 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private long boundMask(Set<Component> boundComponents, Component component) {
-		return boundComponents != null && boundComponents.contains(component) ? 1L : -1L;
-	}
-
 	private long boundMask(int boundComponentMask, Component component) {
 		return (boundComponentMask & (1 << component.ordinal())) != 0 ? 1L : -1L;
-	}
-
-	private int componentMask(Set<Component> components) {
-		if (components == null || components.isEmpty()) {
-			return 0;
-		}
-		int mask = 0;
-		for (Component component : components) {
-			mask |= 1 << component.ordinal();
-		}
-		return mask;
 	}
 
 	private Component toEstimatorComponent(char field) {
@@ -1170,40 +1155,6 @@ class TripleStore implements Closeable {
 			return Component.C;
 		default:
 			throw new IllegalArgumentException("invalid index field: " + field);
-		}
-	}
-
-	static final class IndexPrefixSelection {
-		private final String indexFieldSequence;
-		private final int prefixScore;
-		private final int prefixComponentMask;
-
-		private IndexPrefixSelection(String indexFieldSequence, int prefixScore, int prefixComponentMask) {
-			this.indexFieldSequence = indexFieldSequence;
-			this.prefixScore = prefixScore;
-			this.prefixComponentMask = prefixComponentMask;
-		}
-
-		String indexFieldSequence() {
-			return indexFieldSequence;
-		}
-
-		int prefixScore() {
-			return prefixScore;
-		}
-
-		int prefixComponentMask() {
-			return prefixComponentMask;
-		}
-
-		Set<Component> prefixComponents() {
-			EnumSet<Component> prefixComponents = EnumSet.noneOf(Component.class);
-			for (Component component : Component.values()) {
-				if ((prefixComponentMask & (1 << component.ordinal())) != 0) {
-					prefixComponents.add(component);
-				}
-			}
-			return prefixComponents;
 		}
 	}
 

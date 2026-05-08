@@ -178,21 +178,4 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		}
 	}
 
-	private static final class OomDuringRebuildEstimator extends SketchBasedJoinEstimator {
-		private final AtomicInteger rebuildAttempts = new AtomicInteger();
-
-		private OomDuringRebuildEstimator(SketchStatementSource sailStore, Config config) {
-			super(sailStore, config);
-		}
-
-		int rebuildAttempts() {
-			return rebuildAttempts.get();
-		}
-
-		@Override
-		public synchronized long rebuild() {
-			rebuildAttempts.incrementAndGet();
-			throw new OutOfMemoryError("simulated");
-		}
-	}
 }

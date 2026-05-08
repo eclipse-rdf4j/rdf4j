@@ -320,6 +320,7 @@ class ValueStore extends AbstractValueFactory {
 				string.startsWith("http://xmlns.com/");
 	}
 
+	@SuppressWarnings("unused")
 	private void logValues() throws IOException {
 		readTransaction(env, (stack, txn) -> {
 			long cursor = 0;

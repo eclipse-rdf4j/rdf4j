@@ -350,24 +350,6 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
-	private static final class FilterSelectivityOnlyStatistics extends SelectiveJoinStatistics {
-
-		private FilterSelectivityOnlyStatistics(double joinCardinality, double namePatternCardinality,
-				double defaultPatternCardinality, double filteredNameCardinality) {
-			super(joinCardinality, namePatternCardinality, defaultPatternCardinality, filteredNameCardinality);
-		}
-
-		@Override
-		public boolean supportsJoinEstimation() {
-			return false;
-		}
-
-		@Override
-		public boolean supportsFilterSelectivityCosting() {
-			return true;
-		}
-	}
-
 	private static final class CardinalityOnlyFilterStatistics extends SelectiveJoinStatistics {
 
 		private CardinalityOnlyFilterStatistics(double joinCardinality, double namePatternCardinality,

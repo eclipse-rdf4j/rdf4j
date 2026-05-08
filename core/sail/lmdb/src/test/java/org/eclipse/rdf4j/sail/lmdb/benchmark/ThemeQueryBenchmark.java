@@ -38,10 +38,8 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -100,8 +98,6 @@ public class ThemeQueryBenchmark {
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
-	private static final long EXPECTED_TRIPLES_DATA_SIZE_BYTES = 1500921856L;
-	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 
 	@Param({
@@ -306,10 +302,6 @@ public class ThemeQueryBenchmark {
 		} catch (NumberFormatException e) {
 			throw new IllegalStateException("Invalid long value for property " + propertyName + ": " + value, e);
 		}
-	}
-
-	private DbFileSizes defaultExpectedDbFileSizes() {
-		return new DbFileSizes(EXPECTED_TRIPLES_DATA_SIZE_BYTES, EXPECTED_VALUES_DATA_SIZE_BYTES);
 	}
 
 	private DbFileSizes missingExpectedDbFileSizes() {

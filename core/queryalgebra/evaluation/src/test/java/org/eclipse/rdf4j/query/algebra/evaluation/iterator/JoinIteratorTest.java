@@ -64,8 +64,6 @@ public class JoinIteratorTest {
 			return null;
 		}
 	}, null);
-	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
-			vf.createLiteral(Date.from(Instant.now())), null, null);
 
 	/**
 	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered differently.

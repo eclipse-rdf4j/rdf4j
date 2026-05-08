@@ -58,8 +58,6 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	private Set<Value> reportedValues;
 
-	private final Var contextVar;
-
 	private final EvaluationStrategy evaluationStrategy;
 
 	private final QueryEvaluationStep precompile;
@@ -85,7 +83,6 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		this.context = context;
 		this.result = new QueryBindingSet(bindings);
-		this.contextVar = contextVar;
 		this.subj = subj;
 		this.obj = obj;
 		this.bindings = bindings;

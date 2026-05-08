@@ -839,7 +839,7 @@ final class SketchJoinOrderPlanner {
 		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(factorIndex, 0L, initiallyBoundVarMask,
 				conditionedEstimate.outputRows(), null);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate = factor.estimate();
-		if (appliesSelectiveSeedFilterRowFlow(seedMask, rowsEnteringEstimate)) {
+		if (appliesSelectiveSeedFilterRowFlow(seedMask)) {
 			rowsEnteringEstimate = applyUnlockedFilters(0L, seedMask, rowsEnteringEstimate);
 		}
 		double rowsProcessed = rowsProcessedByStep(factorIndex, 0L, null, rowsEnteringEstimate.outputRows());
@@ -971,9 +971,8 @@ final class SketchJoinOrderPlanner {
 						pendingAssignmentVars);
 	}
 
-	private boolean appliesSelectiveSeedFilterRowFlow(long seedMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
-		double passRatio = newlyUnlockedFilterPassRatio(0L, seedMask, rowsEnteringEstimate);
+	private boolean appliesSelectiveSeedFilterRowFlow(long seedMask) {
+		double passRatio = newlyUnlockedFilterPassRatio(0L, seedMask);
 		return isValidPassRatio(passRatio) && passRatio <= SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO;
 	}
 
@@ -1009,7 +1008,6 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private double seedStepWorkRows(int factorIndex) {
-		long seedMask = bit(factorIndex);
 		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(factorIndex,
 				initiallyBoundVarMask);
 		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(factorIndex, 0L, initiallyBoundVarMask,
@@ -1022,7 +1020,7 @@ final class SketchJoinOrderPlanner {
 	private double delayedStepWorkRows(int factorIndex, long previousMask,
 			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
 		long currentBoundVarMask = boundVariableMask(previousMask);
-		SketchBasedJoinEstimator.JoinStepEstimate step = estimateTransition(previousMask, prefixEstimate,
+		SketchBasedJoinEstimator.JoinStepEstimate step = estimateTransition(prefixEstimate,
 				factorIndex);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate = rowsEnteringEstimate(previousMask,
 				factorIndex, prefixEstimate, step);
@@ -1041,7 +1039,7 @@ final class SketchJoinOrderPlanner {
 		if (!isFactorActionLegal(candidate, currentBoundVarMask)) {
 			return null;
 		}
-		SketchBasedJoinEstimator.JoinStepEstimate step = estimateTransition(mask, prefix.estimate(), candidate);
+		SketchBasedJoinEstimator.JoinStepEstimate step = estimateTransition(prefix.estimate(), candidate);
 		long nextMask = mask | bit(candidate);
 		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(candidate,
 				currentBoundVarMask);
@@ -1049,7 +1047,7 @@ final class SketchJoinOrderPlanner {
 				conditionedEstimate.outputRows(), prefix.estimate());
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate = rowsEnteringEstimate(mask, candidate,
 				prefix.estimate(), step);
-		rowsEnteringEstimate = finiteBindingAssignmentRowFlowEstimate(candidate, mask, prefix.estimate(),
+		rowsEnteringEstimate = finiteBindingAssignmentRowFlowEstimate(candidate, prefix.estimate(),
 				rowsEnteringEstimate);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters = rowsEnteringEstimate;
 		double physicalRowFlowRows = physicalRowFlowRows(candidate, mask, currentBoundVarMask, prefix.estimate(),
@@ -1108,7 +1106,7 @@ final class SketchJoinOrderPlanner {
 			stepWorkRows += forwardContinuationWorkRows;
 		}
 		SketchBasedJoinEstimator.TuplePlanEstimate nextEstimate = rowsEnteringEstimate;
-		double cartesianStepWorkRows = cartesianWorkRows(mask, candidate, stepWorkRows, prefix.estimate(),
+		double cartesianStepWorkRows = cartesianWorkRows(mask, candidate, stepWorkRows,
 				rowsBeforeUnlockedFilters, endpointDomainPreparation);
 		if (cartesianStepWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
 			stepWorkRows += cartesianStepWorkRows;
@@ -1199,7 +1197,7 @@ final class SketchJoinOrderPlanner {
 			filterWorkRows += pendingGuardWorkRows;
 		}
 		SketchBasedJoinEstimator.TuplePlanEstimate nextEstimate = filterAdjustedEstimate(filter, prefix.estimate(),
-				currentBoundVarMask, prefix.mask());
+				prefix.mask());
 		long nextAppliedFilterMask = prefix.appliedFilterMask() | filterBit;
 		double totalWork = prefix.totalWork() + filterWorkRows;
 		double maxIntermediateRows = Math.max(prefix.costVector().maxIntermediateRows(),
@@ -1252,8 +1250,8 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private SketchBasedJoinEstimator.TuplePlanEstimate filterAdjustedEstimate(JoinOrderPlanner.FilterConstraint filter,
-			SketchBasedJoinEstimator.TuplePlanEstimate estimate, long boundVarMask, long factorMask) {
-		double passRatio = filterPassRatio(filter, estimate, boundVarMask, factorMask);
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate, long factorMask) {
+		double passRatio = filterPassRatio(filter, estimate, factorMask);
 		if (!isValidPassRatio(passRatio) || passRatio >= 1.0d) {
 			return estimate;
 		}
@@ -1265,7 +1263,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private double filterPassRatio(JoinOrderPlanner.FilterConstraint filter,
-			SketchBasedJoinEstimator.TuplePlanEstimate estimate, long boundVarMask, long factorMask) {
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate, long factorMask) {
 		if (filter.hasNestedTupleExpression()) {
 			double nestedPassRatio = nestedTupleFilterPassRatio(filter, estimate);
 			if (isValidPassRatio(nestedPassRatio)) {
@@ -1976,7 +1974,7 @@ final class SketchJoinOrderPlanner {
 		ForwardChainState chain = forwardChainState(prefix);
 		double cheapestContinuationWorkRows = Double.POSITIVE_INFINITY;
 		long mask = prefix.mask();
-		long boundBefore = boundVariableMask(mask);
+		boundVariableMask(mask);
 		long remaining = factorUniverseMask & ~mask & ~bit(candidate);
 		while (remaining != 0L) {
 			int i = Long.numberOfTrailingZeros(remaining);
@@ -2088,7 +2086,6 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private double cartesianWorkRows(long mask, int candidate, double stepWorkRows,
-			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
 			SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters,
 			boolean endpointDomainPreparation) {
 		if (mask == 0L || !isFiniteNonNegative(stepWorkRows)
@@ -2212,7 +2209,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private boolean unlocksStrongSelectiveDeferredFilterOnSeed(int factorIndex) {
-		double passRatio = newlyUnlockedFilterPassRatio(0L, bit(factorIndex), factors.get(factorIndex).estimate());
+		double passRatio = newlyUnlockedFilterPassRatio(0L, bit(factorIndex));
 		return isValidPassRatio(passRatio) && passRatio <= SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO;
 	}
 
@@ -3182,7 +3179,7 @@ final class SketchJoinOrderPlanner {
 		return introducedVars != 0L && introducedVarsHasPendingSubjectTypeGuard(factorIndex, mask, introducedVars);
 	}
 
-	private SketchBasedJoinEstimator.JoinStepEstimate estimateTransition(long mask,
+	private SketchBasedJoinEstimator.JoinStepEstimate estimateTransition(
 			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate, int candidate) {
 		SketchBasedJoinEstimator.TuplePlanEstimate candidateEstimate = factors.get(candidate).estimate();
 		return estimator.estimateJoinStepForJoinOrdering(prefixEstimate, candidateEstimate, sketchIntersectionCache);
@@ -3235,7 +3232,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private SketchBasedJoinEstimator.TuplePlanEstimate finiteBindingAssignmentRowFlowEstimate(int factorIndex,
-			long mask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
 			SketchBasedJoinEstimator.TuplePlanEstimate estimate) {
 		if (estimate == null || prefixEstimate == null || !isSmallBindingSetAssignment(factorIndex)) {
 			return estimate;
@@ -3244,7 +3241,7 @@ final class SketchJoinOrderPlanner {
 		if (!isFiniteNonNegative(domainRows)) {
 			return estimate;
 		}
-		double prefixRows = filteredFiniteBindingInvocationRows(mask, prefixEstimate);
+		double prefixRows = filteredFiniteBindingInvocationRows(prefixEstimate);
 		if (!isFiniteNonNegative(prefixRows)) {
 			return estimate;
 		}
@@ -4122,8 +4119,7 @@ final class SketchJoinOrderPlanner {
 		return rows;
 	}
 
-	private double filteredFiniteBindingInvocationRows(long mask,
-			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
+	private double filteredFiniteBindingInvocationRows(SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
 		double rows = prefixEstimate == null ? 1.0d : prefixEstimate.outputRows();
 		if (!Double.isFinite(rows) || rows <= 0.0d) {
 			rows = 1.0d;
@@ -4301,7 +4297,7 @@ final class SketchJoinOrderPlanner {
 		if (!isFiniteNonNegative(domainRows)) {
 			return estimatedRows;
 		}
-		double prefixRows = filteredFiniteBindingInvocationRows(previousMask, prefixEstimate);
+		double prefixRows = filteredFiniteBindingInvocationRows(prefixEstimate);
 		double expandedRows = prefixRows * Math.max(1.0d, domainRows);
 		if (!isFiniteNonNegative(expandedRows)) {
 			return estimatedRows;
@@ -4385,7 +4381,7 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		double domainRows = factorOutputRows[factorIndex];
-		double filteredPrefixRows = filteredFiniteBindingInvocationRows(prefix.mask(), prefix.estimate());
+		double filteredPrefixRows = filteredFiniteBindingInvocationRows(prefix.estimate());
 		if (!isFiniteNonNegative(domainRows) || domainRows <= 1.0d
 				|| !isFiniteNonNegative(filteredPrefixRows) || filteredPrefixRows <= 1.0d) {
 			return estimatedRows;
@@ -4570,7 +4566,7 @@ final class SketchJoinOrderPlanner {
 		long frontier = visited;
 		while (frontier != 0L) {
 			long neighbors = factorInteractionNeighbors(frontier, factorMask, availableVars)
-					| filterInteractionNeighbors(frontier, availableVars, previousMask, nextMask, previousBound,
+					| filterInteractionNeighbors(frontier, availableVars, previousBound,
 							nextBound, prefix.appliedFilterMask(), includeNewlyPlacedNestedFilters);
 			long added = neighbors & availableVars & ~visited;
 			if (added == 0L) {
@@ -4596,7 +4592,7 @@ final class SketchJoinOrderPlanner {
 		return neighbors;
 	}
 
-	private long filterInteractionNeighbors(long frontierVars, long availableVars, long previousMask, long nextMask,
+	private long filterInteractionNeighbors(long frontierVars, long availableVars,
 			long previousBound, long nextBound, long appliedFilterMask, boolean includeNewlyPlacedNestedFilters) {
 		if (deferredFilters.isEmpty()) {
 			return 0L;
@@ -4613,7 +4609,7 @@ final class SketchJoinOrderPlanner {
 				long filterBit = bit(i);
 				if ((appliedFilterMask & filterBit) == 0L
 						&& (!includeNewlyPlacedNestedFilters
-								|| !isDeferredFilterNewlyPlaced(i, previousMask, nextMask, previousBound,
+								|| !isDeferredFilterNewlyPlaced(i, previousBound,
 										nextBound))) {
 					continue;
 				}
@@ -4721,8 +4717,8 @@ final class SketchJoinOrderPlanner {
 		if (rowsEnteringEstimate == null || !isFiniteNonNegative(rowsEnteringEstimate.outputRows())) {
 			return false;
 		}
-		return hasSelectiveOrderingPassRatio(newlyUnlockedFilterPassRatio(previousMask, nextMask,
-				rowsEnteringEstimate));
+		return hasSelectiveOrderingPassRatio(newlyUnlockedFilterPassRatio(previousMask, nextMask
+		));
 	}
 
 	private static double outputWorkRows(double rowsEnteringFilter) {
@@ -4830,7 +4826,7 @@ final class SketchJoinOrderPlanner {
 		factors.add(tupleExpr);
 	}
 
-	private boolean isDeferredFilterNewlyPlaced(int filterIndex, long previousMask, long nextMask,
+	private boolean isDeferredFilterNewlyPlaced(int filterIndex,
 			long previousBound, long nextBound) {
 		long requiredVars = deferredFilterRequiredVarMasks[filterIndex];
 		if (requiredVars == 0L || (nextBound & requiredVars) != requiredVars) {
@@ -4873,7 +4869,7 @@ final class SketchJoinOrderPlanner {
 
 	private SketchBasedJoinEstimator.TuplePlanEstimate applyUnlockedFilters(long previousMask, long nextMask,
 			SketchBasedJoinEstimator.TuplePlanEstimate estimate) {
-		double passRatio = newlyUnlockedFilterPassRatio(previousMask, nextMask, estimate);
+		double passRatio = newlyUnlockedFilterPassRatio(previousMask, nextMask);
 		if (passRatio >= 1.0d) {
 			return estimate;
 		}
@@ -4884,8 +4880,7 @@ final class SketchJoinOrderPlanner {
 		return estimator.withOutputRowsForJoinOrdering(estimate, filteredRows);
 	}
 
-	private double newlyUnlockedFilterPassRatio(long previousMask, long nextMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
+	private double newlyUnlockedFilterPassRatio(long previousMask, long nextMask) {
 		if (deferredFilters.isEmpty()) {
 			return 1.0d;
 		}

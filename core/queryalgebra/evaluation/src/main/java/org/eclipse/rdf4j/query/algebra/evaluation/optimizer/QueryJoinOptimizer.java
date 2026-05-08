@@ -288,7 +288,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// Note: generated hierarchy is right-recursive to help the
 					// IterativeEvaluationOptimizer to factor out the left-most join
 					// argument
-					int i = orderedJoinArgs.size() - 1;
 					TupleExpr right = orderedJoinArgs.removeLast();
 					if (!orderedJoinArgs.isEmpty()) {
 						TupleExpr left = orderedJoinArgs.removeLast();

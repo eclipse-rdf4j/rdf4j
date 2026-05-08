@@ -33,7 +33,6 @@ final class ParetoJoinMemoPlanner<T> {
 	private final int beamWidth;
 	private final IntFunction<T> seedFactory;
 	private final BiFunction<T, Integer, T> transitionFactory;
-	private final ToLongFunction<T> factorMask;
 	private final ToIntFunction<T> planStepCount;
 	private final ToLongFunction<T> memoGroupKey;
 	private final ToLongFunction<T> candidateMask;
@@ -55,7 +54,6 @@ final class ParetoJoinMemoPlanner<T> {
 		this.beamWidth = beamWidth;
 		this.seedFactory = Objects.requireNonNull(seedFactory, "seedFactory");
 		this.transitionFactory = Objects.requireNonNull(transitionFactory, "transitionFactory");
-		this.factorMask = Objects.requireNonNull(factorMask, "factorMask");
 		this.planStepCount = Objects.requireNonNull(planStepCount, "planStepCount");
 		this.memoGroupKey = Objects.requireNonNull(memoGroupKey, "memoGroupKey");
 		this.candidateMask = Objects.requireNonNull(candidateMask, "candidateMask");

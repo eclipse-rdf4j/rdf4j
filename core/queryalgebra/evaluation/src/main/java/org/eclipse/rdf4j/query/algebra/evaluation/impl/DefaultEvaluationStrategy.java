@@ -201,8 +201,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	// track the exeution time of each node in the plan
 	private boolean trackTime;
 
-	private UUID uuid;
-
 	private QueryOptimizerPipeline pipeline;
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
@@ -540,13 +538,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return;
 		}
 		queryModelNode.setLongMetricActual(metricName, longMetric(queryModelNode, metricName) + delta);
-	}
-
-	private static void setLongMetricMax(QueryModelNode queryModelNode, String metricName, long value) {
-		if (value < 0) {
-			return;
-		}
-		queryModelNode.setLongMetricActual(metricName, Math.max(longMetric(queryModelNode, metricName), value));
 	}
 
 	private static void addDoubleMetric(QueryModelNode queryModelNode, String metricName, double delta) {

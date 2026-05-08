@@ -16,18 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -41,22 +34,16 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbThemeFastestRunSnapshotTest {
 
-	private static final Pattern THEME_HEADER = Pattern.compile("## ([A-Z_]+)");
-	private static final Pattern QUERY_HEADER = Pattern.compile("### (?:([A-Z_]+) )?Query (\\d+)");
 	private static final Pattern FILTER_PASS_RATIO = Pattern.compile("plannedFilterPassRatio=([0-9.]+)");
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
-	private static final Pattern OPTIMIZER_CANDIDATES = Pattern.compile(
-			"optimizer\\.logicalExploration=[^\\n)]*candidates=(\\d+)");
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
-	private static final String QUERY_KEYS_PROPERTY = "rdf4j.lmdb.fastestRunSnapshot.queryKeys";
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "fastest-run-snapshot";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
@@ -220,47 +207,6 @@ class LmdbThemeFastestRunSnapshotTest {
 				"value=http://example.com/theme/pharma/pValue");
 	}
 
-	private static void assertPlannerCandidateBudget(String plan, String key, int maxCandidates) {
-		Matcher matcher = OPTIMIZER_CANDIDATES.matcher(plan);
-		int largestCandidates = -1;
-		while (matcher.find()) {
-			largestCandidates = Math.max(largestCandidates, Integer.parseInt(matcher.group(1)));
-		}
-		assertTrue(largestCandidates >= 0, key + " should expose optimizer candidate diagnostics:\n" + plan);
-		assertTrue(largestCandidates <= maxCandidates,
-				key + " should avoid exhaustive memo planning for a bounded finite-anchor query, got candidates="
-						+ largestCandidates + " max=" + maxCandidates + "\n" + plan);
-	}
-
-	private static void verifyTheme(Path dataDir, Theme theme, List<ExpectedSnapshot> planSnapshots)
-			throws Exception {
-		Path storeDir = prepareThemeStore(dataDir, theme);
-		try {
-			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				for (ExpectedSnapshot expected : planSnapshots) {
-					BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(expected.key(), () -> {
-						OptimizerSnapshot actual = explainOptimized(repository, expected.theme(),
-								expected.queryIndex());
-						List<String> expectedSignature = planSignature(expected.queryPlan());
-						List<String> actualSignature = planSignature(actual.plan());
-						if (!expectedSignature.equals(actualSignature)) {
-							throw new AssertionError(
-									"LMDB optimized query plans drifted from " + SNAPSHOT_FILE + ":\n\n"
-											+ mismatch(expected, expectedSignature, actualSignature, actual.plan()));
-						}
-					});
-					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
-				}
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-		} finally {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDir);
-		}
-	}
-
 	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
@@ -328,260 +274,6 @@ class LmdbThemeFastestRunSnapshotTest {
 			return new OptimizerSnapshot(
 					explanation.toString(),
 					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));
-		}
-	}
-
-	private static List<ExpectedSnapshot> parseFastestRunSnapshot() throws IOException {
-		List<String> lines = Files.readAllLines(snapshotFile());
-		List<ExpectedSnapshot> snapshots = new ArrayList<>();
-		Theme theme = null;
-		int queryIndex = -1;
-		int queryLine = -1;
-		String optimizedQuery = null;
-		String queryPlan = null;
-
-		for (int i = 0; i < lines.size(); i++) {
-			String line = lines.get(i);
-			Matcher themeMatcher = THEME_HEADER.matcher(line);
-			if (themeMatcher.matches()) {
-				if (theme != null && queryIndex >= 0) {
-					snapshots.add(new ExpectedSnapshot(theme, queryIndex, queryLine, optimizedQuery, queryPlan));
-				}
-				theme = Theme.valueOf(themeMatcher.group(1));
-				queryIndex = -1;
-				optimizedQuery = null;
-				queryPlan = null;
-				continue;
-			}
-
-			Matcher queryMatcher = QUERY_HEADER.matcher(line);
-			if (queryMatcher.matches()) {
-				if (theme != null && queryIndex >= 0) {
-					snapshots.add(new ExpectedSnapshot(theme, queryIndex, queryLine, optimizedQuery, queryPlan));
-				}
-				if (queryMatcher.group(1) != null) {
-					theme = Theme.valueOf(queryMatcher.group(1));
-				}
-				queryIndex = Integer.parseInt(queryMatcher.group(2));
-				queryLine = i + 1;
-				optimizedQuery = null;
-				queryPlan = null;
-				continue;
-			}
-
-			if (theme != null && queryIndex >= 0 && line.equals("Optimized query:")) {
-				Block block = readFencedBlock(lines, i + 1, "sparql");
-				if (block.text() != null) {
-					optimizedQuery = block.text();
-					i = block.nextIndex() - 1;
-				}
-				continue;
-			}
-
-			if (theme != null && queryIndex >= 0 && line.equals("Query plan:")) {
-				Block block = readFencedBlock(lines, i + 1, "text");
-				if (block.text() != null) {
-					queryPlan = block.text();
-					i = block.nextIndex() - 1;
-				}
-			}
-		}
-
-		if (theme != null && queryIndex >= 0) {
-			snapshots.add(new ExpectedSnapshot(theme, queryIndex, queryLine, optimizedQuery, queryPlan));
-		}
-		return snapshots;
-	}
-
-	private static Block readFencedBlock(List<String> lines, int startIndex, String language) {
-		String fence = "```" + language;
-		for (int i = startIndex; i < lines.size(); i++) {
-			String line = lines.get(i);
-			if (line.equals(fence)) {
-				List<String> block = new ArrayList<>();
-				for (int j = i + 1; j < lines.size(); j++) {
-					if (lines.get(j).equals("```")) {
-						return new Block(String.join("\n", block), j + 1);
-					}
-					block.add(lines.get(j));
-				}
-				return new Block(null, lines.size());
-			}
-			if (line.startsWith("### ") || line.startsWith("## ")) {
-				return new Block(null, i);
-			}
-		}
-		return new Block(null, lines.size());
-	}
-
-	private static boolean isSelected(ExpectedSnapshot snapshot) {
-		String property = System.getProperty(QUERY_KEYS_PROPERTY);
-		if (property == null || property.isBlank()) {
-			return true;
-		}
-		Set<String> selected = Arrays.stream(property.split(","))
-				.map(String::trim)
-				.filter(value -> !value.isEmpty())
-				.collect(Collectors.toSet());
-		return selected.contains(snapshot.key()) || selected.contains(snapshot.theme().name());
-	}
-
-	private static Path snapshotFile() {
-		Path basedirFile = Path.of(System.getProperty("basedir", "."), RESULT_DIRECTORY, SNAPSHOT_FILE);
-		if (Files.isRegularFile(basedirFile)) {
-			return basedirFile;
-		}
-
-		Path repositoryFile = Path.of("core/sail/lmdb", RESULT_DIRECTORY, SNAPSHOT_FILE);
-		if (Files.isRegularFile(repositoryFile)) {
-			return repositoryFile;
-		}
-
-		throw new AssertionError("Unable to locate fastest-run snapshot file " + SNAPSHOT_FILE);
-	}
-
-	private static List<String> planSignature(String plan) {
-		return plan.lines()
-				.map(LmdbThemeFastestRunSnapshotTest::canonicalPlanLine)
-				.filter(line -> !line.isEmpty())
-				.collect(Collectors.toList());
-	}
-
-	private static String canonicalPlanLine(String line) {
-		String value = stripTreePrefix(line);
-		if (value.isEmpty()) {
-			return "";
-		}
-		if (value.startsWith("s: Var") || value.startsWith("p: Var") || value.startsWith("o: Var")) {
-			return canonicalVarLine(value);
-		}
-		if (value.startsWith("BindingSetAssignment")) {
-			return stripTrailingMetadata(value);
-		}
-		if (value.startsWith("StatementPattern")) {
-			return "StatementPattern";
-		}
-		if (value.startsWith("LeftJoin")) {
-			return value.contains("LeftJoinIterator") ? "LeftJoin (LeftJoinIterator)" : "LeftJoin";
-		}
-		if (value.startsWith("Join")) {
-			return isJoinIteratorFamily(value) ? "Join (JoinIterator)" : "Join";
-		}
-		if (value.startsWith("Group ")) {
-			return stripTrailingMetadata(value);
-		}
-		if (value.startsWith("Filter")) {
-			return "Filter";
-		}
-		if (value.startsWith("Projection")) {
-			return "Projection";
-		}
-		if (value.startsWith("Extension")) {
-			return "Extension";
-		}
-		if (value.startsWith("Union")) {
-			return "Union";
-		}
-		if (value.startsWith("Difference")) {
-			return "Difference";
-		}
-		return "";
-	}
-
-	private static boolean isJoinIteratorFamily(String value) {
-		return value.contains("JoinIterator")
-				|| value.contains("BoundStatementPatternJoinIteration")
-				|| value.contains("BoundStatementPatternLeftJoinIteration");
-	}
-
-	private static String stripTreePrefix(String line) {
-		int start = 0;
-		while (start < line.length() && !Character.isLetterOrDigit(line.charAt(start))) {
-			start++;
-		}
-		return line.substring(start).trim();
-	}
-
-	private static String stripTrailingMetadata(String value) {
-		int metadataIndex = value.indexOf(") (");
-		if (metadataIndex >= 0) {
-			value = value.substring(0, metadataIndex + 1);
-		}
-		if (value.endsWith(" [left]") || value.endsWith(" [right]")) {
-			value = value.substring(0, value.lastIndexOf(" ["));
-		}
-		return value;
-	}
-
-	private static String canonicalVarLine(String value) {
-		String role = value.substring(0, 3);
-		return role + " " + canonicalVar(value.substring(3).trim());
-	}
-
-	private static String canonicalVar(String value) {
-		int valueIndex = value.indexOf("value=");
-		if (valueIndex >= 0) {
-			int valueEnd = value.indexOf(", anonymous", valueIndex);
-			if (valueEnd < 0) {
-				valueEnd = value.indexOf(") (", valueIndex);
-			}
-			if (valueEnd < 0) {
-				valueEnd = value.indexOf(')', valueIndex);
-			}
-			return "Var (value=" + value.substring(valueIndex + "value=".length(), valueEnd) + ")";
-		}
-
-		int nameIndex = value.indexOf("name=");
-		if (nameIndex >= 0) {
-			int nameEnd = value.indexOf(',', nameIndex);
-			if (nameEnd < 0) {
-				nameEnd = value.indexOf(')', nameIndex);
-			}
-			return "Var (name=" + value.substring(nameIndex + "name=".length(), nameEnd) + ")";
-		}
-		return value;
-	}
-
-	private static String mismatch(ExpectedSnapshot expected, List<String> expectedSignature,
-			List<String> actualSignature, String actualPlan) {
-		int diffIndex = firstDifferentIndex(expectedSignature, actualSignature);
-		return expected.key() + " line " + expected.lineNumber() + " differs at signature line " + (diffIndex + 1)
-				+ "\nExpected:\n" + signatureWindow(expectedSignature, diffIndex)
-				+ "\nActual:\n" + signatureWindow(actualSignature, diffIndex)
-				+ "\nActual plan:\n" + actualPlan;
-	}
-
-	private static int firstDifferentIndex(List<String> expected, List<String> actual) {
-		int max = Math.min(expected.size(), actual.size());
-		for (int i = 0; i < max; i++) {
-			if (!expected.get(i).equals(actual.get(i))) {
-				return i;
-			}
-		}
-		return max;
-	}
-
-	private static String signatureWindow(List<String> signature, int diffIndex) {
-		int from = Math.max(0, diffIndex - 5);
-		int to = Math.min(signature.size(), diffIndex + 6);
-		List<String> lines = new ArrayList<>();
-		for (int i = from; i < to; i++) {
-			lines.add((i + 1) + ": " + signature.get(i));
-		}
-		if (signature.size() > to) {
-			lines.add("... " + (signature.size() - to) + " more lines");
-		}
-		return String.join("\n", lines);
-	}
-
-	private static void assertPlanOrder(String plan, String key, String... needles) {
-		int previousIndex = -1;
-		for (String needle : needles) {
-			int index = plan.indexOf(needle);
-			assertTrue(index >= 0, key + " missing plan fragment: " + needle + "\n" + plan);
-			assertTrue(index > previousIndex,
-					key + " plan fragment out of order: " + needle + "\n" + plan);
-			previousIndex = index;
 		}
 	}
 
@@ -657,21 +349,7 @@ class LmdbThemeFastestRunSnapshotTest {
 		}
 	}
 
-	private record ExpectedSnapshot(Theme theme, int queryIndex, int lineNumber, String optimizedQuery,
-			String queryPlan) {
-
-		private boolean hasQueryPlan() {
-			return queryPlan != null;
-		}
-
-		private String key() {
-			return theme.name() + ":" + queryIndex;
-		}
-	}
-
 	private record OptimizerSnapshot(String plan, String renderedQuery) {
 	}
 
-	private record Block(String text, int nextIndex) {
-	}
 }
