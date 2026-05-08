@@ -1001,6 +1001,8 @@ public class QueryPlanRetrievalTest {
 	}
 
 	private static final String EXPLAIN_TEXT_ANNOTATION_METRICS = String.join("|",
+			"costEstimate",
+			"resultSizeEstimate",
 			TelemetryMetricNames.BINDING_STATE,
 			TelemetryMetricNames.JOIN_TYPE,
 			TelemetryMetricNames.INDEX_NAME,
@@ -1016,6 +1018,8 @@ public class QueryPlanRetrievalTest {
 			TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
 
 	private static final String EXPLAIN_DOT_ANNOTATION_LABELS = String.join("|",
+			"Cost estimate",
+			"Result size estimate",
 			"Binding state",
 			"Join type",
 			"Index",
@@ -1031,8 +1035,16 @@ public class QueryPlanRetrievalTest {
 			"Filter selectivity source");
 
 	private static String stripExplainTextAnnotations(String text) {
-		return text.replaceAll(", (" + EXPLAIN_TEXT_ANNOTATION_METRICS + ")=[^)]*", "")
-				.replaceAll(" \\((" + EXPLAIN_TEXT_ANNOTATION_METRICS + ")=[^)]*\\)", "");
+		String stripped = text;
+		String previous;
+		do {
+			previous = stripped;
+			stripped = stripped
+					.replaceAll("\\((" + EXPLAIN_TEXT_ANNOTATION_METRICS + ")=[^,)]*, ", "(")
+					.replaceAll(", (" + EXPLAIN_TEXT_ANNOTATION_METRICS + ")=[^,)]*", "")
+					.replaceAll(" \\((" + EXPLAIN_TEXT_ANNOTATION_METRICS + ")=[^,)]*\\)", "");
+		} while (!stripped.equals(previous));
+		return stripped;
 	}
 
 	private static String stripExplainDotAnnotations(String dot) {
