@@ -29,10 +29,10 @@ class SlowQueryLogFormatterTest {
 	void formatterEmitsRawUnoptimizedAndOptimizedSections() {
 		String queryText = "SELECT * WHERE { ?s ?p ?o }";
 		TupleExpr tupleExpr = parseTupleExpr(queryText);
-		SlowQueryLogInfo info = new SlowQueryLogInfo("org.eclipse.rdf4j.sail.memory.MemoryStore", 1L,
+		SlowQueryLogInfo info = new SlowQueryLogInfo("org.eclipse.rdf4j.sail.memory.MemoryStore", 1L, 0L,
 				Query.QueryType.TUPLE, queryText, tupleExpr, tupleExpr, null, Collections.emptySet());
 
-		String formatted = new SlowQueryLogFormatter().format(info, 2_000L);
+		String formatted = new SlowQueryLogFormatter().formatExecution(info, 2_000L);
 
 		assertThat(formatted)
 				.contains("Raw query text")
@@ -46,10 +46,10 @@ class SlowQueryLogFormatterTest {
 	void graphQueriesEmitWarningInsteadOfRenderedSelect() {
 		String queryText = "CONSTRUCT WHERE { ?s ?p ?o }";
 		TupleExpr tupleExpr = parseTupleExpr(queryText);
-		SlowQueryLogInfo info = new SlowQueryLogInfo("org.eclipse.rdf4j.sail.memory.MemoryStore", 1L,
+		SlowQueryLogInfo info = new SlowQueryLogInfo("org.eclipse.rdf4j.sail.memory.MemoryStore", 1L, 0L,
 				Query.QueryType.GRAPH, queryText, tupleExpr, tupleExpr, null, Collections.emptySet());
 
-		String formatted = new SlowQueryLogFormatter().format(info, 2_000L);
+		String formatted = new SlowQueryLogFormatter().formatExecution(info, 2_000L);
 
 		assertThat(formatted)
 				.contains("Skipped: GRAPH queries are not rendered")
@@ -60,7 +60,7 @@ class SlowQueryLogFormatterTest {
 	void rendererThrowableIsRecordedWithoutThrowing() {
 		String queryText = "SELECT * WHERE { ?s ?p ?o }";
 		TupleExpr tupleExpr = parseTupleExpr(queryText);
-		SlowQueryLogInfo info = new SlowQueryLogInfo("org.eclipse.rdf4j.sail.memory.MemoryStore", 1L,
+		SlowQueryLogInfo info = new SlowQueryLogInfo("org.eclipse.rdf4j.sail.memory.MemoryStore", 1L, 0L,
 				Query.QueryType.TUPLE, queryText, tupleExpr, tupleExpr, null, Collections.emptySet());
 
 		String formatted = new SlowQueryLogFormatter() {
@@ -73,7 +73,7 @@ class SlowQueryLogFormatterTest {
 					}
 				};
 			}
-		}.format(info, 2_000L);
+		}.formatExecution(info, 2_000L);
 
 		assertThat(formatted)
 				.contains("Renderer throwable:")

@@ -229,7 +229,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		SlowQueryContextHolder.SlowQueryContext slowQueryContext = SlowQueryContextHolder.get();
 		long slowQueryThresholdSeconds = getSailBase().getSlowQueryLogThresholdSeconds();
-		boolean slowQueryLoggingEnabled = slowQueryThresholdSeconds > 0 && slowQueryContext != null;
+		long slowQueryFirstResultThresholdSeconds = getSailBase().getSlowQueryLogFirstResultThresholdSeconds();
+		boolean slowQueryLoggingEnabled = (slowQueryThresholdSeconds > 0 || slowQueryFirstResultThresholdSeconds > 0)
+				&& slowQueryContext != null;
 		TupleExpr unoptimizedTupleExpr = tupleExpr;
 		long slowQueryStartMillis = 0L;
 		if (slowQueryLoggingEnabled) {
@@ -269,7 +271,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			SlowQueryLogInfo slowQueryLogInfo = null;
 			if (slowQueryLoggingEnabled) {
 				slowQueryLogInfo = new SlowQueryLogInfo(getSailBase().getClass().getName(),
-						slowQueryThresholdSeconds, slowQueryContext.getQueryType(), slowQueryContext.getRawQueryText(),
+						slowQueryThresholdSeconds, slowQueryFirstResultThresholdSeconds,
+						slowQueryContext.getQueryType(),
+						slowQueryContext.getRawQueryText(),
 						unoptimizedTupleExpr, tupleExpr, dataset,
 						bindings == null ? Set.of() : bindings.getBindingNames());
 			}

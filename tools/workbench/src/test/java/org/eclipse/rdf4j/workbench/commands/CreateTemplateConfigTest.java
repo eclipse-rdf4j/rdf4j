@@ -229,6 +229,7 @@ class CreateTemplateConfigTest {
 				"native-shacl")) {
 			CreateTemplateConfig template = CreateTemplateConfig.load(templateType);
 			assertThat(field(template, "Slow query log threshold (seconds)")).isNotNull();
+			assertThat(field(template, "Slow query first-result threshold (seconds)")).isNotNull();
 			assertThat(field(template, "Slow query log file")).isNotNull();
 		}
 	}

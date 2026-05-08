@@ -57,6 +57,8 @@ public class MemoryStoreFactory implements SailFactory {
 
 			memConfig.getDefaultQueryEvaluationMode().ifPresent(memoryStore::setDefaultQueryEvaluationMode);
 			memoryStore.setSlowQueryLogThresholdSeconds(memConfig.getSlowQueryLogThresholdSeconds());
+			memoryStore
+					.setSlowQueryLogFirstResultThresholdSeconds(memConfig.getSlowQueryLogFirstResultThresholdSeconds());
 			memoryStore.setSlowQueryLogFile(memConfig.getSlowQueryLogFile());
 			memoryStore.setPersist(memConfig.getPersist());
 			memoryStore.setSyncDelay(memConfig.getSyncDelay());

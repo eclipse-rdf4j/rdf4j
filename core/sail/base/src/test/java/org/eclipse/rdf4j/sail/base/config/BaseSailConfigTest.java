@@ -95,17 +95,21 @@ public class BaseSailConfigTest {
 
 		var model = new ModelBuilder()
 				.add(implNode, CONFIG.Sail.slowQueryLogThresholdSeconds, literal(5L))
+				.add(implNode, CONFIG.Sail.slowQueryLogFirstResultThresholdSeconds, literal(3L))
 				.add(implNode, CONFIG.Sail.slowQueryLogFile, literal("logs/slow-query.log"))
 				.build();
 
 		config.parse(model, implNode);
 		assertThat(config.getSlowQueryLogThresholdSeconds()).isEqualTo(5L);
+		assertThat(config.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(3L);
 		assertThat(config.getSlowQueryLogFile()).isEqualTo("logs/slow-query.log");
 
 		var exportedModel = new LinkedHashModel();
 		var exportedNode = config.export(exportedModel);
 		assertThat(exportedModel.contains(exportedNode, CONFIG.Sail.slowQueryLogThresholdSeconds, literal(5L)))
 				.isTrue();
+		assertThat(exportedModel.contains(exportedNode, CONFIG.Sail.slowQueryLogFirstResultThresholdSeconds,
+				literal(3L))).isTrue();
 		assertThat(exportedModel.contains(exportedNode, CONFIG.Sail.slowQueryLogFile,
 				literal("logs/slow-query.log"))).isTrue();
 	}
@@ -122,17 +126,22 @@ public class BaseSailConfigTest {
 
 			var model = new ModelBuilder()
 					.add(implNode, BaseSailSchema.SLOW_QUERY_LOG_THRESHOLD_SECONDS, literal(7L))
+					.add(implNode, BaseSailSchema.SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS, literal(2L))
 					.add(implNode, BaseSailSchema.SLOW_QUERY_LOG_FILE, literal("legacy.log"))
 					.build();
 
 			config.parse(model, implNode);
 			assertThat(config.getSlowQueryLogThresholdSeconds()).isEqualTo(7L);
+			assertThat(config.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(2L);
 			assertThat(config.getSlowQueryLogFile()).isEqualTo("legacy.log");
 
 			var exportedModel = new LinkedHashModel();
 			var exportedNode = config.export(exportedModel);
 			assertThat(exportedModel.contains(exportedNode, BaseSailSchema.SLOW_QUERY_LOG_THRESHOLD_SECONDS,
 					literal(7L))).isTrue();
+			assertThat(
+					exportedModel.contains(exportedNode, BaseSailSchema.SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS,
+							literal(2L))).isTrue();
 			assertThat(exportedModel.contains(exportedNode, BaseSailSchema.SLOW_QUERY_LOG_FILE,
 					literal("legacy.log"))).isTrue();
 		} finally {

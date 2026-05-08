@@ -27,6 +27,8 @@ class SlowQueryLoggingIteration<T> extends IterationWrapper<T> {
 	private final SlowQueryLogFormatter formatter;
 	private final long startMillis;
 	private final long thresholdMillis;
+	private final long firstResultThresholdMillis;
+	private boolean firstResultLogged;
 
 	SlowQueryLoggingIteration(CloseableIteration<? extends T> delegate, AbstractSail sail, SlowQueryLogInfo info,
 			SlowQueryLogFormatter formatter, long startMillis) {
@@ -36,6 +38,39 @@ class SlowQueryLoggingIteration<T> extends IterationWrapper<T> {
 		this.formatter = formatter;
 		this.startMillis = startMillis;
 		this.thresholdMillis = info.getThresholdSeconds() * 1_000L;
+		this.firstResultThresholdMillis = info.getFirstResultThresholdSeconds() * 1_000L;
+	}
+
+	@Override
+	public boolean hasNext() {
+		boolean hasNext = super.hasNext();
+		if (hasNext) {
+			maybeLogFirstResult();
+		}
+		return hasNext;
+	}
+
+	@Override
+	public T next() {
+		T value = super.next();
+		maybeLogFirstResult();
+		return value;
+	}
+
+	private void maybeLogFirstResult() {
+		if (firstResultLogged || firstResultThresholdMillis <= 0L) {
+			return;
+		}
+		firstResultLogged = true;
+		long elapsedMillis = Math.max(0L, SlowQuerySupport.getTimestampMillis(sail) - startMillis);
+		if (elapsedMillis <= firstResultThresholdMillis) {
+			return;
+		}
+		try {
+			SlowQuerySupport.log(sail, formatter.formatFirstResult(info, elapsedMillis));
+		} catch (Throwable t) {
+			logger.warn("Failed to log slow first-result query entry", t);
+		}
 	}
 
 	@Override
@@ -43,12 +78,15 @@ class SlowQueryLoggingIteration<T> extends IterationWrapper<T> {
 		try {
 			super.handleClose();
 		} finally {
+			if (thresholdMillis <= 0L) {
+				return;
+			}
 			long elapsedMillis = Math.max(0L, SlowQuerySupport.getTimestampMillis(sail) - startMillis);
 			if (elapsedMillis <= thresholdMillis) {
 				return;
 			}
 			try {
-				SlowQuerySupport.log(sail, formatter.format(info, elapsedMillis));
+				SlowQuerySupport.log(sail, formatter.formatExecution(info, elapsedMillis));
 			} catch (Throwable t) {
 				logger.warn("Failed to log slow query entry", t);
 			}
