@@ -97,6 +97,8 @@ clean_stream() {
 	awk '
 	function is_noise(line) {
 		return line ~ /^[0-9][0-9]:[0-9][0-9]:[0-9][0-9],[0-9][0-9][0-9] \|-[A-Z]+ in ch\.qos\.logback\./ \
+			|| line ~ /^\/Users\/.*\/bin\/java .*org\.openjdk\.jmh\.Main/ \
+			|| line ~ /^Process finished with exit code 0$/ \
 			|| line ~ /^WARNING: A terminally deprecated method in / \
 			|| line ~ /^WARNING: A restricted method in / \
 			|| line ~ /^WARNING: .* has been called by / \
@@ -109,6 +111,33 @@ clean_stream() {
 			|| line ~ /^WARNING: .* will be removed in a future release/
 	}
 	{
+		if ($0 ~ /^REMEMBER: The numbers below are just data\./) {
+			skip_remember = 1
+			next
+		}
+		if (skip_remember) {
+			if ($0 ~ /^Do not assume the numbers tell you what you want them to tell\.$/) {
+				skip_remember = 0
+			}
+			next
+		}
+		if ($0 ~ /^NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use\./) {
+			skip_blackhole_note = 1
+			next
+		}
+		if (skip_blackhole_note) {
+			if ($0 ~ /^modes can be very significant\. Please make sure you use the consistent Blackhole mode for comparisons\.$/) {
+				skip_blackhole_note = 0
+			}
+			next
+		}
+		if ($0 ~ /\/target\/lmdb-theme-query-benchmark\/complete/) {
+			sub(/\/[^[:space:]]*\/target\/lmdb-theme-query-benchmark\/complete/, "")
+			sub(/[[:space:]]+$/, "")
+			if ($0 ~ /^[[:space:]]*$/) {
+				next
+			}
+		}
 		if (is_noise($0)) {
 			next
 		}

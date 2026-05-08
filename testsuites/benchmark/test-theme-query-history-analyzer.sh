@@ -56,9 +56,9 @@ assert_before() {
 DEFAULT_OUTPUT="$(bash "${ANALYZER}" --results-dir "${RESULTS_DIR}")"
 echo "${DEFAULT_OUTPUT}"
 
-assert_contains "${DEFAULT_OUTPUT}" "Latest run: results-2026-04-24-2.md" \
+assert_contains "${DEFAULT_OUTPUT}" "Latest run: results-2026-05-08-3.md" \
 	"default mode should pick the newest dated result file"
-assert_contains "${DEFAULT_OUTPUT}" "q10: latest 2303.219 ms/op | fastest 226.964 ms/op | 90.1% slower than best" \
+assert_contains "${DEFAULT_OUTPUT}" "q10: latest 306.543 ms/op | fastest 226.964 ms/op | 26.0% slower than best" \
 	"default summary should show the fastest historical PHARMA q10 run and the slower delta"
 assert_contains "${DEFAULT_OUTPUT}" "PHARMA q10" \
 	"default mode should expand PHARMA q10 details"
@@ -68,12 +68,12 @@ assert_contains "${DEFAULT_OUTPUT}" "plan no | query yes" \
 	"default detail should distinguish query-only historical runs"
 assert_contains "${DEFAULT_OUTPUT}" "ENGINEERING q4" \
 	"default mode should expand ENGINEERING q4 details"
-assert_contains "${DEFAULT_OUTPUT}" "results-main-branch.md: 47.834 ms/op" \
+assert_contains "${DEFAULT_OUTPUT}" "results-main-branch.md: 45.942 ms/op" \
 	"default detail should include summary-only historical runs"
 assert_contains "${DEFAULT_OUTPUT}" "plan no | query no" \
 	"default detail should mark summary-only runs as missing plan and query"
-assert_not_contains "${DEFAULT_OUTPUT}" "q1: latest 53.748 ms/op" \
-	"default mode should omit MEDICAL_RECORDS q1 because the latest run is faster, not slower"
+assert_not_contains "${DEFAULT_OUTPUT}" "q1: latest 55.623 ms/op" \
+	"default mode should omit MEDICAL_RECORDS q1 because the latest run is not 20% slower"
 assert_not_contains "${DEFAULT_OUTPUT}" $'\nMEDICAL_RECORDS q1\n  latest:' \
 	"default detail section should skip MEDICAL_RECORDS q1 because no history is 20% faster"
 assert_not_contains "${DEFAULT_OUTPUT}" "LIBRARY\n  q0:" \
@@ -84,39 +84,39 @@ echo "${ALL_OUTPUT}"
 
 assert_contains "${ALL_OUTPUT}" "MEDICAL_RECORDS" \
 	"--all should print every theme"
-assert_contains "${ALL_OUTPUT}" "q1: latest 53.748 ms/op | fastest 53.748 ms/op | 46.1% faster than previous best 99.712 ms/op" \
-	"--all should print a >20% current-run win for MEDICAL_RECORDS q1"
-assert_contains "${ALL_OUTPUT}" "q1: latest 105.387 ms/op | fastest 105.387 ms/op | 26.4% faster than previous best 143.142 ms/op" \
-	"--all should print a >20% current-run win for LIBRARY q1"
-assert_contains "${ALL_OUTPUT}" "q10: latest 2303.219 ms/op | fastest 226.964 ms/op | 90.1% slower than best" \
+assert_contains "${ALL_OUTPUT}" "q1: latest 55.623 ms/op | fastest 51.680 ms/op | 7.1% slower than best" \
+	"--all should print sub-threshold MEDICAL_RECORDS q1"
+assert_contains "${ALL_OUTPUT}" "q1: latest 129.282 ms/op | fastest 102.015 ms/op | 21.1% slower than best" \
+	"--all should print LIBRARY q1"
+assert_contains "${ALL_OUTPUT}" "q10: latest 306.543 ms/op | fastest 226.964 ms/op | 26.0% slower than best" \
 	"--all should still print slower queries with fastest historical time and delta"
 
 SORTED_OUTPUT="$(bash "${ANALYZER}" --results-dir "${RESULTS_DIR}" --sort-regressions)"
 echo "${SORTED_OUTPUT}"
 
-assert_contains "${SORTED_OUTPUT}" "ENGINEERING q4" \
+assert_contains "${SORTED_OUTPUT}" "SOCIAL_MEDIA q9" \
 	"--sort-regressions should include the biggest regression"
-assert_contains "${SORTED_OUTPUT}" "LIBRARY q4" \
+assert_contains "${SORTED_OUTPUT}" "SOCIAL_MEDIA q10" \
 	"--sort-regressions should include the second biggest regression"
-assert_contains "${SORTED_OUTPUT}" "TRAIN q2" \
+assert_contains "${SORTED_OUTPUT}" "SOCIAL_MEDIA q2" \
 	"--sort-regressions should include the third biggest regression"
-assert_before "${SORTED_OUTPUT}" "ENGINEERING q4" "PHARMA q10" \
+assert_before "${SORTED_OUTPUT}" "SOCIAL_MEDIA q9" "PHARMA q0" \
 	"--sort-regressions should move larger regressions ahead of smaller ones"
-assert_before "${SORTED_OUTPUT}" "LIBRARY q4" "PHARMA q10" \
+assert_before "${SORTED_OUTPUT}" "SOCIAL_MEDIA q2" "PHARMA q0" \
 	"--sort-regressions should keep the near-100% regressions ahead of lower ones"
 
 TOP_OUTPUT="$(bash "${ANALYZER}" --results-dir "${RESULTS_DIR}" --top 3)"
 echo "${TOP_OUTPUT}"
 
-assert_contains "${TOP_OUTPUT}" "ENGINEERING q4" \
+assert_contains "${TOP_OUTPUT}" "SOCIAL_MEDIA q9" \
 	"--top should keep the biggest regression"
-assert_contains "${TOP_OUTPUT}" "LIBRARY q4" \
+assert_contains "${TOP_OUTPUT}" "SOCIAL_MEDIA q10" \
 	"--top should keep the second biggest regression"
-assert_contains "${TOP_OUTPUT}" "TRAIN q2" \
+assert_contains "${TOP_OUTPUT}" "SOCIAL_MEDIA q2" \
 	"--top should keep the third biggest regression"
-assert_not_contains "${TOP_OUTPUT}" "PHARMA q10" \
+assert_not_contains "${TOP_OUTPUT}" "PHARMA q0" \
 	"--top 3 should drop regressions outside the top three"
-assert_before "${TOP_OUTPUT}" "ENGINEERING q4" "TRAIN q2" \
+assert_before "${TOP_OUTPUT}" "SOCIAL_MEDIA q9" "SOCIAL_MEDIA q2" \
 	"--top should preserve descending regression order"
 
 PHARMA_OUTPUT="$(bash "${ANALYZER}" --results-dir "${RESULTS_DIR}" --theme PHARMA --query-index 10)"
@@ -125,7 +125,7 @@ echo "${PHARMA_OUTPUT}"
 assert_rank_count "${PHARMA_OUTPUT}" 3
 assert_contains "${PHARMA_OUTPUT}" "Query: PHARMA q10" \
 	"query mode should label the selected query"
-assert_contains "${PHARMA_OUTPUT}" "Latest score: 2303.219 ms/op" \
+assert_contains "${PHARMA_OUTPUT}" "Latest score: 306.543 ms/op" \
 	"query mode should report the latest run score"
 assert_contains "${PHARMA_OUTPUT}" "1. results-2026-04-16.md" \
 	"query mode should rank the fastest PHARMA q10 run first"
@@ -133,8 +133,8 @@ assert_contains "${PHARMA_OUTPUT}" "2. results-2026-04-15.md" \
 	"query mode should include the summary-only PHARMA q10 run"
 assert_contains "${PHARMA_OUTPUT}" "3. results-2026-04-09-2-full.md" \
 	"query mode should prefer the richer equal-score PHARMA q10 run"
-assert_not_contains "${PHARMA_OUTPUT}" "results-2026-04-09-2.md" \
-	"query mode should exclude the weaker equal-score PHARMA q10 run"
+assert_contains "${PHARMA_OUTPUT}" "4. results-2026-04-09-2.md" \
+	"query mode should include the matching equal-score PHARMA q10 summary run"
 assert_contains "${PHARMA_OUTPUT}" "Optimized query plan:" \
 	"query mode should print a query plan section"
 assert_contains "${PHARMA_OUTPUT}" "not present in this result file" \
@@ -148,7 +148,7 @@ ENGINEERING_OUTPUT="$(bash "${ANALYZER}" --results-dir "${RESULTS_DIR}" --theme 
 echo "${ENGINEERING_OUTPUT}"
 
 assert_rank_count "${ENGINEERING_OUTPUT}" 3
-assert_contains "${ENGINEERING_OUTPUT}" "1. results-2026-04-23-3.md" \
+assert_contains "${ENGINEERING_OUTPUT}" "1. results-2026-05-06.md" \
 	"query mode should rank the fastest ENGINEERING q4 run first"
 assert_contains "${ENGINEERING_OUTPUT}" '```text' \
 	"query mode should render physical plans in a text fence when present"

@@ -107,7 +107,7 @@ ThemeQueryBenchmark.executeQuery            PHARMA              10  avgt        
 
 # Run progress: 0.00% complete, ETA 00:22:00
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -256,7 +256,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 1.14% complete, ETA 01:14:15
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -418,7 +418,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 2.27% complete, ETA 00:48:11
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -573,7 +573,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 3.41% complete, ETA 00:39:11
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -737,7 +737,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 4.55% complete, ETA 00:34:32
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -888,7 +888,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 5.68% complete, ETA 00:31:43
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -1040,7 +1040,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 6.82% complete, ETA 00:29:43
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -1204,7 +1204,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 7.95% complete, ETA 00:28:12
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -1356,7 +1356,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 9.09% complete, ETA 00:26:59
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -1522,7 +1522,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 10.23% complete, ETA 00:25:59
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -1704,7 +1704,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 11.36% complete, ETA 00:25:14
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX med: <http://example.com/theme/medical/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -1888,7 +1888,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 12.50% complete, ETA 02:05:32
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -2055,7 +2055,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 13.64% complete, ETA 01:55:13
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -2330,7 +2330,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 14.77% complete, ETA 01:46:27
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -2505,7 +2505,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 15.91% complete, ETA 01:38:53
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -2711,7 +2711,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 17.05% complete, ETA 01:32:18
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -2872,7 +2872,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 18.18% complete, ETA 01:26:31
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -3063,7 +3063,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 19.32% complete, ETA 01:21:36
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -3299,7 +3299,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 20.45% complete, ETA 01:16:59
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -3553,7 +3553,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 21.59% complete, ETA 01:12:49
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -3691,7 +3691,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 22.73% complete, ETA 01:09:11
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -3888,7 +3888,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 23.86% complete, ETA 01:05:45
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX social: <http://example.com/theme/social/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -4283,7 +4283,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 25.00% complete, ETA 01:02:36
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -4423,7 +4423,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 26.14% complete, ETA 00:59:48
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -4585,7 +4585,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 27.27% complete, ETA 00:57:10
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -4730,7 +4730,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 28.41% complete, ETA 00:54:41
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -4883,7 +4883,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 29.55% complete, ETA 00:52:22
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -5021,7 +5021,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 30.68% complete, ETA 00:50:13
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -5155,7 +5155,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 31.82% complete, ETA 00:48:11
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -5331,7 +5331,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 32.95% complete, ETA 00:49:53
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -5494,7 +5494,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 34.09% complete, ETA 00:48:02
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -5701,7 +5701,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 35.23% complete, ETA 00:46:09
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -5925,7 +5925,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 36.36% complete, ETA 00:44:24
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX lib: <http://example.com/theme/library/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -6100,7 +6100,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 37.50% complete, ETA 00:42:44
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?component) AS ?count) WHERE {
@@ -6223,7 +6223,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 38.64% complete, ETA 00:41:09
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
@@ -6384,7 +6384,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 39.77% complete, ETA 00:39:39
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT ?assembly (COUNT(DISTINCT ?component) AS ?componentCount) WHERE {
@@ -6528,7 +6528,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 40.91% complete, ETA 00:38:12
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
@@ -6675,7 +6675,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 42.05% complete, ETA 00:36:49
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?component) AS ?count) WHERE {
@@ -6812,7 +6812,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 43.18% complete, ETA 00:35:29
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?measurement) AS ?count) WHERE {
@@ -6945,7 +6945,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 44.32% complete, ETA 00:34:12
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT ?component (COUNT(DISTINCT ?requirement) AS ?reqCount) WHERE {
@@ -7117,7 +7117,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 45.45% complete, ETA 00:33:00
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
@@ -7266,7 +7266,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 46.59% complete, ETA 00:31:49
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT ?component (COUNT(DISTINCT ?requirement) AS ?reqCount) WHERE {
@@ -7439,7 +7439,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 47.73% complete, ETA 00:30:41
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?requirement) AS ?count) WHERE {
@@ -7610,7 +7610,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 48.86% complete, ETA 00:29:35
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX eng: <http://example.com/theme/engineering/>
 SELECT (COUNT(DISTINCT ?assembly) AS ?count) WHERE {
@@ -7764,7 +7764,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 50.00% complete, ETA 00:28:32
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
@@ -7887,7 +7887,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 51.14% complete, ETA 00:27:31
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
@@ -8036,7 +8036,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 52.27% complete, ETA 00:26:35
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?neighborCount) WHERE {
@@ -8193,7 +8193,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 53.41% complete, ETA 00:25:39
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
@@ -8326,7 +8326,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 54.55% complete, ETA 00:24:43
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
@@ -8463,7 +8463,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 55.68% complete, ETA 00:23:50
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
@@ -8598,7 +8598,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 56.82% complete, ETA 00:22:57
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?neighborCount) WHERE {
@@ -8770,7 +8770,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 57.95% complete, ETA 00:22:10
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
@@ -8917,7 +8917,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 59.09% complete, ETA 00:21:20
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
@@ -9063,7 +9063,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 60.23% complete, ETA 00:20:34
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?degree) WHERE {
@@ -9211,7 +9211,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 61.36% complete, ETA 00:19:49
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX conn: <http://example.com/theme/connected/>
 SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {
@@ -9389,7 +9389,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 62.50% complete, ETA 00:22:40
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -9516,7 +9516,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 63.64% complete, ETA 00:21:44
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -9678,7 +9678,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 64.77% complete, ETA 00:20:50
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -9823,7 +9823,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 65.91% complete, ETA 00:19:57
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -9971,7 +9971,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 67.05% complete, ETA 00:19:05
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -10109,7 +10109,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 68.18% complete, ETA 00:18:15
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -10243,7 +10243,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 69.32% complete, ETA 00:17:25
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -10421,7 +10421,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 70.45% complete, ETA 00:16:37
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -10573,7 +10573,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 71.59% complete, ETA 00:15:50
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -10748,7 +10748,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 72.73% complete, ETA 00:15:04
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -10916,7 +10916,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 73.86% complete, ETA 00:14:18
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX train: <http://example.com/theme/train/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -11090,7 +11090,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 75.00% complete, ETA 00:13:34
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?substation) AS ?count) WHERE {
@@ -11225,7 +11225,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 76.14% complete, ETA 00:12:50
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
@@ -11398,7 +11398,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 77.27% complete, ETA 00:12:07
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT ?transformer (COUNT(DISTINCT ?meter) AS ?meterCount) WHERE {
@@ -11555,7 +11555,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 78.41% complete, ETA 00:11:25
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?meter) AS ?count) WHERE {
@@ -11720,7 +11720,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 79.55% complete, ETA 00:10:44
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
@@ -11870,7 +11870,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 80.68% complete, ETA 00:10:03
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?generator) AS ?count) WHERE {
@@ -12005,7 +12005,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 81.82% complete, ETA 00:09:23
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT ?substation (COUNT(DISTINCT ?asset) AS ?assetCount) WHERE {
@@ -12189,7 +12189,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 82.95% complete, ETA 00:08:44
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?transformer) AS ?count) WHERE {
@@ -12349,7 +12349,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 84.09% complete, ETA 00:08:06
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT ?substation (COUNT(DISTINCT ?transformer) AS ?transformerCount) WHERE {
@@ -12510,7 +12510,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 85.23% complete, ETA 00:07:28
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?line) AS ?count) WHERE {
@@ -12651,7 +12651,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 86.36% complete, ETA 00:06:50
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX grid: <http://example.com/theme/grid/>
 SELECT (COUNT(DISTINCT ?meter) AS ?count) WHERE {
@@ -12832,7 +12832,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 87.50% complete, ETA 00:06:13
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -13040,7 +13040,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 88.64% complete, ETA 00:05:37
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -13230,7 +13230,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 89.77% complete, ETA 00:05:01
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -13430,7 +13430,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 90.91% complete, ETA 00:04:26
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -13617,7 +13617,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 92.05% complete, ETA 00:03:51
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -13841,7 +13841,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 93.18% complete, ETA 00:03:17
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -14026,7 +14026,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 94.32% complete, ETA 00:02:43
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -14237,7 +14237,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 95.45% complete, ETA 00:02:09
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -14417,7 +14417,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 96.59% complete, ETA 00:01:36
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -14627,7 +14627,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 97.73% complete, ETA 00:01:04
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -14900,7 +14900,7 @@ Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
 
 # Run progress: 98.86% complete, ETA 00:00:31
 # Fork: 1 of 1
-# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j-stf/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+# Warmup Iteration   1:
 ### Original Query ###
 PREFIX pharma: <http://example.com/theme/pharma/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
