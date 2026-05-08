@@ -862,9 +862,8 @@ class ValueStore extends AbstractValueFactory {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				return transaction.exec(stack, writeTxn);
 			}
-		} else {
-			return LmdbUtil.transaction(env, transaction);
 		}
+		return LmdbUtil.transaction(env, transaction);
 	}
 
 	int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
@@ -1186,28 +1185,35 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
+		txnLock.writeLock().lock();
+		LmdbUtil.lockNativeWrite(env);
+		try {
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
 
-			E(mdb_txn_begin(env, NULL, 0, pp));
-			writeTxn = pp.get(0);
+				E(mdb_txn_begin(env, NULL, 0, pp));
+				writeTxn = pp.get(0);
 
-			// delete unused IDs if required on a regular basis
-			// this is also run after opening the database
-			if (nextValueEvictionTime >= 0 && System.currentTimeMillis() >= nextValueEvictionTime) {
-				synchronized (unusedRevisionIds) {
-					MDBStat stat = MDBStat.malloc(stack);
-					mdb_stat(writeTxn, unusedDbi, stat);
+				// delete unused IDs if required on a regular basis
+				// this is also run after opening the database
+				if (nextValueEvictionTime >= 0 && System.currentTimeMillis() >= nextValueEvictionTime) {
+					synchronized (unusedRevisionIds) {
+						MDBStat stat = MDBStat.malloc(stack);
+						mdb_stat(writeTxn, unusedDbi, stat);
 
-					if (resize) {
-						resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
+						if (resize) {
+							resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
+						}
+
+						freeUnusedIdsAndValues(stack, writeTxn, unusedRevisionIds);
+						unusedRevisionIds.clear();
 					}
-
-					freeUnusedIdsAndValues(stack, writeTxn, unusedRevisionIds);
-					unusedRevisionIds.clear();
+					nextValueEvictionTime = -1;
 				}
-				nextValueEvictionTime = -1;
 			}
+		} finally {
+			LmdbUtil.unlockNativeWrite(env);
+			txnLock.writeLock().unlock();
 		}
 	}
 
@@ -1215,34 +1221,48 @@ class ValueStore extends AbstractValueFactory {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit) throws IOException {
-		if (writeTxn != 0) {
-			if (commit) {
-				if (invalidateRevisionOnCommit) {
+		txnLock.writeLock().lock();
+		LmdbUtil.lockNativeWrite(env);
+		try {
+			if (writeTxn != 0) {
+				if (commit) {
+					if (invalidateRevisionOnCommit) {
+						long stamp = revisionLock.writeLock();
+						try {
+							E(mdb_txn_commit(writeTxn));
+							long revisionId = lazyRevision.getRevisionId();
+							cleaner.register(lazyRevision, () -> {
+								synchronized (unusedRevisionIds) {
+									unusedRevisionIds.add(revisionId);
+								}
+								if (nextValueEvictionTime < 0) {
+									nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
+								}
+							});
+							setNewRevision();
+							clearCaches();
+						} finally {
+							revisionLock.unlockWrite(stamp);
+						}
+					} else {
+						E(mdb_txn_commit(writeTxn));
+					}
+				} else {
 					long stamp = revisionLock.writeLock();
 					try {
-						E(mdb_txn_commit(writeTxn));
-						long revisionId = lazyRevision.getRevisionId();
-						cleaner.register(lazyRevision, () -> {
-							synchronized (unusedRevisionIds) {
-								unusedRevisionIds.add(revisionId);
-							}
-							if (nextValueEvictionTime < 0) {
-								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
-							}
-						});
+						mdb_txn_abort(writeTxn);
 						setNewRevision();
 						clearCaches();
 					} finally {
 						revisionLock.unlockWrite(stamp);
 					}
-				} else {
-					E(mdb_txn_commit(writeTxn));
 				}
-			} else {
-				mdb_txn_abort(writeTxn);
+				writeTxn = 0;
+				invalidateRevisionOnCommit = false;
 			}
-			writeTxn = 0;
-			invalidateRevisionOnCommit = false;
+		} finally {
+			LmdbUtil.unlockNativeWrite(env);
+			txnLock.writeLock().unlock();
 		}
 	}
 
@@ -1328,10 +1348,18 @@ class ValueStore extends AbstractValueFactory {
 	public void close() throws IOException {
 
 		if (env != 0) {
-			closeReadTransactions();
-			endTransaction(false);
-			mdb_env_close(env);
-			env = 0;
+			txnLock.writeLock().lock();
+			long closingEnv = env;
+			LmdbUtil.lockNativeWrite(closingEnv);
+			try {
+				closeReadTransactions();
+				endTransaction(false);
+				mdb_env_close(closingEnv);
+				env = 0;
+			} finally {
+				LmdbUtil.unlockNativeWrite(closingEnv);
+				txnLock.writeLock().unlock();
+			}
 		}
 	}
 
@@ -1345,6 +1373,7 @@ class ValueStore extends AbstractValueFactory {
 
 		static class State implements Runnable {
 			public long txn;
+			public long env;
 			public long depth;
 			private boolean initialized;
 
@@ -1354,7 +1383,12 @@ class ValueStore extends AbstractValueFactory {
 
 			@Override
 			public void run() {
-				if (initialized) {
+				if (!initialized) {
+					return;
+				}
+				long txnEnv = env;
+				LmdbUtil.lockNativeWrite(txnEnv);
+				try {
 					var txn = this.txn;
 					this.txn = -1;
 					if (txn != -1) {
@@ -1368,6 +1402,8 @@ class ValueStore extends AbstractValueFactory {
 						}
 					}
 					initialized = false;
+				} finally {
+					LmdbUtil.unlockNativeWrite(txnEnv);
 				}
 			}
 		}
@@ -1423,7 +1459,12 @@ class ValueStore extends AbstractValueFactory {
 
 			if (state.depth == 0) {
 				try {
-					E(mdb_txn_renew(state.txn));
+					LmdbUtil.lockNativeWrite(env);
+					try {
+						E(mdb_txn_renew(state.txn));
+					} finally {
+						LmdbUtil.unlockNativeWrite(env);
+					}
 				} catch (IOException e) {
 					closeInternal();
 					startTxn(env);
@@ -1436,8 +1477,14 @@ class ValueStore extends AbstractValueFactory {
 		private void startTxn(long env) throws IOException {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-				state.txn = pp.get(0);
+				LmdbUtil.lockNativeWrite(env);
+				try {
+					E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+					state.txn = pp.get(0);
+					state.env = env;
+				} finally {
+					LmdbUtil.unlockNativeWrite(env);
+				}
 			}
 		}
 
@@ -1447,7 +1494,12 @@ class ValueStore extends AbstractValueFactory {
 			}
 			state.depth--;
 			if (state.depth == 0 && state.initialized) {
-				mdb_txn_reset(state.txn);
+				LmdbUtil.lockNativeWrite(state.env);
+				try {
+					mdb_txn_reset(state.txn);
+				} finally {
+					LmdbUtil.unlockNativeWrite(state.env);
+				}
 			}
 		}
 

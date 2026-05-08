@@ -31,6 +31,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Comparator;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -48,6 +51,8 @@ final class LmdbUtil {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbUtil.class);
 
+	private static final ConcurrentMap<Long, ReentrantLock> NATIVE_WRITE_LOCKS = new ConcurrentHashMap<>();
+
 	/**
 	 * Minimum free space in an LMDB db before automatically resizing the map.
 	 */
@@ -60,6 +65,14 @@ final class LmdbUtil {
 	public static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
 
 	private LmdbUtil() {
+	}
+
+	static void lockNativeWrite(long env) {
+		NATIVE_WRITE_LOCKS.computeIfAbsent(env, ignored -> new ReentrantLock()).lock();
+	}
+
+	static void unlockNativeWrite(long env) {
+		NATIVE_WRITE_LOCKS.get(env).unlock();
 	}
 
 	static int E(int rc) throws IOException {
@@ -81,8 +94,13 @@ final class LmdbUtil {
 			long txn;
 			if (writeTxn == 0) {
 				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-				txn = pp.get(0);
+				lockNativeWrite(env);
+				try {
+					E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+					txn = pp.get(0);
+				} finally {
+					unlockNativeWrite(env);
+				}
 			} else {
 				txn = writeTxn;
 			}
@@ -91,7 +109,12 @@ final class LmdbUtil {
 				ret = transaction.exec(stack, txn);
 			} finally {
 				if (writeTxn == 0) {
-					mdb_txn_abort(txn);
+					lockNativeWrite(env);
+					try {
+						mdb_txn_abort(txn);
+					} finally {
+						unlockNativeWrite(env);
+					}
 				}
 			}
 		}
@@ -104,15 +127,30 @@ final class LmdbUtil {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 
-			E(mdb_txn_begin(env, NULL, 0, pp));
+			lockNativeWrite(env);
+			try {
+				E(mdb_txn_begin(env, NULL, 0, pp));
+			} finally {
+				unlockNativeWrite(env);
+			}
 			long txn = pp.get(0);
 
 			int err;
 			try {
 				ret = transaction.exec(stack, txn);
-				err = mdb_txn_commit(txn);
+				lockNativeWrite(env);
+				try {
+					err = mdb_txn_commit(txn);
+				} finally {
+					unlockNativeWrite(env);
+				}
 			} catch (Throwable t) {
-				mdb_txn_abort(txn);
+				lockNativeWrite(env);
+				try {
+					mdb_txn_abort(txn);
+				} finally {
+					unlockNativeWrite(env);
+				}
 				throw t;
 			}
 			E(err);

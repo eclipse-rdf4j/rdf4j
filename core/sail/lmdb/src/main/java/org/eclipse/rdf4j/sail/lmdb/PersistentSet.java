@@ -66,20 +66,25 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 	}
 
 	public synchronized void clear() {
-		if (factory.writeTxn != 0) {
-			mdb_txn_abort(factory.writeTxn);
-			factory.writeTxn = 0;
-		}
+		LmdbUtil.lockNativeWrite(factory.env);
 		try {
-			// start a write transaction
-			E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
-			factory.writeTxn = factory.writeTxnPp.get(0);
-			mdb_drop(factory.writeTxn, dbi, false);
-			factory.commit();
-		} catch (Exception e) {
-			throw new RuntimeException(e);
+			if (factory.writeTxn != 0) {
+				mdb_txn_abort(factory.writeTxn);
+				factory.writeTxn = 0;
+			}
+			try {
+				// start a write transaction
+				E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
+				factory.writeTxn = factory.writeTxnPp.get(0);
+				mdb_drop(factory.writeTxn, dbi, false);
+				factory.commit();
+				size = 0;
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		} finally {
+			LmdbUtil.unlockNativeWrite(factory.env);
 		}
-		size = 0;
 	}
 
 	@Override
@@ -117,8 +122,13 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			if (factory.writeTxn == 0) {
 				// start a write transaction
-				E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
-				factory.writeTxn = factory.writeTxnPp.get(0);
+				LmdbUtil.lockNativeWrite(factory.env);
+				try {
+					E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
+					factory.writeTxn = factory.writeTxnPp.get(0);
+				} finally {
+					LmdbUtil.unlockNativeWrite(factory.env);
+				}
 			}
 			factory.ensureResize();
 
@@ -206,10 +216,15 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				try {
 					this.txnRefVersion = txnRef.version();
 
-					try (MemoryStack stack = MemoryStack.stackPush()) {
-						PointerBuffer pp = stack.mallocPointer(1);
-						E(mdb_cursor_open(txnRef.get(), dbi, pp));
-						cursor = pp.get(0);
+					LmdbUtil.lockNativeWrite(factory.env);
+					try {
+						try (MemoryStack stack = MemoryStack.stackPush()) {
+							PointerBuffer pp = stack.mallocPointer(1);
+							E(mdb_cursor_open(txnRef.get(), dbi, pp));
+							cursor = pp.get(0);
+						}
+					} finally {
+						LmdbUtil.unlockNativeWrite(factory.env);
 					}
 				} finally {
 					txnLockManager.unlockRead(readStamp);
@@ -247,26 +262,31 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		private T computeNext() throws IOException, InterruptedException {
 			long readStamp = txnLockManager.readLock();
 			try {
-				if (txnRefVersion != txnRef.version()) {
-					// cursor must be renewed
-					mdb_cursor_renew(txnRef.get(), cursor);
+				LmdbUtil.lockNativeWrite(factory.env);
+				try {
+					if (txnRefVersion != txnRef.version()) {
+						// cursor must be renewed
+						mdb_cursor_renew(txnRef.get(), cursor);
 
-					try (MemoryStack stack = MemoryStack.stackPush()) {
-						keyData.mv_data(stack.bytes(write(current)));
-						if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != MDB_SUCCESS) {
-							// use MDB_SET_RANGE if key was deleted
-							if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == MDB_SUCCESS) {
-								return read(keyData.mv_data());
+						try (MemoryStack stack = MemoryStack.stackPush()) {
+							keyData.mv_data(stack.bytes(write(current)));
+							if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET) != MDB_SUCCESS) {
+								// use MDB_SET_RANGE if key was deleted
+								if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == MDB_SUCCESS) {
+									return read(keyData.mv_data());
+								}
 							}
 						}
 					}
-				}
 
-				if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
-					return read(keyData.mv_data());
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
+						return read(keyData.mv_data());
+					}
+					close();
+					return null;
+				} finally {
+					LmdbUtil.unlockNativeWrite(factory.env);
 				}
-				close();
-				return null;
 			} finally {
 				txnLockManager.unlockRead(readStamp);
 			}
@@ -282,11 +302,13 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 				} catch (InterruptedException e) {
 					throw new SailException(e);
 				}
+				LmdbUtil.lockNativeWrite(factory.env);
 				try {
 					mdb_cursor_close(cursor);
 					txnRef.close();
 					txnRef = null;
 				} finally {
+					LmdbUtil.unlockNativeWrite(factory.env);
 					txnLockManager.unlockRead(readStamp);
 				}
 			}

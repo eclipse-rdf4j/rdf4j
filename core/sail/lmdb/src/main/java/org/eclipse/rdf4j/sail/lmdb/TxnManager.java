@@ -48,13 +48,18 @@ class TxnManager {
 	}
 
 	private long startReadTxn() throws IOException {
-		long readTxn;
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-			readTxn = pp.get(0);
+		LmdbUtil.lockNativeWrite(env);
+		try {
+			long readTxn;
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+				readTxn = pp.get(0);
+			}
+			return readTxn;
+		} finally {
+			LmdbUtil.unlockNativeWrite(env);
 		}
-		return readTxn;
 	}
 
 	/**
@@ -108,7 +113,12 @@ class TxnManager {
 			if (txn == 0) {
 				txn = startReadTxn();
 			} else {
-				mdb_txn_renew(txn);
+				LmdbUtil.lockNativeWrite(env);
+				try {
+					mdb_txn_renew(txn);
+				} finally {
+					LmdbUtil.unlockNativeWrite(env);
+				}
 			}
 		} else {
 			txn = startReadTxn();
@@ -189,22 +199,27 @@ class TxnManager {
 		}
 
 		private void free(long txn) {
-			switch (mode) {
-			case RESET:
-				synchronized (pool) {
-					if (poolIndex < pool.length - 1) {
-						mdb_txn_reset(txn);
-						pool[++poolIndex] = txn;
-					} else {
-						mdb_txn_abort(txn);
+			LmdbUtil.lockNativeWrite(env);
+			try {
+				switch (mode) {
+				case RESET:
+					synchronized (pool) {
+						if (poolIndex < pool.length - 1) {
+							mdb_txn_reset(txn);
+							pool[++poolIndex] = txn;
+						} else {
+							mdb_txn_abort(txn);
+						}
 					}
+					break;
+				case ABORT:
+					mdb_txn_abort(txn);
+					break;
+				case NONE:
+					break;
 				}
-				break;
-			case ABORT:
-				mdb_txn_abort(txn);
-				break;
-			case NONE:
-				break;
+			} finally {
+				LmdbUtil.unlockNativeWrite(env);
 			}
 		}
 
@@ -220,20 +235,30 @@ class TxnManager {
 		 * Resets current transaction as it points to "old" data.
 		 */
 		void reset() throws IOException {
-			mdb_txn_reset(txn);
-			E(mdb_txn_renew(txn));
-			version++;
+			LmdbUtil.lockNativeWrite(env);
+			try {
+				mdb_txn_reset(txn);
+				E(mdb_txn_renew(txn));
+				version++;
+			} finally {
+				LmdbUtil.unlockNativeWrite(env);
+			}
 		}
 
 		/**
 		 * Triggers active state of current transaction.
 		 */
 		void setActive(boolean active) throws IOException {
-			if (active) {
-				E(mdb_txn_renew(txn));
-				version++;
-			} else {
-				mdb_txn_reset(txn);
+			LmdbUtil.lockNativeWrite(env);
+			try {
+				if (active) {
+					E(mdb_txn_renew(txn));
+					version++;
+				} else {
+					mdb_txn_reset(txn);
+				}
+			} finally {
+				LmdbUtil.unlockNativeWrite(env);
 			}
 		}
 

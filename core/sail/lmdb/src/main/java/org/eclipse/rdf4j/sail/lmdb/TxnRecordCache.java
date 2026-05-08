@@ -88,20 +88,35 @@ final class TxnRecordCache {
 			});
 
 			// directly start a write transaction
-			E(mdb_txn_begin(env, NULL, 0, pp));
-			writeTxn = pp.get(0);
+			LmdbUtil.lockNativeWrite(env);
+			try {
+				E(mdb_txn_begin(env, NULL, 0, pp));
+				writeTxn = pp.get(0);
+			} finally {
+				LmdbUtil.unlockNativeWrite(env);
+			}
 		}
 	}
 
 	public void close() throws IOException {
-		mdb_env_close(env);
-		FileUtils.deleteDirectory(dbDir.toFile());
+		LmdbUtil.lockNativeWrite(env);
+		try {
+			mdb_env_close(env);
+			FileUtils.deleteDirectory(dbDir.toFile());
+		} finally {
+			LmdbUtil.unlockNativeWrite(env);
+		}
 	}
 
 	protected void commit() throws IOException {
-		if (writeTxn != 0) {
-			E(mdb_txn_commit(writeTxn));
-			writeTxn = 0;
+		LmdbUtil.lockNativeWrite(env);
+		try {
+			if (writeTxn != 0) {
+				E(mdb_txn_commit(writeTxn));
+				writeTxn = 0;
+			}
+		} finally {
+			LmdbUtil.unlockNativeWrite(env);
 		}
 	}
 
@@ -114,16 +129,21 @@ final class TxnRecordCache {
 	}
 
 	protected boolean update(long[] quad, boolean explicit, boolean add) throws IOException {
-		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
-			// resize map if required
-			E(mdb_txn_commit(writeTxn));
-			mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-			E(mdb_env_set_mapsize(env, mapSize));
-			try (MemoryStack stack = stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_txn_begin(env, NULL, 0, pp));
-				writeTxn = pp.get(0);
+		LmdbUtil.lockNativeWrite(env);
+		try {
+			if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
+				// resize map if required
+				E(mdb_txn_commit(writeTxn));
+				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+				E(mdb_env_set_mapsize(env, mapSize));
+				try (MemoryStack stack = stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					E(mdb_txn_begin(env, NULL, 0, pp));
+					writeTxn = pp.get(0);
+				}
 			}
+		} finally {
+			LmdbUtil.unlockNativeWrite(env);
 		}
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
@@ -184,35 +204,48 @@ final class TxnRecordCache {
 		protected RecordCacheIterator(int dbi) throws IOException {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
-
-				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-				txn = pp.get(0);
-
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
+				LmdbUtil.lockNativeWrite(env);
+				try {
+					E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+					txn = pp.get(0);
+					E(mdb_cursor_open(txn, dbi, pp));
+					cursor = pp.get(0);
+				} finally {
+					LmdbUtil.unlockNativeWrite(env);
+				}
 			}
 		}
 
 		public Record next() {
-			if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
-				Varint.readListUnsigned(keyData.mv_data(), quad);
-				byte op = valueData.mv_data().get(0);
-				Record r = new Record();
-				r.quad = quad;
-				r.add = op == 1;
-				return r;
+			LmdbUtil.lockNativeWrite(env);
+			try {
+				if (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS) {
+					Varint.readListUnsigned(keyData.mv_data(), quad);
+					byte op = valueData.mv_data().get(0);
+					Record r = new Record();
+					r.quad = quad;
+					r.add = op == 1;
+					return r;
+				}
+				close();
+				return null;
+			} finally {
+				LmdbUtil.unlockNativeWrite(env);
 			}
-			close();
-			return null;
 		}
 
 		public void close() {
 			if (txn != 0) {
-				keyData.close();
-				valueData.close();
-				mdb_cursor_close(cursor);
-				mdb_txn_abort(txn);
-				txn = 0;
+				LmdbUtil.lockNativeWrite(env);
+				try {
+					keyData.close();
+					valueData.close();
+					mdb_cursor_close(cursor);
+					mdb_txn_abort(txn);
+					txn = 0;
+				} finally {
+					LmdbUtil.unlockNativeWrite(env);
+				}
 			}
 		}
 	}
