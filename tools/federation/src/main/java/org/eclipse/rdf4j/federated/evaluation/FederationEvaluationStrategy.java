@@ -342,7 +342,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		// Source Selection: all nodes are annotated with their source
-		SourceSelection sourceSelection = new SourceSelection(members, cache, queryInfo);
+		SourceSelection sourceSelection = new SourceSelection(members, cache, federationContext, queryInfo);
 		sourceSelection.doSourceSelection(info.getStatements());
 
 		relevantMembers.addAll(sourceSelection.getRelevantSources());
@@ -381,7 +381,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			@SuppressWarnings("unused") // only used as artificial parent
 			HolderNode holderParent = new HolderNode(checkStmt);
 
-			SourceSelection sourceSelection = new SourceSelection(members, cache, queryInfo);
+			SourceSelection sourceSelection = new SourceSelection(members, cache, federationContext, queryInfo);
 			sourceSelection.doSourceSelection(List.of(checkStmt));
 
 			identifiedMembers = sourceSelection.getRelevantSources();

@@ -71,7 +71,15 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 	 */
 	static final String basePackage = "/tests/performance/";
 
+	@Override
+	protected void initFedXConfig() {
+
+		// optionally force ASK queries
+		// fedxRule.withConfiguration(c -> c.withEnableGroupedSourceSelection(false));
+	}
+
 	@Test
+	@Disabled("Activate and run for initial one-time setup")
 	public void setupData() throws Exception {
 
 		var benchmarkFolder = new File("src/test/resources" + basePackage);
@@ -83,12 +91,20 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 	@Test
 	public void testPerformance() throws Throwable {
 
+		// change this to see the impact of source selection caching
+		// default: cached source selection information
+		final boolean SOURCE_SELECTION_CACHE = false;
+
 		/* prepare endpoints */
 		prepareTest(Arrays.asList(basePackage + "data1.ttl", basePackage + "data2.ttl", basePackage + "data3.ttl",
 				basePackage + "data4.ttl"));
 
 		// warm-up
 		for (String query : queries) {
+			if (!SOURCE_SELECTION_CACHE) {
+				fedxRule.getFederationContext().getSourceSelectionCache().invalidate();
+			}
+
 			long start = System.currentTimeMillis();
 			execute(basePackage + query + ".rq", basePackage + query + ".srx", false, true);
 			long duration = System.currentTimeMillis() - start;
@@ -103,6 +119,11 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 			Run run = new Run(i);
 			runs.add(run);
 			for (String query : queries) {
+
+				if (!SOURCE_SELECTION_CACHE) {
+					fedxRule.getFederationContext().getSourceSelectionCache().invalidate();
+				}
+
 				SingleQueryRun queryRun = new SingleQueryRun(query);
 				run.addRun(queryRun);
 				long start = System.currentTimeMillis();
