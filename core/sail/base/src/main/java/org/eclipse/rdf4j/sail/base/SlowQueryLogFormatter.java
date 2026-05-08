@@ -28,13 +28,30 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.DatasetView;
 
 class SlowQueryLogFormatter {
 
-	String format(SlowQueryLogInfo info, long elapsedMillis) {
+	String formatExecution(SlowQueryLogInfo info, long elapsedMillis) {
 		String lineSeparator = System.lineSeparator();
 		StringBuilder sb = new StringBuilder(1_024);
 		sb.append("Slow query detected").append(lineSeparator);
 		sb.append("sail=").append(info.getSailClassName()).append(lineSeparator);
 		sb.append("elapsedMillis=").append(elapsedMillis).append(lineSeparator);
 		sb.append("thresholdSeconds=").append(info.getThresholdSeconds()).append(lineSeparator);
+		appendCommonSections(sb, info);
+		return sb.toString();
+	}
+
+	String formatFirstResult(SlowQueryLogInfo info, long elapsedMillisToFirstResult) {
+		String lineSeparator = System.lineSeparator();
+		StringBuilder sb = new StringBuilder(1_024);
+		sb.append("Slow query detected while retrieving first result").append(lineSeparator);
+		sb.append("sail=").append(info.getSailClassName()).append(lineSeparator);
+		sb.append("elapsedMillisToFirstResult=").append(elapsedMillisToFirstResult).append(lineSeparator);
+		sb.append("firstResultThresholdSeconds=").append(info.getFirstResultThresholdSeconds()).append(lineSeparator);
+		appendCommonSections(sb, info);
+		return sb.toString();
+	}
+
+	private void appendCommonSections(StringBuilder sb, SlowQueryLogInfo info) {
+		String lineSeparator = System.lineSeparator();
 		sb.append("queryType=").append(info.getQueryType()).append(lineSeparator);
 		appendSection(sb, "Raw query text", valueOrUnavailable(info.getRawQueryText()));
 		appendSection(sb, "Unoptimized explanation",
@@ -45,7 +62,6 @@ class SlowQueryLogFormatter {
 						info.getIncomingBindingNames()));
 		appendSection(sb, "Rendered optimized query after optimization (WARNING: best-effort; may be incorrect)",
 				renderOptimizedQuery(info));
-		return sb.toString();
 	}
 
 	protected TupleExprIRRenderer createRenderer() {

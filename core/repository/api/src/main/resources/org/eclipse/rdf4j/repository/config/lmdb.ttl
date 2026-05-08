@@ -19,6 +19,8 @@
          # @workbench.field len=16
          config:sail.slowQueryLogThresholdSeconds "{%Slow query log threshold (seconds)|0%}" ;
          # @workbench.field len=16
+         config:sail.slowQueryLogFirstResultThresholdSeconds "{%Slow query first-result threshold (seconds)|0%}" ;
+         # @workbench.field len=16
          config:sail.slowQueryLogFile "{%Slow query log file|%}" ;
          # @workbench.field len=48
          lmdb:tripleIndexes "{%Triple indexes|spoc,posc,ospc%}" ;

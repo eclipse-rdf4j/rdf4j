@@ -140,6 +140,38 @@ class SlowQueryLoggingTest {
 	}
 
 	@Test
+	void logsQueryWhenFirstResultExceedsConfiguredThreshold(@TempDir Path tempDir) throws Exception {
+		Path logFile = tempDir.resolve("slow-query.log");
+		TestMemoryStore store = new TestMemoryStore();
+		configureSlowQueryThreshold(store, 100L);
+		configureSlowQueryFirstResultThreshold(store, 1L);
+		configureSlowQueryLogFile(store, logFile.toString());
+		store.queueTimestampMillis(1_000L, 3_000L, 3_200L);
+
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(RDF.TYPE, RDF.TYPE, RDF.TYPE);
+			}
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				try (TupleQueryResult result = connection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }").evaluate()) {
+					assertThat(result.hasNext()).isTrue();
+					assertThat(result.next()).isNotNull();
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		assertThat(logFile).exists();
+		assertThat(Files.readString(logFile))
+				.contains("elapsedMillisToFirstResult=2000")
+				.contains("firstResultThresholdSeconds=1");
+	}
+
+	@Test
 	void relativeLogFileResolvesAgainstDataDir(@TempDir Path tempDir) throws Exception {
 		Path expectedLogFile = tempDir.resolve("logs/slow-query.log");
 		TestMemoryStore store = new TestMemoryStore();
@@ -177,6 +209,12 @@ class SlowQueryLoggingTest {
 	private static void configureSlowQueryLogFile(MemoryStore store, String logFile) throws Exception {
 		Method method = store.getClass().getMethod("setSlowQueryLogFile", String.class);
 		method.invoke(store, logFile);
+	}
+
+	private static void configureSlowQueryFirstResultThreshold(MemoryStore store, long thresholdSeconds)
+			throws Exception {
+		Method method = store.getClass().getMethod("setSlowQueryLogFirstResultThresholdSeconds", long.class);
+		method.invoke(store, thresholdSeconds);
 	}
 
 	private static final class TestMemoryStore extends MemoryStore {

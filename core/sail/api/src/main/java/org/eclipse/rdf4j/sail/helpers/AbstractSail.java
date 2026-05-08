@@ -117,6 +117,7 @@ public abstract class AbstractSail implements Sail {
 
 	private long iterationCacheSyncThreshold = DEFAULT_ITERATION_SYNC_THRESHOLD;
 	private long slowQueryLogThresholdSeconds;
+	private long slowQueryLogFirstResultThresholdSeconds;
 	private String slowQueryLogFile;
 	private final Object slowQueryLogFileLock = new Object();
 
@@ -438,6 +439,14 @@ public abstract class AbstractSail implements Sail {
 
 	public void setSlowQueryLogThresholdSeconds(long slowQueryLogThresholdSeconds) {
 		this.slowQueryLogThresholdSeconds = slowQueryLogThresholdSeconds;
+	}
+
+	public long getSlowQueryLogFirstResultThresholdSeconds() {
+		return slowQueryLogFirstResultThresholdSeconds;
+	}
+
+	public void setSlowQueryLogFirstResultThresholdSeconds(long slowQueryLogFirstResultThresholdSeconds) {
+		this.slowQueryLogFirstResultThresholdSeconds = slowQueryLogFirstResultThresholdSeconds;
 	}
 
 	public String getSlowQueryLogFile() {

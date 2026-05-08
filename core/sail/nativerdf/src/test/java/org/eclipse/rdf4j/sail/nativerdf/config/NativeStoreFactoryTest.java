@@ -23,11 +23,13 @@ class NativeStoreFactoryTest {
 		NativeStoreConfig config = new NativeStoreConfig();
 		config.setTripleIndexes("spoc");
 		config.setSlowQueryLogThresholdSeconds(11L);
+		config.setSlowQueryLogFirstResultThresholdSeconds(6L);
 		config.setSlowQueryLogFile("native-slow.log");
 
 		NativeStore store = (NativeStore) new NativeStoreFactory().getSail(config);
 
 		assertThat(store.getSlowQueryLogThresholdSeconds()).isEqualTo(11L);
+		assertThat(store.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(6L);
 		assertThat(store.getSlowQueryLogFile()).isEqualTo("native-slow.log");
 	}
 }

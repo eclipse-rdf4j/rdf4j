@@ -23,6 +23,7 @@ final class SlowQueryLogInfo {
 
 	private final String sailClassName;
 	private final long thresholdSeconds;
+	private final long firstResultThresholdSeconds;
 	private final Query.QueryType queryType;
 	private final String rawQueryText;
 	private final TupleExpr unoptimizedTupleExpr;
@@ -30,11 +31,13 @@ final class SlowQueryLogInfo {
 	private final Dataset dataset;
 	private final Set<String> incomingBindingNames;
 
-	SlowQueryLogInfo(String sailClassName, long thresholdSeconds, Query.QueryType queryType,
+	SlowQueryLogInfo(String sailClassName, long thresholdSeconds, long firstResultThresholdSeconds,
+			Query.QueryType queryType,
 			String rawQueryText, TupleExpr unoptimizedTupleExpr, TupleExpr optimizedTupleExpr,
 			Dataset dataset, Set<String> incomingBindingNames) {
 		this.sailClassName = sailClassName;
 		this.thresholdSeconds = thresholdSeconds;
+		this.firstResultThresholdSeconds = firstResultThresholdSeconds;
 		this.queryType = queryType;
 		this.rawQueryText = rawQueryText;
 		this.unoptimizedTupleExpr = unoptimizedTupleExpr;
@@ -50,6 +53,10 @@ final class SlowQueryLogInfo {
 
 	long getThresholdSeconds() {
 		return thresholdSeconds;
+	}
+
+	long getFirstResultThresholdSeconds() {
+		return firstResultThresholdSeconds;
 	}
 
 	Query.QueryType getQueryType() {

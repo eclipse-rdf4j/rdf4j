@@ -235,6 +235,10 @@ public class CONFIG {
 		public final static IRI slowQueryLogThresholdSeconds = createIRI(NAMESPACE,
 				"sail.slowQueryLogThresholdSeconds");
 
+		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogFirstResultThresholdSeconds</var> */
+		public final static IRI slowQueryLogFirstResultThresholdSeconds = createIRI(NAMESPACE,
+				"sail.slowQueryLogFirstResultThresholdSeconds");
+
 		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogFile</var> */
 		public final static IRI slowQueryLogFile = createIRI(NAMESPACE, "sail.slowQueryLogFile");
 	}

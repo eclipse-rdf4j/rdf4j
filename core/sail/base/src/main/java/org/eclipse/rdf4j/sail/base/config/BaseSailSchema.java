@@ -44,6 +44,12 @@ public class BaseSailSchema {
 	public final static IRI SLOW_QUERY_LOG_THRESHOLD_SECONDS = iri(NAMESPACE, "slowQueryLogThresholdSeconds");
 
 	/**
+	 * @deprecated use {@link CONFIG.Sail#slowQueryLogFirstResultThresholdSeconds} instead.
+	 */
+	public final static IRI SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS = iri(NAMESPACE,
+			"slowQueryLogFirstResultThresholdSeconds");
+
+	/**
 	 * @deprecated use {@link CONFIG.Sail#slowQueryLogFile} instead.
 	 */
 	public final static IRI SLOW_QUERY_LOG_FILE = iri(NAMESPACE, "slowQueryLogFile");

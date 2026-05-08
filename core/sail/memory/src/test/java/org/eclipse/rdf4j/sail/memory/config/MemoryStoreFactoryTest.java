@@ -22,11 +22,13 @@ class MemoryStoreFactoryTest {
 	void appliesSlowQueryLoggingConfiguration() {
 		MemoryStoreConfig config = new MemoryStoreConfig();
 		config.setSlowQueryLogThresholdSeconds(9L);
+		config.setSlowQueryLogFirstResultThresholdSeconds(4L);
 		config.setSlowQueryLogFile("memory-slow.log");
 
 		MemoryStore store = (MemoryStore) new MemoryStoreFactory().getSail(config);
 
 		assertThat(store.getSlowQueryLogThresholdSeconds()).isEqualTo(9L);
+		assertThat(store.getSlowQueryLogFirstResultThresholdSeconds()).isEqualTo(4L);
 		assertThat(store.getSlowQueryLogFile()).isEqualTo("memory-slow.log");
 	}
 }

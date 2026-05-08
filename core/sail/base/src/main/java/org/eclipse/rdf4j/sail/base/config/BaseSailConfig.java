@@ -14,6 +14,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.SLOW_QUERY_LOG_FILE;
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.SLOW_QUERY_LOG_THRESHOLD_SECONDS;
 
 import java.util.Optional;
@@ -34,6 +35,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	private QueryEvaluationMode defaultQueryEvaluationMode;
 	private long slowQueryLogThresholdSeconds;
+	private long slowQueryLogFirstResultThresholdSeconds;
 	private String slowQueryLogFile;
 
 	protected BaseSailConfig(String type) {
@@ -82,6 +84,10 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		if (slowQueryLogThresholdSeconds != 0) {
 			graph.add(implNode, CONFIG.Sail.slowQueryLogThresholdSeconds, literal(slowQueryLogThresholdSeconds));
 		}
+		if (slowQueryLogFirstResultThresholdSeconds != 0) {
+			graph.add(implNode, CONFIG.Sail.slowQueryLogFirstResultThresholdSeconds,
+					literal(slowQueryLogFirstResultThresholdSeconds));
+		}
 		if (slowQueryLogFile != null && !slowQueryLogFile.isBlank()) {
 			graph.add(implNode, CONFIG.Sail.slowQueryLogFile, literal(slowQueryLogFile));
 		}
@@ -101,6 +107,10 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		});
 		if (slowQueryLogThresholdSeconds != 0) {
 			graph.add(implNode, SLOW_QUERY_LOG_THRESHOLD_SECONDS, literal(slowQueryLogThresholdSeconds));
+		}
+		if (slowQueryLogFirstResultThresholdSeconds != 0) {
+			graph.add(implNode, SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS,
+					literal(slowQueryLogFirstResultThresholdSeconds));
 		}
 		if (slowQueryLogFile != null && !slowQueryLogFile.isBlank()) {
 			graph.add(implNode, SLOW_QUERY_LOG_FILE, literal(slowQueryLogFile));
@@ -127,6 +137,9 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.slowQueryLogThresholdSeconds,
 					SLOW_QUERY_LOG_THRESHOLD_SECONDS)
 					.ifPresent(threshold -> setSlowQueryLogThresholdSeconds(threshold.longValue()));
+			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.slowQueryLogFirstResultThresholdSeconds,
+					SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS)
+					.ifPresent(threshold -> setSlowQueryLogFirstResultThresholdSeconds(threshold.longValue()));
 			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.slowQueryLogFile,
 					SLOW_QUERY_LOG_FILE)
 					.ifPresent(logFile -> setSlowQueryLogFile(logFile.stringValue()));
@@ -155,6 +168,14 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	public void setSlowQueryLogThresholdSeconds(long slowQueryLogThresholdSeconds) {
 		this.slowQueryLogThresholdSeconds = slowQueryLogThresholdSeconds;
+	}
+
+	public long getSlowQueryLogFirstResultThresholdSeconds() {
+		return slowQueryLogFirstResultThresholdSeconds;
+	}
+
+	public void setSlowQueryLogFirstResultThresholdSeconds(long slowQueryLogFirstResultThresholdSeconds) {
+		this.slowQueryLogFirstResultThresholdSeconds = slowQueryLogFirstResultThresholdSeconds;
 	}
 
 	public String getSlowQueryLogFile() {
