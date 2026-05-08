@@ -472,8 +472,20 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	private boolean shouldUseSketchBasedJoinEstimator() {
-		return explicitEvalStratFactory == null && Runtime.getRuntime()
-				.maxMemory() >= SKETCH_BASED_JOIN_ESTIMATOR_MIN_MAX_HEAP_BYTES;
+		return shouldUseSketchBasedJoinEstimator(Runtime.getRuntime().maxMemory());
+	}
+
+	boolean shouldUseSketchBasedJoinEstimator(long maxMemoryBytes) {
+		if (explicitEvalStratFactory != null) {
+			return false;
+		}
+
+		Boolean sketchEstimatorEnabled = config.getSketchEstimatorEnabled();
+		if (sketchEstimatorEnabled != null) {
+			return sketchEstimatorEnabled;
+		}
+
+		return maxMemoryBytes >= SKETCH_BASED_JOIN_ESTIMATOR_MIN_MAX_HEAP_BYTES;
 	}
 
 	private boolean isSketchEstimatorReadyNonBlocking() {
