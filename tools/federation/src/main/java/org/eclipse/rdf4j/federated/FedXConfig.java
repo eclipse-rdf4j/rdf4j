@@ -58,6 +58,8 @@ public class FedXConfig {
 
 	private boolean includeInferredDefault = true;
 
+	private boolean enableGroupedSourceSelection = true;
+
 	private String sourceSelectionCacheSpec = null;
 
 	private SourceSelectionCacheFactory sourceSelectionCacheFactory = null;
@@ -494,5 +496,38 @@ public class FedXConfig {
 	 */
 	public int getConsumingIterationMax() {
 		return consumingIterationMax;
+	}
+
+	/**
+	 * Flag to enable or disable the grouped source selection strategy. Default={@code true}.
+	 *
+	 * <p>
+	 * When enabled, all statement patterns that require a remote check for a given endpoint are batched into a single
+	 * SPARQL SELECT query using {@code BIND(EXISTS { ... } AS ?stmt_i)} expressions, reducing the number of remote
+	 * requests from <em>O(S &times; M)</em> to <em>O(M)</em> where <em>S</em> is the number of statement patterns and
+	 * <em>M</em> the number of federation members. When disabled, one individual ASK query is sent per statement
+	 * pattern and endpoint (the classic FedX behaviour).
+	 * </p>
+	 *
+	 * @return {@code true} if grouped source selection is enabled
+	 */
+	public boolean isEnableGroupedSourceSelection() {
+		return enableGroupedSourceSelection;
+	}
+
+	/**
+	 * Enable or disable the grouped source selection strategy. Default={@code true}.
+	 *
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 *
+	 * @param flag {@code true} to enable grouped source selection, {@code false} to fall back to individual ASK queries
+	 * @return the current config
+	 * @see #isEnableGroupedSourceSelection()
+	 */
+	public FedXConfig withEnableGroupedSourceSelection(boolean flag) {
+		this.enableGroupedSourceSelection = flag;
+		return this;
 	}
 }

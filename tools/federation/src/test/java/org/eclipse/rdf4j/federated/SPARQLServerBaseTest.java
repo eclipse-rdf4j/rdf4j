@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringService;
+import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
 import org.eclipse.rdf4j.federated.repository.RepositorySettings;
 import org.eclipse.rdf4j.federated.server.NativeStoreServer;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
@@ -151,7 +152,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 * @param i the index of the repository, starting with 1
 	 * @return
 	 */
-	protected static Repository getRepository(int i) {
+	protected static ConfigurableSailRepository getRepository(int i) {
 		return server.getRepository(i);
 	}
 
