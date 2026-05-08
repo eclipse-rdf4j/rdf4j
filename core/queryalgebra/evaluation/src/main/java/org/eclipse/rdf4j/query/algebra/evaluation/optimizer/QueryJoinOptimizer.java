@@ -133,7 +133,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
-			stampResultSizeEstimate(node, statistics.getCardinality(node));
+			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
 		}
 
 		private void optimizePriorityJoin(Set<String> origBoundVars, TupleExpr join) {
@@ -198,7 +198,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 						double cardinality = statistics.getCardinality(tupleExpr);
 
-						stampResultSizeEstimate(tupleExpr, cardinality);
+						tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));
 						if (!hasCachedCardinality(tupleExpr)) {
 							if (cardinalityMap.isEmpty()) {
 								cardinalityMap = new HashMap<>();
@@ -243,7 +243,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					priorityJoins = priorityArgs.getFirst();
 
 					for (int i = 1; i < priorityArgs.size(); i++) {
-						priorityJoins = createEstimatedJoin(priorityJoins, priorityArgs.get(i));
+						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
 					}
 				}
 
@@ -274,7 +274,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						} else {
 							cardinality = Math.max(cardinality, left.getResultSizeEstimate());
 							cardinality = Math.max(cardinality, right.getResultSizeEstimate());
-							Join join = createEstimatedJoin(left, right);
+							Join join = new Join(left, right);
 							join.setOrder((Var) supportedOrders.toArray()[0]);
 							join.setMergeJoin(true);
 							orderedJoinArgs.addFirst(join);
@@ -296,7 +296,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						Set<Var> supportedOrders = new HashSet<>(left.getSupportedOrders(tripleSource));
 						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
 
-						Join join = createEstimatedJoin(left, right);
+						Join join = new Join(left, right);
 
 						if (USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN) {
 							mergeJoinForCrossJoin(orderedJoinArgs, supportedOrders, left, right, join);
@@ -306,11 +306,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					}
 					while (!orderedJoinArgs.isEmpty()) {
-						right = createEstimatedJoin(orderedJoinArgs.removeLast(), right);
+						right = new Join(orderedJoinArgs.removeLast(), right);
 					}
 
 					if (priorityJoins != null) {
-						right = createEstimatedJoin(priorityJoins, right);
+						right = new Join(priorityJoins, right);
 					}
 
 					// Replace old join hierarchy
@@ -330,26 +330,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} finally {
 				boundVars = origBoundVars;
 			}
-		}
-
-		private Join createEstimatedJoin(TupleExpr left, TupleExpr right) {
-			Join join = new Join(left, right);
-			double cardinality = statistics.getCardinality(join);
-			if (isFiniteNonNegative(cardinality)) {
-				join.setResultSizeEstimate(cardinality);
-				join.setCostEstimate(cardinality);
-			}
-			return join;
-		}
-
-		private void stampResultSizeEstimate(TupleExpr tupleExpr, double cardinality) {
-			if (isFiniteNonNegative(cardinality)) {
-				tupleExpr.setResultSizeEstimate(cardinality);
-			}
-		}
-
-		private boolean isFiniteNonNegative(double value) {
-			return Double.isFinite(value) && value >= 0.0d;
 		}
 
 		/**
@@ -756,7 +736,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 			if (expressions.size() == 1) {
 				TupleExpr tupleExpr = expressions.getFirst();
-				tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
+				if (tupleExpr.getCostEstimate() < 0) {
+					tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
+				}
 				return tupleExpr;
 			}
 
@@ -766,7 +748,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			for (TupleExpr tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
 				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
-				tupleExpr.setCostEstimate(cost);
 
 				if (cost < lowestCost || result == null) {
 					// More specific path expression found

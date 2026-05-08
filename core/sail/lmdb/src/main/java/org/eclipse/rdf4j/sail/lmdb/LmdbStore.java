@@ -71,6 +71,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 */
 	static final int VERSION = 2;
 
+	private static final long SKETCH_BASED_JOIN_ESTIMATOR_MIN_MAX_HEAP_BYTES = 2L * 1024 * 1024 * 1024;
+
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
 	 */
@@ -292,7 +294,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				properties.setVersion(String.valueOf(VERSION));
 			}
 
-			boolean useSketchBasedJoinEstimator = usesAutomaticEvaluationStrategyFactory();
+			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 
 			// update version afer loading and potential internal migration within value and triple store
@@ -469,8 +471,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return estimator != null && estimator.awaitReady(timeout, unit);
 	}
 
-	private boolean usesAutomaticEvaluationStrategyFactory() {
-		return explicitEvalStratFactory == null;
+	private boolean shouldUseSketchBasedJoinEstimator() {
+		return explicitEvalStratFactory == null && Runtime.getRuntime()
+				.maxMemory() >= SKETCH_BASED_JOIN_ESTIMATOR_MIN_MAX_HEAP_BYTES;
 	}
 
 	private boolean isSketchEstimatorReadyNonBlocking() {

@@ -182,7 +182,7 @@ public final class BenchmarkJoinEstimatorSupport {
 	static SketchBasedJoinEstimator resolveEstimator(LmdbStore store) throws IOException {
 		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
 		if (estimator == null) {
-			throw new IOException("LMDB backing store is not available");
+			throw new IOException("LMDB sketch-based join estimator is not available");
 		}
 		return estimator;
 	}
@@ -198,7 +198,11 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	public static void awaitEstimatorReady(LmdbStore store, String phase, long timeout, TimeUnit unit)
 			throws IOException {
-		awaitEstimatorReady(resolveEstimator(store), phase, timeout, unit);
+		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
+		if (estimator == null) {
+			return;
+		}
+		awaitEstimatorReady(estimator, phase, timeout, unit);
 	}
 
 	private static void persistReusableEstimatorSnapshot(SketchBasedJoinEstimator estimator) throws IOException {

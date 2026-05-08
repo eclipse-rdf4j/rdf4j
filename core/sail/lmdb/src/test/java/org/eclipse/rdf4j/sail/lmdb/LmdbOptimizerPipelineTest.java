@@ -19,7 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -42,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -101,6 +106,14 @@ class LmdbOptimizerPipelineTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	@Test
+	void lowHeapAutomaticStoreUsesDefaultFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
+		ProcessResult result = runLowHeapProbe(dataDir);
+
+		assertEquals(0, result.exitCode, result.output);
+		assertTrue(result.output.contains("LOW_HEAP_SKETCH_GATE_OK"), result.output);
 	}
 
 	@Test
@@ -268,6 +281,44 @@ class LmdbOptimizerPipelineTest {
 		return parsedQuery.getTupleExpr();
 	}
 
+	private static StatementPattern firstStatementPattern(IRI predicate) {
+		TupleExpr tupleExpr = parseTupleExpr("SELECT * WHERE { ?s <" + predicate.stringValue() + "> ?o . }");
+		StatementPattern[] found = new StatementPattern[1];
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(StatementPattern node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static ProcessResult runLowHeapProbe(File dataDir) throws IOException, InterruptedException {
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		List<String> command = new ArrayList<>();
+		command.add(javaBinary);
+		command.add("-Xmx1536m");
+		command.add("-cp");
+		command.add(System.getProperty("java.class.path"));
+		command.add(LowHeapSketchGateProbe.class.getName());
+		command.add(dataDir.getAbsolutePath());
+
+		Process process = new ProcessBuilder(command)
+				.redirectErrorStream(true)
+				.start();
+		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+		byte[] output = process.getInputStream().readAllBytes();
+		if (!finished) {
+			process.destroyForcibly();
+			fail("Low-heap sketch gate probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+		}
+		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
+	}
+
 	private static void addSingleStatement(LmdbStore store, String prefix) {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		try (NotifyingSailConnection connection = store.getConnection()) {
@@ -287,6 +338,52 @@ class LmdbOptimizerPipelineTest {
 
 	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory) {
 		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), new EvaluationStatistics());
+	}
+
+	public static final class LowHeapSketchGateProbe {
+
+		public static void main(String[] args) throws Exception {
+			File dataDir = new File(args[0]);
+			LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+			store.init();
+			try {
+				ValueFactory vf = SimpleValueFactory.getInstance();
+				IRI predicate = vf.createIRI("urn:lowheap:p");
+				addSingleStatement(store, "urn:lowheap");
+
+				if (Runtime.getRuntime().maxMemory() >= 2L * 1024 * 1024 * 1024) {
+					throw new AssertionError("Probe must run with less than 2 GiB max heap");
+				}
+				if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
+					throw new AssertionError("Low heap should not allocate the sketch estimator");
+				}
+				if (!(store.getEvaluationStrategyFactory() instanceof DefaultEvaluationStrategyFactory)) {
+					throw new AssertionError("Low heap should keep the default evaluation strategy factory");
+				}
+
+				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+				if (statistics.supportsJoinEstimation()) {
+					throw new AssertionError("Low heap should not expose sketch join estimation");
+				}
+				if (statistics.getCardinality(firstStatementPattern(predicate)) <= 0.0d) {
+					throw new AssertionError("Low heap should retain page-walking statement cardinality");
+				}
+				System.out.println("LOW_HEAP_SKETCH_GATE_OK");
+			} finally {
+				store.shutDown();
+			}
+		}
+	}
+
+	private static final class ProcessResult {
+
+		final int exitCode;
+		final String output;
+
+		private ProcessResult(int exitCode, String output) {
+			this.exitCode = exitCode;
+			this.output = output;
+		}
 	}
 
 	private static void assertRetainedEngineeringNameFilter(TupleExpr tupleExpr, String stage) {
