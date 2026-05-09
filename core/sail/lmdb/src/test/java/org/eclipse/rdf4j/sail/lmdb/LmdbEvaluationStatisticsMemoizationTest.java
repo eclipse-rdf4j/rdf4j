@@ -409,7 +409,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
@@ -441,7 +441,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
@@ -486,7 +486,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			assertTrue(statistics.supportsJoinEstimation(), "Expected sketch join estimator to be available");
@@ -517,7 +517,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			String query = """
 					SELECT * WHERE {
@@ -560,7 +560,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			String query = """
 					SELECT ?node (COUNT(DISTINCT ?neighbor) AS ?neighborCount) WHERE {
@@ -612,7 +612,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			String plan = optimizedPlanFor(repository, """
 					SELECT * WHERE {
@@ -637,7 +637,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			String plan = optimizedPlanFor(repository, """
 					SELECT * WHERE {
@@ -663,7 +663,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			String plan = optimizedPlanFor(repository, """
 					SELECT ?s (COUNT(?o) AS ?count) WHERE {
@@ -723,7 +723,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter filter = firstFilter(
@@ -754,7 +754,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter filter = firstFilter("""
@@ -788,7 +788,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter filter = firstFilter(
@@ -816,7 +816,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter filter = firstFilter(
@@ -857,7 +857,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			String query = """
 					SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
@@ -947,7 +947,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter filter = firstFilter(
@@ -978,7 +978,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter filter = firstFilter(
@@ -1016,7 +1016,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
 			Filter nameFilter = firstFilter(
@@ -1113,7 +1113,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.getSketchBasedJoinEstimator().rebuild();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
 			String externalBoundQuery = """
 					SELECT * WHERE {
@@ -1177,6 +1177,15 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					.explain(Explanation.Level.Optimized);
 			return explanation.toString();
 		}
+	}
+
+	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)
+			throws InterruptedException {
+		backingStore.getSketchBasedJoinEstimator().rebuild();
+		assertTrue(sail.awaitSketchesReady(10, TimeUnit.SECONDS),
+				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
+		assertTrue(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory,
+				"Expected ready sketches to select the LMDB optimizer pipeline");
 	}
 
 	private static void assertOptimizedTupleNodeAnnotated(String plan, String nodeName) {
