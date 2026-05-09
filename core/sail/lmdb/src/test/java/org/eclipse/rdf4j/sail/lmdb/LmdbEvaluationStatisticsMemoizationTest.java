@@ -1185,6 +1185,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
 		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
 				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
+		Thread.sleep(1000);
 		assertTrue(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory,
 				"Expected ready sketches to select the LMDB optimizer pipeline");
 	}
