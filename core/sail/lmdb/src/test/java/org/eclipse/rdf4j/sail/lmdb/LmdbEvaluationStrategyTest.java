@@ -252,6 +252,7 @@ class LmdbEvaluationStrategyTest {
 			return true;
 		}
 	}
+
 	@Override
 	protected boolean deleteDataDirAfterShutdown() {
 		return true;
