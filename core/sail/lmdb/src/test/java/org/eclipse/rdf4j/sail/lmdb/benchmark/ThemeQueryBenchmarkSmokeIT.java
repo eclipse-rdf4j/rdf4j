@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.junit.jupiter.api.Test;
 
-class ThemeQueryBenchmarkSmokeTest {
+class ThemeQueryBenchmarkSmokeIT {
 
 	private static final String MEDICAL = "http://example.com/theme/medical/";
 	private static final String MEDICAL_RECORDED_ON = MEDICAL + "recordedOn";

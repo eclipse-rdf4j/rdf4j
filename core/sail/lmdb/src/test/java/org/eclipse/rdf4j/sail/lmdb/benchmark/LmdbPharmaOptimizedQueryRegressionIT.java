@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class LmdbPharmaOptimizedQueryRegressionTest {
+class LmdbPharmaOptimizedQueryRegressionIT {
 
 	private static final Theme THEME = Theme.PHARMA;
 	private static final int MAX_QUERY_INDEX = 10;

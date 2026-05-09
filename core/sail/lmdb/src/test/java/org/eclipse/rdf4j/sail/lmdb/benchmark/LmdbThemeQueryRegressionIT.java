@@ -55,7 +55,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
-class LmdbThemeQueryRegressionTest {
+class LmdbThemeQueryRegressionIT {
 
 	private static final ValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
 	private static final IRI PHARMA_BIOMARKER_3 = VALUE_FACTORY

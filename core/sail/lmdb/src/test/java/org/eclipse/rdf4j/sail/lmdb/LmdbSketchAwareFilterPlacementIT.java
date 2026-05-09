@@ -63,7 +63,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class LmdbSketchAwareFilterPlacementTest {
+class LmdbSketchAwareFilterPlacementIT {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String LIBRARY = "http://example.com/theme/library/";

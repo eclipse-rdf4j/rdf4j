@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class LmdbEngineeringThemeQueryRegressionTest {
+class LmdbEngineeringThemeQueryRegressionIT {
 
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "engineering-regression";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"

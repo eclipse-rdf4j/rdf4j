@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class LmdbFlaggedThemeOptimizedQueryRegressionTest {
+class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 
 	private static final String THEMES_PROPERTY = "rdf4j.lmdb.flaggedThemeRegression.themes";
 	private static final String QUERY_INDEXES_PROPERTY = "rdf4j.lmdb.flaggedThemeRegression.queryIndexes";

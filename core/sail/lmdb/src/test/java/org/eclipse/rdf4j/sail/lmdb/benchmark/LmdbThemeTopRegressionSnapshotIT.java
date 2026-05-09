@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class LmdbThemeTopRegressionSnapshotTest {
+class LmdbThemeTopRegressionSnapshotIT {
 
 	private static final Pattern THEME_HEADER = Pattern.compile("## ([A-Z_]+)");
 	private static final Pattern QUERY_HEADER = Pattern.compile("### (?:([A-Z_]+) )?Query ([0-9]+)");
@@ -435,8 +435,8 @@ class LmdbThemeTopRegressionSnapshotTest {
 		return query.lines()
 				.map(String::strip)
 				.filter(line -> !line.isEmpty())
-				.filter(LmdbThemeTopRegressionSnapshotTest::isCriticalShapeLine)
-				.map(LmdbThemeTopRegressionSnapshotTest::canonicalShapeLine)
+				.filter(LmdbThemeTopRegressionSnapshotIT::isCriticalShapeLine)
+				.map(LmdbThemeTopRegressionSnapshotIT::canonicalShapeLine)
 				.collect(Collectors.toList());
 	}
 

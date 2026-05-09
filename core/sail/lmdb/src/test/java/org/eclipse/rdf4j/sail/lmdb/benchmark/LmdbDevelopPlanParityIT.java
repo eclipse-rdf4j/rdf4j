@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class LmdbDevelopPlanParityTest {
+class LmdbDevelopPlanParityIT {
 
 	private static final Pattern BENCHMARK_PARAMETERS = Pattern.compile(
 			"# Parameters: \\(themeName = ([A-Z_]+), z_queryIndex = ([0-9]+)\\)");
@@ -244,7 +244,7 @@ class LmdbDevelopPlanParityTest {
 
 	private static PlanSignature planSignature(String plan) {
 		List<String> signature = plan.lines()
-				.map(LmdbDevelopPlanParityTest::canonicalPlanLine)
+				.map(LmdbDevelopPlanParityIT::canonicalPlanLine)
 				.filter(line -> !line.isEmpty())
 				.collect(Collectors.toList());
 		return new PlanSignature(normalizeAggregateHavingWrapper(normalizeAssociativeJoinNodes(signature)));

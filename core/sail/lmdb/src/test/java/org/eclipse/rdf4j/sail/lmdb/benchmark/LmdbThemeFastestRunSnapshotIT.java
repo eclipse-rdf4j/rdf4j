@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class LmdbThemeFastestRunSnapshotTest {
+class LmdbThemeFastestRunSnapshotIT {
 
 	private static final Pattern FILTER_PASS_RATIO = Pattern.compile("plannedFilterPassRatio=([0-9.]+)");
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(

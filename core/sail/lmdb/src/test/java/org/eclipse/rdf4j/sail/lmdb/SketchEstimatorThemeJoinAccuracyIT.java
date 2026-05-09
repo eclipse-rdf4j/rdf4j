@@ -53,7 +53,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class SketchEstimatorThemeJoinAccuracyTest {
+class SketchEstimatorThemeJoinAccuracyIT {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI THEME_GRAPH = VF.createIRI("urn:test:theme-graph");
