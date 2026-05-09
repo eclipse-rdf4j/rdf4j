@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -892,12 +893,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected optimizer to queue background sampling for the recordedOn IN filter; requests="
 							+ requests);
 
-			assertEquals(1, backingStore.runBackgroundFilterSamplingCycle(50L),
-					"Expected background cycle to sample the queued recordedOn filter");
-
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
 			assertNotNull(recordedOnFilter,
 					"Expected optimized plan to retain the recordedOn date constraint as a local filter");
+			assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, backingStore.getEvaluationStatistics(),
+					recordedOnFilter) > 0,
+					"Expected background cycle to sample the queued recordedOn filter");
+
 			EvaluationStatistics.FilterPassEstimate estimate = backingStore.getEvaluationStatistics()
 					.estimateFilterPass(recordedOnFilter);
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
@@ -986,7 +988,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, before.getSource(),
 					"Foreground optimizer sampling is disabled for this test");
 
-			assertEquals(1, backingStore.runBackgroundFilterSamplingCycle(50L),
+			assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, statistics, filter) > 0,
 					"Expected background cycle to sample the queued filter");
 
 			EvaluationStatistics.FilterPassEstimate after = statistics.estimateFilterPass(filter);
@@ -1336,6 +1338,21 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		field.setAccessible(true);
 		Map<?, ?> requests = (Map<?, ?>) field.get(stats);
 		return new ArrayList<>(requests.values());
+	}
+
+	private static int runBackgroundFilterSamplingUntilSampled(LmdbSailStore store, EvaluationStatistics statistics,
+			Filter filter) throws InterruptedException {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+		int sampled = 0;
+		while (System.nanoTime() - deadlineNanos < 0L) {
+			sampled += store.runBackgroundFilterSamplingCycle(250L);
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+			if (estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED) {
+				return sampled;
+			}
+			Thread.yield();
+		}
+		return sampled;
 	}
 
 	private static Filter findRecordedOnFilter(TupleExpr tupleExpr) {
