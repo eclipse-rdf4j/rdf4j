@@ -84,9 +84,10 @@ class SketchBasedJoinEstimatorMemoryLayoutTest {
 
 		assertThrows(NoSuchFieldException.class, () -> spBuild.getClass().getDeclaredField("rows"),
 				"Pair sketches should not use row maps or a two-level sparse structure");
-		assertSingleLevelSparseArray(privateFieldValue(spBuild, "triples"), 3);
-		assertSingleLevelSparseArray(privateFieldValue(spBuild, "comp1"), 3);
-		assertSingleLevelSparseArray(privateFieldValue(spBuild, "comp2"), 3);
+		assertEquals(3, (int) privateFieldValue(spBuild, "yBits"));
+		assertSingleLevelSparseArray(privateFieldValue(spBuild, "triples"));
+		assertSingleLevelSparseArray(privateFieldValue(spBuild, "comp1"));
+		assertSingleLevelSparseArray(privateFieldValue(spBuild, "comp2"));
 	}
 
 	private static SketchBasedJoinEstimator.Config smallConfig() {
@@ -106,11 +107,10 @@ class SketchBasedJoinEstimatorMemoryLayoutTest {
 		return field.get(target);
 	}
 
-	private static void assertSingleLevelSparseArray(Object sparseArray, int expectedYBits) throws Exception {
+	private static void assertSingleLevelSparseArray(Object sparseArray) throws Exception {
 		assertNotNull(sparseArray);
 		assertInstanceOf(long[].class, privateFieldValue(sparseArray, "keys"));
 		assertTrue(((long[]) privateFieldValue(sparseArray, "keys")).length > 0);
 		assertInstanceOf(Object[].class, privateFieldValue(sparseArray, "values"));
-		assertEquals(expectedYBits, (int) privateFieldValue(sparseArray, "yBits"));
 	}
 }
