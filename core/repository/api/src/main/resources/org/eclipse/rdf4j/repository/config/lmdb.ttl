@@ -36,6 +36,30 @@
          lmdb:autoGrow {%Auto grow|true|false%} ;
          lmdb:pageCardinalityEstimator {%Page cardinality estimator|true|false%} ;
          lmdb:valueEvictionInterval {%Value eviction interval|300000%} ;
+         lmdb:valueHashCacheEnabled {%Value hash cache enabled|false|true%} ;
+         lmdb:inlineLiterals {%Inline literals|true|false%} ;
+         lmdb:sketchEstimatorEnabled {%Sketch estimator enabled|true|false%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorSubjectBucketCount {%Sketch estimator subject bucket count|4096%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorPredicateBucketCount {%Sketch estimator predicate bucket count|64%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorObjectBucketCount {%Sketch estimator object bucket count|4096%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorContextBucketCount {%Sketch estimator context bucket count|16%} ;
+         lmdb:sketchEstimatorContextPairSketchesEnabled {%Sketch estimator context pair sketches enabled|false|true%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorThrottleEveryN {%Sketch estimator throttle every N|1048576%} ;
+         # @workbench.field len=16
+         lmdb:sketchEstimatorThrottleMillis {%Sketch estimator throttle millis|2%} ;
+         lmdb:optimizerSamplingEnabled {%Optimizer sampling enabled|true|false%} ;
+         # @workbench.field len=16
+         lmdb:optimizerSamplingMaxMillis {%Optimizer sampling max millis|2%} ;
+         # @workbench.field len=16
+         lmdb:optimizerSamplingMaxRows {%Optimizer sampling max rows|4096%} ;
+         lmdb:backgroundRawSamplingEnabled {%Background raw sampling enabled|true|false%} ;
+         # @workbench.field len=16
+         lmdb:backgroundRawSamplingMaxMillisPerCycle {%Background raw sampling max millis per cycle|10%} ;
          # @workbench.field len=16
          lmdb:forceSync {%Force sync|false|true%} ;
          lmdb:noReadahead {%No readahead|false|true%} ;
