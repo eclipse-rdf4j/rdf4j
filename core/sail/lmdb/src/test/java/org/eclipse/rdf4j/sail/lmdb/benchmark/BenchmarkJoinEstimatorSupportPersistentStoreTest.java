@@ -38,7 +38,10 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 64;
 	private static final String ESTIMATOR_PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
 	private static final String NOMINAL_ENTRIES_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "nominalEntries";
-	private static final String SKETCH_K_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "sketchK";
+	private static final String SUBJECT_BUCKET_COUNT_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "subjectBucketCount";
+	private static final String PREDICATE_BUCKET_COUNT_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "predicateBucketCount";
+	private static final String OBJECT_BUCKET_COUNT_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "objectBucketCount";
+	private static final String CONTEXT_BUCKET_COUNT_PROPERTY = ESTIMATOR_PROPERTY_PREFIX + "contextBucketCount";
 
 	@AfterEach
 	void clearSystemProperties() {
@@ -170,10 +173,16 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 		System.setProperty(BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName(),
 				dataDir.resolve("persistent-lmdb-theme-store").toString());
 		String previousNominalEntries = System.getProperty(NOMINAL_ENTRIES_PROPERTY);
-		String previousSketchK = System.getProperty(SKETCH_K_PROPERTY);
+		String previousSubjectBucketCount = System.getProperty(SUBJECT_BUCKET_COUNT_PROPERTY);
+		String previousPredicateBucketCount = System.getProperty(PREDICATE_BUCKET_COUNT_PROPERTY);
+		String previousObjectBucketCount = System.getProperty(OBJECT_BUCKET_COUNT_PROPERTY);
+		String previousContextBucketCount = System.getProperty(CONTEXT_BUCKET_COUNT_PROPERTY);
 		try {
-			System.setProperty(NOMINAL_ENTRIES_PROPERTY, "512");
-			System.setProperty(SKETCH_K_PROPERTY, "2048");
+			System.setProperty(NOMINAL_ENTRIES_PROPERTY, "2048");
+			System.setProperty(SUBJECT_BUCKET_COUNT_PROPERTY, "512");
+			System.setProperty(PREDICATE_BUCKET_COUNT_PROPERTY, "512");
+			System.setProperty(OBJECT_BUCKET_COUNT_PROPERTY, "512");
+			System.setProperty(CONTEXT_BUCKET_COUNT_PROPERTY, "512");
 
 			AtomicInteger buildCount = new AtomicInteger();
 			ThemeRegressionStore first = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
@@ -202,7 +211,10 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 			assertEquals(109L, Files.size(second.storeDirectory().resolve("values/data.mdb")));
 		} finally {
 			restoreSystemProperty(NOMINAL_ENTRIES_PROPERTY, previousNominalEntries);
-			restoreSystemProperty(SKETCH_K_PROPERTY, previousSketchK);
+			restoreSystemProperty(SUBJECT_BUCKET_COUNT_PROPERTY, previousSubjectBucketCount);
+			restoreSystemProperty(PREDICATE_BUCKET_COUNT_PROPERTY, previousPredicateBucketCount);
+			restoreSystemProperty(OBJECT_BUCKET_COUNT_PROPERTY, previousObjectBucketCount);
+			restoreSystemProperty(CONTEXT_BUCKET_COUNT_PROPERTY, previousContextBucketCount);
 		}
 	}
 
@@ -280,43 +292,13 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 		int predicateBucketCount = DEFAULT_PREDICATE_BUCKET_COUNT;
 		int objectBucketCount = DEFAULT_BUCKET_COUNT;
 		int contextBucketCount = DEFAULT_CONTEXT_BUCKET_COUNT;
-		boolean nominalEntriesPropertySet = estimatorPropertyPresent("nominalEntries");
-		boolean subjectBucketPropertySet = estimatorPropertyPresent("subjectBucketCount");
-		boolean predicateBucketPropertySet = estimatorPropertyPresent("predicateBucketCount");
-		boolean objectBucketPropertySet = estimatorPropertyPresent("objectBucketCount");
-		boolean contextBucketPropertySet = estimatorPropertyPresent("contextBucketCount");
-		boolean sketchKPropertySet = estimatorPropertyPresent("sketchK");
-		int nominalEntries = estimatorIntProperty("nominalEntries", DEFAULT_BUCKET_COUNT);
-		if (nominalEntriesPropertySet) {
-			if (!subjectBucketPropertySet) {
-				subjectBucketCount = nominalEntries;
-			}
-			if (!predicateBucketPropertySet) {
-				predicateBucketCount = nominalEntries;
-			}
-			if (!objectBucketPropertySet) {
-				objectBucketCount = nominalEntries;
-			}
-			if (!contextBucketPropertySet) {
-				contextBucketCount = nominalEntries;
-			}
-		}
 		subjectBucketCount = estimatorIntProperty("subjectBucketCount", subjectBucketCount);
 		predicateBucketCount = estimatorIntProperty("predicateBucketCount", predicateBucketCount);
 		objectBucketCount = estimatorIntProperty("objectBucketCount", objectBucketCount);
 		contextBucketCount = estimatorIntProperty("contextBucketCount", contextBucketCount);
 		boolean contextPairSketchesEnabled = estimatorBooleanProperty("contextPairSketchesEnabled", false);
-		int sketchKMultiplier = Math.max(0, estimatorIntProperty("sketchKMultiplier", 0));
-		int sketchNominalEntries = sketchKPropertySet
-				? estimatorIntProperty("sketchK", -1)
-				: DEFAULT_SKETCH_NOMINAL_ENTRIES;
-		if (sketchNominalEntries <= 0) {
-			int maxBucketCount = Math.max(Math.max(subjectBucketCount, predicateBucketCount),
-					Math.max(objectBucketCount, contextBucketCount));
-			sketchNominalEntries = sketchKMultiplier > 0
-					? Math.max(16, maxBucketCount * sketchKMultiplier)
-					: DEFAULT_SKETCH_NOMINAL_ENTRIES;
-		}
+		int sketchNominalEntries = Math.max(16,
+				estimatorIntProperty("nominalEntries", DEFAULT_SKETCH_NOMINAL_ENTRIES));
 		return new EstimatorMetadataFingerprint(subjectBucketCount, predicateBucketCount, objectBucketCount,
 				contextBucketCount, contextPairSketchesEnabled, sketchNominalEntries);
 	}

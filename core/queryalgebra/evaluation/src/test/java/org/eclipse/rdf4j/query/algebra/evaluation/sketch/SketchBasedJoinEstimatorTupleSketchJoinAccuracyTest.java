@@ -161,7 +161,10 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
-				.withNominalEntries(1024)
+				.withSubjectBucketCount(1024)
+				.withPredicateBucketCount(1024)
+				.withObjectBucketCount(1024)
+				.withContextBucketCount(1024)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
@@ -170,7 +173,10 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 	private static SketchBasedJoinEstimator.Config largeExactConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(16_384)
-				.withSketchK(16_384)
+				.withSubjectBucketCount(16_384)
+				.withPredicateBucketCount(16_384)
+				.withObjectBucketCount(16_384)
+				.withContextBucketCount(16_384)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);

@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -23,6 +24,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.apache.datasketches.common.ResizeFactor;
@@ -54,7 +56,6 @@ class SketchBasedJoinEstimatorConfigTest {
 	private static final String OBJECT_BUCKET_COUNT_PROPERTY = PROPERTY_PREFIX + "objectBucketCount";
 	private static final String CONTEXT_BUCKET_COUNT_PROPERTY = PROPERTY_PREFIX + "contextBucketCount";
 	private static final String CONTEXT_PAIR_SKETCHES_ENABLED_PROPERTY = PROPERTY_PREFIX + "contextPairSketchesEnabled";
-	private static final String SKETCH_K_PROPERTY = PROPERTY_PREFIX + "sketchK";
 
 	private StubSketchStatementSource store;
 	private Resource s1;
@@ -151,42 +152,27 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void sketchKMultiplierControlsDerivedK() throws Exception {
+	void nominalEntriesControlsSketchNominalEntries() throws Exception {
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, SketchBasedJoinEstimator.Config.defaults()
-				.withNominalEntries(20)
-				.withoutDoubleArrayBuckets()
-				.withSketchK(-1)
-				.withSketchKMultiplier(3));
+				.withNominalEntries(256));
 
-		var field = est.getClass().getDeclaredField("bufA");
-		field.setAccessible(true);
-		Object bufA = field.get(est);
-		var kField = bufA.getClass().getDeclaredField("k");
-		kField.setAccessible(true);
-
-		assertEquals(60, kField.getInt(bufA));
+		assertEquals(256, sketchNominalEntries(est));
 	}
 
 	@Test
 	void defaultsPreserveHistoricalBucketAndSketchDefaults() throws Exception {
 		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, SketchBasedJoinEstimator.Config.defaults());
 
-		var bucketsField = est.getClass().getDeclaredField("nominalEntries");
+		var bucketsField = est.getClass().getDeclaredField("maxBucketCount");
 		bucketsField.setAccessible(true);
 		var defaultBucketsField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_BUCKET_COUNT");
 		defaultBucketsField.setAccessible(true);
-
-		var bufField = est.getClass().getDeclaredField("bufA");
-		bufField.setAccessible(true);
-		Object bufA = bufField.get(est);
-		var kField = bufA.getClass().getDeclaredField("k");
-		kField.setAccessible(true);
 
 		var defaultKField = SketchBasedJoinEstimator.class.getDeclaredField("DEFAULT_SKETCH_NOMINAL_ENTRIES");
 		defaultKField.setAccessible(true);
 
 		assertEquals(defaultBucketsField.getInt(null), bucketsField.getInt(est));
-		assertEquals(defaultKField.getInt(null), kField.getInt(bufA));
+		assertEquals(defaultKField.getInt(null), sketchNominalEntries(est));
 	}
 
 	@Test
@@ -194,7 +180,8 @@ class SketchBasedJoinEstimatorConfigTest {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults();
 
 		int defaultBucketCount = staticIntField(SketchBasedJoinEstimator.class, "DEFAULT_BUCKET_COUNT");
-		assertEquals(defaultBucketCount, intField(cfg, "nominalEntries"));
+		assertEquals(staticIntField(SketchBasedJoinEstimator.class, "DEFAULT_SKETCH_NOMINAL_ENTRIES"),
+				intField(cfg, "nominalEntries"));
 		assertEquals(defaultBucketCount, intField(cfg, "subjectBucketCount"));
 		assertEquals(64, intField(cfg, "predicateBucketCount"));
 		assertEquals(defaultBucketCount, intField(cfg, "objectBucketCount"));
@@ -203,19 +190,40 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void configAliasesAreExposed() throws Exception {
+	void nominalEntriesBuilderIsExposed() throws Exception {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults();
 
-		assertSame(cfg, invokeConfig(cfg, "withBucketCount", int.class, 64));
-		assertEquals(64, cfg.nominalEntries);
-		assertSame(cfg, invokeConfig(cfg, "withSketchNominalEntries", int.class, 256));
-		assertEquals(256, cfg.sketchK);
+		assertSame(cfg, invokeConfig(cfg, "withNominalEntries", int.class, 256));
+		assertEquals(256, cfg.nominalEntries);
+	}
+
+	@Test
+	void nominalEntriesIsOnlySketchSizeKnobAndBucketsStayExplicit() throws Exception {
+		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
+				.withNominalEntries(256);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, cfg);
+		int defaultBucketCount = staticIntField(SketchBasedJoinEstimator.class, "DEFAULT_BUCKET_COUNT");
+
+		assertAll(
+				() -> assertEquals(256, sketchNominalEntries(estimator)),
+				() -> assertEquals(defaultBucketCount, intField(estimator, "subjectBucketCount")),
+				() -> assertEquals(64, intField(estimator, "predicateBucketCount")),
+				() -> assertEquals(defaultBucketCount, intField(estimator, "objectBucketCount")),
+				() -> assertEquals(16, intField(estimator, "contextBucketCount")),
+				() -> assertThrows(NoSuchMethodException.class,
+						() -> SketchBasedJoinEstimator.Config.class.getMethod("withBucketCount", int.class)),
+				() -> assertThrows(NoSuchMethodException.class,
+						() -> SketchBasedJoinEstimator.Config.class.getMethod("withSketchK", int.class)),
+				() -> assertThrows(NoSuchMethodException.class,
+						() -> SketchBasedJoinEstimator.Config.class.getMethod("withSketchNominalEntries", int.class)),
+				() -> assertThrows(NoSuchMethodException.class,
+						() -> SketchBasedJoinEstimator.Config.class.getMethod("withSketchKMultiplier", int.class)));
 	}
 
 	@Test
 	void componentBucketCountsControlStateLayout() throws Exception {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
-				.withoutDoubleArrayBuckets()
 				.withNominalEntries(128)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0);
@@ -233,16 +241,15 @@ class SketchBasedJoinEstimatorConfigTest {
 		assertEquals(16, componentArrayLength(singleTriples, "P"));
 		assertEquals(32, componentArrayLength(singleTriples, "O"));
 		assertEquals(8, componentArrayLength(singleTriples, "C"));
-		assertEquals(64, intField(component(singles, "S"), "buckets"));
-		assertEquals(16, intField(component(singles, "P"), "buckets"));
-		assertEquals(32, intField(component(singles, "O"), "buckets"));
-		assertEquals(8, intField(component(singles, "C"), "buckets"));
+		assertEquals(64, complementArrayLength(component(singles, "S")));
+		assertEquals(16, complementArrayLength(component(singles, "P")));
+		assertEquals(32, complementArrayLength(component(singles, "O")));
+		assertEquals(8, complementArrayLength(component(singles, "C")));
 	}
 
 	@Test
 	void componentAwareHashingKeepsUnevenBucketEstimatesCorrect() throws Exception {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
-				.withoutDoubleArrayBuckets()
 				.withNominalEntries(64)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0);
@@ -276,7 +283,6 @@ class SketchBasedJoinEstimatorConfigTest {
 	void disablingContextPairSketchesKeepsContextSinglesAndComplements() throws Exception {
 		Resource c1 = VF.createIRI("urn:c1");
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
-				.withoutDoubleArrayBuckets()
 				.withNominalEntries(64)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0);
@@ -314,7 +320,6 @@ class SketchBasedJoinEstimatorConfigTest {
 			store.add(VF.createStatement(s1, p1, o1, c1));
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
 					SketchBasedJoinEstimator.Config.defaults()
-							.withoutDoubleArrayBuckets()
 							.withNominalEntries(128)
 							.withThrottleEveryN(1)
 							.withThrottleMillis(0));
@@ -358,17 +363,24 @@ class SketchBasedJoinEstimatorConfigTest {
 	}
 
 	@Test
-	void systemPropertyBucketAndSketchOverridesWin() throws Exception {
-		PropertyState properties = PropertyState.capture(NOMINAL_ENTRIES_PROPERTY, SKETCH_K_PROPERTY);
+	void systemPropertyNominalEntriesAndExplicitBucketsWin() throws Exception {
+		PropertyState properties = PropertyState.capture(NOMINAL_ENTRIES_PROPERTY, SUBJECT_BUCKET_COUNT_PROPERTY,
+				PREDICATE_BUCKET_COUNT_PROPERTY, OBJECT_BUCKET_COUNT_PROPERTY, CONTEXT_BUCKET_COUNT_PROPERTY);
 		try {
 			System.setProperty(NOMINAL_ENTRIES_PROPERTY, "1024");
-			System.setProperty(SKETCH_K_PROPERTY, "4096");
+			System.setProperty(SUBJECT_BUCKET_COUNT_PROPERTY, "512");
+			System.setProperty(PREDICATE_BUCKET_COUNT_PROPERTY, "32");
+			System.setProperty(OBJECT_BUCKET_COUNT_PROPERTY, "256");
+			System.setProperty(CONTEXT_BUCKET_COUNT_PROPERTY, "8");
 
 			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
 					SketchBasedJoinEstimator.Config.defaults());
 
-			assertEquals(1024, intField(estimator, "nominalEntries"));
-			assertEquals(4096, sketchK(estimator));
+			assertEquals(1024, sketchNominalEntries(estimator));
+			assertEquals(512, intField(estimator, "subjectBucketCount"));
+			assertEquals(32, intField(estimator, "predicateBucketCount"));
+			assertEquals(256, intField(estimator, "objectBucketCount"));
+			assertEquals(8, intField(estimator, "contextBucketCount"));
 		} finally {
 			properties.restore();
 		}
@@ -426,8 +438,11 @@ class SketchBasedJoinEstimatorConfigTest {
 		try {
 			properties.clearAll();
 			RareOverlapFixture fixture = buildRareOverlapFixture(SketchBasedJoinEstimator.Config.defaults()
-					.withNominalEntries(128)
-					.withSketchK(512)
+					.withNominalEntries(512)
+					.withSubjectBucketCount(128)
+					.withPredicateBucketCount(128)
+					.withObjectBucketCount(128)
+					.withContextBucketCount(128)
 					.withThrottleEveryN(1)
 					.withThrottleMillis(0)
 					.withRefreshSleepMillis(5)
@@ -544,7 +559,14 @@ class SketchBasedJoinEstimatorConfigTest {
 		return ((AtomicReferenceArray<?>) component(stateComponents, component)).length();
 	}
 
-	private static int sketchK(SketchBasedJoinEstimator estimator) throws Exception {
+	@SuppressWarnings("unchecked")
+	private static int complementArrayLength(Object singleBuild) throws Exception {
+		Map<?, AtomicReferenceArray<?>> complements = (Map<?, AtomicReferenceArray<?>>) objectField(singleBuild,
+				"cmpl");
+		return complements.values().iterator().next().length();
+	}
+
+	private static int sketchNominalEntries(SketchBasedJoinEstimator estimator) throws Exception {
 		Field bufField = SketchBasedJoinEstimator.class.getDeclaredField("bufA");
 		bufField.setAccessible(true);
 		Object bufA = bufField.get(estimator);

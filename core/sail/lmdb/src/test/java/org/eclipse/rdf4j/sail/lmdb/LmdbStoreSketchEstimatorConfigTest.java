@@ -14,6 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 
+import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -21,9 +25,11 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -87,7 +93,43 @@ class LmdbStoreSketchEstimatorConfigTest {
 		assertThat(store.shouldUseSketchBasedJoinEstimator(0L)).isTrue();
 	}
 
+	@Test
+	void sketchEstimatorThrottleConfigIsAppliedToBackingEstimator(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		invokeLongSetter(config, "setSketchEstimatorThrottleEveryN", 7L);
+		invokeLongSetter(config, "setSketchEstimatorThrottleMillis", 11L);
+
+		LmdbSailStore backingStore = new LmdbSailStore(dataDir, new StoreProperties(), config, true);
+		try {
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+
+			assertThat(longField(estimator, "throttleEveryN")).isEqualTo(7L);
+			assertThat(longField(estimator, "throttleMillis")).isEqualTo(11L);
+		} finally {
+			backingStore.close();
+		}
+	}
+
 	private static LmdbStoreConfig configWithSketchEstimatorEnabled(boolean enabled) {
 		return new LmdbStoreConfig().setSketchEstimatorEnabled(enabled);
+	}
+
+	private static void invokeLongSetter(LmdbStoreConfig config, String setterName, long value) {
+		try {
+			Method setter = config.getClass().getMethod(setterName, long.class);
+			setter.invoke(config, value);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config setter: " + setterName, e);
+		}
+	}
+
+	private static long longField(Object target, String fieldName) {
+		try {
+			Field field = target.getClass().getDeclaredField(fieldName);
+			field.setAccessible(true);
+			return field.getLong(target);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing estimator field: " + fieldName, e);
+		}
 	}
 }

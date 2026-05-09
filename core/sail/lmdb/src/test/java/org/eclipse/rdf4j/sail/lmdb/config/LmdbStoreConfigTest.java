@@ -56,6 +56,12 @@ class LmdbStoreConfigTest {
 	private static final IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorContextPairSketchesEnabled");
 
+	private static final IRI SKETCH_ESTIMATOR_THROTTLE_EVERY_N = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorThrottleEveryN");
+
+	private static final IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorThrottleMillis");
+
 	private static final IRI OPTIMIZER_SAMPLING_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "optimizerSamplingEnabled");
 
@@ -91,6 +97,14 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeBooleanGetter(config, "getBackgroundRawSamplingEnabled")).isTrue();
 		assertThat(invokeLongGetter(config, "getBackgroundRawSamplingMaxMillisPerCycle")).isEqualTo(10L);
+	}
+
+	@Test
+	void sketchEstimatorThrottleDefaultsToCurrentRebuildBudget() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleEveryN")).isEqualTo(1024L * 1024L);
+		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleMillis")).isEqualTo(2L);
 	}
 
 	@Test
@@ -266,6 +280,30 @@ class LmdbStoreConfigTest {
 				"getSketchEstimatorContextPairSketchesEnabled",
 				enabled,
 				enabled
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { 0, 1, 2048 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorThrottleEveryN(final long throttleEveryN) {
+		testParseAndExportReflectiveLong(
+				SKETCH_ESTIMATOR_THROTTLE_EVERY_N,
+				Values.literal(throttleEveryN),
+				"getSketchEstimatorThrottleEveryN",
+				throttleEveryN,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { 0, 1, 25 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorThrottleMillis(final long throttleMillis) {
+		testParseAndExportReflectiveLong(
+				SKETCH_ESTIMATOR_THROTTLE_MILLIS,
+				Values.literal(throttleMillis),
+				"getSketchEstimatorThrottleMillis",
+				throttleMillis,
+				true
 		);
 	}
 

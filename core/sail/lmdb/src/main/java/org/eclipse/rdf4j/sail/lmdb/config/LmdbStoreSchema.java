@@ -108,6 +108,10 @@ public class LmdbStoreSchema {
 
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED;
 
+	public final static IRI SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
+
+	public final static IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS;
+
 	public final static IRI SKETCH_ESTIMATOR_ENABLED;
 
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
@@ -147,6 +151,8 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorContextBucketCount");
 		SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = factory.createIRI(NAMESPACE,
 				"sketchEstimatorContextPairSketchesEnabled");
+		SKETCH_ESTIMATOR_THROTTLE_EVERY_N = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleEveryN");
+		SKETCH_ESTIMATOR_THROTTLE_MILLIS = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleMillis");
 		SKETCH_ESTIMATOR_ENABLED = factory.createIRI(NAMESPACE, "sketchEstimatorEnabled");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");

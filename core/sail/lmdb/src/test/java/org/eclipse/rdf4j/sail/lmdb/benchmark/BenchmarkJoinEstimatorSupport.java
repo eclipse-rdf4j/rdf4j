@@ -332,43 +332,13 @@ public final class BenchmarkJoinEstimatorSupport {
 		int predicateBucketCount = DEFAULT_PREDICATE_BUCKET_COUNT;
 		int objectBucketCount = DEFAULT_BUCKET_COUNT;
 		int contextBucketCount = DEFAULT_CONTEXT_BUCKET_COUNT;
-		boolean nominalEntriesPropertySet = estimatorPropertyPresent("nominalEntries");
-		boolean subjectBucketPropertySet = estimatorPropertyPresent("subjectBucketCount");
-		boolean predicateBucketPropertySet = estimatorPropertyPresent("predicateBucketCount");
-		boolean objectBucketPropertySet = estimatorPropertyPresent("objectBucketCount");
-		boolean contextBucketPropertySet = estimatorPropertyPresent("contextBucketCount");
-		boolean sketchKPropertySet = estimatorPropertyPresent("sketchK");
-		int nominalEntries = estimatorIntProperty("nominalEntries", DEFAULT_BUCKET_COUNT);
-		if (nominalEntriesPropertySet) {
-			if (!subjectBucketPropertySet) {
-				subjectBucketCount = nominalEntries;
-			}
-			if (!predicateBucketPropertySet) {
-				predicateBucketCount = nominalEntries;
-			}
-			if (!objectBucketPropertySet) {
-				objectBucketCount = nominalEntries;
-			}
-			if (!contextBucketPropertySet) {
-				contextBucketCount = nominalEntries;
-			}
-		}
 		subjectBucketCount = estimatorIntProperty("subjectBucketCount", subjectBucketCount);
 		predicateBucketCount = estimatorIntProperty("predicateBucketCount", predicateBucketCount);
 		objectBucketCount = estimatorIntProperty("objectBucketCount", objectBucketCount);
 		contextBucketCount = estimatorIntProperty("contextBucketCount", contextBucketCount);
 		boolean contextPairSketchesEnabled = estimatorBooleanProperty("contextPairSketchesEnabled", false);
-		int sketchKMultiplier = Math.max(0, estimatorIntProperty("sketchKMultiplier", 0));
-		int sketchNominalEntries = sketchKPropertySet
-				? estimatorIntProperty("sketchK", -1)
-				: DEFAULT_SKETCH_NOMINAL_ENTRIES;
-		if (sketchNominalEntries <= 0) {
-			int maxBucketCount = Math.max(Math.max(subjectBucketCount, predicateBucketCount),
-					Math.max(objectBucketCount, contextBucketCount));
-			sketchNominalEntries = sketchKMultiplier > 0
-					? Math.max(16, maxBucketCount * sketchKMultiplier)
-					: DEFAULT_SKETCH_NOMINAL_ENTRIES;
-		}
+		int sketchNominalEntries = Math.max(16,
+				estimatorIntProperty("nominalEntries", DEFAULT_SKETCH_NOMINAL_ENTRIES));
 		return new EstimatorMetadataFingerprint(subjectBucketCount, predicateBucketCount, objectBucketCount,
 				contextBucketCount, contextPairSketchesEnabled, sketchNominalEntries);
 	}

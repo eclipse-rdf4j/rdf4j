@@ -232,8 +232,11 @@ public class SketchEstimatorThemeMemoryBenchmark {
 
 		private static EstimatorPropertyScope open(EstimatorPrecision precision) {
 			Map<String, String> properties = new LinkedHashMap<>();
-			properties.put("nominalEntries", Integer.toString(precision.bucketCount()));
-			properties.put("sketchK", Integer.toString(precision.sketchNominalEntries()));
+			properties.put("nominalEntries", Integer.toString(precision.sketchNominalEntries()));
+			properties.put("subjectBucketCount", Integer.toString(precision.bucketCount()));
+			properties.put("predicateBucketCount", Integer.toString(precision.bucketCount()));
+			properties.put("objectBucketCount", Integer.toString(precision.bucketCount()));
+			properties.put("contextBucketCount", Integer.toString(precision.bucketCount()));
 
 			Map<String, String> previousValues = new LinkedHashMap<>();
 			for (Map.Entry<String, String> entry : properties.entrySet()) {

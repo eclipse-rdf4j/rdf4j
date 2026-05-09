@@ -121,6 +121,37 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 				"Incremental delete flushed during rebuild must be present after publish");
 	}
 
+	@Test
+	void rebuildUsesConfiguredThrottleBetweenScannedStatements() throws Exception {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		store.add(statement("urn:s:throttle-1", "urn:p:throttle", "urn:o:throttle-1", "urn:c:throttle"));
+		store.add(statement("urn:s:throttle-2", "urn:p:throttle", "urn:o:throttle-2", "urn:c:throttle"));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(1_000)
+						.withRefreshSleepMillis(5));
+		AtomicReference<Throwable> rebuildFailure = new AtomicReference<>();
+		Thread rebuildThread = new Thread(() -> {
+			try {
+				estimator.rebuild();
+			} catch (Throwable t) {
+				rebuildFailure.set(t);
+			}
+		}, "SketchEstimator-RebuildThrottle");
+
+		rebuildThread.start();
+		rebuildThread.join(250);
+		assertTrue(rebuildThread.isAlive(), "Expected rebuild to remain in configured throttle sleep");
+
+		rebuildThread.interrupt();
+		rebuildThread.join(TimeUnit.SECONDS.toMillis(2));
+		assertEquals(null, rebuildFailure.get(), "Rebuild should complete without failure after interrupting throttle");
+		assertTrue(!rebuildThread.isAlive(), "Rebuild should stop after interrupting the throttle sleep");
+	}
+
 	private static List<Statement> fixtureStatements() {
 		List<Statement> statements = new ArrayList<>();
 		for (int i = 0; i < 48; i++) {

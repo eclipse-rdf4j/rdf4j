@@ -435,8 +435,8 @@ class LmdbSailStore implements SailStore {
 
 	private static SketchBasedJoinEstimator.Config sketchEstimatorConfig(LmdbStoreConfig config) {
 		SketchBasedJoinEstimator.Config estimatorConfig = SketchBasedJoinEstimator.Config.defaults()
-				.withThrottleEveryN(1024 * 1024)
-				.withThrottleMillis(2)
+				.withThrottleEveryN(config.getSketchEstimatorThrottleEveryN())
+				.withThrottleMillis(config.getSketchEstimatorThrottleMillis())
 				.withEstimateCacheSeconds(60);
 		if (config.getSketchEstimatorSubjectBucketCount() >= 0) {
 			estimatorConfig.withSubjectBucketCount(config.getSketchEstimatorSubjectBucketCount());

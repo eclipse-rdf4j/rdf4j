@@ -106,8 +106,11 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
-				.withNominalEntries(128)
-				.withSketchK(512)
+				.withNominalEntries(512)
+				.withSubjectBucketCount(128)
+				.withPredicateBucketCount(128)
+				.withObjectBucketCount(128)
+				.withContextBucketCount(128)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);

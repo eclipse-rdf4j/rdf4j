@@ -246,7 +246,7 @@
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.sketchK>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.sketchK>
+						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>
@@ -259,7 +259,7 @@
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>4096</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.objectBucketCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>16</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextBucketCount>
 						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>false</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.contextPairSketchesEnabled>
-						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.sketchK>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.sketchK>
+						<org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.nominalEntries>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>

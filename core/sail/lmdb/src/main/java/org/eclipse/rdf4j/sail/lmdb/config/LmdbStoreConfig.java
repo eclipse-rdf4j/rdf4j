@@ -63,6 +63,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
+	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
+
+	public static final long SKETCH_ESTIMATOR_THROTTLE_MILLIS = 2L;
+
 	/**
 	 * The default namespace id cache size.
 	 */
@@ -109,6 +113,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private int sketchEstimatorContextBucketCount = -1;
 
 	private boolean sketchEstimatorContextPairSketchesEnabled = false;
+
+	private long sketchEstimatorThrottleEveryN = SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
+
+	private long sketchEstimatorThrottleMillis = SKETCH_ESTIMATOR_THROTTLE_MILLIS;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -335,6 +343,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public long getSketchEstimatorThrottleEveryN() {
+		return sketchEstimatorThrottleEveryN;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorThrottleEveryN(long sketchEstimatorThrottleEveryN) {
+		this.sketchEstimatorThrottleEveryN = Math.max(0L, sketchEstimatorThrottleEveryN);
+		return this;
+	}
+
+	public long getSketchEstimatorThrottleMillis() {
+		return sketchEstimatorThrottleMillis;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorThrottleMillis(long sketchEstimatorThrottleMillis) {
+		this.sketchEstimatorThrottleMillis = Math.max(0L, sketchEstimatorThrottleMillis);
+		return this;
+	}
+
 	public boolean getOptimizerSamplingEnabled() {
 		return optimizerSamplingEnabled;
 	}
@@ -453,6 +479,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (sketchEstimatorContextPairSketchesEnabled) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
 					vf.createLiteral(true));
+		}
+		if (sketchEstimatorThrottleEveryN != SKETCH_ESTIMATOR_THROTTLE_EVERY_N) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_EVERY_N,
+					vf.createLiteral(sketchEstimatorThrottleEveryN));
+		}
+		if (sketchEstimatorThrottleMillis != SKETCH_ESTIMATOR_THROTTLE_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS,
+					vf.createLiteral(sketchEstimatorThrottleMillis));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -669,6 +703,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_EVERY_N, null))
+					.ifPresent(lit -> setSketchEstimatorThrottleEveryN(parseLong(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_EVERY_N)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS, null))
+					.ifPresent(lit -> setSketchEstimatorThrottleMillis(parseLong(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS)));
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, null))
 					.ifPresent(lit -> {

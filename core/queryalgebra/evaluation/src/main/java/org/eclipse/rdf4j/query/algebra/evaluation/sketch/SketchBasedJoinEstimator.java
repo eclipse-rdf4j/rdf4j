@@ -132,15 +132,12 @@ import org.slf4j.LoggerFactory;
  * (defaults shown in {@link Config}):
  * </p>
  * <ul>
- * <li>{@code nominalEntries} (int ≥ 4)</li>
+ * <li>{@code nominalEntries} (int ≥ 16, sketch nominal entries)</li>
  * <li>{@code subjectBucketCount} (int ≥ 4)</li>
  * <li>{@code predicateBucketCount} (int ≥ 4)</li>
  * <li>{@code objectBucketCount} (int ≥ 4)</li>
  * <li>{@code contextBucketCount} (int ≥ 4)</li>
  * <li>{@code contextPairSketchesEnabled} (boolean)</li>
- * <li>{@code doubleArrayBuckets} (boolean)</li>
- * <li>{@code sketchK} (int &gt; 0 ⇒ explicit K; otherwise DataSketches default unless multiplier is set)</li>
- * <li>{@code sketchKMultiplier} (int ≥ 1, used when {@code sketchK <= 0})</li>
  * <li>{@code throttleEveryN} (long)</li>
  * <li>{@code throttleMillis} (long)</li>
  * <li>{@code refreshSleepMillis} (long)</li>
@@ -167,7 +164,7 @@ import org.slf4j.LoggerFactory;
  *     "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.defaultContextString", "urn:ctx");
  * System.setProperty(
  *     "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.refreshSleepMillis", "500");
- * var est = new SketchBasedJoinEstimator(source, Config.defaults().withNominalEntries(128));
+ * var est = new SketchBasedJoinEstimator(source, Config.defaults().withNominalEntries(1024));
  * }
  * </pre>
  */
@@ -385,7 +382,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	/* ────────────────────────────────────────────────────────────── */
 
 	private final SketchStatementSource statementSource;
-	private final int nominalEntries; // ← bucket count for array indices
+	private final int maxBucketCount;
 	private final int subjectBucketCount;
 	private final int predicateBucketCount;
 	private final int objectBucketCount;
@@ -1328,7 +1325,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Objects.requireNonNull(cfg, "cfg");
 
 		// Base from provided config
-		int nEntries = cfg.nominalEntries;
+		int sketchNominalEntries = cfg.nominalEntries;
 		int sBuckets = cfg.subjectBucketCount;
 		int pBuckets = cfg.predicateBucketCount;
 		int oBuckets = cfg.objectBucketCount;
@@ -1349,37 +1346,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double zeroIntersectionSkew = cfg.zeroIntersectionSkewRatio;
 		long zeroIntersectionBudget = cfg.zeroIntersectionRowBudget;
 		int zeroIntersectionSampleSize = cfg.zeroIntersectionSampleSize;
-		int kCfg = cfg.sketchK;
-		int kMult = cfg.sketchKMultiplier;
 		int queueInitialLimit = cfg.incrementalQueueInitialLimit;
 		long queueIdleResetMillis = cfg.incrementalQueueIdleResetMillis;
 		long queueEstimatedStatementBytes = cfg.incrementalQueueEstimatedStatementBytes;
 		int memoryMonitorCheckInterval = cfg.memoryMonitorCheckInterval;
 		long memoryMonitorEstimatedOperationBytes = cfg.memoryMonitorEstimatedOperationBytes;
 
-		boolean nominalEntriesPropertySet = propPresent("nominalEntries");
-		boolean subjectBucketPropertySet = propPresent("subjectBucketCount");
-		boolean predicateBucketPropertySet = propPresent("predicateBucketCount");
-		boolean objectBucketPropertySet = propPresent("objectBucketCount");
-		boolean contextBucketPropertySet = propPresent("contextBucketCount");
-		boolean sketchKPropertySet = propPresent("sketchK");
-
 		// Overlay from system properties (take precedence)
-		nEntries = propInt("nominalEntries", nEntries);
-		if (nominalEntriesPropertySet) {
-			if (!subjectBucketPropertySet) {
-				sBuckets = nEntries;
-			}
-			if (!predicateBucketPropertySet) {
-				pBuckets = nEntries;
-			}
-			if (!objectBucketPropertySet) {
-				oBuckets = nEntries;
-			}
-			if (!contextBucketPropertySet) {
-				cBuckets = nEntries;
-			}
-		}
+		sketchNominalEntries = propInt("nominalEntries", sketchNominalEntries);
 		sBuckets = propInt("subjectBucketCount", sBuckets);
 		pBuckets = propInt("predicateBucketCount", pBuckets);
 		oBuckets = propInt("objectBucketCount", oBuckets);
@@ -1401,9 +1375,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		zeroIntersectionSkew = propDouble(ZERO_INTERSECTION_SKEW_RATIO_PROPERTY, zeroIntersectionSkew);
 		zeroIntersectionBudget = propLong(ZERO_INTERSECTION_ROW_BUDGET_PROPERTY, zeroIntersectionBudget);
 		zeroIntersectionSampleSize = propInt(ZERO_INTERSECTION_SAMPLE_SIZE_PROPERTY, zeroIntersectionSampleSize);
-		int kProp = propIntOrNegOne("sketchK", -1);
-		kMult = propInt("sketchKMultiplier", kMult);
-		kMult = Math.max(0, kMult);
 		queueInitialLimit = propInt("incrementalQueueInitialLimit", queueInitialLimit);
 		queueIdleResetMillis = propLong("incrementalQueueIdleResetMillis", queueIdleResetMillis);
 		queueEstimatedStatementBytes = propLong("incrementalQueueEstimatedStatementBytes",
@@ -1416,12 +1387,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			memoryMonitorEstimatedOperationBytes = queueEstimatedStatementBytes;
 		}
 
-		int k = sketchKPropertySet ? kProp : kCfg;
-		if (k <= 0) {
-			k = kMult > 0 ? Math.max(16, maxBucketCount(sBuckets, pBuckets, oBuckets, cBuckets) * kMult)
-					: DEFAULT_SKETCH_NOMINAL_ENTRIES;
-		}
-
+		sketchNominalEntries = Math.max(16, sketchNominalEntries);
 		samplePct = clamp(samplePct, 0.0, 1.0);
 		sampleMin = Math.max(0, sampleMin);
 		sampleMax = Math.max(0, sampleMax);
@@ -1439,7 +1405,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		memoryMonitorEstimatedOperationBytes = Math.max(1L, memoryMonitorEstimatedOperationBytes);
 
 		this.statementSource = Objects.requireNonNull(statementSource, "statementSource");
-		this.nominalEntries = maxBucketCount(sBuckets, pBuckets, oBuckets, cBuckets);
+		this.maxBucketCount = maxBucketCount(sBuckets, pBuckets, oBuckets, cBuckets);
 		this.subjectBucketCount = sBuckets;
 		this.predicateBucketCount = pBuckets;
 		this.objectBucketCount = oBuckets;
@@ -1466,10 +1432,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.memoryMonitorCheckInterval = memoryMonitorCheckInterval;
 		this.memoryMonitorEstimatedOperationBytes = memoryMonitorEstimatedOperationBytes;
 		this.churnSampler = new ChurnSampler();
-		this.bufA = new State(k, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
-				contextPairSketchesEnabled);
-		this.bufB = new State(k, subjectBucketCount, predicateBucketCount, objectBucketCount, contextBucketCount,
-				contextPairSketchesEnabled);
+		this.bufA = new State(sketchNominalEntries, subjectBucketCount, predicateBucketCount, objectBucketCount,
+				contextBucketCount, contextPairSketchesEnabled);
+		this.bufB = new State(sketchNominalEntries, subjectBucketCount, predicateBucketCount, objectBucketCount,
+				contextBucketCount, contextPairSketchesEnabled);
 		this.current = usingA ? bufA : bufB;
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
@@ -2124,14 +2090,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 					seen++;
 
-//					if (seen % throttleEveryN == 0 && throttleMillis > 0) {
-//						try {
-//							Thread.sleep(throttleMillis);
-//						} catch (InterruptedException ie) {
-//							Thread.currentThread().interrupt();
-//							break;
-//						}
-//					}
+					if (throttleEveryN > 0 && throttleMillis > 0 && seen % throttleEveryN == 0) {
+						try {
+							Thread.sleep(throttleMillis);
+						} catch (InterruptedException ie) {
+							Thread.currentThread().interrupt();
+							stoppedEarly = true;
+							break;
+						}
+					}
 
 				}
 				if (seen > 0) {
@@ -2836,7 +2803,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private int expectedSingleBatchUpdates(int batchSize) {
 		long batchEstimate = (long) batchSize << 3;
-		long addressBound = ((long) nominalEntries << 5) + 8L;
+		long addressBound = ((long) maxBucketCount << 5) + 8L;
 		return (int) Math.min(Integer.MAX_VALUE, Math.clamp(addressBound, 64L, batchEstimate));
 	}
 
@@ -8813,7 +8780,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					+ metadata.contextPairSketchesEnabled + " current=" + contextPairSketchesEnabled);
 		}
 		if (metadata.sketchNominalEntries != bufA.k) {
-			throw new IOException("Snapshot sketchK mismatch: snapshot=" + metadata.sketchNominalEntries
+			throw new IOException("Snapshot sketch nominal entries mismatch: snapshot=" + metadata.sketchNominalEntries
 					+ " current=" + bufA.k);
 		}
 		if (!Objects.equals(metadata.defaultContext, defaultContextString)) {
@@ -9502,18 +9469,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private static int propIntOrNegOne(String name, int def) {
-		String v = propValue(name);
-		if (v == null) {
-			return def;
-		}
-		try {
-			return Integer.parseInt(v.trim());
-		} catch (Exception e) {
-			return def;
-		}
-	}
-
 	private static long propLong(String name, long def) {
 		String v = propValue(name);
 		if (v == null) {
@@ -9562,26 +9517,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 * Configuration for {@link SketchBasedJoinEstimator}.
 	 *
 	 * <p>
-	 * Defaults use {@value #DEFAULT_BUCKET_COUNT} buckets and DataSketches default nominal entries for sketch accuracy.
-	 * Array doubling is disabled by default.
+	 * Defaults use explicit S/P/O/C bucket counts and {@value #DEFAULT_SKETCH_NOMINAL_ENTRIES} sketch nominal entries.
 	 * </p>
 	 */
 	public static final class Config {
 		// capacity & layout
-		int nominalEntries = DEFAULT_BUCKET_COUNT;
-		boolean bucketCountExplicit;
+		int nominalEntries = DEFAULT_SKETCH_NOMINAL_ENTRIES;
 		int subjectBucketCount = DEFAULT_BUCKET_COUNT;
 		int predicateBucketCount = 64;
 		int objectBucketCount = DEFAULT_BUCKET_COUNT;
 		int contextBucketCount = 16;
-		boolean subjectBucketCountExplicit;
-		boolean predicateBucketCountExplicit;
-		boolean objectBucketCountExplicit;
-		boolean contextBucketCountExplicit;
-		boolean doubleArrayBuckets = false;
-		int sketchK = DEFAULT_SKETCH_NOMINAL_ENTRIES; // <= 0 -> use DataSketches default unless multiplier is set
-		boolean sketchNominalEntriesExplicit;
-		int sketchKMultiplier = 0;
 
 		// rebuild throttling
 		long throttleEveryN = Integer.MAX_VALUE;
@@ -9616,51 +9561,29 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return new Config();
 		}
 
-		/** Base array bucket count (must be ≥ 4). */
+		/** Sketch nominal entries (must be ≥ 16). */
 		public Config withNominalEntries(int n) {
-			this.nominalEntries = Math.max(4, n);
-			this.bucketCountExplicit = true;
-			if (!subjectBucketCountExplicit) {
-				this.subjectBucketCount = this.nominalEntries;
-			}
-			if (!predicateBucketCountExplicit) {
-				this.predicateBucketCount = this.nominalEntries;
-			}
-			if (!objectBucketCountExplicit) {
-				this.objectBucketCount = this.nominalEntries;
-			}
-			if (!contextBucketCountExplicit) {
-				this.contextBucketCount = this.nominalEntries;
-			}
+			this.nominalEntries = Math.max(16, n);
 			return this;
-		}
-
-		/** Backward-compatible alias for {@link #withNominalEntries(int)}. */
-		public Config withBucketCount(int n) {
-			return withNominalEntries(n);
 		}
 
 		public Config withSubjectBucketCount(int n) {
 			this.subjectBucketCount = Math.max(4, n);
-			this.subjectBucketCountExplicit = true;
 			return this;
 		}
 
 		public Config withPredicateBucketCount(int n) {
 			this.predicateBucketCount = Math.max(4, n);
-			this.predicateBucketCountExplicit = true;
 			return this;
 		}
 
 		public Config withObjectBucketCount(int n) {
 			this.objectBucketCount = Math.max(4, n);
-			this.objectBucketCountExplicit = true;
 			return this;
 		}
 
 		public Config withContextBucketCount(int n) {
 			this.contextBucketCount = Math.max(4, n);
-			this.contextBucketCountExplicit = true;
 			return this;
 		}
 
@@ -9671,33 +9594,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		public Config withoutContextPairSketches() {
 			return withContextPairSketchesEnabled(false);
-		}
-
-		/** Disable default bucket doubling for array indexes. */
-		public Config withoutDoubleArrayBuckets() {
-			this.doubleArrayBuckets = false;
-			return this;
-		}
-
-		/** Explicit sketch K. If omitted (≤0), the library default is used unless a multiplier is configured. */
-		public Config withSketchK(int k) {
-			this.sketchK = k;
-			this.sketchNominalEntriesExplicit = true;
-			return this;
-		}
-
-		/** Explicit sketch nominal entries. */
-		public Config withSketchNominalEntries(int k) {
-			return withSketchK(k);
-		}
-
-		/**
-		 * Derived-K multiplier used when {@link #withSketchK(int)} is not set (or set ≤ 0). Higher values reduce error
-		 * at the cost of memory.
-		 */
-		public Config withSketchKMultiplier(int multiplier) {
-			this.sketchKMultiplier = Math.max(1, multiplier);
-			return this;
 		}
 
 		/** Sleep every N scanned statements during a full rebuild. */
