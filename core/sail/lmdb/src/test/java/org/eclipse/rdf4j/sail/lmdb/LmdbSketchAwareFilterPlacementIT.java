@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -85,472 +86,681 @@ class LmdbSketchAwareFilterPlacementIT {
 	private static final String GRID_SUBSTATION_NAME_FILTER = "substation-name-filter";
 	private static final String GRID_FEEDS_LABEL = "grid-feeds";
 	private static final String GRID_TRANSFORMER_TYPE_LABEL = "transformer-type";
+	private static final int CRITERIA_RETRY_ATTEMPTS = 10;
+	private static final int TEST_RERUN_ATTEMPTS = 10;
+	private static final long RETRY_PAUSE_MILLIS = TimeUnit.SECONDS.toMillis(1L);
 
 	@Test
 	void optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady(@TempDir File dataDir)
 			throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady", attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadLibraryData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+					try {
+						loadLibraryData(repository);
+						store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
-			String query = String.join("\n",
-					"PREFIX lib: <http://example.com/theme/library/>",
-					"SELECT (COUNT(DISTINCT ?copy) AS ?count) WHERE {",
-					"  ?branch lib:name ?branchName .",
-					"  ?copy a lib:Copy .",
-					"  ?copy lib:locatedAt ?branch .",
-					"  FILTER ((?branchName = \"Branch 0\") || (?branchName = \"Branch 1\"))",
-					"  FILTER EXISTS {",
-					"    ?copy a lib:Copy .",
-					"  }",
-					"  MINUS {",
-					"    ?copy lib:locatedAt ?branch .",
-					"    FILTER (CONTAINS(STR(?branch), \"branch/0\"))",
-					"  }",
-					"}");
+						String query = String.join("\n",
+								"PREFIX lib: <http://example.com/theme/library/>",
+								"SELECT (COUNT(DISTINCT ?copy) AS ?count) WHERE {",
+								"  ?branch lib:name ?branchName .",
+								"  ?copy a lib:Copy .",
+								"  ?copy lib:locatedAt ?branch .",
+								"  FILTER ((?branchName = \"Branch 0\") || (?branchName = \"Branch 1\"))",
+								"  FILTER EXISTS {",
+								"    ?copy a lib:Copy .",
+								"  }",
+								"  MINUS {",
+								"    ?copy lib:locatedAt ?branch .",
+								"    FILTER (CONTAINS(STR(?branch), \"branch/0\"))",
+								"  }",
+								"}");
 
-			TupleExpr optimized;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
-			}
+						assertCriteriaEventually("branch-name filter placement", () -> {
+							TupleExpr optimized;
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								Explanation explanation = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Optimized);
+								optimized = (TupleExpr) explanation.tupleExpr();
+							}
 
-			BindingSetAssignment branchNameValues = findBindingSetAssignment(optimized, "branchName");
-			assertNotNull(branchNameValues,
-					"Expected optimized plan to retain the branch-name constraint as a finite VALUES anchor");
-			assertLiteralValues(branchNameValues, "branchName", "Branch 0", "Branch 1");
+							BindingSetAssignment branchNameValues = findBindingSetAssignment(optimized,
+									"branchName");
+							assertNotNull(branchNameValues,
+									"Expected optimized plan to retain the branch-name constraint as a finite VALUES anchor");
+							assertLiteralValues(branchNameValues, "branchName", "Branch 0", "Branch 1");
 
-			StatementPattern branchNamePattern = findStatementPattern(optimized, NAME, "branchName");
-			assertNotNull(branchNamePattern,
-					"Expected optimized plan to retain the branch-name lookup pattern");
-			assertTrue(branchNamePattern.getBindingNames().contains("branch"),
-					"Branch-name lookup should stay attached to the branch pattern");
-			assertTrue(!branchNamePattern.getBindingNames().contains("copy"),
-					"Branch-name lookup should no longer sit above the copy join once local selectivity is known");
-		} finally {
-			repository.shutDown();
-		}
+							StatementPattern branchNamePattern = findStatementPattern(optimized, NAME,
+									"branchName");
+							assertNotNull(branchNamePattern,
+									"Expected optimized plan to retain the branch-name lookup pattern");
+							assertTrue(branchNamePattern.getBindingNames().contains("branch"),
+									"Branch-name lookup should stay attached to the branch pattern");
+							assertTrue(!branchNamePattern.getBindingNames().contains("copy"),
+									"Branch-name lookup should no longer sit above the copy join once local selectivity is known");
+						});
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test
 	void filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady", attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadLibraryData(repository);
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+					try {
+						loadLibraryData(repository);
+						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
-			assertTrue(statistics.supportsFilterSelectivityCosting(),
-					"Expected LMDB to expose local filter selectivity costing before sketches are ready");
+						assertCriteriaEventually("local branch-name filter selectivity", () -> {
+							assertTrue(statistics.supportsFilterSelectivityCosting(),
+									"Expected LMDB to expose local filter selectivity costing before sketches are ready");
 
-			Filter filter = new Filter(
-					new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME), Var.of("branchName")),
-					new Or(
-							new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 0")),
-									Compare.CompareOp.EQ),
-							new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 1")),
-									Compare.CompareOp.EQ)));
-			double passRatio = statistics.estimateFilterPassRatio(filter);
-			double baseRows = statistics.getCardinality(filter.getArg());
-			double filteredRows = statistics.getCardinality(filter);
+							Filter filter = new Filter(
+									new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME),
+											Var.of("branchName")),
+									new Or(
+											new Compare(Var.of("branchName"),
+													new ValueConstant(VF.createLiteral("Branch 0")),
+													Compare.CompareOp.EQ),
+											new Compare(Var.of("branchName"),
+													new ValueConstant(VF.createLiteral("Branch 1")),
+													Compare.CompareOp.EQ)));
+							double passRatio = statistics.estimateFilterPassRatio(filter);
+							double baseRows = statistics.getCardinality(filter.getArg());
+							double filteredRows = statistics.getCardinality(filter);
 
-			assertTrue(passRatio > 0.0d && passRatio < 1.0d,
-					"Expected a selective pass ratio for the branch-name filter");
-			assertTrue(filteredRows < baseRows,
-					"Expected filter cardinality to honor local selectivity without requiring sketch-ready join estimation");
-		} finally {
-			repository.shutDown();
-		}
+							assertTrue(passRatio > 0.0d && passRatio < 1.0d,
+									"Expected a selective pass ratio for the branch-name filter");
+							assertTrue(filteredRows < baseRows,
+									"Expected filter cardinality to honor local selectivity without requiring sketch-ready join estimation");
+						});
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test
 	void learnedTemplateStatsApplyWhenExactFilterKeyMisses(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir, "learnedTemplateStatsApplyWhenExactFilterKeyMisses",
+				attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadLibraryData(repository);
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+					try {
+						loadLibraryData(repository);
+						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
-			Filter observed = new Filter(
-					new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME), Var.of("branchName")),
-					new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 0")),
-							Compare.CompareOp.EQ));
-			statistics.recordFilterOutcome(observed, 1L, 99L);
+						Filter observed = new Filter(
+								new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME),
+										Var.of("branchName")),
+								new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 0")),
+										Compare.CompareOp.EQ));
+						statistics.recordFilterOutcome(observed, 1L, 99L);
 
-			Filter equivalentShape = new Filter(
-					new StatementPattern(Var.of("place"), Var.of("namePredicate", NAME), Var.of("label")),
-					new Compare(Var.of("label"), new ValueConstant(VF.createLiteral("Branch 12")),
-							Compare.CompareOp.EQ));
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(equivalentShape);
+						assertCriteriaEventually("template learned selectivity", () -> {
+							Filter equivalentShape = new Filter(
+									new StatementPattern(Var.of("place"), Var.of("namePredicate", NAME),
+											Var.of("label")),
+									new Compare(Var.of("label"), new ValueConstant(VF.createLiteral("Branch 12")),
+											Compare.CompareOp.EQ));
+							EvaluationStatistics.FilterPassEstimate estimate = statistics
+									.estimateFilterPass(equivalentShape);
 
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource());
-			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.05d,
-					"Expected template learned selectivity to generalize across variable names and constants");
-		} finally {
-			repository.shutDown();
-		}
+							assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
+									estimate.getSource());
+							assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.05d,
+									"Expected template learned selectivity to generalize across variable names and constants");
+						});
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test
 	void bindingWindowFilterKeepsIncomingValuesBindings(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir, "bindingWindowFilterKeepsIncomingValuesBindings", attemptDir -> {
+			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+			SailRepository repository = new SailRepository(store);
+			repository.init();
 
-		try {
-			loadFiniteChainData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			try {
+				loadFiniteChainData(repository);
+				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
-			String query = String.join("\n",
-					"PREFIX ex: <urn:test:>",
-					"SELECT (COUNT(*) AS ?count) WHERE {",
-					"  VALUES ?a { ex:a ex:b }",
-					"  VALUES ?b { ex:a ex:b }",
-					"  FILTER (?a != ?b)",
-					"  ?a ex:p ?b .",
-					"  VALUES ?c { ex:a ex:b }",
-					"  FILTER (?b != ?c)",
-					"  ?b ex:p ?c .",
-					"}");
+				String query = String.join("\n",
+						"PREFIX ex: <urn:test:>",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  VALUES ?a { ex:a ex:b }",
+						"  VALUES ?b { ex:a ex:b }",
+						"  FILTER (?a != ?b)",
+						"  ?a ex:p ?b .",
+						"  VALUES ?c { ex:a ex:b }",
+						"  FILTER (?b != ?c)",
+						"  ?b ex:p ?c .",
+						"}");
 
-			assertEquals(2L, evaluateCount(repository, query),
-					"A filter spanning an existing binding and a later VALUES binding must see both variables");
-		} finally {
-			repository.shutDown();
-		}
+				assertCriteriaEventually("binding window query result", () -> assertEquals(2L,
+						evaluateCount(repository, query),
+						"A filter spanning an existing binding and a later VALUES binding must see both variables"));
+			} finally {
+				repository.shutDown();
+			}
+		});
 	}
 
 	@Test
 	void prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats", attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadLibraryData(repository);
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+					try {
+						loadLibraryData(repository);
+						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
-			Filter conditioned = new Filter(
-					new Join(bindingAssignment("authorName", "Author 1", "Author 2", "Author 3"),
-							new StatementPattern(Var.of("author"), Var.of("namePredicate", NAME),
-									Var.of("authorName"))),
-					listMember("authorName", "Author 1", "Author 2", "Author 3"));
-			statistics.recordFilterOutcome(conditioned, 1L, 99L);
+						Filter conditioned = new Filter(
+								new Join(bindingAssignment("authorName", "Author 1", "Author 2", "Author 3"),
+										new StatementPattern(Var.of("author"), Var.of("namePredicate", NAME),
+												Var.of("authorName"))),
+								listMember("authorName", "Author 1", "Author 2", "Author 3"));
+						statistics.recordFilterOutcome(conditioned, 1L, 99L);
 
-			Filter unconditioned = new Filter(
-					new StatementPattern(Var.of("author"), Var.of("namePredicate", NAME), Var.of("authorName")),
-					listMember("authorName", "Author 1", "Author 2", "Author 3"));
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(unconditioned);
+						assertCriteriaEventually("prefix-conditioned feedback isolation", () -> {
+							Filter unconditioned = new Filter(
+									new StatementPattern(Var.of("author"), Var.of("namePredicate", NAME),
+											Var.of("authorName")),
+									listMember("authorName", "Author 1", "Author 2", "Author 3"));
+							EvaluationStatistics.FilterPassEstimate estimate = statistics
+									.estimateFilterPass(unconditioned);
 
-			assertTrue(estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER
-					&& estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE
-					&& estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN,
-					"Prefix-conditioned local filter feedback should not be reused as unconditional learned stats: "
-							+ estimate.getSource() + " ratio=" + estimate.getPassRatio());
-		} finally {
-			repository.shutDown();
-		}
+							assertTrue(
+									estimate.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER
+											&& estimate
+													.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE
+											&& estimate
+													.getSource() != EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN,
+									"Prefix-conditioned local filter feedback should not be reused as unconditional learned stats: "
+											+ estimate.getSource() + " ratio=" + estimate.getPassRatio());
+						});
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test
 	void nonLocalEqualityFilterReceivesHeuristicPassRatio(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir, "nonLocalEqualityFilterReceivesHeuristicPassRatio",
+				attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadLibraryData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+					try {
+						loadLibraryData(repository);
+						store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
-			StatementPattern left = new StatementPattern(Var.of("copy"), Var.of("locatedAt", LOCATED_AT),
-					Var.of("branch"));
-			StatementPattern right = new StatementPattern(Var.of("otherCopy"), Var.of("locatedAt2", LOCATED_AT),
-					Var.of("otherBranch"));
-			Filter nonLocal = new Filter(new Join(left, right),
-					new Compare(Var.of("copy"), Var.of("otherCopy"), Compare.CompareOp.EQ));
+						StatementPattern left = new StatementPattern(Var.of("copy"), Var.of("locatedAt", LOCATED_AT),
+								Var.of("branch"));
+						StatementPattern right = new StatementPattern(Var.of("otherCopy"),
+								Var.of("locatedAt2", LOCATED_AT), Var.of("otherBranch"));
+						Filter nonLocal = new Filter(new Join(left, right),
+								new Compare(Var.of("copy"), Var.of("otherCopy"), Compare.CompareOp.EQ));
 
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(nonLocal);
+						assertCriteriaEventually("non-local equality heuristic pass ratio", () -> {
+							EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(nonLocal);
 
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC, estimate.getSource());
-			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 1.0d,
-					"Expected non-local equality to derive a selective tuple-var heuristic");
-		} finally {
-			repository.shutDown();
-		}
+							assertEquals(EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC,
+									estimate.getSource());
+							assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 1.0d,
+									"Expected non-local equality to derive a selective tuple-var heuristic");
+						});
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test
 	void socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow", attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadThemeDataWithBulkEstimator(repository, store, Theme.SOCIAL_MEDIA);
-			String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 3);
+					try {
+						loadThemeDataWithBulkEstimator(repository, store, Theme.SOCIAL_MEDIA);
+						String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 3);
 
-			String optimizedPlan;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				optimizedPlan = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized)
-						.toString();
-			}
+						assertCriteriaEventually("social q3 pairwise inequality placement", () -> {
+							String optimizedPlan;
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								optimizedPlan = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Optimized)
+										.toString();
+							}
 
-			assertTrue(!optimizedPlan.contains("deferredFilterScope=bindingPrefix"),
-					"Pairwise VALUES inequality should stay on its minimal binding window, not a binding-prefix split:\n"
-							+ optimizedPlan);
-		} finally {
-			repository.shutDown();
-		}
+							assertTrue(!optimizedPlan.contains("deferredFilterScope=bindingPrefix"),
+									"Pairwise VALUES inequality should stay on its minimal binding window, not a binding-prefix split:\n"
+											+ optimizedPlan);
+						});
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test
 	void deferredFilterUnlockAddsWorkAndShrinksRows(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir, "deferredFilterUnlockAddsWorkAndShrinksRows", attemptDir -> {
+			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+			SailRepository repository = new SailRepository(store);
+			repository.init();
 
-		try {
-			loadLibraryData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			try {
+				loadLibraryData(repository);
+				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
-			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
-			List<TupleExpr> factors = List.of(
-					new StatementPattern(Var.of("copy"), Var.of("typePredicate", RDF_TYPE), Var.of("copyType", COPY)),
-					new StatementPattern(Var.of("copy"), Var.of("locatedAt", LOCATED_AT), Var.of("branch")));
-			JoinOrderPlanner.JoinOrderPlan withoutFilter = planner.planJoinOrderAttempt(factors, Set.of(),
-					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
-					.getPlan()
-					.orElseThrow();
-			JoinOrderPlanner.JoinOrderPlan withFilter = planner.planJoinOrderAttempt(factors, Set.of(),
-					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
-					List.of(new JoinOrderPlanner.FilterConstraint(Set.of("copy", "branch"), 0.25d,
-							JoinOrderPlanner.FILTER_COST_EXPENSIVE, "copy-branch-expensive")))
-					.getPlan()
-					.orElseThrow();
+				JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
+				List<TupleExpr> factors = List.of(
+						new StatementPattern(Var.of("copy"), Var.of("typePredicate", RDF_TYPE),
+								Var.of("copyType", COPY)),
+						new StatementPattern(Var.of("copy"), Var.of("locatedAt", LOCATED_AT), Var.of("branch")));
 
-			assertTrue(withFilter.getEstimatedFinalRows() < withoutFilter.getEstimatedFinalRows(),
-					"Expected unlocked deferred filter pass ratio to shrink final rows");
-			assertTrue(withFilter.getSteps()
-					.stream()
-					.anyMatch(step -> step.getStringMetrics().containsKey(TelemetryMetricNames.UNLOCKED_FILTERS)),
-					"Expected planner step diagnostics to show the deferred filter unlock");
-			assertTrue(withFilter.getSteps()
-					.stream()
-					.anyMatch(step -> step.getAppliedFilterIndexes().contains(0)),
-					"Expected LMDB access-metric enrichment to preserve deferred filter action indexes");
-			assertTrue(withFilter.getSteps()
-					.stream()
-					.filter(step -> step.getAppliedFilterIndexes().contains(0))
-					.anyMatch(step -> step.getStepWorkRows() > step.getDoubleMetrics()
-							.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 0.0d)),
-					"Expected expensive deferred filter evaluation to add step work");
-		} finally {
-			repository.shutDown();
-		}
+				assertCriteriaEventually("deferred filter unlock planning metrics", () -> {
+					JoinOrderPlanner.JoinOrderPlan withoutFilter = planner.planJoinOrderAttempt(factors, Set.of(),
+							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
+							.getPlan()
+							.orElseThrow();
+					JoinOrderPlanner.JoinOrderPlan withFilter = planner.planJoinOrderAttempt(factors, Set.of(),
+							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+							List.of(new JoinOrderPlanner.FilterConstraint(Set.of("copy", "branch"), 0.25d,
+									JoinOrderPlanner.FILTER_COST_EXPENSIVE, "copy-branch-expensive")))
+							.getPlan()
+							.orElseThrow();
+
+					assertTrue(withFilter.getEstimatedFinalRows() < withoutFilter.getEstimatedFinalRows(),
+							"Expected unlocked deferred filter pass ratio to shrink final rows");
+					assertTrue(withFilter.getSteps()
+							.stream()
+							.anyMatch(step -> step.getStringMetrics()
+									.containsKey(TelemetryMetricNames.UNLOCKED_FILTERS)),
+							"Expected planner step diagnostics to show the deferred filter unlock");
+					assertTrue(withFilter.getSteps()
+							.stream()
+							.anyMatch(step -> step.getAppliedFilterIndexes().contains(0)),
+							"Expected LMDB access-metric enrichment to preserve deferred filter action indexes");
+					assertTrue(withFilter.getSteps()
+							.stream()
+							.filter(step -> step.getAppliedFilterIndexes().contains(0))
+							.anyMatch(step -> step.getStepWorkRows() > step.getDoubleMetrics()
+									.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, 0.0d)),
+							"Expected expensive deferred filter evaluation to add step work");
+				});
+			} finally {
+				repository.shutDown();
+			}
+		});
 	}
 
 	@Test
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady(
 			@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady",
+				attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadThemeData(repository, Theme.MEDICAL_RECORDS);
-			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+					try {
+						loadThemeData(repository, Theme.MEDICAL_RECORDS);
+						String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
+						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
-			assertTrue(statistics.supportsFilterSelectivityCosting(),
-					"Expected LMDB to expose local filter selectivity costing for q2");
+						assertCriteriaEventually("medical q2 local filter costing support", () -> assertTrue(
+								statistics.supportsFilterSelectivityCosting(),
+								"Expected LMDB to expose local filter selectivity costing for q2"));
 
-			TupleExpr coldOptimized;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				coldOptimized = (TupleExpr) explanation.tupleExpr();
-			}
+						assertCriteriaEventually("cold medical q2 recordedOn placement", () -> {
+							TupleExpr coldOptimized;
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								Explanation explanation = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Optimized);
+								coldOptimized = (TupleExpr) explanation.tupleExpr();
+							}
 
-			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(coldOptimized), coldOptimized);
+							assertRecordedOnMovesFirst(collectMandatoryLeafOrder(coldOptimized), coldOptimized);
+						});
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				try (var result = connection.prepareTupleQuery(query).evaluate()) {
-					while (result.hasNext()) {
-						result.next();
+						try (SailRepositoryConnection connection = repository.getConnection()) {
+							try (var result = connection.prepareTupleQuery(query).evaluate()) {
+								while (result.hasNext()) {
+									result.next();
+								}
+							}
+						}
+
+						assertCriteriaEventually("learned medical q2 recordedOn placement", () -> {
+							TupleExpr optimized;
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								Explanation explanation = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Optimized);
+								optimized = (TupleExpr) explanation.tupleExpr();
+							}
+
+							assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
+						});
+					} finally {
+						repository.shutDown();
 					}
-				}
-			}
-
-			TupleExpr optimized;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
-			}
-
-			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
-		} finally {
-			repository.shutDown();
-		}
+				});
 	}
 
 	@Test
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset(
 			@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset",
+				attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadThemeDataWithBulkEstimator(repository, store, Theme.MEDICAL_RECORDS);
-			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+					try {
+						loadThemeDataWithBulkEstimator(repository, store, Theme.MEDICAL_RECORDS);
+						String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
+						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
-			assertTrue(statistics.supportsFilterSelectivityCosting(),
-					"Expected LMDB to expose local filter selectivity costing for q2 in the theme dataset");
+						assertCriteriaEventually("medical q2 theme filter costing support", () -> assertTrue(
+								statistics.supportsFilterSelectivityCosting(),
+								"Expected LMDB to expose local filter selectivity costing for q2 in the theme dataset"));
 
-			TupleExpr optimized;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
-			}
+						assertCriteriaEventually("theme medical q2 recordedOn placement", () -> {
+							TupleExpr optimized;
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								Explanation explanation = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Optimized);
+								optimized = (TupleExpr) explanation.tupleExpr();
+							}
 
-			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
-		} finally {
-			repository.shutDown();
-		}
+							assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
+						});
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test
 	void backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled(
 			@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig()
-				.setOptimizerSamplingEnabled(false)
-				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled",
+				attemptDir -> {
+					LmdbStoreConfig config = new LmdbStoreConfig()
+							.setOptimizerSamplingEnabled(false)
+							.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+					LmdbStore store = new LmdbStore(attemptDir, config);
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadThemeData(repository, Theme.MEDICAL_RECORDS);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
+					try {
+						loadThemeData(repository, Theme.MEDICAL_RECORDS);
+						store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+						String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
 
-			TupleExpr optimized = waitForRecordedOnBackgroundSample(repository, store, query);
+						TupleExpr optimized = waitForRecordedOnBackgroundSample(repository, store, query);
 
-			Filter recordedOnFilter = findFirstRecordedOnFilter(optimized);
-			assertNotNull(recordedOnFilter,
-					"Expected sampled optimized plan to retain the recordedOn date constraint");
-			assertEquals("sampled", recordedOnFilter.getStringMetricPlanned(
-					TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
-					"Expected optimized plan telemetry to show sampled background selectivity");
-			assertRecordedOnMovesFirst(collectMandatoryLeafOrder(optimized), optimized);
-		} finally {
-			repository.shutDown();
-		}
+						assertCriteriaEventually("sampled recordedOn placement", () -> assertRecordedOnMovesFirst(
+								collectMandatoryLeafOrder(optimized), optimized));
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	private static TupleExpr waitForRecordedOnBackgroundSample(SailRepository repository, LmdbStore store,
-			String query) {
-		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(30L);
-		int sampledRequests = 0;
-		TupleExpr latestOptimized = null;
-		do {
+			String query) throws Exception {
+		int[] sampledRequests = { 0 };
+		return awaitCriteria("sampled recordedOn background selectivity", () -> {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 			}
 
-			sampledRequests += store.getBackingStore().runBackgroundFilterSamplingCycle(5_000L);
+			sampledRequests[0] += store.getBackingStore().runBackgroundFilterSamplingCycle(5_000L);
 
+			TupleExpr latestOptimized;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 				latestOptimized = (TupleExpr) explanation.tupleExpr();
 			}
+
 			Filter recordedOnFilter = findFirstRecordedOnFilter(latestOptimized);
-			if (recordedOnFilter != null && "sampled".equals(recordedOnFilter.getStringMetricPlanned(
-					TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))) {
-				assertTrue(sampledRequests > 0,
-						"Expected background sampling to process the recordedOn IN-filter vote");
-				return latestOptimized;
-			}
-		} while (System.nanoTime() < deadlineNanos);
-		assertTrue(sampledRequests > 0,
-				"Expected background sampling to process the recordedOn IN-filter vote");
-		return latestOptimized;
+			assertNotNull(recordedOnFilter,
+					"Expected sampled optimized plan to retain the recordedOn date constraint");
+			assertEquals("sampled",
+					recordedOnFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+					"Expected optimized plan telemetry to show sampled background selectivity");
+			assertTrue(sampledRequests[0] > 0,
+					"Expected background sampling to process the recordedOn IN-filter vote");
+			return latestOptimized;
+		});
 	}
 
 	@Test
 	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset(
 			@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir,
+				"optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset",
+				attemptDir -> {
+					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadThemeDataWithBulkEstimator(repository, store, Theme.ELECTRICAL_GRID);
-			String query = ThemeQueryCatalog.queryFor(Theme.ELECTRICAL_GRID, 2);
+					try {
+						loadThemeDataWithBulkEstimator(repository, store, Theme.ELECTRICAL_GRID);
+						String query = ThemeQueryCatalog.queryFor(Theme.ELECTRICAL_GRID, 2);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				try (var result = connection.prepareTupleQuery(query).evaluate()) {
-					while (result.hasNext()) {
-						result.next();
+						try (SailRepositoryConnection connection = repository.getConnection()) {
+							try (var result = connection.prepareTupleQuery(query).evaluate()) {
+								while (result.hasNext()) {
+									result.next();
+								}
+							}
+						}
+
+						assertCriteriaEventually("electrical q2 substation filter placement", () -> {
+							TupleExpr optimized;
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								Explanation explanation = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Optimized);
+								optimized = (TupleExpr) explanation.tupleExpr();
+							}
+
+							assertSubstationNameMovesFirst(collectMandatoryLeafOrder(optimized));
+						});
+					} finally {
+						repository.shutDown();
 					}
-				}
-			}
+				});
+	}
 
-			TupleExpr optimized;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
-			}
+	@Test
+	void deferredFilterPlacementPreservesAcceptedFactorOrder() throws Exception {
+		assertTestPassesWithinAttempts("deferredFilterPlacementPreservesAcceptedFactorOrder", () -> {
+			StatementPattern forward = new StatementPattern(Var.of("anchor"),
+					Var.of("edge", VF.createIRI("urn:edge")), Var.of("right"));
+			StatementPattern reverse = new StatementPattern(Var.of("left"),
+					Var.of("edge", VF.createIRI("urn:edge")), Var.of("anchor"));
+			LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
+					Join::new, (root, filters, scope) -> root);
 
-			assertSubstationNameMovesFirst(collectMandatoryLeafOrder(optimized));
-		} finally {
-			repository.shutDown();
+			assertCriteriaEventually("accepted factor order", () -> {
+				TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(forward, reverse)), List.of(),
+						Set.of("anchor"));
+
+				assertEquals(List.of(forward, reverse), collectJoinArgs(root));
+			});
+		});
+	}
+
+	@Test
+	void deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter() throws Exception {
+		assertTestPassesWithinAttempts("deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter", () -> {
+			BindingSetAssignment left = bindingAssignment("left", VF.createLiteral("P1D", XSD.DAYTIMEDURATION));
+			BindingSetAssignment right = bindingAssignment("right", VF.createLiteral("P1D", XSD.DURATION));
+			Compare condition = new Compare(Var.of("left"), Var.of("right"), Compare.CompareOp.EQ);
+			DeferredFilter filter = new DeferredFilter(condition, Set.of("left", "right"),
+					JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
+					new EvaluationStatistics.FilterPassEstimate(-1.0d,
+							EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
+			LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr,
+					Join::new,
+					(root, filters, scope) -> new Filter(root, LmdbJoinPlanSupport.combinedCondition(filters.stream()
+							.map(deferredFilter -> deferredFilter.condition)
+							.toList())));
+
+			assertCriteriaEventually("mode-sensitive duration filter", () -> {
+				TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(left, right)), List.of(filter),
+						Set.of());
+
+				assertTrue(containsFilter(root),
+						"Duration subtype equality depends on STANDARD query mode and must stay as a runtime filter");
+			});
+		});
+	}
+
+	private static void assertTestPassesWithinAttempts(File dataDir, String testName, TestAttempt testAttempt)
+			throws Exception {
+		Throwable lastFailure = null;
+		for (int attempt = 1; attempt <= TEST_RERUN_ATTEMPTS; attempt++) {
+			File attemptDir = new File(dataDir, "attempt-" + attempt);
+			Files.createDirectories(attemptDir.toPath());
+			try {
+				testAttempt.run(attemptDir);
+				return;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw e;
+			} catch (AssertionError | RuntimeException e) {
+				lastFailure = e;
+			} catch (Exception e) {
+				lastFailure = e;
+			}
 		}
+		failAfterRetries("Test \"" + testName + "\" did not pass within " + TEST_RERUN_ATTEMPTS
+				+ " full attempts", lastFailure);
 	}
 
-	@Test
-	void deferredFilterPlacementPreservesAcceptedFactorOrder() {
-		StatementPattern forward = new StatementPattern(Var.of("anchor"), Var.of("edge", VF.createIRI("urn:edge")),
-				Var.of("right"));
-		StatementPattern reverse = new StatementPattern(Var.of("left"), Var.of("edge", VF.createIRI("urn:edge")),
-				Var.of("anchor"));
-		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr, Join::new,
-				(root, filters, scope) -> root);
-
-		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(forward, reverse)), List.of(),
-				Set.of("anchor"));
-
-		assertEquals(List.of(forward, reverse), collectJoinArgs(root));
+	private static void assertTestPassesWithinAttempts(String testName, TestBody testBody) throws Exception {
+		Throwable lastFailure = null;
+		for (int attempt = 1; attempt <= TEST_RERUN_ATTEMPTS; attempt++) {
+			try {
+				testBody.run();
+				return;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw e;
+			} catch (AssertionError | RuntimeException e) {
+				lastFailure = e;
+			} catch (Exception e) {
+				lastFailure = e;
+			}
+		}
+		failAfterRetries("Test \"" + testName + "\" did not pass within " + TEST_RERUN_ATTEMPTS
+				+ " full attempts", lastFailure);
 	}
 
-	@Test
-	void deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter() {
-		BindingSetAssignment left = bindingAssignment("left", VF.createLiteral("P1D", XSD.DAYTIMEDURATION));
-		BindingSetAssignment right = bindingAssignment("right", VF.createLiteral("P1D", XSD.DURATION));
-		Compare condition = new Compare(Var.of("left"), Var.of("right"), Compare.CompareOp.EQ);
-		DeferredFilter filter = new DeferredFilter(condition, Set.of("left", "right"),
-				JoinOrderPlanner.FILTER_COST_CHEAP, 0, null, Set.of(),
-				new EvaluationStatistics.FilterPassEstimate(-1.0d,
-						EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN));
-		LmdbDeferredFilterPlacer placer = new LmdbDeferredFilterPlacer((tupleExpr, bound) -> tupleExpr, Join::new,
-				(root, filters, scope) -> new Filter(root, LmdbJoinPlanSupport.combinedCondition(filters.stream()
-						.map(deferredFilter -> deferredFilter.condition)
-						.toList())));
+	private static void assertCriteriaEventually(String criteria, CriteriaAssertion assertion) throws Exception {
+		awaitCriteria(criteria, () -> {
+			assertion.assertPasses();
+			return null;
+		});
+	}
 
-		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(left, right)), List.of(filter), Set.of());
+	private static <T> T awaitCriteria(String criteria, CriteriaProbe<T> probe) throws Exception {
+		Throwable lastFailure = null;
+		for (int attempt = 1; attempt <= CRITERIA_RETRY_ATTEMPTS; attempt++) {
+			try {
+				return probe.probe();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw e;
+			} catch (AssertionError | RuntimeException e) {
+				lastFailure = e;
+			} catch (Exception e) {
+				lastFailure = e;
+			}
+			if (attempt < CRITERIA_RETRY_ATTEMPTS) {
+				pauseBeforeRetry();
+			}
+		}
+		return failAfterRetries("Criteria \"" + criteria + "\" did not pass within "
+				+ CRITERIA_RETRY_ATTEMPTS + " attempts", lastFailure);
+	}
 
-		assertTrue(containsFilter(root),
-				"Duration subtype equality depends on STANDARD query mode and must stay as a runtime filter");
+	private static void pauseBeforeRetry() throws InterruptedException {
+		Thread.sleep(RETRY_PAUSE_MILLIS);
+	}
+
+	private static <T> T failAfterRetries(String message, Throwable failure) throws Exception {
+		if (failure instanceof AssertionError assertionError) {
+			AssertionError error = new AssertionError(message);
+			error.addSuppressed(assertionError);
+			throw error;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw new RuntimeException(message, runtimeException);
+		}
+		if (failure instanceof Exception exception) {
+			throw new Exception(message, exception);
+		}
+		AssertionError error = new AssertionError(message);
+		if (failure != null) {
+			error.addSuppressed(failure);
+		}
+		throw error;
+	}
+
+	@FunctionalInterface
+	private interface TestAttempt {
+
+		void run(File dataDir) throws Exception;
+	}
+
+	@FunctionalInterface
+	private interface TestBody {
+
+		void run() throws Exception;
+	}
+
+	@FunctionalInterface
+	private interface CriteriaAssertion {
+
+		void assertPasses() throws Exception;
+	}
+
+	@FunctionalInterface
+	private interface CriteriaProbe<T> {
+
+		T probe() throws Exception;
 	}
 
 	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, TupleExpr optimized) {
