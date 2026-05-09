@@ -39,7 +39,7 @@
          lmdb:valueHashCacheEnabled {%Value hash cache enabled|false|true%} ;
          lmdb:inlineLiterals {%Inline literals|true|false%} ;
          lmdb:sketchEstimatorEnabled {%Sketch estimator enabled|true|false%} ;
-         # @workbench.field len=16
+         # @workbench.field unset=true
          lmdb:sketchEstimatorSubjectBucketCount {%Sketch estimator subject bucket count|4096%} ;
          # @workbench.field len=16
          lmdb:sketchEstimatorPredicateBucketCount {%Sketch estimator predicate bucket count|64%} ;

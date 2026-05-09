@@ -199,8 +199,12 @@ public class CreateServlet extends TransformationServlet {
 		for (CreateTemplateConfig.Field field : template.getFields()) {
 			if (field.getControl() == CreateTemplateConfig.FieldControl.SELECT
 					|| field.getControl() == CreateTemplateConfig.FieldControl.RADIO) {
+				if (field.isUnsettable()) {
+					writeTemplateField(builder, template, field, CreateTemplateConfig.UNSET_VALUE, true);
+				}
 				for (String value : field.getValues()) {
-					writeTemplateField(builder, template, field, value, value.equals(field.getDefaultValue()));
+					writeTemplateField(builder, template, field, value,
+							!field.isUnsettable() && value.equals(field.getDefaultValue()));
 				}
 			} else {
 				writeTemplateField(builder, template, field, field.getDefaultValue(), true);
