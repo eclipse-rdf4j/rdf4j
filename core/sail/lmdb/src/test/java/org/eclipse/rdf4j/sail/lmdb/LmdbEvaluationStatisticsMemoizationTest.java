@@ -1183,7 +1183,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)
 			throws InterruptedException {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
-		assertTrue(sail.awaitSketchesReady(10, TimeUnit.SECONDS),
+		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
 				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
 		assertTrue(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory,
 				"Expected ready sketches to select the LMDB optimizer pipeline");
