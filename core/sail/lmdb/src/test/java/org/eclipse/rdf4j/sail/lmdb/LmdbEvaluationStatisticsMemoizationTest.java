@@ -717,7 +717,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	@Test
 	void samplesPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampled-filter").toFile();
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingMaxMillis(100L);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
 
