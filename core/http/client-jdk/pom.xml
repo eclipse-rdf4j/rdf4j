@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-http-client-jdk</artifactId>
 	<name>RDF4J: HTTP client JDK implementation</name>
-	<description>HTTP client implementation for RDF4J using java.net.http.HttpClient (JDK 11+).</description>
+	<description>HTTP client implementation for RDF4J using java.net.http.HttpClient.</description>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

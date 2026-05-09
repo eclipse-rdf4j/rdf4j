@@ -270,7 +270,7 @@ Plan
 
 ## Environment
 
-* **JDK:** 11 (minimum). The project builds and runs on Java 11+.
+* **JDK:** 25 (minimum). The project builds and runs on Java 25+.
 * **Maven default:** run **offline** using `-o` whenever possible.
 * **Maven local repo (required):** always pass `-Dmaven.repo.local=.m2_repo` on all Maven commands (install, verify, plugins, formatting). All examples in this document implicitly assume this flag, even if omitted.
 * **Network:** only to fetch missing deps/plugins; then rerun once without `-o`, and return offline.
