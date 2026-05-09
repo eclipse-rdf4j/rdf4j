@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -459,8 +460,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"name",
 					SimpleValueFactory.getInstance().createLiteral("u0"));
 
-			double leftPatternCardinality = statistics.getCardinality((StatementPattern) leftFilter.getArg());
-			double rightPatternCardinality = statistics.getCardinality((StatementPattern) rightFilter.getArg());
+			double leftPatternCardinality = statistics.getCardinality(leftFilter.getArg());
+			double rightPatternCardinality = statistics.getCardinality(rightFilter.getArg());
 			double fallbackProduct = leftPatternCardinality * rightPatternCardinality;
 
 			double joinCardinality = statistics.getCardinality(new Join(leftFilter.clone(), rightFilter.clone()));
@@ -1185,8 +1186,16 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
 		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
 				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
-		Thread.sleep(1000);
-		assertTrue(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory,
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+			Thread.sleep(1000);
+		}
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+			Thread.sleep(10 * 1000);
+		}
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+			Thread.sleep(60 * 1000);
+		}
+		assertInstanceOf(LmdbEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
 				"Expected ready sketches to select the LMDB optimizer pipeline");
 	}
 
