@@ -38,6 +38,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -439,6 +440,32 @@ public class LmdbSailStoreTest {
 				while (result.hasNext()) {
 					subjects.add(result.next().getValue("a").stringValue());
 				}
+			}
+
+			assertEquals(List.of("urn:s3", "urn:s1"), subjects);
+		}
+	}
+
+	@Test
+	public void testOrderedGetStatementsWithMultipleContextsDoesNotLeakOtherContexts() {
+		IRI s3 = F.createIRI("urn:s3");
+		IRI s1 = F.createIRI("urn:s1");
+		IRI s2 = F.createIRI("urn:s2");
+		IRI type = F.createIRI("urn:type");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(s3, RDF.TYPE, type, CTX_1);
+			conn.add(s1, RDF.TYPE, type, CTX_2);
+			conn.add(s2, RDF.TYPE, type, CTX_INV);
+		}
+
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection();
+				CloseableIteration<? extends Statement> statements = connection.getStatements(StatementOrder.S, null,
+						RDF.TYPE, type, false, CTX_1, CTX_2)) {
+			List<String> subjects = new ArrayList<>();
+			while (statements.hasNext()) {
+				subjects.add(statements.next().getSubject().stringValue());
 			}
 
 			assertEquals(List.of("urn:s3", "urn:s1"), subjects);

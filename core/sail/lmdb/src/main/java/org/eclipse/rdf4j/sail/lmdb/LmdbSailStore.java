@@ -32,6 +32,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -526,16 +527,45 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		long contextID = orderedContextId(contexts);
-		if (contexts.length == 1 && contexts[0] != null) {
-			contextID = valueStore.getId(contexts[0]);
-			if (contextID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+		if (contexts.length <= 1) {
+			long contextID = orderedContextId(contexts);
+			if (contexts.length == 1 && contexts[0] != null) {
+				contextID = valueStore.getId(contexts[0]);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
+					return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				}
+			}
+
+			return new LmdbStatementIterator(
+					tripleStore.getTriples(txn, statementOrder, subjID, predID, objID, contextID, explicit),
+					valueStore);
+		}
+
+		List<Long> contextIDList = new ArrayList<>(contexts.length);
+		for (Resource context : contexts) {
+			if (context == null) {
+				contextIDList.add(0L);
+			} else if (!context.isTriple()) {
+				long contextID = valueStore.getId(context);
+				if (contextID != LmdbValue.UNKNOWN_ID) {
+					contextIDList.add(contextID);
+				}
 			}
 		}
 
-		return new LmdbStatementIterator(
-				tripleStore.getTriples(txn, statementOrder, subjID, predID, objID, contextID, explicit), valueStore);
+		if (contextIDList.isEmpty()) {
+			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+		}
+
+		CloseableIteration<? extends Statement> iterator = CloseableIteration.EMPTY_STATEMENT_ITERATION;
+		Comparator<Statement> statementComparator = statementOrder.getComparator(comparator);
+		for (long contextID : contextIDList) {
+			CloseableIteration<? extends Statement> contextIterator = new LmdbStatementIterator(
+					tripleStore.getTriples(txn, statementOrder, subjID, predID, objID, contextID, explicit),
+					valueStore);
+			iterator = DualUnionIteration.getWildcardInstance(statementComparator, iterator, contextIterator);
+		}
+		return iterator;
 	}
 
 	private long orderedContextId(Resource... contexts) {

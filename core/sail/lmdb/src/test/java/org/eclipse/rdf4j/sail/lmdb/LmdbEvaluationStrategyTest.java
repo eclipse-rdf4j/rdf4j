@@ -253,9 +253,4 @@ class LmdbEvaluationStrategyTest {
 		}
 	}
 
-	@Override
-	protected boolean deleteDataDirAfterShutdown() {
-		return true;
-	}
-
 }
