@@ -128,6 +128,19 @@ public class LmdbOrderByOptimizerTest {
 	}
 
 	@Test
+	public void testRejectSwapAcrossExtensionBecauseBindScopeWouldChange() {
+		TupleExpr tupleExpr = parse(
+				"select ?a ?x ?type where { bind(?a as ?x) ?a a ?type. } order by STABLE_INDEX(?a)");
+
+		optimize(tupleExpr);
+
+		assertNotNull(findOrder(tupleExpr));
+		assertEquals(0, findStatementPatterns(tupleExpr).stream()
+				.filter(statementPattern -> statementPattern.getStatementOrder() != null)
+				.count());
+	}
+
+	@Test
 	public void testRejectMultipleOrderElements() {
 		TupleExpr tupleExpr = parse("select ?a ?type where { ?a a ?type. } order by STABLE_INDEX(?a) ?type");
 

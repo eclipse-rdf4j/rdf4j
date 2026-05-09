@@ -48,13 +48,26 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.testsuite.sail.EvaluationStrategyTest;
 import org.junit.jupiter.api.Test;
 
-class LmdbEvaluationStrategyTest {
+class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 
 	private static final String PARTITIONED_ITERATOR = "LmdbPartitionedDistinctIteration";
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
+
+	@Override
+	protected BaseSailConfig getBaseSailConfig() {
+		return new LmdbStoreConfig();
+	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 
 	@Test
 	void testDistinctUsesPartitionedIteratorForVisibleStableOrder() {

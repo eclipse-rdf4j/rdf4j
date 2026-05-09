@@ -105,6 +105,28 @@ class UnionSailDatasetTest {
 		assertEquals(comparator, tripleSource.getComparator());
 	}
 
+	@Test
+	void sailDatasetImplDelegatesStableOrderForNamespaceOnlyChanges() {
+		Comparator<Value> comparator = Comparator.comparing(Value::stringValue);
+		TestDataset baseDataset = new TestDataset(Set.of(StatementOrder.S), comparator);
+		Changeset changeset = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+		changeset.setNamespace("ex", "urn:example:");
+
+		SailDataset dataset = new SailDatasetImpl(baseDataset, changeset);
+
+		assertEquals(Set.of(StatementOrder.S), dataset.getSupportedOrders(null, null, null));
+		assertEquals(comparator, dataset.getComparator());
+	}
+
 	private static final class StableOrderSailDataset extends SailDatasetImpl {
 		private final TestDataset baseDataset;
 

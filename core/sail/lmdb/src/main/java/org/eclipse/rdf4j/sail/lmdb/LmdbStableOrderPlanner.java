@@ -148,7 +148,7 @@ final class LmdbStableOrderPlanner {
 
 	private boolean canUseJoinIterator(TupleExpr rightArg) {
 		return !(rightArg instanceof Service) && !TupleExprs.isVariableScopeChange(rightArg)
-				&& !TupleExprs.containsSubquery(rightArg);
+				&& !TupleExprs.containsSubquery(rightArg) && !TupleExprs.containsExtension(rightArg);
 	}
 
 	private String mapProjection(ProjectionElemList projectionElemList, String requestedName) {
