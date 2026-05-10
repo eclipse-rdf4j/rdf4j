@@ -177,11 +177,11 @@ public interface SailSink extends SailClosable {
 
 	default void observeAll(Set<Changeset.SimpleStatementPattern> observed) {
 		for (Changeset.SimpleStatementPattern p : observed) {
-			Resource subj = p.getSubject();
-			IRI pred = p.getPredicate();
-			Value obj = p.getObject();
-			Resource context = p.getContext();
-			if (p.isAllContexts()) {
+			Resource subj = p.subject();
+			IRI pred = p.predicate();
+			Value obj = p.object();
+			Resource context = p.context();
+			if (p.allContexts()) {
 				observe(subj, pred, obj);
 			} else {
 				observe(subj, pred, obj, context);

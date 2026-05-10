@@ -56,6 +56,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.Closeable;
 import java.io.File;
@@ -66,6 +67,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -75,19 +77,23 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
@@ -132,6 +138,7 @@ class TripleStore implements Closeable {
 	 * The directory that is used to store the index files.
 	 */
 	private final File dir;
+	private final File dataMdbFile;
 	/**
 	 * Properties of the store, such as version and triple indexes specification. These properties are stored in a file
 	 * in the store directory and are loaded when the store is initialized.
@@ -159,6 +166,8 @@ class TripleStore implements Closeable {
 	private long[] leadingFieldScratchValues = new long[0];
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
+	private final LmdbPageCardinalityEstimator pageEstimator;
+	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
 
@@ -169,6 +178,7 @@ class TripleStore implements Closeable {
 	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore)
 			throws IOException, SailException {
 		this.dir = dir;
+		this.dataMdbFile = new File(dir, "data.mdb");
 		this.properties = properties;
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
@@ -208,6 +218,7 @@ class TripleStore implements Closeable {
 		});
 
 		txnManager = new TxnManager(env, Mode.RESET);
+		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
@@ -279,6 +290,10 @@ class TripleStore implements Closeable {
 		return txnManager;
 	}
 
+	long getDataRevision() {
+		return dataRevision.get();
+	}
+
 	/**
 	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
 	 * of 4 characters: 's', 'p', 'o' and 'c'.
@@ -347,7 +362,7 @@ class TripleStore implements Closeable {
 		}
 
 		List<String> orderedSpecs = new ArrayList<>(indexSpecs);
-		String mainFieldSeq = orderedSpecs.get(0);
+		String mainFieldSeq = orderedSpecs.getFirst();
 		List<String> secondarySpecs = new ArrayList<>(orderedSpecs.subList(1, orderedSpecs.size()));
 		OrderScore bestSecondaryOrder = findBestSecondaryIndexOrder(mainFieldSeq, secondarySpecs);
 
@@ -477,18 +492,9 @@ class TripleStore implements Closeable {
 		throw new IllegalStateException("Unable to reconstruct secondary index order");
 	}
 
-	private static final class OrderScore {
+	private record OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
+
 		private static final OrderScore EMPTY = new OrderScore(List.of(), 0, 0);
-
-		private final List<String> indexOrder;
-		private final int reusedTransitions;
-		private final int mainOrderResets;
-
-		private OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
-			this.indexOrder = indexOrder;
-			this.reusedTransitions = reusedTransitions;
-			this.mainOrderResets = mainOrderResets;
-		}
 
 		@Override
 		public String toString() {
@@ -512,7 +518,7 @@ class TripleStore implements Closeable {
 		addedIndexSpecs.removeAll(currentIndexSpecs);
 
 		if (!addedIndexSpecs.isEmpty()) {
-			TripleIndex sourceIndex = indexes.get(0);
+			TripleIndex sourceIndex = indexes.getFirst();
 			for (boolean explicit : new boolean[] { true, false }) {
 				try (MemoryStack stack = stackPush()) {
 					MDBVal keyValue = MDBVal.calloc(stack);
@@ -596,7 +602,7 @@ class TripleStore implements Closeable {
 		}
 
 		if (!removedIndexExceptions.isEmpty()) {
-			throw new IOException(removedIndexExceptions.get(0));
+			throw new IOException(removedIndexExceptions.getFirst());
 		}
 
 		// Update the indexes variable, using the specified index order
@@ -613,6 +619,14 @@ class TripleStore implements Closeable {
 			endTransaction(false);
 
 			List<Throwable> caughtExceptions = new ArrayList<>();
+			if (pageEstimator != null) {
+				try {
+					pageEstimator.close();
+				} catch (Throwable e) {
+					logger.warn("Failed to close page estimator", e);
+					caughtExceptions.add(e);
+				}
+			}
 			for (TripleIndex index : indexes) {
 				try {
 					index.close();
@@ -626,7 +640,7 @@ class TripleStore implements Closeable {
 			env = 0;
 
 			if (!caughtExceptions.isEmpty()) {
-				throw new IOException(caughtExceptions.get(0));
+				throw new IOException(caughtExceptions.getFirst());
 			}
 		}
 	}
@@ -666,7 +680,7 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
-		TripleIndex mainIndex = indexes.get(0);
+		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
 			mdb_stat(txn, mainIndex.getDB(explicit), stat);
@@ -832,6 +846,61 @@ class TripleStore implements Closeable {
 		}
 
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
+
+		try {
+			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+		} catch (IOException | RuntimeException e) {
+			logger.warn("Page-walk cardinality estimator failed for index {}, falling back to sampling",
+					new String(index.getFieldSeq()), e);
+			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+		}
+	}
+
+	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)
+			throws IOException {
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		if (estimator == null) {
+			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+		}
+		int relevantParts = index.getPatternScore(subj, pred, obj, context);
+		final String explicitDbName = new String(index.getFieldSeq());
+		final String inferredDbName = explicitDbName + "-inf";
+
+		return txnManager.doWith((stack, txn) -> {
+			long txnId = mdb_txn_id(txn);
+			if (relevantParts == 0) {
+				long explicitEntries = estimator.totalEntries(txnId, explicitDbName);
+				long inferredEntries = estimator.totalEntries(txnId, inferredDbName);
+				return (double) (explicitEntries + inferredEntries);
+			}
+
+			ByteBuffer minKeyBuffer = ByteBuffer.allocate(MAX_KEY_LENGTH);
+			index.getMinKey(minKeyBuffer, subj, pred, obj, context);
+			minKeyBuffer.flip();
+			byte[] minKey = toArray(minKeyBuffer);
+
+			ByteBuffer maxKeyBuffer = ByteBuffer.allocate(MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuffer, subj, pred, obj, context);
+			maxKeyBuffer.flip();
+			byte[] maxKey = toArray(maxKeyBuffer);
+
+			GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
+					maxKey.length, matcher);
+			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,
+					maxKey.length, matcher);
+			return (double) (explicitCount + inferredCount);
+		});
+	}
+
+	private static byte[] toArray(ByteBuffer buffer) {
+		byte[] data = new byte[buffer.remaining()];
+		buffer.get(data);
+		return data;
+	}
+
+	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
+			throws IOException {
 
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
@@ -1027,6 +1096,68 @@ class TripleStore implements Closeable {
 		return bestIndex;
 	}
 
+	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
+		long subj = boundMask(boundComponentMask, Component.S);
+		long pred = boundMask(boundComponentMask, Component.P);
+		long obj = boundMask(boundComponentMask, Component.O);
+		long context = boundMask(boundComponentMask, Component.C);
+		List<IndexAccessPath> accessPaths = new ArrayList<>(indexes.size());
+		for (TripleIndex index : indexes) {
+			int prefixScore = index.getPatternScore(subj, pred, obj, context);
+			int prefixComponentMask = 0;
+			char[] fieldSequence = index.getFieldSeq();
+			for (int i = 0; i < prefixScore; i++) {
+				Component component = toEstimatorComponent(fieldSequence[i]);
+				prefixComponentMask |= 1 << component.ordinal();
+			}
+			accessPaths.add(new IndexAccessPath(new String(fieldSequence), prefixScore, prefixComponentMask));
+		}
+		return List.copyOf(accessPaths);
+	}
+
+	static final class IndexAccessPath {
+		private final String indexFieldSequence;
+		private final int prefixLength;
+		private final int prefixComponentMask;
+
+		private IndexAccessPath(String indexFieldSequence, int prefixLength, int prefixComponentMask) {
+			this.indexFieldSequence = indexFieldSequence;
+			this.prefixLength = prefixLength;
+			this.prefixComponentMask = prefixComponentMask;
+		}
+
+		String indexFieldSequence() {
+			return indexFieldSequence;
+		}
+
+		int prefixLength() {
+			return prefixLength;
+		}
+
+		int prefixComponentMask() {
+			return prefixComponentMask;
+		}
+	}
+
+	private long boundMask(int boundComponentMask, Component component) {
+		return (boundComponentMask & (1 << component.ordinal())) != 0 ? 1L : -1L;
+	}
+
+	private Component toEstimatorComponent(char field) {
+		switch (field) {
+		case 's':
+			return Component.S;
+		case 'p':
+			return Component.P;
+		case 'o':
+			return Component.O;
+		case 'c':
+			return Component.C;
+		default:
+			throw new IllegalArgumentException("invalid index field: " + field);
+		}
+	}
+
 	private boolean requiresResize() {
 		if (autoGrow) {
 			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);
@@ -1040,7 +1171,7 @@ class TripleStore implements Closeable {
 	int localCount = 0;
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		TripleIndex mainIndex = indexes.get(0);
+		TripleIndex mainIndex = indexes.getFirst();
 		boolean stAdded;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
@@ -1063,15 +1194,20 @@ class TripleStore implements Closeable {
 				long[] quad = new long[] { subj, pred, obj, context };
 				boolean mainExplicitExists = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == MDB_SUCCESS;
 				boolean mainInferredExists = mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
+				boolean statementAdded = !recordExistsInCacheOrMain(recordCache.getRecordState(quad, explicit),
+						explicit ? mainExplicitExists : mainInferredExists);
+				if (!statementAdded) {
+					return false;
+				}
 				if (explicit) {
 					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
-					if (inferredCacheState == TxnRecordCache.RecordState.ADD
-							|| inferredCacheState == TxnRecordCache.RecordState.ABSENT && mainInferredExists) {
+					if (recordExistsInCacheOrMain(inferredCacheState, mainInferredExists)) {
 						recordCache.removeRecord(quad, false, true);
 					}
 				}
 				// put record in cache and return immediately
-				return recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
+				recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
+				return true;
 			}
 
 			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
@@ -1111,18 +1247,30 @@ class TripleStore implements Closeable {
 		return stAdded;
 	}
 
+	private boolean recordExistsInCacheOrMain(TxnRecordCache.RecordState cacheState, boolean mainExists) {
+		return cacheState == TxnRecordCache.RecordState.ADD
+				|| cacheState == TxnRecordCache.RecordState.ABSENT && mainExists;
+	}
+
 	@Experimental
 	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit)
+			throws IOException {
+		storeTriplesAligned(subj, pred, obj, context, count, explicit, null);
+	}
+
+	@Experimental
+	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
+			IntConsumer addedIndexConsumer)
 			throws IOException {
 		if (count == 0) {
 			return;
 		}
 		if (count == 1 || count < subj.length || recordCache != null || requiresResize()) {
-			storeTriplesIndividually(subj, pred, obj, context, count, explicit);
+			storeTriplesIndividually(subj, pred, obj, context, count, explicit, addedIndexConsumer);
 			return;
 		}
 
-		TripleIndex mainIndex = indexes.get(0);
+		TripleIndex mainIndex = indexes.getFirst();
 		int addedCount = 0;
 		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -1156,6 +1304,9 @@ class TripleStore implements Closeable {
 				}
 
 				if (rc == MDB_SUCCESS) {
+					if (addedIndexConsumer != null) {
+						addedIndexConsumer.accept(i);
+					}
 					sortedIndices[addedCount++] = i;
 					if (explicit) {
 						promotedFromImplicit[i] = mdb_del(writeTxn, mainIndex.getDB(false), keyVal,
@@ -1180,7 +1331,8 @@ class TripleStore implements Closeable {
 					throw e;
 				}
 				fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-						promotedFromImplicit, remainingStart, count, explicit, appliedContextIncrements);
+						promotedFromImplicit, remainingStart, count, explicit, appliedContextIncrements,
+						addedIndexConsumer);
 				return;
 			}
 
@@ -1208,14 +1360,16 @@ class TripleStore implements Closeable {
 					}
 					if (shouldFallBackFromAlignedWrite()) {
 						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-								promotedFromImplicit, remainingStart, count, explicit, contextIncrements);
+								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+								addedIndexConsumer);
 						return;
 					}
 					if (REUSE_SECONDARY_WRITE_CURSOR) {
 						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements);
+									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+									addedIndexConsumer);
 							return;
 						}
 						E(rc);
@@ -1223,7 +1377,8 @@ class TripleStore implements Closeable {
 						int rc = mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements);
+									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+									addedIndexConsumer);
 							return;
 						}
 						E(rc);
@@ -1233,23 +1388,25 @@ class TripleStore implements Closeable {
 		}
 
 		if (remainingStart < count) {
-			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit);
+			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit, addedIndexConsumer);
 		}
 
 		logAddedStatements(addedCount);
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int count,
-			boolean explicit)
+			boolean explicit, IntConsumer addedIndexConsumer)
 			throws IOException {
-		storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit);
+		storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, addedIndexConsumer);
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,
-			int count, boolean explicit)
+			int count, boolean explicit, IntConsumer addedIndexConsumer)
 			throws IOException {
 		for (int i = startIndex; i < count; i++) {
-			storeTriple(subj[i], pred[i], obj[i], context[i], explicit);
+			if (storeTriple(subj[i], pred[i], obj[i], context[i], explicit) && addedIndexConsumer != null) {
+				addedIndexConsumer.accept(i);
+			}
 		}
 	}
 
@@ -1259,7 +1416,7 @@ class TripleStore implements Closeable {
 
 	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
 			long[] obj, long[] context, boolean[] promotedFromImplicit, int remainingStart, int count, boolean explicit,
-			LongIntHashMap contextIncrementsToUndo)
+			LongIntHashMap contextIncrementsToUndo, IntConsumer addedIndexConsumer)
 			throws IOException {
 		undoContextIncrements(contextIncrementsToUndo);
 		if (recordCache == null) {
@@ -1282,7 +1439,7 @@ class TripleStore implements Closeable {
 			}
 		}
 		if (remainingStart < count) {
-			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit);
+			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit, addedIndexConsumer);
 		}
 	}
 
@@ -1657,6 +1814,7 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
+						dataRevision.incrementAndGet();
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);

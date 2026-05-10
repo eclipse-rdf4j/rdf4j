@@ -33,6 +33,7 @@ import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -368,7 +370,7 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 				verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
@@ -401,8 +403,53 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean());
+						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void approveAllBulkFailureDiscardsNonIsolatedEstimatorUpdates() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			try (SailSink seedSink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				seedSink.approveAll(sampleStatements(5), Set.of());
+				seedSink.flush();
+			}
+			estimator.rebuild();
+			assertTrue("Expected estimator to be ready before the failed bulk add", estimator.isReady());
+
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			doAnswer(invocation -> {
+				IntConsumer addedIndexConsumer = invocation.getArgument(6);
+				addedIndexConsumer.accept(0);
+				throw new IOException("expected aligned bulk failure after estimator update");
+			}).when(tripleStoreSpy)
+					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				assertThrows(SailException.class, () -> sink.approveAll(sampleStatements(2), Set.of()));
+
+				assertFalse("Expected rollback to discard estimator state after an eager non-isolated update",
+						estimator.isReady());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
 			}

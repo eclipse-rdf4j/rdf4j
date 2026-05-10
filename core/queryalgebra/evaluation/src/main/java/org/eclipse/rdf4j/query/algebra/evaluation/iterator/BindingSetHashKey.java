@@ -56,11 +56,10 @@ public class BindingSetHashKey implements Serializable {
 		if (o == this) {
 			return true;
 		}
-		if (!(o instanceof BindingSetHashKey)) {
+		if (!(o instanceof BindingSetHashKey jk)) {
 			return false;
 		}
 
-		BindingSetHashKey jk = (BindingSetHashKey) o;
 		if (this.values.length != jk.values.length) {
 			return false;
 		}

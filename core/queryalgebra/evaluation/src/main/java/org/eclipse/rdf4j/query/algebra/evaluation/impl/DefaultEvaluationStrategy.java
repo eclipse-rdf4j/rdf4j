@@ -201,11 +201,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	// track the exeution time of each node in the plan
 	private boolean trackTime;
 
-	private UUID uuid;
-
 	private QueryOptimizerPipeline pipeline;
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
+	private final EvaluationStatistics evaluationStatistics;
 
 	private QueryEvaluationMode queryEvaluationMode;
 
@@ -284,8 +283,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
+		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
 		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
-				tripleSource, evaluationStatistics);
+				tripleSource, this.evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
 		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
@@ -540,13 +540,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		queryModelNode.setLongMetricActual(metricName, longMetric(queryModelNode, metricName) + delta);
 	}
 
-	private static void setLongMetricMax(QueryModelNode queryModelNode, String metricName, long value) {
-		if (value < 0) {
-			return;
-		}
-		queryModelNode.setLongMetricActual(metricName, Math.max(longMetric(queryModelNode, metricName), value));
-	}
-
 	private static void addDoubleMetric(QueryModelNode queryModelNode, String metricName, double delta) {
 		if (delta <= 0) {
 			return;
@@ -670,8 +663,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryModelNode child = node;
 		QueryModelNode parent = node.getParentNode();
 		while (parent != null) {
-			if (parent instanceof Difference) {
-				Difference diff = (Difference) parent;
+			if (parent instanceof Difference diff) {
 				if (diff.getRightArg() == child) {
 					return true;
 				}
@@ -693,7 +685,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
-		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context);
+		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context, evaluationStatistics);
 
 	}
 
@@ -1142,8 +1134,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private static boolean isNumeric(Value argValue) {
-		if (argValue instanceof Literal) {
-			Literal lit = (Literal) argValue;
+		if (argValue instanceof Literal lit) {
 			CoreDatatype.XSD datatype = lit.getCoreDatatype().asXSDDatatypeOrNull();
 			return datatype != null && datatype.isNumericDatatype();
 		} else {
@@ -1466,8 +1457,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		// In algebra, OPTIONAL is a LeftJoin. With a SingletonSet left-arg, LeftJoin
 		// always yields at least the input binding set. Therefore EXISTS evaluates to TRUE.
 		TupleExpr subQuery = node.getSubQuery();
-		if (subQuery instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) subQuery;
+		if (subQuery instanceof LeftJoin leftJoin) {
 			if (leftJoin.getLeftArg() instanceof SingletonSet) {
 				return bindings -> BooleanLiteral.TRUE;
 			}
@@ -1501,8 +1491,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	protected long getLimit(QueryModelNode node) {
 		long offset = 0;
-		if (node instanceof Slice) {
-			Slice slice = (Slice) node;
+		if (node instanceof Slice slice) {
 			if (slice.hasOffset() && slice.hasLimit()) {
 				return slice.getOffset() + slice.getLimit();
 			} else if (slice.hasLimit()) {
@@ -1631,8 +1620,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				if (telemetryEnabled && iterator instanceof IndexReportingIterator) {
-					IndexReportingIterator sourceMetrics = (IndexReportingIterator) iterator;
+				if (telemetryEnabled && iterator instanceof IndexReportingIterator sourceMetrics) {
 					queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
 					queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
 					queryModelNode
@@ -1764,8 +1752,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
 							Math.max(0L, System.nanoTime() - openedAtNanos));
 				}
-				if (iterator instanceof IndexReportingIterator) {
-					IndexReportingIterator sourceMetrics = (IndexReportingIterator) iterator;
+				if (iterator instanceof IndexReportingIterator sourceMetrics) {
 					long sourceRowsScanned = sourceMetrics.getSourceRowsScannedActual();
 					if (sourceRowsScanned >= 0) {
 						queryModelNode.setSourceRowsScannedActual(

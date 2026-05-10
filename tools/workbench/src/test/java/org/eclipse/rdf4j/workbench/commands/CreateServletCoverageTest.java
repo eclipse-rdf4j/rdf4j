@@ -155,6 +155,23 @@ class CreateServletCoverageTest {
 		assertThat(invokeTemplateValues(servlet, request, template)).containsExactly(Map.entry("Second", "value"));
 	}
 
+	@Test
+	void renderOmitsUnsettableLineForRepositoryDefaultAndKeepsExplicitBooleans() {
+		CreateTemplateConfig template = parseTemplate("synthetic", String.join("\n",
+				"# @workbench.template label=\"Synthetic\" order=1",
+				"@prefix ex: <urn:test:> .",
+				"[] ex:name \"{%Name|repo%}\" ;",
+				"   ex:enabled {%Enabled|true|false%} ;",
+				"# @workbench.field unset=true",
+				"   ex:after \"kept\" ."));
+
+		assertThat(template.render(Map.of("Enabled", "__workbench_unset__")))
+				.doesNotContain("ex:enabled")
+				.contains("ex:after \"kept\"");
+		assertThat(template.render(Map.of("Enabled", "true"))).contains("ex:enabled true");
+		assertThat(template.render(Map.of("Enabled", "false"))).contains("ex:enabled false");
+	}
+
 	private static Map<String, String> defaultTemplateValues(CreateTemplateConfig template) {
 		Map<String, String> values = new LinkedHashMap<>();
 		for (CreateTemplateConfig.Field field : template.getFields()) {

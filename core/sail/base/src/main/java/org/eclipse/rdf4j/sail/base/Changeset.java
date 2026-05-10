@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -122,6 +123,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private volatile boolean statementCleared;
 
 	private boolean closed;
+	private IsolationLevel sinkIsolationLevel = IsolationLevels.NONE;
 
 	public static boolean isOrderIndependent(Changeset changeset1, Changeset changeset2) {
 		Objects.requireNonNull(changeset1, "changeset1");
@@ -175,12 +177,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		if (prepend != null && observed != null) {
 			for (SimpleStatementPattern p : observed) {
-				Resource subj = p.getSubject();
-				IRI pred = p.getPredicate();
-				Value obj = p.getObject();
-				Resource context = p.getContext();
+				Resource subj = p.subject();
+				IRI pred = p.predicate();
+				Value obj = p.object();
+				Resource context = p.context();
 				Resource[] contexts;
-				if (p.isAllContexts()) {
+				if (p.allContexts()) {
 					contexts = new Resource[0];
 				} else {
 					contexts = new Resource[] { context };
@@ -539,6 +541,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		assert !from.closed;
 
+		this.sinkIsolationLevel = from.sinkIsolationLevel;
 		this.observed = from.observed;
 		this.approved = from.approved;
 		this.approvedEmpty = from.approvedEmpty;
@@ -550,6 +553,14 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		this.removedPrefixes = from.removedPrefixes;
 		this.namespaceCleared = from.namespaceCleared;
 		this.statementCleared = from.statementCleared;
+	}
+
+	IsolationLevel getSinkIsolationLevel() {
+		return sinkIsolationLevel;
+	}
+
+	void setSinkIsolationLevel(IsolationLevel sinkIsolationLevel) {
+		this.sinkIsolationLevel = Objects.requireNonNull(sinkIsolationLevel);
 	}
 
 	/**
@@ -604,11 +615,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 			return observed.stream()
 					.map(simpleStatementPattern -> new StatementPattern(
-							Var.of("s", simpleStatementPattern.getSubject()),
-							Var.of("p", simpleStatementPattern.getPredicate()),
-							Var.of("o", simpleStatementPattern.getObject()),
-							simpleStatementPattern.isAllContexts() ? null
-									: Var.of("c", simpleStatementPattern.getContext())
+							Var.of("s", simpleStatementPattern.subject()),
+							Var.of("p", simpleStatementPattern.predicate()),
+							Var.of("o", simpleStatementPattern.object()),
+							simpleStatementPattern.allContexts() ? null
+									: Var.of("c", simpleStatementPattern.context())
 					)
 					)
 					.collect(Collectors.toCollection(HashSet::new));
@@ -1042,57 +1053,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	}
 
-	public static class SimpleStatementPattern {
-		final private Resource subject;
-		final private IRI predicate;
-		final private Value object;
-		final private Resource context;
-
-		// true if the context is the union of all contexts
-		final private boolean allContexts;
-
-		public SimpleStatementPattern(Resource subject, IRI predicate, Value object, Resource context,
-				boolean allContexts) {
-			this.subject = subject;
-			this.predicate = predicate;
-			this.object = object;
-			this.context = context;
-			this.allContexts = allContexts;
-		}
-
-		public Resource getSubject() {
-			return subject;
-		}
-
-		public IRI getPredicate() {
-			return predicate;
-		}
-
-		public Value getObject() {
-			return object;
-		}
-
-		public Resource getContext() {
-			return context;
-		}
-
-		public boolean isAllContexts() {
-			return allContexts;
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (this == o) {
-				return true;
-			}
-			if (o == null || getClass() != o.getClass()) {
-				return false;
-			}
-			SimpleStatementPattern that = (SimpleStatementPattern) o;
-			return allContexts == that.allContexts && Objects.equals(subject, that.subject)
-					&& Objects.equals(predicate, that.predicate) && Objects.equals(object, that.object)
-					&& Objects.equals(context, that.context);
-		}
+	/**
+	 * @param allContexts true if the context is the union of all contexts
+	 */
+	public record SimpleStatementPattern(Resource subject, IRI predicate, Value object, Resource context,
+			boolean allContexts) {
 
 		@Override
 		public int hashCode() {

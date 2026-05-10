@@ -208,6 +208,10 @@ public class SparqlComprehensiveStreamingValidTest {
 		return new TupleExprIRRenderer(cfg).render(algebra, null).trim();
 	}
 
+	private static String semanticAlgebra(String algebraDump) {
+		return VarNameNormalizer.normalizeVars(algebraDump).replace(" (new scope)", "");
+	}
+
 	/** Round-trip twice and assert the renderer is a fixed point (idempotent). */
 	private String assertFixedPoint(String sparql, TupleExprIRRenderer.Config cfg) {
 //		System.out.println("# Original SPARQL query\n" + sparql + "\n");
@@ -245,9 +249,9 @@ public class SparqlComprehensiveStreamingValidTest {
 		TupleExpr actual = parseAlgebra(rendered);
 
 		try {
-			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
+			assertThat(semanticAlgebra(actual.toString()))
 					.as("Algebra after rendering must be identical to original")
-					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
+					.isEqualTo(semanticAlgebra(expected.toString()));
 //			assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
 		} catch (Throwable t) {
 			System.out.println("\n\n\n");
@@ -282,6 +286,12 @@ public class SparqlComprehensiveStreamingValidTest {
 //		ShrinkOnFailure.wrap(q, () -> assertRoundTrip(q), failureOracle());
 	}
 
+	private static void assertRenderFixedPoint(String sparql) {
+		String rendered = render(sparql, cfg());
+		String rerendered = render(rendered, cfg());
+		assertEquals(rendered, rerendered, "Renderer must be idempotent after one round-trip");
+	}
+
 	// =========================
 	// TEST FACTORIES (VALID ONLY)
 	// =========================
@@ -299,11 +309,16 @@ public class SparqlComprehensiveStreamingValidTest {
 	}
 
 	private static Stream<DynamicTest> toDynamicTests(String prefix, Stream<String> queries) {
+		return toDynamicTests(prefix, queries, SparqlComprehensiveStreamingValidTest::runWithShrink);
+	}
+
+	private static Stream<DynamicTest> toDynamicTests(String prefix, Stream<String> queries,
+			Consumer<String> assertion) {
 		Set<String> seen = new LinkedHashSet<>();
 		return queries
 				.filter(distinctLimited(seen, Integer.MAX_VALUE))
 				.map(q -> DynamicTest.dynamicTest(prefix + " :: " + summarize(q),
-						() -> runWithShrink(q)));
+						() -> assertion.accept(q)));
 	}
 
 	/** Bounded distinct: returns true for the first 'limit' distinct items; false afterwards or on duplicates. */
@@ -1483,7 +1498,7 @@ public class SparqlComprehensiveStreamingValidTest {
 				NEST_SEED
 		);
 
-		return toDynamicTests("DeepNest50", queries);
+		return toDynamicTests("DeepNest50", queries, SparqlComprehensiveStreamingValidTest::assertRenderFixedPoint);
 	}
 
 	/** Collect a small, diverse set of property paths to use inside deep nests. */

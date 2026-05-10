@@ -43,8 +43,7 @@ public class Concat implements Function {
 		boolean useLanguageTag = true;
 
 		for (Value arg : args) {
-			if (arg instanceof Literal) {
-				Literal lit = (Literal) arg;
+			if (arg instanceof Literal lit) {
 
 				if (!QueryEvaluationUtility.isStringLiteral(lit)) {
 					throw new ValueExprEvaluationException("unexpected datatype for CONCAT operand: " + lit);

@@ -68,34 +68,30 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			join.replaceWith(rightArg);
 		} else if (rightArg instanceof SingletonSet) {
 			join.replaceWith(leftArg);
-		} else if (leftArg instanceof Union) {
+		} else if (leftArg instanceof Union union) {
 			// sort unions above joins
-			Union union = (Union) leftArg;
 			Join leftJoin = new Join(union.getLeftArg(), rightArg.clone());
 			Join rightJoin = new Join(union.getRightArg(), rightArg.clone());
 			Union newUnion = new Union(leftJoin, rightJoin);
 			newUnion.setVariableScopeChange(union.isVariableScopeChange());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
-		} else if (rightArg instanceof Union) {
+		} else if (rightArg instanceof Union union) {
 			// sort unions above joins
-			Union union = (Union) rightArg;
 			Join leftJoin = new Join(leftArg.clone(), union.getLeftArg());
 			Join rightJoin = new Join(leftArg.clone(), union.getRightArg());
 			Union newUnion = new Union(leftJoin, rightJoin);
 			newUnion.setVariableScopeChange(union.isVariableScopeChange());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
-		} else if (leftArg instanceof LeftJoin && isWellDesigned((LeftJoin) leftArg)) {
+		} else if (leftArg instanceof LeftJoin leftJoin && isWellDesigned((LeftJoin) leftArg)) {
 			// sort left join above normal joins
-			LeftJoin leftJoin = (LeftJoin) leftArg;
 			join.replaceWith(leftJoin);
 			join.setLeftArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
 			leftJoin.visit(this);
-		} else if (rightArg instanceof LeftJoin && isWellDesigned((LeftJoin) rightArg)) {
+		} else if (rightArg instanceof LeftJoin leftJoin && isWellDesigned((LeftJoin) rightArg)) {
 			// sort left join above normal joins
-			LeftJoin leftJoin = (LeftJoin) rightArg;
 			join.replaceWith(leftJoin);
 			join.setRightArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
@@ -306,8 +302,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 		@Override
 		protected void meetNode(QueryModelNode node) {
-			if (node instanceof TupleExpr && node != nodeToIgnore) {
-				TupleExpr tupleExpr = (TupleExpr) node;
+			if (node instanceof TupleExpr tupleExpr && node != nodeToIgnore) {
 				bindingNames.addAll(tupleExpr.getBindingNames());
 			}
 		}

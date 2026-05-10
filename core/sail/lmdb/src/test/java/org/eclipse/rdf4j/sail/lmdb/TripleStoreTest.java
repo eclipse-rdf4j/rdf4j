@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
@@ -130,7 +131,7 @@ public class TripleStoreTest {
 			fallbackStore.commit();
 
 			fallbackStore.startTransaction();
-			TripleStore.TripleIndex mainIndex = getIndexes(fallbackStore).get(0);
+			TripleStore.TripleIndex mainIndex = getIndexes(fallbackStore).getFirst();
 			long writeTxn = getWriteTxn(fallbackStore);
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				MDBVal keyVal = MDBVal.malloc(stack);
@@ -146,10 +147,10 @@ public class TripleStoreTest {
 
 			Method fallBackFromAlignedWrite = TripleStore.class.getDeclaredMethod("fallBackFromAlignedWrite",
 					int[].class, int.class, long[].class, long[].class, long[].class, long[].class, boolean[].class,
-					int.class, int.class, boolean.class, LongIntHashMap.class);
+					int.class, int.class, boolean.class, LongIntHashMap.class, IntConsumer.class);
 			fallBackFromAlignedWrite.setAccessible(true);
 			fallBackFromAlignedWrite.invoke(fallbackStore, new int[] { 0 }, 1, subj, pred, obj, context,
-					new boolean[] { true }, 1, 1, true, new LongIntHashMap());
+					new boolean[] { true }, 1, 1, true, new LongIntHashMap(), null);
 			fallbackStore.commit();
 
 			try (Txn txn = fallbackStore.getTxnManager().createReadTxn()) {

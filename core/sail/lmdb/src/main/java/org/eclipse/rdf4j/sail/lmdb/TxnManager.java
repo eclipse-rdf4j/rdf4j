@@ -45,6 +45,9 @@ class TxnManager {
 	private static final long READERS_FULL_WAIT_MILLIS = 10L;
 
 	private final Mode mode;
+	/**
+	 * Live transactions keyed by reference. The value controls whether {@link #reset()} should renew the transaction.
+	 */
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
 	private final long[] pool;
 	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
@@ -150,6 +153,22 @@ class TxnManager {
 		return txnRef;
 	}
 
+	/**
+	 * Creates a new read-only transaction that is treated as untracked for reset semantics.
+	 *
+	 * <p>
+	 * Untracked read transactions skip {@link #reset()} so long-lived refresh readers are not invalidated on every
+	 * write commit, but they still participate in deactivate/activate to remain safe during map resize.
+	 * </p>
+	 */
+	Txn createReadTxnUntracked() throws IOException {
+		Txn txnRef = new Txn(createReadTxnInternal());
+		synchronized (active) {
+			active.put(txnRef, Boolean.FALSE);
+		}
+		return txnRef;
+	}
+
 	long createReadTxnInternal() throws IOException {
 		long txn = 0;
 		if (mode == Mode.RESET) {
@@ -212,7 +231,7 @@ class TxnManager {
 	}
 
 	void reset() throws IOException {
-		for (Txn txn : activeTransactions()) {
+		for (Txn txn : resettableActiveTransactions()) {
 			txn.reset();
 		}
 	}
@@ -223,12 +242,21 @@ class TxnManager {
 		}
 	}
 
-	private void updateActiveState(Txn txn, boolean isActive) {
+	private List<Txn> resettableActiveTransactions() {
+		synchronized (active) {
+			List<Txn> transactions = new ArrayList<>();
+			active.forEach((txn, resetOnWrite) -> {
+				if (Boolean.TRUE.equals(resetOnWrite)) {
+					transactions.add(txn);
+				}
+			});
+			return transactions;
+		}
+	}
+
+	private void notifyReaderInactive(Txn txn) {
 		synchronized (active) {
 			if (active.containsKey(txn)) {
-				active.put(txn, isActive);
-			}
-			if (!isActive) {
 				active.notifyAll();
 			}
 		}
@@ -314,7 +342,7 @@ class TxnManager {
 			if (txnActive) {
 				mdb_txn_reset(txn);
 				txnActive = false;
-				updateActiveState(this, false);
+				notifyReaderInactive(this);
 				activate();
 			}
 			version++;
@@ -343,7 +371,6 @@ class TxnManager {
 					renewReadTxn(txn, this);
 				}
 				txnActive = true;
-				updateActiveState(this, true);
 			}
 		}
 
@@ -352,7 +379,7 @@ class TxnManager {
 				mdb_txn_reset(txn);
 			}
 			txnActive = false;
-			updateActiveState(this, false);
+			notifyReaderInactive(this);
 		}
 
 		long version() {

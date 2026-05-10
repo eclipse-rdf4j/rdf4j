@@ -47,8 +47,7 @@ public class Substring implements Function {
 			lengthValue = args[2];
 		}
 
-		if (argValue instanceof Literal) {
-			Literal literal = (Literal) argValue;
+		if (argValue instanceof Literal literal) {
 
 			// substr function accepts string literals only.
 			if (QueryEvaluationUtility.isStringLiteral(literal)) {

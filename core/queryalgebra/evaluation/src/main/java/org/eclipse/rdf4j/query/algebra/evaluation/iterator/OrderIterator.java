@@ -133,7 +133,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					decrement(list.size() - sorted.size());
 					list = sorted;
 					if (sorted.size() >= limit) {
-						threshold = sorted.get(sorted.size() - 1);
+						threshold = sorted.getLast();
 					}
 				}
 				BindingSet next = iter.next();

@@ -55,7 +55,6 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
 
 	private static final int FULL_MASK_CACHE_MAX_VARIABLES = 12;
-	private static final int FULL_MASK_CACHE_MAX_VARIABLES_POW = 2 << FULL_MASK_CACHE_MAX_VARIABLES;
 
 	public static final Predicate<BindingSet> HAS_BINDING_FALSE = (bs) -> false;
 	public static final Function<BindingSet, Binding> GET_BINDING_NULL = (bs) -> null;

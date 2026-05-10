@@ -249,6 +249,27 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void plannedIndexMetricsDoNotOverwriteRuntimeIndexMetrics() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setRuntimeTelemetryEnabled(false);
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME, "posc");
+
+		String optimized = node.toString();
+
+		assertTrue(optimized.contains("plannedIndexName=posc"), optimized);
+
+		node.setRuntimeTelemetryEnabled(true);
+		node.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, "spoc");
+		String telemetry = node.toString();
+		String dot = node.toDot();
+
+		assertTrue(telemetry.contains("plannedIndexName=posc"), telemetry);
+		assertTrue(telemetry.contains("indexName=spoc"), telemetry);
+		assertTrue(dot.contains("<tr><td>Planned index</td><td>posc</td></tr>"), dot);
+		assertTrue(dot.contains("<tr><td>Index</td><td>spoc</td></tr>"), dot);
+	}
+
+	@Test
 	void regularJoinTypeIsHidden() {
 		GenericPlanNode join = new GenericPlanNode("Join");
 		join.setStringMetricActual("joinType", "regular join");
@@ -350,6 +371,30 @@ class GenericPlanNodeTest {
 		assertFalse(actual.contains("selectivityActual="), actual);
 		assertTrue(actual.contains("bindingState=bound"), actual);
 		assertTrue(actual.contains("indexName=spoc"), actual);
+	}
+
+	@Test
+	void toStringSuppressesRuntimeTelemetryButKeepsOptimizerAnnotations() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setRuntimeTelemetryEnabled(false);
+		node.setSourceRowsScannedActual(7L);
+		node.setLongMetricActual("optimizer.candidateCount", 3L);
+		node.setDoubleMetricActual("optimizer.score", 12.5);
+		node.setStringMetricActual("optimizer.strategy", "greedy");
+		node.setStringMetricActual("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8");
+
+		String actual = node.toString();
+
+		assertFalse(actual.contains("sourceRowsScannedActual="), actual);
+		assertTrue(actual.contains("optimizer.candidateCount=3"), actual);
+		assertTrue(actual.contains("optimizer.score="), actual);
+		assertTrue(actual.contains("optimizer.strategy=greedy"), actual);
+		assertTrue(actual.contains("optimizer.thresholds=DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8"), actual);
+
+		String json = new ExplanationImpl(node, false, null).toJson();
+		assertTrue(json.contains("\"optimizer.candidateCount\""), json);
+		assertTrue(json.contains("\"optimizer.score\""), json);
+		assertTrue(json.contains("\"optimizer.strategy\""), json);
 	}
 
 	@Test

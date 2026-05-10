@@ -506,8 +506,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new StringBuilderCollector(vf),
 					ge.getName());
-		} else if (operator instanceof AggregateFunctionCall) {
-			var aggOperator = (AggregateFunctionCall) operator;
+		} else if (operator instanceof AggregateFunctionCall aggOperator) {
 			int argumentCount = aggOperator.getArguments().size();
 			var nAryFactory = CustomAggregateNAryFunctionRegistry.getInstance().get(aggOperator.getIRI());
 			var unaryFactory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
@@ -868,8 +867,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 			Value v = evaluate(s);
 			if (distinctValue.test(v)) {
-				if (v instanceof Literal) {
-					Literal nextLiteral = (Literal) v;
+				if (v instanceof Literal nextLiteral) {
 					// check if the literal is numeric.
 					CoreDatatype.XSD datatype = nextLiteral.getCoreDatatype().asXSDDatatypeOrNull();
 

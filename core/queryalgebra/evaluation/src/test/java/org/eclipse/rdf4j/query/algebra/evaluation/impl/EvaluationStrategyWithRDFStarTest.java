@@ -323,7 +323,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	@ParameterizedTest(name = "RDF-star={0}")
 	@ValueSource(booleans = { false, true })
 	public void testExtVarBound(boolean bRDFStarData) {
-		Triple triple = triples.get(0);
+		Triple triple = triples.getFirst();
 		QueryBindingSet set = (QueryBindingSet) createWithVarValue(tripleRefNode.getExprVar(), triple);
 
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(createSource(bRDFStarData), null);

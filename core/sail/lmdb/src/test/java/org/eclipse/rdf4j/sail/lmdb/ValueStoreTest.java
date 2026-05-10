@@ -111,12 +111,12 @@ public class ValueStoreTest {
 
 	@Test
 	public void testGcValues() throws Exception {
-		Value values[] = new Value[] {
+		Value[] values = new Value[] {
 				RDF.TYPE, RDFS.CLASS,
 				Values.iri("some:iri"),
 				Values.literal("This is a literal.")
 		};
-		long ids[] = new long[values.length];
+		long[] ids = new long[values.length];
 		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
 			ids[i] = valueStore.storeValue(values[i]);
@@ -165,7 +165,7 @@ public class ValueStoreTest {
 	@Test
 	public void testGcValuesAfterRestart() throws Exception {
 		Random random = new Random(1337);
-		LmdbValue values[] = new LmdbValue[1000];
+		LmdbValue[] values = new LmdbValue[1000];
 		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
 			values[i] = valueStore.createLiteral("This is a random literal:" + random.nextLong());
@@ -201,7 +201,7 @@ public class ValueStoreTest {
 	@Test
 	public void testGcDatatypes() throws Exception {
 		IRI[] types = new IRI[] { XSD.STRING, XSD.INTEGER, XSD.LONG, XSD.DECIMAL };
-		LmdbValue values[] = new LmdbValue[types.length];
+		LmdbValue[] values = new LmdbValue[types.length];
 		valueStore.startTransaction(true);
 		for (int i = 0; i < values.length; i++) {
 			// use a value that is large enough to not being inlined
@@ -230,7 +230,7 @@ public class ValueStoreTest {
 		assertNull(valueStore.getValue(values[0].getInternalID()));
 		// the first datatype is not directly GCed and must not be
 		// removed from the store if the related literal is removed
-		assertNotNull(valueStore.getValue(datatypeIds.remove(0)));
+		assertNotNull(valueStore.getValue(datatypeIds.removeFirst()));
 
 		for (int i = 1; i < values.length; i++) {
 			Value v = valueStore.getValue(values[i].getInternalID());
@@ -286,7 +286,7 @@ public class ValueStoreTest {
 	@Test
 	public void testDisableGc() throws Exception {
 		final Random random = new Random(1337);
-		final LmdbValue values[] = new LmdbValue[1000];
+		final LmdbValue[] values = new LmdbValue[1000];
 
 		ValueStore disabledGcValueStore = new ValueStore(
 				new File(dataDir, "values"), new LmdbStoreConfig().setValueEvictionInterval(-1));
@@ -499,10 +499,6 @@ public class ValueStoreTest {
 		}
 	}
 
-	private long storeValueAndReopen(Value value) throws Exception {
-		return storeValueAndReopen(value, new LmdbStoreConfig());
-	}
-
 	private long storeValueAndReopen(Value value, LmdbStoreConfig config) throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(config);
@@ -513,10 +509,6 @@ public class ValueStoreTest {
 		valueStore.commit();
 		reopenValueStore(config);
 		return id;
-	}
-
-	private void reopenValueStore() throws Exception {
-		reopenValueStore(new LmdbStoreConfig());
 	}
 
 	private void reopenValueStore(LmdbStoreConfig config) throws Exception {

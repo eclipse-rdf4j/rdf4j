@@ -336,8 +336,7 @@
 		<profile>
 			<id>formatting</id>
 			<activation>
-				<!-- active on all Java 11 and higher builds by default -->
-				<jdk>[11,)</jdk>
+				<jdk>[25,)</jdk>
 			</activation>
 			<build>
 				<plugins>
@@ -1010,7 +1009,7 @@
 					<version>3.5.4</version>
 					<configuration>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -1021,7 +1020,7 @@
 						<forkCount>1</forkCount>
 						<reuseForks>true</reuseForks>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
