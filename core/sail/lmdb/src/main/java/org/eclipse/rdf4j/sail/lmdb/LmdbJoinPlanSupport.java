@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -305,6 +306,10 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition) {
+		return smallLiteralFilterAnchor(condition, LmdbJoinPlanSupport::isSafeValuesAnchorValue);
+	}
+
+	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition, Predicate<Value> valueFilter) {
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
 			if (arguments.isEmpty() || !(arguments.getFirst()instanceof Var filterVar)) {
@@ -323,7 +328,7 @@ final class LmdbJoinPlanSupport {
 					return null;
 				}
 				Value value = ((ValueConstant) argument).getValue();
-				if (!isSafeValuesAnchorValue(value)) {
+				if (!valueFilter.test(value)) {
 					return null;
 				}
 				values.add(value);
@@ -331,13 +336,13 @@ final class LmdbJoinPlanSupport {
 			return smallLiteralFilterAnchor(bindingName, values);
 		}
 		if (condition instanceof Or) {
-			return smallLiteralOrEqualityFilterAnchor((Or) condition);
+			return smallLiteralOrEqualityFilterAnchor((Or) condition, valueFilter);
 		}
 		if (condition instanceof Compare compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
-			return smallLiteralFilterAnchor(compare.getLeftArg(), compare.getRightArg());
+			return smallLiteralFilterAnchor(compare.getLeftArg(), compare.getRightArg(), valueFilter);
 		}
 		if (condition instanceof SameTerm sameTerm) {
-			return smallLiteralFilterAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
+			return smallLiteralFilterAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg(), valueFilter);
 		}
 		return null;
 	}
@@ -375,7 +380,7 @@ final class LmdbJoinPlanSupport {
 		if (pattern == null || bindingName == null) {
 			return true;
 		}
-		return !bindingName.equals(unboundName(pattern.getObjectVar())) || canDriveLiteralObjectFilterAnchor(pattern);
+		return !bindingName.equals(unboundName(pattern.getObjectVar()));
 	}
 
 	static boolean containsPathContextBinding(TupleExpr tupleExpr, String bindingName) {
@@ -400,15 +405,6 @@ final class LmdbJoinPlanSupport {
 			}
 		});
 		return contains[0];
-	}
-
-	static boolean canDriveLiteralObjectFilterAnchor(StatementPattern pattern) {
-		Var predicate = pattern.getPredicateVar();
-		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
-			return false;
-		}
-		String iri = predicate.getValue().stringValue();
-		return iri.endsWith("/name") || iri.endsWith("/measuredValue") || iri.endsWith("/title");
 	}
 
 	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
@@ -447,7 +443,7 @@ final class LmdbJoinPlanSupport {
 		return Collections.newSetFromMap(new IdentityHashMap<>());
 	}
 
-	private static StatementPattern patternLocalBaseForFilterCondition(Filter filter, ValueExpr condition) {
+	static StatementPattern patternLocalBaseForFilterCondition(Filter filter, ValueExpr condition) {
 		Set<StatementPattern> patterns = FilterSelectivityKeys.originPatternsForFilter(filter);
 		StatementPattern match = null;
 		for (StatementPattern pattern : patterns) {
@@ -493,8 +489,8 @@ final class LmdbJoinPlanSupport {
 		return JoinOrderPlanner.FILTER_COST_CHEAP;
 	}
 
-	private static BindingSetAssignment smallLiteralOrEqualityFilterAnchor(Or condition) {
-		OrEqualityAnchorCollector collector = new OrEqualityAnchorCollector();
+	private static BindingSetAssignment smallLiteralOrEqualityFilterAnchor(Or condition, Predicate<Value> valueFilter) {
+		OrEqualityAnchorCollector collector = new OrEqualityAnchorCollector(valueFilter);
 		if (!collectOrEqualityAnchorValues(condition, collector)) {
 			return null;
 		}
@@ -558,7 +554,7 @@ final class LmdbJoinPlanSupport {
 	private static boolean collectOrEqualityAnchorValue(Var filterVar, Value value,
 			OrEqualityAnchorCollector collector) {
 		String bindingName = filterVar.getName();
-		if (bindingName == null || filterVar.hasValue() || !isSafeValuesAnchorValue(value)) {
+		if (bindingName == null || filterVar.hasValue() || !collector.valueFilter.test(value)) {
 			return false;
 		}
 		if (collector.bindingName == null) {
@@ -581,23 +577,25 @@ final class LmdbJoinPlanSupport {
 		return var != null && bindingName.equals(var.getName());
 	}
 
-	private static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg) {
+	private static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg,
+			Predicate<Value> valueFilter) {
 		if (leftArg instanceof Var && rightArg instanceof ValueConstant) {
-			return smallLiteralFilterAnchor((Var) leftArg, (ValueConstant) rightArg);
+			return smallLiteralFilterAnchor((Var) leftArg, (ValueConstant) rightArg, valueFilter);
 		}
 		if (rightArg instanceof Var && leftArg instanceof ValueConstant) {
-			return smallLiteralFilterAnchor((Var) rightArg, (ValueConstant) leftArg);
+			return smallLiteralFilterAnchor((Var) rightArg, (ValueConstant) leftArg, valueFilter);
 		}
 		return null;
 	}
 
-	private static BindingSetAssignment smallLiteralFilterAnchor(Var filterVar, ValueConstant valueConstant) {
+	private static BindingSetAssignment smallLiteralFilterAnchor(Var filterVar, ValueConstant valueConstant,
+			Predicate<Value> valueFilter) {
 		String bindingName = filterVar.getName();
 		if (bindingName == null || filterVar.hasValue()) {
 			return null;
 		}
 		Value value = valueConstant.getValue();
-		if (!isSafeValuesAnchorValue(value)) {
+		if (!valueFilter.test(value)) {
 			return null;
 		}
 		LinkedHashSet<Value> values = new LinkedHashSet<>();
@@ -664,7 +662,12 @@ final class LmdbJoinPlanSupport {
 	}
 
 	private static final class OrEqualityAnchorCollector {
+		private final Predicate<Value> valueFilter;
 		private String bindingName;
 		private final LinkedHashSet<Value> values = new LinkedHashSet<>();
+
+		private OrEqualityAnchorCollector(Predicate<Value> valueFilter) {
+			this.valueFilter = valueFilter;
+		}
 	}
 }

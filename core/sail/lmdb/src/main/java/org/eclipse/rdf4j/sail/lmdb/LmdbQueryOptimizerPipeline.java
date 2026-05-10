@@ -72,6 +72,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
+				new LmdbGuaranteeFilterOptimizer(evaluationStatistics),
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
 				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
 				SAME_TERM_FILTER_OPTIMIZER,

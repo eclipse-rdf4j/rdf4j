@@ -20,6 +20,7 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
@@ -41,6 +42,7 @@ public interface JoinFactorCostModel {
 		private final double distinctLookupBindings;
 		private final boolean nestedIteratorInvocation;
 		private final boolean collectMetrics;
+		private final Map<String, Set<Value>> finiteBindingValues;
 
 		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
 				boolean nestedIteratorInvocation) {
@@ -58,6 +60,7 @@ public interface JoinFactorCostModel {
 			this.distinctLookupBindings = distinctLookupBindings;
 			this.nestedIteratorInvocation = nestedIteratorInvocation;
 			this.collectMetrics = collectMetrics;
+			this.finiteBindingValues = Map.of();
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -75,6 +78,20 @@ public interface JoinFactorCostModel {
 			this.distinctLookupBindings = distinctLookupBindings;
 			this.nestedIteratorInvocation = nestedIteratorInvocation;
 			this.collectMetrics = collectMetrics;
+			this.finiteBindingValues = Map.of();
+		}
+
+		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues) {
+			this.currentlyBoundVars = currentlyBoundVarMask == 0L ? Set.of() : null;
+			this.variableNames = variableNames;
+			this.currentlyBoundVarMask = currentlyBoundVarMask;
+			this.outerPrefixRows = outerPrefixRows;
+			this.distinctLookupBindings = distinctLookupBindings;
+			this.nestedIteratorInvocation = nestedIteratorInvocation;
+			this.collectMetrics = collectMetrics;
+			this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
 		}
 
 		public static CostContext of(Set<String> currentlyBoundVars, double outerPrefixRows,
@@ -93,6 +110,13 @@ public interface JoinFactorCostModel {
 				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics) {
 			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
 					nestedIteratorInvocation, collectMetrics);
+		}
+
+		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues) {
+			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues);
 		}
 
 		public Set<String> getCurrentlyBoundVars() {
@@ -128,6 +152,25 @@ public interface JoinFactorCostModel {
 
 		public boolean shouldCollectMetrics() {
 			return collectMetrics;
+		}
+
+		public Map<String, Set<Value>> getFiniteBindingValues() {
+			return finiteBindingValues;
+		}
+
+		private static Map<String, Set<Value>> immutableFiniteBindingValues(
+				Map<String, Set<Value>> finiteBindingValues) {
+			if (finiteBindingValues == null || finiteBindingValues.isEmpty()) {
+				return Map.of();
+			}
+			Map<String, Set<Value>> copy = new HashMap<>();
+			for (Map.Entry<String, Set<Value>> entry : finiteBindingValues.entrySet()) {
+				if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isEmpty()) {
+					continue;
+				}
+				copy.put(entry.getKey(), Set.copyOf(entry.getValue()));
+			}
+			return copy.isEmpty() ? Map.of() : Collections.unmodifiableMap(copy);
 		}
 
 		private static final class VariableMaskSet extends AbstractSet<String> {

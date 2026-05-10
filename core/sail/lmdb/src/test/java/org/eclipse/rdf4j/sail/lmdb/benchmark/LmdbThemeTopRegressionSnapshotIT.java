@@ -428,6 +428,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 3) {
 			return engineeringQ3FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
+		if (targetQuery.theme == Theme.MEDICAL_RECORDS && targetQuery.queryIndex == 7) {
+			return medicalRecordsQ7FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
 		return false;
 	}
 
@@ -606,6 +609,13 @@ class LmdbThemeTopRegressionSnapshotIT {
 			List<String> mismatches = engineeringQ9FastShapeMismatches(renderedQuery, plan);
 			assertTrue(mismatches.isEmpty(),
 					targetQuery.key() + " should keep the canonical fast measurement-requirement shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.MEDICAL_RECORDS && targetQuery.queryIndex == 7) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = medicalRecordsQ7FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast medication-code shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		}
 	}
@@ -815,14 +825,37 @@ class LmdbThemeTopRegressionSnapshotIT {
 
 	private static List<String> highlyConnectedQ5FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
-		requireContains(mismatches, renderedQuery, "VALUES ?threshold { 4 }",
-				"singleton threshold binding should remain explicit");
-		requireBefore(mismatches, renderedQuery, "VALUES ?threshold { 4 }",
-				"?node a <http://example.com/theme/connected/Node> .",
-				"threshold should bind before the Node type guard");
-		requireBefore(mismatches, renderedQuery, "?node a <http://example.com/theme/connected/Node> .",
-				"?node <http://example.com/theme/connected/weight> ?w .",
-				"Node type guard should run before the outer weight fanout");
+		boolean finiteThresholdWeightAnchor = renderedQuery.contains("VALUES (?threshold ?w)");
+		if (finiteThresholdWeightAnchor) {
+			requireBefore(mismatches, renderedQuery, "VALUES (?threshold ?w)",
+					"?node <http://example.com/theme/connected/weight> ?w .",
+					"finite threshold/weight anchor should guard the outer weight lookup");
+			requireContains(mismatches, renderedQuery,
+					"FILTER (?w IN (4, 5, 6))",
+					"outer weight filter should remain present after the finite weight anchor");
+			requireContains(mismatches, renderedQuery,
+					"?node a <http://example.com/theme/connected/Node> .",
+					"Node type guard should remain present after finite weight anchoring");
+			requireContains(mismatches, renderedQuery, "FILTER NOT EXISTS",
+					"correlated anti-exists weight guard should remain present");
+			requireContains(mismatches, plan,
+					"BindingSetAssignment ([[w=\"4\"^^<http://www.w3.org/2001/XMLSchema#int>]",
+					"finite weight binding assignment should be planned");
+			requirePredicateHeaderContains(mismatches, plan,
+					"http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+					"plannedLookupComponents=[S, P, O]",
+					"Node type guard should use exact direct access after weight anchoring");
+			return mismatches;
+		} else {
+			requireContains(mismatches, renderedQuery, "VALUES ?threshold { 4 }",
+					"singleton threshold binding should remain explicit");
+			requireBefore(mismatches, renderedQuery, "VALUES ?threshold { 4 }",
+					"?node a <http://example.com/theme/connected/Node> .",
+					"threshold should bind before the Node type guard");
+			requireBefore(mismatches, renderedQuery, "?node a <http://example.com/theme/connected/Node> .",
+					"?node <http://example.com/theme/connected/weight> ?w .",
+					"Node type guard should run before the outer weight fanout");
+		}
 		requireContains(mismatches, renderedQuery, "FILTER NOT EXISTS",
 				"correlated anti-exists weight guard should remain present");
 		requireContains(mismatches, plan, "source=sketch_nested_not_exists",
@@ -1212,6 +1245,33 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/verifiedBy", "verifiedBy");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/name", "component name");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
+	private static List<String> medicalRecordsQ7FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+				"missing finite medication-code anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?code",
+				"?med <http://example.com/theme/medical/code> ?code .",
+				"finite medication-code values should guard the code lookup");
+		requireBefore(mismatches, renderedQuery, "?med <http://example.com/theme/medical/code> ?code .",
+				"?med a <http://example.com/theme/medical/Medication> .",
+				"code lookup should bind medication before the Medication type guard");
+		requireBefore(mismatches, renderedQuery, "?med a <http://example.com/theme/medical/Medication> .",
+				"FILTER NOT EXISTS", "Medication type guard should run before dosage anti-probe");
+		requireBefore(mismatches, renderedQuery, "FILTER NOT EXISTS", "FILTER EXISTS",
+				"dosage anti-probe should remain before patient-medication existence probe");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/code",
+				"plannedLookupComponents=[O]", "code lookup should use finite medication-code object access");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[S, P, O]", "Medication type should use bound medication exact access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/dosage",
+				"plannedLookupComponents=[S, P]", "dosage anti-probe should use bound medication subject access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/hasMedication",
+				"plannedLookupComponents=[P, O]",
+				"patient-medication existence probe should use bound medication object access");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 3);
 		return mismatches;
 	}
 

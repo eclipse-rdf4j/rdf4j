@@ -190,9 +190,12 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(c);
 			}
 			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
-			if (added && explicit && estimatorCallback != null) {
-				Statement st = valueStore.createStatement(subj, pred, obj, context);
-				estimatorCallback.accept(st);
+			if (added) {
+				tripleStore.recordPredicateObjectGuarantee(p, obj);
+				if (explicit && estimatorCallback != null) {
+					Statement st = valueStore.createStatement(subj, pred, obj, context);
+					estimatorCallback.accept(st);
+				}
 			}
 		}
 	}
@@ -251,14 +254,23 @@ class LmdbSailStore implements SailStore {
 				for (int i = 0; i < size; i++) {
 					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
 							explicit);
-					if (added && explicit && estimatorCallback != null) {
-						estimatorCallback.accept(statements[i]);
+					if (added) {
+						tripleStore.recordPredicateObjectGuarantee(predicates[i], statements[i].getObject());
+						if (explicit && estimatorCallback != null) {
+							estimatorCallback.accept(statements[i]);
+						}
 					}
 				}
 				return;
 			}
 			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
 					statementIndex -> {
+						try {
+							tripleStore.recordPredicateObjectGuarantee(predicates[statementIndex],
+									statements[statementIndex].getObject());
+						} catch (IOException e) {
+							throw new UncheckedIOException(e);
+						}
 						if (explicit && estimatorCallback != null) {
 							estimatorCallback.accept(statements[statementIndex]);
 						}
@@ -1423,6 +1435,11 @@ class LmdbSailStore implements SailStore {
 				for (long contextId : contexts) {
 					tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 						removeCount[0]++;
+						try {
+							tripleStore.recordPredicateObjectRemoval(quad[1], valueStore.getValue(quad[2]));
+						} catch (IOException e) {
+							throw new UncheckedIOException(e);
+						}
 						if (explicit) {
 							try {
 								queueEstimatorRemove(quadToStatement(quad));

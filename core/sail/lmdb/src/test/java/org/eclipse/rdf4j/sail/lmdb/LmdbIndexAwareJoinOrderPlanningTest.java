@@ -68,10 +68,13 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static final IRI GRID_ALIAS = VF.createIRI("http://example.com/theme/grid/alias");
 	private static final IRI SOCIAL_FOLLOWS = VF.createIRI("http://example.com/theme/social/follows");
 	private static final IRI SOCIAL_NAME = VF.createIRI("http://example.com/theme/social/name");
+	private static final IRI MED_CODE = VF.createIRI("http://example.com/theme/medical/code");
+	private static final IRI MED_MEDICATION = VF.createIRI("http://example.com/theme/medical/Medication");
 	private static final int SUBSTATION_COUNT = 300;
 	private static final int GENERATOR_COUNT = 120;
 	private static final int TRANSFORMER_COUNT = 5_000;
 	private static final int NOISE_COUNT = 600;
+	private static final int MEDICATIONS_PER_QUERY_CODE = 300;
 
 	@Test
 	void plannerPrefersFeedsBeforeFilteredNameWithoutPosc(@TempDir File dataDir) throws Exception {
@@ -397,6 +400,49 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	@Test
+	void valuesBoundObjectLookupUsesPredicateObjectPageEstimate(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			BindingSetAssignment codes = medicalCodeBindings();
+			StatementPattern codePattern = new StatementPattern(Var.of("med"), Var.of("codePredicate", MED_CODE),
+					Var.of("code"));
+			JoinOrderPlanner planner = (JoinOrderPlanner) store.getBackingStore().getEvaluationStatistics();
+			JoinOrderPlanner.JoinOrderPlan plan = planner
+					.estimateJoinOrder(List.of(codes, codePattern), Set.of(),
+							JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of())
+					.orElseThrow();
+
+			JoinOrderPlanner.PlanStep codeStep = plan.getSteps().get(1);
+			assertEquals("[P, O]",
+					codeStep.getStringMetrics().get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"VALUES-bound object lookups with a constant predicate should be costed as P,O lookups: "
+							+ codeStep.getStringMetrics() + codeStep.getDoubleMetrics());
+			assertEquals("directLookup",
+					codeStep.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+					"VALUES-bound object lookups with a constant predicate should use the direct posc prefix: "
+							+ codeStep.getStringMetrics() + codeStep.getDoubleMetrics());
+			assertTrue(
+					codeStep.getDoubleMetrics()
+							.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, 0.0d) >= MEDICATIONS_PER_QUERY_CODE
+									* 2.0d,
+					"Access rows should be the summed page-walk estimate for both VALUES bindings: "
+							+ codeStep.getStringMetrics() + codeStep.getDoubleMetrics());
+			assertTrue(codeStep.getStepWorkRows() >= MEDICATIONS_PER_QUERY_CODE * 2.0d,
+					"Step work should include the page-walked rows for both VALUES bindings: "
+							+ codeStep.getStringMetrics() + codeStep.getDoubleMetrics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static PlannedBranch planGeneratorBranch(File dataDir, String indexes) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig(indexes);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -483,6 +529,23 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			for (int i = 0; i < NOISE_COUNT; i++) {
 				Resource aliasHolder = VF.createIRI("urn:test:alias-holder:" + i);
 				connection.add(aliasHolder, GRID_ALIAS, VF.createLiteral("Substation " + (1 + (i % 3))));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticMedicalCodeData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < MEDICATIONS_PER_QUERY_CODE; i++) {
+				Resource medication = VF.createIRI("urn:test:medication:1000:" + i);
+				connection.add(medication, RDF_TYPE, MED_MEDICATION);
+				connection.add(medication, MED_CODE, VF.createLiteral("MED-1000"));
+			}
+			for (int i = 0; i < MEDICATIONS_PER_QUERY_CODE; i++) {
+				Resource medication = VF.createIRI("urn:test:medication:1001:" + i);
+				connection.add(medication, RDF_TYPE, MED_MEDICATION);
+				connection.add(medication, MED_CODE, VF.createLiteral("MED-1001"));
 			}
 			connection.commit();
 		}
@@ -623,6 +686,16 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			bindingSets.add(bindingSet);
 		}
 		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static BindingSetAssignment medicalCodeBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding("code", VF.createLiteral("MED-1000"));
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding("code", VF.createLiteral("MED-1001"));
+		assignment.setBindingSets(List.<BindingSet>of(first, second));
 		return assignment;
 	}
 

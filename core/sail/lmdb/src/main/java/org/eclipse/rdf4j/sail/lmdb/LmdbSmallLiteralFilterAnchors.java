@@ -115,9 +115,6 @@ final class LmdbSmallLiteralFilterAnchors {
 		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
 			return false;
 		}
-		if (LmdbJoinPlanSupport.canDriveLiteralObjectFilterAnchor(pattern)) {
-			return false;
-		}
 
 		String subjectName = unboundName(pattern.getSubjectVar());
 		if (subjectName == null || outerBoundVars.contains(subjectName)
@@ -140,9 +137,6 @@ final class LmdbSmallLiteralFilterAnchors {
 			Set<String> outerBoundVars) {
 		StatementPattern pattern = filter.patternLocalBase;
 		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
-			return false;
-		}
-		if (LmdbJoinPlanSupport.canDriveLiteralObjectFilterAnchor(pattern)) {
 			return false;
 		}
 

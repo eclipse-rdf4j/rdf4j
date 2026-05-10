@@ -75,6 +75,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicLong;
@@ -86,6 +87,7 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -129,6 +131,11 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_INDEXES = "spoc,posc";
+	private static final String PREDICATE_OBJECT_GUARANTEES_DB = "predicate-object-guarantees";
+	private static final String PREDICATE_OBJECT_GUARANTEE_DEGRADATIONS_DB = "predicate-object-guarantee-degradations";
+	private static final String PREDICATE_OBJECT_GUARANTEES_VERSION = "4";
+	private static final int PREDICATE_OBJECT_GUARANTEE_DEGRADATION_BYTES = Long.BYTES * 2;
+	private static final long PREDICATE_OBJECT_GUARANTEE_REBUILD_REQUESTED = 1L;
 	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
@@ -152,6 +159,8 @@ class TripleStore implements Closeable {
 
 	private long env;
 	private final int contextsDbi;
+	private final int predicateObjectGuaranteesDbi;
+	private final int predicateObjectGuaranteeDegradationsDbi;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -170,6 +179,7 @@ class TripleStore implements Closeable {
 	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
+	private final Map<Long, PendingPredicateObjectGuarantee> pendingPredicateObjectGuarantees = new HashMap<>();
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this(dir, new StoreProperties(dir), config, valueStore);
@@ -194,8 +204,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 49));
+		// 1 for contexts, 2 for predicate guarantees, 48 for all possible triple indexes (24 explicit + 24 inferred)
+		E(mdb_env_set_maxdbs(env, 51));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -216,6 +226,10 @@ class TripleStore implements Closeable {
 			}
 			return ip.get(0);
 		});
+		predicateObjectGuaranteesDbi = transaction(env,
+				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_GUARANTEES_DB, MDB_CREATE));
+		predicateObjectGuaranteeDegradationsDbi = transaction(env,
+				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_GUARANTEE_DEGRADATIONS_DB, MDB_CREATE));
 
 		txnManager = new TxnManager(env, Mode.RESET);
 		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
@@ -261,6 +275,7 @@ class TripleStore implements Closeable {
 				// Store up-to-date properties
 				properties.setTripleIndexes(indexSpecStr);
 			}
+			initializePredicateObjectGuarantees();
 		} catch (IOException | SailException e) {
 			endTransaction(false);
 			throw e;
@@ -292,6 +307,367 @@ class TripleStore implements Closeable {
 
 	long getDataRevision() {
 		return dataRevision.get();
+	}
+
+	private void initializePredicateObjectGuarantees() throws IOException {
+		if (valueStore == null) {
+			return;
+		}
+		if (PREDICATE_OBJECT_GUARANTEES_VERSION.equals(properties.getPredicateObjectGuaranteesVersion())) {
+			rebuildMarkedPredicateObjectGuarantees();
+			return;
+		}
+		rebuildPredicateObjectGuarantees();
+		properties.setPredicateObjectGuaranteesVersion(PREDICATE_OBJECT_GUARANTEES_VERSION);
+	}
+
+	private void rebuildPredicateObjectGuarantees() throws IOException {
+		boolean committed = false;
+		startTransaction();
+		try {
+			E(mdb_drop(writeTxn, predicateObjectGuaranteesDbi, false));
+			E(mdb_drop(writeTxn, predicateObjectGuaranteeDegradationsDbi, false));
+			if (valueStore != null) {
+				Map<Long, PendingPredicateObjectGuarantee> guarantees = new HashMap<>();
+				for (boolean explicit : new boolean[] { true, false }) {
+					try (RecordIterator triples = getTriplesSortedByPredicateObject(txnManager.createTxn(writeTxn),
+							explicit)) {
+						long previousPredicate = -1;
+						long previousObject = -1;
+						long[] quad;
+						while ((quad = triples.next()) != null) {
+							if (quad[PRED_IDX] == previousPredicate && quad[OBJ_IDX] == previousObject) {
+								continue;
+							}
+							previousPredicate = quad[PRED_IDX];
+							previousObject = quad[OBJ_IDX];
+							Value object = valueStore.getValue(quad[OBJ_IDX]);
+							guarantees.merge(quad[PRED_IDX],
+									PendingPredicateObjectGuarantee.of(PredicateObjectGuarantee.classify(object)),
+									PendingPredicateObjectGuarantee::combine);
+						}
+					}
+				}
+				for (Map.Entry<Long, PendingPredicateObjectGuarantee> entry : guarantees.entrySet()) {
+					PendingPredicateObjectGuarantee guarantee = entry.getValue();
+					writePredicateObjectGuarantee(entry.getKey(), guarantee.guarantee());
+					long candidateMask = guarantee.observedMask() & ~guarantee.guarantee().mask();
+					if (candidateMask != 0L) {
+						try (MemoryStack stack = MemoryStack.stackPush()) {
+							writePredicateObjectGuaranteeDegradation(stack, predicateObjectGuaranteeKey(stack,
+									entry.getKey()), candidateMask, 0L);
+						}
+					}
+				}
+			}
+			endTransaction(true);
+			committed = true;
+		} finally {
+			if (!committed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private void rebuildMarkedPredicateObjectGuarantees() throws IOException {
+		boolean completed = false;
+		startTransaction();
+		try {
+			List<Long> predicateIds = getPredicateObjectGuaranteeRebuilds();
+			if (predicateIds.isEmpty()) {
+				endTransaction(false);
+				completed = true;
+				return;
+			}
+			for (long predicateId : predicateIds) {
+				rebuildPredicateObjectGuarantee(predicateId);
+			}
+			endTransaction(true);
+			completed = true;
+		} finally {
+			if (!completed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private List<Long> getPredicateObjectGuaranteeRebuilds() throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, predicateObjectGuaranteeDegradationsDbi, pp));
+			long cursor = pp.get(0);
+			try {
+				List<Long> predicateIds = new ArrayList<>();
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					PredicateObjectGuaranteeDegradation degradation = readPredicateObjectGuaranteeDegradation(dataVal);
+					if (degradation.rebuildRequested()) {
+						ByteBuffer keyData = keyVal.mv_data();
+						if (keyData != null) {
+							predicateIds.add(Varint.readUnsigned(keyData, keyData.position()));
+						}
+					}
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return predicateIds;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private void rebuildPredicateObjectGuarantee(long predicateId) throws IOException {
+		PredicateObjectGuarantee rebuilt = null;
+		long observedMask = 0L;
+		for (boolean explicit : new boolean[] { true, false }) {
+			try (RecordIterator triples = getTriples(txnManager.createTxn(writeTxn), -1, predicateId, -1, -1,
+					explicit)) {
+				long[] quad;
+				while ((quad = triples.next()) != null) {
+					Value object = valueStore.getValue(quad[OBJ_IDX]);
+					PredicateObjectGuarantee observed = PredicateObjectGuarantee.classify(object);
+					rebuilt = rebuilt == null ? observed : rebuilt.combine(observed);
+					observedMask |= observed.mask();
+				}
+			}
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectGuaranteeKey(stack, predicateId);
+			if (rebuilt == null) {
+				deletePredicateObjectGuarantee(keyVal);
+				deletePredicateObjectGuaranteeDegradation(keyVal);
+			} else {
+				writePredicateObjectGuarantee(stack, keyVal, rebuilt);
+				long candidateMask = observedMask & ~rebuilt.mask();
+				if (candidateMask == 0L) {
+					deletePredicateObjectGuaranteeDegradation(keyVal);
+				} else {
+					writePredicateObjectGuaranteeDegradation(stack, keyVal, candidateMask, 0L);
+				}
+			}
+		}
+	}
+
+	private RecordIterator getTriplesSortedByPredicateObject(Txn txn, boolean explicit) throws IOException {
+		for (TripleIndex index : indexes) {
+			char[] fieldSeq = index.getFieldSeq();
+			if (fieldSeq[0] == 'p' && fieldSeq[1] == 'o') {
+				return getTriplesUsingIndex(txn, -1, -1, -1, -1, explicit, index, false);
+			}
+		}
+		return getTriples(txn, -1, -1, -1, -1, explicit);
+	}
+
+	void recordPredicateObjectGuarantee(long predicateId, Value object) throws IOException {
+		PredicateObjectGuarantee observed = PredicateObjectGuarantee.classify(object);
+		if (recordCache != null) {
+			pendingPredicateObjectGuarantees.merge(predicateId, PendingPredicateObjectGuarantee.of(observed),
+					PendingPredicateObjectGuarantee::combine);
+			return;
+		}
+		updatePredicateObjectGuarantee(predicateId, PendingPredicateObjectGuarantee.of(observed));
+	}
+
+	void recordPredicateObjectRemoval(long predicateId, Value object) throws IOException {
+		PredicateObjectGuarantee removed = PredicateObjectGuarantee.classify(object);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectGuaranteeKey(stack, predicateId);
+			MDBVal existingVal = MDBVal.malloc(stack);
+			int rc = mdb_get(writeTxn, predicateObjectGuaranteeDegradationsDbi, keyVal, existingVal);
+			if (rc == MDB_NOTFOUND) {
+				return;
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException(mdb_strerror(rc));
+			}
+
+			PredicateObjectGuaranteeDegradation degradation = readPredicateObjectGuaranteeDegradation(existingVal);
+			if (degradation.candidateMask() == 0L
+					|| (degradation.candidateMask() & ~removed.mask()) == 0L
+					|| degradation.rebuildRequested()) {
+				return;
+			}
+			writePredicateObjectGuaranteeDegradation(stack, keyVal, degradation.candidateMask(),
+					degradation.flags() | PREDICATE_OBJECT_GUARANTEE_REBUILD_REQUESTED);
+		}
+	}
+
+	PredicateObjectGuarantee getPredicateObjectGuarantee(long predicateId) throws IOException {
+		return getKnownPredicateObjectGuarantee(predicateId).orElse(PredicateObjectGuarantee.NONE);
+	}
+
+	Optional<PredicateObjectGuarantee> getKnownPredicateObjectGuarantee(long predicateId) throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			MDBVal keyVal = predicateObjectGuaranteeKey(stack, predicateId);
+
+			MDBVal dataVal = MDBVal.malloc(stack);
+			int rc = mdb_get(txn, predicateObjectGuaranteesDbi, keyVal, dataVal);
+			if (rc == MDB_NOTFOUND) {
+				return Optional.empty();
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException(mdb_strerror(rc));
+			}
+			return Optional.of(readPredicateObjectGuarantee(dataVal));
+		});
+	}
+
+	private void flushPendingPredicateObjectGuarantees() throws IOException {
+		if (pendingPredicateObjectGuarantees.isEmpty()) {
+			return;
+		}
+		for (Map.Entry<Long, PendingPredicateObjectGuarantee> entry : pendingPredicateObjectGuarantees.entrySet()) {
+			updatePredicateObjectGuarantee(entry.getKey(), entry.getValue());
+		}
+		pendingPredicateObjectGuarantees.clear();
+	}
+
+	private void updatePredicateObjectGuarantee(long predicateId, PendingPredicateObjectGuarantee pending)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectGuaranteeKey(stack, predicateId);
+
+			MDBVal existingVal = MDBVal.malloc(stack);
+			int rc = mdb_get(writeTxn, predicateObjectGuaranteesDbi, keyVal, existingVal);
+			PredicateObjectGuarantee updated = pending.guarantee();
+			long candidateMask = pending.observedMask() & ~updated.mask();
+			boolean writeGuarantee = true;
+			if (rc == MDB_SUCCESS) {
+				PredicateObjectGuarantee existing = readPredicateObjectGuarantee(existingVal);
+				updated = existing.combine(pending.guarantee());
+				candidateMask = (existing.mask() | pending.observedMask()) & ~updated.mask();
+				writeGuarantee = !updated.equals(existing);
+				if (!writeGuarantee && candidateMask == 0L) {
+					return;
+				}
+			} else if (rc != MDB_NOTFOUND) {
+				throw new IOException(mdb_strerror(rc));
+			}
+
+			if (writeGuarantee) {
+				writePredicateObjectGuarantee(stack, keyVal, updated);
+			}
+			recordPredicateObjectGuaranteeDegradation(stack, keyVal, candidateMask);
+		}
+	}
+
+	private void writePredicateObjectGuarantee(long predicateId, PredicateObjectGuarantee guarantee)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectGuaranteeKey(stack, predicateId);
+			writePredicateObjectGuarantee(stack, keyVal, guarantee);
+		}
+	}
+
+	private void writePredicateObjectGuarantee(MemoryStack stack, MDBVal keyVal, PredicateObjectGuarantee guarantee)
+			throws IOException {
+		MDBVal dataVal = MDBVal.malloc(stack);
+		ByteBuffer dataBuf = stack.malloc(Long.BYTES);
+		dataBuf.putLong(guarantee.mask());
+		dataBuf.flip();
+		dataVal.mv_data(dataBuf);
+		E(mdb_put(writeTxn, predicateObjectGuaranteesDbi, keyVal, dataVal, 0));
+	}
+
+	private PredicateObjectGuarantee readPredicateObjectGuarantee(MDBVal dataVal) {
+		ByteBuffer data = dataVal.mv_data();
+		if (data == null || !data.hasRemaining()) {
+			return PredicateObjectGuarantee.NONE;
+		}
+		if (data.remaining() >= Long.BYTES) {
+			return PredicateObjectGuarantee.fromMask(data.getLong(data.position()));
+		}
+		return PredicateObjectGuarantee.fromLegacyCode(data.get(data.position()));
+	}
+
+	private void deletePredicateObjectGuarantee(MDBVal keyVal) throws IOException {
+		int rc = mdb_del(writeTxn, predicateObjectGuaranteesDbi, keyVal, null);
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+	}
+
+	private void recordPredicateObjectGuaranteeDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask)
+			throws IOException {
+		if (candidateMask == 0L) {
+			return;
+		}
+		MDBVal existingVal = MDBVal.malloc(stack);
+		int rc = mdb_get(writeTxn, predicateObjectGuaranteeDegradationsDbi, keyVal, existingVal);
+		long mergedCandidateMask = candidateMask;
+		long flags = 0L;
+		if (rc == MDB_SUCCESS) {
+			PredicateObjectGuaranteeDegradation existing = readPredicateObjectGuaranteeDegradation(existingVal);
+			mergedCandidateMask |= existing.candidateMask();
+			flags = existing.flags();
+		} else if (rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+		writePredicateObjectGuaranteeDegradation(stack, keyVal, mergedCandidateMask, flags);
+	}
+
+	private void writePredicateObjectGuaranteeDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask,
+			long flags)
+			throws IOException {
+		MDBVal dataVal = MDBVal.malloc(stack);
+		ByteBuffer dataBuf = stack.malloc(PREDICATE_OBJECT_GUARANTEE_DEGRADATION_BYTES);
+		dataBuf.putLong(candidateMask);
+		dataBuf.putLong(flags);
+		dataBuf.flip();
+		dataVal.mv_data(dataBuf);
+		E(mdb_put(writeTxn, predicateObjectGuaranteeDegradationsDbi, keyVal, dataVal, 0));
+	}
+
+	private void deletePredicateObjectGuaranteeDegradation(MDBVal keyVal) throws IOException {
+		int rc = mdb_del(writeTxn, predicateObjectGuaranteeDegradationsDbi, keyVal, null);
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+	}
+
+	private PredicateObjectGuaranteeDegradation readPredicateObjectGuaranteeDegradation(MDBVal dataVal) {
+		ByteBuffer data = dataVal.mv_data();
+		if (data == null || data.remaining() < Long.BYTES) {
+			return new PredicateObjectGuaranteeDegradation(0L, 0L);
+		}
+		long candidateMask = data.getLong(data.position());
+		long flags = data.remaining() >= PREDICATE_OBJECT_GUARANTEE_DEGRADATION_BYTES
+				? data.getLong(data.position() + Long.BYTES)
+				: 0L;
+		return new PredicateObjectGuaranteeDegradation(candidateMask, flags);
+	}
+
+	private MDBVal predicateObjectGuaranteeKey(MemoryStack stack, long predicateId) {
+		MDBVal keyVal = MDBVal.malloc(stack);
+		ByteBuffer keyBuf = stack.malloc(9);
+		Varint.writeUnsigned(keyBuf, predicateId);
+		keyBuf.flip();
+		keyVal.mv_data(keyBuf);
+		return keyVal;
+	}
+
+	private record PendingPredicateObjectGuarantee(PredicateObjectGuarantee guarantee, long observedMask) {
+
+		static PendingPredicateObjectGuarantee of(PredicateObjectGuarantee guarantee) {
+			return new PendingPredicateObjectGuarantee(guarantee, guarantee.mask());
+		}
+
+		PendingPredicateObjectGuarantee combine(PendingPredicateObjectGuarantee observed) {
+			return new PendingPredicateObjectGuarantee(guarantee.combine(observed.guarantee),
+					observedMask | observed.observedMask);
+		}
+	}
+
+	private record PredicateObjectGuaranteeDegradation(long candidateMask, long flags) {
+
+		boolean rebuildRequested() {
+			return (flags & PREDICATE_OBJECT_GUARANTEE_REBUILD_REQUESTED) != 0L;
+		}
 	}
 
 	/**
@@ -1778,6 +2154,9 @@ class TripleStore implements Closeable {
 				closeAlignedWriteCursors();
 				if (commit) {
 					try {
+						if (recordCache == null) {
+							flushPendingPredicateObjectGuarantees();
+						}
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
@@ -1799,6 +2178,7 @@ class TripleStore implements Closeable {
 									writeTxn = pp.get(0);
 								}
 								updateFromCache();
+								flushPendingPredicateObjectGuarantees();
 								// finally, commit write transaction
 								E(mdb_txn_commit(writeTxn));
 							} finally {
@@ -1833,6 +2213,7 @@ class TripleStore implements Closeable {
 						recordCache = null;
 					}
 				}
+				pendingPredicateObjectGuarantees.clear();
 			}
 		}
 	}

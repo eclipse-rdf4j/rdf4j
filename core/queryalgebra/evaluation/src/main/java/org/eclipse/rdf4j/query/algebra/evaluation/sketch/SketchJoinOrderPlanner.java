@@ -3668,7 +3668,7 @@ final class SketchJoinOrderPlanner {
 					doubleKey(outerPrefixRows), doubleKey(distinctLookupBindings), nestedIteratorInvocation);
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = contextualFactorCostMemo.get(key);
 			if (estimate == null) {
-				estimate = Optional.ofNullable(estimateFactorCostUncached(factorIndex, currentlyBoundVarMask,
+				estimate = Optional.ofNullable(estimateFactorCostUncached(factorIndex, mask, currentlyBoundVarMask,
 						outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation));
 				contextualFactorCostMemo.put(key, estimate);
 			}
@@ -3709,19 +3709,44 @@ final class SketchJoinOrderPlanner {
 			distinctLookupBindings = distinctLookupBindings(factorIndex, mask, prefixEstimate, accessShape,
 					accessShape == null ? 0 : accessShape.lookupBoundComponentMask());
 		}
-		return estimateFactorCostUncached(factorIndex, currentlyBoundVarMask, outerPrefixRows,
+		return estimateFactorCostUncached(factorIndex, mask, currentlyBoundVarMask, outerPrefixRows,
 				distinctLookupBindings, prefixEstimate != null);
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate estimateFactorCostUncached(int factorIndex,
-			long currentlyBoundVarMask, double outerPrefixRows, double distinctLookupBindings,
+			long mask, long currentlyBoundVarMask, double outerPrefixRows, double distinctLookupBindings,
 			boolean nestedIteratorInvocation) {
+		Map<String, Set<Value>> finiteBindingValues = finiteBindingLookupValues(factorIndex, mask,
+				currentlyBoundVarMask);
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(variableNames,
 				currentlyBoundVarMask,
-				outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, false);
+				outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, false, finiteBindingValues);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostModel
 				.estimateFactorCost(factors.get(factorIndex).tupleExpr(), context);
 		return estimate.orElse(null);
+	}
+
+	private Map<String, Set<Value>> finiteBindingLookupValues(int factorIndex, long mask,
+			long currentlyBoundVarMask) {
+		SketchBasedJoinEstimator.AccessShape accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
+		if (accessShape == null) {
+			return Map.of();
+		}
+		long lookupVarMask = lookupVarMask(accessShape, accessShape.lookupBoundComponentMask());
+		if (lookupVarMask == 0L) {
+			return Map.of();
+		}
+		Map<String, Set<Value>> valuesByName = new HashMap<>();
+		long remaining = lookupVarMask;
+		while (remaining != 0L) {
+			int variableId = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			Set<Value> values = finiteBindingVariableValues(mask, variableId);
+			if (!values.isEmpty()) {
+				valuesByName.put(variableNames[variableId], values);
+			}
+		}
+		return valuesByName.isEmpty() ? Map.of() : Map.copyOf(valuesByName);
 	}
 
 	private static long doubleKey(double value) {

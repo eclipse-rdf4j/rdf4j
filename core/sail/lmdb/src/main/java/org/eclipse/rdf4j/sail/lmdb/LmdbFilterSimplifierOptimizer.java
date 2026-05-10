@@ -18,9 +18,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -54,6 +61,22 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
+
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final List<CoreDatatype.XSD> INTEGER_ANCHOR_DATATYPES = List.of(
+			CoreDatatype.XSD.INTEGER,
+			CoreDatatype.XSD.LONG,
+			CoreDatatype.XSD.INT,
+			CoreDatatype.XSD.SHORT,
+			CoreDatatype.XSD.BYTE,
+			CoreDatatype.XSD.NON_POSITIVE_INTEGER,
+			CoreDatatype.XSD.NEGATIVE_INTEGER,
+			CoreDatatype.XSD.NON_NEGATIVE_INTEGER,
+			CoreDatatype.XSD.POSITIVE_INTEGER,
+			CoreDatatype.XSD.UNSIGNED_LONG,
+			CoreDatatype.XSD.UNSIGNED_INT,
+			CoreDatatype.XSD.UNSIGNED_SHORT,
+			CoreDatatype.XSD.UNSIGNED_BYTE);
 
 	private final EvaluationStatistics statistics;
 
@@ -141,16 +164,18 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		List<ValueExpr> remainingConditions = new ArrayList<>();
 		for (ValueExpr condition : conditions) {
 			BindingSetAssignment valuesVariableAnchor = valuesVariableFilterAnchor(condition, assignmentValues);
+			BindingSetAssignment materializedValuesVariableAnchor = materializedSmallLiteralFilterAnchor(filter,
+					condition, valuesVariableAnchor, assuredBindings);
 			if (valuesVariableAnchor != null
 					&& isSelectiveSmallLiteralAnchor(filter, condition)
-					&& canMaterializeSmallLiteralFilterAnchor(filter, condition, valuesVariableAnchor,
-							assuredBindings)) {
-				anchors.add(valuesVariableAnchor);
+					&& materializedValuesVariableAnchor != null) {
+				anchors.add(materializedValuesVariableAnchor);
 				remainingConditions.add(condition);
 				continue;
 			}
 
-			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
+			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition,
+					LmdbFilterSimplifierOptimizer::isPotentialSmallLiteralAnchorValue);
 			if (shouldDropMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings,
 					removableMandatoryOptionalAnchorBindings)) {
 				continue;
@@ -160,9 +185,15 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				remainingConditions.add(condition);
 				continue;
 			}
-			if (anchor != null && canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor, assuredBindings)) {
-				if (!equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)) {
-					anchors.add(anchor);
+			if (equivalentSmallLiteralAssignmentExists(anchor, assignmentValues)
+					&& !shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
+				continue;
+			}
+			BindingSetAssignment materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor,
+					assuredBindings);
+			if (materializedAnchor != null) {
+				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
+					anchors.add(materializedAnchor);
 				}
 				if (shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
 					remainingConditions.add(condition);
@@ -484,18 +515,287 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return false;
 	}
 
-	private boolean canMaterializeSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
+	private BindingSetAssignment materializedSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
 			BindingSetAssignment anchor,
 			Set<String> assuredBindings) {
+		if (anchor == null) {
+			return null;
+		}
 		if (anchor.getBindingNames().size() != 1) {
-			return false;
+			return null;
 		}
 		String bindingName = anchor.getBindingNames().iterator().next();
-		return assuredBindings.contains(bindingName)
+		if (assuredBindings.contains(bindingName)
 				&& !extensionElementNames(filter.getArg()).contains(bindingName)
 				&& !containsVariableScopeChangeBinding(filter.getArg(), bindingName)
 				&& !LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)
-				&& LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
+				&& canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor, bindingName)) {
+			return expandFiniteAnchor(filter, condition, anchor, bindingName);
+		}
+		return null;
+	}
+
+	private boolean canMaterializeSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
+			BindingSetAssignment anchor, String bindingName) {
+		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
+		boolean objectAnchor = pattern != null && bindingName.equals(unboundName(pattern.getObjectVar()));
+		if (objectAnchor) {
+			Optional<PredicateObjectGuarantee> guarantee = knownPredicateObjectGuarantee(pattern);
+			return guarantee.isPresent()
+					&& canMaterializeObjectFilterAnchor(anchor, bindingName, guarantee.get());
+		}
+		if (containsGuaranteeOnlyAnchorValue(anchor, bindingName)) {
+			return false;
+		}
+		return LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor);
+	}
+
+	private BindingSetAssignment expandFiniteAnchor(Filter filter, ValueExpr condition,
+			BindingSetAssignment anchor, String bindingName) {
+		Optional<PredicateObjectGuarantee> guarantee = Optional.empty();
+		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
+		if (pattern != null && bindingName.equals(unboundName(pattern.getObjectVar()))) {
+			guarantee = knownPredicateObjectGuarantee(pattern);
+		}
+		if (!containsGuaranteeOnlyAnchorValue(anchor, bindingName)) {
+			return anchor;
+		}
+		LinkedHashSet<Value> expandedValues = new LinkedHashSet<>();
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (PredicateObjectGuarantee.classify(value).has(PredicateObjectGuarantee.Fact.CANONICAL_INTEGER)
+					&& value instanceof Literal literal) {
+				addCanonicalIntegerFamilyValues(literal, guarantee.orElse(PredicateObjectGuarantee.CANONICAL_INTEGER),
+						expandedValues);
+			} else if (isBooleanLiteral(value) && value instanceof Literal literal) {
+				addBooleanAnchorValues(literal, expandedValues);
+			} else if (isCalendarLiteral(value) && value instanceof Literal literal) {
+				expandedValues.add(value);
+			} else {
+				expandedValues.add(value);
+			}
+		}
+		return bindingSetAssignment(bindingName, expandedValues);
+	}
+
+	private static void addCanonicalIntegerFamilyValues(Literal literal, PredicateObjectGuarantee guarantee,
+			LinkedHashSet<Value> values) {
+		String label = literal.getLabel();
+		CoreDatatype.XSD sourceDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD guaranteedDatatype = guarantee.singleXsdDatatype();
+		if (guaranteedDatatype != null) {
+			addCanonicalIntegerValue(label, guaranteedDatatype, values);
+			return;
+		}
+		if (sourceDatatype != null) {
+			addCanonicalIntegerValue(label, sourceDatatype, values);
+		}
+		for (CoreDatatype.XSD datatype : INTEGER_ANCHOR_DATATYPES) {
+			if (datatype != sourceDatatype) {
+				addCanonicalIntegerValue(label, datatype, values);
+			}
+		}
+	}
+
+	private static void addBooleanAnchorValues(Literal literal, LinkedHashSet<Value> values) {
+		if (!XMLDatatypeUtil.isValidBoolean(literal.getLabel())) {
+			return;
+		}
+		if (XMLDatatypeUtil.parseBoolean(literal.getLabel())) {
+			values.add(VF.createLiteral("true", XSD.BOOLEAN));
+			values.add(VF.createLiteral("1", XSD.BOOLEAN));
+		} else {
+			values.add(VF.createLiteral("false", XSD.BOOLEAN));
+			values.add(VF.createLiteral("0", XSD.BOOLEAN));
+		}
+	}
+
+	private static void addCanonicalIntegerValue(String label, CoreDatatype.XSD datatype,
+			LinkedHashSet<Value> values) {
+		if (datatype.isIntegerDatatype()
+				&& XMLDatatypeUtil.isValidValue(label, datatype)
+				&& label.equals(XMLDatatypeUtil.normalize(label, datatype))) {
+			values.add(VF.createLiteral(label, datatype));
+		}
+	}
+
+	private static BindingSetAssignment bindingSetAssignment(String bindingName, LinkedHashSet<Value> values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		List<BindingSet> bindingSets = new ArrayList<>(values.size());
+		for (Value value : values) {
+			MapBindingSet bindingSet = new MapBindingSet(1);
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private Optional<PredicateObjectGuarantee> knownPredicateObjectGuarantee(StatementPattern pattern) {
+		if (!(statistics instanceof LmdbPredicateObjectGuaranteeSource guaranteeSource)) {
+			return Optional.empty();
+		}
+		Var predicate = pattern.getPredicateVar();
+		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+			return Optional.empty();
+		}
+		return guaranteeSource.getKnownPredicateObjectGuarantee((IRI) predicate.getValue());
+	}
+
+	private static boolean canMaterializeObjectFilterAnchor(BindingSetAssignment anchor, String bindingName,
+			PredicateObjectGuarantee guarantee) {
+		if (guarantee.equals(PredicateObjectGuarantee.NONE)) {
+			return false;
+		}
+		if (!allAnchorValuesCompatibleWithGuarantee(anchor, bindingName, guarantee)) {
+			return false;
+		}
+		if (containsXsdNumericAnchorValue(anchor, bindingName)) {
+			return guarantee.has(PredicateObjectGuarantee.Fact.CANONICAL_INTEGER)
+					&& allXsdNumericAnchorValuesAreCanonicalIntegers(anchor, bindingName);
+		}
+		if (containsBooleanAnchorValue(anchor, bindingName)) {
+			return guarantee.hasDatatype(CoreDatatype.XSD.BOOLEAN)
+					&& allBooleanAnchorValuesAreValidBooleans(anchor, bindingName);
+		}
+		if (containsCalendarAnchorValue(anchor, bindingName)) {
+			return allCalendarAnchorValuesMatchGuarantee(anchor, bindingName, guarantee);
+		}
+		return true;
+	}
+
+	private static boolean allAnchorValuesCompatibleWithGuarantee(BindingSetAssignment anchor, String bindingName,
+			PredicateObjectGuarantee guarantee) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value == null || guarantee.combine(PredicateObjectGuarantee.classify(value))
+					.equals(
+							PredicateObjectGuarantee.NONE)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isPotentialSmallLiteralAnchorValue(Value value) {
+		return LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)
+				|| PredicateObjectGuarantee.classify(value).has(PredicateObjectGuarantee.Fact.CANONICAL_INTEGER)
+				|| isBooleanLiteral(value)
+				|| isCalendarLiteral(value);
+	}
+
+	private static boolean containsGuaranteeOnlyAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		return containsXsdNumericAnchorValue(anchor, bindingName)
+				|| containsBooleanAnchorValue(anchor, bindingName)
+				|| containsCalendarAnchorValue(anchor, bindingName);
+	}
+
+	private static boolean containsXsdNumericAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (PredicateObjectGuarantee.isXsdNumericLiteral(bindingSet.getValue(bindingName))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean allXsdNumericAnchorValuesAreCanonicalIntegers(BindingSetAssignment anchor,
+			String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (PredicateObjectGuarantee.isXsdNumericLiteral(value)
+					&& !PredicateObjectGuarantee.classify(value)
+							.has(PredicateObjectGuarantee.Fact.CANONICAL_INTEGER)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean containsBooleanAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (isBooleanLiteral(bindingSet.getValue(bindingName))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean allBooleanAnchorValuesAreValidBooleans(BindingSetAssignment anchor,
+			String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (isBooleanLiteral(value) && !XMLDatatypeUtil.isValidBoolean(((Literal) value).getLabel())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean containsCalendarAnchorValue(BindingSetAssignment anchor, String bindingName) {
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (isCalendarLiteral(bindingSet.getValue(bindingName))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean allCalendarAnchorValuesMatchGuarantee(BindingSetAssignment anchor, String bindingName,
+			PredicateObjectGuarantee guarantee) {
+		CoreDatatype.XSD guaranteedDatatype = guarantee.singleXsdDatatype();
+		if (guaranteedDatatype == null || !guaranteedDatatype.isCalendarDatatype()) {
+			return false;
+		}
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (!isCalendarLiteral(value)) {
+				continue;
+			}
+			Literal literal = (Literal) value;
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			if (datatype != guaranteedDatatype || !XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
+				return false;
+			}
+			PredicateObjectGuarantee literalGuarantee = PredicateObjectGuarantee.classify(literal);
+			if (literalGuarantee.has(PredicateObjectGuarantee.Fact.DATE_WITHOUT_TIMEZONE)) {
+				if (!guarantee.has(PredicateObjectGuarantee.Fact.DATE_WITHOUT_TIMEZONE)) {
+					return false;
+				}
+				continue;
+			}
+			if (literalGuarantee.has(PredicateObjectGuarantee.Fact.DATE_UTC)) {
+				if (!guarantee.has(PredicateObjectGuarantee.Fact.DATE_UTC)) {
+					return false;
+				}
+				continue;
+			}
+			return false;
+		}
+		return true;
+	}
+
+	private static boolean isBooleanLiteral(Value value) {
+		if (!(value instanceof Literal literal)) {
+			return false;
+		}
+		return literal.getCoreDatatype().asXSDDatatypeOrNull() == CoreDatatype.XSD.BOOLEAN;
+	}
+
+	private static boolean isCalendarLiteral(Value value) {
+		if (!(value instanceof Literal literal)) {
+			return false;
+		}
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		return datatype != null && datatype.isCalendarDatatype();
+	}
+
+	private static String unboundName(Var var) {
+		if (var == null || var.hasValue()) {
+			return null;
+		}
+		return var.getName();
 	}
 
 	private static boolean containsVariableScopeChangeBinding(TupleExpr tupleExpr, String bindingName) {

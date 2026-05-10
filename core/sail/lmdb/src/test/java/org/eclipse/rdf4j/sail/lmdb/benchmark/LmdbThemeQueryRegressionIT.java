@@ -626,33 +626,46 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
 					String plan = snapshot.plan();
+					String renderedQuery = snapshot.renderedQuery();
+					boolean finiteThresholdWeightAnchor = renderedQuery.contains("VALUES (?threshold ?w)");
 					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
-					assertContains(snapshot.renderedQuery(), "FILTER NOT EXISTS");
-					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 4 }",
-							"?node a <http://example.com/theme/connected/Node>",
-							"Highly connected q5 should bind the singleton threshold outside the typed-node loop "
-									+ "so the outer join subtree is not reopened once per node\n" + plan);
-					assertBefore(snapshot.renderedQuery(), "?node a <http://example.com/theme/connected/Node>",
-							"<http://example.com/theme/connected/weight> ?w",
-							"Highly connected q5 should apply the Node type guard before the weight scan so the "
-									+ "anti-exists scope is charged against the typed prefix\n" + plan);
-					assertBefore(snapshot.renderedQuery(), "FILTER NOT EXISTS",
-							"<http://example.com/theme/connected/weight> ?w",
-							"Highly connected q5 should evaluate the anti-exists guard after binding typed nodes "
-									+ "and before expanding the outer weight fanout\n" + plan);
-					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 4 }",
-							"<http://example.com/theme/connected/weight> ?w",
-							"Highly connected q5 should bind the singleton threshold before the outer weight fanout "
-									+ "so the anti-exists scope is not unlocked per candidate row\n" + plan);
-					assertContains(plan, "source=sketch_nested_not_exists",
-							"Highly connected q5 should charge the correlated anti-exists weight scope against "
-									+ "the typed-node prefix\n" + plan);
-					assertBefore(plan, "unlockedFilters=Not Exists", "unlockedFilters=ListMemberOperator",
-							"Highly connected q5 should probe the anti-exists weight scope once per typed node "
-									+ "before expanding candidate rows through the outer weight fanout\n"
-									+ plan);
-					assertPredicateLookupWorkRowsAbove(plan,
-							"http://example.com/theme/connected/weight", 10_000.0d);
+					assertContains(renderedQuery, "FILTER NOT EXISTS");
+					if (finiteThresholdWeightAnchor) {
+						assertBefore(renderedQuery, "VALUES (?threshold ?w)",
+								"<http://example.com/theme/connected/weight> ?w",
+								"Highly connected q5 should bind the finite threshold/weight anchor before "
+										+ "probing the outer weight rows\n" + plan);
+						assertContains(plan,
+								"BindingSetAssignment ([[threshold=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>]])");
+						assertContains(plan,
+								"BindingSetAssignment ([[w=\"4\"^^<http://www.w3.org/2001/XMLSchema#int>]");
+					} else {
+						assertBefore(renderedQuery, "VALUES ?threshold { 4 }",
+								"?node a <http://example.com/theme/connected/Node>",
+								"Highly connected q5 should bind the singleton threshold outside the typed-node "
+										+ "loop so the outer join subtree is not reopened once per node\n" + plan);
+						assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
+								"<http://example.com/theme/connected/weight> ?w",
+								"Highly connected q5 should apply the Node type guard before the weight scan so the "
+										+ "anti-exists scope is charged against the typed prefix\n" + plan);
+						assertBefore(renderedQuery, "FILTER NOT EXISTS",
+								"<http://example.com/theme/connected/weight> ?w",
+								"Highly connected q5 should evaluate the anti-exists guard after binding typed nodes "
+										+ "and before expanding the outer weight fanout\n" + plan);
+						assertBefore(renderedQuery, "VALUES ?threshold { 4 }",
+								"<http://example.com/theme/connected/weight> ?w",
+								"Highly connected q5 should bind the singleton threshold before the outer weight "
+										+ "fanout so the anti-exists scope is not unlocked per candidate row\n" + plan);
+						assertContains(plan, "source=sketch_nested_not_exists",
+								"Highly connected q5 should charge the correlated anti-exists weight scope against "
+										+ "the typed-node prefix\n" + plan);
+						assertBefore(plan, "unlockedFilters=Not Exists", "unlockedFilters=ListMemberOperator",
+								"Highly connected q5 should probe the anti-exists weight scope once per typed node "
+										+ "before expanding candidate rows through the outer weight fanout\n"
+										+ plan);
+						assertPredicateLookupWorkRowsAbove(plan,
+								"http://example.com/theme/connected/weight", 10_000.0d);
+					}
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -672,23 +685,36 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
 					String plan = snapshot.plan();
+					String renderedQuery = snapshot.renderedQuery();
+					boolean finiteThresholdWeightAnchor = renderedQuery.contains("VALUES (?threshold ?w)");
 					assertPlannerDiagnosticsPresent(theme, 10, plan);
-					assertContains(snapshot.renderedQuery(), "FILTER NOT EXISTS");
-					assertBefore(snapshot.renderedQuery(), "VALUES ?threshold { 3 }",
-							"?node a <http://example.com/theme/connected/Node>",
-							"Highly connected q10 should bind the singleton threshold before the typed-node loop\n"
-									+ plan);
-					assertBefore(snapshot.renderedQuery(), "?node a <http://example.com/theme/connected/Node>",
-							"<http://example.com/theme/connected/weight> ?w",
-							"Highly connected q10 should bind typed nodes before expanding the outer weight fanout\n"
-									+ plan);
-					assertBefore(snapshot.renderedQuery(), "FILTER NOT EXISTS",
-							"<http://example.com/theme/connected/weight> ?w",
-							"Highly connected q10 should run correlated anti-exists probes once per typed node "
-									+ "before multiplying rows through the outer weight fanout\n" + plan);
-					assertContains(plan, "source=sketch_nested_not_exists",
-							"Highly connected q10 should charge the correlated anti-exists scope against "
-									+ "the typed-node prefix\n" + plan);
+					assertContains(renderedQuery, "FILTER NOT EXISTS");
+					if (finiteThresholdWeightAnchor) {
+						assertBefore(renderedQuery, "VALUES (?threshold ?w)",
+								"<http://example.com/theme/connected/weight> ?w",
+								"Highly connected q10 should bind the finite threshold/weight anchor before "
+										+ "probing the outer weight rows\n" + plan);
+						assertContains(plan,
+								"BindingSetAssignment ([[threshold=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>]])");
+						assertContains(plan,
+								"BindingSetAssignment ([[w=\"1\"^^<http://www.w3.org/2001/XMLSchema#int>]");
+					} else {
+						assertBefore(renderedQuery, "VALUES ?threshold { 3 }",
+								"?node a <http://example.com/theme/connected/Node>",
+								"Highly connected q10 should bind the singleton threshold before the typed-node "
+										+ "loop\n" + plan);
+						assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
+								"<http://example.com/theme/connected/weight> ?w",
+								"Highly connected q10 should bind typed nodes before expanding the outer weight "
+										+ "fanout\n" + plan);
+						assertBefore(renderedQuery, "FILTER NOT EXISTS",
+								"<http://example.com/theme/connected/weight> ?w",
+								"Highly connected q10 should run correlated anti-exists probes once per typed node "
+										+ "before multiplying rows through the outer weight fanout\n" + plan);
+						assertContains(plan, "source=sketch_nested_not_exists",
+								"Highly connected q10 should charge the correlated anti-exists scope against "
+										+ "the typed-node prefix\n" + plan);
+					}
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1747,9 +1773,12 @@ class LmdbThemeQueryRegressionIT {
 				assertQueryRegressionPasses(repository, theme, 4, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 4, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
-					assertDoesNotContain(renderedQuery, "VALUES ?code",
-							"Medical q4 should not turn the local code filter into a driving VALUES factor\n"
-									+ snapshot.plan());
+					assertContains(renderedQuery, "VALUES ?code { \"DX-200\" \"DX-201\" }",
+							"Medical q4 should use the safe finite code anchor once predicate guarantees prove "
+									+ "the code object domain is plain literals\n" + snapshot.plan());
+					assertBefore(renderedQuery, "VALUES ?code", "?cond <http://example.com/theme/medical/code> ?code",
+							"Medical q4 should bind the guaranteed literal code domain before probing condition "
+									+ "codes\n" + snapshot.plan());
 					if (appearsBefore(renderedQuery, "?enc a <http://example.com/theme/medical/Encounter>",
 							"?enc <http://example.com/theme/medical/hasCondition> ?cond")) {
 						assertBefore(renderedQuery, "?enc <http://example.com/theme/medical/hasCondition> ?cond",
@@ -1782,8 +1811,9 @@ class LmdbThemeQueryRegressionIT {
 			throw new AssertionError("Medical q4 plan should include the code pattern:\n" + plan);
 		}
 		String codePattern = statementPatternWindow(plan, codePredicateIndex);
-		assertContains(codePattern, "unlockedFilters=Or");
-		assertContains(codePattern, "source=sampled");
+		assertContains(codePattern, "plannedIndexAccessMode=prefixScan");
+		assertContains(codePattern, "plannedLookupComponents=[O]");
+		assertContains(codePattern, "o: Var (name=code) (bindingState=bound)");
 
 		int conditionPredicateIndex = plan.indexOf("value=http://example.com/theme/medical/hasCondition");
 		if (conditionPredicateIndex < 0) {
@@ -1792,7 +1822,7 @@ class LmdbThemeQueryRegressionIT {
 		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
 		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
 		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
-		assertContains(conditionPattern, "plannedBoundVars=code,cond");
+		assertContains(conditionPattern, "o: Var (name=cond) (bindingState=bound)");
 	}
 
 	@Test
@@ -1836,15 +1866,13 @@ class LmdbThemeQueryRegressionIT {
 				assertQueryRegressionPasses(repository, theme, 7, snapshot -> {
 					String renderedQuery = snapshot.renderedQuery();
 					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
-					assertBefore(renderedQuery, "?med a <http://example.com/theme/medical/Medication>",
-							"FILTER NOT EXISTS",
-							"Medical q7 should run the historically fast dosage anti-probe before the code lookup\n"
+					assertContains(renderedQuery, "VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+							"Medical q7 should use the safe finite medication-code anchor once predicate "
+									+ "guarantees prove the code object domain is plain literals\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "FILTER NOT EXISTS",
-							"?med <http://example.com/theme/medical/code> ?code",
-							"Medical q7 should keep the dosage anti-probe before the code lookup; "
-									+ "the reverse order is the strict May 6 regression\n"
-									+ snapshot.plan());
+					assertBefore(renderedQuery, "VALUES ?code", "?med <http://example.com/theme/medical/code> ?code",
+							"Medical q7 should bind the guaranteed literal code domain before probing medication "
+									+ "codes\n" + snapshot.plan());
 					assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code",
 							"FILTER EXISTS",
 							"Medical q7 should narrow medication codes before the patient-medication probe\n"
@@ -1920,7 +1948,7 @@ class LmdbThemeQueryRegressionIT {
 		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
 		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
 		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
-		assertContains(conditionPattern, "plannedBoundVars=cond,condCode");
+		assertContains(conditionPattern, "o: Var (name=cond) (bindingState=bound)");
 
 		int encounterTypeIndex = plan.indexOf("value=http://example.com/theme/medical/Encounter");
 		if (encounterTypeIndex < 0) {
@@ -1929,7 +1957,7 @@ class LmdbThemeQueryRegressionIT {
 		String encounterPattern = statementPatternWindow(plan, encounterTypeIndex);
 		assertContains(encounterPattern, "plannedIndexAccessMode=directLookup");
 		assertContains(encounterPattern, "plannedLookupComponents=[S, P, O]");
-		assertContains(encounterPattern, "plannedBoundVars=cond,condCode,enc");
+		assertContains(encounterPattern, "s: Var (name=enc) (bindingState=bound)");
 	}
 
 	@Test
@@ -2856,20 +2884,33 @@ class LmdbThemeQueryRegressionIT {
 	private static void assertElectricalGridGeneratorCapacityThresholdShape(OptimizerSnapshot snapshot) {
 		String renderedQuery = snapshot.renderedQuery();
 		String plan = snapshot.plan();
+		boolean finiteThresholdCapacityAnchor = renderedQuery.contains("VALUES (?threshold ?capacity)");
 
-		assertBefore(renderedQuery, "<http://example.com/theme/grid/capacity> ?capacity",
-				"FILTER (?capacity IN (700, 800, 900))",
-				"Electrical grid q5 should keep the capacity filter attached to the capacity pattern\n" + plan);
-		assertBefore(renderedQuery, "FILTER (?capacity IN (700, 800, 900))",
-				"VALUES ?threshold { 700 }",
-				"Electrical grid q5 should apply the selective capacity filter before the broad type check\n" + plan);
-		assertBefore(renderedQuery, "VALUES ?threshold { 700 }", "FILTER NOT EXISTS",
-				"Electrical grid q5 should bind the threshold before the anti-join filter\n" + plan);
+		if (finiteThresholdCapacityAnchor) {
+			assertBefore(renderedQuery, "VALUES (?threshold ?capacity)",
+					"<http://example.com/theme/grid/capacity> ?capacity",
+					"Electrical grid q5 should bind the finite threshold/capacity anchor before probing "
+							+ "capacity rows\n" + plan);
+			assertContains(plan,
+					"BindingSetAssignment ([[threshold=\"700\"^^<http://www.w3.org/2001/XMLSchema#integer>]])");
+			assertContains(plan,
+					"BindingSetAssignment ([[capacity=\"700\"^^<http://www.w3.org/2001/XMLSchema#int>]");
+		} else {
+			assertBefore(renderedQuery, "<http://example.com/theme/grid/capacity> ?capacity",
+					"FILTER (?capacity IN (700, 800, 900))",
+					"Electrical grid q5 should keep the capacity filter attached to the capacity pattern\n" + plan);
+			assertBefore(renderedQuery, "FILTER (?capacity IN (700, 800, 900))",
+					"VALUES ?threshold { 700 }",
+					"Electrical grid q5 should apply the selective capacity filter before the broad type check\n"
+							+ plan);
+			assertBefore(renderedQuery, "VALUES ?threshold { 700 }", "FILTER NOT EXISTS",
+					"Electrical grid q5 should bind the threshold before the anti-join filter\n" + plan);
 
-		assertContains(plan,
-				"BindingSetAssignment ([[threshold=\"700\"^^<http://www.w3.org/2001/XMLSchema#integer>]])");
-		assertDoesNotContain(plan,
-				"BindingSetAssignment ([[capacity=\"700\"^^<http://www.w3.org/2001/XMLSchema#integer>]");
+			assertContains(plan,
+					"BindingSetAssignment ([[threshold=\"700\"^^<http://www.w3.org/2001/XMLSchema#integer>]])");
+			assertDoesNotContain(plan,
+					"BindingSetAssignment ([[capacity=\"700\"^^<http://www.w3.org/2001/XMLSchema#int>]");
+		}
 	}
 
 	private static void assertDirectLookupWorkRowsBelow(String plan, double maxWorkRows) {
