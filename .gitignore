@@ -56,3 +56,5 @@ e2e/test-results
 /tools/server/.lwjgl/
 .m2_repo/
 .serena/
+/.m2_repo_linux_j25/
+/.codex/environments/

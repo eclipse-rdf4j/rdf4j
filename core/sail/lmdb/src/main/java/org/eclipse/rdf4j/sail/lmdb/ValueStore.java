@@ -1186,28 +1186,33 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
+		txnLock.writeLock().lock();
+		try {
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
 
-			E(mdb_txn_begin(env, NULL, 0, pp));
-			writeTxn = pp.get(0);
+				E(mdb_txn_begin(env, NULL, 0, pp));
+				writeTxn = pp.get(0);
 
-			// delete unused IDs if required on a regular basis
-			// this is also run after opening the database
-			if (nextValueEvictionTime >= 0 && System.currentTimeMillis() >= nextValueEvictionTime) {
-				synchronized (unusedRevisionIds) {
-					MDBStat stat = MDBStat.malloc(stack);
-					mdb_stat(writeTxn, unusedDbi, stat);
+				// delete unused IDs if required on a regular basis
+				// this is also run after opening the database
+				if (nextValueEvictionTime >= 0 && System.currentTimeMillis() >= nextValueEvictionTime) {
+					synchronized (unusedRevisionIds) {
+						MDBStat stat = MDBStat.malloc(stack);
+						mdb_stat(writeTxn, unusedDbi, stat);
 
-					if (resize) {
-						resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
+						if (resize) {
+							resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
+						}
+
+						freeUnusedIdsAndValues(stack, writeTxn, unusedRevisionIds);
+						unusedRevisionIds.clear();
 					}
-
-					freeUnusedIdsAndValues(stack, writeTxn, unusedRevisionIds);
-					unusedRevisionIds.clear();
+					nextValueEvictionTime = -1;
 				}
-				nextValueEvictionTime = -1;
 			}
+		} finally {
+			txnLock.writeLock().unlock();
 		}
 	}
 
@@ -1215,34 +1220,39 @@ class ValueStore extends AbstractValueFactory {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit) throws IOException {
-		if (writeTxn != 0) {
-			if (commit) {
-				if (invalidateRevisionOnCommit) {
-					long stamp = revisionLock.writeLock();
-					try {
+		txnLock.writeLock().lock();
+		try {
+			if (writeTxn != 0) {
+				if (commit) {
+					if (invalidateRevisionOnCommit) {
+						long stamp = revisionLock.writeLock();
+						try {
+							E(mdb_txn_commit(writeTxn));
+							long revisionId = lazyRevision.getRevisionId();
+							cleaner.register(lazyRevision, () -> {
+								synchronized (unusedRevisionIds) {
+									unusedRevisionIds.add(revisionId);
+								}
+								if (nextValueEvictionTime < 0) {
+									nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
+								}
+							});
+							setNewRevision();
+							clearCaches();
+						} finally {
+							revisionLock.unlockWrite(stamp);
+						}
+					} else {
 						E(mdb_txn_commit(writeTxn));
-						long revisionId = lazyRevision.getRevisionId();
-						cleaner.register(lazyRevision, () -> {
-							synchronized (unusedRevisionIds) {
-								unusedRevisionIds.add(revisionId);
-							}
-							if (nextValueEvictionTime < 0) {
-								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
-							}
-						});
-						setNewRevision();
-						clearCaches();
-					} finally {
-						revisionLock.unlockWrite(stamp);
 					}
 				} else {
-					E(mdb_txn_commit(writeTxn));
+					mdb_txn_abort(writeTxn);
 				}
-			} else {
-				mdb_txn_abort(writeTxn);
+				writeTxn = 0;
+				invalidateRevisionOnCommit = false;
 			}
-			writeTxn = 0;
-			invalidateRevisionOnCommit = false;
+		} finally {
+			txnLock.writeLock().unlock();
 		}
 	}
 
@@ -1328,10 +1338,16 @@ class ValueStore extends AbstractValueFactory {
 	public void close() throws IOException {
 
 		if (env != 0) {
-			closeReadTransactions();
-			endTransaction(false);
-			mdb_env_close(env);
-			env = 0;
+			txnLock.writeLock().lock();
+			long closingEnv = env;
+			try {
+				closeReadTransactions();
+				endTransaction(false);
+				mdb_env_close(closingEnv);
+				env = 0;
+			} finally {
+				txnLock.writeLock().unlock();
+			}
 		}
 	}
 
