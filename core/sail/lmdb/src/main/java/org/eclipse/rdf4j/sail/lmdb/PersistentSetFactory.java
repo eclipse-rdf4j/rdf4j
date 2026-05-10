@@ -86,32 +86,23 @@ class PersistentSetFactory<T extends Serializable> {
 	}
 
 	public synchronized void close() throws IOException {
-		LmdbUtil.lockNativeWrite(env);
-		try {
-			if (writeTxn != 0) {
-				mdb_txn_abort(writeTxn);
-				writeTxn = 0;
-			}
-
-			// We don't need to free the pointer because it was allocated
-			// by java.nio.ByteBuffer, which will handle freeing for us.
-			// writeTxnPp.free();
-			mdb_env_close(env);
-			FileUtils.deleteDirectory(dbDir.toFile());
-		} finally {
-			LmdbUtil.unlockNativeWrite(env);
+		if (writeTxn != 0) {
+			mdb_txn_abort(writeTxn);
+			writeTxn = 0;
 		}
+
+		// We don't need to free the pointer because it was allocated
+		// by java.nio.ByteBuffer, which will handle freeing for us.
+		// writeTxnPp.free();
+
+		mdb_env_close(env);
+		FileUtils.deleteDirectory(dbDir.toFile());
 	}
 
 	synchronized void commit() throws IOException {
-		LmdbUtil.lockNativeWrite(env);
-		try {
-			if (writeTxn != 0) {
-				E(mdb_txn_commit(writeTxn));
-				writeTxn = 0;
-			}
-		} finally {
-			LmdbUtil.unlockNativeWrite(env);
+		if (writeTxn != 0) {
+			E(mdb_txn_commit(writeTxn));
+			writeTxn = 0;
 		}
 	}
 
@@ -119,7 +110,6 @@ class PersistentSetFactory<T extends Serializable> {
 		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
 			StampedLongAdderLockManager lockManager = txnManager.lockManager();
 			long writeStamp = lockManager.writeLock();
-			LmdbUtil.lockNativeWrite(env);
 			try {
 				txnManager.deactivate();
 
@@ -131,7 +121,6 @@ class PersistentSetFactory<T extends Serializable> {
 				E(mdb_txn_begin(env, NULL, 0, writeTxnPp));
 				writeTxn = writeTxnPp.get(0);
 			} finally {
-				LmdbUtil.unlockNativeWrite(env);
 				try {
 					txnManager.activate();
 				} finally {

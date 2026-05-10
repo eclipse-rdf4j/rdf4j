@@ -48,18 +48,13 @@ class TxnManager {
 	}
 
 	private long startReadTxn() throws IOException {
-		LmdbUtil.lockNativeWrite(env);
-		try {
-			long readTxn;
-			try (MemoryStack stack = stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-				readTxn = pp.get(0);
-			}
-			return readTxn;
-		} finally {
-			LmdbUtil.unlockNativeWrite(env);
+		long readTxn;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+			readTxn = pp.get(0);
 		}
+		return readTxn;
 	}
 
 	/**
@@ -84,22 +79,11 @@ class TxnManager {
 	 * @throws IOException if the transaction cannot be started for some reason
 	 */
 	Txn createReadTxn() throws IOException {
-		long readStamp;
-		try {
-			readStamp = lockManager.readLock();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new SailException(e);
+		Txn txnRef = new Txn(createReadTxnInternal());
+		synchronized (active) {
+			active.put(txnRef, Boolean.TRUE);
 		}
-		try {
-			Txn txnRef = new Txn(createReadTxnInternal());
-			synchronized (active) {
-				active.put(txnRef, Boolean.TRUE);
-			}
-			return txnRef;
-		} finally {
-			lockManager.unlockRead(readStamp);
-		}
+		return txnRef;
 	}
 
 	long createReadTxnInternal() throws IOException {
@@ -113,12 +97,7 @@ class TxnManager {
 			if (txn == 0) {
 				txn = startReadTxn();
 			} else {
-				LmdbUtil.lockNativeWrite(env);
-				try {
-					mdb_txn_renew(txn);
-				} finally {
-					LmdbUtil.unlockNativeWrite(env);
-				}
+				mdb_txn_renew(txn);
 			}
 		} else {
 			txn = startReadTxn();
@@ -199,27 +178,22 @@ class TxnManager {
 		}
 
 		private void free(long txn) {
-			LmdbUtil.lockNativeWrite(env);
-			try {
-				switch (mode) {
-				case RESET:
-					synchronized (pool) {
-						if (poolIndex < pool.length - 1) {
-							mdb_txn_reset(txn);
-							pool[++poolIndex] = txn;
-						} else {
-							mdb_txn_abort(txn);
-						}
+			switch (mode) {
+			case RESET:
+				synchronized (pool) {
+					if (poolIndex < pool.length - 1) {
+						mdb_txn_reset(txn);
+						pool[++poolIndex] = txn;
+					} else {
+						mdb_txn_abort(txn);
 					}
-					break;
-				case ABORT:
-					mdb_txn_abort(txn);
-					break;
-				case NONE:
-					break;
 				}
-			} finally {
-				LmdbUtil.unlockNativeWrite(env);
+				break;
+			case ABORT:
+				mdb_txn_abort(txn);
+				break;
+			case NONE:
+				break;
 			}
 		}
 
@@ -235,30 +209,20 @@ class TxnManager {
 		 * Resets current transaction as it points to "old" data.
 		 */
 		void reset() throws IOException {
-			LmdbUtil.lockNativeWrite(env);
-			try {
-				mdb_txn_reset(txn);
-				E(mdb_txn_renew(txn));
-				version++;
-			} finally {
-				LmdbUtil.unlockNativeWrite(env);
-			}
+			mdb_txn_reset(txn);
+			E(mdb_txn_renew(txn));
+			version++;
 		}
 
 		/**
 		 * Triggers active state of current transaction.
 		 */
 		void setActive(boolean active) throws IOException {
-			LmdbUtil.lockNativeWrite(env);
-			try {
-				if (active) {
-					E(mdb_txn_renew(txn));
-					version++;
-				} else {
-					mdb_txn_reset(txn);
-				}
-			} finally {
-				LmdbUtil.unlockNativeWrite(env);
+			if (active) {
+				E(mdb_txn_renew(txn));
+				version++;
+			} else {
+				mdb_txn_reset(txn);
 			}
 		}
 

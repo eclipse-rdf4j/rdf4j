@@ -228,8 +228,6 @@ class TripleStore implements Closeable {
 			return ip.get(0);
 		});
 
-		// It is not allowed to change the mode to ABORT. This ruins performance. If there are any problems then you
-		// need to fix the root cause and not just patch it by making everything slow!
 		txnManager = new TxnManager(env, Mode.RESET);
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
@@ -473,23 +471,8 @@ class TripleStore implements Closeable {
 				}
 			}
 
-			StampedLongAdderLockManager lockManager = txnManager.lockManager();
-			long writeStamp;
-			try {
-				writeStamp = lockManager.writeLock();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new SailException(e);
-			}
-			long closingEnv = env;
-			LmdbUtil.lockNativeWrite(closingEnv);
-			try {
-				mdb_env_close(closingEnv);
-				env = 0;
-			} finally {
-				LmdbUtil.unlockNativeWrite(closingEnv);
-				lockManager.unlockWrite(writeStamp);
-			}
+			mdb_env_close(env);
+			env = 0;
 
 			if (!caughtExceptions.isEmpty()) {
 				throw new IOException(caughtExceptions.get(0));
@@ -1097,16 +1080,11 @@ class TripleStore implements Closeable {
 	}
 
 	public void startTransaction() throws IOException {
-		LmdbUtil.lockNativeWrite(env);
-		try {
-			try (MemoryStack stack = stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
 
-				E(mdb_txn_begin(env, NULL, 0, pp));
-				writeTxn = pp.get(0);
-			}
-		} finally {
-			LmdbUtil.unlockNativeWrite(env);
+			E(mdb_txn_begin(env, NULL, 0, pp));
+			writeTxn = pp.get(0);
 		}
 	}
 
@@ -1115,20 +1093,18 @@ class TripleStore implements Closeable {
 	 */
 	void endTransaction(boolean commit) throws IOException {
 		if (writeTxn != 0) {
-			StampedLongAdderLockManager lockManager = txnManager.lockManager();
-			long writeStamp;
-			try {
-				writeStamp = lockManager.writeLock();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new SailException(e);
-			}
-			LmdbUtil.lockNativeWrite(env);
 			try {
 				if (commit) {
 					try {
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
+							StampedLongAdderLockManager lockManager = txnManager.lockManager();
+							long readStamp;
+							try {
+								readStamp = lockManager.readLock();
+							} catch (InterruptedException e) {
+								throw new SailException(e);
+							}
 							try {
 								txnManager.deactivate();
 								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
@@ -1148,7 +1124,7 @@ class TripleStore implements Closeable {
 								try {
 									txnManager.activate();
 								} finally {
-									// lock released below
+									lockManager.unlockRead(readStamp);
 								}
 							}
 						} else {
@@ -1165,8 +1141,6 @@ class TripleStore implements Closeable {
 					mdb_txn_abort(writeTxn);
 				}
 			} finally {
-				LmdbUtil.unlockNativeWrite(env);
-				lockManager.unlockWrite(writeStamp);
 				writeTxn = 0;
 				// ensure that record cache is always reset
 				if (recordCache != null) {

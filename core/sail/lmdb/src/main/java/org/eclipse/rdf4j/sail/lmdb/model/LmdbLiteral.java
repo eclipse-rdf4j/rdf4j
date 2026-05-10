@@ -155,8 +155,6 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			this.language = lmdbLiteral.language;
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
-			if (label != null)
-				this.initialized = true;
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
 		}
@@ -200,7 +198,6 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	public void setLabel(String label) {
 		this.label = label;
-		this.initialized = true;
 	}
 
 	@Override
@@ -219,10 +216,6 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 				if (!initialized) {
 					boolean resolved = revision.resolveValue(internalID, this);
 					initialized = resolved;
-					if (!resolved) {
-						revision.resolveValue(internalID, this);
-						System.out.println();
-					}
 					assert resolved;
 				}
 			}

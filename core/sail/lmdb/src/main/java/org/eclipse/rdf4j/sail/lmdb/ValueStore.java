@@ -862,8 +862,9 @@ class ValueStore extends AbstractValueFactory {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				return transaction.exec(stack, writeTxn);
 			}
+		} else {
+			return LmdbUtil.transaction(env, transaction);
 		}
-		return LmdbUtil.transaction(env, transaction);
 	}
 
 	int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
@@ -1186,7 +1187,6 @@ class ValueStore extends AbstractValueFactory {
 
 	public void startTransaction(boolean resize) throws IOException {
 		txnLock.writeLock().lock();
-		LmdbUtil.lockNativeWrite(env);
 		try {
 			try (MemoryStack stack = stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
@@ -1212,7 +1212,6 @@ class ValueStore extends AbstractValueFactory {
 				}
 			}
 		} finally {
-			LmdbUtil.unlockNativeWrite(env);
 			txnLock.writeLock().unlock();
 		}
 	}
@@ -1222,7 +1221,6 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	void endTransaction(boolean commit) throws IOException {
 		txnLock.writeLock().lock();
-		LmdbUtil.lockNativeWrite(env);
 		try {
 			if (writeTxn != 0) {
 				if (commit) {
@@ -1248,20 +1246,12 @@ class ValueStore extends AbstractValueFactory {
 						E(mdb_txn_commit(writeTxn));
 					}
 				} else {
-					long stamp = revisionLock.writeLock();
-					try {
-						mdb_txn_abort(writeTxn);
-						setNewRevision();
-						clearCaches();
-					} finally {
-						revisionLock.unlockWrite(stamp);
-					}
+					mdb_txn_abort(writeTxn);
 				}
 				writeTxn = 0;
 				invalidateRevisionOnCommit = false;
 			}
 		} finally {
-			LmdbUtil.unlockNativeWrite(env);
 			txnLock.writeLock().unlock();
 		}
 	}
@@ -1350,14 +1340,12 @@ class ValueStore extends AbstractValueFactory {
 		if (env != 0) {
 			txnLock.writeLock().lock();
 			long closingEnv = env;
-			LmdbUtil.lockNativeWrite(closingEnv);
 			try {
 				closeReadTransactions();
 				endTransaction(false);
 				mdb_env_close(closingEnv);
 				env = 0;
 			} finally {
-				LmdbUtil.unlockNativeWrite(closingEnv);
 				txnLock.writeLock().unlock();
 			}
 		}
@@ -1373,7 +1361,6 @@ class ValueStore extends AbstractValueFactory {
 
 		static class State implements Runnable {
 			public long txn;
-			public long env;
 			public long depth;
 			private boolean initialized;
 
@@ -1383,12 +1370,7 @@ class ValueStore extends AbstractValueFactory {
 
 			@Override
 			public void run() {
-				if (!initialized) {
-					return;
-				}
-				long txnEnv = env;
-				LmdbUtil.lockNativeWrite(txnEnv);
-				try {
+				if (initialized) {
 					var txn = this.txn;
 					this.txn = -1;
 					if (txn != -1) {
@@ -1402,8 +1384,6 @@ class ValueStore extends AbstractValueFactory {
 						}
 					}
 					initialized = false;
-				} finally {
-					LmdbUtil.unlockNativeWrite(txnEnv);
 				}
 			}
 		}
@@ -1459,12 +1439,7 @@ class ValueStore extends AbstractValueFactory {
 
 			if (state.depth == 0) {
 				try {
-					LmdbUtil.lockNativeWrite(env);
-					try {
-						E(mdb_txn_renew(state.txn));
-					} finally {
-						LmdbUtil.unlockNativeWrite(env);
-					}
+					E(mdb_txn_renew(state.txn));
 				} catch (IOException e) {
 					closeInternal();
 					startTxn(env);
@@ -1477,14 +1452,8 @@ class ValueStore extends AbstractValueFactory {
 		private void startTxn(long env) throws IOException {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
-				LmdbUtil.lockNativeWrite(env);
-				try {
-					E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-					state.txn = pp.get(0);
-					state.env = env;
-				} finally {
-					LmdbUtil.unlockNativeWrite(env);
-				}
+				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+				state.txn = pp.get(0);
 			}
 		}
 
@@ -1494,12 +1463,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 			state.depth--;
 			if (state.depth == 0 && state.initialized) {
-				LmdbUtil.lockNativeWrite(state.env);
-				try {
-					mdb_txn_reset(state.txn);
-				} finally {
-					LmdbUtil.unlockNativeWrite(state.env);
-				}
+				mdb_txn_reset(state.txn);
 			}
 		}
 
@@ -1662,9 +1626,6 @@ class ValueStore extends AbstractValueFactory {
 		bb.get();
 		long nsID = Varint.readUnsignedHeap(bb);
 		String namespace = getNamespace(nsID);
-		if (namespace == null) {
-			throw new IllegalStateException("Namespace not found for id " + nsID);
-		}
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
 		if (value == null) {

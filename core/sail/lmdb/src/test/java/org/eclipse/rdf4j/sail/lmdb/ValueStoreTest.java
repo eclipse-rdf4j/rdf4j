@@ -15,6 +15,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +26,12 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -278,8 +285,81 @@ public class ValueStoreTest {
 		assertNotEquals("IDs should NOT have been reused since GC is disabled", Collections.emptySet(), ids);
 	}
 
+	@Test
+	public void commitWaitsForReadTransactionUsingActiveWriteTxn() throws Exception {
+		valueStore.close();
+		BlockingValueStore blockingValueStore = new BlockingValueStore(new File(dataDir, "blocking-values"),
+				new LmdbStoreConfig());
+		valueStore = blockingValueStore;
+
+		valueStore.startTransaction(true);
+		valueStore.storeValue(Values.iri("urn:stored"));
+
+		CountDownLatch readEntered = new CountDownLatch(1);
+		CountDownLatch releaseRead = new CountDownLatch(1);
+		blockingValueStore.blockNextRead(readEntered, releaseRead);
+
+		ExecutorService executorService = Executors.newFixedThreadPool(2);
+		try {
+			Future<Long> reader = executorService.submit(() -> valueStore.getId(Values.iri("urn:missing")));
+			assertTrue("read transaction should be entered", readEntered.await(5, TimeUnit.SECONDS));
+
+			CountDownLatch commitStarted = new CountDownLatch(1);
+			Future<?> commit = executorService.submit(() -> {
+				commitStarted.countDown();
+				valueStore.commit();
+				return null;
+			});
+			assertTrue("commit should start", commitStarted.await(5, TimeUnit.SECONDS));
+
+			assertThrows(TimeoutException.class, () -> commit.get(250, TimeUnit.MILLISECONDS),
+					"commit must wait while a read path is using the active write transaction");
+
+			releaseRead.countDown();
+			reader.get(5, TimeUnit.SECONDS);
+			commit.get(5, TimeUnit.SECONDS);
+		} finally {
+			releaseRead.countDown();
+			executorService.shutdownNow();
+		}
+	}
+
 	@AfterEach
 	public void after() throws Exception {
 		valueStore.close();
+	}
+
+	private static final class BlockingValueStore extends ValueStore {
+
+		private volatile CountDownLatch readEntered;
+		private volatile CountDownLatch releaseRead;
+
+		private BlockingValueStore(File dir, LmdbStoreConfig config) throws IOException {
+			super(dir, config);
+		}
+
+		private void blockNextRead(CountDownLatch readEntered, CountDownLatch releaseRead) {
+			this.readEntered = readEntered;
+			this.releaseRead = releaseRead;
+		}
+
+		@Override
+		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
+			return super.readTransaction(env, (stack, txn) -> {
+				CountDownLatch entered = readEntered;
+				CountDownLatch release = releaseRead;
+				if (entered != null) {
+					readEntered = null;
+					entered.countDown();
+					try {
+						assertTrue("read transaction should be released", release.await(5, TimeUnit.SECONDS));
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IOException(e);
+					}
+				}
+				return transaction.exec(stack, txn);
+			});
+		}
 	}
 }

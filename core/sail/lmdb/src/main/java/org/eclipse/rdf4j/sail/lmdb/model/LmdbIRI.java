@@ -89,19 +89,13 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
-		synchronized (this) {
-			if (initializedValue instanceof LmdbIRI) {
-				LmdbIRI initializedIRI = (LmdbIRI) initializedValue;
-				this.iriString = initializedIRI.iriString;
-				if (this.iriString != null) {
-					this.initialized = true;
-				}
-				this.localNameIdx = initializedIRI.localNameIdx;
-			} else {
-				throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
-			}
+		if (initializedValue instanceof LmdbIRI) {
+			LmdbIRI initializedIRI = (LmdbIRI) initializedValue;
+			this.iriString = initializedIRI.iriString;
+			this.localNameIdx = initializedIRI.localNameIdx;
+		} else {
+			throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
 		}
-
 	}
 
 	@Override
@@ -118,7 +112,6 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 		this.iriString = iriString;
 		this.localNameIdx = -1;
-		this.initialized = true;
 	}
 
 	@Override
@@ -149,9 +142,6 @@ public class LmdbIRI implements LmdbResource, IRI {
 			return iriString;
 		}
 		init();
-		if (iriString == null) {
-			throw new IllegalStateException("IRI string value is still null after initialization");
-		}
 		return iriString;
 	}
 
@@ -159,8 +149,6 @@ public class LmdbIRI implements LmdbResource, IRI {
 		if (iriString == null && !initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					assert iriString == null : "iriString should still be null at this point";
-					assert !initialized : "initialized should still be false at this point";
 					boolean resolved = revision.resolveValue(internalID, this);
 					if (!resolved) {
 						log.warn("Could not resolve value");
@@ -208,9 +196,6 @@ public class LmdbIRI implements LmdbResource, IRI {
 					if (iriString == null) {
 						iriString = otherLmdbURI.iriString;
 						localNameIdx = otherLmdbURI.localNameIdx;
-						if (iriString != null) {
-							initialized = true;
-						}
 					} else if (otherLmdbURI.iriString == null) {
 						otherLmdbURI.iriString = iriString;
 						otherLmdbURI.localNameIdx = localNameIdx;
@@ -234,9 +219,6 @@ public class LmdbIRI implements LmdbResource, IRI {
 		}
 
 		init();
-		if (iriString == null) {
-			throw new IllegalStateException("IRI string value is still null after initialization");
-		}
 		return iriString.hashCode();
 	}
 
@@ -253,6 +235,5 @@ public class LmdbIRI implements LmdbResource, IRI {
 	public void setNamespaceAndIri(String namespace, String localName) {
 		localNameIdx = namespace.length();
 		this.iriString = namespace + localName;
-		initialized = true;
 	}
 }
