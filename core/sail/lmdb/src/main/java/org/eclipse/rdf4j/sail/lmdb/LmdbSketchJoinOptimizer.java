@@ -3418,7 +3418,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private JoinOrderPlanner.Algorithm plannerAlgorithm(int segmentSize) {
-			if (segmentSize < JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT) {
+			if (segmentSize <= JoinOrderPlanner.dynamicProgrammingJoinArgLimit()) {
 				return JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING;
 			}
 			return JoinOrderPlanner.Algorithm.GREEDY;

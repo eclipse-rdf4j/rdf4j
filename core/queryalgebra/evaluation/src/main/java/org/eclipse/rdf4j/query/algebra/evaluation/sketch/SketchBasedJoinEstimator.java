@@ -5710,7 +5710,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 		JoinOrderPlanner.Algorithm algorithm = tupleExprs
-				.size() <= SketchJoinOrderPlanner.MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS
+				.size() <= JoinOrderPlanner.dynamicProgrammingJoinArgLimit()
 						? JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
 						: JoinOrderPlanner.Algorithm.GREEDY;
 		SketchJoinOrderPlanner.PlanOutcome outcome = new SketchJoinOrderPlanner(this, JoinOrderWorkAdjuster.NO_OP,

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -179,6 +180,90 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Expected compact Pareto frontier alternatives in logical exploration: " + exploration);
 		assertTrue(exploration.contains("order="),
 				"Expected frontier alternatives to include considered factor orders: " + exploration);
+	}
+
+	@Test
+	void systemPropertiesConfigureParetoFrontierAndBeamWidth() {
+		withSystemProperties(Map.of(
+				"rdf4j.optimizer.sketchPlanner.frontierLimit", "3",
+				"rdf4j.optimizer.sketchPlanner.greedyBeamWidth", "5"), () -> {
+					StubSketchStatementSource store = new StubSketchStatementSource();
+					IRI pA = VF.createIRI("urn:pareto-config:a");
+					IRI pB = VF.createIRI("urn:pareto-config:b");
+					IRI pC = VF.createIRI("urn:pareto-config:c");
+					for (int i = 0; i < 4; i++) {
+						store.add(VF.createStatement(VF.createIRI("urn:pareto-config:a:s" + i), pA,
+								VF.createIRI("urn:pareto-config:a:o" + i)));
+						store.add(VF.createStatement(VF.createIRI("urn:pareto-config:b:s" + i), pB,
+								VF.createIRI("urn:pareto-config:b:o" + i)));
+						store.add(VF.createStatement(VF.createIRI("urn:pareto-config:c:s" + i), pC,
+								VF.createIRI("urn:pareto-config:c:o" + i)));
+					}
+
+					SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+					estimator.rebuild();
+
+					List<TupleExpr> args = List.of(pattern("aS", pA, "aO"), pattern("bS", pB, "bO"),
+							pattern("cS", pC, "cO"));
+					JoinFactorCostModel costModel = (factor, boundVars) -> Optional
+							.of(new JoinFactorCostModel.FactorCostEstimate(4.0d, 4.0d));
+
+					JoinOrderPlanner.JoinOrderPlan memoPlan = estimator
+							.planJoinOrderAttempt(args, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+									costModel, List.of())
+							.getPlan()
+							.orElseThrow();
+					String memoExploration = memoPlan.getSummaryStringMetrics()
+							.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
+					assertTrue(memoExploration.contains("frontierLimit=3"), memoExploration);
+					assertTrue(memoExploration.contains("beamWidth=5"), memoExploration);
+
+					JoinOrderPlanner.JoinOrderPlan beamPlan = estimator
+							.planJoinOrderAttempt(args, Set.of(), JoinOrderPlanner.Algorithm.GREEDY, costModel,
+									List.of())
+							.getPlan()
+							.orElseThrow();
+					String beamExploration = beamPlan.getSummaryStringMetrics()
+							.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
+					assertTrue(beamExploration.contains("mode=pareto-beam"), beamExploration);
+					assertTrue(beamExploration.contains("frontierLimit=3"), beamExploration);
+					assertTrue(beamExploration.contains("beamWidth=5"), beamExploration);
+				});
+	}
+
+	@Test
+	void systemPropertyConfiguresDynamicProgrammingJoinArgLimit() {
+		withSystemProperties(Map.of("rdf4j.optimizer.sketchPlanner.dynamicProgrammingJoinArgLimit", "2"), () -> {
+			StubSketchStatementSource store = new StubSketchStatementSource();
+			IRI pA = VF.createIRI("urn:dp-config:a");
+			IRI pB = VF.createIRI("urn:dp-config:b");
+			IRI pC = VF.createIRI("urn:dp-config:c");
+			for (int i = 0; i < 4; i++) {
+				store.add(VF.createStatement(VF.createIRI("urn:dp-config:s" + i), pA,
+						VF.createIRI("urn:dp-config:o" + i)));
+				store.add(VF.createStatement(VF.createIRI("urn:dp-config:s" + i), pB,
+						VF.createIRI("urn:dp-config:x" + i)));
+				store.add(VF.createStatement(VF.createIRI("urn:dp-config:x" + i), pC,
+						VF.createIRI("urn:dp-config:z" + i)));
+			}
+
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+			estimator.rebuild();
+
+			List<TupleExpr> args = List.of(pattern("s", pA, "o"), pattern("s", pB, "x"), pattern("x", pC, "z"));
+			JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+					SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP,
+					List.of());
+
+			assertTrue(attempt.getPlan().isEmpty(), "Expected configured DP limit to reject three-factor DP plans");
+			assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE.name(),
+					attempt.getPlannerPath());
+			assertTrue(attempt.getDiagnostics()
+					.stream()
+					.anyMatch(diagnostic -> diagnostic.contains("maxDynamicProgrammingArgs=2")),
+					"Expected diagnostics to report the configured DP limit: " + attempt.getDiagnostics());
+		});
 	}
 
 	@Test
@@ -2823,6 +2908,31 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Expected Pareto memo exploration: " + plan.getSummaryStringMetrics());
 		assertTrue(summary.contains("finalVector="),
 				"Expected final cost vector diagnostics: " + plan.getSummaryStringMetrics());
+	}
+
+	private static void withSystemProperties(Map<String, String> properties, Runnable action) {
+		Map<String, String> previousValues = new HashMap<>();
+		for (String key : properties.keySet()) {
+			previousValues.put(key, System.getProperty(key));
+		}
+		try {
+			properties.forEach((key, value) -> {
+				if (value == null) {
+					System.clearProperty(key);
+				} else {
+					System.setProperty(key, value);
+				}
+			});
+			action.run();
+		} finally {
+			previousValues.forEach((key, value) -> {
+				if (value == null) {
+					System.clearProperty(key);
+				} else {
+					System.setProperty(key, value);
+				}
+			});
+		}
 	}
 
 	private static StatementPattern pattern(String subjVar, IRI pred, String objVar) {

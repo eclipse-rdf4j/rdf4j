@@ -26,8 +26,26 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 public interface JoinOrderPlanner {
 
 	int DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT = 20;
+	String DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT_PROPERTY = "rdf4j.optimizer.sketchPlanner.dynamicProgrammingJoinArgLimit";
 	int FILTER_COST_CHEAP = 0;
 	int FILTER_COST_EXPENSIVE = 1;
+
+	static int dynamicProgrammingJoinArgLimit() {
+		return intSystemProperty(DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT_PROPERTY,
+				DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT, 0);
+	}
+
+	private static int intSystemProperty(String propertyName, int defaultValue, int minimumValue) {
+		String value = System.getProperty(propertyName);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			return Math.max(minimumValue, Integer.parseInt(value.trim()));
+		} catch (NumberFormatException ignored) {
+			return defaultValue;
+		}
+	}
 
 	enum Algorithm {
 		GREEDY,
