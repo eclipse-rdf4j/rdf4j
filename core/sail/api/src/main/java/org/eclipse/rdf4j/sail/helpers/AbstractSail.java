@@ -502,20 +502,20 @@ public abstract class AbstractSail implements Sail {
 			return;
 		}
 
-		Path configuredPath = Path.of(configuredLogFile.trim());
-		Path resolvedPath = configuredPath;
-		if (!configuredPath.isAbsolute()) {
-			File currentDataDir = getDataDir();
-			if (currentDataDir == null) {
-				slowQueryLogger.warn(logEntry + System.lineSeparator()
-						+ "Warning: configured slow query log file '" + configuredLogFile
-						+ "' is relative but dataDir is not set. Falling back to logger.");
-				return;
-			}
-			resolvedPath = currentDataDir.toPath().resolve(configuredPath).normalize();
-		}
-
 		try {
+			Path configuredPath = Path.of(configuredLogFile.trim());
+			Path resolvedPath = configuredPath;
+			if (!configuredPath.isAbsolute()) {
+				File currentDataDir = getDataDir();
+				if (currentDataDir == null) {
+					slowQueryLogger.warn(logEntry + System.lineSeparator()
+							+ "Warning: configured slow query log file '" + configuredLogFile
+							+ "' is relative but dataDir is not set. Falling back to logger.");
+					return;
+				}
+				resolvedPath = currentDataDir.toPath().resolve(configuredPath).normalize();
+			}
+
 			Path parent = resolvedPath.getParent();
 			if (parent != null) {
 				Files.createDirectories(parent);
@@ -525,8 +525,13 @@ public abstract class AbstractSail implements Sail {
 						StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND,
 						StandardOpenOption.WRITE);
 			}
+		} catch (RuntimeException e) {
+			slowQueryLogger.warn(
+					"Invalid slow query log file configuration '{}'. Falling back to logger.",
+					configuredLogFile, e);
+			slowQueryLogger.warn(logEntry);
 		} catch (IOException e) {
-			slowQueryLogger.warn("Failed to write slow query log entry to {}", resolvedPath, e);
+			slowQueryLogger.warn("Failed to write slow query log entry to configured path '{}'.", configuredLogFile, e);
 			slowQueryLogger.warn(logEntry);
 		}
 	}

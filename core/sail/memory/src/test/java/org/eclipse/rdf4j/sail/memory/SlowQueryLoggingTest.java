@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -199,6 +200,45 @@ class SlowQueryLoggingTest {
 
 		assertThat(expectedLogFile).exists();
 		assertThat(Files.readString(expectedLogFile)).contains("SELECT * WHERE { ?s ?p ?o }");
+	}
+
+	@Test
+	void invalidConfiguredLogFileFallsBackToLogger() throws Exception {
+		TestMemoryStore store = new TestMemoryStore();
+		configureSlowQueryThreshold(store, 1L);
+		configureSlowQueryLogFile(store, "slow\u0000query.log");
+		store.queueTimestampMillis(1_000L, 3_000L);
+
+		Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger("org.eclipse.rdf4j.sail.slowquery");
+		Level previousLevel = logger.getLevel();
+		CapturingAppender appender = new CapturingAppender();
+		appender.setContext((LoggerContext) org.slf4j.LoggerFactory.getILoggerFactory());
+		logger.addAppender(appender);
+		appender.start();
+		logger.setLevel(Level.WARN);
+
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			assertThatCode(() -> {
+				try (RepositoryConnection connection = repository.getConnection()) {
+					connection.add(RDF.TYPE, RDF.TYPE, RDF.TYPE);
+				}
+				try (RepositoryConnection connection = repository.getConnection()) {
+					boolean result = connection.prepareBooleanQuery("ASK WHERE { ?s ?p ?o }").evaluate();
+					assertThat(result).isTrue();
+				}
+			}).doesNotThrowAnyException();
+		} finally {
+			repository.shutDown();
+			logger.detachAppender(appender);
+			appender.stop();
+			logger.setLevel(previousLevel);
+		}
+
+		assertThat(appender.messages(Level.WARN))
+				.anySatisfy(message -> assertThat(message).contains("ASK WHERE { ?s ?p ?o }"))
+				.anySatisfy(message -> assertThat(message).containsIgnoringCase("invalid slow query log file"));
 	}
 
 	private static void configureSlowQueryThreshold(MemoryStore store, long thresholdSeconds) throws Exception {
