@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static final double MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS = 512.0d;
+	private static final double MAX_BOUND_STATEMENT_GUARD_LEFT_WORK_ROWS = 4_096.0d;
 
 	private final Function<BindingSet, CloseableIteration<BindingSet>> eval;
 	private final BoundStatementPatternGuardJoinIteration.GuardCounter guardCounter;
@@ -126,9 +127,16 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	private static boolean isBoundStatementGuardInvocationBudgetReasonable(Join join) {
 		double leftRows = join.getLeftArg()
 				.getResultSizeEstimate();
-		return !Double.isFinite(leftRows)
-				|| leftRows < 0.0d
-				|| leftRows <= MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS;
+		if (Double.isFinite(leftRows) && leftRows >= 0.0d) {
+			return leftRows <= MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS;
+		}
+		double leftWorkRows = join.getLeftArg()
+				.getCostEstimate();
+		return isBoundStatementGuardBudgetReasonable(leftWorkRows, MAX_BOUND_STATEMENT_GUARD_LEFT_WORK_ROWS);
+	}
+
+	private static boolean isBoundStatementGuardBudgetReasonable(double value, double maximum) {
+		return !Double.isFinite(value) || value < 0.0d || value <= maximum;
 	}
 
 	private static boolean isBoundStatementPatternGuardCandidate(TupleExpr expr) {

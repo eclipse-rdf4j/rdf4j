@@ -422,6 +422,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		if (targetQuery.theme == Theme.LIBRARY && targetQuery.queryIndex == 8) {
 			return libraryQ8FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
+		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 2) {
+			return engineeringQ2FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
 			return engineeringQ9FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
@@ -602,6 +605,13 @@ class LmdbThemeTopRegressionSnapshotIT {
 			List<String> mismatches = libraryQ8FastShapeMismatches(renderedQuery, plan);
 			assertTrue(mismatches.isEmpty(),
 					targetQuery.key() + " should keep the canonical fast member-loan shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 2) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = engineeringQ2FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast assembly-name shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		} else if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
 			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
@@ -1210,6 +1220,37 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/satisfies",
 				"plannedIndexAccessMode=directLookup", "correlated satisfies EXISTS should be direct");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
+	private static List<String> engineeringQ2FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }",
+				"missing finite assembly-name anchor");
+		requireDoesNotContain(mismatches, renderedQuery,
+				"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
+				"selected finite anchor should satisfy the original assembly-name filter");
+		requireBefore(mismatches, renderedQuery, "VALUES ?assemblyName",
+				"?assembly <http://example.com/theme/engineering/name> ?assemblyName .",
+				"finite assembly-name anchor should feed the name lookup");
+		requireBefore(mismatches, renderedQuery,
+				"?assembly <http://example.com/theme/engineering/name> ?assemblyName .",
+				"?assembly a <http://example.com/theme/engineering/Assembly> .",
+				"assembly name lookup should run before the type guard");
+		requireBefore(mismatches, renderedQuery,
+				"?assembly a <http://example.com/theme/engineering/Assembly> .",
+				"OPTIONAL",
+				"assembly bindings should be resolved before optional component fanout");
+		requireContains(mismatches, plan, "optimizer.guaranteeOptions=generated=",
+				"missing guarantee option telemetry");
+		requireContains(mismatches, plan, "selected=finite-anchor:assemblyName",
+				"finite assembly-name option should be selected");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/name",
+				"plannedLookupComponents=[P, O]", "assembly name should use predicate/object lookup");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[S, P, O]", "assembly type should use subject/predicate/object lookup");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}
 

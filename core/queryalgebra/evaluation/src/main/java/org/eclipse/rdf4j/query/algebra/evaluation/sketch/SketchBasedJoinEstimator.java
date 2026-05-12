@@ -197,7 +197,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final double DISCONNECTED_JOIN_WORK_PENALTY = 16.0d;
 	private static final int DEFAULT_ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT = 64;
 	private static final double DEFAULT_ZERO_INTERSECTION_SKEW_RATIO = 128.0d;
-	private static final long DEFAULT_ZERO_INTERSECTION_ROW_BUDGET = 1_000_000L;
+	private static final long DEFAULT_ZERO_INTERSECTION_ROW_BUDGET = 4096L;
 	private static final int DEFAULT_ZERO_INTERSECTION_SAMPLE_SIZE = 128;
 	private static final int FINITE_UNIQUE_JOIN_CAP_MAX_ROWS = 4096;
 	private static final double FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT = 1.25d;
@@ -5692,6 +5692,63 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return cardinalityWithInitiallyBoundVars(tupleExprs, Collections.emptySet());
 	}
 
+	public double orderedCardinality(List<TupleExpr> tupleExprs) {
+		if (!isReady() || tupleExprs == null || tupleExprs.isEmpty()) {
+			recordRobustCardinalityPath(
+					isReady() ? SketchPlannerPath.UNSUPPORTED_SHAPE : SketchPlannerPath.ROBUST_NOT_READY);
+			return -1;
+		}
+		TuplePlanEstimate estimate = orderedStatementPatternCardinality(tupleExprs);
+		if (estimate != null) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+			return normalizeRows(estimate.outputRows);
+		}
+		TupleExpr orderedTree = leftDeepJoinTree(tupleExprs);
+		if (orderedTree == null) {
+			recordRobustCardinalityPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
+			return -1;
+		}
+		estimate = estimateTupleExprPlan(orderedTree);
+		if (estimate == null) {
+			recordRobustCardinalityPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
+			return -1;
+		}
+		recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+		return normalizeRows(estimate.outputRows);
+	}
+
+	private TuplePlanEstimate orderedStatementPatternCardinality(List<TupleExpr> tupleExprs) {
+		TuplePlanEstimate estimate = null;
+		for (TupleExpr tupleExpr : tupleExprs) {
+			if (!(tupleExpr instanceof StatementPattern)) {
+				return null;
+			}
+			TuplePlanEstimate factorEstimate = estimateTupleExprPlan(tupleExpr);
+			if (factorEstimate == null) {
+				return null;
+			}
+			if (estimate == null) {
+				estimate = factorEstimate;
+			} else {
+				JoinStepEstimate step = estimateJoinStep(estimate, factorEstimate);
+				estimate = new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
+			}
+		}
+		return estimate;
+	}
+
+	private TupleExpr leftDeepJoinTree(List<TupleExpr> tupleExprs) {
+		TupleExpr tree = null;
+		for (TupleExpr tupleExpr : tupleExprs) {
+			if (tupleExpr == null) {
+				return null;
+			}
+			TupleExpr clone = tupleExpr.clone();
+			tree = tree == null ? clone : new Join(tree, clone);
+		}
+		return tree;
+	}
+
 	private double cardinalityWithInitiallyBoundVars(List<TupleExpr> tupleExprs, Set<String> initiallyBoundVars) {
 		if (!isReady() || tupleExprs == null || tupleExprs.isEmpty()) {
 			recordRobustCardinalityPath(
@@ -6997,6 +7054,206 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return Math.max(leftRows, crossRows);
 		}
 		return crossRows;
+	}
+
+	public double estimateJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
+		return estimateJoinSurfaceRows(prefixFactors, factor, joinVarName, true);
+	}
+
+	public double estimateSketchJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
+		return estimateJoinSurfaceRows(prefixFactors, factor, joinVarName, false);
+	}
+
+	public double estimateExactJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
+		Double exactSurfaceRows = exactJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		return exactSurfaceRows == null ? -1.0d : normalizeRows(exactSurfaceRows);
+	}
+
+	private double estimateJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName,
+			boolean exactFallback) {
+		if (!isReady() || prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
+			return -1.0d;
+		}
+
+		TupleSketchStats prefixStats = null;
+		for (TupleExpr prefixFactor : prefixFactors) {
+			if (prefixFactor == null || !prefixFactor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			TupleSketchStats factorStats = estimateTupleExprForJoinVar(prefixFactor, joinVarName);
+			if (factorStats == null) {
+				return -1.0d;
+			}
+			prefixStats = prefixStats == null ? factorStats : mergeTupleSketchStats(prefixStats, factorStats);
+		}
+		if (prefixStats == null) {
+			return -1.0d;
+		}
+		TupleSketchStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
+		if (factorStats == null) {
+			return -1.0d;
+		}
+		double surfaceRows = normalizeRows(mergeTupleSketchStats(prefixStats, factorStats).rows);
+		if (!exactFallback) {
+			return surfaceRows;
+		}
+		Double exactSurfaceRows = exactJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		if (exactSurfaceRows != null && exactSurfaceRows >= 0.0d
+				&& (!Double.isFinite(surfaceRows) || surfaceRows <= 0.0d || exactSurfaceRows < surfaceRows)) {
+			return exactSurfaceRows;
+		}
+		return surfaceRows;
+	}
+
+	public double estimateJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+		return estimateJoinSurfaceRows(factors, joinVarName, true);
+	}
+
+	public double estimateSketchJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+		return estimateJoinSurfaceRows(factors, joinVarName, false);
+	}
+
+	public double estimateExactJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+		Double exactSurfaceRows = exactJoinSurfaceRows(factors, null, joinVarName);
+		return exactSurfaceRows == null ? -1.0d : normalizeRows(exactSurfaceRows);
+	}
+
+	private double estimateJoinSurfaceRows(List<TupleExpr> factors, String joinVarName, boolean exactFallback) {
+		if (!isReady() || factors == null || factors.isEmpty() || joinVarName == null) {
+			return -1.0d;
+		}
+
+		TupleSketchStats prefixStats = null;
+		for (TupleExpr factor : factors) {
+			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			TupleSketchStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
+			if (factorStats == null) {
+				return -1.0d;
+			}
+			prefixStats = prefixStats == null ? factorStats : mergeTupleSketchStats(prefixStats, factorStats);
+		}
+		if (prefixStats == null) {
+			return -1.0d;
+		}
+
+		double surfaceRows = normalizeRows(prefixStats.rows);
+		if (!exactFallback) {
+			return surfaceRows;
+		}
+		Double exactSurfaceRows = exactJoinSurfaceRows(factors, null, joinVarName);
+		if (exactSurfaceRows != null && exactSurfaceRows >= 0.0d
+				&& (!Double.isFinite(surfaceRows) || surfaceRows <= 0.0d || exactSurfaceRows < surfaceRows)) {
+			return exactSurfaceRows;
+		}
+		return surfaceRows;
+	}
+
+	private Double exactJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
+		List<StatementPattern> patterns = new ArrayList<>(prefixFactors.size() + 1);
+		for (TupleExpr prefixFactor : prefixFactors) {
+			StatementPattern pattern = exactJoinSurfacePattern(prefixFactor, joinVarName);
+			if (pattern != null) {
+				patterns.add(pattern);
+			}
+		}
+
+		StatementPattern currentPattern = factor == null ? null : exactJoinSurfacePattern(factor, joinVarName);
+		if (currentPattern == null && factor != null) {
+			return null;
+		}
+		if (currentPattern != null) {
+			patterns.add(currentPattern);
+		}
+		if (patterns.isEmpty()) {
+			return null;
+		}
+
+		StatementPattern scanPattern = null;
+		Component scanComponent = null;
+		double scanRowsEstimate = Double.POSITIVE_INFINITY;
+		for (StatementPattern pattern : patterns) {
+			if (!hasBoundComponent(pattern)) {
+				return null;
+			}
+			Component component = findPatternComponentByVarName(pattern, joinVarName);
+			if (component == null) {
+				return null;
+			}
+			double rowsEstimate = estimatePatternRows(pattern);
+			if (!Double.isFinite(rowsEstimate) || rowsEstimate <= 0.0d || rowsEstimate > zeroIntersectionRowBudget) {
+				continue;
+			}
+			if (rowsEstimate < scanRowsEstimate) {
+				scanRowsEstimate = rowsEstimate;
+				scanPattern = pattern;
+				scanComponent = component;
+			}
+		}
+		if (scanPattern == null) {
+			return null;
+		}
+
+		SharedVarScan scan = scanSharedVarRows(scanPattern, scanComponent, joinVarName);
+		if (scan == null) {
+			return null;
+		}
+		if (scan.scannedRows == 0L) {
+			return 0.0d;
+		}
+		if (scan.exactCounts == null) {
+			return null;
+		}
+
+		Map<Value, Double> candidateCounts = new LinkedHashMap<>(scan.exactCounts.size());
+		for (Map.Entry<Value, Long> entry : scan.exactCounts.entrySet()) {
+			candidateCounts.put(entry.getKey(), entry.getValue().doubleValue());
+		}
+		for (StatementPattern pattern : patterns) {
+			if (pattern == scanPattern) {
+				continue;
+			}
+			Map<Value, Double> survivingCounts = new LinkedHashMap<>(candidateCounts.size());
+			for (Map.Entry<Value, Double> entry : candidateCounts.entrySet()) {
+				Long rows = exactBoundPatternRows(pattern, joinVarName, entry.getKey());
+				if (rows == null) {
+					return null;
+				}
+				if (rows > 0L) {
+					survivingCounts.put(entry.getKey(), saturatingMultiply(entry.getValue(), rows.doubleValue()));
+				}
+			}
+			if (survivingCounts.isEmpty()) {
+				return 0.0d;
+			}
+			candidateCounts = survivingCounts;
+		}
+
+		double rows = 0.0d;
+		for (double count : candidateCounts.values()) {
+			rows = saturatingAdd(rows, count);
+		}
+		return normalizeRows(rows);
+	}
+
+	private StatementPattern exactJoinSurfacePattern(TupleExpr tupleExpr, String joinVarName) {
+		PatternEstimateInput input = asSketchCompatibleInput(tupleExpr);
+		if (input == null || input.filterMultiplier != 1.0d) {
+			return null;
+		}
+		StatementPattern pattern = input.pattern;
+		return findPatternComponentByVarName(pattern, joinVarName) == null ? null : pattern;
+	}
+
+	private static double saturatingMultiply(double left, double right) {
+		double result = left * right;
+		return Double.isFinite(result) ? result : Double.MAX_VALUE;
+	}
+
+	private static double saturatingAdd(double left, double right) {
+		double result = left + right;
+		return Double.isFinite(result) ? result : Double.MAX_VALUE;
 	}
 
 	private double estimateTupleExprRows(TupleExpr tupleExpr) {

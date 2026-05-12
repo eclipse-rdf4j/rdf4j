@@ -66,11 +66,11 @@ final class SketchJoinOrderPlanner {
 	private static final double STRUCTURAL_WORK_EQUIVALENCE_ROWS = 4.0d;
 	private static final double ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO = 3.0d;
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
-	private static final double NESTED_NOT_EXISTS_MIN_PASS_RATIO = 0.05d;
 	private static final double BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO = 3.0d;
 	private static final double FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS = 1_000.0d;
 	private static final int FINITE_DOMAIN_FILTER_MAX_ENUMERATED_BINDINGS = 4096;
 	private static final int COMPLETED_DEFERRED_FILTER_CONNECTIONS = 2;
+	private static final int SATISFIED_FILTER_DETAILS_LIMIT = 4;
 	private static final double DEFERRED_FILTER_ORDERING_MAX_PASS_RATIO = 0.5d;
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
 	private static final String LMDB_PLAN_ALTERNATIVES_PROPERTY = "rdf4j.optimizer.lmdb.planAlternatives";
@@ -839,6 +839,7 @@ final class SketchJoinOrderPlanner {
 		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(factorIndex, 0L, initiallyBoundVarMask,
 				conditionedEstimate.outputRows(), null);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate = factor.estimate();
+		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		if (appliesSelectiveSeedFilterRowFlow(seedMask)) {
 			rowsEnteringEstimate = applyUnlockedFilters(0L, seedMask, rowsEnteringEstimate);
 		}
@@ -1049,6 +1050,9 @@ final class SketchJoinOrderPlanner {
 				prefix.estimate(), step);
 		rowsEnteringEstimate = finiteBindingAssignmentRowFlowEstimate(candidate, prefix.estimate(),
 				rowsEnteringEstimate);
+		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
+		rowsEnteringEstimate = boundedFiniteLookupRowFlowEstimate(candidate, mask, currentBoundVarMask,
+				prefix.estimate(), rowsEnteringEstimate, physicalEstimate);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters = rowsEnteringEstimate;
 		double physicalRowFlowRows = physicalRowFlowRows(candidate, mask, currentBoundVarMask, prefix.estimate(),
 				rowsEnteringEstimate, physicalEstimate);
@@ -3204,6 +3208,10 @@ final class SketchJoinOrderPlanner {
 				|| (runtimeVarMasks[factorIndex] & ~currentlyBoundVarMask) == 0L) {
 			return Double.NaN;
 		}
+		if (physicalEstimate.exactOutputRows()
+				&& costModelChargedRepeatedInvocations(physicalEstimate.factorCostEstimate())) {
+			return Double.NaN;
+		}
 		if (isEndpointDomainPreparationStep(factorIndex, mask, prefixEstimate)) {
 			return Double.NaN;
 		}
@@ -3222,9 +3230,7 @@ final class SketchJoinOrderPlanner {
 		if (!isFiniteNonNegative(prefixRows) || prefixRows <= 1.0d) {
 			return Double.NaN;
 		}
-		double lookupInvocationRows = lookupInvocationRows(factorIndex, mask, prefixEstimate, accessShape,
-				accessShape == null ? 0 : accessShape.lookupBoundComponentMask(), prefixRows);
-		double rowFlow = lookupInvocationRows * rowsPerInvocation;
+		double rowFlow = prefixRows * rowsPerInvocation;
 		if (!isFiniteNonNegative(rowFlow) || rowFlow <= estimate.outputRows()) {
 			return Double.NaN;
 		}
@@ -3250,6 +3256,93 @@ final class SketchJoinOrderPlanner {
 			return estimate;
 		}
 		return estimator.withOutputRowsForJoinOrdering(estimate, rowFlow);
+	}
+
+	private SketchBasedJoinEstimator.TuplePlanEstimate exactPhysicalRowFlowEstimate(
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate, FactorPhysicalEstimate physicalEstimate) {
+		if (estimate == null || physicalEstimate == null || !physicalEstimate.exactOutputRows()) {
+			return estimate;
+		}
+		double outputRows = physicalEstimate.factorOutputRows();
+		if (!isFiniteNonNegative(outputRows) || outputRows < 0.0d
+				|| Double.compare(estimate.outputRows(), outputRows) == 0) {
+			return estimate;
+		}
+		return estimator.withOutputRowsForJoinOrdering(estimate, outputRows);
+	}
+
+	private SketchBasedJoinEstimator.TuplePlanEstimate boundedFiniteLookupRowFlowEstimate(int factorIndex, long mask,
+			long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate, FactorPhysicalEstimate physicalEstimate) {
+		if (estimate == null || prefixEstimate == null || physicalEstimate == null
+				|| isSmallBindingSetAssignment(factorIndex)
+				|| (runtimeVarMasks[factorIndex] & ~currentlyBoundVarMask) == 0L) {
+			return estimate;
+		}
+		SketchBasedJoinEstimator.AccessShape accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
+		if (!isFiniteExactLookupEstimate(physicalEstimate)
+				&& !hasFiniteBindingDerivedLookup(mask, accessShape, physicalEstimate.lookupComponentMask())) {
+			return estimate;
+		}
+		double rowsPerInvocation = physicalEstimate.accessRowsBeforeFilter();
+		if (!isFiniteNonNegative(rowsPerInvocation) || rowsPerInvocation <= 0.0d) {
+			return estimate;
+		}
+		if (physicalEstimate.missingLookupComponents() > 0
+				&& isFiniteNonNegative(physicalEstimate.factorOutputRows())) {
+			rowsPerInvocation = Math.max(rowsPerInvocation, physicalEstimate.factorOutputRows());
+		}
+		double prefixRows = effectiveInvocationRows(mask, prefixEstimate);
+		if (!isFiniteNonNegative(prefixRows) || prefixRows <= 0.0d) {
+			return estimate;
+		}
+		double rowFlow = prefixRows * Math.max(1.0d, rowsPerInvocation);
+		if (!isFiniteNonNegative(rowFlow) || rowFlow <= 0.0d || rowFlow >= estimate.outputRows()) {
+			return estimate;
+		}
+		return estimator.withOutputRowsForJoinOrdering(estimate, rowFlow);
+	}
+
+	private boolean isFiniteExactLookupEstimate(FactorPhysicalEstimate physicalEstimate) {
+		if (physicalEstimate == null || physicalEstimate.factorCostEstimate() == null) {
+			return false;
+		}
+		String source = physicalEstimate.factorCostEstimate()
+				.getStringMetrics()
+				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		return "lmdb-finite-binding-lookup".equals(source) || "lmdb-finite-derived-surface".equals(source);
+	}
+
+	private boolean hasFiniteBindingDerivedLookup(long mask, SketchBasedJoinEstimator.AccessShape accessShape,
+			int lookupComponentMask) {
+		if (accessShape == null || lookupComponentMask == 0) {
+			return false;
+		}
+		long lookupVars = lookupVarMask(accessShape, lookupComponentMask);
+		if (lookupVars == 0L) {
+			return false;
+		}
+		long finiteDerivedVars = finiteBindingDerivedVariableMask(mask);
+		return (lookupVars & finiteDerivedVars) != 0L;
+	}
+
+	private long finiteBindingDerivedVariableMask(long mask) {
+		long finiteVars = finiteBindingAssignmentVariableMask(mask);
+		if (finiteVars == 0L) {
+			return 0L;
+		}
+		long selectedStatementFactors = (mask & ~smallBindingSetAssignmentFactorMask) & factorUniverseMask;
+		long frontier = finiteVars;
+		while (frontier != 0L) {
+			long added = factorInteractionNeighbors(frontier, selectedStatementFactors, variableUniverseMask)
+					& ~finiteVars;
+			if (added == 0L) {
+				break;
+			}
+			finiteVars |= added;
+			frontier = added;
+		}
+		return finiteVars;
 	}
 
 	private double noNewBindingsDirectLookupOutputCap(long mask, int candidate,
@@ -3585,6 +3678,7 @@ final class SketchJoinOrderPlanner {
 		int lookupComponentMask = 0;
 		boolean directLookup = false;
 		double accessRowsBeforeFilter = Double.NaN;
+		boolean exactOutputRows = false;
 		boolean endpointDomainPreparation = isEndpointDomainPreparationStep(factorIndex, mask, prefixEstimate);
 		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = isPlainBindingSetAssignment(factorIndex) ? null
 				: factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
@@ -3596,6 +3690,7 @@ final class SketchJoinOrderPlanner {
 			if (isFiniteNonNegative(factorCostEstimate.getWorkRows())) {
 				accessWorkRows = factorCostEstimate.getWorkRows();
 			}
+			exactOutputRows = factorCostEstimate.hasExactOutputRows();
 			physicalComparable = factorCostEstimate.hasPhysicalAccessPath()
 					|| (!factorCostEstimate.getStringMetrics().isEmpty()
 							&& factorCostEstimate.getStringMetrics()
@@ -3645,7 +3740,8 @@ final class SketchJoinOrderPlanner {
 			factorRows = defaultFactorRows;
 		}
 		return new FactorPhysicalEstimate(accessWorkRows, factorRows, physicalComparable, missingLookupComponents,
-				lookupComponents, lookupComponentMask, directLookup, accessRowsBeforeFilter, factorCostEstimate);
+				lookupComponents, lookupComponentMask, directLookup, accessRowsBeforeFilter, exactOutputRows,
+				factorCostEstimate);
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate factorCostEstimate(int factorIndex, long mask,
@@ -3720,10 +3816,27 @@ final class SketchJoinOrderPlanner {
 				currentlyBoundVarMask);
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(variableNames,
 				currentlyBoundVarMask,
-				outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, false, finiteBindingValues);
+				outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, false, finiteBindingValues,
+				selectedPrefixFactors(mask));
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostModel
 				.estimateFactorCost(factors.get(factorIndex).tupleExpr(), context);
 		return estimate.orElse(null);
+	}
+
+	private List<TupleExpr> selectedPrefixFactors(long mask) {
+		if (mask == 0L) {
+			return List.of();
+		}
+		List<TupleExpr> prefixFactors = new ArrayList<>(Long.bitCount(mask));
+		long remaining = mask;
+		while (remaining != 0L) {
+			int factorIndex = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			if (factorIndex >= 0 && factorIndex < factors.size()) {
+				prefixFactors.add(factors.get(factorIndex).tupleExpr());
+			}
+		}
+		return prefixFactors;
 	}
 
 	private Map<String, Set<Value>> finiteBindingLookupValues(int factorIndex, long mask,
@@ -3732,11 +3845,12 @@ final class SketchJoinOrderPlanner {
 		if (accessShape == null) {
 			return Map.of();
 		}
+		Map<String, Set<Value>> valuesByName = new HashMap<>();
+		addSelectedFiniteBindingValues(mask, valuesByName);
 		long lookupVarMask = lookupVarMask(accessShape, accessShape.lookupBoundComponentMask());
 		if (lookupVarMask == 0L) {
-			return Map.of();
+			return valuesByName.isEmpty() ? Map.of() : Map.copyOf(valuesByName);
 		}
-		Map<String, Set<Value>> valuesByName = new HashMap<>();
 		long remaining = lookupVarMask;
 		while (remaining != 0L) {
 			int variableId = Long.numberOfTrailingZeros(remaining);
@@ -3747,6 +3861,34 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		return valuesByName.isEmpty() ? Map.of() : Map.copyOf(valuesByName);
+	}
+
+	private void addSelectedFiniteBindingValues(long mask, Map<String, Set<Value>> valuesByName) {
+		long assignments = smallBindingSetAssignmentFactorMask & mask;
+		while (assignments != 0L) {
+			int factorIndex = Long.numberOfTrailingZeros(assignments);
+			assignments &= assignments - 1L;
+			BindingSetAssignment assignment = bindingSetAssignments[factorIndex];
+			if (assignment == null) {
+				continue;
+			}
+			Map<String, Set<Value>> assignmentValues = new HashMap<>();
+			for (BindingSet bindingSet : assignment.getBindingSets()) {
+				for (String bindingName : bindingSet.getBindingNames()) {
+					Value value = bindingSet.getValue(bindingName);
+					if (value != null) {
+						assignmentValues.computeIfAbsent(bindingName, ignored -> new HashSet<>()).add(value);
+					}
+				}
+			}
+			for (Map.Entry<String, Set<Value>> entry : assignmentValues.entrySet()) {
+				valuesByName.merge(entry.getKey(), Set.copyOf(entry.getValue()), (left, right) -> {
+					Set<Value> intersection = new HashSet<>(left);
+					intersection.retainAll(right);
+					return intersection.isEmpty() ? Set.of() : Set.copyOf(intersection);
+				});
+			}
+		}
 	}
 
 	private static long doubleKey(double value) {
@@ -4755,6 +4897,9 @@ final class SketchJoinOrderPlanner {
 		if (filter.getNestedTupleExpression().isEmpty()) {
 			return rowsEnteringFilter;
 		}
+		if (filter.getNestedTupleExpression().get() instanceof StatementPattern) {
+			return outputWorkRows(rowsEnteringFilter);
+		}
 		double invocations = rowsEnteringFilter;
 		if (rowsEnteringEstimate != null && isFiniteNonNegative(rowsEnteringEstimate.outputRows())) {
 			invocations = Math.max(invocations, rowsEnteringEstimate.outputRows());
@@ -4781,6 +4926,9 @@ final class SketchJoinOrderPlanner {
 					JoinFactorCostModel.CostContext.of(variableNames, boundVarMask, 1.0d, Double.NaN, true,
 							false));
 			if (estimate.isPresent() && isFiniteNonNegative(estimate.get().getWorkRows())) {
+				if (isBareStatementExistenceProbe(nestedTupleExpression, estimate.get())) {
+					return 1.0d;
+				}
 				return estimate.get().getWorkRows();
 			}
 		}
@@ -4804,6 +4952,19 @@ final class SketchJoinOrderPlanner {
 		return isFiniteNonNegative(rows) ? rows : Double.NaN;
 	}
 
+	private boolean isBareStatementExistenceProbe(TupleExpr nestedTupleExpression,
+			JoinFactorCostModel.FactorCostEstimate estimate) {
+		if (!(nestedTupleExpression instanceof StatementPattern)) {
+			return false;
+		}
+		if (estimate == null || !estimate.hasPhysicalAccessPath()) {
+			return false;
+		}
+		return estimate.isDirectLookup()
+				|| "directLookup"
+						.equals(estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+	}
+
 	private double nestedTupleFilterPassRatio(JoinOrderPlanner.FilterConstraint filter,
 			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
 		double existsPassRatio = nestedExistsPassRatio(filter, rowsEnteringEstimate);
@@ -4813,7 +4974,7 @@ final class SketchJoinOrderPlanner {
 		if (!filter.isNotExists()) {
 			return existsPassRatio;
 		}
-		return Math.max(NESTED_NOT_EXISTS_MIN_PASS_RATIO, 1.0d - existsPassRatio);
+		return Math.max(0.0d, 1.0d - existsPassRatio);
 	}
 
 	private double nestedExistsPassRatio(JoinOrderPlanner.FilterConstraint filter,
@@ -5290,6 +5451,7 @@ final class SketchJoinOrderPlanner {
 		}
 
 		Map<String, Integer> sources = new TreeMap<>();
+		List<String> satisfiedFilters = new ArrayList<>();
 		int knownPassRatios = 0;
 		long totalEvidence = 0L;
 		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
@@ -5306,11 +5468,48 @@ final class SketchJoinOrderPlanner {
 			if (evidenceCount > 0L) {
 				totalEvidence += evidenceCount;
 			}
+			if (filter.isCostOnly() && satisfiedFilters.size() < SATISFIED_FILTER_DETAILS_LIMIT) {
+				satisfiedFilters.add(describeSatisfiedFilter(filter));
+			}
 		}
-		return "filterFeedback=deferredFilters=" + deferredFilters.size()
+		String summary = "filterFeedback=deferredFilters=" + deferredFilters.size()
 				+ ", knownPassRatios=" + knownPassRatios
 				+ ", sources=" + sources
 				+ ", totalEvidence=" + totalEvidence;
+		if (!satisfiedFilters.isEmpty()) {
+			summary += ", satisfiedFilters=" + satisfiedFilters;
+			int remainingSatisfiedFilters = countCostOnlyFilters() - satisfiedFilters.size();
+			if (remainingSatisfiedFilters > 0) {
+				summary += " +" + remainingSatisfiedFilters + " more";
+			}
+		}
+		return summary;
+	}
+
+	private int countCostOnlyFilters() {
+		int count = 0;
+		for (JoinOrderPlanner.FilterConstraint filter : deferredFilters) {
+			if (filter.isCostOnly()) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private String describeSatisfiedFilter(JoinOrderPlanner.FilterConstraint filter) {
+		String label = singleLineMetricValue(filter.getDebugLabel());
+		double passRatio = filter.getEstimatedPassRatio();
+		if (Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d) {
+			label += " passRatio=" + passRatio;
+		}
+		String selectivitySource = filter.getSelectivitySource();
+		if (selectivitySource != null) {
+			label += " source=" + selectivitySource;
+		}
+		if (filter.getEvidenceCount() >= 0L) {
+			label += " evidence=" + filter.getEvidenceCount();
+		}
+		return label;
 	}
 
 	private double runtimeFeedbackConfidence() {
@@ -5330,6 +5529,9 @@ final class SketchJoinOrderPlanner {
 			return evidenceCount / (evidenceCount + 64.0d);
 		}
 		String source = filter.getSelectivitySource();
+		if ("exact".equals(source)) {
+			return 1.0d;
+		}
 		if ("heuristic".equals(source)) {
 			return 0.25d;
 		}
@@ -5721,7 +5923,8 @@ final class SketchJoinOrderPlanner {
 
 	private record FactorPhysicalEstimate(double workRows, double factorOutputRows, boolean physicalComparable,
 			int missingLookupComponents, int lookupComponents, int lookupComponentMask, boolean directLookup,
-			double accessRowsBeforeFilter, JoinFactorCostModel.FactorCostEstimate factorCostEstimate) {
+			double accessRowsBeforeFilter, boolean exactOutputRows,
+			JoinFactorCostModel.FactorCostEstimate factorCostEstimate) {
 	}
 
 	private record ForwardChainState(long lastIntroducedVars, boolean previousStepForwardExpansion) {

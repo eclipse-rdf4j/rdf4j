@@ -373,10 +373,9 @@ class LmdbImprovedQueryPlanSnapshotIT {
 
 		int nameIndex = value.indexOf("name=");
 		if (nameIndex >= 0) {
-			int nameEnd = value.indexOf(',', nameIndex);
-			if (nameEnd < 0) {
-				nameEnd = value.indexOf(')', nameIndex);
-			}
+			int commaEnd = value.indexOf(',', nameIndex);
+			int parenEnd = value.indexOf(')', nameIndex);
+			int nameEnd = commaEnd < 0 ? parenEnd : parenEnd < 0 ? commaEnd : Math.min(commaEnd, parenEnd);
 			return "Var (name=" + value.substring(nameIndex + "name=".length(), nameEnd) + ")";
 		}
 		return value;

@@ -17,11 +17,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
@@ -36,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -336,6 +342,57 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 	}
 
 	@Test
+	void rewritesNullRejectingOptionalConjunctWithNestedExists() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		StatementPattern follows = statementPattern("person", "follows", "friend");
+		StatementPattern optional = statementPattern("person", "title", "optTitle");
+		StatementPattern nested = statementPattern("person", "dueDate", "dueDate");
+		ValueExpr condition = new And(
+				new Compare(new Var("optTitle"), new ValueConstant(VF.createLiteral("")), Compare.CompareOp.NE),
+				new Not(new Exists(nested)));
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(person, follows), optional), condition));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		TupleExpr optimized = root.getArg();
+		TupleExpr rewritten = optimized instanceof Filter ? ((Filter) optimized).getArg() : optimized;
+		assertInstanceOf(Join.class, rewritten);
+		assertTrue(!containsLeftJoin(root.getArg()));
+	}
+
+	@Test
+	void keepsHavingCountPositiveOptionalAsLeftJoin() {
+		StatementPattern assembly = statementPattern("assembly", "type", "assemblyType");
+		StatementPattern optional = statementPattern("component", "partOf", "assembly");
+		Group group = new Group(new LeftJoin(assembly, optional));
+		group.addGroupBindingName("assembly");
+		group.addGroupElement(new GroupElem("componentCount", new Count(new Var("component"))));
+		Compare having = new Compare(new Var("componentCount"), new ValueConstant(VF.createLiteral(0)),
+				Compare.CompareOp.GT);
+		QueryRoot root = new QueryRoot(new Filter(group, having));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		assertTrue(containsLeftJoin(root.getArg()), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsHavingCountNonRejectingOptionalAsLeftJoin() {
+		StatementPattern assembly = statementPattern("assembly", "type", "assemblyType");
+		StatementPattern optional = statementPattern("component", "partOf", "assembly");
+		Group group = new Group(new LeftJoin(assembly, optional));
+		group.addGroupBindingName("assembly");
+		group.addGroupElement(new GroupElem("componentCount", new Count(new Var("component"))));
+		Compare having = new Compare(new Var("componentCount"), new ValueConstant(VF.createLiteral(0)),
+				Compare.CompareOp.GE);
+		QueryRoot root = new QueryRoot(new Filter(group, having));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		assertTrue(containsLeftJoin(root.getArg()), () -> root.getArg().toString());
+	}
+
+	@Test
 	void rewritesNullRejectingOptionalLanguageFallbackDisjunctionOnDirectBinding() {
 		StatementPattern person = statementPattern("person", "type", "personType");
 		StatementPattern follows = statementPattern("person", "follows", "friend");
@@ -366,6 +423,9 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 		}
 		if (tupleExpr instanceof Filter) {
 			return containsLeftJoin(((Filter) tupleExpr).getArg());
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			return containsLeftJoin(unary.getArg());
 		}
 		if (tupleExpr instanceof Join join) {
 			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());

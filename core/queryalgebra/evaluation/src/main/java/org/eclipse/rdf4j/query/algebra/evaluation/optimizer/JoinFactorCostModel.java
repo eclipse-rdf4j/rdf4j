@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -43,6 +45,7 @@ public interface JoinFactorCostModel {
 		private final boolean nestedIteratorInvocation;
 		private final boolean collectMetrics;
 		private final Map<String, Set<Value>> finiteBindingValues;
+		private final List<TupleExpr> prefixFactors;
 
 		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
 				boolean nestedIteratorInvocation) {
@@ -51,6 +54,13 @@ public interface JoinFactorCostModel {
 
 		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
 				boolean nestedIteratorInvocation, boolean collectMetrics) {
+			this(currentlyBoundVars, outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, collectMetrics,
+					Map.of(), List.of());
+		}
+
+		private CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
+				boolean nestedIteratorInvocation, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
+				List<TupleExpr> prefixFactors) {
 			this.currentlyBoundVars = currentlyBoundVars == null || currentlyBoundVars.isEmpty()
 					? Set.of()
 					: Set.copyOf(currentlyBoundVars);
@@ -60,7 +70,8 @@ public interface JoinFactorCostModel {
 			this.distinctLookupBindings = distinctLookupBindings;
 			this.nestedIteratorInvocation = nestedIteratorInvocation;
 			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = Map.of();
+			this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
+			this.prefixFactors = immutablePrefixFactors(prefixFactors);
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -79,11 +90,19 @@ public interface JoinFactorCostModel {
 			this.nestedIteratorInvocation = nestedIteratorInvocation;
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = Map.of();
+			this.prefixFactors = List.of();
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
 				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
 				Map<String, Set<Value>> finiteBindingValues) {
+			this(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, List.of());
+		}
+
+		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
 			this.currentlyBoundVars = currentlyBoundVarMask == 0L ? Set.of() : null;
 			this.variableNames = variableNames;
 			this.currentlyBoundVarMask = currentlyBoundVarMask;
@@ -92,12 +111,20 @@ public interface JoinFactorCostModel {
 			this.nestedIteratorInvocation = nestedIteratorInvocation;
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
+			this.prefixFactors = immutablePrefixFactors(prefixFactors);
 		}
 
 		public static CostContext of(Set<String> currentlyBoundVars, double outerPrefixRows,
 				double distinctLookupBindings, boolean nestedIteratorInvocation) {
 			return new CostContext(currentlyBoundVars, outerPrefixRows, distinctLookupBindings,
 					nestedIteratorInvocation);
+		}
+
+		public static CostContext of(Set<String> currentlyBoundVars, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
+			return new CostContext(currentlyBoundVars, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors);
 		}
 
 		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -117,6 +144,13 @@ public interface JoinFactorCostModel {
 				Map<String, Set<Value>> finiteBindingValues) {
 			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
 					nestedIteratorInvocation, collectMetrics, finiteBindingValues);
+		}
+
+		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
+			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors);
 		}
 
 		public Set<String> getCurrentlyBoundVars() {
@@ -158,6 +192,10 @@ public interface JoinFactorCostModel {
 			return finiteBindingValues;
 		}
 
+		public List<TupleExpr> getPrefixFactors() {
+			return prefixFactors;
+		}
+
 		private static Map<String, Set<Value>> immutableFiniteBindingValues(
 				Map<String, Set<Value>> finiteBindingValues) {
 			if (finiteBindingValues == null || finiteBindingValues.isEmpty()) {
@@ -171,6 +209,19 @@ public interface JoinFactorCostModel {
 				copy.put(entry.getKey(), Set.copyOf(entry.getValue()));
 			}
 			return copy.isEmpty() ? Map.of() : Collections.unmodifiableMap(copy);
+		}
+
+		private static List<TupleExpr> immutablePrefixFactors(List<TupleExpr> prefixFactors) {
+			if (prefixFactors == null || prefixFactors.isEmpty()) {
+				return List.of();
+			}
+			List<TupleExpr> copy = new ArrayList<>(prefixFactors.size());
+			for (TupleExpr prefixFactor : prefixFactors) {
+				if (prefixFactor != null) {
+					copy.add(prefixFactor);
+				}
+			}
+			return copy.isEmpty() ? List.of() : List.copyOf(copy);
 		}
 
 		private static final class VariableMaskSet extends AbstractSet<String> {
@@ -240,6 +291,7 @@ public interface JoinFactorCostModel {
 		private final int missingLookupComponentMask;
 		private final double accessRowsBeforeFilter;
 		private final boolean repeatedInvocationsCosted;
+		private final boolean exactOutputRows;
 
 		public FactorCostEstimate(double workRows, double outputRows) {
 			this(workRows, outputRows, Map.of(), Map.of());
@@ -261,6 +313,15 @@ public interface JoinFactorCostModel {
 				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
 				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
 				boolean nestedInvocationCosted) {
+			this(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath, directLookup,
+					lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter, nestedInvocationCosted,
+					false);
+		}
+
+		public FactorCostEstimate(double workRows, double outputRows, Map<String, String> stringMetrics,
+				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
+				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
+				boolean nestedInvocationCosted, boolean exactOutputRows) {
 			this.workRows = workRows;
 			this.outputRows = outputRows;
 			this.stringMetrics = stringMetrics == null || stringMetrics.isEmpty()
@@ -276,6 +337,7 @@ public interface JoinFactorCostModel {
 			this.accessRowsBeforeFilter = accessRowsBeforeFilter;
 			this.repeatedInvocationsCosted = nestedInvocationCosted
 					|| (doubleMetrics != null && doubleMetrics.containsKey("plannedRepeatedInvocations"));
+			this.exactOutputRows = exactOutputRows;
 		}
 
 		public double getWorkRows() {
@@ -316,6 +378,10 @@ public interface JoinFactorCostModel {
 
 		public boolean isRepeatedInvocationsCosted() {
 			return repeatedInvocationsCosted;
+		}
+
+		public boolean hasExactOutputRows() {
+			return exactOutputRows;
 		}
 	}
 }

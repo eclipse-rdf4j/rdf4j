@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -53,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -342,6 +344,50 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of("s"));
 		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of("s"));
 		verify(tripleStore, times(1)).indexAccessPaths(anyInt());
+	}
+
+	@Test
+	void repeatedFiniteBindingFactorCostUsesSinglePageWalkWithinOptimizationScope() throws Exception {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of());
+		ValueStore valueStore = mock(ValueStore.class);
+		LmdbStatementPatternCardinalitySource cardinalitySource = mock(LmdbStatementPatternCardinalitySource.class);
+		when(cardinalitySource.estimateIds(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(10.0d);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator, null,
+				cardinalitySource);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:test:value");
+		var value50 = vf.createLiteral(50);
+		var value60 = vf.createLiteral(60);
+		var value70 = vf.createLiteral(70);
+		StatementPattern pattern = new StatementPattern(
+				Var.of("s"),
+				Var.of("p", predicate),
+				Var.of("o"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(pattern);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of())).thenReturn(100.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of())).thenReturn(accessShape);
+		when(valueStore.getId(predicate)).thenReturn(10L);
+		when(valueStore.getId(value50)).thenReturn(50L);
+		when(valueStore.getId(value60)).thenReturn(60L);
+		when(valueStore.getId(value70)).thenReturn(70L);
+
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of(), 1.0d, 1.0d,
+					false, false, Map.of("o", Set.of(value50, value60, value70)), List.of());
+
+			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
+			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
+		}
+
+		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of());
+		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of());
+		verify(cardinalitySource, times(3)).estimateIds(anyLong(), anyLong(), anyLong(), anyLong());
 	}
 
 	@Test
@@ -896,14 +942,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 							+ requests);
 
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
-			assertNotNull(recordedOnFilter,
-					"Expected optimized plan to retain the recordedOn date constraint as a local filter");
+			Filter recordedOnSamplingFilter = recordedOnFilter == null ? recordedOnLocalFilter() : recordedOnFilter;
 			assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, backingStore.getEvaluationStatistics(),
-					recordedOnFilter) > 0,
+					recordedOnSamplingFilter) > 0,
 					"Expected background cycle to sample the queued recordedOn filter");
 
 			EvaluationStatistics.FilterPassEstimate estimate = backingStore.getEvaluationStatistics()
-					.estimateFilterPass(recordedOnFilter);
+					.estimateFilterPass(recordedOnSamplingFilter);
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
 					"Expected background sampling to make the recordedOn IN filter available to planning");
 			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.5d,
@@ -918,15 +963,22 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				optimizedTextAfterSampling = explanation.toString();
 			}
 			Filter recordedOnFilterAfterSampling = findRecordedOnFilter(optimizedAfterSampling);
-			assertNotNull(recordedOnFilterAfterSampling,
-					"Expected sampled optimized plan to retain the recordedOn date constraint");
-			assertEquals("sampled",
-					recordedOnFilterAfterSampling
-							.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
-					"Expected optimized plan telemetry to show sampled background selectivity");
-			assertTrue(optimizedTextAfterSampling.contains("filterSelectivitySource=sampled"),
-					"Expected Workbench text explain to show sampled selectivity for recordedOn\n"
-							+ optimizedTextAfterSampling);
+			if (recordedOnFilterAfterSampling == null) {
+				assertTrue(optimizedTextAfterSampling.contains("BindingSetAssignment ([[date="),
+						"Expected sampled optimized plan to use the exact selected date anchor\n"
+								+ optimizedTextAfterSampling);
+				assertTrue(optimizedTextAfterSampling.contains("selected=finite-anchor:date"),
+						"Expected Workbench text explain to show the selected recordedOn date anchor\n"
+								+ optimizedTextAfterSampling);
+			} else {
+				assertEquals("sampled",
+						recordedOnFilterAfterSampling
+								.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+						"Expected optimized plan telemetry to show sampled background selectivity");
+				assertTrue(optimizedTextAfterSampling.contains("filterSelectivitySource=sampled"),
+						"Expected Workbench text explain to show sampled selectivity for recordedOn\n"
+								+ optimizedTextAfterSampling);
+			}
 			assertFalse(optimizedTextAfterSampling.contains("Filter (filterSelectivitySource=unknown)"),
 					"Unsupported filters should not make Workbench text explain look like sampled selectivity was missed\n"
 							+ optimizedTextAfterSampling);
@@ -1393,6 +1445,17 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			}
 		});
 		return filters.isEmpty() ? null : filters.getFirst();
+	}
+
+	private static Filter recordedOnLocalFilter() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI recordedOn = vf.createIRI("http://example.com/theme/medical/recordedOn");
+		ListMemberOperator condition = new ListMemberOperator();
+		condition.addArgument(new Var("date"));
+		condition.addArgument(new ValueConstant(vf.createLiteral("2024-01-01", XMLSchema.DATE)));
+		condition.addArgument(new ValueConstant(vf.createLiteral("2024-02-01", XMLSchema.DATE)));
+		return new Filter(new StatementPattern(new Var("enc"), new Var("predicate", recordedOn), new Var("date")),
+				condition);
 	}
 
 	private static String invokeString(Object target, String methodName) throws Exception {

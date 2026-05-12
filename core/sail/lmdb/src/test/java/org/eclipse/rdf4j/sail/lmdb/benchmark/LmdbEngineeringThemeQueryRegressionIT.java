@@ -15,12 +15,18 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -36,6 +42,10 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
+	private static final String ENGINEERING_NS = "http://example.com/theme/engineering/";
+	private static final String ENGINEERING_NAME = ENGINEERING_NS + "name";
+	private static final String ENGINEERING_ASSEMBLY = ENGINEERING_NS + "Assembly";
+	private static final String ENGINEERING_PART_OF = ENGINEERING_NS + "partOf";
 
 	@Test
 	void requirementExistsMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
@@ -97,13 +107,58 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void assemblyComponentCountsKeepsFastValuesFilterPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareAllThemeStore(dataDir, theme, 2);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			try {
 				assertQueryRegressionPasses(repository, theme, 2,
 						snapshot -> assertEngineeringQ2FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan()));
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void assemblyNameTypePartOfSketchSurfaceUsesFiniteBranches(@TempDir Path dataDir) throws Exception {
+		Path themeDir = prepareAllThemeStore(dataDir, Theme.ENGINEERING, 2);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				SketchBasedJoinEstimator estimator = BenchmarkJoinEstimatorSupport.resolveEstimator(store);
+				double rows = 0.0d;
+				StringBuilder diagnostics = new StringBuilder();
+				for (int assemblyIndex = 1; assemblyIndex <= 3; assemblyIndex++) {
+					String assemblyName = "Assembly " + assemblyIndex;
+					StatementPattern name = new StatementPattern(Var.of("assembly"),
+							Var.of("namePredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_NAME)),
+							Var.of("assemblyName", SimpleValueFactory.getInstance().createLiteral(assemblyName)));
+					StatementPattern type = new StatementPattern(Var.of("assembly"),
+							Var.of("typePredicate", RDF.TYPE),
+							Var.of("type", SimpleValueFactory.getInstance().createIRI(ENGINEERING_ASSEMBLY)));
+					StatementPattern partOf = new StatementPattern(Var.of("component"),
+							Var.of("partOfPredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_PART_OF)),
+							Var.of("assembly"));
+					double nameRows = estimator.estimateJoinSurfaceRows(List.of(name), name, "assembly");
+					double nameTypeRows = estimator.estimateJoinSurfaceRows(List.of(name), type, "assembly");
+					double branchRows = estimator.estimateJoinSurfaceRows(List.of(name, type), partOf, "assembly");
+					rows += branchRows;
+					diagnostics.append(assemblyName)
+							.append(": name=")
+							.append(nameRows)
+							.append(", nameType=")
+							.append(nameTypeRows)
+							.append(", branch=")
+							.append(branchRows)
+							.append('\n');
+				}
+				assertMetricAtLeast("surfaceRows=" + rows + "\n" + diagnostics, "surfaceRows", 315.0d,
+						"Finite assembly-name branches should estimate the joined assembly/component surface");
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -176,11 +231,47 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		return preparedStore.storeDirectory();
 	}
 
+	private static Path prepareAllThemeStore(Path dataDir, Theme queryTheme, int queryIndexToPrime) throws Exception {
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("ALL_THEMES"),
+						PERSISTENT_STORE_KEY_PREFIX + "/ALL_THEMES-q" + queryIndexToPrime,
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadAllThemeData(repository);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository, queryTheme, queryIndexToPrime);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent all-theme store " + preparedStore.storeDirectory()
+					+ " for engineering regression. " + PERSISTENT_STORE_HINT);
+		}
+		return preparedStore.storeDirectory();
+	}
+
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
 			ThemeDataSetGenerator.generate(theme, inserter);
+			connection.commit();
+		}
+	}
+
+	private static void loadAllThemeData(SailRepository repository) throws IOException {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			RDFInserter inserter = new RDFInserter(connection);
+			for (Theme theme : Theme.values()) {
+				ThemeDataSetGenerator.generate(theme, inserter);
+			}
 			connection.commit();
 		}
 	}
@@ -287,7 +378,9 @@ class LmdbEngineeringThemeQueryRegressionIT {
 
 	private static void assertEngineeringQ2FastPlanShape(String renderedQuery, String plan) {
 		assertContains(renderedQuery, "VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }");
-		assertContains(renderedQuery, "FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))");
+		assertDoesNotContain(renderedQuery,
+				"FILTER (?assemblyName IN (\"Assembly 1\", \"Assembly 2\", \"Assembly 3\"))",
+				"Engineering q2 selected exact VALUES anchor should satisfy the original finite filter\n" + plan);
 		assertBefore(renderedQuery,
 				"VALUES ?assemblyName { \"Assembly 1\" \"Assembly 2\" \"Assembly 3\" }",
 				"?assembly <http://example.com/theme/engineering/name> ?assemblyName .",
@@ -303,8 +396,8 @@ class LmdbEngineeringThemeQueryRegressionIT {
 
 		assertContains(plan,
 				"BindingSetAssignment ([[assemblyName=\"Assembly 1\"], [assemblyName=\"Assembly 2\"], [assemblyName=\"Assembly 3\"]])");
-		assertContains(plan, "plannerId=lmdb-finite-anchor");
-		assertContains(plan, "plannerPath=CANONICAL_FINITE_ANCHOR");
+		assertContains(plan, "optimizer.guaranteeOptions=generated=");
+		assertContains(plan, "selected=finite-anchor:assemblyName");
 		assertContains(plan, "Join (BoundStatementPatternJoinIteration)");
 		assertFalse(plan.contains("BoundStatementPatternLeftJoinIteration"),
 				"Engineering q2 should not drift back to the slower left-join statement pattern path:\n" + plan);
@@ -320,7 +413,8 @@ class LmdbEngineeringThemeQueryRegressionIT {
 				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"value=http://example.com/theme/engineering/partOf",
 				"Engineering q2 should resolve assemblies before optional partOf expansion");
-		assertAssemblyNameLookupUsesLocalValuesFilter(plan);
+		assertAssemblyNameLookupUsesSelectedValuesAnchor(plan);
+		assertEngineeringQ2PartOfUsesDerivedAssemblySurface(plan);
 	}
 
 	private static void assertEngineeringQ9FastRenderedShape(String renderedQuery, String plan) {
@@ -372,31 +466,29 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		assertNamePatternUsesBoundValue(plan, "Engineering q4", false);
 	}
 
-	private static void assertAssemblyNameLookupUsesLocalValuesFilter(String plan) {
+	private static void assertAssemblyNameLookupUsesSelectedValuesAnchor(String plan) {
 		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
 		if (predicateIndex < 0) {
 			throw new AssertionError("Engineering q2 plan should include the assembly name pattern:\n" + plan);
 		}
 
 		String pattern = statementPatternWindow(plan, predicateIndex, "StatementPattern");
-		assertContains(pattern, "o: Var (name=assemblyName) (bindingState=bound)");
+		assertVarBindingState(pattern, "o", "assemblyName", "bound");
 		assertContains(pattern, "plannedLookupComponents=[P, O]");
 		assertContains(pattern, "plannedIndexAccessMode=directLookup");
+	}
 
-		int filterIndex = plan.lastIndexOf("Filter (", predicateIndex);
-		int typeIndex = plan.indexOf("value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type", predicateIndex);
-		if (filterIndex < 0 || typeIndex < 0 || filterIndex >= typeIndex) {
-			throw new AssertionError("Engineering q2 name lookup should be wrapped by a local VALUES filter:\n" + plan);
+	private static void assertEngineeringQ2PartOfUsesDerivedAssemblySurface(String plan) {
+		int predicateIndex = plan.indexOf("value=http://example.com/theme/engineering/partOf");
+		if (predicateIndex < 0) {
+			throw new AssertionError("Engineering q2 plan should include the optional partOf pattern:\n" + plan);
 		}
 
-		String filteredLookup = plan.substring(filterIndex, typeIndex);
-		assertContains(filteredLookup, "ListMemberOperator");
-		assertContains(filteredLookup, "Var (name=assemblyName) (bindingState=bound)");
-		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 1\")");
-		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 2\")");
-		assertContains(filteredLookup, "ValueConstant (value=\"Assembly 3\")");
-		assertContains(filteredLookup, "deferredFilterScope=localPattern");
-		assertContains(filteredLookup, "filterSelectivitySource=learned_filter");
+		String pattern = statementPatternWindow(plan, predicateIndex, "GroupElem (componentCount)");
+		assertContains(pattern, "plannedEstimateSource=lmdb-finite-derived-surface");
+		assertMetricAtLeast(pattern, "plannedAccessRows", 315.0d,
+				"Engineering q2 should estimate the optional partOf lookup from the finite assembly surface:\n"
+						+ plan);
 	}
 
 	private static void assertEngineeringQ8FastPlanShape(String renderedQuery, String plan) {
@@ -463,7 +555,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		}
 
 		String pattern = statementPatternWindow(plan, predicateIndex, "StatementPattern");
-		assertContains(pattern, "o: Var (name=name) (bindingState=bound)");
+		assertVarBindingState(pattern, "o", "name", "bound");
 		if (requirePlannerMetrics) {
 			assertContains(pattern, "plannedLookupComponents=[P, O]");
 			assertContains(pattern, "plannedIndexAccessMode=directLookup");
@@ -477,8 +569,8 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		}
 
 		String pattern = statementPatternWindow(plan, predicateIndex, "ExtensionElem (optComponent)");
-		assertContains(pattern, "s: Var (name=component) (bindingState=unbound)");
-		assertContains(pattern, "o: Var (name=assembly) (bindingState=bound)");
+		assertVarBindingState(pattern, "s", "component", "unbound");
+		assertVarBindingState(pattern, "o", "assembly", "bound");
 	}
 
 	private static void assertMinusSatisfiesStaysNewScope(String plan) {
@@ -489,8 +581,13 @@ class LmdbEngineeringThemeQueryRegressionIT {
 
 		String pattern = statementPatternWindow(plan, predicateIndex, "GroupElem (count)");
 		assertContains(pattern, "StatementPattern (new scope)");
-		assertContains(pattern, "s: Var (name=requirement) (bindingState=unbound)");
-		assertContains(pattern, "o: Var (name=component) (bindingState=unbound)");
+		assertVarBindingState(pattern, "s", "requirement", "unbound");
+		assertVarBindingState(pattern, "o", "component", "unbound");
+	}
+
+	private static void assertVarBindingState(String pattern, String role, String name, String bindingState) {
+		assertContains(pattern, role + ": Var (name=" + name);
+		assertContains(pattern, "bindingState=" + bindingState);
 	}
 
 	private static String statementPatternWindow(String plan, int predicateIndex, String endMarker) {
@@ -507,6 +604,41 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		if (!value.contains(expected)) {
 			throw new AssertionError("Expected to find `" + expected + "` in:\n" + value);
 		}
+	}
+
+	private static void assertMetricAtLeast(String value, String metricName, double minimum, String message) {
+		double actual = readMetric(value, metricName);
+		if (actual < minimum) {
+			throw new AssertionError(message + "\nExpected " + metricName + " >= " + minimum + ", actual=" + actual
+					+ "\nIn:\n" + value);
+		}
+	}
+
+	private static double readMetric(String value, String metricName) {
+		int index = value.indexOf(metricName + "=");
+		if (index < 0) {
+			throw new AssertionError("Expected metric `" + metricName + "` in:\n" + value);
+		}
+		int start = index + metricName.length() + 1;
+		int end = start;
+		while (end < value.length()) {
+			char c = value.charAt(end);
+			if ((c >= '0' && c <= '9') || c == '.' || c == 'K' || c == 'M') {
+				end++;
+			} else {
+				break;
+			}
+		}
+		String token = value.substring(start, end);
+		double multiplier = 1.0d;
+		if (token.endsWith("K")) {
+			multiplier = 1_000.0d;
+			token = token.substring(0, token.length() - 1);
+		} else if (token.endsWith("M")) {
+			multiplier = 1_000_000.0d;
+			token = token.substring(0, token.length() - 1);
+		}
+		return Double.parseDouble(token) * multiplier;
 	}
 
 	private static void assertDoesNotContain(String value, String unexpected, String message) {

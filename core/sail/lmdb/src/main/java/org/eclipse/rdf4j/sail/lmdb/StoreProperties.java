@@ -34,7 +34,7 @@ class StoreProperties {
 	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
 	 */
 	static final String INDEXES_KEY = "triple-indexes";
-	static final String PREDICATE_OBJECT_GUARANTEES_VERSION_KEY = "predicate-object-guarantees-version";
+	static final String PREDICATE_OBJECT_DOMAINS_VERSION_KEY = "predicate-object-domains-version";
 
 	protected final File propertiesFile;
 
@@ -42,7 +42,7 @@ class StoreProperties {
 
 	protected String tripleIndexes;
 
-	protected String predicateObjectGuaranteesVersion;
+	protected String predicateObjectDomainsVersion;
 
 	protected boolean loaded;
 
@@ -71,7 +71,7 @@ class StoreProperties {
 			}
 			version = properties.getProperty(VERSION_KEY);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
-			predicateObjectGuaranteesVersion = properties.getProperty(PREDICATE_OBJECT_GUARANTEES_VERSION_KEY);
+			predicateObjectDomainsVersion = properties.getProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -92,8 +92,8 @@ class StoreProperties {
 			if (tripleIndexes != null) {
 				properties.setProperty(INDEXES_KEY, tripleIndexes);
 			}
-			if (predicateObjectGuaranteesVersion != null) {
-				properties.setProperty(PREDICATE_OBJECT_GUARANTEES_VERSION_KEY, predicateObjectGuaranteesVersion);
+			if (predicateObjectDomainsVersion != null) {
+				properties.setProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY, predicateObjectDomainsVersion);
 			}
 			File parent = file.getParentFile();
 			if (parent != null) {
@@ -132,12 +132,12 @@ class StoreProperties {
 		return this;
 	}
 
-	String getPredicateObjectGuaranteesVersion() {
-		return predicateObjectGuaranteesVersion;
+	String getRdfTermDomainsVersion() {
+		return predicateObjectDomainsVersion;
 	}
 
-	StoreProperties setPredicateObjectGuaranteesVersion(String predicateObjectGuaranteesVersion) {
-		this.predicateObjectGuaranteesVersion = predicateObjectGuaranteesVersion;
+	StoreProperties setRdfTermDomainsVersion(String predicateObjectDomainsVersion) {
+		this.predicateObjectDomainsVersion = predicateObjectDomainsVersion;
 		this.dirty = true;
 		return this;
 	}

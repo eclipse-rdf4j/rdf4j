@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -86,6 +87,23 @@ public interface SailDataset extends SailClosable {
 			Resource... contexts) throws SailException;
 
 	/**
+	 * Gets statements for a physical statement pattern. Stores can use optimizer metadata attached to the supplied
+	 * statement pattern; default behavior delegates to the value-only API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts         The context(s) to get the statements from.
+	 * @return An iterator over the relevant statements.
+	 * @throws SailException If the triple source failed to get the statements.
+	 */
+	default CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
+		return getStatements(subj, pred, obj, contexts);
+	}
+
+	/**
 	 * Counts statements that have a specific subject, predicate and/or object.
 	 *
 	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
@@ -105,6 +123,23 @@ public interface SailDataset extends SailClosable {
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * Counts statements for a physical statement pattern. Stores can use optimizer metadata attached to the supplied
+	 * statement pattern; default behavior delegates to the value-only API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts         The context(s) to get the statements from.
+	 * @return The number of relevant statements.
+	 * @throws SailException If the triple source failed to count the statements.
+	 */
+	default long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		return getStatementCount(subj, pred, obj, contexts);
 	}
 
 	/**

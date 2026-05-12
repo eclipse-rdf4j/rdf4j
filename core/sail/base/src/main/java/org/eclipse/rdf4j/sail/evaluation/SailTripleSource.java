@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -44,9 +45,15 @@ public class SailTripleSource implements TripleSource {
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
+		return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement> iter = null;
 		try {
-			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
+			iter = conn.getStatements(statementPattern, subj, pred, obj, includeInferred, contexts);
 			if (iter instanceof EmptyIteration) {
 				return iter;
 			}

@@ -2331,6 +2331,15 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void joinCostVectorRanksOutputSurfaceWithinEquivalentWork() {
+		JoinCostVector broaderSurface = JoinCostVector.of(134.0d, 9.0d, 18.0d, 28.0d, 0.0d);
+		JoinCostVector narrowerSurface = JoinCostVector.of(138.0d, 3.0d, 18.0d, 10.0d, 0.0d);
+
+		assertTrue(narrowerSurface.compareTo(broaderSurface) < 0,
+				"Nearly equal work should prefer the plan with the smaller final and uncertainty row surface");
+	}
+
+	@Test
 	void cardinalityJoinSupportsBindingSetAssignment() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:pA");

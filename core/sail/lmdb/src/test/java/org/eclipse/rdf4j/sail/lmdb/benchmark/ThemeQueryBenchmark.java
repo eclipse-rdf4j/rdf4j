@@ -438,6 +438,14 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
+	String explainOptimizedPlan() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+		}
+	}
+
 	EvaluationStatistics evaluationStatistics() {
 		try {
 			Method getBackingStore = LmdbStore.class.getDeclaredMethod("getBackingStore");

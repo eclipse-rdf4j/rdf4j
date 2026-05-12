@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
@@ -191,7 +192,7 @@ class LmdbSailStore implements SailStore {
 			}
 			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
 			if (added) {
-				tripleStore.recordPredicateObjectGuarantee(p, obj);
+				tripleStore.recordRdfTermDomain(p, obj);
 				if (explicit && estimatorCallback != null) {
 					Statement st = valueStore.createStatement(subj, pred, obj, context);
 					estimatorCallback.accept(st);
@@ -255,7 +256,7 @@ class LmdbSailStore implements SailStore {
 					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
 							explicit);
 					if (added) {
-						tripleStore.recordPredicateObjectGuarantee(predicates[i], statements[i].getObject());
+						tripleStore.recordRdfTermDomain(predicates[i], statements[i].getObject());
 						if (explicit && estimatorCallback != null) {
 							estimatorCallback.accept(statements[i]);
 						}
@@ -266,7 +267,7 @@ class LmdbSailStore implements SailStore {
 			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
 					statementIndex -> {
 						try {
-							tripleStore.recordPredicateObjectGuarantee(predicates[statementIndex],
+							tripleStore.recordRdfTermDomain(predicates[statementIndex],
 									statements[statementIndex].getObject());
 						} catch (IOException e) {
 							throw new UncheckedIOException(e);
@@ -726,6 +727,11 @@ class LmdbSailStore implements SailStore {
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		return createStatementIterator(txn, null, subj, pred, obj, explicit, contexts);
+	}
+
+	CloseableIteration<? extends Statement> createStatementIterator(Txn txn, StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
@@ -773,9 +779,13 @@ class LmdbSailStore implements SailStore {
 		}
 
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
+		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
+		if (statementPattern != null) {
+			statementPattern.setStringMetricActual("optimizer.idFilterRuntime", idFilter.isEmpty() ? "none" : "active");
+		}
 
 		for (long contextID : contextIDList) {
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, idFilter);
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
 
@@ -788,6 +798,11 @@ class LmdbSailStore implements SailStore {
 
 	long countStatementIterator(
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		return countStatementIterator(txn, null, subj, pred, obj, explicit, contexts);
+	}
+
+	long countStatementIterator(Txn txn, StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return 0;
@@ -835,8 +850,10 @@ class LmdbSailStore implements SailStore {
 		}
 
 		long count = 0;
+		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
 		for (long contextID : contextIDList) {
-			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit)) {
+			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit,
+					idFilter)) {
 				while (records.next() != null) {
 					count++;
 				}
@@ -1625,14 +1642,20 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
+			return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+				IRI pred, Value obj, Resource... contexts) throws SailException {
 			try {
-				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				return createStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to get statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+					return createStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
 				}
@@ -1641,14 +1664,20 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			return getStatementCount((StatementPattern) null, subj, pred, obj, contexts);
+		}
+
+		@Override
+		public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws SailException {
 			try {
-				return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				return countStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to count statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+					return countStatementIterator(txn, statementPattern, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to count statements", e);
 				}

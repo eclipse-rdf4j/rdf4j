@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.Locale;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -54,7 +56,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	private static final String LMDB_ACCESS_PATH = "lmdb-access-path";
 	private static final String LMDB_JOIN_PLAN = "lmdb-join-plan";
 	private static final String LMDB_SYNTHETIC = "lmdb-synthetic";
+	private static final String LMDB_FINITE_DERIVED_SURFACE = "lmdb-finite-derived-surface";
 	private static final String GROUP_DISTINCT = "lmdb-sketch-var-stats";
+	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
+	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
 
 	private static final Set<Class<? extends TupleExpr>> ANNOTATION_POLICY_TYPES = Set.of(
 			StatementPattern.class,
@@ -102,6 +107,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 
 	@Override
 	public void meet(StatementPattern node) {
+		annotateRdfTermDomain(node);
 		stampLeaf(node, sourceForExistingPlan(node, GENERIC_STATISTICS));
 	}
 
@@ -241,7 +247,11 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		node.getLeftArg().visit(this);
 		node.getRightArg().visit(this);
 		double leftRows = nodeRows(node.getLeftArg());
-		double matchedRows = statisticsRows(node);
+		double matchedRows = optionalMatchedRows(node);
+		double finiteLeftRows = finiteDerivedOptionalLeftRows(node.getRightArg());
+		if (isFiniteNonNegative(finiteLeftRows)) {
+			leftRows = finiteLeftRows;
+		}
 		double rows = isFiniteNonNegative(leftRows) && isFiniteNonNegative(matchedRows)
 				? Math.max(leftRows, matchedRows)
 				: finiteOr(matchedRows, leftRows);
@@ -314,6 +324,34 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		stampEstimate(node, rows, passThroughWork(node.getArg(), childRows, rowPassWork), source);
 	}
 
+	private void annotateRdfTermDomain(StatementPattern node) {
+		if (!(statistics instanceof LmdbPredicateObjectDomainSource guaranteeSource)) {
+			return;
+		}
+		IRI predicate = constantPredicate(node);
+		if (predicate == null) {
+			return;
+		}
+		RdfTermDomain guarantee = guaranteeSource.getKnownRdfTermDomain(predicate)
+				.orElse(RdfTermDomain.UNKNOWN);
+		String guaranteeDescription = String.valueOf(guarantee);
+		node.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE, guaranteeDescription);
+		node.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE_PREDICATE, predicate.stringValue());
+		Var objectVar = node.getObjectVar();
+		if (objectVar != null) {
+			objectVar.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE, guaranteeDescription);
+			objectVar.setStringMetricPlanned(OPTIMIZER_OBJECT_GUARANTEE_PREDICATE, predicate.stringValue());
+		}
+	}
+
+	private IRI constantPredicate(StatementPattern node) {
+		Var predicate = node.getPredicateVar();
+		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+			return null;
+		}
+		return (IRI) predicate.getValue();
+	}
+
 	private void stampLeaf(TupleExpr node, String source) {
 		double rows = currentRowsOrStatistics(node);
 		double workRows = currentWork(node);
@@ -336,7 +374,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (group.getGroupBindingNames().isEmpty()) {
 			return isFiniteNonNegative(childRows) && childRows > 0.0d ? 1.0d : childRows;
 		}
-		double rows = currentRowsOrStatistics(group);
+		double rows = nodeRows(group);
+		if (!isFiniteNonNegative(rows) && !isFiniteNonNegative(childRows)) {
+			rows = statisticsRows(group);
+		}
 		if (isFiniteNonNegative(rows) && isFiniteNonNegative(childRows)) {
 			return Math.min(rows, childRows);
 		}
@@ -353,6 +394,60 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			return leftRows * rightRows;
 		}
 		return Math.max(1.0d, Math.min(leftRows, rightRows));
+	}
+
+	private double optionalMatchedRows(LeftJoin node) {
+		TupleExpr rightArg = node.getRightArg();
+		double finiteDerivedRows = finiteDerivedOptionalRows(rightArg);
+		if (isFiniteNonNegative(finiteDerivedRows)) {
+			return finiteDerivedRows;
+		}
+		double rows = statisticsRows(node);
+		finiteDerivedRows = finiteDerivedOptionalRows(rightArg);
+		return isFiniteNonNegative(finiteDerivedRows) ? finiteDerivedRows : rows;
+	}
+
+	private double finiteDerivedOptionalRows(TupleExpr rightArg) {
+		if (!containsEstimateSource(rightArg, LMDB_FINITE_DERIVED_SURFACE)) {
+			return Double.NaN;
+		}
+		double rightAccessRows = rightArg.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+		if (isFiniteNonNegative(rightAccessRows)) {
+			return rightAccessRows;
+		}
+		double rightRows = nodeRows(rightArg);
+		if (isFiniteNonNegative(rightRows)) {
+			return rightRows;
+		}
+		return nodeWorkRows(rightArg);
+	}
+
+	private double finiteDerivedOptionalLeftRows(TupleExpr rightArg) {
+		if (!containsEstimateSource(rightArg, LMDB_FINITE_DERIVED_SURFACE)) {
+			return Double.NaN;
+		}
+		double distinctLookupBindings = rightArg.getDoubleMetricPlanned("plannedDistinctLookupBindings");
+		if (isFiniteNonNegative(distinctLookupBindings)) {
+			return distinctLookupBindings;
+		}
+		return rightArg.getDoubleMetricPlanned("plannedRepeatedInvocations");
+	}
+
+	private boolean containsEstimateSource(TupleExpr node, String source) {
+		if (node == null) {
+			return false;
+		}
+		if (source.equals(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
+			return true;
+		}
+		if (node instanceof UnaryTupleOperator unary) {
+			return containsEstimateSource(unary.getArg(), source);
+		}
+		if (node instanceof BinaryTupleOperator binary) {
+			return containsEstimateSource(binary.getLeftArg(), source)
+					|| containsEstimateSource(binary.getRightArg(), source);
+		}
+		return false;
 	}
 
 	private double passThroughWork(TupleExpr child, double childRows, boolean rowPassWork) {

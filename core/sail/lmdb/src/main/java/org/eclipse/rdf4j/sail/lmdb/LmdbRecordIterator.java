@@ -77,6 +77,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final long[] quad;
 	private final long[] originalQuad;
+	private final LmdbValueIdFilter idFilter;
 
 	private boolean fetchNext = false;
 
@@ -90,10 +91,16 @@ class LmdbRecordIterator implements RecordIterator {
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, LmdbValueIdFilter.none());
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbValueIdFilter idFilter) throws IOException {
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 		this.context = context;
+		this.idFilter = idFilter == null ? LmdbValueIdFilter.none() : idFilter;
 		this.originalQuad = new long[] { subj, pred, obj, context };
 		this.quad = new long[] { subj, pred, obj, context };
 		this.pool = Pool.get();
@@ -210,6 +217,11 @@ class LmdbRecordIterator implements RecordIterator {
 				} else {
 					// Matching value found
 					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+					if (!idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
+						sourceRowsFilteredActual++;
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+						continue;
+					}
 					sourceRowsMatchedActual++;
 					// fetch next value
 					fetchNext = true;

@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -26,22 +27,28 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -70,11 +77,27 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static final IRI SOCIAL_NAME = VF.createIRI("http://example.com/theme/social/name");
 	private static final IRI MED_CODE = VF.createIRI("http://example.com/theme/medical/code");
 	private static final IRI MED_MEDICATION = VF.createIRI("http://example.com/theme/medical/Medication");
+	private static final IRI LIB_NAME = VF.createIRI("http://example.com/theme/library/name");
+	private static final IRI LIB_WRITTEN_BY = VF.createIRI("http://example.com/theme/library/writtenBy");
+	private static final IRI LIB_HAS_COPY = VF.createIRI("http://example.com/theme/library/hasCopy");
+	private static final IRI LIB_LOANED_COPY = VF.createIRI("http://example.com/theme/library/loanedCopy");
+	private static final IRI LIB_BORROWED_BY = VF.createIRI("http://example.com/theme/library/borrowedBy");
+	private static final IRI LIB_TITLE = VF.createIRI("http://example.com/theme/library/title");
+	private static final IRI LIB_BOOK = VF.createIRI("http://example.com/theme/library/Book");
+	private static final IRI LIB_COPY = VF.createIRI("http://example.com/theme/library/Copy");
+	private static final IRI LIB_LOAN = VF.createIRI("http://example.com/theme/library/Loan");
+	private static final IRI LIB_MEMBER = VF.createIRI("http://example.com/theme/library/Member");
+	private static final IRI GUARANTEE_IRI_LEFT = VF.createIRI("http://example.com/p/iri-left");
+	private static final IRI GUARANTEE_IRI_RIGHT = VF.createIRI("http://example.com/p/iri-right");
+	private static final IRI GUARANTEE_LITERAL_OBJECT = VF.createIRI("http://example.com/p/literal-object");
+	private static final IRI GUARANTEE_INT_OBJECT = VF.createIRI("http://example.com/p/int-object");
 	private static final int SUBSTATION_COUNT = 300;
 	private static final int GENERATOR_COUNT = 120;
 	private static final int TRANSFORMER_COUNT = 5_000;
 	private static final int NOISE_COUNT = 600;
 	private static final int MEDICATIONS_PER_QUERY_CODE = 300;
+	private static final int SELECTIVE_MEDICATION_COUNT = 1_500;
+	private static final int LIBRARY_AUTHOR_NOISE_COUNT = 90_000;
 
 	@Test
 	void plannerPrefersFeedsBeforeFilteredNameWithoutPosc(@TempDir File dataDir) throws Exception {
@@ -443,6 +466,307 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	@Test
+	void highFanoutMedicalCodeFilterKeepsOriginalAndFiniteAnchorCandidates(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates="),
+					"High-fanout literal filters should expose the costed guarantee option set:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("original[lower-bound")
+					|| optimizedPlan.contains("original-fixed[fixed-order")
+					|| optimizedPlan.contains("original[baseline"),
+					"High-fanout literal filters should keep an original FILTER alternative available:\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("finite-anchor:code"),
+					"High-fanout literal filters should also expose the finite-anchor option when it is sound:\n"
+							+ optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void selectiveMedicalCodeFilterChoosesFiniteAnchorOption(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSelectiveMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			assertTrue(containsBindingSetAssignmentFor(optimized, "code"),
+					"Selective finite literal filters should have a planner-selected VALUES anchor option: "
+							+ optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void selectedFiniteAnchorShowsGuaranteeDiagnostics(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSelectiveMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			BindingSetAssignment anchor = findBindingSetAssignment(optimized, "code")
+					.orElseThrow(() -> new AssertionError("Expected selected code VALUES anchor: " + optimized));
+			assertEquals("finite-anchor:code", anchor.getStringMetricPlanned("optimizer.guaranteeOption"),
+					"Selected finite anchors should expose the chosen guarantee option on the VALUES node: "
+							+ optimized);
+			assertEquals(MED_CODE.stringValue(), anchor.getStringMetricPlanned("optimizer.guaranteeAnchorPredicate"),
+					"Selected finite anchors should show the known predicate that made the option sound: "
+							+ optimized);
+			assertTrue(anchor.getStringMetricPlanned("optimizer.guaranteeAnchorDomain")
+					.contains("LITERAL"),
+					"Selected finite anchors should show the narrowed finite object domain: " + optimized);
+			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates="),
+					"Plan should show generated guarantee option candidates:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("finite-anchor:code"),
+					"Plan should identify the finite-anchor option that produced the VALUES clause:\n"
+							+ optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void knownPredicateObjectVarsShowGuaranteeDiagnostics(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSelectiveMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			StatementPattern codePattern = findStatementPatternByPredicate(optimized, MED_CODE)
+					.orElseThrow(() -> new AssertionError("Expected med:code statement pattern: " + optimized));
+			assertTrue(codePattern.getStringMetricPlanned("optimizer.objectGuarantee")
+					.contains("LITERAL"),
+					"Known-predicate statement patterns should expose their object guarantee: " + optimized);
+			assertTrue(optimizedPlan.lines()
+					.anyMatch(line -> line.contains("Var (name=code")
+							&& line.contains("optimizer.objectGuarantee=")
+							&& line.contains("LITERAL")),
+					"Known-predicate object var explain lines should expose their predicate object domain:\n"
+							+ optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void valuesVariableObjectFilterChoosesFiniteAnchorOption(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryNameData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(libraryValuesVariableNameQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			assertTrue(containsBindingSetAssignmentFor(optimized, "authorName"),
+					"Finite VALUES-bound equality should add an object anchor for the name lookup: " + optimized);
+			assertTrue(containsCompare(optimized, "authorName", "target"),
+					"The inferred object anchor narrows the lookup but does not satisfy the original filter: "
+							+ optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void libraryQ9ValuesVariableFilterChoosesAuthorNameAnchorOption(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryQ9Data(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(libraryQ9ValuesVariableNameQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			assertTrue(containsBindingSetAssignmentFor(optimized, "authorName"),
+					"LIBRARY q9 shape should select the inferred authorName object anchor: " + optimized);
+			assertTrue(containsCompare(optimized, "authorName", "target"),
+					"The authorName anchor narrows lib:name lookups but does not satisfy the original filter: "
+							+ optimized);
+			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptions=generated=1, "
+					+ "selected=finite-anchor:authorName"),
+					"LIBRARY q9's inferred finite object domain should enter the Pareto option set and select "
+							+ "the authorName anchor:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates=original[baseline")
+					&& optimizedPlan.contains("finite-anchor:authorName[valid"),
+					"LIBRARY q9 should explain both the original and finite-anchor candidate costs:\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("optimizer.logicalExploration=mode=pareto"),
+					"LIBRARY q9's inferred finite object domain should be selected by the native Pareto planner "
+							+ "option path:\n" + optimizedPlan);
+			assertFalse(optimizedPlan.contains("optimizer.logicalExploration=mode=finite-anchor-fastpath"),
+					"LIBRARY q9 should not bypass the Pareto planner with the removed finite-anchor fast path:\n"
+							+ optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void iriObjectEqualityChoosesSameTermFilterOption(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticIriEqualityData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(iriEqualityQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			assertTrue(containsSameTerm(optimized, "a", "b"),
+					"IRI object equality should have a planner-selected SameTerm variant: " + optimized);
+			assertFalse(containsCompare(optimized, "a", "b"),
+					"The selected IRI equality variant should not keep the original Compare: " + optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void disjointObjectEqualityChoosesEmptySetOption(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticDisjointEqualityData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(disjointEqualityQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+			}
+
+			assertTrue(containsEmptySet(optimized),
+					"IRI-vs-literal equality over assured domains should select EmptySet: " + optimized);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void typeAndDatatypeFiltersUseGuaranteeOptions(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticTypeFilterData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleExpr iriFilter = (TupleExpr) connection.prepareTupleQuery(iriTypeFilterQuery())
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				assertFalse(containsNode(iriFilter, IsURI.class),
+						"Assured IRI object domain should drop tautological isIRI filter option: " + iriFilter);
+
+				TupleExpr impossibleLiteralFilter = (TupleExpr) connection.prepareTupleQuery(iriAsLiteralFilterQuery())
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				assertTrue(containsEmptySet(impossibleLiteralFilter),
+						"Assured IRI object domain should select EmptySet for isLiteral: "
+								+ impossibleLiteralFilter);
+
+				TupleExpr datatypeFilter = (TupleExpr) connection.prepareTupleQuery(intDatatypeFilterQuery())
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				assertFalse(containsDatatypeFunction(datatypeFilter),
+						"Single xsd:int object domain should drop matching datatype filter option: "
+								+ datatypeFilter);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static PlannedBranch planGeneratorBranch(File dataDir, String indexes) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig(indexes);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -546,6 +870,98 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				Resource medication = VF.createIRI("urn:test:medication:1001:" + i);
 				connection.add(medication, RDF_TYPE, MED_MEDICATION);
 				connection.add(medication, MED_CODE, VF.createLiteral("MED-1001"));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSelectiveMedicalCodeData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < SELECTIVE_MEDICATION_COUNT; i++) {
+				Resource medication = VF.createIRI("urn:test:selective-medication:" + i);
+				connection.add(medication, RDF_TYPE, MED_MEDICATION);
+				connection.add(medication, MED_CODE, VF.createLiteral("MED-" + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticLibraryNameData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < LIBRARY_AUTHOR_NOISE_COUNT; i++) {
+				Resource author = VF.createIRI("urn:test:library-author:noise:" + i);
+				connection.add(author, LIB_NAME, VF.createLiteral("Noise Author " + i));
+			}
+			connection.add(VF.createIRI("urn:test:library-author:1"), LIB_NAME, VF.createLiteral("Author 1"));
+			connection.add(VF.createIRI("urn:test:library-author:2"), LIB_NAME, VF.createLiteral("Author 2"));
+			connection.add(VF.createIRI("urn:test:library-author:3"), LIB_NAME, VF.createLiteral("Author 3"));
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticLibraryQ9Data(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < LIBRARY_AUTHOR_NOISE_COUNT; i++) {
+				Resource author = VF.createIRI("urn:test:library-q9-author:noise:" + i);
+				connection.add(author, LIB_NAME, VF.createLiteral("Noise Author " + i));
+			}
+			for (int i = 1; i <= 3; i++) {
+				Resource author = VF.createIRI("urn:test:library-q9-author:" + i);
+				Resource book = VF.createIRI("urn:test:library-q9-book:" + i);
+				Resource copy = VF.createIRI("urn:test:library-q9-copy:" + i);
+				Resource loan = VF.createIRI("urn:test:library-q9-loan:" + i);
+				Resource member = VF.createIRI("urn:test:library-q9-member:" + i);
+				connection.add(author, LIB_NAME, VF.createLiteral("Author " + i));
+				connection.add(book, RDF_TYPE, LIB_BOOK);
+				connection.add(book, LIB_WRITTEN_BY, author);
+				connection.add(book, LIB_HAS_COPY, copy);
+				connection.add(book, LIB_TITLE, VF.createLiteral("Book " + i));
+				connection.add(copy, RDF_TYPE, LIB_COPY);
+				connection.add(loan, RDF_TYPE, LIB_LOAN);
+				connection.add(loan, LIB_LOANED_COPY, copy);
+				connection.add(loan, LIB_BORROWED_BY, member);
+				connection.add(member, RDF_TYPE, LIB_MEMBER);
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticIriEqualityData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 40; i++) {
+				Resource object = VF.createIRI("urn:test:iri-object:" + i);
+				connection.add(VF.createIRI("urn:test:iri-left:" + i), GUARANTEE_IRI_LEFT, object);
+				connection.add(VF.createIRI("urn:test:iri-right:" + i), GUARANTEE_IRI_RIGHT, object);
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticDisjointEqualityData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 40; i++) {
+				connection.add(VF.createIRI("urn:test:disjoint-iri:" + i), GUARANTEE_IRI_LEFT,
+						VF.createIRI("urn:test:iri-object:" + i));
+				connection.add(VF.createIRI("urn:test:disjoint-literal:" + i), GUARANTEE_LITERAL_OBJECT,
+						VF.createLiteral("literal " + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticTypeFilterData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 40; i++) {
+				connection.add(VF.createIRI("urn:test:type-filter-iri:" + i), GUARANTEE_IRI_LEFT,
+						VF.createIRI("urn:test:iri-object:" + i));
+				connection.add(VF.createIRI("urn:test:type-filter-int:" + i), GUARANTEE_INT_OBJECT,
+						VF.createLiteral(String.valueOf(i), XSD.INT));
 			}
 			connection.commit();
 		}
@@ -763,6 +1179,89 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				"}");
 	}
 
+	private static String medicalCodeFilterQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+				"  ?med a med:Medication ; med:code ?code .",
+				"  FILTER(?code = \"MED-1000\" || ?code = \"MED-1001\")",
+				"}");
+	}
+
+	private static String libraryValuesVariableNameQuery() {
+		return String.join("\n",
+				"PREFIX lib: <http://example.com/theme/library/>",
+				"SELECT (COUNT(DISTINCT ?author) AS ?count) WHERE {",
+				"  VALUES ?target { \"Author 1\" \"Author 2\" }",
+				"  ?author lib:name ?authorName .",
+				"  FILTER(?authorName = ?target || ?authorName = \"Author 3\")",
+				"}");
+	}
+
+	private static String libraryQ9ValuesVariableNameQuery() {
+		return String.join("\n",
+				"PREFIX lib: <http://example.com/theme/library/>",
+				"SELECT (COUNT(DISTINCT ?member) AS ?count) WHERE {",
+				"  VALUES ?target { \"Author 1\" \"Author 2\" }",
+				"  ?author lib:name ?authorName .",
+				"  FILTER(?authorName = ?target || ?authorName = \"Author 3\")",
+				"  ?book lib:writtenBy ?author .",
+				"  ?book lib:hasCopy ?copy .",
+				"  ?loan lib:loanedCopy ?copy .",
+				"  ?loan a lib:Loan .",
+				"  ?loan lib:borrowedBy ?member .",
+				"  ?member a lib:Member .",
+				"  OPTIONAL { ?book lib:title ?optTitle . }",
+				"  FILTER(?optTitle != \"\" && NOT EXISTS {",
+				"    ?loan lib:dueDate ?due .",
+				"    FILTER(?due < \"2024-01-10\"^^<http://www.w3.org/2001/XMLSchema#date>)",
+				"  })",
+				"}");
+	}
+
+	private static String iriEqualityQuery() {
+		return String.join("\n",
+				"SELECT * WHERE {",
+				"  ?left <" + GUARANTEE_IRI_LEFT + "> ?a .",
+				"  ?right <" + GUARANTEE_IRI_RIGHT + "> ?b .",
+				"  FILTER (?a = ?b)",
+				"}");
+	}
+
+	private static String disjointEqualityQuery() {
+		return String.join("\n",
+				"SELECT * WHERE {",
+				"  ?left <" + GUARANTEE_IRI_LEFT + "> ?a .",
+				"  ?right <" + GUARANTEE_LITERAL_OBJECT + "> ?b .",
+				"  FILTER (?a = ?b)",
+				"}");
+	}
+
+	private static String iriTypeFilterQuery() {
+		return String.join("\n",
+				"SELECT * WHERE {",
+				"  ?left <" + GUARANTEE_IRI_LEFT + "> ?a .",
+				"  FILTER (isIRI(?a))",
+				"}");
+	}
+
+	private static String iriAsLiteralFilterQuery() {
+		return String.join("\n",
+				"SELECT * WHERE {",
+				"  ?left <" + GUARANTEE_IRI_LEFT + "> ?a .",
+				"  FILTER (isLiteral(?a))",
+				"}");
+	}
+
+	private static String intDatatypeFilterQuery() {
+		return String.join("\n",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT * WHERE {",
+				"  ?left <" + GUARANTEE_INT_OBJECT + "> ?a .",
+				"  FILTER (datatype(?a) = xsd:int)",
+				"}");
+	}
+
 	private record PlannedBranch(Optional<JoinOrderPlanner.JoinOrderPlan> plan, BindingSetAssignment targets,
 			StatementPattern typePattern, StatementPattern feedsPattern, Filter filteredNamePattern,
 			JoinFactorCostModel.FactorCostEstimate targetBoundFilteredNameCost) {
@@ -851,6 +1350,133 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
 			collectStatementPatterns(unaryTupleOperator.getArg(), patterns);
 		}
+	}
+
+	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {
+		return findBindingSetAssignment(tupleExpr, bindingName).isPresent();
+	}
+
+	private static Optional<BindingSetAssignment> findBindingSetAssignment(TupleExpr tupleExpr, String bindingName) {
+		List<BindingSetAssignment> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				if (node.getBindingNames().contains(bindingName)) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.stream().findFirst();
+	}
+
+	private static Optional<StatementPattern> findStatementPatternByPredicate(TupleExpr tupleExpr, IRI predicate) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar() != null && predicate.equals(node.getPredicateVar().getValue())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.stream().findFirst();
+	}
+
+	private static boolean containsCodeEqualityFilter(TupleExpr tupleExpr) {
+		List<Compare> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Compare node) {
+				if (node.getOperator() == Compare.CompareOp.EQ && compareReferencesCodeConstant(node)) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static boolean containsSameTerm(TupleExpr tupleExpr, String left, String right) {
+		return containsBinaryValueOperator(tupleExpr, SameTerm.class, left, right);
+	}
+
+	private static boolean containsCompare(TupleExpr tupleExpr, String left, String right) {
+		return containsBinaryValueOperator(tupleExpr, Compare.class, left, right);
+	}
+
+	private static boolean containsEmptySet(TupleExpr tupleExpr) {
+		List<EmptySet> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(EmptySet node) {
+				matches.add(node);
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static boolean containsDatatypeFunction(TupleExpr tupleExpr) {
+		return containsNode(tupleExpr, Datatype.class);
+	}
+
+	private static boolean containsNode(TupleExpr tupleExpr, Class<? extends QueryModelNode> type) {
+		List<QueryModelNode> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (type.isInstance(node)) {
+					matches.add(node);
+				}
+				super.meetNode(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static boolean containsBinaryValueOperator(TupleExpr tupleExpr,
+			Class<? extends org.eclipse.rdf4j.query.algebra.BinaryValueOperator> type, String left, String right) {
+		List<org.eclipse.rdf4j.query.algebra.BinaryValueOperator> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (type.isInstance(node)) {
+					org.eclipse.rdf4j.query.algebra.BinaryValueOperator operator = type.cast(node);
+					if (sameVars(operator.getLeftArg(), operator.getRightArg(), left, right)) {
+						matches.add(operator);
+					}
+				}
+				super.meetNode(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
+	private static boolean sameVars(ValueExpr leftArg, ValueExpr rightArg, String left, String right) {
+		return varName(leftArg).filter(left::equals).isPresent()
+				&& varName(rightArg).filter(right::equals).isPresent()
+				|| varName(leftArg).filter(right::equals).isPresent()
+						&& varName(rightArg).filter(left::equals).isPresent();
+	}
+
+	private static Optional<String> varName(ValueExpr valueExpr) {
+		if (valueExpr instanceof Var var && !var.hasValue()) {
+			return Optional.of(var.getName());
+		}
+		return Optional.empty();
+	}
+
+	private static boolean compareReferencesCodeConstant(Compare compare) {
+		return valueExprReferencesCodeConstant(compare.getLeftArg())
+				|| valueExprReferencesCodeConstant(compare.getRightArg());
+	}
+
+	private static boolean valueExprReferencesCodeConstant(QueryModelNode node) {
+		return node instanceof ValueConstant valueConstant
+				&& ("MED-1000".equals(valueConstant.getValue().stringValue())
+						|| "MED-1001".equals(valueConstant.getValue().stringValue()));
 	}
 
 	private static <T extends QueryModelNode> T findFirst(QueryModelNode root, Class<T> type) {

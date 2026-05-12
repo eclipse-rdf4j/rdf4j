@@ -361,10 +361,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			incrementIndexLookupCount();
 			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, order, (Resource) subject,
+						(IRI) predicate, object, contexts);
 
 			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			}
 
 			if (iteration instanceof IndexReportingIterator) {
@@ -451,7 +453,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		try {
 			incrementIndexLookupCount();
-			long statementCount = tripleSource.getStatementCount((Resource) subject, (IRI) predicate, object, contexts);
+			long statementCount = tripleSource.getStatementCount(statementPatternForMetrics, (Resource) subject,
+					(IRI) predicate, object, contexts);
 			putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(statementCount));
 			return statementCount;
 		} catch (Throwable t) {
@@ -553,8 +556,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private CloseableIteration<? extends Statement> reopenUncachedIteration(Resource subject, IRI predicate,
 			Value object, Resource[] contexts) {
 		incrementIndexLookupCount();
-		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(subject, predicate, object,
-				contexts);
+		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(statementPatternForMetrics,
+				subject, predicate, object, contexts);
 		if (iteration instanceof IndexReportingIterator) {
 			String indexName = ((IndexReportingIterator) iteration).getIndexName();
 			statementPattern.setIndexName(indexName);
@@ -590,9 +593,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			incrementIndexLookupCount();
 			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, order, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+				iteration = tripleSource.getStatements(statementPatternForMetrics, (Resource) subject,
+						(IRI) predicate, object, contexts);
 			}
 			if (iteration instanceof IndexReportingIterator) {
 				String indexName = ((IndexReportingIterator) iteration).getIndexName();

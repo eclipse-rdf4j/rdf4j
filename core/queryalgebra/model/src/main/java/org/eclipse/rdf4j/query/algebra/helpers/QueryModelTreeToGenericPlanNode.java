@@ -57,6 +57,8 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	private static final Set<String> INCOMING_ONLY_RIGHT_ALGORITHMS = Set.of(
 			"HashJoinIteration",
 			"InnerMergeJoinIterator");
+	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
+	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
 
 	private GenericPlanNode top = null;
 	private final QueryModelNode topTupleExpr;
@@ -267,6 +269,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 				genericPlanNode.setStringMetricActual(TelemetryMetricNames.BINDING_STATE,
 						incomingBindings.contains(var.getName()) ? "bound" : "unbound");
 			}
+			applyStatementPatternObjectGuarantee(var, genericPlanNode);
 		}
 
 		if (node instanceof StatementPattern) {
@@ -278,6 +281,26 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			if (joinType != null) {
 				genericPlanNode.setStringMetricActual(TelemetryMetricNames.JOIN_TYPE, joinType);
 			}
+		}
+	}
+
+	private static void applyStatementPatternObjectGuarantee(Var var, GenericPlanNode genericPlanNode) {
+		QueryModelNode parent = var.getParentNode();
+		if (!(parent instanceof StatementPattern statementPattern) || statementPattern.getObjectVar() != var) {
+			return;
+		}
+		copyPlannedStringMetricIfAbsent(statementPattern, genericPlanNode, OPTIMIZER_OBJECT_GUARANTEE);
+		copyPlannedStringMetricIfAbsent(statementPattern, genericPlanNode, OPTIMIZER_OBJECT_GUARANTEE_PREDICATE);
+	}
+
+	private static void copyPlannedStringMetricIfAbsent(QueryModelNode source, GenericPlanNode target,
+			String metricName) {
+		if (target.getStringMetricPlanned(metricName) != null) {
+			return;
+		}
+		String metricValue = source.getStringMetricPlanned(metricName);
+		if (metricValue != null) {
+			target.setStringMetricPlanned(metricName, metricValue);
 		}
 	}
 

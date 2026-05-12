@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
@@ -150,6 +151,24 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			boolean includeInferred, Resource... contexts) throws SailException {
 		return new IterationWrapper<Statement>(
 				super.getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
+			@Override
+			public Statement next() throws SailException {
+				// ensure that all elements of the statement are initialized (lazy values are resolved)
+				Statement stmt = super.next();
+				initValue(stmt.getSubject());
+				initValue(stmt.getPredicate());
+				initValue(stmt.getObject());
+				initValue(stmt.getContext());
+				return stmt;
+			}
+		};
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		return new IterationWrapper<Statement>(
+				super.getStatementsInternal(statementPattern, subj, pred, obj, includeInferred, contexts)) {
 			@Override
 			public Statement next() throws SailException {
 				// ensure that all elements of the statement are initialized (lazy values are resolved)

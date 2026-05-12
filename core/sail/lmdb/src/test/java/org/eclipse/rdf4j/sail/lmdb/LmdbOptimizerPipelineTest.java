@@ -26,7 +26,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -47,18 +46,13 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.IsBNode;
-import org.eclipse.rdf4j.query.algebra.IsLiteral;
-import org.eclipse.rdf4j.query.algebra.IsURI;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -203,7 +197,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineRunsGuaranteeFilterOptimizerBeforeConjunctiveSplitter() {
+	void lmdbPipelineDoesNotRunEagerDomainFilterOptimizer() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<String> optimizers = optimizers(new LmdbQueryOptimizerPipeline(strategy, tripleSource,
@@ -212,123 +206,9 @@ class LmdbOptimizerPipelineTest {
 						.map(optimizer -> optimizer.getClass().getSimpleName())
 						.collect(Collectors.toList());
 
-		int guaranteeIndex = optimizers.indexOf("LmdbGuaranteeFilterOptimizer");
-		int splitterIndex = optimizers.indexOf("ConjunctiveConstraintSplitterOptimizer");
-		int sameTermIndex = optimizers.indexOf("SameTermFilterOptimizer");
+		int guaranteeIndex = optimizers.indexOf("Lmdb" + "GuaranteeFilterOptimizer");
 
-		assertTrue(guaranteeIndex >= 0, optimizers.toString());
-		assertTrue(guaranteeIndex < splitterIndex, optimizers.toString());
-		assertTrue(guaranteeIndex < sameTermIndex, optimizers.toString());
-	}
-
-	@Test
-	void lmdbGuaranteeOptimizerRewritesIriEqualityToSameTermBeforeSplitter() {
-		TupleExpr tupleExpr = optimizeUntilConjunctiveSplitter("""
-				SELECT * WHERE {
-				  ?s <http://example.com/p/iri-left> ?a .
-				  ?t <http://example.com/p/iri-right> ?b .
-				  FILTER (?a = ?b)
-				}
-				""", new FixedPredicateGuaranteeStatistics(Map.of(
-				"http://example.com/p/iri-left", PredicateObjectGuarantee.IRI,
-				"http://example.com/p/iri-right", PredicateObjectGuarantee.IRI)));
-
-		assertTrue(containsSameTerm(tupleExpr, "a", "b"), tupleExpr.toString());
-		assertFalse(containsCompare(tupleExpr, "a", "b"), tupleExpr.toString());
-	}
-
-	@Test
-	void lmdbGuaranteeOptimizerAddsIriGuardForUnknownEqualityPeerBeforeSplitter() {
-		TupleExpr tupleExpr = optimizeUntilConjunctiveSplitter("""
-				SELECT * WHERE {
-				  ?s <http://example.com/p/iri-object> ?a .
-				  ?t ?p ?c .
-				  FILTER (?a = ?c)
-				}
-				""", new FixedPredicateGuaranteeStatistics(Map.of(
-				"http://example.com/p/iri-object", PredicateObjectGuarantee.IRI)));
-
-		assertTrue(containsUnaryGuard(tupleExpr, IsURI.class, "c"), tupleExpr.toString());
-		assertTrue(containsSameTerm(tupleExpr, "a", "c"), tupleExpr.toString());
-	}
-
-	@Test
-	void lmdbGuaranteeOptimizerRewritesBNodeEqualityToSameTermBeforeSplitter() {
-		TupleExpr tupleExpr = optimizeUntilConjunctiveSplitter("""
-				SELECT * WHERE {
-				  ?s <http://example.com/p/bnode-left> ?a .
-				  ?t <http://example.com/p/bnode-right> ?b .
-				  FILTER (?a = ?b)
-				}
-				""", new FixedPredicateGuaranteeStatistics(Map.of(
-				"http://example.com/p/bnode-left", PredicateObjectGuarantee.BNODE,
-				"http://example.com/p/bnode-right", PredicateObjectGuarantee.BNODE)));
-
-		assertTrue(containsSameTerm(tupleExpr, "a", "b"), tupleExpr.toString());
-		assertFalse(containsCompare(tupleExpr, "a", "b"), tupleExpr.toString());
-	}
-
-	@Test
-	void lmdbGuaranteeOptimizerAddsBNodeGuardForUnknownEqualityPeerBeforeSplitter() {
-		TupleExpr tupleExpr = optimizeUntilConjunctiveSplitter("""
-				SELECT * WHERE {
-				  ?s <http://example.com/p/bnode-object> ?a .
-				  ?t ?p ?c .
-				  FILTER (?a = ?c)
-				}
-				""", new FixedPredicateGuaranteeStatistics(Map.of(
-				"http://example.com/p/bnode-object", PredicateObjectGuarantee.BNODE)));
-
-		assertTrue(containsUnaryGuard(tupleExpr, IsBNode.class, "c"), tupleExpr.toString());
-		assertTrue(containsSameTerm(tupleExpr, "a", "c"), tupleExpr.toString());
-	}
-
-	@Test
-	void lmdbGuaranteeOptimizerAddsLiteralGuardButKeepsCompareForUnknownEqualityPeerBeforeSplitter() {
-		TupleExpr tupleExpr = optimizeUntilConjunctiveSplitter("""
-				SELECT * WHERE {
-				  ?s <http://example.com/p/literal-object> ?a .
-				  ?t ?p ?c .
-				  FILTER (?a = ?c)
-				}
-				""", new FixedPredicateGuaranteeStatistics(Map.of(
-				"http://example.com/p/literal-object", PredicateObjectGuarantee.LITERAL)));
-
-		assertTrue(containsUnaryGuard(tupleExpr, IsLiteral.class, "c"), tupleExpr.toString());
-		assertTrue(containsCompare(tupleExpr, "a", "c"), tupleExpr.toString());
-		assertFalse(containsSameTerm(tupleExpr, "a", "c"), tupleExpr.toString());
-	}
-
-	@Test
-	void lmdbGuaranteeOptimizerLeavesEqualityAloneWhenGuaranteesAreMissing() {
-		TupleExpr tupleExpr = optimizeUntilConjunctiveSplitter("""
-				SELECT * WHERE {
-				  ?s <http://example.com/p/left> ?a .
-				  ?t <http://example.com/p/right> ?b .
-				  FILTER (?a = ?b)
-				}
-				""", new FixedPredicateGuaranteeStatistics(Map.of()));
-
-		assertFalse(containsUnaryGuard(tupleExpr, IsURI.class, "b"), tupleExpr.toString());
-		assertFalse(containsUnaryGuard(tupleExpr, IsBNode.class, "b"), tupleExpr.toString());
-		assertFalse(containsUnaryGuard(tupleExpr, IsLiteral.class, "b"), tupleExpr.toString());
-		assertFalse(containsSameTerm(tupleExpr, "a", "b"), tupleExpr.toString());
-		assertTrue(containsCompare(tupleExpr, "a", "b"), tupleExpr.toString());
-	}
-
-	@Test
-	void lmdbGuaranteeOptimizerTurnsDisjointAssuredKindsIntoEmptySetBeforeSplitter() {
-		TupleExpr tupleExpr = optimizeUntilConjunctiveSplitter("""
-				SELECT * WHERE {
-				  ?s <http://example.com/p/iri-object> ?a .
-				  ?t <http://example.com/p/literal-object> ?b .
-				  FILTER (?a = ?b)
-				}
-				""", new FixedPredicateGuaranteeStatistics(Map.of(
-				"http://example.com/p/iri-object", PredicateObjectGuarantee.IRI,
-				"http://example.com/p/literal-object", PredicateObjectGuarantee.LITERAL)));
-
-		assertTrue(containsEmptySet(tupleExpr), tupleExpr.toString());
+		assertEquals(-1, guaranteeIndex, optimizers.toString());
 	}
 
 	@Test
@@ -405,6 +285,30 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbSketchPipelineRemovesProjectionDeadOptionalUnderDistinct() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+				SELECT DISTINCT ?p WHERE {
+				  ?a a foaf:Person ;
+				     ?p ?o .
+				  OPTIONAL {
+				    ?o a ?type .
+				  }
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+
+		assertFalse(containsLeftJoin(tupleExpr), tupleExpr.toString());
+	}
+
+	@Test
 	void standardPipelineStillUsesLegacyFilterAndJoinOptimizer() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -443,90 +347,6 @@ class LmdbOptimizerPipelineTest {
 		return parsedQuery.getTupleExpr();
 	}
 
-	private static TupleExpr optimizeUntilConjunctiveSplitter(String query, EvaluationStatistics statistics) {
-		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
-		TupleExpr tupleExpr = parseTupleExpr(query);
-		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
-				.getOptimizers()) {
-			if ("ConjunctiveConstraintSplitterOptimizer".equals(optimizer.getClass().getSimpleName())) {
-				break;
-			}
-			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
-		}
-		return tupleExpr;
-	}
-
-	private static boolean containsSameTerm(TupleExpr tupleExpr, String left, String right) {
-		return containsBinaryValueOperator(tupleExpr, SameTerm.class, left, right);
-	}
-
-	private static boolean containsCompare(TupleExpr tupleExpr, String left, String right) {
-		return containsBinaryValueOperator(tupleExpr, Compare.class, left, right);
-	}
-
-	private static boolean containsBinaryValueOperator(TupleExpr tupleExpr,
-			Class<? extends org.eclipse.rdf4j.query.algebra.BinaryValueOperator> type, String left, String right) {
-		boolean[] found = { false };
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (type.isInstance(node)) {
-					org.eclipse.rdf4j.query.algebra.BinaryValueOperator operator = type.cast(node);
-					if (sameVars(operator.getLeftArg(), operator.getRightArg(), left, right)) {
-						found[0] = true;
-					}
-				}
-				super.meetNode(node);
-			}
-		});
-		return found[0];
-	}
-
-	private static boolean sameVars(ValueExpr leftArg, ValueExpr rightArg, String left, String right) {
-		return varName(leftArg).filter(left::equals).isPresent()
-				&& varName(rightArg).filter(right::equals).isPresent()
-				|| varName(leftArg).filter(right::equals).isPresent()
-						&& varName(rightArg).filter(left::equals).isPresent();
-	}
-
-	private static Optional<String> varName(ValueExpr valueExpr) {
-		if (valueExpr instanceof Var var && !var.hasValue()) {
-			return Optional.of(var.getName());
-		}
-		return Optional.empty();
-	}
-
-	private static boolean containsUnaryGuard(TupleExpr tupleExpr, Class<? extends UnaryValueOperator> type,
-			String variable) {
-		boolean[] found = { false };
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (type.isInstance(node) && varName(type.cast(node).getArg()).filter(variable::equals).isPresent()) {
-					found[0] = true;
-				}
-				super.meetNode(node);
-			}
-		});
-		return found[0];
-	}
-
-	private static boolean containsEmptySet(TupleExpr tupleExpr) {
-		boolean[] found = { false };
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-
-			@Override
-			public void meet(EmptySet node) {
-				found[0] = true;
-				super.meet(node);
-			}
-		});
-		return found[0];
-	}
-
 	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {
 		boolean[] found = { false };
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -537,6 +357,18 @@ class LmdbOptimizerPipelineTest {
 					found[0] = true;
 				}
 				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean containsLeftJoin(QueryModelNode queryModelNode) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(LeftJoin node) {
+				found[0] = true;
 			}
 		});
 		return found[0];
@@ -780,29 +612,6 @@ class LmdbOptimizerPipelineTest {
 		@Override
 		public FilterPassEstimate estimateFilterPass(Filter filter) {
 			return new FilterPassEstimate(passRatio, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
-		}
-	}
-
-	private static final class FixedPredicateGuaranteeStatistics extends EvaluationStatistics
-			implements LmdbPredicateObjectGuaranteeSource {
-
-		private final Map<String, PredicateObjectGuarantee> guarantees;
-
-		private FixedPredicateGuaranteeStatistics(Map<String, PredicateObjectGuarantee> guarantees) {
-			this.guarantees = guarantees;
-		}
-
-		@Override
-		public PredicateObjectGuarantee getPredicateObjectGuarantee(IRI predicate) {
-			return getKnownPredicateObjectGuarantee(predicate).orElse(PredicateObjectGuarantee.NONE);
-		}
-
-		@Override
-		public Optional<PredicateObjectGuarantee> getKnownPredicateObjectGuarantee(IRI predicate) {
-			if (predicate == null) {
-				return Optional.empty();
-			}
-			return Optional.ofNullable(guarantees.get(predicate.stringValue()));
 		}
 	}
 

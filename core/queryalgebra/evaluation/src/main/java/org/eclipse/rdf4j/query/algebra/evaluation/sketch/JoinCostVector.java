@@ -18,6 +18,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 final class JoinCostVector implements Comparable<JoinCostVector> {
 
+	private static final double WORK_EQUIVALENCE_ABSOLUTE_ROWS = 4.0d;
+	private static final double WORK_EQUIVALENCE_RELATIVE_RATIO = 0.05d;
+
 	private final double totalWorkRows;
 	private final double finalRows;
 	private final double maxIntermediateRows;
@@ -74,6 +77,29 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 
 	@Override
 	public int compareTo(JoinCostVector other) {
+		if (equivalentTotalWork(totalWorkRows, other.totalWorkRows)) {
+			int comparison = Double.compare(outputSurfaceRows(), other.outputSurfaceRows());
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(finalRows, other.finalRows);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(maxIntermediateRows, other.maxIntermediateRows);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(uncertaintyRows, other.uncertaintyRows);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(cartesianWorkRows, other.cartesianWorkRows);
+			if (comparison != 0) {
+				return comparison;
+			}
+			return Double.compare(totalWorkRows, other.totalWorkRows);
+		}
 		int comparison = Double.compare(totalWorkRows, other.totalWorkRows);
 		if (comparison != 0) {
 			return comparison;
@@ -91,6 +117,19 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 			return comparison;
 		}
 		return Double.compare(cartesianWorkRows, other.cartesianWorkRows);
+	}
+
+	private double outputSurfaceRows() {
+		return finalRows + uncertaintyRows;
+	}
+
+	private static boolean equivalentTotalWork(double left, double right) {
+		double difference = Math.abs(left - right);
+		if (difference <= WORK_EQUIVALENCE_ABSOLUTE_ROWS) {
+			return true;
+		}
+		double baseline = Math.max(1.0d, Math.min(left, right));
+		return difference <= baseline * WORK_EQUIVALENCE_RELATIVE_RATIO;
 	}
 
 	@Override

@@ -20,10 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -91,6 +93,36 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 
 		clearActiveSingleTriples(estimator);
 		assertFalse(estimator.isReady(), "Estimator should not be ready without active single-triple sketches");
+	}
+
+	@Test
+	void sketchOnlyJoinSurfaceRowsDoNotOpenStatementSourceAfterRebuild() {
+		IRI value = VF.createIRI("urn:value");
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		FailOnReadSketchStatementSource store = new FailOnReadSketchStatementSource();
+		for (int i = 0; i < 200; i++) {
+			Resource observation = VF.createIRI("urn:observation:" + i);
+			store.add(st(observation, value, VF.createLiteral(i % 10)));
+			store.add(st(VF.createIRI("urn:encounter:" + i), hasObservation, observation));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		int rebuildReads = store.readCalls;
+		store.failOnRead = true;
+
+		StatementPattern valuePattern = new StatementPattern(Var.of("obs"), Var.of("value", value), Var.of("v"));
+		StatementPattern hasObservationPattern = new StatementPattern(Var.of("enc"),
+				Var.of("hasObservation", hasObservation), Var.of("obs"));
+
+		double prefixRows = estimator.estimateSketchJoinSurfaceRows(List.of(valuePattern), "obs");
+		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(valuePattern), hasObservationPattern,
+				"obs");
+
+		assertTrue(prefixRows > 0.0d, "Expected sketch-only prefix surface rows");
+		assertTrue(surfaceRows > 0.0d, "Expected sketch-only join surface rows");
+		assertEquals(rebuildReads, store.readCalls,
+				"Sketch-only surface costing must not perform exact statement-source scans during planning");
 	}
 
 	private static Statement st(Resource s, IRI p, Value o) {
@@ -184,6 +216,22 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 			return field.getDouble(varPlanStats);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError(e);
+		}
+	}
+
+	private static final class FailOnReadSketchStatementSource extends StubSketchStatementSource {
+
+		private boolean failOnRead;
+		private int readCalls;
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			if (failOnRead) {
+				throw new AssertionError("Statement source opened during sketch-only join-surface estimation");
+			}
+			readCalls++;
+			return super.getStatements(subj, pred, obj, contexts);
 		}
 	}
 }

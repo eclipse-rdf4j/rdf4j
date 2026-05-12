@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -97,6 +98,53 @@ class ThemeQueryBenchmarkSmokeIT {
 	@Test
 	void executeQueryReturnsExpectedCountForPharmaQueryTwo() throws Exception {
 		assertThemeQueryCount(Theme.PHARMA, 2);
+	}
+
+	@Test
+	void medicalRecordsQueryNineBenchmarkLifecycleRejectsConditionCodeAnchor() throws Exception {
+		deleteBenchmarkStore();
+
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 9;
+
+		benchmark.setup();
+		try {
+			String initialPlan = benchmark.explainOptimizedPlan();
+			assertTrue(initialPlan.contains("finite-anchor:condCode[valid"),
+					"Expected q9 benchmark setup to expose the condition-code finite anchor candidate\n"
+							+ initialPlan);
+			assertFalse(initialPlan.contains("selected=finite-anchor:condCode"),
+					"q9 benchmark setup should reject a condition-code finite anchor that only wins by a "
+							+ "near-tie scalar work estimate while worsening final rows and intermediate surface\n"
+							+ initialPlan);
+
+			long expected = ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, 9);
+			for (int i = 0; i < 5; i++) {
+				assertEquals(expected, benchmark.executeQuery());
+			}
+			String plan = benchmark.explainOptimizedPlan();
+			assertTrue(plan.contains("finite-anchor:condCode[valid"),
+					"Expected q9 benchmark lifecycle to expose the condition-code finite anchor candidate\n" + plan);
+			assertFalse(plan.contains("selected=finite-anchor:condCode"),
+					"q9 benchmark lifecycle should reject a condition-code finite anchor that only wins by a "
+							+ "near-tie scalar work estimate while worsening final rows and intermediate surface\n"
+							+ plan);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	private static void deleteBenchmarkStore() throws Exception {
+		Path store = Path.of("target", "lmdb-theme-query-benchmark");
+		if (!Files.exists(store)) {
+			return;
+		}
+		try (Stream<Path> paths = Files.walk(store)) {
+			for (Path path : paths.sorted(Comparator.reverseOrder()).collect(Collectors.toList())) {
+				Files.delete(path);
+			}
+		}
 	}
 
 	@Test

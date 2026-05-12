@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -81,6 +83,8 @@ class LmdbThemeQueryRegressionIT {
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final Pattern OPTIMIZER_CANDIDATES = Pattern.compile(
 			"optimizer\\.logicalExploration=[^\\n)]*candidates=(\\d+)");
+	private static final Pattern STATEMENT_PATTERN_LINE = Pattern.compile(
+			"(?m)^[\\s│║╠╚├└─═]*StatementPattern\\b");
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "theme-query-regression";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName()
@@ -837,6 +841,54 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	void trainQ8FreshBenchmarkStoreUsesServiceBoundSecondSection(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.TRAIN;
+		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
+					String renderedQuery = snapshot.renderedQuery();
+					assertContains(renderedQuery, "VALUES ?optName { \"Line 0\" \"Line 1\" }",
+							"Train q8 fresh benchmark store should infer the finite line-name anchor\n"
+									+ snapshot.plan());
+					assertDoesNotContain(renderedQuery, "FILTER (?optName IN (\"Line 0\", \"Line 1\"))",
+							"Train q8 finite line-name anchor should satisfy the original IN filter; keeping it "
+									+ "forces sampled selectivity and runtime filter work\n" + snapshot.plan());
+					assertContains(snapshot.plan(), "source=exact",
+							"Train q8 finite line-name anchor should keep exact satisfied-filter costing after "
+									+ "removing runtime filter evaluation\n" + snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "sources={sampled=1, unknown=1}",
+							"Train q8 satisfied line-name filter should not fall back to sampled selectivity; "
+									+ "that inflates work and regresses the hot query\n" + snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "plannedEstimateSource=lmdb-finite-derived-surface",
+							"Train q8 complete base lookups are cheaper than finite-derived surface lookups; "
+									+ "using finite-derived surface here regresses the small hot query\n"
+									+ snapshot.plan());
+					assertBefore(renderedQuery, "?s1 <http://example.com/theme/train/partOfLine> ?line",
+							"?service <http://example.com/theme/train/runsOnSection> ?s1",
+							"Train q8 fresh benchmark store should bind the first line section before service "
+									+ "bridge expansion\n" + snapshot.plan());
+					assertBefore(renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s1",
+							"?service <http://example.com/theme/train/runsOnSection> ?s2",
+							"Train q8 fresh benchmark store should let the bound service drive the second "
+									+ "section probe\n" + snapshot.plan());
+					assertBefore(renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s2",
+							"?s2 <http://example.com/theme/train/partOfLine> ?line",
+							"Train q8 fresh benchmark store should check each service-bound second section "
+									+ "against the bounded line instead of expanding all sections for the line\n"
+									+ snapshot.plan());
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void socialMediaReciprocalMinusUsesDependentAntiJoin(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -932,6 +984,48 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	void libraryMissingTitleFiniteAnchorUsesMemoPlannerNotFastPath(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.LIBRARY;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 4, snapshot -> {
+					String plan = snapshot.plan();
+					assertContains(plan, "finite-anchor:title[valid",
+							"Library q4 should still show the finite title anchor candidate cost\n" + plan);
+					assertContains(plan, "selected=empty-anchor:title",
+							"Library q4 should collapse the exact zero-row finite title lookup to EmptySet\n"
+									+ plan);
+					assertContains(plan, "EmptySet",
+							"Library q4 exact zero-row finite title lookup should not build a join tree\n" + plan);
+					assertDoesNotContain(plan, "LeftJoin",
+							"Library q4 exact zero-row mandatory input should propagate through OPTIONAL and avoid "
+									+ "planning optional work\n" + plan);
+					assertDoesNotContain(plan, "http://example.com/theme/library/hasCopy",
+							"Library q4 exact zero-row mandatory input should make the correlated EXISTS filter "
+									+ "irrelevant\n" + plan);
+					assertOccurrenceAtMost(plan, "optimizer.guaranteeOptionCandidates=", 1,
+							"Library q4 should report the heavy guarantee candidate summary once, not stamp it "
+									+ "onto every plan node\n" + plan);
+					assertContains(plan, "optimizer.logicalExploration=mode=pareto-memo",
+							"Library q4 is a zero-result title lookup where query execution is sub-millisecond; "
+									+ "the choice-option fast path does more planning work than the query itself\n"
+									+ plan);
+					assertDoesNotContain(plan, "optimizer.logicalExploration=mode=finite-anchor-fastpath",
+							"Library q4 should not use the prepare-heavy guarantee fast path for a tiny zero-result "
+									+ "finite title anchor\n" + plan);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	void libraryCopyBranchExclusionDoesNotScanAllLocatedAt(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
@@ -955,8 +1049,14 @@ class LmdbThemeQueryRegressionIT {
 									+ snapshot.plan());
 					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
 							12.0d);
-					assertPredicateLookupWorkRowsAtMost(snapshot.plan(),
-							"http://example.com/theme/library/locatedAt", 12.0d);
+					String locatedAtPattern = firstStatementPatternForPredicateAndVar(snapshot.plan(),
+							"http://example.com/theme/library/locatedAt", "o", "branch");
+					assertContains(locatedAtPattern, "plannedLookupComponents=[P, O]",
+							"Library q7 should drive locatedAt through finite branch object lookups\n"
+									+ snapshot.plan());
+					assertMetricRowsAtMost(locatedAtPattern, "plannedRepeatedInvocations", 12.0d,
+							"Library q7 should only perform one locatedAt lookup per finite branch\n"
+									+ snapshot.plan());
 					assertNoUnboundLeftStatementGuard(snapshot.plan(),
 							"Library q7 should not route an unbound branch/location scan through the left "
 									+ "bound-statement guard");
@@ -1742,17 +1842,33 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 2, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 2, snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "<http://example.com/theme/medical/recordedOn> ?date",
-							"FILTER (?date IN (\"2024-01-01\"^^<http://www.w3.org/2001/XMLSchema#date>, "
-									+ "\"2024-02-01\"^^<http://www.w3.org/2001/XMLSchema#date>))",
-							"Medical q2 should keep the date filter attached to the recordedOn lookup\n"
-									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(),
-							"FILTER (?date IN (\"2024-01-01\"^^<http://www.w3.org/2001/XMLSchema#date>, "
-									+ "\"2024-02-01\"^^<http://www.w3.org/2001/XMLSchema#date>))",
+					String renderedQuery = snapshot.renderedQuery();
+					String plan = snapshot.plan();
+					assertContains(renderedQuery,
+							"VALUES ?date { \"2024-01-01\"^^<http://www.w3.org/2001/XMLSchema#date> "
+									+ "\"2024-02-01\"^^<http://www.w3.org/2001/XMLSchema#date> }",
+							"Medical q2 should materialize the safe finite date anchor\n" + plan);
+					assertBefore(renderedQuery, "VALUES ?date",
+							"?enc <http://example.com/theme/medical/recordedOn> ?date",
+							"Medical q2 should bind the guaranteed xsd:date domain before probing recordedOn\n"
+									+ plan);
+					assertBefore(renderedQuery, "?enc <http://example.com/theme/medical/recordedOn> ?date",
 							"?enc a <http://example.com/theme/medical/Encounter>",
-							"Medical q2 should apply the selective date filter before the broad Encounter type scan\n"
-									+ snapshot.plan());
+							"Medical q2 should apply the selective date anchor before the broad Encounter type scan\n"
+									+ plan);
+					assertContains(plan, "optimizer.guaranteeOptions=generated=1, selected=finite-anchor:date",
+							"Medical q2 should show the selected guarantee option\n" + plan);
+					assertOriginalGuaranteeCandidate(plan,
+							"Medical q2 should show the original filter candidate cost\n" + plan);
+					assertContains(plan, "finite-anchor:date[valid",
+							"Medical q2 should show the finite date anchor candidate cost\n" + plan);
+					assertContains(plan, "optimizer.guaranteeAnchorPredicateDomain=RdfTermDomain[LITERAL, "
+							+ "DATE_WITHOUT_TIMEZONE, LITERAL_WITHOUT_LANGUAGE, DATE]",
+							"Medical q2 VALUES should expose the predicate guarantee that made it legal\n" + plan);
+					assertContains(plan, "o: Var (name=date) (optimizer.objectGuarantee=RdfTermDomain"
+							+ "[LITERAL, DATE_WITHOUT_TIMEZONE, LITERAL_WITHOUT_LANGUAGE, DATE], "
+							+ "optimizer.objectGuaranteePredicate=http://example.com/theme/medical/recordedOn",
+							"Medical q2 recordedOn object var should carry guarantee diagnostics\n" + plan);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1774,7 +1890,7 @@ class LmdbThemeQueryRegressionIT {
 					assertPlannerDiagnosticsPresent(theme, 4, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
 					assertContains(renderedQuery, "VALUES ?code { \"DX-200\" \"DX-201\" }",
-							"Medical q4 should use the safe finite code anchor once predicate guarantees prove "
+							"Medical q4 should use the safe finite code anchor once predicate domains prove "
 									+ "the code object domain is plain literals\n" + snapshot.plan());
 					assertBefore(renderedQuery, "VALUES ?code", "?cond <http://example.com/theme/medical/code> ?code",
 							"Medical q4 should bind the guaranteed literal code domain before probing condition "
@@ -1806,23 +1922,123 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private static void assertMedicalQ4CodeFirstPlanShape(String plan) {
-		int codePredicateIndex = plan.indexOf("value=http://example.com/theme/medical/code");
-		if (codePredicateIndex < 0) {
-			throw new AssertionError("Medical q4 plan should include the code pattern:\n" + plan);
-		}
-		String codePattern = statementPatternWindow(plan, codePredicateIndex);
-		assertContains(codePattern, "plannedIndexAccessMode=prefixScan");
-		assertContains(codePattern, "plannedLookupComponents=[O]");
-		assertContains(codePattern, "o: Var (name=code) (bindingState=bound)");
+		String codePattern = firstStatementPatternForPredicateAndVar(plan,
+				"http://example.com/theme/medical/code", "o", "code");
+		assertContains(codePattern, "plannedIndexAccessMode=directLookup");
+		assertContains(codePattern, "plannedLookupComponents=[P, O]");
+		assertPlannedBoundVar(codePattern, "code");
 
-		int conditionPredicateIndex = plan.indexOf("value=http://example.com/theme/medical/hasCondition");
-		if (conditionPredicateIndex < 0) {
-			throw new AssertionError("Medical q4 plan should include the hasCondition pattern:\n" + plan);
-		}
-		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
+		String conditionPattern = firstStatementPatternForPredicateAndVar(plan,
+				"http://example.com/theme/medical/hasCondition", "o", "cond");
 		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
 		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
-		assertContains(conditionPattern, "o: Var (name=cond) (bindingState=bound)");
+		assertPlannedBoundVar(conditionPattern, "cond");
+	}
+
+	@Test
+	void medicalObservationValueSelectsFiniteAnchorWithExactDiagnostics(@TempDir Path dataDir)
+			throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
+					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
+					String renderedQuery = snapshot.renderedQuery();
+					String plan = snapshot.plan();
+					assertOriginalGuaranteeCandidate(plan,
+							"Medical q5 should show the original filter candidate cost\n" + plan);
+					assertOriginalGuaranteeTotal(plan);
+					assertContains(plan, " finalRows=");
+					assertContains(plan, "finite-anchor:value[valid",
+							"Medical q5 should show that the value VALUES anchor was generated and costed\n" + plan);
+					assertContains(plan, "finite-anchor:value[valid total=");
+					assertContains(plan, "anchorAccessRows=");
+					assertContains(plan, "anchorWorkRows=");
+					assertContains(plan, "anchorIndex=");
+					assertContains(plan, "anchorLookupComponents=");
+					assertContains(plan, "surfaceRows=");
+					assertContains(plan, "satisfiedFilters=");
+					assertMetricRowsAtLeast(plan, "surfaceRows", 1_000.0d,
+							"Medical q5 finite anchor should carry a positive join-surface estimate for the "
+									+ "value -> observation -> encounter path\n" + plan);
+					assertContains(plan, "optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
+							+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT]",
+							"Medical q5 value object should expose its integer-domain guarantee\n" + plan);
+					assertContains(plan, "optimizer.objectGuaranteePredicate=http://example.com/theme/medical/value",
+							"Medical q5 value object should expose the predicate that provided the guarantee\n"
+									+ plan);
+					assertContains(plan, "selected=finite-anchor:value",
+							"Medical q5 should choose the exact finite value anchor over a broad value scan\n"
+									+ plan);
+					assertRenderedValueAnchor(renderedQuery, "value",
+							"Medical q5 selected finite anchor should be visible in the rendered query\n" + plan);
+					assertDoesNotContain(renderedQuery, "FILTER (?value IN (50, 60, 70))",
+							"Medical q5 finite anchor should satisfy and remove the original value filter\n"
+									+ plan);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalObservationValueFreshBenchmarkStoreSelectsFiniteAnchor(@TempDir Path dataDir)
+			throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 5, snapshot -> {
+					String plan = snapshot.plan();
+					assertContainsAny(plan, "optimizer.logicalExploration=mode=pareto-memo",
+							"optimizer.logicalExploration=mode=pareto-beam");
+					assertContains(plan, "optimizer.logicalExploration=mode=pareto",
+							"Medical q5 cold benchmark store should select the finite anchor through the normal "
+									+ "Pareto planner option path\n" + plan);
+					assertDoesNotContain(plan, "optimizer.logicalExploration=mode=finite-anchor-fastpath",
+							"Medical q5 should not bypass the cascade planner for guarantee choices\n" + plan);
+					assertOriginalGuaranteeCandidate(plan,
+							"Medical q5 cold benchmark store should still explain the original candidate "
+									+ "when choosing the finite-anchor option\n" + plan);
+					assertContains(plan, "finite-anchor:value[valid",
+							"Medical q5 cold benchmark store should cost the finite anchor candidate\n" + plan);
+					assertContains(plan, "selected=finite-anchor:value",
+							"Medical q5 cold benchmark store should choose finite-anchor:value\n" + plan);
+					assertContains(plan, "Join (BoundStatementPatternJoinIteration)",
+							"Medical q5 finite-anchor plan should keep the bounded statement-pattern join "
+									+ "physical path for the final patient type lookup\n" + plan);
+					assertContains(plan, "passRatio=0.0 source=sketch_nested_not_exists",
+							"Medical q5 finite-anchor plan should preserve the exact sketch anti-join "
+									+ "selectivity for the hasCondition NOT EXISTS filter\n" + plan);
+					assertContains(snapshot.renderedQuery(), "FILTER NOT EXISTS",
+							"Medical q5 finite-anchor plan should keep the bounded correlated hasCondition probe; "
+									+ "materializing the RHS scans all hasCondition rows and regresses this query\n"
+									+ plan);
+					assertDoesNotContain(snapshot.renderedQuery(), "MINUS",
+							"Medical q5 finite-anchor plan should not materialize the hasCondition anti-join "
+									+ "when the anchored left stream is already bounded\n" + plan);
+					assertDoesNotContain(plan, "antiJoinRewrite=materialized-minus",
+							"Medical q5 finite-anchor plan should explain that it kept the correlated anti-probe\n"
+									+ plan);
+					assertRenderedValueAnchor(snapshot.renderedQuery(), "value",
+							"Medical q5 cold benchmark store should render the selected value anchor\n" + plan);
+					assertDoesNotContain(snapshot.renderedQuery(), "FILTER (?value IN (50, 60, 70))",
+							"Medical q5 cold benchmark store should remove the satisfied value filter\n" + plan);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
 	}
 
 	@Test
@@ -1856,7 +2072,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	void medicalMedicationCodeMinusUsesCorrelatedNotExists(@TempDir Path dataDir) throws Exception {
+	void medicalMedicationCodeMinusKeepsOriginalFilterWhenAnchorCostsHigher(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
 		try {
@@ -1865,31 +2081,144 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 7, snapshot -> {
 					String renderedQuery = snapshot.renderedQuery();
-					assertPlannerDiagnosticsPresent(theme, 7, snapshot.plan());
-					assertContains(renderedQuery, "VALUES ?code { \"MED-1000\" \"MED-1001\" }",
-							"Medical q7 should use the safe finite medication-code anchor once predicate "
-									+ "guarantees prove the code object domain is plain literals\n"
-									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES ?code", "?med <http://example.com/theme/medical/code> ?code",
-							"Medical q7 should bind the guaranteed literal code domain before probing medication "
-									+ "codes\n" + snapshot.plan());
+					String plan = snapshot.plan();
+					assertPlannerDiagnosticsPresent(theme, 7, plan);
+					assertOriginalGuaranteeCandidate(plan,
+							"Medical q7 should show the original filter candidate cost\n" + plan);
+					assertContains(plan, "finite-anchor:code[valid",
+							"Medical q7 should show that the finite code anchor was generated and costed\n" + plan);
+					assertContains(plan, "selected=original",
+							"Medical q7 should keep the original filter when finite code anchoring is more "
+									+ "expensive after exact PO/OP page walking\n" + plan);
+					assertOriginalGuaranteeTotal(plan);
+					assertContains(plan, " finalRows=");
+					assertContains(plan, "anchorAccessRows=");
+					assertContains(plan, "anchorWorkRows=");
+					assertContains(plan, "anchorIndex=");
+					assertContains(plan, "anchorLookupComponents=");
+					assertDoesNotContain(renderedQuery, "VALUES ?code { \"MED-1000\" \"MED-1001\" }",
+							"Medical q7 should not materialize the more expensive medication-code VALUES anchor\n"
+									+ plan);
+					assertContains(renderedQuery,
+							"FILTER ((?code = \"MED-1000\") || (?code = \"MED-1001\"))",
+							"Medical q7 should retain the original medication-code filter when it wins costing\n"
+									+ plan);
+					assertBefore(renderedQuery,
+							"?med <http://example.com/theme/medical/code> ?code",
+							"FILTER ((?code = \"MED-1000\") || (?code = \"MED-1001\"))",
+							"Medical q7 should keep the code filter attached to the medication code scan\n"
+									+ plan);
 					assertBefore(renderedQuery, "?med <http://example.com/theme/medical/code> ?code",
 							"FILTER EXISTS",
 							"Medical q7 should narrow medication codes before the patient-medication probe\n"
-									+ snapshot.plan());
+									+ plan);
 					assertContains(renderedQuery, "FILTER NOT EXISTS",
 							"Medical q7 should use a bound-medication dosage probe instead of materializing "
-									+ "the dosage side of MINUS\n" + snapshot.plan());
+									+ "the dosage side of MINUS\n" + plan);
 					assertDoesNotContain(renderedQuery, "MINUS",
-							"Medical q7 should avoid the retained materialized anti-join shape\n"
-									+ snapshot.plan());
-					assertDoesNotContain(snapshot.plan(), "antiJoinRewrite=materialized-minus",
+							"Medical q7 should avoid the retained materialized anti-join shape\n" + plan);
+					assertDoesNotContain(plan, "antiJoinRewrite=materialized-minus",
 							"Medical q7 should not retain a materialized MINUS once the correlated dosage probe "
-									+ "is cheaper\n" + snapshot.plan());
-					assertNoUnboundLeftStatementGuard(snapshot.plan(),
+									+ "is cheaper\n" + plan);
+					assertNoUnboundLeftStatementGuard(plan,
 							"Medical q7 should keep the correlated medication anti-probe, but avoid failed "
 									+ "left bound-statement guards around unbound medication scans");
 				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalPatientsFreshBenchmarkStoreRejectsExpensiveConditionCodeAnchor(@TempDir Path dataDir)
+			throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme, 9);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
+					String plan = snapshot.plan();
+					assertPlannerDiagnosticsPresent(theme, 9, plan);
+					assertContains(plan, "finite-anchor:condCode[valid",
+							"Medical q9 fresh benchmark store should still explain the finite-anchor candidate\n"
+									+ plan);
+					assertDoesNotContain(plan, "selected=finite-anchor:condCode",
+							"Medical q9 should not select the condition-code finite anchor when the full plan work "
+									+ "is higher than the original candidate and only wins after unrelated assignment "
+									+ "work is discounted\n"
+									+ plan);
+				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalPatientsColdBenchmarkHarnessStoreRejectsConditionCodeAnchor(@TempDir Path dataDir)
+			throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareFreshBenchmarkHarnessStore(dataDir, theme);
+		LmdbStoreConfig config = benchmarkHarnessConfig();
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), config);
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "medical q9 cold benchmark harness setup",
+						60, TimeUnit.SECONDS);
+
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 9);
+				String plan = snapshot.plan();
+				assertPlannerDiagnosticsPresent(theme, 9, plan);
+				assertContains(plan, "finite-anchor:condCode[valid",
+						"Medical q9 cold benchmark harness store should still explain the finite-anchor candidate\n"
+								+ plan);
+				assertDoesNotContain(plan, "selected=finite-anchor:condCode",
+						"Medical q9 should not select a condition-code anchor when the cold finite-anchor plan "
+								+ "only wins by a tiny scalar work delta while estimating a worse row surface\n"
+								+ plan);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalPatientsBenchmarkHarnessStoreRejectsConditionCodeAnchorAfterWarmups(@TempDir Path dataDir)
+			throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareFreshBenchmarkHarnessStore(dataDir, theme);
+		LmdbStoreConfig config = benchmarkHarnessConfig();
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), config);
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "medical q9 benchmark harness setup", 60,
+						TimeUnit.SECONDS);
+				for (int i = 0; i < 5; i++) {
+					executeQuery(repository, ThemeQueryCatalog.queryFor(theme, 9));
+				}
+
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 9);
+				String plan = snapshot.plan();
+				assertPlannerDiagnosticsPresent(theme, 9, plan);
+				assertContains(plan, "finite-anchor:condCode[valid",
+						"Medical q9 benchmark harness store should still explain the finite-anchor candidate\n"
+								+ plan);
+				assertDoesNotContain(plan, "selected=finite-anchor:condCode",
+						"Medical q9 should not select the condition-code finite anchor after JMH-style warmup "
+								+ "feedback\n" + plan);
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -1909,6 +2238,11 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
+					assertDoesNotContain(snapshot.plan(), "selected=finite-anchor:condCode",
+							"Medical q9 should not select the condition-code finite anchor when the full plan work "
+									+ "is higher than the original candidate and only wins after unrelated assignment "
+									+ "work is discounted\n"
+									+ snapshot.plan());
 					assertBefore(snapshot.renderedQuery(), "?cond <http://example.com/theme/medical/code> ?condCode",
 							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
 							"Medical q9 should bind the filtered condition code domain before hasCondition fanout\n"
@@ -1941,23 +2275,19 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private static void assertMedicalQ9CodeFirstPlanShape(String plan) {
-		int conditionPredicateIndex = plan.indexOf("value=http://example.com/theme/medical/hasCondition");
-		if (conditionPredicateIndex < 0) {
-			throw new AssertionError("Medical q9 plan should include the hasCondition pattern:\n" + plan);
-		}
-		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
+		String conditionPattern = firstStatementPatternForPredicateAndVar(plan,
+				"http://example.com/theme/medical/hasCondition", "o", "cond");
 		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
 		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
-		assertContains(conditionPattern, "o: Var (name=cond) (bindingState=bound)");
+		assertPlannedBoundVar(conditionPattern, "cond");
 
-		int encounterTypeIndex = plan.indexOf("value=http://example.com/theme/medical/Encounter");
-		if (encounterTypeIndex < 0) {
-			throw new AssertionError("Medical q9 plan should include the Encounter type pattern:\n" + plan);
-		}
-		String encounterPattern = statementPatternWindow(plan, encounterTypeIndex);
+		String encounterPattern = firstStatementPatternContaining(plan,
+				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"value=http://example.com/theme/medical/Encounter",
+				"s: Var (name=enc");
 		assertContains(encounterPattern, "plannedIndexAccessMode=directLookup");
 		assertContains(encounterPattern, "plannedLookupComponents=[S, P, O]");
-		assertContains(encounterPattern, "s: Var (name=enc) (bindingState=bound)");
+		assertPlannedBoundVar(encounterPattern, "enc");
 	}
 
 	@Test
@@ -2082,11 +2412,13 @@ class LmdbThemeQueryRegressionIT {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
-					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
+					String finiteAuthorValues = firstValuesHeader(renderedQuery,
+							"VALUES (?authorName ?target)", "VALUES (?target ?authorName)");
+					assertBefore(renderedQuery, finiteAuthorValues,
 							"?author <http://example.com/theme/library/name> ?authorName",
 							"Library q9 should bind the finite author-name domain before the author-name lookup\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
+					assertBefore(renderedQuery, finiteAuthorValues,
 							"FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
 							"Library q9 should apply the original filter once both finite domains are bound\n"
 									+ snapshot.plan());
@@ -2211,6 +2543,25 @@ class LmdbThemeQueryRegressionIT {
 			shutdownAndRelease(repository, store);
 		}
 		return themeDir;
+	}
+
+	private static Path prepareFreshBenchmarkHarnessStore(Path dataDir, Theme theme) throws Exception {
+		Path themeDir = dataDir.resolve("benchmark-harness-" + theme.name());
+		LmdbStoreConfig config = benchmarkHarnessConfig();
+		LmdbStore store = new LmdbStore(themeDir.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		try {
+			loadBenchmarkData(repository);
+		} finally {
+			repository.shutDown();
+		}
+		return themeDir;
+	}
+
+	private static LmdbStoreConfig benchmarkHarnessConfig() {
+		LmdbStoreConfig config = ConfigUtil.createConfig();
+		config.setIterationCacheSyncThreshold(0);
+		return config;
 	}
 
 	private static Path prepareFreshRuntimeThemeStore(Path dataDir, Theme theme) throws Exception {
@@ -2523,6 +2874,14 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
+	private static void assertRenderedValueAnchor(String renderedQuery, String varName, String message) {
+		assertContains(renderedQuery, "VALUES", message);
+		assertContains(renderedQuery, "?" + varName, message);
+		assertContains(renderedQuery, "\"50\"^^<http://www.w3.org/2001/XMLSchema#int>", message);
+		assertContains(renderedQuery, "\"60\"^^<http://www.w3.org/2001/XMLSchema#int>", message);
+		assertContains(renderedQuery, "\"70\"^^<http://www.w3.org/2001/XMLSchema#int>", message);
+	}
+
 	private static void assertNoUnboundLeftStatementGuard(String plan, String message) {
 		String[] lines = plan.split("\\R");
 		for (int i = 0; i < lines.length; i++) {
@@ -2557,6 +2916,20 @@ class LmdbThemeQueryRegressionIT {
 		return block.toString();
 	}
 
+	private static void assertOriginalGuaranteeCandidate(String plan, String message) {
+		if (plan.contains("optimizer.guaranteeOptionCandidates=original[baseline")
+				|| plan.contains("optimizer.guaranteeOptionCandidates=original[lower-bound")
+				|| plan.contains("optimizer.guaranteeOptionCandidates=original-fixed[fixed-order")) {
+			return;
+		}
+		throw new AssertionError(message);
+	}
+
+	private static void assertOriginalGuaranteeTotal(String plan) {
+		assertContainsAny(plan, "original[baseline total=", "original[lower-bound total=",
+				"original-fixed[fixed-order total=");
+	}
+
 	private static void assertContainsAny(String value, String... expectedValues) {
 		for (String expected : expectedValues) {
 			if (value.contains(expected)) {
@@ -2565,6 +2938,22 @@ class LmdbThemeQueryRegressionIT {
 		}
 		throw new AssertionError("Expected to find one of `" + String.join("`, `", expectedValues) + "` in:\n"
 				+ value);
+	}
+
+	private static void assertOccurrenceAtMost(String value, String needle, int maxCount, String message) {
+		int count = 0;
+		int offset = 0;
+		while (true) {
+			int index = value.indexOf(needle, offset);
+			if (index < 0) {
+				break;
+			}
+			count++;
+			offset = index + needle.length();
+		}
+		if (count > maxCount) {
+			throw new AssertionError(message + "\nFound " + count + " occurrences of `" + needle + "`");
+		}
 	}
 
 	private static void assertBefore(String value, String first, String second, String message) {
@@ -2627,18 +3016,23 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private static void assertBoundObjectLookup(String plan, FiniteLiteralFilterQuery target) {
-		int predicateIndex = plan.indexOf("value=" + target.predicateIri());
-		if (predicateIndex < 0) {
-			throw new AssertionError(target + " plan should include predicate " + target.predicateIri() + ":\n"
-					+ plan);
-		}
-		String pattern = statementPatternWindow(plan, predicateIndex);
-		assertContains(pattern, "o: Var (name=" + target.bindingName() + ") (bindingState=bound)");
+		String pattern = firstStatementPatternForPredicateAndVar(plan, target.predicateIri(), "o",
+				target.bindingName());
+		assertVarBindingState(pattern, "o", target.bindingName(), "bound");
 	}
 
 	private static String statementPatternWindow(String plan, int predicateIndex) {
-		int start = plan.lastIndexOf("StatementPattern", predicateIndex);
-		int end = plan.indexOf("StatementPattern", predicateIndex);
+		Matcher matcher = STATEMENT_PATTERN_LINE.matcher(plan);
+		int start = -1;
+		int end = -1;
+		while (matcher.find()) {
+			if (matcher.start() <= predicateIndex) {
+				start = matcher.start();
+			} else {
+				end = matcher.start();
+				break;
+			}
+		}
 		if (start < 0) {
 			throw new AssertionError("Unable to isolate statement pattern around offset " + predicateIndex + ":\n"
 					+ plan);
@@ -2647,6 +3041,71 @@ class LmdbThemeQueryRegressionIT {
 			end = Math.min(plan.length(), predicateIndex + 1200);
 		}
 		return plan.substring(start, end);
+	}
+
+	private static List<String> statementPatternWindows(String plan) {
+		List<String> patterns = new ArrayList<>();
+		Matcher matcher = STATEMENT_PATTERN_LINE.matcher(plan);
+		int start = -1;
+		while (matcher.find()) {
+			if (start >= 0) {
+				patterns.add(plan.substring(start, matcher.start()));
+			}
+			start = matcher.start();
+		}
+		if (start >= 0) {
+			patterns.add(plan.substring(start));
+		}
+		return patterns;
+	}
+
+	private static List<String> statementPatternsForPredicate(String plan, String predicateIri) {
+		String predicateValue = "value=" + predicateIri;
+		return statementPatternWindows(plan).stream()
+				.filter(pattern -> hasPredicateLine(pattern, predicateValue))
+				.collect(Collectors.toList());
+	}
+
+	private static boolean hasPredicateLine(String pattern, String predicateValue) {
+		for (String line : pattern.split("\\R")) {
+			if (line.contains("p: Var") && line.contains(predicateValue)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String firstStatementPatternForPredicateAndVar(String plan, String predicateIri, String role,
+			String variableName) {
+		String variablePrefix = role + ": Var (name=" + variableName;
+		return statementPatternsForPredicate(plan, predicateIri).stream()
+				.filter(pattern -> pattern.contains(variablePrefix))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected statement pattern for predicate `" + predicateIri
+						+ "` and `" + variablePrefix + "` in:\n" + plan));
+	}
+
+	private static String firstStatementPatternForPredicate(String plan, String predicateIri) {
+		return statementPatternsForPredicate(plan, predicateIri).stream()
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected statement pattern for predicate `" + predicateIri
+						+ "` in:\n" + plan));
+	}
+
+	private static String firstStatementPatternContaining(String plan, String... needles) {
+		return statementPatternWindows(plan).stream()
+				.filter(pattern -> Stream.of(needles).allMatch(pattern::contains))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected statement pattern containing "
+						+ String.join(", ", needles) + " in:\n" + plan));
+	}
+
+	private static String firstValuesHeader(String renderedQuery, String... candidates) {
+		return Stream.of(candidates)
+				.filter(renderedQuery::contains)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected one of " + String.join(", ", candidates)
+						+ " in rendered query:\n" + renderedQuery));
 	}
 
 	private static void assertPlannerDiagnosticsPresent(Theme theme, int queryIndex, String plan) {
@@ -2769,9 +3228,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private static void assertSelfLoopAntiJoinDoesNotScanAllFollows(String plan) {
-		int selfLoopPredicateIndex = plan.indexOf("value=http://example.com/theme/social/follows");
-		while (selfLoopPredicateIndex >= 0) {
-			String pattern = statementPatternWindow(plan, selfLoopPredicateIndex);
+		for (String pattern : statementPatternsForPredicate(plan, "http://example.com/theme/social/follows")) {
 			boolean selfLoop = pattern.contains("s: Var (name=v)") && pattern.contains("o: Var (name=v)");
 			boolean unbound = pattern.contains("s: Var (name=v) (bindingState=unbound)")
 					&& pattern.contains("o: Var (name=v) (bindingState=unbound)");
@@ -2779,22 +3236,17 @@ class LmdbThemeQueryRegressionIT {
 				throw new AssertionError("Social media q7 self-loop anti-join should probe with ?v bound, "
 						+ "not scan all follows rows:\n" + pattern + "\nFull plan:\n" + plan);
 			}
-			selfLoopPredicateIndex = plan.indexOf("value=http://example.com/theme/social/follows",
-					selfLoopPredicateIndex + 1);
 		}
 	}
 
 	private static void assertNoConnectedReverseOptionalProbe(String plan) {
-		int predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo");
-		while (predicateIndex >= 0) {
-			String pattern = statementPatternWindow(plan, predicateIndex);
+		for (String pattern : statementPatternsForPredicate(plan, "http://example.com/theme/connected/connectsTo")) {
 			if (pattern.contains("s: Var (name=neighbor) (bindingState=bound)")
 					&& pattern.contains("o: Var (name=node) (bindingState=bound)")) {
 				throw new AssertionError(
 						"Highly connected q2 should remove the no-new-binding reverse optional probe:\n"
 								+ pattern + "\nFull plan:\n" + plan);
 			}
-			predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo", predicateIndex + 1);
 		}
 	}
 
@@ -2824,21 +3276,8 @@ class LmdbThemeQueryRegressionIT {
 
 		String filterPrefix = plan.substring(filterStart, filterEnd);
 
-		int namePatternIndex = plan.indexOf("value=http://example.com/theme/engineering/name", assemblyLiteralIndex);
-		if (namePatternIndex < 0) {
-			namePatternIndex = plan.indexOf("value=http://example.com/theme/engineering/name");
-		}
-		if (namePatternIndex < 0) {
-			throw new AssertionError("Engineering q2 plan should include the engineering/name pattern:\n" + plan);
-		}
-
-		int patternStart = plan.lastIndexOf("StatementPattern", namePatternIndex);
-		int patternEnd = plan.indexOf("s: Var", namePatternIndex);
-		if (patternStart < 0 || patternEnd < 0) {
-			return;
-		}
-
-		String patternHeader = plan.substring(patternStart, patternEnd);
+		String patternHeader = statementPatternHeader(
+				firstStatementPatternForPredicate(plan, "http://example.com/theme/engineering/name"));
 		if (patternHeader.contains("plannedLookupComponents=[P]")) {
 			throw new AssertionError("Engineering q2 engineering/name lookup should bind the object literal values, "
 					+ "not scan the whole predicate prefix:\n" + patternHeader + "\nFull plan:\n" + plan);
@@ -2851,16 +3290,14 @@ class LmdbThemeQueryRegressionIT {
 		assertBefore(plan, assignment, "value=http://example.com/theme/grid/name",
 				"Electrical grid q7 should anchor the finite name set before the name access");
 
-		int namePatternIndex = plan.indexOf("value=http://example.com/theme/grid/name");
-		if (namePatternIndex < 0) {
-			throw new AssertionError("Electrical grid q7 plan should include the grid/name pattern:\n" + plan);
-		}
-		String namePattern = statementPatternWindow(plan, namePatternIndex);
-		assertContains(namePattern, "o: Var (name=name) (bindingState=bound)");
+		String namePattern = firstStatementPatternForPredicateAndVar(plan, "http://example.com/theme/grid/name",
+				"o", "name");
+		assertVarBindingState(namePattern, "o", "name", "bound");
 		assertContains(namePattern, "plannedLookupComponents=[P, O]");
 		assertContains(namePattern, "plannedIndexAccessMode=directLookup");
 
 		int assignmentIndex = plan.indexOf(assignment);
+		int namePatternIndex = plan.indexOf(namePattern);
 		int feedsPatternIndex = plan.indexOf("value=http://example.com/theme/grid/feeds", namePatternIndex);
 		if (assignmentIndex < 0 || feedsPatternIndex < 0 || assignmentIndex >= feedsPatternIndex) {
 			throw new AssertionError("Unable to isolate electrical grid q7 finite-name prefix:\n" + plan);
@@ -2869,6 +3306,34 @@ class LmdbThemeQueryRegressionIT {
 		assertDoesNotContain(finiteNamePrefix, "Filter (",
 				"Electrical grid q7 should not wrap the name lookup in a redundant local finite-value filter:\n"
 						+ finiteNamePrefix + "\nFull plan:\n" + plan);
+	}
+
+	private static void assertVarBindingState(String pattern, String role, String name, String bindingState) {
+		assertContains(pattern, role + ": Var (name=" + name);
+		assertContains(pattern, "bindingState=" + bindingState);
+	}
+
+	private static void assertPlannedBoundVar(String pattern, String name) {
+		String prefix = "plannedBoundVars=";
+		int start = pattern.indexOf(prefix);
+		if (start < 0) {
+			throw new AssertionError("Expected plannedBoundVars for `" + name + "` in:\n" + pattern);
+		}
+		int end = pattern.indexOf(", plannerId", start);
+		if (end < 0) {
+			end = pattern.indexOf(")", start);
+		}
+		if (end < 0) {
+			end = pattern.length();
+		}
+		String boundVars = pattern.substring(start + prefix.length(), end);
+		for (String boundVar : boundVars.split(",")) {
+			if (name.equals(boundVar.trim())) {
+				return;
+			}
+		}
+		throw new AssertionError("Expected plannedBoundVars to include `" + name + "` but got `" + boundVars
+				+ "` in:\n" + pattern);
 	}
 
 	private static void assertElectricalGridQ10CombinedOptionalAntiFilterPlan(String plan) {
@@ -2985,68 +3450,130 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private static void assertPredicateLookupWorkRowsBelow(String plan, String predicateIri, double maxWorkRows) {
-		int predicateIndex = plan.indexOf("value=" + predicateIri);
-		if (predicateIndex < 0) {
+		List<String> patterns = statementPatternsForPredicate(plan, predicateIri);
+		if (patterns.isEmpty()) {
 			throw new AssertionError("Expected to find predicate `" + predicateIri + "` in:\n" + plan);
 		}
-		int patternStart = plan.lastIndexOf("StatementPattern", predicateIndex);
-		int patternEnd = plan.indexOf("s: Var", predicateIndex);
-		if (patternStart < 0 || patternEnd < 0 || patternStart >= patternEnd) {
-			throw new AssertionError("Expected a statement-pattern header for predicate `" + predicateIri + "` in:\n"
-					+ plan);
+		double bestWorkRows = Double.POSITIVE_INFINITY;
+		String bestHeader = "";
+		for (String pattern : patterns) {
+			String header = statementPatternHeader(pattern);
+			assertDoesNotContain(header, "plannedIndexAccessMode=fullScan");
+			if (!header.contains("plannedLookupComponents=[P, O]")) {
+				continue;
+			}
+			double workRows = preferredPredicateLookupWorkRows(header);
+			if (!Double.isNaN(workRows) && workRows < bestWorkRows) {
+				bestWorkRows = workRows;
+				bestHeader = header;
+			}
 		}
-		String header = plan.substring(patternStart, patternEnd);
-		assertDoesNotContain(header, "plannedIndexAccessMode=fullScan");
-		assertContains(header, "plannedLookupComponents=[P, O]");
-		Matcher matcher = Pattern.compile("plannedWorkRows=([^,)]*)").matcher(header);
-		if (!matcher.find()) {
-			throw new AssertionError(
-					"Expected plannedWorkRows for predicate `" + predicateIri + "` in:\n" + header + "\nFull plan:\n"
-							+ plan);
+		if (bestHeader.isEmpty()) {
+			throw new AssertionError("Expected a [P, O] lookup for predicate `" + predicateIri + "` in:\n"
+					+ patterns + "\nFull plan:\n" + plan);
 		}
-		double workRows = parsePlanRows(matcher.group(1));
-		if (workRows > maxWorkRows) {
-			throw new AssertionError("Expected `" + predicateIri + "` plannedWorkRows <= " + maxWorkRows + " but got "
-					+ matcher.group(1) + " in:\n" + header + "\nFull plan:\n" + plan);
+		if (bestWorkRows > maxWorkRows) {
+			throw new AssertionError("Expected `" + predicateIri + "` lookup work rows <= " + maxWorkRows
+					+ " but got " + bestWorkRows + " in:\n" + bestHeader + "\nFull plan:\n" + plan);
 		}
 	}
 
 	private static void assertPredicateLookupWorkRowsAtMost(String plan, String predicateIri, double maxWorkRows) {
-		int predicateIndex = plan.indexOf("value=" + predicateIri);
-		if (predicateIndex < 0) {
+		List<String> patterns = statementPatternsForPredicate(plan, predicateIri);
+		if (patterns.isEmpty()) {
 			throw new AssertionError("Expected to find predicate `" + predicateIri + "` in:\n" + plan);
 		}
-		String pattern = statementPatternWindow(plan, predicateIndex);
-		assertDoesNotContain(pattern, "plannedIndexAccessMode=fullScan");
-		Matcher matcher = Pattern.compile("plannedWorkRows=([^,)]*)").matcher(pattern);
-		if (!matcher.find()) {
-			throw new AssertionError(
-					"Expected plannedWorkRows for predicate `" + predicateIri + "` in:\n" + pattern + "\nFull plan:\n"
-							+ plan);
+		double bestWorkRows = Double.POSITIVE_INFINITY;
+		String bestHeader = "";
+		for (String pattern : patterns) {
+			String header = statementPatternHeader(pattern);
+			assertDoesNotContain(header, "plannedIndexAccessMode=fullScan");
+			double workRows = preferredPredicateLookupWorkRows(header);
+			if (!Double.isNaN(workRows) && workRows < bestWorkRows) {
+				bestWorkRows = workRows;
+				bestHeader = header;
+			}
 		}
-		double workRows = parsePlanRows(matcher.group(1));
-		if (workRows > maxWorkRows) {
-			throw new AssertionError("Expected `" + predicateIri + "` plannedWorkRows <= " + maxWorkRows + " but got "
-					+ matcher.group(1) + " in:\n" + pattern + "\nFull plan:\n" + plan);
+		if (bestHeader.isEmpty()) {
+			throw new AssertionError("Expected planned work rows for predicate `" + predicateIri + "` in:\n"
+					+ patterns + "\nFull plan:\n" + plan);
+		}
+		if (bestWorkRows > maxWorkRows) {
+			throw new AssertionError("Expected `" + predicateIri + "` lookup work rows <= " + maxWorkRows
+					+ " but got " + bestWorkRows + " in:\n" + bestHeader + "\nFull plan:\n" + plan);
 		}
 	}
 
 	private static void assertPredicateLookupWorkRowsAbove(String plan, String predicateIri, double minWorkRows) {
-		int predicateIndex = plan.indexOf("value=" + predicateIri);
-		if (predicateIndex < 0) {
+		List<String> patterns = statementPatternsForPredicate(plan, predicateIri);
+		if (patterns.isEmpty()) {
 			throw new AssertionError("Expected to find predicate `" + predicateIri + "` in:\n" + plan);
 		}
-		String pattern = statementPatternWindow(plan, predicateIndex);
-		Matcher matcher = Pattern.compile("plannedWorkRows=([^,)]*)").matcher(pattern);
-		if (!matcher.find()) {
-			throw new AssertionError(
-					"Expected plannedWorkRows for predicate `" + predicateIri + "` in:\n" + pattern + "\nFull plan:\n"
-							+ plan);
+		double largestWorkRows = Double.NEGATIVE_INFINITY;
+		String largestPattern = "";
+		for (String pattern : patterns) {
+			double workRows = metricRows(pattern, "plannedWorkRows");
+			if (!Double.isNaN(workRows) && workRows > largestWorkRows) {
+				largestWorkRows = workRows;
+				largestPattern = pattern;
+			}
 		}
-		double workRows = parsePlanRows(matcher.group(1));
-		if (workRows < minWorkRows) {
-			throw new AssertionError("Expected `" + predicateIri + "` plannedWorkRows >= " + minWorkRows + " but got "
-					+ matcher.group(1) + " in:\n" + pattern + "\nFull plan:\n" + plan);
+		if (largestPattern.isEmpty()) {
+			throw new AssertionError("Expected plannedWorkRows for predicate `" + predicateIri + "` in:\n"
+					+ patterns + "\nFull plan:\n" + plan);
+		}
+		if (largestWorkRows < minWorkRows) {
+			throw new AssertionError("Expected any `" + predicateIri + "` plannedWorkRows >= " + minWorkRows
+					+ " but max was " + largestWorkRows + " in:\n" + largestPattern + "\nFull plan:\n" + plan);
+		}
+	}
+
+	private static String statementPatternHeader(String pattern) {
+		int varsStart = pattern.indexOf("s: Var");
+		if (varsStart < 0) {
+			varsStart = pattern.indexOf("╠══");
+		}
+		return varsStart < 0 ? pattern : pattern.substring(0, varsStart);
+	}
+
+	private static double preferredPredicateLookupWorkRows(String header) {
+		double accessWorkRows = metricRows(header, "plannedAccessWorkRows");
+		if (!Double.isNaN(accessWorkRows)) {
+			return accessWorkRows;
+		}
+		double accessRows = metricRows(header, "plannedAccessRows");
+		if (!Double.isNaN(accessRows)) {
+			return accessRows;
+		}
+		return metricRows(header, "plannedWorkRows");
+	}
+
+	private static double metricRows(String value, String metricName) {
+		Matcher matcher = Pattern
+				.compile(Pattern.quote(metricName) + "=([-+]?\\d+(?:\\.\\d+)?(?:[Ee][-+]?\\d+)?[KMB]?)")
+				.matcher(value);
+		return matcher.find() ? parsePlanRows(matcher.group(1)) : Double.NaN;
+	}
+
+	private static void assertMetricRowsAtMost(String value, String metricName, double maxRows, String message) {
+		double rows = metricRows(value, metricName);
+		if (Double.isNaN(rows)) {
+			throw new AssertionError("Expected metric `" + metricName + "` in:\n" + value);
+		}
+		if (rows > maxRows) {
+			throw new AssertionError(message + "\nExpected `" + metricName + "` <= " + maxRows + " but got "
+					+ rows + " in:\n" + value);
+		}
+	}
+
+	private static void assertMetricRowsAtLeast(String value, String metricName, double minRows, String message) {
+		double rows = metricRows(value, metricName);
+		if (Double.isNaN(rows)) {
+			throw new AssertionError("Expected metric `" + metricName + "` in:\n" + value);
+		}
+		if (rows < minRows) {
+			throw new AssertionError(message + "\nExpected `" + metricName + "` >= " + minRows + " but got "
+					+ rows + " in:\n" + value);
 		}
 	}
 

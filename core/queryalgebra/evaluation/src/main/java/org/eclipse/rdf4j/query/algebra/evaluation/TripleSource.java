@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
  * A triple source that can be queried for (the existence of) certain triples in certain contexts. This interface
@@ -51,6 +52,23 @@ public interface TripleSource extends AvailableStatementOrder {
 			Value obj, Resource... contexts) throws QueryEvaluationException;
 
 	/**
+	 * Gets statements for a physical statement pattern. Stores that can use optimizer metadata attached to the
+	 * statement pattern can override this method; other stores delegate to the value-only API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts         The context(s) to get the statements from.
+	 * @return An iterator over the relevant statements.
+	 * @throws QueryEvaluationException If the triple source failed to get the statements.
+	 */
+	default CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
+		return getStatements(subj, pred, obj, contexts);
+	}
+
+	/**
 	 * Counts statements matching the supplied pattern without requiring callers to materialize converted bindings.
 	 *
 	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
@@ -65,6 +83,31 @@ public interface TripleSource extends AvailableStatementOrder {
 			throws QueryEvaluationException {
 		long count = 0;
 		try (CloseableIteration<? extends Statement> statements = getStatements(subj, pred, obj, contexts)) {
+			while (statements.hasNext()) {
+				statements.next();
+				count++;
+			}
+		}
+		return count;
+	}
+
+	/**
+	 * Counts statements for a physical statement pattern. Stores that can use optimizer metadata attached to the
+	 * statement pattern can override this method; other stores delegate to the value-only API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts         The context(s) to count statements from.
+	 * @return The number of relevant statements.
+	 * @throws QueryEvaluationException If the triple source failed to count the statements.
+	 */
+	default long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws QueryEvaluationException {
+		long count = 0;
+		try (CloseableIteration<? extends Statement> statements = getStatements(statementPattern, subj, pred, obj,
+				contexts)) {
 			while (statements.hasNext()) {
 				statements.next();
 				count++;
@@ -98,6 +141,26 @@ public interface TripleSource extends AvailableStatementOrder {
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		throw new UnsupportedOperationException(
 				"StatementOrder is not supported by this TripleSource: " + this.getClass().getName());
+	}
+
+	/**
+	 * Gets ordered statements for a physical statement pattern. Stores that can use optimizer metadata attached to the
+	 * statement pattern can override this method; other stores delegate to the value-only ordered API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param order            The order in which the statements should be returned.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts         The context(s) to get the statements from.
+	 * @return An ordered iterator over the relevant statements.
+	 * @throws QueryEvaluationException If the triple source failed to get the statements.
+	 */
+	@Experimental
+	default CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern,
+			StatementOrder order, Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws QueryEvaluationException {
+		return getStatements(order, subj, pred, obj, contexts);
 	}
 
 	/**
