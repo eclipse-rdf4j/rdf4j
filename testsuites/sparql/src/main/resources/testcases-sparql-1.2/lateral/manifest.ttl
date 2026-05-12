@@ -1,0 +1,33 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix : <http://www.w3.org/2009/sparql/docs/tests/data-sparql11/lateral/manifest#> .
+@prefix rdfs:	<http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mf:     <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix qt:     <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> .
+@prefix dawgt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#> .
+@prefix sparql:  <http://www.w3.org/ns/sparql#> .
+
+<>  rdf:type mf:Manifest ;
+    rdfs:label "Lateral" ;
+    mf:entries
+    (
+    :lateral-01
+    :lateral-02
+) .
+
+:lateral-01 rdf:type mf:QueryEvaluationTest ;
+	mf:name "LATERAL join with LIMIT" ;
+	mf:feature sparql:lateral ;
+    mf:action
+         [ qt:query  <lateral-01.rq> ;
+           qt:data   <data.ttl> ] ;
+    mf:result  <lateral-01.srx>
+    .
+
+:lateral-02 rdf:type mf:QueryEvaluationTest ;
+	mf:name "LATERAL join with OPTIONAL" ;
+	mf:feature sparql:lateral ;
+    mf:action
+         [ qt:query  <lateral-02.rq> ;
+           qt:data   <data.ttl> ] ;
+    mf:result  <lateral-02.srx>
+    .

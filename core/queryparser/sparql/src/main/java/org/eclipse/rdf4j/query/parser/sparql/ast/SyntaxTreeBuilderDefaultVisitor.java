@@ -141,6 +141,10 @@ public class SyntaxTreeBuilderDefaultVisitor implements SyntaxTreeBuilderVisitor
 		return defaultVisit(node, data);
 	}
 
+	public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
 	public Object visit(ASTGraphGraphPattern node, Object data) throws VisitorException {
 		return defaultVisit(node, data);
 	}
@@ -645,4 +649,4 @@ public class SyntaxTreeBuilderDefaultVisitor implements SyntaxTreeBuilderVisitor
 		return defaultVisit(node, data);
 	}
 }
-/* JavaCC - OriginalChecksum=a4ab9b7123c8eec92073d189c9c45351 (do not edit this line) */
+/* JavaCC - OriginalChecksum=bdb419b4ef5189661102c89d809c717f (do not edit this line) */

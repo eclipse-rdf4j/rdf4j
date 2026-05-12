@@ -7,10 +7,12 @@
 	rdfs:label "SPARQL 1.2 test cases" ;
 	mf:include (
 		<aggregates/manifest.ttl>
+		<lateral/manifest.ttl>
 	).
 
 
 <http://www.w3.org/TR/sparql11-query/> rdfs:label "SPARQL 1.1 Query Language" ;
 	mf:conformanceRequirement (
 		<aggregates/manifest.ttl>
+		<lateral/manifest.ttl>
 	).
