@@ -186,6 +186,36 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		ctxClose(theJoin);
 	}
 
+	@Override
+	public void meet(Lateral lateral) throws Exception {
+		ctxOpen(lateral);
+
+		// try and reverse engineer the original scoping intent of the query
+		final boolean aNeedsNewScope = lateral.getParentNode() != null
+				&& (lateral.getParentNode() instanceof Join || lateral.getParentNode() instanceof LeftJoin
+						|| lateral.getParentNode() instanceof Lateral);
+
+		if (aNeedsNewScope) {
+			mJoinBuffer.append("{").append(System.lineSeparator());
+		}
+
+		lateral.getLeftArg().visit(this);
+
+		mJoinBuffer.append(indent()).append("LATERAL {").append(System.lineSeparator());
+
+		mIndent += 2;
+		lateral.getRightArg().visit(this);
+		mIndent -= 2;
+
+		mJoinBuffer.append(indent()).append("}.").append(System.lineSeparator());
+
+		if (aNeedsNewScope) {
+			mJoinBuffer.append("}.").append(System.lineSeparator());
+		}
+
+		ctxClose(lateral);
+	}
+
 	/**
 	 * Renders the tuple expression as a query string. It creates a new SparqlTupleExprRenderer rather than reusing this
 	 * one.

@@ -244,6 +244,8 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTBNodeFunc node, Object data) throws VisitorException;
 
+    public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException;
+
 	public Object visit(ASTIRIFunc node, Object data) throws VisitorException;
 
 	public Object visit(ASTStrDt node, Object data) throws VisitorException;

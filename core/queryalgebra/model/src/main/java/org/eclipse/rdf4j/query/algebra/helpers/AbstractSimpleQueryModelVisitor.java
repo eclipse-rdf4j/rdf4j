@@ -330,6 +330,11 @@ public abstract class AbstractSimpleQueryModelVisitor<X extends Exception> imple
 	}
 
 	@Override
+	public void meet(Lateral node) throws X {
+		meetBinaryTupleOperator(node);
+	}
+
+	@Override
 	public void meet(Label node) throws X {
 		meetUnaryValueOperator(node);
 	}

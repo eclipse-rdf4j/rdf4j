@@ -103,6 +103,8 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	void meet(Label node) throws X;
 
+	void meet(Lateral node) throws X;
+
 	void meet(Lang node) throws X;
 
 	void meet(LangMatches node) throws X;

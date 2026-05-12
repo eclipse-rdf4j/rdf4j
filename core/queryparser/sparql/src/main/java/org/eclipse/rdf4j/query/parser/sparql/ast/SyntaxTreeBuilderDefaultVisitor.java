@@ -141,6 +141,10 @@ public class SyntaxTreeBuilderDefaultVisitor implements SyntaxTreeBuilderVisitor
 		return defaultVisit(node, data);
 	}
 
+	public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException {
+		return defaultVisit(node, data);
+	}
+
 	public Object visit(ASTGraphGraphPattern node, Object data) throws VisitorException {
 		return defaultVisit(node, data);
 	}

@@ -324,6 +324,11 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	@Override
+	public void meet(Lateral node) throws X {
+		meetBinaryTupleOperator(node);
+	}
+
+	@Override
 	public void meet(Lang node) throws X {
 		meetUnaryValueOperator(node);
 	}

@@ -3082,4 +3082,24 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		public PathSequenceContext() {
 		}
 	}
+
+	@Override
+	public Object visit(ASTLateralGraphPattern node, Object data) throws VisitorException {
+		GraphPattern parentGP = graphPattern;
+
+		// The left argument is the current graph pattern so far
+		TupleExpr leftArg = graphPattern.buildTupleExpr();
+
+		// Create a new graph pattern for the lateral block
+		graphPattern = new GraphPattern(parentGP);
+		node.jjtGetChild(0).jjtAccept(this, null);
+		TupleExpr rightArg = graphPattern.buildTupleExpr();
+
+		// Create the lateral join
+		Lateral lateral = new Lateral(leftArg, rightArg);
+		parentGP.addRequiredTE(lateral);
+		graphPattern = parentGP;
+
+		return null;
+	}
 }

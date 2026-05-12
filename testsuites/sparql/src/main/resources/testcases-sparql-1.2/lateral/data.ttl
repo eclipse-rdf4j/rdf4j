@@ -1,0 +1,9 @@
+@prefix ex: <http://example.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:subject1 ex:predicate ex:object1 .
+ex:subject1 rdfs:label "Label 1" .
+ex:subject2 ex:predicate ex:object2 .
+ex:subject2 rdfs:label "Label 2" .
+ex:subject3 ex:predicate ex:object3 .
+ex:subject3 rdfs:label "Label 3" .

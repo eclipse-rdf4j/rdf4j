@@ -12,98 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.query.algebra.Add;
-import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
-import org.eclipse.rdf4j.query.algebra.And;
-import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.Avg;
-import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
-import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
-import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Bound;
-import org.eclipse.rdf4j.query.algebra.Clear;
-import org.eclipse.rdf4j.query.algebra.Coalesce;
-import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.CompareAll;
-import org.eclipse.rdf4j.query.algebra.CompareAny;
-import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
-import org.eclipse.rdf4j.query.algebra.Copy;
-import org.eclipse.rdf4j.query.algebra.Count;
-import org.eclipse.rdf4j.query.algebra.Create;
-import org.eclipse.rdf4j.query.algebra.Datatype;
-import org.eclipse.rdf4j.query.algebra.DeleteData;
-import org.eclipse.rdf4j.query.algebra.DescribeOperator;
-import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
-import org.eclipse.rdf4j.query.algebra.Exists;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.FunctionCall;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupConcat;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
-import org.eclipse.rdf4j.query.algebra.HasLang;
-import org.eclipse.rdf4j.query.algebra.HasLangDir;
-import org.eclipse.rdf4j.query.algebra.IRIFunction;
-import org.eclipse.rdf4j.query.algebra.If;
-import org.eclipse.rdf4j.query.algebra.In;
-import org.eclipse.rdf4j.query.algebra.InsertData;
-import org.eclipse.rdf4j.query.algebra.Intersection;
-import org.eclipse.rdf4j.query.algebra.IsBNode;
-import org.eclipse.rdf4j.query.algebra.IsLiteral;
-import org.eclipse.rdf4j.query.algebra.IsNumeric;
-import org.eclipse.rdf4j.query.algebra.IsResource;
-import org.eclipse.rdf4j.query.algebra.IsURI;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Label;
-import org.eclipse.rdf4j.query.algebra.Lang;
-import org.eclipse.rdf4j.query.algebra.LangDir;
-import org.eclipse.rdf4j.query.algebra.LangMatches;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
-import org.eclipse.rdf4j.query.algebra.Load;
-import org.eclipse.rdf4j.query.algebra.LocalName;
-import org.eclipse.rdf4j.query.algebra.MathExpr;
-import org.eclipse.rdf4j.query.algebra.Max;
-import org.eclipse.rdf4j.query.algebra.Min;
-import org.eclipse.rdf4j.query.algebra.Modify;
-import org.eclipse.rdf4j.query.algebra.Move;
-import org.eclipse.rdf4j.query.algebra.MultiProjection;
-import org.eclipse.rdf4j.query.algebra.Namespace;
-import org.eclipse.rdf4j.query.algebra.Not;
-import org.eclipse.rdf4j.query.algebra.Or;
-import org.eclipse.rdf4j.query.algebra.Order;
-import org.eclipse.rdf4j.query.algebra.OrderElem;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.Reduced;
-import org.eclipse.rdf4j.query.algebra.Regex;
-import org.eclipse.rdf4j.query.algebra.SameTerm;
-import org.eclipse.rdf4j.query.algebra.Sample;
-import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
-import org.eclipse.rdf4j.query.algebra.Slice;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Str;
-import org.eclipse.rdf4j.query.algebra.StrLangDir;
-import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
-import org.eclipse.rdf4j.query.algebra.Sum;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
-import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
-import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.UpdateExpr;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
-import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.*;
 
 @InternalUseOnly
 public abstract class StatementPatternVisitor implements QueryModelVisitor<Exception> {
@@ -276,6 +185,11 @@ public abstract class StatementPatternVisitor implements QueryModelVisitor<Excep
 	@Override
 	public void meet(Intersection node) throws Exception {
 		node.visitChildren(this);
+	}
+
+	@Override
+	public void meet(Lateral node) throws Exception {
+		((BinaryTupleOperator) node).visitChildren(this);
 	}
 
 	@Override

@@ -382,6 +382,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					result = precompile(expr).evaluate(bindings);
 				} else if (expr instanceof Difference) {
 					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Lateral) {
+					result = precompile(expr).evaluate(bindings);
 				} else {
 					throw new QueryEvaluationException(
 							"Unsupported binary tuple operator type: " + ((BinaryTupleOperator) expr).getClass());
@@ -879,6 +881,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return prepare((Intersection) expr, context);
 		} else if (expr instanceof Difference) {
 			return prepare((Difference) expr, context);
+		} else if (expr instanceof Lateral) {
+			return LateralQueryEvaluationStep.supply(this, (Lateral) expr, context);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {

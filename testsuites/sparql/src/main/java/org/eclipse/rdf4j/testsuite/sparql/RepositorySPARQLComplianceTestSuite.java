@@ -24,26 +24,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
-import org.eclipse.rdf4j.testsuite.sparql.tests.AggregateTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ArbitraryLengthPathTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.BasicTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.BindTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.BuiltinFunctionTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ConstructTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.FilterScopeTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.SparqlMinusScopingTests;
-import org.eclipse.rdf4j.testsuite.sparql.tests.SubselectTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.UnionTest;
-import org.eclipse.rdf4j.testsuite.sparql.tests.ValuesTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.*;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DynamicTest;
@@ -119,6 +100,11 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	@TestFactory
 	Stream<DynamicTest> optional() throws RDF4JException, IOException {
 		return new OptionalTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> lateral() throws RDF4JException, IOException {
+		return new LateralTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory
