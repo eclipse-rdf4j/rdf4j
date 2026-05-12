@@ -169,6 +169,12 @@ class Rdf4jServerWorkbenchApplicationTest {
 	}
 
 	@Test
+	void workbenchServerPrefixesDefaultToLocalServerOnly() {
+		assertThat(rdf4jWorkbenchServlet.getInitParameters())
+				.containsEntry("accepted-server-prefixes", "/rdf4j-server");
+	}
+
+	@Test
 	void queryServletChainIsAsyncSupported() {
 		assertThat(rdf4jServerServlet.isAsyncSupported()).isTrue();
 		assertThat(rdf4jWorkbenchServlet.isAsyncSupported()).isTrue();

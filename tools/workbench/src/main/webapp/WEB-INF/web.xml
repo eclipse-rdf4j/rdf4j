@@ -47,7 +47,7 @@
 		</init-param>
 		<init-param>
 			<param-name>accepted-server-prefixes</param-name>
-			<param-value>file: http: https:</param-value>
+			<param-value>/rdf4j-server</param-value>
 		</init-param>
 		<init-param>
 			<param-name>change-server-path</param-name>

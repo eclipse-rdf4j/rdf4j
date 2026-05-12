@@ -276,7 +276,7 @@ public class Rdf4jServerWorkbenchApplication {
 		Map<String, String> params = new LinkedHashMap<>();
 		params.put("transformations", "/rdf4j-workbench/transformations");
 		params.put("default-server", "/rdf4j-server");
-		params.put("accepted-server-prefixes", "file: http: https:");
+		params.put("accepted-server-prefixes", "/rdf4j-server");
 		params.put("change-server-path", "/NONE/server");
 		params.put("cookie-max-age", "2592000");
 		params.put("no-repository-id", "NONE");

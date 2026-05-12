@@ -34,10 +34,16 @@ class ServerValidator {
 
 	private static final String ACCEPTED_SERVER = "accepted-server-prefixes";
 
+	private static final String DEFAULT_ACCEPTED_SERVER_PREFIXES = "/rdf4j-server";
+
 	private final String prefixes;
 
 	protected ServerValidator(final ServletConfig config) {
-		this.prefixes = config.getInitParameter(ACCEPTED_SERVER);
+		String configuredPrefixes = config.getInitParameter(ACCEPTED_SERVER);
+		if (configuredPrefixes == null || configuredPrefixes.isBlank()) {
+			configuredPrefixes = DEFAULT_ACCEPTED_SERVER_PREFIXES;
+		}
+		this.prefixes = configuredPrefixes;
 	}
 
 	private boolean isDirectory(final String server) {
@@ -62,7 +68,7 @@ class ServerValidator {
 	protected boolean isValidServer(final String server) {
 		boolean isValid = checkServerPrefixes(server);
 		if (isValid) {
-			if (server.startsWith("http")) {
+			if (server.startsWith("http://") || server.startsWith("https://")) {
 				isValid = canConnect(server);
 			} else if (server.startsWith("file:")) {
 				isValid = isDirectory(server);
@@ -80,20 +86,25 @@ class ServerValidator {
 	 */
 	private boolean checkServerPrefixes(final String server) {
 		boolean accept = false;
-		if (prefixes == null) {
-			accept = true;
-		} else {
-			for (String prefix : prefixes.split(" ")) {
-				if (server.startsWith(prefix)) {
-					accept = true;
-					break;
-				}
+		for (String prefix : prefixes.split("\\s+")) {
+			if (prefix.isBlank() || isBroadSchemePrefix(prefix)) {
+				continue;
+			}
+			if (server.startsWith(prefix)) {
+				accept = true;
+				break;
 			}
 		}
 		if (!accept) {
 			LOGGER.warn("server URL {} does not have a prefix {}", server, prefixes);
 		}
 		return accept;
+	}
+
+	private boolean isBroadSchemePrefix(String prefix) {
+		return "file:".equalsIgnoreCase(prefix)
+				|| "http:".equalsIgnoreCase(prefix)
+				|| "https:".equalsIgnoreCase(prefix);
 	}
 
 	/**
