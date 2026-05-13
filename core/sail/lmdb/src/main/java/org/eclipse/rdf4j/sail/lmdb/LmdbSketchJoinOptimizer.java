@@ -2905,8 +2905,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			int segmentFilterCount = segmentFilters.size();
 			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation();
-			boolean hasGuaranteeChoiceOptions = hasGuaranteeChoiceOptions(segment, segmentFilters);
-			if (preferFiniteAnchorFastPath && !hasGuaranteeChoiceOptions) {
+			GuaranteeChoices guaranteeChoices = guaranteeChoices(segment, segmentFilters);
+			if (preferFiniteAnchorFastPath && !guaranteeChoices.hasChoiceOptions()) {
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
@@ -2943,7 +2943,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					selectedPlan, algorithm, planner)
 							.orElse(selectedPlan);
 			selectedPlan = guaranteePlanOption(segment, boundBeforeSegment, plannerFilters, segmentFilters,
-					selectedPlan, planner);
+					selectedPlan, planner, guaranteeChoices);
 			segmentFilterCount = segmentFilters.size();
 			applyPlannerStepEstimates(selectedPlan);
 			FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
@@ -2955,19 +2955,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
 		}
 
-		private boolean hasGuaranteeChoiceOptions(List<TupleExpr> segment, List<DeferredFilter> segmentFilters) {
-			return !GuaranteePlanOptionProvider.finiteAnchorOptions(segment, segmentFilters, statistics).isEmpty()
-					|| !GuaranteePlanOptionProvider.filterOptions(segment, segmentFilters, statistics).isEmpty();
+		private GuaranteeChoices guaranteeChoices(List<TupleExpr> segment, List<DeferredFilter> segmentFilters) {
+			return new GuaranteeChoices(
+					GuaranteePlanOptionProvider.finiteAnchorOptions(segment, segmentFilters, statistics),
+					GuaranteePlanOptionProvider.filterOptions(segment, segmentFilters, statistics));
 		}
 
 		private JoinOrderPlanner.JoinOrderPlan guaranteePlanOption(List<TupleExpr> segment,
 				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> plannerFilters,
 				List<DeferredFilter> segmentFilters, JoinOrderPlanner.JoinOrderPlan selectedPlan,
-				JoinOrderPlanner planner) {
-			List<GuaranteePlanOptionProvider.PlanOption> options = GuaranteePlanOptionProvider
-					.finiteAnchorOptions(segment, segmentFilters, statistics);
-			List<GuaranteePlanOptionProvider.FilterPlanOption> filterOptions = GuaranteePlanOptionProvider
-					.filterOptions(segment, segmentFilters, statistics);
+				JoinOrderPlanner planner, GuaranteeChoices guaranteeChoices) {
+			List<GuaranteePlanOptionProvider.PlanOption> options = guaranteeChoices.finiteAnchorOptions();
+			List<GuaranteePlanOptionProvider.FilterPlanOption> filterOptions = guaranteeChoices.filterOptions();
 			if (options.isEmpty() && filterOptions.isEmpty()) {
 				return selectedPlan;
 			}
@@ -3062,7 +3061,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				segmentFilters.clear();
 				segmentFilters.addAll(selectedFilters);
 			}
-			return withGuaranteeOptionMetrics(bestPlan, options.size() + filterOptions.size(), selectedOption,
+			return withGuaranteeOptionMetrics(bestPlan, guaranteeChoices.generatedCount(), selectedOption,
 					candidateSummaries);
 		}
 
@@ -3185,6 +3184,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private record GuaranteeOptionPlanSelection(Optional<JoinOrderPlanner.JoinOrderPlan> plan, String details) {
+		}
+
+		private record GuaranteeChoices(List<GuaranteePlanOptionProvider.PlanOption> finiteAnchorOptions,
+				List<GuaranteePlanOptionProvider.FilterPlanOption> filterOptions) {
+
+			private boolean hasChoiceOptions() {
+				return !finiteAnchorOptions.isEmpty() || !filterOptions.isEmpty();
+			}
+
+			private int generatedCount() {
+				return finiteAnchorOptions.size() + filterOptions.size();
+			}
 		}
 
 		private record NamedGuaranteePlan(String name, JoinOrderPlanner.JoinOrderPlan plan, double comparableWork) {
