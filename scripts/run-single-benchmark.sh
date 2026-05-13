@@ -208,7 +208,7 @@ if ${enable_jfr}; then
         start_flight_recording_options+=("settings=profile")
         start_flight_recording_options+=("dumponexit=true")
         start_flight_recording_options+=("filename=${jfr_output}")
-        start_flight_recording_options+=("duration=120s")
+        start_flight_recording_options+=("duration=600s)
 
         if ${enable_jfr_cpu_times}; then
                 start_flight_recording_options+=("jdk.CPUTimeSample#enabled=true")
