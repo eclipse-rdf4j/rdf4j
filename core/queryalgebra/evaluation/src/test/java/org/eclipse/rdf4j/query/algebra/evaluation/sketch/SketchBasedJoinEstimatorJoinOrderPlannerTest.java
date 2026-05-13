@@ -98,6 +98,35 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planTelemetryMarksOneSigmaUpperBoundSketchIntersection() {
+		IRI leftPredicate = VF.createIRI("urn:planner-upper-bound:left");
+		IRI rightPredicate = VF.createIRI("urn:planner-upper-bound:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 20_000; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:planner-upper-bound:left-subject:" + i), leftPredicate,
+					VF.createIRI("urn:planner-upper-bound:left-key:" + i)));
+			store.add(VF.createStatement(VF.createIRI("urn:planner-upper-bound:right-subject:" + i), rightPredicate,
+					VF.createIRI("urn:planner-upper-bound:right-key:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		Optional<JoinOrderPlanner.JoinOrderPlan> plan = estimator.planJoinOrder(
+				List.of(pattern("leftSubject", leftPredicate, "shared"),
+						pattern("rightSubject", rightPredicate, "shared")),
+				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING);
+
+		assertTrue(plan.isPresent(), "Expected planner to keep a two-factor join plan");
+		assertEquals("1stddev", plan.get()
+				.getSummaryStringMetrics()
+				.get("optimizer.sketchIntersectionUpperBound"));
+		assertTrue(plan.get()
+				.getSummaryDoubleMetrics()
+				.getOrDefault("optimizer.sketchIntersectionUpperBoundUses", 0.0d) > 0.0d,
+				"Expected one-sigma upper-bound use count in planner telemetry");
+	}
+
+	@Test
 	void planJoinOrderUsesFactorCostModelAsPhysicalRefiner() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI expensivePredicate = VF.createIRI("urn:expensive");

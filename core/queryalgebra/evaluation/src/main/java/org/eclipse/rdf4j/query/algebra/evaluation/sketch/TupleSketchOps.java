@@ -280,11 +280,13 @@ final class TupleSketchOps {
 		private final ArrayOfDoublesSketch sketch;
 		private final double positiveDistinct;
 		private final double positiveSum;
+		private final double upperBoundDistinct1StdDev;
 
 		private IntersectionStats(ArrayOfDoublesSketch sketch, double positiveDistinct, double positiveSum) {
 			this.sketch = sketch;
 			this.positiveDistinct = positiveDistinct;
 			this.positiveSum = positiveSum;
+			this.upperBoundDistinct1StdDev = computeUpperBoundDistinct1StdDev(sketch);
 		}
 
 		ArrayOfDoublesSketch sketch() {
@@ -298,6 +300,22 @@ final class TupleSketchOps {
 		double positiveSum() {
 			return positiveSum;
 		}
+
+		double upperBoundDistinct1StdDev() {
+			return upperBoundDistinct1StdDev;
+		}
+
+		boolean upperBoundOnly() {
+			return positiveDistinct == 0.0d && upperBoundDistinct1StdDev > 0.0d;
+		}
+	}
+
+	private static double computeUpperBoundDistinct1StdDev(ArrayOfDoublesSketch sketch) {
+		if (sketch == null) {
+			return 0.0d;
+		}
+		double upperBound = sketch.getUpperBound(1);
+		return Double.isFinite(upperBound) && upperBound > 0.0d ? upperBound : 0.0d;
 	}
 
 }

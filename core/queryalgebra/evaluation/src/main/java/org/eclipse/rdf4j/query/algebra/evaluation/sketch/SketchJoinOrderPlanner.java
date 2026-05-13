@@ -83,6 +83,7 @@ final class SketchJoinOrderPlanner {
 	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster;
 	private final JoinFactorCostModel factorCostModel;
 	private final SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache sketchIntersectionCache;
+	private final int initialSketchIntersectionUpperBoundUses;
 	private final List<PlanFactor> factors;
 	private final Set<String> initiallyBoundVars;
 	private final double initialPrefixRows;
@@ -205,6 +206,7 @@ final class SketchJoinOrderPlanner {
 		this.workAdjuster = Objects.requireNonNull(workAdjuster, "workAdjuster");
 		this.factorCostModel = factorCostModel;
 		this.sketchIntersectionCache = estimator.newJoinOrderingSketchIntersectionCache();
+		this.initialSketchIntersectionUpperBoundUses = estimator.sketchIntersectionUpperBoundUses();
 		this.initiallyBoundVars = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Set.of()
 				: Set.copyOf(initiallyBoundVars);
 		this.initialPrefixRows = Double.isFinite(initialPrefixRows) && initialPrefixRows > 0.0d
@@ -410,8 +412,16 @@ final class SketchJoinOrderPlanner {
 			summaryStringMetrics.put(TelemetryMetricNames.OPTIMIZER_PLANNER_DIAGNOSTICS,
 					summarizeDiagnostics(diagnostics));
 		}
+		int sketchIntersectionUpperBoundUses = sketchIntersectionUpperBoundUses();
+		if (sketchIntersectionUpperBoundUses > 0) {
+			summaryStringMetrics.put("optimizer.sketchIntersectionUpperBound", "1stddev");
+		}
 		Map<String, Double> summaryDoubleMetrics = new HashMap<>();
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, result.totalWork());
+		if (sketchIntersectionUpperBoundUses > 0) {
+			summaryDoubleMetrics.put("optimizer.sketchIntersectionUpperBoundUses",
+					(double) sketchIntersectionUpperBoundUses);
+		}
 		double runtimeFeedbackConfidence = runtimeFeedbackConfidence();
 		if (Double.isFinite(runtimeFeedbackConfidence)) {
 			summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE,
@@ -436,6 +446,11 @@ final class SketchJoinOrderPlanner {
 			total += stepWorkRows;
 		}
 		return total;
+	}
+
+	private int sketchIntersectionUpperBoundUses() {
+		return Math.max(0,
+				estimator.sketchIntersectionUpperBoundUses() - initialSketchIntersectionUpperBoundUses);
 	}
 
 	private FactorBuildResult buildFactors(List<TupleExpr> expressions) {

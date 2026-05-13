@@ -159,6 +159,47 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		assertEstimateEqualsTruth(subjectPairJoinTruth, fluentSubjectPairJoinEstimate, "fluent subject pair join");
 	}
 
+	@Test
+	void fluentJoinUsesOneSigmaUpperBoundWhenEstimationModeIntersectionPointIsZero() {
+		IRI leftPredicate = VF.createIRI("urn:tuple:upper-bound:left");
+		IRI rightPredicate = VF.createIRI("urn:tuple:upper-bound:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		addDisjointRows(store, "urn:tuple:upper-bound:left:subject:", leftPredicate,
+				"urn:tuple:upper-bound:left:key:", 20_000);
+		addDisjointRows(store, "urn:tuple:upper-bound:right:subject:", rightPredicate,
+				"urn:tuple:upper-bound:right:key:", 20_000);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallSketchConfig());
+		estimator.rebuild();
+
+		double estimate = estimator
+				.estimate(SketchBasedJoinEstimator.Component.O, null, leftPredicate.stringValue(), null, null)
+				.join(SketchBasedJoinEstimator.Component.O, null, rightPredicate.stringValue(), null, null)
+				.estimate();
+
+		assertTrue(estimate > 0.0d,
+				"An estimation-mode zero intersection point should use the one-sigma upper bound before zero");
+	}
+
+	@Test
+	void exactDisjointSketchIntersectionRemainsZero() {
+		IRI leftPredicate = VF.createIRI("urn:tuple:exact-disjoint:left");
+		IRI rightPredicate = VF.createIRI("urn:tuple:exact-disjoint:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		addDisjointRows(store, "urn:tuple:exact-disjoint:left:subject:", leftPredicate,
+				"urn:tuple:exact-disjoint:left:key:", 10);
+		addDisjointRows(store, "urn:tuple:exact-disjoint:right:subject:", rightPredicate,
+				"urn:tuple:exact-disjoint:right:key:", 10);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, largeExactConfig());
+		estimator.rebuild();
+
+		double estimate = estimator
+				.estimate(SketchBasedJoinEstimator.Component.O, null, leftPredicate.stringValue(), null, null)
+				.join(SketchBasedJoinEstimator.Component.O, null, rightPredicate.stringValue(), null, null)
+				.estimate();
+
+		assertEquals(0.0d, estimate, 0.0d, "Exact non-estimation sketches should keep exact disjoint zero");
+	}
+
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withSubjectBucketCount(1024)
@@ -182,10 +223,29 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 				.withRefreshSleepMillis(5);
 	}
 
+	private static SketchBasedJoinEstimator.Config smallSketchConfig() {
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withNominalEntries(64)
+				.withSubjectBucketCount(64)
+				.withPredicateBucketCount(64)
+				.withObjectBucketCount(64)
+				.withContextBucketCount(64)
+				.withThrottleEveryN(1)
+				.withThrottleMillis(0)
+				.withRefreshSleepMillis(5);
+	}
+
 	private static void addRows(StubSketchStatementSource store, String subjectPrefix, IRI predicate, Resource object,
 			int count) {
 		for (int i = 0; i < count; i++) {
 			store.add(statement(subjectPrefix + i, predicate, object));
+		}
+	}
+
+	private static void addDisjointRows(StubSketchStatementSource store, String subjectPrefix, IRI predicate,
+			String objectPrefix, int count) {
+		for (int i = 0; i < count; i++) {
+			store.add(statement(subjectPrefix + i, predicate, VF.createIRI(objectPrefix + i)));
 		}
 	}
 

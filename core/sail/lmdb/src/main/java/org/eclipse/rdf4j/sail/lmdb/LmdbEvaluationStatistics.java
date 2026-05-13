@@ -1286,10 +1286,9 @@ class LmdbEvaluationStatistics
 		if (isPositiveFinite(rows)) {
 			return rows;
 		}
-		rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
 
 		countExactJoinSurfaceCall();
-		 rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(factors, joinVarName);
+		rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(factors, joinVarName);
 		if (isFiniteNonNegative(rows)) {
 			return rows;
 		}
@@ -1299,14 +1298,15 @@ class LmdbEvaluationStatistics
 	}
 
 	private double finiteBranchSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
-		countExactJoinSurfaceCall();
-		double rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(prefixFactors, factor, joinVarName);
-		if (isFiniteNonNegative(rows)) {
+		countSketchJoinSurfaceCall();
+		double rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		if (isPositiveFinite(rows)) {
 			return rows;
 		}
-		countSketchJoinSurfaceCall();
-		rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
-		if (isPositiveFinite(rows)) {
+
+		countExactJoinSurfaceCall();
+		 rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		if (isFiniteNonNegative(rows)) {
 			return rows;
 		}
 		countFallbackJoinSurfaceCall();

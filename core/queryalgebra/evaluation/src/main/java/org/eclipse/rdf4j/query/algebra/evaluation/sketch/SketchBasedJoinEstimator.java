@@ -1258,6 +1258,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final Object sketchCacheLock = new Object();
 	private final CacheDirectory cacheDirectory = new CacheDirectory();
 	private final ThreadLocal<OptimizationScopeState> optimizationScope = new ThreadLocal<>();
+	private final ThreadLocal<Integer> unscopedSketchIntersectionUpperBoundUses = ThreadLocal.withInitial(() -> 0);
 
 	private static final int INCREMENTAL_BATCH_SIZE = 32 * 1024;
 	private static final int INCREMENTAL_QUEUE_INITIAL_LIMIT = 1024;
@@ -3068,6 +3069,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			double interDistinct = intersectionStats.positiveDistinct();
 
 			if (interDistinct == 0.0) { // early out
+				double upperBoundRows = estimateUpperBoundIntersectionRows(intersectionStats, this.resultSize,
+						rhs.card, this.distinct, rhs.distinct, estimateDisconnectedJoinRows(this.resultSize,
+								rhs.card));
+				if (upperBoundRows > 0.0d) {
+					this.bindings = inter;
+					this.distinct = upperBoundDistinct(intersectionStats, this.distinct, rhs.distinct);
+					this.resultSize = upperBoundRows;
+					return this;
+				}
 				this.bindings = inter;
 				this.distinct = 0.0;
 				this.resultSize = 0.0;
@@ -4845,6 +4855,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			ArrayOfDoublesSketch intersection = intersectionResult.sketch;
 			double distinct = Math.min(intersectionResult.distinct, Math.min(leftDistinct, rightDistinct));
 			if (distinct == 0.0d) {
+				double rows = estimateUpperBoundIntersectionRows(intersectionResult.upperBoundDistinct1StdDev,
+						leftRows, rightRows, leftDistinct, rightDistinct, disconnectedRows);
+				if (rows > 0.0d) {
+					distinct = upperBoundDistinct(intersectionResult.upperBoundDistinct1StdDev, leftDistinct,
+							rightDistinct);
+					return new SharedVarEstimate(rows, distinct, intersection);
+				}
 				return new SharedVarEstimate(0.0d, 0.0d, intersection);
 			}
 			double rows = normalizeRows(Math.min(disconnectedRows, intersectionResult.rows));
@@ -4910,17 +4927,84 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return normalizeRows(rows);
 	}
 
+	private double estimateUpperBoundIntersectionRows(TupleSketchOps.IntersectionStats intersectionStats,
+			double leftRows, double rightRows, double leftDistinct, double rightDistinct, double rowCap) {
+		if (intersectionStats == null || !intersectionStats.upperBoundOnly()) {
+			return 0.0d;
+		}
+		return estimateUpperBoundIntersectionRows(intersectionStats.upperBoundDistinct1StdDev(), leftRows, rightRows,
+				leftDistinct, rightDistinct, rowCap);
+	}
+
+	private double estimateUpperBoundIntersectionRows(double upperBoundDistinct, double leftRows, double rightRows,
+			double leftDistinct, double rightDistinct, double rowCap) {
+		double boundedDistinct = upperBoundDistinct(upperBoundDistinct, leftDistinct, rightDistinct);
+		if (!(boundedDistinct > 0.0d)
+				|| !(Double.isFinite(leftRows) && leftRows > 0.0d)
+				|| !(Double.isFinite(rightRows) && rightRows > 0.0d)
+				|| !(Double.isFinite(leftDistinct) && leftDistinct > 0.0d)
+				|| !(Double.isFinite(rightDistinct) && rightDistinct > 0.0d)) {
+			return 0.0d;
+		}
+		double leftFanout = Math.max(1.0d, leftRows / leftDistinct);
+		double rightFanout = Math.max(1.0d, rightRows / rightDistinct);
+		double rows = saturatingMultiply(saturatingMultiply(boundedDistinct, leftFanout), rightFanout);
+		if (Double.isFinite(rowCap) && rowCap >= 0.0d) {
+			rows = Math.min(rows, rowCap);
+		}
+		boolean positiveBeforeNormalize = rows > 0.0d;
+		rows = normalizeRows(rows);
+		if (rows > 0.0d) {
+			recordSketchIntersectionUpperBoundUse();
+			return rows;
+		}
+		if (positiveBeforeNormalize) {
+			recordSketchIntersectionUpperBoundUse();
+			return 1.0d;
+		}
+		return 0.0d;
+	}
+
+	private double upperBoundDistinct(TupleSketchOps.IntersectionStats intersectionStats, double leftDistinct,
+			double rightDistinct) {
+		return intersectionStats == null ? 0.0d
+				: upperBoundDistinct(intersectionStats.upperBoundDistinct1StdDev(), leftDistinct, rightDistinct);
+	}
+
+	private double upperBoundDistinct(double upperBoundDistinct, double leftDistinct, double rightDistinct) {
+		if (!(Double.isFinite(upperBoundDistinct) && upperBoundDistinct > 0.0d)
+				|| !(Double.isFinite(leftDistinct) && leftDistinct > 0.0d)
+				|| !(Double.isFinite(rightDistinct) && rightDistinct > 0.0d)) {
+			return 0.0d;
+		}
+		return Math.min(upperBoundDistinct, Math.min(leftDistinct, rightDistinct));
+	}
+
 	private static SketchIntersectionResult intersectJoinOrderingSketches(ArrayOfDoublesSketch left,
 			ArrayOfDoublesSketch right) {
 		TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(left, right,
 				DEFAULT_SKETCH_NOMINAL_ENTRIES);
 		return new SketchIntersectionResult(intersectionStats.positiveDistinct(), intersectionStats.positiveSum(),
-				intersectionStats.sketch());
+				intersectionStats.upperBoundDistinct1StdDev(), intersectionStats.sketch());
 	}
 
 	JoinOrderingSketchIntersectionCache newJoinOrderingSketchIntersectionCache() {
 		OptimizationScopeState scope = optimizationScope.get();
 		return scope == null ? new JoinOrderingSketchIntersectionCache() : scope.sketchIntersectionCache;
+	}
+
+	int sketchIntersectionUpperBoundUses() {
+		OptimizationScopeState scope = optimizationScope.get();
+		return scope == null ? unscopedSketchIntersectionUpperBoundUses.get() : scope.sketchIntersectionUpperBoundUses;
+	}
+
+	private void recordSketchIntersectionUpperBoundUse() {
+		OptimizationScopeState scope = optimizationScope.get();
+		if (scope != null) {
+			scope.sketchIntersectionUpperBoundUses++;
+		} else {
+			unscopedSketchIntersectionUpperBoundUses.set(unscopedSketchIntersectionUpperBoundUses.get() + 1);
+		}
 	}
 
 	private double normalizeRows(double rows) {
@@ -5518,6 +5602,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private boolean readyRebuildRequired;
 		private boolean readySketchesLoaded;
 		private int readinessScans;
+		private int sketchIntersectionUpperBoundUses;
 		private final VariableDictionary variableDictionary = new VariableDictionary();
 		private final JoinOrderingSketchIntersectionCache sketchIntersectionCache = new JoinOrderingSketchIntersectionCache();
 		private final Map<TuplePlanEstimateCacheKey, Optional<TuplePlanEstimate>> tupleEstimateCache = new HashMap<>();
@@ -5631,7 +5716,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private record SketchIntersectionResult(double distinct, double rows, ArrayOfDoublesSketch sketch) {
+	private record SketchIntersectionResult(double distinct, double rows, double upperBoundDistinct1StdDev,
+			ArrayOfDoublesSketch sketch) {
 	}
 
 	private static final class SketchPairKey {
@@ -7402,7 +7488,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				getValueOrNull(pattern.getObjectVar()),
 				getValueOrNull(pattern.getContextVar()));
 		return new TupleSketchStats(estimate.bindings, estimate.distinct,
-				applyFilterMultiplier(estimate.resultSize, filterMultiplier));
+				applyFilterMultiplier(estimate.resultSize, filterMultiplier), false);
 	}
 
 	private TupleSketchStats mergeTupleSketchStats(TupleSketchStats leftStats, TupleSketchStats rightStats) {
@@ -7410,13 +7496,29 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				rightStats.bindings, DEFAULT_SKETCH_NOMINAL_ENTRIES);
 		ArrayOfDoublesSketch inter = intersectionStats.sketch();
 		double interDistinct = intersectionStats.positiveDistinct();
+		double disconnectedRows = estimateDisconnectedJoinRows(leftStats.rows, rightStats.rows);
 
 		if (interDistinct == 0.0) {
-			return new TupleSketchStats(inter, 0.0, 0.0);
+			double rows = estimateUpperBoundIntersectionRows(intersectionStats, leftStats.rows, rightStats.rows,
+					leftStats.distinct, rightStats.distinct, disconnectedRows);
+			if (rows > 0.0d) {
+				return new TupleSketchStats(inter, upperBoundDistinct(intersectionStats, leftStats.distinct,
+						rightStats.distinct), rows, true);
+			}
+			if (leftStats.upperBoundOnly || rightStats.upperBoundOnly) {
+				double upperBoundDistinct = Math.min(leftStats.distinct, rightStats.distinct);
+				rows = estimateUpperBoundIntersectionRows(upperBoundDistinct, leftStats.rows, rightStats.rows,
+						leftStats.distinct, rightStats.distinct, disconnectedRows);
+				if (rows > 0.0d) {
+					return new TupleSketchStats(inter, upperBoundDistinct(upperBoundDistinct, leftStats.distinct,
+							rightStats.distinct), rows, true);
+				}
+			}
+			return new TupleSketchStats(inter, 0.0, 0.0, false);
 		}
 
 		double joinRows = roundJoinEstimate(intersectionStats.positiveSum());
-		return new TupleSketchStats(inter, interDistinct, joinRows);
+		return new TupleSketchStats(inter, interDistinct, joinRows, false);
 	}
 
 	private Var findUnboundVarByName(StatementPattern pattern, String varName) {
@@ -7428,7 +7530,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return null;
 	}
 
-	private record TupleSketchStats(ArrayOfDoublesSketch bindings, double distinct, double rows) {
+	private record TupleSketchStats(ArrayOfDoublesSketch bindings, double distinct, double rows,
+			boolean upperBoundOnly) {
 	}
 
 	private record PatternEstimateInput(StatementPattern pattern, double filterMultiplier) {

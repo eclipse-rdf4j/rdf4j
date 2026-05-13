@@ -127,6 +127,62 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 	}
 
 	@Test
+	void sketchOnlyJoinSurfaceUsesOneSigmaUpperBoundWhenIntersectionPointIsZero() {
+		IRI left = VF.createIRI("urn:upper-bound-surface:left");
+		IRI right = VF.createIRI("urn:upper-bound-surface:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 20_000; i++) {
+			store.add(st(VF.createIRI("urn:upper-bound-surface:left-subject:" + i), left,
+					VF.createIRI("urn:upper-bound-surface:left-key:" + i)));
+			store.add(st(VF.createIRI("urn:upper-bound-surface:right-subject:" + i), right,
+					VF.createIRI("urn:upper-bound-surface:right-key:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		StatementPattern leftPattern = new StatementPattern(Var.of("leftSubject"), Var.of("left", left),
+				Var.of("shared"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
+				Var.of("shared"));
+
+		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(leftPattern), rightPattern, "shared");
+
+		assertTrue(surfaceRows > 0.0d,
+				"Sketch-only surface costing should use the one-sigma upper bound before returning zero");
+	}
+
+	@Test
+	void sketchOnlyMultiFactorJoinSurfaceCarriesOneSigmaUpperBoundForward() {
+		IRI left = VF.createIRI("urn:upper-bound-multi-surface:left");
+		IRI middle = VF.createIRI("urn:upper-bound-multi-surface:middle");
+		IRI right = VF.createIRI("urn:upper-bound-multi-surface:right");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 20_000; i++) {
+			store.add(st(VF.createIRI("urn:upper-bound-multi-surface:left-subject:" + i), left,
+					VF.createIRI("urn:upper-bound-multi-surface:left-key:" + i)));
+			store.add(st(VF.createIRI("urn:upper-bound-multi-surface:middle-subject:" + i), middle,
+					VF.createIRI("urn:upper-bound-multi-surface:middle-key:" + i)));
+			store.add(st(VF.createIRI("urn:upper-bound-multi-surface:right-subject:" + i), right,
+					VF.createIRI("urn:upper-bound-multi-surface:right-key:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+		StatementPattern leftPattern = new StatementPattern(Var.of("leftSubject"), Var.of("left", left),
+				Var.of("shared"));
+		StatementPattern middlePattern = new StatementPattern(Var.of("middleSubject"), Var.of("middle", middle),
+				Var.of("shared"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"), Var.of("right", right),
+				Var.of("shared"));
+
+		double surfaceRows = estimator.estimateSketchJoinSurfaceRows(List.of(leftPattern, middlePattern), rightPattern,
+				"shared");
+
+		assertTrue(surfaceRows > 0.0d,
+				"Sketch-only surface costing should not collapse an upper-bound-only prefix back to zero");
+	}
+
+	@Test
 	void exactBoundPatternRowsUsesPatternCardinalityProviderForBoundProbe() throws Exception {
 		IRI hasObservation = VF.createIRI("urn:hasObservation");
 		Resource observation = VF.createIRI("urn:observation:1");
