@@ -72,6 +72,7 @@ final class SketchJoinOrderPlanner {
 	private static final int COMPLETED_DEFERRED_FILTER_CONNECTIONS = 2;
 	private static final int SATISFIED_FILTER_DETAILS_LIMIT = 4;
 	private static final double DEFERRED_FILTER_ORDERING_MAX_PASS_RATIO = 0.5d;
+	private static final JoinFactorCostModel.EstimationTier EXPANSION_FACTOR_COST_TIER = JoinFactorCostModel.EstimationTier.STANDARD;
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
 	private static final String LMDB_PLAN_ALTERNATIVES_PROPERTY = "rdf4j.optimizer.lmdb.planAlternatives";
 	static final double SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS = 64.0d;
@@ -135,6 +136,9 @@ final class SketchJoinOrderPlanner {
 	private final Map<LocalFilterPassRatioKey, Double> localFilterPassRatioMemo = new HashMap<>();
 	private final Map<Long, Double> finiteBindingAssignmentPrefixRowsMemo = new HashMap<>();
 	private final Map<FiniteBindingVariableValuesKey, Set<Value>> finiteBindingVariableValuesMemo = new HashMap<>();
+	private final Map<Long, List<TupleExpr>> selectedPrefixFactorsMemo = new HashMap<>();
+	private final Map<Long, Map<String, Set<Value>>> selectedFiniteBindingValuesMemo = new HashMap<>();
+	private final Map<FiniteBindingLookupValuesKey, Map<String, Set<Value>>> finiteBindingLookupValuesMemo = new HashMap<>();
 	private final Map<ValueExpr, Map<Long, Double>> finiteDomainConditionPassRatioMemo = new IdentityHashMap<>();
 	private final SketchBasedJoinEstimator.SketchPlannerPath factorRejectionPath;
 	private final TupleExpr rejectedFactor;
@@ -535,7 +539,7 @@ final class SketchJoinOrderPlanner {
 			registerVariables(ids, factor.connectivityVars());
 			registerVariables(ids, factor.bindingVars());
 		}
-		return Map.copyOf(ids);
+		return ids;
 	}
 
 	private static void registerVariables(Map<String, Integer> ids, Set<String> variables) {
@@ -1043,7 +1047,7 @@ final class SketchJoinOrderPlanner {
 		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(factorIndex,
 				currentBoundVarMask);
 		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(factorIndex, previousMask,
-				currentBoundVarMask, conditionedEstimate.outputRows(), prefixEstimate);
+				currentBoundVarMask, conditionedEstimate.outputRows(), prefixEstimate, EXPANSION_FACTOR_COST_TIER);
 		double rowsProcessed = rowsProcessedByStep(factorIndex, previousMask, prefixEstimate,
 				rowsEnteringEstimate.outputRows());
 		return factorStepWorkRows(physicalEstimate, rowsProcessed);
@@ -1060,7 +1064,7 @@ final class SketchJoinOrderPlanner {
 		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(candidate,
 				currentBoundVarMask);
 		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(candidate, mask, currentBoundVarMask,
-				conditionedEstimate.outputRows(), prefix.estimate());
+				conditionedEstimate.outputRows(), prefix.estimate(), EXPANSION_FACTOR_COST_TIER);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate = rowsEnteringEstimate(mask, candidate,
 				prefix.estimate(), step);
 		rowsEnteringEstimate = finiteBindingAssignmentRowFlowEstimate(candidate, prefix.estimate(),
@@ -3878,6 +3882,10 @@ final class SketchJoinOrderPlanner {
 		if (mask == 0L) {
 			return List.of();
 		}
+		return selectedPrefixFactorsMemo.computeIfAbsent(mask, this::selectedPrefixFactorsUncached);
+	}
+
+	private List<TupleExpr> selectedPrefixFactorsUncached(long mask) {
 		List<TupleExpr> prefixFactors = new ArrayList<>(Long.bitCount(mask));
 		long remaining = mask;
 		while (remaining != 0L) {
@@ -3887,20 +3895,32 @@ final class SketchJoinOrderPlanner {
 				prefixFactors.add(factors.get(factorIndex).tupleExpr());
 			}
 		}
-		return prefixFactors;
+		return List.copyOf(prefixFactors);
 	}
 
 	private Map<String, Set<Value>> finiteBindingLookupValues(int factorIndex, long mask,
+			long currentlyBoundVarMask) {
+		FiniteBindingLookupValuesKey key = new FiniteBindingLookupValuesKey(factorIndex, mask, currentlyBoundVarMask);
+		return finiteBindingLookupValuesMemo.computeIfAbsent(key,
+				ignored -> finiteBindingLookupValuesUncached(factorIndex, mask, currentlyBoundVarMask));
+	}
+
+	private Map<String, Set<Value>> finiteBindingLookupValuesUncached(int factorIndex, long mask,
 			long currentlyBoundVarMask) {
 		SketchBasedJoinEstimator.AccessShape accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
 		if (accessShape == null) {
 			return Map.of();
 		}
-		Map<String, Set<Value>> valuesByName = new HashMap<>();
-		addSelectedFiniteBindingValues(mask, valuesByName);
+		Map<String, Set<Value>> selectedValues = selectedFiniteBindingValues(mask);
 		long lookupVarMask = lookupVarMask(accessShape, accessShape.lookupBoundComponentMask());
+		if (lookupVarMask == 0L && selectedValues.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Set<Value>> valuesByName = selectedValues.isEmpty()
+				? new HashMap<>()
+				: new HashMap<>(selectedValues);
 		if (lookupVarMask == 0L) {
-			return valuesByName.isEmpty() ? Map.of() : Map.copyOf(valuesByName);
+			return Map.copyOf(valuesByName);
 		}
 		long remaining = lookupVarMask;
 		while (remaining != 0L) {
@@ -3914,8 +3934,16 @@ final class SketchJoinOrderPlanner {
 		return valuesByName.isEmpty() ? Map.of() : Map.copyOf(valuesByName);
 	}
 
-	private void addSelectedFiniteBindingValues(long mask, Map<String, Set<Value>> valuesByName) {
+	private Map<String, Set<Value>> selectedFiniteBindingValues(long mask) {
 		long assignments = smallBindingSetAssignmentFactorMask & mask;
+		if (assignments == 0L) {
+			return Map.of();
+		}
+		return selectedFiniteBindingValuesMemo.computeIfAbsent(assignments, this::selectedFiniteBindingValuesUncached);
+	}
+
+	private Map<String, Set<Value>> selectedFiniteBindingValuesUncached(long assignments) {
+		Map<String, Set<Value>> valuesByName = new HashMap<>();
 		while (assignments != 0L) {
 			int factorIndex = Long.numberOfTrailingZeros(assignments);
 			assignments &= assignments - 1L;
@@ -3940,6 +3968,7 @@ final class SketchJoinOrderPlanner {
 				});
 			}
 		}
+		return valuesByName.isEmpty() ? Map.of() : Map.copyOf(valuesByName);
 	}
 
 	private static long doubleKey(double value) {
@@ -6012,5 +6041,8 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private record FiniteBindingVariableValuesKey(long mask, int variableId) {
+	}
+
+	private record FiniteBindingLookupValuesKey(int factorIndex, long mask, long boundVarMask) {
 	}
 }

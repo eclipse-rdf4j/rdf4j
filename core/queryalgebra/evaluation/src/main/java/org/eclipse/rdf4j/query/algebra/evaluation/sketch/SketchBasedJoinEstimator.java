@@ -2687,10 +2687,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void rethrowAsyncIncrementalFailure() {
 		Throwable failure = asyncIncrementalFailure.get();
+		if(failure == null) return;;
 		switch (failure) {
-			case null -> {
-				return;
-			}
 			case Error error -> throw error;
 			case RuntimeException runtimeException -> throw runtimeException;
 			default -> {
@@ -5807,6 +5805,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
 			return normalizeRows(singleFactorRows);
 		}
+		TuplePlanEstimate finitePatternRows = estimateBindingSetAssignmentPatternRows(tupleExprs);
+		if (finitePatternRows != null) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+			return normalizeRows(finitePatternRows.outputRows);
+		}
 		if (!isReady()) {
 			recordRobustCardinalityPath(
 					isReady() ? SketchPlannerPath.UNSUPPORTED_SHAPE : SketchPlannerPath.ROBUST_NOT_READY);
@@ -5853,6 +5856,113 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return null;
 		}
 		return applyFilterMultiplier(rows, input.filterMultiplier);
+	}
+
+	private TuplePlanEstimate estimateBindingSetAssignmentPatternRows(List<TupleExpr> tupleExprs) {
+		if (tupleExprs.size() != 2 || patternCardinalityProvider == null) {
+			return null;
+		}
+		boolean leftAssignment = tupleExprs.get(0) instanceof BindingSetAssignment;
+		boolean rightAssignment = tupleExprs.get(1) instanceof BindingSetAssignment;
+		if (leftAssignment == rightAssignment) {
+			return null;
+		}
+
+		BindingSetAssignment assignment = (BindingSetAssignment) (leftAssignment ? tupleExprs.get(0)
+				: tupleExprs.get(1));
+		TupleExpr patternExpr = leftAssignment ? tupleExprs.get(1) : tupleExprs.get(0);
+		PatternEstimateInput input = asSketchCompatibleInput(patternExpr);
+		if (input == null || !isSmallBindingSetAssignment(assignment)) {
+			return null;
+		}
+		Set<String> sharedNames = new HashSet<>(assignment.getBindingNames());
+		sharedNames.retainAll(input.pattern.getBindingNames());
+		if (sharedNames.isEmpty()) {
+			return null;
+		}
+
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets == null) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+
+		double totalRows = 0.0d;
+		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
+		Map<String, ArrayOfDoublesUpdatableSketch> survivingAssignmentSketches = new HashMap<>();
+		Map<String, Double> carriedDistinct = new HashMap<>();
+
+		for (BindingSet bindingSet : bindingSets) {
+			TupleExpr boundExpr = bindTupleExpr(patternExpr, bindingSet);
+			PatternEstimateInput boundInput = asSketchCompatibleInput(boundExpr);
+			TuplePlanEstimate rowEstimate = estimateBoundPatternRowsFromProvider(boundInput);
+			if (rowEstimate == null) {
+				return null;
+			}
+
+			double rowRows = rowEstimate.outputRows;
+			if (rowRows <= 0.0d) {
+				continue;
+			}
+			totalRows += rowRows;
+			if (!Double.isFinite(totalRows)) {
+				totalRows = Double.MAX_VALUE;
+			}
+
+			for (String bindingName : assignment.getBindingNames()) {
+				Value value = bindingSet.getValue(bindingName);
+				if (value == null) {
+					continue;
+				}
+				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
+				tupleUpdateRaw(survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k)),
+						thetaHash(valueFingerprint(str(value))), 1.0d);
+			}
+			for (Map.Entry<String, VarPlanStats> entry : rowEstimate.varStats.entrySet()) {
+				if (!bindingSet.hasBinding(entry.getKey())) {
+					carriedDistinct.merge(entry.getKey(), entry.getValue().distinct, Double::sum);
+				}
+			}
+		}
+
+		totalRows = normalizeRows(totalRows);
+		Map<String, VarPlanStats> varStats = newVarStatsMap(survivingAssignmentValues.size() + carriedDistinct.size());
+		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
+			double distinct = clampDistinct(entry.getValue().size(), totalRows);
+			ArrayOfDoublesSketch sketch = survivingAssignmentSketches.get(entry.getKey());
+			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.compact()));
+		}
+		for (Map.Entry<String, Double> entry : carriedDistinct.entrySet()) {
+			varStats.putIfAbsent(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue(), totalRows), null));
+		}
+		return new TuplePlanEstimate(totalRows, totalRows, 1.0d, varStats);
+	}
+
+	private TuplePlanEstimate estimateBoundPatternRowsFromProvider(PatternEstimateInput input) {
+		if (input == null) {
+			return null;
+		}
+		StatementPattern pattern = input.pattern;
+		if (hasIncompatibleBoundResource(pattern.getSubjectVar())
+				|| hasIncompatibleBoundPredicate(pattern.getPredicateVar())
+				|| hasIncompatibleBoundResource(pattern.getContextVar())
+				|| exactBoundContexts(pattern.getContextVar()) == null) {
+			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
+		}
+		PatternCardinalityProvider provider = patternCardinalityProvider;
+		if (provider == null) {
+			return null;
+		}
+		double baseRows = provider.estimate(pattern);
+		if (!Double.isFinite(baseRows) || baseRows < 0.0d) {
+			return null;
+		}
+		baseRows = normalizeRows(baseRows);
+		double outputRows = normalizeRows(applyFilterMultiplier(baseRows, input.filterMultiplier));
+		Map<String, VarPlanStats> varStats = conservativeBoundPatternVarStats(pattern, outputRows);
+		if (input.filterMultiplier < 1.0d) {
+			varStats = clampVarStatsToRows(varStats, outputRows, false);
+		}
+		return new TuplePlanEstimate(baseRows, outputRows, input.filterMultiplier, varStats);
 	}
 
 	private TuplePlanEstimate orderedStatementPatternCardinality(List<TupleExpr> tupleExprs) {

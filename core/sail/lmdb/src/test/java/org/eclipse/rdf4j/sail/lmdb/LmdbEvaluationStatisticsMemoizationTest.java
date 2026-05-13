@@ -38,6 +38,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -231,6 +232,91 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertNotNull(decisionTrace, "Selected plan should retain compact cascade decisions");
 		assertTrue(decisionTrace.contains("bounded-greedy rejected"), decisionTrace);
 		assertTrue(decisionTrace.contains("pareto-memo selected"), decisionTrace);
+	}
+
+	@Test
+	void boundedGreedyIsOnlyComparedWhenDeferredFiltersArePresent() {
+		List<TupleExpr> args = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			args.add(new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
+		}
+		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 1.0d, 1.0d);
+		JoinOrderPlanner.JoinOrderPlan boundedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 1.0d,
+				6.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
+		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 2.0d, 2.0d);
+		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 2.0d,
+				12.0d, List.of("pareto selected"),
+				Map.of(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION,
+						"mode=pareto-memo, finalVector=JoinCostVector{}"),
+				Map.of(), selectedSteps);
+		ScriptedJoinEstimator estimator = new ScriptedJoinEstimator(boundedGreedy, selectedPareto);
+		try {
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null) {
+				@Override
+				public boolean supportsJoinEstimation() {
+					return true;
+				}
+			};
+
+			JoinOrderPlanner.FilterConstraint deferredFilter = new JoinOrderPlanner.FilterConstraint(Set.of("s0"),
+					1.0d, JoinOrderPlanner.FILTER_COST_CHEAP, "deferred");
+			JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of(deferredFilter));
+
+			assertEquals(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, attempt.getAlgorithm(),
+					"Deferred filters should make bounded greedy a compared candidate, not the early winner");
+			JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
+			String decisionTrace = plan.getSummaryStringMetrics()
+					.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
+			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy comparison");
+			assertTrue(decisionTrace.contains("boundedGreedyCompared=true"), decisionTrace);
+			assertTrue(decisionTrace.contains("boundedGreedyRejectedReason=deferredFilters"), decisionTrace);
+			assertTrue(decisionTrace.contains("pareto-memo selected"), decisionTrace);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void boundedGreedyIsComparedWhenFiniteAssignmentsArePresent() {
+		List<TupleExpr> args = new ArrayList<>();
+		args.add(finiteAssignment("target", "Author 1", "Author 2"));
+		for (int i = 0; i < 6; i++) {
+			args.add(new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
+		}
+		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 1.0d, 1.0d);
+		JoinOrderPlanner.JoinOrderPlan boundedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 1.0d,
+				6.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
+		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 2.0d, 2.0d);
+		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 2.0d,
+				12.0d, List.of("pareto selected"),
+				Map.of(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION,
+						"mode=pareto-memo, finalVector=JoinCostVector{}"),
+				Map.of(), selectedSteps);
+		ScriptedJoinEstimator estimator = new ScriptedJoinEstimator(boundedGreedy, selectedPareto);
+		try {
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null) {
+				@Override
+				public boolean supportsJoinEstimation() {
+					return true;
+				}
+			};
+
+			JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of());
+
+			assertEquals(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, attempt.getAlgorithm(),
+					"Finite assignments should make bounded greedy a compared candidate, not the early winner");
+			JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
+			String decisionTrace = plan.getSummaryStringMetrics()
+					.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
+			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy comparison");
+			assertTrue(decisionTrace.contains("boundedGreedyCompared=true"), decisionTrace);
+			assertTrue(decisionTrace.contains("boundedGreedyRejectedReason=finiteAssignments"), decisionTrace);
+			assertTrue(decisionTrace.contains("pareto-memo selected"), decisionTrace);
+		} finally {
+			estimator.close();
+		}
 	}
 
 	@Test
@@ -1391,6 +1477,50 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					Map.of(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows), List.of()));
 		}
 		return steps;
+	}
+
+	private static BindingSetAssignment finiteAssignment(String bindingName, String... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<org.eclipse.rdf4j.query.BindingSet> bindingSets = new ArrayList<>();
+		for (String value : values) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding(bindingName, SimpleValueFactory.getInstance().createLiteral(value));
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static final class ScriptedJoinEstimator extends SketchBasedJoinEstimator {
+		private final JoinOrderPlanner.JoinOrderPlan greedyPlan;
+		private final JoinOrderPlanner.JoinOrderPlan selectedPlan;
+
+		ScriptedJoinEstimator(JoinOrderPlanner.JoinOrderPlan greedyPlan,
+				JoinOrderPlanner.JoinOrderPlan selectedPlan) {
+			super((subject, predicate, object, contexts) -> new EmptyIteration<>(),
+					SketchBasedJoinEstimator.Config.defaults());
+			this.greedyPlan = greedyPlan;
+			this.selectedPlan = selectedPlan;
+		}
+
+		@Override
+		public boolean isReadyNonBlocking() {
+			return true;
+		}
+
+		@Override
+		public JoinOrderPlanner.PlanningAttempt planJoinOrderAttempt(List<TupleExpr> args,
+				Set<String> initiallyBoundVars,
+				JoinOrderPlanner.Algorithm algorithm, JoinFactorCostModel factorCostModel,
+				List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+			if (algorithm == JoinOrderPlanner.Algorithm.GREEDY) {
+				return JoinOrderPlanner.PlanningAttempt.planned(greedyPlan, "sketch", algorithm, "ROBUST_USED",
+						greedyPlan.getDiagnostics());
+			}
+			return JoinOrderPlanner.PlanningAttempt.planned(selectedPlan, "sketch", algorithm, "ROBUST_USED",
+					selectedPlan.getDiagnostics());
+		}
 	}
 
 	private static String optimizedPlanFor(SailRepository repository, String query) {

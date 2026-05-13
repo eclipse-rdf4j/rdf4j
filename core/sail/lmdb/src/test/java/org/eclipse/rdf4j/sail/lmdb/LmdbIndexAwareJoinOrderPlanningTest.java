@@ -100,6 +100,18 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static final int LIBRARY_AUTHOR_NOISE_COUNT = 90_000;
 
 	@Test
+	void plannerAlgorithmUsesDynamicProgrammingAtConfiguredLimit() {
+		assertEquals(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+				LmdbSketchJoinOptimizer.plannerAlgorithmForSegment(
+						JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT),
+				"The exact DP limit should still use the memo planner");
+		assertEquals(JoinOrderPlanner.Algorithm.GREEDY,
+				LmdbSketchJoinOptimizer.plannerAlgorithmForSegment(
+						JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT + 1),
+				"Only segments above the DP limit should fall back to greedy");
+	}
+
+	@Test
 	void plannerPrefersFeedsBeforeFilteredNameWithoutPosc(@TempDir File dataDir) throws Exception {
 		PlannedBranch plannedBranch = planGeneratorBranch(dataDir, "spoc,ospc,psoc");
 		Optional<JoinOrderPlanner.JoinOrderPlan> plan = plannedBranch.plan();
@@ -683,6 +695,9 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			assertTrue(optimizedPlan.contains("optimizer.logicalExploration=mode=pareto"),
 					"LIBRARY q9's inferred finite object domain should be selected by the native Pareto planner "
 							+ "option path:\n" + optimizedPlan);
+			assertFalse(optimizedPlan.contains("bounded-greedy selected"),
+					"LIBRARY q9 should compare bounded greedy with the full planner instead of selecting it "
+							+ "early:\n" + optimizedPlan);
 			assertFalse(optimizedPlan.contains("optimizer.logicalExploration=mode=finite-anchor-fastpath"),
 					"LIBRARY q9 should not bypass the Pareto planner with the removed finite-anchor fast path:\n"
 							+ optimizedPlan);

@@ -138,8 +138,8 @@ public interface JoinFactorCostModel {
 			this.distinctLookupBindings = distinctLookupBindings;
 			this.nestedIteratorInvocation = nestedIteratorInvocation;
 			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
-			this.prefixFactors = immutablePrefixFactors(prefixFactors);
+			this.finiteBindingValues = (finiteBindingValues);
+			this.prefixFactors = (prefixFactors);
 			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
 		}
 

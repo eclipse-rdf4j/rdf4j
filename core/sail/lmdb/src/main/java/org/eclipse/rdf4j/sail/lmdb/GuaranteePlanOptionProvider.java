@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -46,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class GuaranteePlanOptionProvider {
 
@@ -55,6 +58,7 @@ final class GuaranteePlanOptionProvider {
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE_DOMAIN = "optimizer.guaranteeAnchorPredicateDomain";
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_DOMAIN = "optimizer.guaranteeAnchorDomain";
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_ROLE = "optimizer.guaranteeAnchorRole";
+	private static final int MAX_MATERIALIZED_FILTER_ROWS = 5000;
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final List<CoreDatatype.XSD> INTEGER_ANCHOR_DATATYPES = List.of(
 			CoreDatatype.XSD.INTEGER,
@@ -90,14 +94,18 @@ final class GuaranteePlanOptionProvider {
 				continue;
 			}
 			BindingSetAssignment anchor = anchorOption.anchor();
-			String bindingName = anchor.getBindingNames().iterator().next();
+			String bindingName = anchorOption.bindingName();
 			if (!optionBindingNames.add(bindingName)
 					|| segmentHasBindingSetAssignment(segment, bindingName)
 					|| !segmentMustBind(segment, bindingName)) {
 				continue;
 			}
 			List<TupleExpr> factors = new ArrayList<>(segment.size() + 1);
-			factors.addAll(segment);
+			for (TupleExpr factor : segment) {
+				if (!replacedAssignment(factor, anchorOption.replacedBindingNames())) {
+					factors.add(factor);
+				}
+			}
 			factors.add(anchor);
 			options.add(new PlanOption("finite-anchor:" + bindingName, List.copyOf(factors),
 					anchorOption.satisfiesFilter() ? i : -1));
@@ -184,7 +192,8 @@ final class GuaranteePlanOptionProvider {
 				GuaranteePlanOptionProvider::isPotentialAnchorValue);
 		BindingSetAssignment narrowedAnchor = narrowObjectAnchor(pattern, anchor, guaranteeSource);
 		if (narrowedAnchor != null) {
-			return new AnchorOption(narrowedAnchor, true);
+			String bindingName = narrowedAnchor.getBindingNames().iterator().next();
+			return new AnchorOption(narrowedAnchor, bindingName, true, Set.of());
 		}
 
 		Map<String, LinkedHashSet<Value>> assignmentValues = LmdbFiniteAnchorInference.collectSmallAssignmentValues(
@@ -193,7 +202,179 @@ final class GuaranteePlanOptionProvider {
 				filter.condition, assignmentValues, GuaranteePlanOptionProvider::isPotentialAnchorValue);
 		narrowedAnchor = narrowObjectAnchor(pattern, valuesVariableAnchor, guaranteeSource);
 		if (narrowedAnchor != null) {
-			return new AnchorOption(narrowedAnchor, false);
+			String bindingName = narrowedAnchor.getBindingNames().iterator().next();
+			BindingSetAssignment materializedAnchor = materializedFilterAnchor(filter.condition, pattern,
+					narrowedAnchor, bindingName, assignmentValues, guaranteeSource);
+			if (materializedAnchor != null) {
+				return new AnchorOption(materializedAnchor, bindingName, true,
+						replacedAssignmentNames(materializedAnchor, bindingName, assignmentValues));
+			}
+			return new AnchorOption(narrowedAnchor, bindingName, false, Set.of());
+		}
+		return null;
+	}
+
+	private static boolean replacedAssignment(TupleExpr factor, Set<String> replacedBindingNames) {
+		if (replacedBindingNames.isEmpty()) {
+			return false;
+		}
+		Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(factor);
+		return assignmentNames.isPresent() && !assignmentNames.get().isEmpty()
+				&& replacedBindingNames.containsAll(assignmentNames.get());
+	}
+
+	private static BindingSetAssignment materializedFilterAnchor(ValueExpr condition, StatementPattern pattern,
+			BindingSetAssignment narrowedAnchor, String bindingName,
+			Map<String, LinkedHashSet<Value>> assignmentValues,
+			LmdbPredicateObjectDomainSource guaranteeSource) {
+		Map<String, LinkedHashSet<Value>> finiteValues = new HashMap<>(assignmentValues);
+		finiteValues.put(bindingName, anchorValues(narrowedAnchor, bindingName));
+		BindingSetAssignment materialized = materializedFilterAssignment(condition, finiteValues);
+		if (materialized == null || !materialized.getBindingNames().contains(bindingName)) {
+			return null;
+		}
+		Optional<RdfTermDomain> guarantee = knownRdfTermDomain(guaranteeSource, pattern);
+		RdfTermDomain predicateDomain = guarantee.orElse(RdfTermDomain.UNKNOWN);
+		RdfTermDomain anchorDomain = RdfTermDomain.finiteValues(anchorValues(narrowedAnchor, bindingName));
+		return annotateAnchor(materialized, pattern, bindingName, predicateDomain, anchorDomain);
+	}
+
+	private static Set<String> replacedAssignmentNames(BindingSetAssignment materializedAnchor,
+			String generatedBindingName, Map<String, LinkedHashSet<Value>> assignmentValues) {
+		LinkedHashSet<String> names = new LinkedHashSet<>(materializedAnchor.getBindingNames());
+		names.remove(generatedBindingName);
+		names.removeIf(name -> !assignmentValues.containsKey(name));
+		return Set.copyOf(names);
+	}
+
+	private static BindingSetAssignment materializedFilterAssignment(ValueExpr condition,
+			Map<String, LinkedHashSet<Value>> finiteValues) {
+		List<String> bindingNames = finiteConditionBindingNames(condition);
+		if (bindingNames.isEmpty() || !finiteValues.keySet().containsAll(bindingNames)) {
+			return null;
+		}
+		long candidateRows = 1L;
+		for (String bindingName : bindingNames) {
+			LinkedHashSet<Value> values = finiteValues.get(bindingName);
+			if (values == null || values.isEmpty()) {
+				return null;
+			}
+			candidateRows *= values.size();
+			if (candidateRows > MAX_MATERIALIZED_FILTER_ROWS) {
+				return null;
+			}
+		}
+
+		List<BindingSet> rows = new ArrayList<>();
+		if (!materializeFilterRows(condition, bindingNames, finiteValues, 0, new HashMap<>(), rows)) {
+			return null;
+		}
+		if (rows.isEmpty()) {
+			return null;
+		}
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(bindingNames));
+		assignment.setBindingSets(rows);
+		return assignment;
+	}
+
+	private static List<String> finiteConditionBindingNames(ValueExpr condition) {
+		LinkedHashSet<String> names = new LinkedHashSet<>();
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.hasValue() && !var.isAnonymous() && var.getName() != null) {
+					names.add(var.getName());
+				}
+			}
+		});
+		return List.copyOf(names);
+	}
+
+	private static boolean materializeFilterRows(ValueExpr condition, List<String> bindingNames,
+			Map<String, LinkedHashSet<Value>> finiteValues, int index, Map<String, Value> current,
+			List<BindingSet> rows) {
+		if (index == bindingNames.size()) {
+			Boolean truth = finiteFilterTruth(condition, current);
+			if (truth == null) {
+				return false;
+			}
+			if (truth) {
+				MapBindingSet row = new MapBindingSet(bindingNames.size());
+				for (String bindingName : bindingNames) {
+					row.addBinding(bindingName, current.get(bindingName));
+				}
+				rows.add(row);
+			}
+			return true;
+		}
+		String bindingName = bindingNames.get(index);
+		for (Value value : finiteValues.get(bindingName)) {
+			current.put(bindingName, value);
+			if (!materializeFilterRows(condition, bindingNames, finiteValues, index + 1, current, rows)) {
+				return false;
+			}
+		}
+		current.remove(bindingName);
+		return true;
+	}
+
+	private static Boolean finiteFilterTruth(ValueExpr condition, Map<String, Value> bindings) {
+		if (condition instanceof Or or) {
+			Boolean left = finiteFilterTruth(or.getLeftArg(), bindings);
+			Boolean right = finiteFilterTruth(or.getRightArg(), bindings);
+			return left == null || right == null ? null : left || right;
+		}
+		if (condition instanceof And and) {
+			Boolean left = finiteFilterTruth(and.getLeftArg(), bindings);
+			Boolean right = finiteFilterTruth(and.getRightArg(), bindings);
+			return left == null || right == null ? null : left && right;
+		}
+		if (condition instanceof SameTerm sameTerm) {
+			Value left = finiteValue(sameTerm.getLeftArg(), bindings);
+			Value right = finiteValue(sameTerm.getRightArg(), bindings);
+			return left == null || right == null ? null : left.equals(right);
+		}
+		if (condition instanceof Compare compare
+				&& (compare.getOperator() == Compare.CompareOp.EQ
+						|| compare.getOperator() == Compare.CompareOp.NE)) {
+			Value left = finiteValue(compare.getLeftArg(), bindings);
+			Value right = finiteValue(compare.getRightArg(), bindings);
+			if (left == null || right == null) {
+				return null;
+			}
+			boolean equal = left.equals(right);
+			return compare.getOperator() == Compare.CompareOp.EQ ? equal : !equal;
+		}
+		if (condition instanceof ListMemberOperator list) {
+			List<ValueExpr> arguments = list.getArguments();
+			if (arguments.size() < 2) {
+				return null;
+			}
+			Value left = finiteValue(arguments.getFirst(), bindings);
+			if (left == null) {
+				return null;
+			}
+			for (int i = 1; i < arguments.size(); i++) {
+				Value member = finiteValue(arguments.get(i), bindings);
+				if (member == null) {
+					return null;
+				}
+				if (left.equals(member)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return null;
+	}
+
+	private static Value finiteValue(ValueExpr expression, Map<String, Value> bindings) {
+		if (expression instanceof ValueConstant valueConstant) {
+			return valueConstant.getValue();
+		}
+		if (expression instanceof Var var && !var.hasValue()) {
+			return bindings.get(var.getName());
 		}
 		return null;
 	}
@@ -892,7 +1073,8 @@ final class GuaranteePlanOptionProvider {
 	record FilterPlanOption(String name, List<DeferredFilter> filters, boolean preferOnTie) {
 	}
 
-	private record AnchorOption(BindingSetAssignment anchor, boolean satisfiesFilter) {
+	private record AnchorOption(BindingSetAssignment anchor, String bindingName, boolean satisfiesFilter,
+			Set<String> replacedBindingNames) {
 	}
 
 	private enum Truth {

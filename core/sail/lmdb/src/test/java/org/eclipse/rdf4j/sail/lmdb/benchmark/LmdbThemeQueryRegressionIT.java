@@ -2421,9 +2421,9 @@ class LmdbThemeQueryRegressionIT {
 							"?author <http://example.com/theme/library/name> ?authorName",
 							"Library q9 should bind the finite author-name domain before the author-name lookup\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, finiteAuthorValues,
-							"FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
-							"Library q9 should apply the original filter once both finite domains are bound\n"
+					Assertions.assertFalse(
+							renderedQuery.contains("FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))"),
+							"Library q9 should satisfy the author-name filter through materialized finite rows\n"
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "?book <http://example.com/theme/library/writtenBy> ?author",
 							"?book <http://example.com/theme/library/hasCopy> ?copy",
@@ -3070,12 +3070,25 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private static boolean hasPredicateLine(String pattern, String predicateValue) {
+		int componentIndex = 0;
 		for (String line : pattern.split("\\R")) {
 			if (line.contains("p: Var") && line.contains(predicateValue)) {
 				return true;
 			}
+			if (!statementPatternComponentLine(line)) {
+				continue;
+			}
+			if (componentIndex == 1 && line.contains(predicateValue)) {
+				return true;
+			}
+			componentIndex++;
 		}
 		return false;
+	}
+
+	private static boolean statementPatternComponentLine(String line) {
+		return line.contains("s: Var") || line.contains("p: Var") || line.contains("o: Var")
+				|| line.contains("LmdbValueVar");
 	}
 
 	private static String firstStatementPatternForPredicateAndVar(String plan, String predicateIri, String role,

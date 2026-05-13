@@ -125,6 +125,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		this.trackResultSize = trackResultSize;
 	}
 
+	static JoinOrderPlanner.Algorithm plannerAlgorithmForSegment(int segmentSize) {
+		if (segmentSize <= JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT) {
+			return JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING;
+		}
+		return JoinOrderPlanner.Algorithm.GREEDY;
+	}
+
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
@@ -4524,10 +4531,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private JoinOrderPlanner.Algorithm plannerAlgorithm(int segmentSize) {
-			if (segmentSize < JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT) {
-				return JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING;
-			}
-			return JoinOrderPlanner.Algorithm.GREEDY;
+			return plannerAlgorithmForSegment(segmentSize);
 		}
 
 		private TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,

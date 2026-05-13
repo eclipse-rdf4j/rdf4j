@@ -546,7 +546,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
 		boolean objectAnchor = pattern != null && bindingName.equals(unboundName(pattern.getObjectVar()));
 		if (objectAnchor) {
-			return false;
+			Optional<RdfTermDomain> guarantee = knownRdfTermDomain(pattern);
+			return guarantee.isPresent() && canMaterializeObjectFilterAnchor(anchor, bindingName, guarantee.get());
 		}
 		if (containsGuaranteeOnlyAnchorValue(anchor, bindingName)) {
 			return false;

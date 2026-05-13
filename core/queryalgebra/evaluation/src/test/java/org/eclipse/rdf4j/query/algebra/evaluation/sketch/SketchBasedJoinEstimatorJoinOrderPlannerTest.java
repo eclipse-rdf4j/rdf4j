@@ -174,6 +174,58 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void dynamicProgrammingExpansionAvoidsExactContextualFactorCosts() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI firstPredicate = VF.createIRI("urn:tier:first");
+		IRI secondPredicate = VF.createIRI("urn:tier:second");
+		IRI thirdPredicate = VF.createIRI("urn:tier:third");
+		for (int i = 0; i < 20; i++) {
+			IRI subject = VF.createIRI("urn:tier:s" + i);
+			IRI middle = VF.createIRI("urn:tier:m" + i);
+			IRI object = VF.createIRI("urn:tier:o" + i);
+			IRI leaf = VF.createIRI("urn:tier:l" + i);
+			store.add(VF.createStatement(subject, firstPredicate, middle));
+			store.add(VF.createStatement(middle, secondPredicate, object));
+			store.add(VF.createStatement(object, thirdPredicate, leaf));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern first = pattern("subject", firstPredicate, "middle");
+		StatementPattern second = pattern("middle", secondPredicate, "object");
+		StatementPattern third = pattern("object", thirdPredicate, "leaf");
+		List<JoinFactorCostModel.EstimationTier> contextualTiers = new ArrayList<>();
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d));
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				if (context != null && context.isNestedIteratorInvocation()) {
+					contextualTiers.add(context.getEstimationTier());
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d));
+			}
+		};
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(List.of(first, second, third),
+				Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected dynamic programming to keep a three-factor plan");
+		assertTrue(contextualTiers.size() > 0, "Expected cost model to see contextual expansion estimates");
+		long exactContextualRequests = contextualTiers.stream()
+				.filter(JoinFactorCostModel.EstimationTier.EXACT::equals)
+				.count();
+		assertEquals(0L, exactContextualRequests,
+				"Dynamic programming expansion must not run exact contextual factor costing");
+	}
+
+	@Test
 	void paretoPlanSummaryIncludesCompactFinalFrontier() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:frontier:a");

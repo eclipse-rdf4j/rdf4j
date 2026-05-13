@@ -252,8 +252,74 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 				"Single binding-set assignment ordered cardinality should use the finite row count");
 	}
 
+	@Test
+	void orderedCardinalityUsesPatternCardinalityProviderForValuesThenStatementPatternWhenSketchIsNotReady() {
+		IRI predicate = VF.createIRI("urn:page-walk-values-pattern");
+		Value first = VF.createLiteral("first");
+		Value second = VF.createLiteral("second");
+		Value missing = VF.createLiteral("missing");
+		Map<Value, Double> rowsByObject = Map.of(first, 2.0d, second, 5.0d, missing, 0.0d);
+		AtomicInteger providerCalls = new AtomicInteger();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (predicate.equals(pattern.getPredicateVar().getValue()) && pattern.getObjectVar().hasValue()) {
+				providerCalls.incrementAndGet();
+				return rowsByObject.getOrDefault(pattern.getObjectVar().getValue(), -1.0d);
+			}
+			return -1.0d;
+		});
+
+		BindingSetAssignment assignment = assignment("o", first, second, missing);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+
+		double rows = estimator.orderedCardinality(List.of(assignment, pattern));
+
+		assertEquals(7.0d, rows, 0.0d,
+				"VALUES followed by a statement pattern should sum page-walk bound-pattern rows");
+		assertEquals(3, providerCalls.get(), "Expected one page-walk lookup per finite assignment row");
+	}
+
+	@Test
+	void orderedCardinalityUsesPatternCardinalityProviderForStatementPatternThenValuesWhenSketchIsNotReady() {
+		IRI predicate = VF.createIRI("urn:page-walk-pattern-values");
+		Value first = VF.createLiteral("first");
+		Value second = VF.createLiteral("second");
+		Value missing = VF.createLiteral("missing");
+		Map<Value, Double> rowsByObject = Map.of(first, 3.0d, second, 4.0d, missing, 0.0d);
+		AtomicInteger providerCalls = new AtomicInteger();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (predicate.equals(pattern.getPredicateVar().getValue()) && pattern.getObjectVar().hasValue()) {
+				providerCalls.incrementAndGet();
+				return rowsByObject.getOrDefault(pattern.getObjectVar().getValue(), -1.0d);
+			}
+			return -1.0d;
+		});
+
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		BindingSetAssignment assignment = assignment("o", first, second, missing);
+
+		double rows = estimator.orderedCardinality(List.of(pattern, assignment));
+
+		assertEquals(7.0d, rows, 0.0d,
+				"Statement pattern followed by VALUES should sum page-walk bound-pattern rows");
+		assertEquals(3, providerCalls.get(), "Expected one page-walk lookup per finite assignment row");
+	}
+
 	private static Statement st(Resource s, IRI p, Value o) {
 		return VF.createStatement(s, p, o);
+	}
+
+	private static BindingSetAssignment assignment(String name, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> rows = new ArrayList<>();
+		for (Value value : values) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding(name, value);
+			rows.add(row);
+		}
+		assignment.setBindingSets(rows);
+		return assignment;
 	}
 
 	private static Statement st(Resource s, IRI p, Value o, Resource c) {
