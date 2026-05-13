@@ -624,10 +624,17 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				optimized = (TupleExpr) explanation.tupleExpr();
 			}
 
-			assertTrue(containsBindingSetAssignmentFor(optimized, "authorName"),
-					"Finite VALUES-bound equality should add an object anchor for the name lookup: " + optimized);
-			assertTrue(containsCompare(optimized, "authorName", "target"),
-					"The inferred object anchor narrows the lookup but does not satisfy the original filter: "
+			BindingSetAssignment authorNameAnchor = findBindingSetAssignment(optimized, "authorName")
+					.orElseThrow(() -> new AssertionError(
+							"Finite VALUES-bound equality should add an object anchor for the name lookup: "
+									+ optimized));
+			assertTrue(authorNameAnchor.getBindingNames().contains("target"),
+					"The finite equality should be satisfied by one materialized assignment: " + optimized);
+			assertEquals(4, countBindingSets(authorNameAnchor),
+					"The materialized equality rows should retain only the compatible target/name pairs: "
+							+ optimized);
+			assertFalse(containsCompare(optimized, "authorName", "target"),
+					"The materialized equality rows should satisfy the original filter without runtime comparison: "
 							+ optimized);
 		} finally {
 			repository.shutDown();
@@ -654,11 +661,17 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				optimizedPlan = explanation.toString();
 			}
 
-			assertTrue(containsBindingSetAssignmentFor(optimized, "authorName"),
-					"LIBRARY q9 shape should select the inferred authorName object anchor: " + optimized);
-			assertTrue(containsCompare(optimized, "authorName", "target"),
-					"The authorName anchor narrows lib:name lookups but does not satisfy the original filter: "
+			BindingSetAssignment authorNameAnchor = findBindingSetAssignment(optimized, "authorName")
+					.orElseThrow(() -> new AssertionError(
+							"LIBRARY q9 shape should select the inferred authorName object anchor: " + optimized));
+			assertTrue(authorNameAnchor.getBindingNames().contains("target"),
+					"LIBRARY q9 should materialize the finite authorName/target filter into one assignment: "
 							+ optimized);
+			assertEquals(4, countBindingSets(authorNameAnchor),
+					"LIBRARY q9 should only keep the four finite rows that satisfy the OR filter: " + optimized);
+			assertFalse(containsCompare(optimized, "authorName", "target"),
+					"The materialized authorName/target rows should satisfy the finite filter without runtime "
+							+ "comparison: " + optimized);
 			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptions=generated=1, "
 					+ "selected=finite-anchor:authorName"),
 					"LIBRARY q9's inferred finite object domain should enter the Pareto option set and select "
@@ -1368,6 +1381,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			}
 		});
 		return matches.stream().findFirst();
+	}
+
+	private static int countBindingSets(BindingSetAssignment assignment) {
+		int count = 0;
+		for (BindingSet ignored : assignment.getBindingSets()) {
+			count++;
+		}
+		return count;
 	}
 
 	private static Optional<StatementPattern> findStatementPatternByPredicate(TupleExpr tupleExpr, IRI predicate) {

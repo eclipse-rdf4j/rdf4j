@@ -1305,7 +1305,7 @@ class LmdbEvaluationStatistics
 		}
 
 		countExactJoinSurfaceCall();
-		 rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(prefixFactors, factor, joinVarName);
 		if (isFiniteNonNegative(rows)) {
 			return rows;
 		}

@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -729,9 +730,8 @@ final class LmdbDeferredFilterPlacer {
 			firstFactorOrder = Math.min(firstFactorOrder, factor.firstFactorOrder);
 			lastFactorOrder = Math.max(lastFactorOrder, factor.lastFactorOrder);
 		}
-		TupleExpr filteredRoot = materializeFiniteBindingWindow(selectedRoots, List.of(deferredFilter))
-				.orElseGet(() -> filterWrapper.wrap(buildJoinRoot(selectedRoots), List.of(deferredFilter),
-						"bindingAssignments"));
+		TupleExpr filteredRoot = materializeFiniteBindingWindowOrWrap(selectedRoots, List.of(deferredFilter),
+				"bindingAssignments");
 		SegmentFactor groupedFactor = new SegmentFactor(filteredRoot, containedPatterns, firstFactorOrder,
 				lastFactorOrder);
 		int insertionIndex = window.startIndex;
@@ -898,13 +898,24 @@ final class LmdbDeferredFilterPlacer {
 			windowRoots.addLast(factor.tupleExpr);
 			containedPatterns.addAll(factor.containedPatterns);
 		}
-		TupleExpr filteredRoot = materializeFiniteBindingWindow(windowRoots, filters)
-				.orElseGet(() -> filterWrapper.wrap(buildJoinRoot(windowRoots), filters, placement));
+		TupleExpr filteredRoot = materializeFiniteBindingWindowOrWrap(windowRoots, filters, placement);
 		for (int i = window[1]; i >= window[0]; i--) {
 			factors.remove(i);
 		}
 		factors.add(window[0], new SegmentFactor(filteredRoot, containedPatterns, firstFactorOrder, lastFactorOrder));
 		return true;
+	}
+
+	private TupleExpr materializeFiniteBindingWindowOrWrap(Deque<TupleExpr> roots, List<DeferredFilter> filters,
+			String placement) {
+		Optional<TupleExpr> materialized = materializeFiniteBindingWindow(roots, filters);
+		if (materialized.isPresent()) {
+			for (DeferredFilter filter : filters) {
+				filter.applied = true;
+			}
+			return materialized.get();
+		}
+		return filterWrapper.wrap(buildJoinRoot(roots), filters, placement);
 	}
 
 	private Optional<TupleExpr> materializeFiniteBindingWindow(Deque<TupleExpr> roots, List<DeferredFilter> filters) {
@@ -969,7 +980,22 @@ final class LmdbDeferredFilterPlacer {
 		BindingSetAssignment materialized = new BindingSetAssignment();
 		materialized.setBindingNames(bindingNames);
 		materialized.setBindingSets(rows);
+		copyPlannedMetrics(assignments, materialized);
 		return Optional.of(materialized);
+	}
+
+	private void copyPlannedMetrics(List<BindingSetAssignment> assignments, BindingSetAssignment materialized) {
+		for (BindingSetAssignment assignment : assignments) {
+			for (Map.Entry<String, String> entry : assignment.getStringMetricsPlanned().entrySet()) {
+				materialized.setStringMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Double> entry : assignment.getDoubleMetricsPlanned().entrySet()) {
+				materialized.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+			}
+			for (Map.Entry<String, Long> entry : assignment.getLongMetricsPlanned().entrySet()) {
+				materialized.setLongMetricPlanned(entry.getKey(), entry.getValue());
+			}
+		}
 	}
 
 	private boolean filtersCoverTouchedAssignmentBindings(List<BindingSetAssignment> assignments,
@@ -1072,6 +1098,10 @@ final class LmdbDeferredFilterPlacer {
 			return isMaterializableFiniteCondition(and.getLeftArg())
 					&& isMaterializableFiniteCondition(and.getRightArg());
 		}
+		if (condition instanceof Or or) {
+			return isMaterializableFiniteCondition(or.getLeftArg())
+					&& isMaterializableFiniteCondition(or.getRightArg());
+		}
 		if (condition instanceof Compare compare) {
 			return (compare.getOperator() == Compare.CompareOp.EQ || compare.getOperator() == Compare.CompareOp.NE)
 					&& isFiniteConditionOperand(compare.getLeftArg())
@@ -1101,6 +1131,10 @@ final class LmdbDeferredFilterPlacer {
 		if (condition instanceof And and) {
 			return containsModeSensitiveFiniteValue(and.getLeftArg(), row)
 					|| containsModeSensitiveFiniteValue(and.getRightArg(), row);
+		}
+		if (condition instanceof Or or) {
+			return containsModeSensitiveFiniteValue(or.getLeftArg(), row)
+					|| containsModeSensitiveFiniteValue(or.getRightArg(), row);
 		}
 		if (condition instanceof Compare compare) {
 			return isModeSensitiveFiniteValue(compare.getLeftArg(), row)
@@ -1135,6 +1169,9 @@ final class LmdbDeferredFilterPlacer {
 	private boolean evaluateFiniteCondition(ValueExpr condition, BindingSet row) {
 		if (condition instanceof And and) {
 			return evaluateFiniteCondition(and.getLeftArg(), row) && evaluateFiniteCondition(and.getRightArg(), row);
+		}
+		if (condition instanceof Or or) {
+			return evaluateFiniteCondition(or.getLeftArg(), row) || evaluateFiniteCondition(or.getRightArg(), row);
 		}
 		if (condition instanceof Compare compare) {
 			return evaluateFiniteCompare(compare, row);
