@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -67,6 +69,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
@@ -76,11 +79,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimiz
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -212,6 +217,59 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbPipelineAttachesReadOnlyLmdbLookupMetadataBeforeCompare(@TempDir File dataDir) throws Exception {
+		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+		try {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			IRI missingSubject = vf.createIRI("urn:lmdb-normalize:missing-subject");
+			IRI missingPredicate = vf.createIRI("urn:lmdb-normalize:missing-predicate");
+			IRI missingFilterIri = vf.createIRI("urn:lmdb-normalize:missing-filter");
+			Literal filterLiteral = vf.createLiteral("filter-value");
+			Literal valuesLiteral = vf.createLiteral("values-value");
+
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingSubject));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingFilterIri));
+
+			StatementPattern statementPattern = new StatementPattern(Var.of("s", missingSubject),
+					Var.of("p", missingPredicate), Var.of("o"));
+			BindingSetAssignment values = new BindingSetAssignment();
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("choice", missingFilterIri);
+			row.addBinding("literalChoice", valuesLiteral);
+			values.setBindingSets(List.of(row));
+
+			Compare literalFilter = new Compare(Var.of("o"), new ValueConstant(filterLiteral), Compare.CompareOp.EQ);
+			Compare varFilter = new Compare(Var.of("fixed", missingFilterIri), Var.of("o"), Compare.CompareOp.NE);
+			Filter query = new Filter(new Join(statementPattern, values), new And(literalFilter, varFilter));
+
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new LmdbEvaluationStatistics(valueStore, null, null)).getOptimizers()) {
+				if (optimizer instanceof CompareOptimizer) {
+					break;
+				}
+				optimizer.optimize(query, null, EmptyBindingSet.getInstance());
+			}
+
+			assertLmdbVarResolvedMissing(valueStore, statementPattern.getSubjectVar(), missingSubject);
+			assertLmdbVarResolvedMissing(valueStore, statementPattern.getPredicateVar(), missingPredicate);
+			assertOwnedLmdbValue(valueStore, ((ValueConstant) literalFilter.getRightArg()).getValue());
+			assertLmdbVarResolvedMissing(valueStore, (Var) varFilter.getLeftArg(), missingFilterIri);
+
+			BindingSet normalizedRow = values.getBindingSets().iterator().next();
+			assertOwnedLmdbValue(valueStore, normalizedRow.getValue("choice"));
+			assertOwnedLmdbValue(valueStore, normalizedRow.getValue("literalChoice"));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingSubject));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingFilterIri));
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(normalizedRow.getValue("choice")));
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void lmdbPreSketchPipelineRetainsSmallLiteralFilterEvidence() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -331,6 +389,20 @@ class LmdbOptimizerPipelineTest {
 			}
 		}
 		return -1;
+	}
+
+	private static void assertLmdbVarResolvedMissing(ValueStore valueStore, Var var, Value originalValue)
+			throws Exception {
+		LmdbValueVar lmdbValueVar = assertInstanceOf(LmdbValueVar.class, var);
+		assertEquals(originalValue, var.getValue());
+		assertOwnedLmdbValue(valueStore, var.getValue());
+		assertTrue(lmdbValueVar.isLmdbValueResolved());
+		assertEquals(null, lmdbValueVar.getLmdbValue());
+	}
+
+	private static void assertOwnedLmdbValue(ValueStore valueStore, Value value) {
+		LmdbValue lmdbValue = assertInstanceOf(LmdbValue.class, value);
+		assertSame(valueStore, lmdbValue.getValueStoreRevision().getValueStore());
 	}
 
 	private static List<Class<? extends QueryOptimizer>> nonCheckerOptimizerTypesAfter(List<QueryOptimizer> optimizers,

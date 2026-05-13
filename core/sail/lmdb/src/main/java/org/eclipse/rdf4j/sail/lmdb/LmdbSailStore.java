@@ -345,6 +345,9 @@ class LmdbSailStore implements SailStore {
 				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
 				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
 				sketchBasedJoinEstimator.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
+				sketchBasedJoinEstimator.setExactJoinSurfaceProvider(new LmdbSamplingJoinCardinalityEstimator(
+						valueStore, tripleStore, statementPatternCardinalitySource,
+						this::lockEstimatorExactJoinSurfaceProvider));
 				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
 				if (!snapshotExists) {
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
@@ -357,6 +360,25 @@ class LmdbSailStore implements SailStore {
 				close();
 			}
 		}
+	}
+
+	private LmdbSamplingJoinCardinalityEstimator.Guard lockEstimatorExactJoinSurfaceProvider() {
+		boolean refreshThread = SketchBasedJoinEstimator.REFRESH_THREAD_NAME.equals(Thread.currentThread().getName());
+		boolean locked = refreshThread ? sinkStoreAccessLock.tryLock()
+				: lockEstimatorExactJoinSurfaceProviderBlocking();
+		if (!locked) {
+			return null;
+		}
+		if (storeTxnStarted.get()) {
+			sinkStoreAccessLock.unlock();
+			return null;
+		}
+		return sinkStoreAccessLock::unlock;
+	}
+
+	private boolean lockEstimatorExactJoinSurfaceProviderBlocking() {
+		sinkStoreAccessLock.lock();
+		return true;
 	}
 
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {

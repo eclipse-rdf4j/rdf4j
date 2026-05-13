@@ -419,6 +419,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private volatile JoinStatsProvider learnedStatsProvider;
 	private volatile PatternFilterSamplingEstimator patternFilterSamplingEstimator;
 	private volatile PatternCardinalityProvider patternCardinalityProvider;
+	private volatile ExactJoinSurfaceProvider exactJoinSurfaceProvider;
 	private volatile SketchPlannerPath lastJoinOrderPlannerPath = SketchPlannerPath.ROBUST_NOT_READY;
 	private volatile SketchPlannerPath lastRobustCardinalityPath = SketchPlannerPath.ROBUST_NOT_READY;
 
@@ -1820,9 +1821,27 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.patternCardinalityProvider = patternCardinalityProvider;
 	}
 
+	public void setExactJoinSurfaceProvider(ExactJoinSurfaceProvider exactJoinSurfaceProvider) {
+		this.exactJoinSurfaceProvider = exactJoinSurfaceProvider;
+	}
+
 	@FunctionalInterface
 	public interface PatternCardinalityProvider {
 		double estimate(StatementPattern pattern);
+	}
+
+	@FunctionalInterface
+	public interface ExactJoinSurfaceProvider {
+		double UNSUPPORTED = -1.0d;
+		double NO_EXACT_ESTIMATE = -2.0d;
+
+		double estimate(ExactJoinSurfaceRequest request);
+	}
+
+	public record ExactJoinSurfaceRequest(List<StatementPattern> patterns, String sharedVarName,
+			StatementPattern scanPattern, Component scanSharedComponent, StatementPattern probePattern,
+			Component probeSharedComponent, long rowBudget, int exactDistinctLimit, int sampleSize,
+			double disconnectedRowCap, boolean pairwiseFallback) {
 	}
 
 	@FunctionalInterface
@@ -6544,6 +6563,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return new TuplePlanEstimate(0.0d, 0.0d, 1.0d, Collections.emptyMap());
 		}
 
+		Long estimatedRows = estimateBoundPatternRows(pattern);
+		if (estimatedRows != null) {
+			double rows = normalizeRows(estimatedRows);
+			return new TuplePlanEstimate(rows, rows, 1.0d, conservativeBoundPatternVarStats(pattern, rows));
+		}
+
 		double rows = 0.0d;
 		Map<String, Set<Value>> distinctValues = new HashMap<>();
 		try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(subject, predicate,
@@ -6571,6 +6596,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					pattern));
 		}
 		return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
+	}
+
+	private Map<String, VarPlanStats> conservativeBoundPatternVarStats(StatementPattern pattern, double rows) {
+		if (rows <= 0.0d) {
+			return Collections.emptyMap();
+		}
+		Map<String, VarPlanStats> varStats = null;
+		for (Component component : COMPONENT_VALUES) {
+			Var var = varForComponent(pattern, component);
+			if (var == null || var.hasValue() || var.getName() == null) {
+				continue;
+			}
+			if (varStats == null) {
+				varStats = newVarStatsMap(4);
+			}
+			varStats.putIfAbsent(var.getName(), new VarPlanStats(rows, null, pattern));
+		}
+		return varStats == null ? Collections.emptyMap() : varStats;
 	}
 
 	private int boundComponentCount(StatementPattern pattern) {
@@ -6633,10 +6676,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		StatementPattern scanPattern = scanLeft ? left : right;
 		StatementPattern probePattern = scanLeft ? right : left;
 		Component scanSharedComponent = scanLeft ? leftSharedComponent : rightSharedComponent;
+		Component probeSharedComponent = scanLeft ? rightSharedComponent : leftSharedComponent;
 		double scanRowsEstimate = scanLeft ? leftRowsEstimate : rightRowsEstimate;
 		if (!Double.isFinite(scanRowsEstimate) || scanRowsEstimate <= 0.0d
 				|| scanRowsEstimate > zeroIntersectionRowBudget) {
 			return null;
+		}
+
+		ExactJoinSurfaceProvider provider = exactJoinSurfaceProvider;
+		if (provider != null) {
+			double providerRows = provider.estimate(new ExactJoinSurfaceRequest(List.of(scanPattern, probePattern),
+					sharedVarName, scanPattern, scanSharedComponent, probePattern, probeSharedComponent,
+					zeroIntersectionRowBudget, zeroIntersectionExactDistinctLimit, zeroIntersectionSampleSize,
+					disconnectedRows, true));
+			if (providerRows == ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE) {
+				return null;
+			}
+			if (Double.isFinite(providerRows) && providerRows >= 0.0d) {
+				return normalizeRows(Math.min(disconnectedRows, providerRows));
+			}
 		}
 
 		SharedVarScan smallerScan = scanSharedVarRows(scanPattern, scanSharedComponent, sharedVarName);
@@ -6737,13 +6795,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return 0L;
 		}
 
-		Resource subject = exactBoundResource(boundPattern.getSubjectVar());
-		IRI predicate = exactBoundIri(boundPattern.getPredicateVar());
-		Value object = exactBoundValue(boundPattern.getObjectVar());
 		Resource[] contexts = exactBoundContexts(boundPattern.getContextVar());
 		if (contexts == null) {
 			return 0L;
 		}
+
+		Long estimatedRows = estimateBoundPatternRows(boundPattern);
+		if (estimatedRows != null) {
+			return estimatedRows;
+		}
+
+		Resource subject = exactBoundResource(boundPattern.getSubjectVar());
+		IRI predicate = exactBoundIri(boundPattern.getPredicateVar());
+		Value object = exactBoundValue(boundPattern.getObjectVar());
 
 		long rows = 0L;
 		try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(subject, predicate,
@@ -6760,6 +6824,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return null;
 		}
 		return rows;
+	}
+
+	private Long estimateBoundPatternRows(StatementPattern boundPattern) {
+		PatternCardinalityProvider provider = patternCardinalityProvider;
+		if (provider == null) {
+			return null;
+		}
+		double rows = provider.estimate(boundPattern);
+		if (!Double.isFinite(rows) || rows < 0.0d) {
+			return null;
+		}
+		return Math.round(rows);
 	}
 
 	private StatementPattern bindPatternVar(StatementPattern pattern, String sharedVarName, Value sharedValue) {
@@ -7193,6 +7269,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		if (scanPattern == null) {
 			return null;
+		}
+
+		ExactJoinSurfaceProvider provider = exactJoinSurfaceProvider;
+		if (provider != null) {
+			double providerRows = provider.estimate(new ExactJoinSurfaceRequest(List.copyOf(patterns), joinVarName,
+					scanPattern, scanComponent, null, null, zeroIntersectionRowBudget,
+					zeroIntersectionExactDistinctLimit, zeroIntersectionSampleSize, Double.POSITIVE_INFINITY, false));
+			if (providerRows == ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE) {
+				return null;
+			}
+			if (Double.isFinite(providerRows) && providerRows >= 0.0d) {
+				return normalizeRows(providerRows);
+			}
 		}
 
 		SharedVarScan scan = scanSharedVarRows(scanPattern, scanComponent, joinVarName);

@@ -961,7 +961,7 @@ final class SketchJoinOrderPlanner {
 		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(factorIndex,
 				initiallyBoundVarMask);
 		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(factorIndex, 0L, initiallyBoundVarMask,
-				conditionedEstimate.outputRows(), null);
+				conditionedEstimate.outputRows(), null, JoinFactorCostModel.EstimationTier.CHEAP);
 		if (isExactStatementDirectLookup(physicalEstimate)) {
 			return false;
 		}
@@ -2947,7 +2947,7 @@ final class SketchJoinOrderPlanner {
 				continue;
 			}
 			FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(candidate, plan.mask(), boundVarMask,
-					factorOutputRows[candidate], plan.estimate());
+					factorOutputRows[candidate], plan.estimate(), JoinFactorCostModel.EstimationTier.CHEAP);
 			if (isExactStatementDirectLookup(physicalEstimate)) {
 				continue;
 			}
@@ -3106,7 +3106,7 @@ final class SketchJoinOrderPlanner {
 				continue;
 			}
 			FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(candidate, plan.mask(), boundVarMask,
-					factorOutputRows[candidate], plan.estimate());
+					factorOutputRows[candidate], plan.estimate(), JoinFactorCostModel.EstimationTier.CHEAP);
 			if (isExactStatementDirectLookup(physicalEstimate)) {
 				guards |= bit(candidate);
 			}
@@ -3670,6 +3670,13 @@ final class SketchJoinOrderPlanner {
 
 	private FactorPhysicalEstimate factorPhysicalEstimate(int factorIndex, long mask, long currentlyBoundVarMask,
 			double defaultFactorRows, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
+		return factorPhysicalEstimate(factorIndex, mask, currentlyBoundVarMask, defaultFactorRows, prefixEstimate,
+				JoinFactorCostModel.EstimationTier.EXACT);
+	}
+
+	private FactorPhysicalEstimate factorPhysicalEstimate(int factorIndex, long mask, long currentlyBoundVarMask,
+			double defaultFactorRows, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			JoinFactorCostModel.EstimationTier estimationTier) {
 		double factorRows = defaultFactorRows;
 		double accessWorkRows = Double.NaN;
 		boolean physicalComparable = false;
@@ -3682,7 +3689,7 @@ final class SketchJoinOrderPlanner {
 		boolean endpointDomainPreparation = isEndpointDomainPreparationStep(factorIndex, mask, prefixEstimate);
 		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = isPlainBindingSetAssignment(factorIndex) ? null
 				: factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
-						!endpointDomainPreparation);
+						!endpointDomainPreparation, estimationTier);
 		if (factorCostEstimate != null) {
 			if (isFiniteNonNegative(factorCostEstimate.getOutputRows())) {
 				factorRows = factorCostEstimate.getOutputRows();
@@ -3746,12 +3753,20 @@ final class SketchJoinOrderPlanner {
 
 	private JoinFactorCostModel.FactorCostEstimate factorCostEstimate(int factorIndex, long mask,
 			long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
-		return factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate, true);
+		return factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate, true,
+				JoinFactorCostModel.EstimationTier.EXACT);
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate factorCostEstimate(int factorIndex, long mask,
 			long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
 			boolean nestedIteratorInvocation) {
+		return factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate, nestedIteratorInvocation,
+				JoinFactorCostModel.EstimationTier.EXACT);
+	}
+
+	private JoinFactorCostModel.FactorCostEstimate factorCostEstimate(int factorIndex, long mask,
+			long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			boolean nestedIteratorInvocation, JoinFactorCostModel.EstimationTier estimationTier) {
 		if (factorCostModel == null) {
 			return null;
 		}
@@ -3761,17 +3776,18 @@ final class SketchJoinOrderPlanner {
 			double distinctLookupBindings = distinctLookupBindings(factorIndex, mask, prefixEstimate, accessShape,
 					accessShape == null ? 0 : accessShape.lookupBoundComponentMask());
 			ContextualFactorCostKey key = new ContextualFactorCostKey(mask, factorIndex, currentlyBoundVarMask,
-					doubleKey(outerPrefixRows), doubleKey(distinctLookupBindings), nestedIteratorInvocation);
+					doubleKey(outerPrefixRows), doubleKey(distinctLookupBindings), nestedIteratorInvocation,
+					normalizedEstimationTier(estimationTier));
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = contextualFactorCostMemo.get(key);
 			if (estimate == null) {
 				estimate = Optional.ofNullable(estimateFactorCostUncached(factorIndex, mask, currentlyBoundVarMask,
-						outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation));
+						outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, estimationTier));
 				contextualFactorCostMemo.put(key, estimate);
 			}
 			return estimate.orElse(null);
 		}
 		int stateIndex = stateMemoIndex(mask);
-		if (stateIndex >= 0) {
+		if (stateIndex >= 0 && normalizedEstimationTier(estimationTier) == JoinFactorCostModel.EstimationTier.EXACT) {
 			JoinFactorCostModel.FactorCostEstimate[] estimates = factorCostByState[stateIndex];
 			boolean[] loaded = factorCostLoadedByState[stateIndex];
 			if (estimates == null) {
@@ -3786,11 +3802,11 @@ final class SketchJoinOrderPlanner {
 			}
 			return estimates[factorIndex];
 		}
-		FactorCostKey key = new FactorCostKey(mask, factorIndex);
+		FactorCostKey key = new FactorCostKey(mask, factorIndex, normalizedEstimationTier(estimationTier));
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostMemo.get(key);
 		if (estimate == null) {
 			estimate = Optional.ofNullable(estimateFactorCostUncached(factorIndex, mask, currentlyBoundVarMask,
-					null));
+					null, estimationTier));
 			factorCostMemo.put(key, estimate);
 		}
 		return estimate.orElse(null);
@@ -3798,6 +3814,13 @@ final class SketchJoinOrderPlanner {
 
 	private JoinFactorCostModel.FactorCostEstimate estimateFactorCostUncached(int factorIndex,
 			long mask, long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
+		return estimateFactorCostUncached(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
+				JoinFactorCostModel.EstimationTier.EXACT);
+	}
+
+	private JoinFactorCostModel.FactorCostEstimate estimateFactorCostUncached(int factorIndex,
+			long mask, long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			JoinFactorCostModel.EstimationTier estimationTier) {
 		double outerPrefixRows = effectiveInvocationRows(mask, prefixEstimate);
 		double distinctLookupBindings = Double.NaN;
 		if (prefixEstimate != null) {
@@ -3806,21 +3829,34 @@ final class SketchJoinOrderPlanner {
 					accessShape == null ? 0 : accessShape.lookupBoundComponentMask());
 		}
 		return estimateFactorCostUncached(factorIndex, mask, currentlyBoundVarMask, outerPrefixRows,
-				distinctLookupBindings, prefixEstimate != null);
+				distinctLookupBindings, prefixEstimate != null, estimationTier);
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate estimateFactorCostUncached(int factorIndex,
 			long mask, long currentlyBoundVarMask, double outerPrefixRows, double distinctLookupBindings,
 			boolean nestedIteratorInvocation) {
+		return estimateFactorCostUncached(factorIndex, mask, currentlyBoundVarMask, outerPrefixRows,
+				distinctLookupBindings, nestedIteratorInvocation, JoinFactorCostModel.EstimationTier.EXACT);
+	}
+
+	private JoinFactorCostModel.FactorCostEstimate estimateFactorCostUncached(int factorIndex,
+			long mask, long currentlyBoundVarMask, double outerPrefixRows, double distinctLookupBindings,
+			boolean nestedIteratorInvocation, JoinFactorCostModel.EstimationTier estimationTier) {
 		Map<String, Set<Value>> finiteBindingValues = finiteBindingLookupValues(factorIndex, mask,
 				currentlyBoundVarMask);
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(variableNames,
 				currentlyBoundVarMask,
 				outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, false, finiteBindingValues,
-				selectedPrefixFactors(mask));
+				selectedPrefixFactors(mask))
+				.withEstimationTier(estimationTier);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostModel
 				.estimateFactorCost(factors.get(factorIndex).tupleExpr(), context);
 		return estimate.orElse(null);
+	}
+
+	private static JoinFactorCostModel.EstimationTier normalizedEstimationTier(
+			JoinFactorCostModel.EstimationTier estimationTier) {
+		return estimationTier == null ? JoinFactorCostModel.EstimationTier.EXACT : estimationTier;
 	}
 
 	private List<TupleExpr> selectedPrefixFactors(long mask) {
@@ -5946,11 +5982,12 @@ final class SketchJoinOrderPlanner {
 	private record AccessShapeKey(long mask, int factorIndex) {
 	}
 
-	private record FactorCostKey(long mask, int factorIndex) {
+	private record FactorCostKey(long mask, int factorIndex, JoinFactorCostModel.EstimationTier estimationTier) {
 	}
 
 	private record ContextualFactorCostKey(long mask, int factorIndex, long boundVarMask, long outerPrefixRows,
-			long distinctLookupBindings, boolean nestedIteratorInvocation) {
+			long distinctLookupBindings, boolean nestedIteratorInvocation,
+			JoinFactorCostModel.EstimationTier estimationTier) {
 	}
 
 	private record ConditionedFactorEstimateKey(int factorIndex, long boundVarMask) {

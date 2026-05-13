@@ -13,13 +13,18 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -36,6 +41,129 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 	private static final String SKEW_RATIO_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionSkewRatio";
 	private static final String ROW_BUDGET_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionRowBudget";
 	private static final String SAMPLE_SIZE_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionSampleSize";
+
+	@Test
+	void exactJoinSurfaceProviderShortCircuitsGenericSharedValueScan() {
+		IRI leftPredicate = VF.createIRI("urn:left");
+		IRI rightPredicate = VF.createIRI("urn:right");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new FailingStatementSource(), config());
+		AtomicBoolean providerCalled = new AtomicBoolean();
+		estimator.setPatternCardinalityProvider(pattern -> 1.0d);
+		estimator.setExactJoinSurfaceProvider(request -> {
+			providerCalled.set(true);
+			return 7.0d;
+		});
+
+		double rows = estimator.estimateExactJoinSurfaceRows(List.of(
+				new StatementPattern(Var.of("s"), Var.of("left", leftPredicate), Var.of("x")),
+				new StatementPattern(Var.of("x"), Var.of("right", rightPredicate), Var.of("o"))), "x");
+
+		assertEquals(7.0d, rows);
+		assertTrue(providerCalled.get(), "LMDB provider should be consulted before generic Value scans");
+	}
+
+	@Test
+	void exactJoinSurfaceProviderUnsupportedFallsBackToGenericSharedValueScan() {
+		IRI leftPredicate = VF.createIRI("urn:left");
+		IRI rightPredicate = VF.createIRI("urn:right");
+		Resource x1 = VF.createIRI("urn:x1");
+		Resource x2 = VF.createIRI("urn:x2");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		store.add(st(VF.createIRI("urn:s1"), leftPredicate, x1));
+		store.add(st(VF.createIRI("urn:s2"), leftPredicate, x2));
+		store.add(st(x1, rightPredicate, VF.createLiteral("one")));
+		store.add(st(x2, rightPredicate, VF.createLiteral("two")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		AtomicBoolean providerCalled = new AtomicBoolean();
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (rightPredicate.equals(pattern.getPredicateVar().getValue()) && pattern.getSubjectVar().hasValue()) {
+				return 1.0d;
+			}
+			return 2.0d;
+		});
+		estimator.setExactJoinSurfaceProvider(request -> {
+			providerCalled.set(true);
+			return SketchBasedJoinEstimator.ExactJoinSurfaceProvider.UNSUPPORTED;
+		});
+
+		double rows = estimator.estimateExactJoinSurfaceRows(List.of(
+				new StatementPattern(Var.of("s"), Var.of("left", leftPredicate), Var.of("x")),
+				new StatementPattern(Var.of("x"), Var.of("right", rightPredicate), Var.of("o"))), "x");
+
+		assertEquals(2.0d, rows);
+		assertTrue(providerCalled.get(), "Provider should be consulted even when it declines the request");
+	}
+
+	@Test
+	void exactJoinSurfaceProviderNoExactEstimateSkipsGenericSharedValueScan() {
+		IRI leftPredicate = VF.createIRI("urn:left");
+		IRI rightPredicate = VF.createIRI("urn:right");
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new FailingStatementSource(), config());
+		AtomicBoolean providerCalled = new AtomicBoolean();
+		estimator.setPatternCardinalityProvider(pattern -> 1.0d);
+		estimator.setExactJoinSurfaceProvider(request -> {
+			providerCalled.set(true);
+			return SketchBasedJoinEstimator.ExactJoinSurfaceProvider.NO_EXACT_ESTIMATE;
+		});
+
+		double rows = estimator.estimateExactJoinSurfaceRows(List.of(
+				new StatementPattern(Var.of("s"), Var.of("left", leftPredicate), Var.of("x")),
+				new StatementPattern(Var.of("x"), Var.of("right", rightPredicate), Var.of("o"))), "x");
+
+		assertEquals(-1.0d, rows);
+		assertTrue(providerCalled.get(), "Provider should be able to stop a duplicate generic exact scan");
+	}
+
+	@Test
+	void boundPatternProbesUseCardinalityProviderBeforeStatementScanning() {
+		IRI leftPredicate = VF.createIRI("urn:left");
+		IRI rightPredicate = VF.createIRI("urn:right");
+		Resource x1 = VF.createIRI("urn:x1");
+		Resource x2 = VF.createIRI("urn:x2");
+		ProbeThrowingStatementSource store = new ProbeThrowingStatementSource(rightPredicate);
+		store.add(st(VF.createIRI("urn:s1"), leftPredicate, x1));
+		store.add(st(VF.createIRI("urn:s2"), leftPredicate, x2));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (rightPredicate.equals(pattern.getPredicateVar().getValue()) && pattern.getSubjectVar().hasValue()) {
+				return 5.0d;
+			}
+			if (leftPredicate.equals(pattern.getPredicateVar().getValue())) {
+				return 2.0d;
+			}
+			return 100.0d;
+		});
+
+		double rows = estimator.estimateExactJoinSurfaceRows(List.of(
+				new StatementPattern(Var.of("s"), Var.of("left", leftPredicate), Var.of("x")),
+				new StatementPattern(Var.of("x"), Var.of("right", rightPredicate), Var.of("o"))), "x");
+
+		assertEquals(10.0d, rows);
+		assertFalse(store.probeScanned, "Bound probes should use page-walk cardinality instead of statement scans");
+	}
+
+	@Test
+	void valuesBoundStatementPatternPlanUsesCardinalityProviderBeforeDistinctValueScan() throws Exception {
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		Resource observation = VF.createIRI("urn:observation:1");
+		SwitchingStatementSource store = new SwitchingStatementSource();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		store.failOnRead = true;
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (hasObservation.equals(pattern.getPredicateVar().getValue())
+					&& observation.equals(pattern.getObjectVar().getValue())) {
+				return 7.0d;
+			}
+			return -1.0d;
+		});
+
+		StatementPattern pattern = new StatementPattern(Var.of("enc"), Var.of("hasObservation", hasObservation),
+				Var.of("obs", observation));
+
+		SketchBasedJoinEstimator.TuplePlanEstimate estimate = invokeExactBoundStatementPatternPlan(estimator, pattern);
+
+		assertEquals(7.0d, estimate.outputRows());
+	}
 
 	@Test
 	void plannerUsesTupleSketchDotProductForRareOverlap() throws Exception {
@@ -126,7 +254,58 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		return VF.createStatement(subject, predicate, object);
 	}
 
+	private static SketchBasedJoinEstimator.TuplePlanEstimate invokeExactBoundStatementPatternPlan(
+			SketchBasedJoinEstimator estimator, StatementPattern pattern) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("exactBoundStatementPatternPlan",
+				StatementPattern.class);
+		method.setAccessible(true);
+		return (SketchBasedJoinEstimator.TuplePlanEstimate) method.invoke(estimator, pattern);
+	}
+
 	private record RareOverlapFixture(SketchBasedJoinEstimator estimator, Join join, double actualJoinRows) {
+	}
+
+	private static final class FailingStatementSource extends StubSketchStatementSource {
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			throw new AssertionError("generic Value shared-var scan should not run");
+		}
+	}
+
+	private static final class SwitchingStatementSource extends StubSketchStatementSource {
+
+		private boolean failOnRead;
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			if (failOnRead) {
+				throw new AssertionError("bound VALUES planning should use PatternCardinalityProvider first");
+			}
+			return super.getStatements(subj, pred, obj, contexts);
+		}
+	}
+
+	private static final class ProbeThrowingStatementSource extends StubSketchStatementSource {
+
+		private final IRI probePredicate;
+		private boolean probeScanned;
+
+		private ProbeThrowingStatementSource(IRI probePredicate) {
+			this.probePredicate = probePredicate;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			if (subj != null && probePredicate.equals(pred)) {
+				probeScanned = true;
+				throw new AssertionError("bound probe should use PatternCardinalityProvider first");
+			}
+			return super.getStatements(subj, pred, obj, contexts);
+		}
 	}
 
 	private record PropertyState(String[] keys, String[] values) {

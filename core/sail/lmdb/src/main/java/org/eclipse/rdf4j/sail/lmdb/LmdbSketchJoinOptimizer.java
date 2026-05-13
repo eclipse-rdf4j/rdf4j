@@ -107,6 +107,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final int MAX_GUARANTEE_OPTION_CANDIDATE_METRICS = 8;
 	private static final double GUARANTEE_OPTION_WORK_EQUIVALENCE_ABSOLUTE_ROWS = 4.0d;
 	private static final double GUARANTEE_OPTION_WORK_EQUIVALENCE_RELATIVE_RATIO = 0.05d;
+	private static final double SPECULATIVE_ANCHOR_WORK_IMPROVEMENT_RATIO = 0.80d;
+	private static final double SPECULATIVE_ANCHOR_ROW_IMPROVEMENT_RATIO = 0.50d;
+	private static final double SPECULATIVE_ANCHOR_MAX_ROW_GROWTH_RATIO = 1.50d;
+	private static final double SPECULATIVE_ANCHOR_SMALL_OUTPUT_ROWS = 512.0d;
 	private static final String FINITE_ANCHOR_PLANNER_ID = "lmdb-finite-anchor";
 	private static final String FINITE_ANCHOR_PLANNER_PATH = "CANONICAL_FINITE_ANCHOR";
 	private static final String LMDB_PHYSICAL_REFINEMENT = "costModel=lmdb, accessPathSelection=per-step";
@@ -1590,7 +1594,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (!(statistics instanceof JoinFactorCostModel costModel)) {
 				return;
 			}
-			if (hasAcceptedPlannerStepEstimate(statementPattern)) {
+			if (hasAcceptedPlannerStepEstimate(statementPattern)
+					&& !needsRepeatedInvocationRefresh(statementPattern)) {
 				return;
 			}
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = estimateStatementPatternCost(costModel,
@@ -1629,6 +1634,16 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return LmdbJoinPlanSupport.isFiniteNonNegative(
 					statementPattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS))
 					&& statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE) != null;
+		}
+
+		private boolean needsRepeatedInvocationRefresh(StatementPattern statementPattern) {
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(repeatedSubplanInvocations)
+					|| repeatedSubplanInvocations <= 1.0d) {
+				return false;
+			}
+			double plannedInvocations = statementPattern.getDoubleMetricPlanned("plannedRepeatedInvocations");
+			return !LmdbJoinPlanSupport.isFiniteNonNegative(plannedInvocations)
+					|| plannedInvocations < repeatedSubplanInvocations;
 		}
 
 		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateStatementPatternCost(
@@ -1744,21 +1759,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private double estimatedSubplanInvocationRows(TupleExpr tupleExpr) {
 			double rows = estimatedSubplanOutputRows(tupleExpr);
-			double finiteUpperBound = finiteBindingInvocationUpperBound(tupleExpr);
-			double directLookupUpperBound = exactDirectLookupInvocationUpperBound(tupleExpr);
-			if (LmdbJoinPlanSupport.isFiniteNonNegative(directLookupUpperBound)) {
-				finiteUpperBound = LmdbJoinPlanSupport.isFiniteNonNegative(finiteUpperBound)
-						? Math.min(finiteUpperBound, directLookupUpperBound)
-						: directLookupUpperBound;
-			}
-			if (LmdbJoinPlanSupport.isFiniteNonNegative(finiteUpperBound)) {
-				rows = Math.min(rows, finiteUpperBound);
-			}
 			double plannedWorkRows = maxPlannedWorkRows(tupleExpr);
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(plannedWorkRows)) {
-				rows = Math.max(rows, LmdbJoinPlanSupport.isFiniteNonNegative(finiteUpperBound)
-						? Math.min(plannedWorkRows, finiteUpperBound)
-						: plannedWorkRows);
+				rows = Math.max(rows, plannedWorkRows);
 			}
 			return Math.max(1.0d, rows);
 		}
@@ -2934,11 +2937,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 							.orElse(selectedPlan);
 			selectedPlan = guaranteePlanOption(segment, boundBeforeSegment, plannerFilters, segmentFilters,
 					selectedPlan, planner);
-			Optional<String> exactEmptyAnchor = exactEmptyFiniteAnchorOption(selectedPlan);
-			if (exactEmptyAnchor.isPresent()) {
-				EmptySet emptySet = exactEmptySet(selectedPlan, exactEmptyAnchor.get());
-				return new OrderedSegment(new ArrayDeque<>(List.of(emptySet)), Map.of(), false);
-			}
 			segmentFilterCount = segmentFilters.size();
 			applyPlannerStepEstimates(selectedPlan);
 			FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
@@ -2989,9 +2987,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				optionPlannerFilters.addAll(costOnlyFilters);
 				JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(option.factors(),
 						new HashSet<>(boundBeforeSegment), optionAlgorithm, optionPlannerFilters);
-				Optional<JoinOrderPlanner.JoinOrderPlan> candidate = bestGuaranteeOptionPlan(option.factors(),
+				GuaranteeOptionPlanSelection candidateSelection = bestGuaranteeOptionPlan(option.factors(),
 						boundBeforeSegment, optionPlannerFilters, optionAlgorithm, planner, attempt.getPlan(),
 						option.name());
+				Optional<JoinOrderPlanner.JoinOrderPlan> candidate = candidateSelection.plan();
 				if (candidate.isEmpty() || !isValidPlannerOrder(option.factors(), candidate.get())) {
 					candidateSummaries.add(GuaranteeOptionCandidate.invalid(option.name(), "no-valid-plan"));
 					continue;
@@ -3006,9 +3005,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						- generatedFiniteAnchorAssignmentWork(candidate.get(), option.name());
 				candidateSummaries.add(GuaranteeOptionCandidate.valid(option.name(), candidate.get(),
 						candidateComparableWork, "valid",
-						guaranteeOptionDetails(candidate.get(), option.satisfiedFilterIndex())));
+						appendGuaranteeOptionDetails(
+								guaranteeOptionDetails(candidate.get(), option.satisfiedFilterIndex()),
+								candidateSelection.details())));
 				if (guaranteePlanOptionBeats(candidate.get(), candidateComparableWork, bestPlan,
-						optionBestComparableWork)) {
+						optionBestComparableWork, option.satisfiedFilterIndex() >= 0)) {
 					bestPlan = candidate.get();
 					bestComparableWork = candidateComparableWork;
 					selectedOption = option.name();
@@ -3058,32 +3059,238 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					candidateSummaries);
 		}
 
-		private Optional<JoinOrderPlanner.JoinOrderPlan> bestGuaranteeOptionPlan(List<TupleExpr> optionFactors,
+		private GuaranteeOptionPlanSelection bestGuaranteeOptionPlan(List<TupleExpr> optionFactors,
 				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> optionPlannerFilters,
 				JoinOrderPlanner.Algorithm optionAlgorithm, JoinOrderPlanner planner,
 				Optional<JoinOrderPlanner.JoinOrderPlan> dynamicPlan, String optionName) {
-			Optional<List<TupleExpr>> canonicalOrder = canonicalFiniteAnchorOrder(optionFactors, boundBeforeSegment,
-					optionPlannerFilters);
-			Optional<JoinOrderPlanner.JoinOrderPlan> fixedPlan = canonicalOrder
-					.flatMap(order -> planner.estimateJoinOrder(order, new HashSet<>(boundBeforeSegment),
-							optionAlgorithm, optionPlannerFilters));
-			if (dynamicPlan.isEmpty() || !isValidPlannerOrder(optionFactors, dynamicPlan.get())) {
-				return fixedPlan;
+			List<NamedGuaranteePlan> candidates = new ArrayList<>(3);
+			addGuaranteePlanCandidate(candidates, "dynamic", dynamicPlan, optionFactors, optionName);
+			Optional<List<TupleExpr>> connectedOrder = finiteAnchorConnectedOrder(optionFactors, boundBeforeSegment,
+					optionName);
+			addGuaranteePlanCandidate(candidates, "fixed-connected",
+					connectedOrder.flatMap(order -> planner.estimateJoinOrder(order, new HashSet<>(boundBeforeSegment),
+							optionAlgorithm, optionPlannerFilters)),
+					optionFactors, optionName);
+			if (connectedOrder.isEmpty()) {
+				Optional<List<TupleExpr>> canonicalOrder = canonicalFiniteAnchorOrder(optionFactors, boundBeforeSegment,
+						optionPlannerFilters);
+				addGuaranteePlanCandidate(candidates, "fixed-canonical",
+						canonicalOrder.flatMap(order -> planner.estimateJoinOrder(order,
+								new HashSet<>(boundBeforeSegment), optionAlgorithm, optionPlannerFilters)),
+						optionFactors, optionName);
 			}
-			if (fixedPlan.isEmpty() || !isValidPlannerOrder(optionFactors, fixedPlan.get())) {
-				return dynamicPlan;
+			if (candidates.isEmpty()) {
+				return new GuaranteeOptionPlanSelection(Optional.empty(), "");
 			}
-			double dynamicComparableWork = dynamicPlan.get()
-					.getEstimatedTotalWork() - generatedFiniteAnchorAssignmentWork(dynamicPlan.get(), optionName);
-			double fixedComparableWork = fixedPlan.get()
-					.getEstimatedTotalWork() - generatedFiniteAnchorAssignmentWork(fixedPlan.get(), optionName);
-			return fixedComparableWork < dynamicComparableWork ? fixedPlan : dynamicPlan;
+			NamedGuaranteePlan best = candidates.get(0);
+			for (int i = 1; i < candidates.size(); i++) {
+				NamedGuaranteePlan candidate = candidates.get(i);
+				if (candidate.comparableWork() < best.comparableWork()) {
+					best = candidate;
+				}
+			}
+			return new GuaranteeOptionPlanSelection(Optional.of(best.plan()),
+					guaranteeOptionCostingDetails(candidates, best));
+		}
+
+		private void addGuaranteePlanCandidate(List<NamedGuaranteePlan> candidates, String name,
+				Optional<JoinOrderPlanner.JoinOrderPlan> plan, List<TupleExpr> optionFactors, String optionName) {
+			if (plan.isEmpty() || !isValidPlannerOrder(optionFactors, plan.get())) {
+				return;
+			}
+			double comparableWork = plan.get()
+					.getEstimatedTotalWork() - generatedFiniteAnchorAssignmentWork(plan.get(), optionName);
+			candidates.add(new NamedGuaranteePlan(name, plan.get(), comparableWork));
+		}
+
+		private String guaranteeOptionCostingDetails(List<NamedGuaranteePlan> candidates, NamedGuaranteePlan best) {
+			StringBuilder details = new StringBuilder("costing=").append(best.name());
+			for (NamedGuaranteePlan candidate : candidates) {
+				details.append(' ')
+						.append(candidate.name())
+						.append("Cmp=")
+						.append(formatGuaranteeMetric(candidate.comparableWork()))
+						.append(' ')
+						.append(candidate.name())
+						.append("Order=")
+						.append(formatGuaranteePlanOrder(candidate.plan()))
+						.append(' ')
+						.append(candidate.name())
+						.append("Work=")
+						.append(formatGuaranteePlanStepWork(candidate.plan()))
+						.append(' ')
+						.append(candidate.name())
+						.append("Access=")
+						.append(formatGuaranteePlanStepAccess(candidate.plan()))
+						.append(' ')
+						.append(candidate.name())
+						.append("Sources=")
+						.append(formatGuaranteePlanStepSources(candidate.plan()));
+			}
+			return details.toString();
+		}
+
+		private List<String> formatGuaranteePlanStepWork(JoinOrderPlanner.JoinOrderPlan plan) {
+			List<String> workRows = new ArrayList<>(plan.getSteps().size());
+			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+				workRows.add(formatGuaranteeMetric(step.getStepWorkRows()));
+			}
+			return workRows;
+		}
+
+		private List<String> formatGuaranteePlanStepAccess(JoinOrderPlanner.JoinOrderPlan plan) {
+			List<String> accessRows = new ArrayList<>(plan.getSteps().size());
+			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+				double accessWorkRows = step.getDoubleMetrics()
+						.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, Double.NaN);
+				accessRows.add(LmdbJoinPlanSupport.isFiniteNonNegative(accessWorkRows)
+						? formatGuaranteeMetric(accessWorkRows)
+						: "n/a");
+			}
+			return accessRows;
+		}
+
+		private List<String> formatGuaranteePlanStepSources(JoinOrderPlanner.JoinOrderPlan plan) {
+			List<String> sources = new ArrayList<>(plan.getSteps().size());
+			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+				Map<String, String> metrics = step.getStringMetrics();
+				sources.add(metrics.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "n/a"));
+			}
+			return sources;
+		}
+
+		private List<String> formatGuaranteePlanOrder(JoinOrderPlanner.JoinOrderPlan plan) {
+			List<String> order = new ArrayList<>(plan.getOrderedArgs().size());
+			for (TupleExpr orderedArg : plan.getOrderedArgs()) {
+				order.add(formatGuaranteeStepFactor(orderedArg));
+			}
+			return order;
+		}
+
+		private String appendGuaranteeOptionDetails(String first, String second) {
+			if (first == null || first.isEmpty()) {
+				return second == null ? "" : second;
+			}
+			if (second == null || second.isEmpty()) {
+				return first;
+			}
+			return first + ' ' + second;
+		}
+
+		private record GuaranteeOptionPlanSelection(Optional<JoinOrderPlanner.JoinOrderPlan> plan, String details) {
+		}
+
+		private record NamedGuaranteePlan(String name, JoinOrderPlanner.JoinOrderPlan plan, double comparableWork) {
+		}
+
+		private Optional<List<TupleExpr>> finiteAnchorConnectedOrder(List<TupleExpr> optionFactors,
+				Set<String> boundBeforeSegment, String optionName) {
+			if (optionName == null || !optionName.startsWith("finite-anchor:") || optionFactors.size() < 3) {
+				return Optional.empty();
+			}
+			String generatedAnchorBinding = optionName.substring("finite-anchor:".length());
+			if (generatedAnchorBinding.isEmpty()) {
+				return Optional.empty();
+			}
+			List<TupleExpr> fixedAnchors = new ArrayList<>();
+			List<TupleExpr> generatedAnchors = new ArrayList<>();
+			List<TupleExpr> patterns = new ArrayList<>();
+			for (TupleExpr factor : optionFactors) {
+				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(
+						factor);
+				if (assignmentNames.isPresent()) {
+					if (assignmentNames.get().isEmpty()) {
+						return Optional.empty();
+					}
+					if (assignmentNames.get().contains(generatedAnchorBinding)
+							|| optionName.equals(factor.getStringMetricPlanned("optimizer.guaranteeOption"))) {
+						generatedAnchors.add(factor);
+					} else {
+						fixedAnchors.add(factor);
+					}
+				} else if (factor instanceof StatementPattern) {
+					patterns.add(factor);
+				} else {
+					return Optional.empty();
+				}
+			}
+			if (generatedAnchors.isEmpty() || patterns.isEmpty()) {
+				return Optional.empty();
+			}
+
+			List<TupleExpr> ordered = new ArrayList<>(optionFactors.size());
+			Set<String> bound = new HashSet<>(boundBeforeSegment);
+			Set<String> generatedAnchorNames = new HashSet<>();
+			for (TupleExpr anchor : fixedAnchors) {
+				ordered.add(anchor);
+				bound.addAll(plannerBindingNames(anchor.getBindingNames()));
+			}
+			for (TupleExpr anchor : generatedAnchors) {
+				ordered.add(anchor);
+				Set<String> anchorNames = plannerBindingNames(anchor.getBindingNames());
+				generatedAnchorNames.addAll(anchorNames);
+				bound.addAll(anchorNames);
+			}
+
+			int connectedPatternCount = 0;
+			while (connectedPatternCount < patterns.size()) {
+				int selectedIndex = selectFiniteAnchorConnectedPattern(patterns, connectedPatternCount, bound,
+						generatedAnchorNames);
+				if (selectedIndex < 0) {
+					return Optional.empty();
+				}
+				TupleExpr selected = patterns.get(selectedIndex);
+				movePatternToConnectedPrefix(patterns, connectedPatternCount, selectedIndex);
+				ordered.add(selected);
+				bound.addAll(plannerBindingNames(selected.getBindingNames()));
+				connectedPatternCount++;
+			}
+			return ordered.size() == optionFactors.size() ? Optional.of(ordered) : Optional.empty();
+		}
+
+		private int selectFiniteAnchorConnectedPattern(List<TupleExpr> patterns, int firstCandidateIndex,
+				Set<String> bound, Set<String> generatedAnchorNames) {
+			int selectedIndex = -1;
+			int selectedScore = Integer.MIN_VALUE;
+			boolean selectedSubjectTypeGuard = false;
+			for (int i = firstCandidateIndex; i < patterns.size(); i++) {
+				Set<String> tupleBindings = plannerBindingNames(patterns.get(i)
+						.getBindingNames());
+				if (tupleBindings.isEmpty() || Collections.disjoint(bound, tupleBindings)) {
+					continue;
+				}
+				if (bound.containsAll(tupleBindings)) {
+					return i;
+				}
+				int score = downstreamBindingReuseScore(patterns, firstCandidateIndex, i, tupleBindings, bound);
+				if (!Collections.disjoint(generatedAnchorNames, tupleBindings)) {
+					score += 20_000;
+				} else {
+					score += 10_000;
+				}
+				boolean subjectTypeGuard = isSubjectTypeGuardPattern(patterns.get(i));
+				if (subjectTypeGuard) {
+					score -= 100;
+				}
+				if (selectedIndex < 0 || score > selectedScore
+						|| (score == selectedScore && !subjectTypeGuard && selectedSubjectTypeGuard)) {
+					selectedIndex = i;
+					selectedScore = score;
+					selectedSubjectTypeGuard = subjectTypeGuard;
+				}
+			}
+			return selectedIndex;
 		}
 
 		private boolean guaranteePlanOptionBeats(JoinOrderPlanner.JoinOrderPlan candidate,
 				double candidateComparableWork, JoinOrderPlanner.JoinOrderPlan incumbent,
-				double incumbentComparableWork) {
-			if (!equivalentGuaranteeOptionWork(candidateComparableWork, incumbentComparableWork)) {
+				double incumbentComparableWork, boolean preferEquivalentWork) {
+			boolean equivalentWork = equivalentGuaranteeOptionWork(candidateComparableWork, incumbentComparableWork);
+			if (!equivalentWork && !speculativeAnchorMateriallyImproves(candidate, candidateComparableWork, incumbent,
+					incumbentComparableWork)) {
+				return false;
+			}
+			if (!equivalentWork) {
 				return candidateComparableWork < incumbentComparableWork;
 			}
 
@@ -3103,7 +3310,46 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (comparison != 0) {
 				return comparison < 0;
 			}
-			return candidateComparableWork <= incumbentComparableWork;
+			return preferEquivalentWork && candidateComparableWork <= incumbentComparableWork;
+		}
+
+		private boolean speculativeAnchorMateriallyImproves(JoinOrderPlanner.JoinOrderPlan candidate,
+				double candidateComparableWork, JoinOrderPlanner.JoinOrderPlan incumbent,
+				double incumbentComparableWork) {
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateComparableWork)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(incumbentComparableWork)
+					|| incumbentComparableWork <= 0.0d) {
+				return false;
+			}
+			if (candidateComparableWork <= incumbentComparableWork * SPECULATIVE_ANCHOR_WORK_IMPROVEMENT_RATIO
+					&& !anchorRowsGrowTooMuch(candidate.getEstimatedFinalRows(), incumbent.getEstimatedFinalRows())) {
+				return true;
+			}
+			double candidateRows = bestFiniteRows(candidate);
+			double incumbentRows = bestFiniteRows(incumbent);
+			return LmdbJoinPlanSupport.isFiniteNonNegative(candidateRows)
+					&& LmdbJoinPlanSupport.isFiniteNonNegative(incumbentRows)
+					&& incumbentRows > 0.0d
+					&& candidateRows <= incumbentRows * SPECULATIVE_ANCHOR_ROW_IMPROVEMENT_RATIO;
+		}
+
+		private boolean anchorRowsGrowTooMuch(double candidateRows, double incumbentRows) {
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(candidateRows)
+					&& candidateRows <= SPECULATIVE_ANCHOR_SMALL_OUTPUT_ROWS) {
+				return false;
+			}
+			return LmdbJoinPlanSupport.isFiniteNonNegative(candidateRows)
+					&& LmdbJoinPlanSupport.isFiniteNonNegative(incumbentRows)
+					&& incumbentRows > 0.0d
+					&& candidateRows > incumbentRows * SPECULATIVE_ANCHOR_MAX_ROW_GROWTH_RATIO;
+		}
+
+		private double bestFiniteRows(JoinOrderPlanner.JoinOrderPlan plan) {
+			double rows = outputSurfaceRows(plan);
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(rows)) {
+				return rows;
+			}
+			return plan.getEstimatedFinalRows();
 		}
 
 		private boolean equivalentGuaranteeOptionWork(double left, double right) {
@@ -3200,103 +3446,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return work;
-		}
-
-		private Optional<String> exactEmptyFiniteAnchorOption(JoinOrderPlanner.JoinOrderPlan plan) {
-			String selectedOption = selectedGuaranteeOption(plan.getSummaryStringMetrics()
-					.get("optimizer.guaranteeOptions"));
-			if (selectedOption == null || !selectedOption.startsWith("finite-anchor:")) {
-				return Optional.empty();
-			}
-			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
-				if (!"lmdb-finite-binding-lookup".equals(step.getStringMetrics()
-						.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))) {
-					continue;
-				}
-				double accessRows = step.getDoubleMetrics()
-						.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(accessRows) && accessRows == 0.0d) {
-					return Optional.of("empty-anchor:" + selectedOption.substring("finite-anchor:".length()));
-				}
-			}
-			return Optional.empty();
-		}
-
-		private String selectedGuaranteeOption(String guaranteeOptions) {
-			if (guaranteeOptions == null || guaranteeOptions.isEmpty()) {
-				return null;
-			}
-			String marker = "selected=";
-			int start = guaranteeOptions.indexOf(marker);
-			if (start < 0) {
-				return null;
-			}
-			start += marker.length();
-			int end = guaranteeOptions.indexOf(',', start);
-			if (end < 0) {
-				end = guaranteeOptions.length();
-			}
-			return guaranteeOptions.substring(start, end).trim();
-		}
-
-		private EmptySet exactEmptySet(JoinOrderPlanner.JoinOrderPlan plan, String selectedOption) {
-			Map<String, String> summaryStringMetrics = selectedEmptyAnchorSummaryMetrics(plan, selectedOption);
-			Map<String, Double> summaryDoubleMetrics = plan.getSummaryDoubleMetrics();
-			clearSelectedPlanAnnotations();
-			selectedPlanSummaryStringMetrics = summaryStringMetrics;
-			selectedPlanSummaryDoubleMetrics = summaryDoubleMetrics;
-			EmptySet emptySet = new EmptySet();
-			emptySet.setResultSizeEstimate(0.0d);
-			emptySet.setCostEstimate(0.0d);
-			emptySet.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, 0.0d);
-			emptySet.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
-					"lmdb-exact-empty-anchor");
-			for (Map.Entry<String, String> entry : summaryStringMetrics.entrySet()) {
-				emptySet.setStringMetricPlanned(entry.getKey(), entry.getValue());
-			}
-			for (Map.Entry<String, Double> entry : summaryDoubleMetrics.entrySet()) {
-				emptySet.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
-			}
-			return emptySet;
-		}
-
-		private Map<String, String> selectedEmptyAnchorSummaryMetrics(JoinOrderPlanner.JoinOrderPlan plan,
-				String selectedOption) {
-			Map<String, String> summaryStringMetrics = new LinkedHashMap<>(plan.getSummaryStringMetrics());
-			summaryStringMetrics.remove("satisfiedFilters");
-			summaryStringMetrics.computeIfPresent(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK,
-					(ignored, value) -> withoutSatisfiedFilterDetails(value));
-			String guaranteeOptions = summaryStringMetrics.get("optimizer.guaranteeOptions");
-			summaryStringMetrics.put("optimizer.guaranteeOptions",
-					replaceSelectedGuaranteeOption(guaranteeOptions, selectedOption));
-			return summaryStringMetrics;
-		}
-
-		private String withoutSatisfiedFilterDetails(String runtimeFeedback) {
-			if (runtimeFeedback == null || runtimeFeedback.isEmpty()) {
-				return runtimeFeedback;
-			}
-			int satisfiedFilters = runtimeFeedback.indexOf(", satisfiedFilters=");
-			if (satisfiedFilters < 0) {
-				return runtimeFeedback;
-			}
-			return runtimeFeedback.substring(0, satisfiedFilters);
-		}
-
-		private String replaceSelectedGuaranteeOption(String guaranteeOptions, String selectedOption) {
-			if (guaranteeOptions == null || guaranteeOptions.isEmpty()) {
-				return "selected=" + selectedOption;
-			}
-			String marker = "selected=";
-			int start = guaranteeOptions.indexOf(marker);
-			if (start < 0) {
-				return guaranteeOptions + ", selected=" + selectedOption;
-			}
-			int end = guaranteeOptions.indexOf(',', start);
-			if (end < 0) {
-				end = guaranteeOptions.length();
-			}
-			return guaranteeOptions.substring(0, start) + marker + selectedOption + guaranteeOptions.substring(end);
 		}
 
 		private JoinOrderPlanner.JoinOrderPlan withGuaranteeOptionMetrics(JoinOrderPlanner.JoinOrderPlan plan,

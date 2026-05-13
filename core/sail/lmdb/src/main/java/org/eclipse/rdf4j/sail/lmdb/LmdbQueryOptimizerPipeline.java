@@ -67,22 +67,26 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		List<QueryOptimizer> optimizers = List.of(
-				BINDING_ASSIGNER,
-				new ConstantOptimizer(strategy),
-				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
-				COMPARE_OPTIMIZER,
-				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
-				SAME_TERM_FILTER_OPTIMIZER,
-				UNION_SCOPE_CHANGE_OPTIMIZER,
-				QUERY_MODEL_NORMALIZER,
-				PROJECTION_REMOVAL_OPTIMIZER,
-				new FilterOptimizer(null, false, false),
-				ITERATIVE_EVALUATION_OPTIMIZER,
-				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
-				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
-				ORDER_LIMIT_OPTIMIZER);
+		List<QueryOptimizer> optimizers = new ArrayList<>();
+		optimizers.add(BINDING_ASSIGNER);
+		optimizers.add(new ConstantOptimizer(strategy));
+		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
+		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics
+				&& lmdbStatistics.getValueStore() != null) {
+			optimizers.add(new LmdbValueLookupOptimizer(lmdbStatistics.getValueStore()));
+		}
+		optimizers.add(COMPARE_OPTIMIZER);
+		optimizers.add(CONJUNCTIVE_CONSTRAINT_SPLITTER);
+		optimizers.add(DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
+		optimizers.add(SAME_TERM_FILTER_OPTIMIZER);
+		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
+		optimizers.add(QUERY_MODEL_NORMALIZER);
+		optimizers.add(PROJECTION_REMOVAL_OPTIMIZER);
+		optimizers.add(new FilterOptimizer(null, false, false));
+		optimizers.add(ITERATIVE_EVALUATION_OPTIMIZER);
+		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
+		optimizers.add(new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()));
+		optimizers.add(ORDER_LIMIT_OPTIMIZER);
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

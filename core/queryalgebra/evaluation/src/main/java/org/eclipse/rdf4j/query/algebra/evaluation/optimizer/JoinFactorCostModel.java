@@ -30,6 +30,16 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public interface JoinFactorCostModel {
 
+	enum EstimationTier {
+		CHEAP,
+		STANDARD,
+		EXACT;
+
+		public boolean allowsExactEstimates() {
+			return this == EXACT;
+		}
+	}
+
 	Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars);
 
 	default Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
@@ -46,6 +56,7 @@ public interface JoinFactorCostModel {
 		private final boolean collectMetrics;
 		private final Map<String, Set<Value>> finiteBindingValues;
 		private final List<TupleExpr> prefixFactors;
+		private final EstimationTier estimationTier;
 
 		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
 				boolean nestedIteratorInvocation) {
@@ -61,6 +72,13 @@ public interface JoinFactorCostModel {
 		private CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
 				boolean nestedIteratorInvocation, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
 				List<TupleExpr> prefixFactors) {
+			this(currentlyBoundVars, outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, collectMetrics,
+					finiteBindingValues, prefixFactors, EstimationTier.EXACT);
+		}
+
+		private CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
+				boolean nestedIteratorInvocation, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
+				List<TupleExpr> prefixFactors, EstimationTier estimationTier) {
 			this.currentlyBoundVars = currentlyBoundVars == null || currentlyBoundVars.isEmpty()
 					? Set.of()
 					: Set.copyOf(currentlyBoundVars);
@@ -72,6 +90,7 @@ public interface JoinFactorCostModel {
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
 			this.prefixFactors = immutablePrefixFactors(prefixFactors);
+			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -91,6 +110,7 @@ public interface JoinFactorCostModel {
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = Map.of();
 			this.prefixFactors = List.of();
+			this.estimationTier = EstimationTier.EXACT;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -103,6 +123,14 @@ public interface JoinFactorCostModel {
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
 				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
 				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
+			this(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, EstimationTier.EXACT);
+		}
+
+		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors,
+				EstimationTier estimationTier) {
 			this.currentlyBoundVars = currentlyBoundVarMask == 0L ? Set.of() : null;
 			this.variableNames = variableNames;
 			this.currentlyBoundVarMask = currentlyBoundVarMask;
@@ -112,6 +140,7 @@ public interface JoinFactorCostModel {
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
 			this.prefixFactors = immutablePrefixFactors(prefixFactors);
+			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
 		}
 
 		public static CostContext of(Set<String> currentlyBoundVars, double outerPrefixRows,
@@ -194,6 +223,22 @@ public interface JoinFactorCostModel {
 
 		public List<TupleExpr> getPrefixFactors() {
 			return prefixFactors;
+		}
+
+		public EstimationTier getEstimationTier() {
+			return estimationTier;
+		}
+
+		public CostContext withEstimationTier(EstimationTier estimationTier) {
+			if (this.estimationTier == estimationTier || estimationTier == null) {
+				return this;
+			}
+			if (variableNames != null) {
+				return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+						nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
+			}
+			return new CostContext(getCurrentlyBoundVars(), outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
 		}
 
 		private static Map<String, Set<Value>> immutableFiniteBindingValues(

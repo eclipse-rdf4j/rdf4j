@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -29,6 +30,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +73,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -88,9 +91,25 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class LmdbEvaluationStatisticsMemoizationTest {
+	private final List<Path> temporaryDirectories = new ArrayList<>();
+
+	@AfterEach
+	void deleteTemporaryDirectories() {
+		for (int i = temporaryDirectories.size() - 1; i >= 0; i--) {
+			LmdbTestUtil.deleteDir(temporaryDirectories.get(i));
+		}
+		temporaryDirectories.clear();
+	}
+
+	private Path createTemporaryDirectory(String prefix) throws Exception {
+		Path directory = Files.createTempDirectory(prefix);
+		temporaryDirectories.add(directory);
+		return directory;
+	}
 
 	@Test
 	void memoizesSupportsJoinEstimationAndInvalidatesAfterCacheWindow() throws Exception {
@@ -216,7 +235,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void cachesEquivalentStatementPatternCardinalitiesByResolvedIds() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-memoization").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-memoization").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			sharedCardinalityCache().clear();
@@ -241,8 +260,43 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void factorCostCacheKeyUsesStructuralStatementPatternFingerprint() throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern first = new StatementPattern(
+				Var.of("s"),
+				Var.of("p", vf.createIRI("urn:test:follows")),
+				Var.of("o"));
+		StatementPattern second = first.clone();
+
+		Object firstKey = factorCostCacheKey(first, Set.of("s"), Double.NaN, true, Map.of());
+		Object secondKey = factorCostCacheKey(second, Set.of("s"), Double.NaN, true, Map.of());
+
+		assertNotSame(first, second, "Test must use distinct cloned tuple expressions");
+		assertEquals(firstKey, secondKey,
+				"Equivalent cloned factors should share scoped LMDB factor-cost estimates during one optimization");
+		assertEquals(firstKey.hashCode(), secondKey.hashCode(),
+				"Equivalent cloned factors should hash to the same scoped LMDB factor-cost cache slot");
+	}
+
+	@Test
+	void factorCostCacheKeyUsesStructuralFiniteAnchorFingerprint() throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		BindingSetAssignment first = finiteAnchor("value", vf.createLiteral(60), vf.createLiteral(50));
+		BindingSetAssignment second = finiteAnchor("value", vf.createLiteral(50), vf.createLiteral(60));
+
+		Object firstKey = factorCostCacheKey(first, Set.of(), Double.NaN, true, Map.of());
+		Object secondKey = factorCostCacheKey(second, Set.of(), Double.NaN, true, Map.of());
+
+		assertNotSame(first, second, "Test must use distinct finite-anchor tuple expressions");
+		assertEquals(firstKey, secondKey,
+				"Equivalent finite anchors should share scoped LMDB factor-cost estimates even when cloned");
+		assertEquals(firstKey.hashCode(), secondKey.hashCode(),
+				"Equivalent finite anchors should hash to the same scoped LMDB factor-cost cache slot");
+	}
+
+	@Test
 	void invalidatesSharedCardinalityCacheAfterTripleOnlyCommit() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-triple-only-commit").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-triple-only-commit").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			sharedCardinalityCache().clear();
@@ -391,6 +445,120 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void exactFiniteDerivedSurfaceIsSkippedWhenBaseLookupAlreadyCoversAccess() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int objectBit = 1 << SketchBasedJoinEstimator.Component.O.ordinal();
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(2);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit | objectBit);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI valuePredicate = vf.createIRI("urn:test:value");
+		IRI hasObservation = vf.createIRI("urn:test:hasObservation");
+		StatementPattern prefix = new StatementPattern(
+				Var.of("obs"),
+				Var.of("p1", valuePredicate),
+				Var.of("value"));
+		StatementPattern factor = new StatementPattern(
+				Var.of("enc"),
+				Var.of("p2", hasObservation),
+				Var.of("obs"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(factor);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(predicateBit);
+		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
+		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(factor, Set.of("obs"))).thenReturn(100_000.0d);
+		when(estimator.accessShapeForJoinOrdering(factor, Set.of("obs"))).thenReturn(accessShape);
+		when(estimator.estimateExactJoinSurfaceRows(any(), any(String.class))).thenReturn(100.0d);
+		when(estimator.estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class)))
+				.thenReturn(10.0d);
+		when(estimator.orderedCardinality(any())).thenReturn(100.0d, 10.0d, 100.0d, 10.0d);
+
+		Map<String, Set<org.eclipse.rdf4j.model.Value>> finiteValues = Map.of("value",
+				Set.of(vf.createLiteral(50), vf.createLiteral(60)));
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("obs"),
+					100.0d, 100.0d, true, true, finiteValues, List.of(prefix));
+
+			assertTrue(statistics.estimateFactorCost(factor, context).isPresent());
+			JoinFactorCostModel.FactorCostEstimate secondEstimate = statistics.estimateFactorCost(factor, context)
+					.orElseThrow();
+			Map<String, Double> metrics = secondEstimate.getDoubleMetrics();
+			assertFalse(metrics.containsKey("optimizer.exactJoinSurfaceCalls"));
+			assertFalse(metrics.containsKey("optimizer.finiteDerivedSurfaceCacheHits"));
+		}
+
+		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(String.class));
+		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class));
+		verify(estimator, times(1)).orderedCardinality(any());
+	}
+
+	@Test
+	void cheapFactorCostSkipsFiniteDerivedSurfaceEstimation() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int objectBit = 1 << SketchBasedJoinEstimator.Component.O.ordinal();
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(2);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit | objectBit);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI valuePredicate = vf.createIRI("urn:test:value");
+		IRI hasObservation = vf.createIRI("urn:test:hasObservation");
+		StatementPattern prefix = new StatementPattern(
+				Var.of("obs"),
+				Var.of("p1", valuePredicate),
+				Var.of("value"));
+		StatementPattern factor = new StatementPattern(
+				Var.of("enc"),
+				Var.of("p2", hasObservation),
+				Var.of("obs"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(factor);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(predicateBit | objectBit);
+		when(accessShape.joinBoundComponentMask()).thenReturn(objectBit);
+		when(accessShape.estimateAccessRows(anyInt())).thenReturn(100_000.0d);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(factor, Set.of("obs"))).thenReturn(100_000.0d);
+		when(estimator.accessShapeForJoinOrdering(factor, Set.of("obs"))).thenReturn(accessShape);
+
+		Map<String, Set<org.eclipse.rdf4j.model.Value>> finiteValues = Map.of("value",
+				Set.of(vf.createLiteral(50), vf.createLiteral(60)));
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("obs"),
+					100.0d, 100.0d, true, true, finiteValues, List.of(prefix))
+					.withEstimationTier(JoinFactorCostModel.EstimationTier.CHEAP);
+
+			JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(factor, context)
+					.orElseThrow();
+
+			assertNotEquals("lmdb-finite-derived-surface",
+					estimate.getStringMetrics()
+							.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
+					"Cheap planner-control estimates must not perform exact finite-derived surface costing");
+		}
+
+		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(String.class));
+		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class));
+		verify(estimator, times(0)).orderedCardinality(any());
+	}
+
+	@Test
 	void fixedOrderEstimateEnrichesPlannerMetrics() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		ValueStore valueStore = mock(ValueStore.class);
@@ -449,7 +617,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void usesSketchEstimatorForLeftJoinCardinalityWhenReady() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-leftjoin").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-leftjoin").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -481,7 +649,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void usesSketchEstimatorForFilterWrappedStatementPatternsWhenReady() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-filter-wrapped-join").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-filter-wrapped-join").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -526,7 +694,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void usesSketchEstimatorForFilterCardinalityWhenReady() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-filter-cardinality").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-filter-cardinality").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -557,7 +725,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizedPlanDumpShowsCurrentPlannerEstimatesForNodes() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-estimate-dump").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-plan-estimate-dump").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -600,7 +768,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizedPlanDumpAnnotatesCompleteTupleExprCosting() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-complete-cost-dump").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-plan-complete-cost-dump").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -652,7 +820,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void leftJoinNodeReceivesCurrentRowsAndSubtreeWork() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-leftjoin-cost").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-plan-leftjoin-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -677,7 +845,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void unionNodeReceivesSummedRowsAndWork() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-union-cost").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-plan-union-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -703,7 +871,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void groupNodeUsesDistinctGroupEstimateOrSyntheticUpperBound() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-group-cost").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-plan-group-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -763,7 +931,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void samplesPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampled-filter").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingMaxMillis(100L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
@@ -794,7 +962,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void samplesZeroHitPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-zero-sampled-filter").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-zero-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingMaxMillis(100L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
@@ -828,7 +996,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizerSamplingCanBeDisabledForUnlearnedFilters() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampling-disabled").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-sampling-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig().setOptimizerSamplingEnabled(false);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
@@ -854,7 +1022,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizerVotesUnlearnedFilterForBackgroundSamplingWhenForegroundSamplingDisabled() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-vote").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -895,7 +1063,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	@Test
 	void medicalAggregateInFilterUsesBackgroundSampledRecordedOnSelectivityWhenForegroundSamplingDisabled()
 			throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-medical-background-vote").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-medical-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -990,7 +1158,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void backgroundRawSamplingDisabledPreventsQueueingAndSampling() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-disabled").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingEnabled(false)
@@ -1022,7 +1190,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void backgroundCycleSamplesQueuedFilterWhenForegroundSamplingDisabled() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-cycle").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-cycle").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -1060,7 +1228,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void repeatedOptimizerNeedPromotesBackgroundSamplingRequestToFront() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-promotion").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-background-promotion").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -1106,7 +1274,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(tripleStore.cardinality(LmdbValue.UNKNOWN_ID, 7L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
 				.thenReturn(128.0d);
 		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
-				Files.createTempDirectory("lmdb-eval-stats-runtime-rows-cache").resolve("join-estimator.rjes"),
+				createTemporaryDirectory("lmdb-eval-stats-runtime-rows-cache").resolve("join-estimator.rjes"),
 				tripleStore,
 				valueStore,
 				false,
@@ -1136,7 +1304,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	@Test
 	void optimizerSamplingBudgetScalesWithExpectedRuntimeAndBenefit() throws Exception {
 		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
-				Files.createTempDirectory("lmdb-eval-stats-sampling-budget").resolve("join-estimator.rjes"),
+				createTemporaryDirectory("lmdb-eval-stats-sampling-budget").resolve("join-estimator.rjes"),
 				mock(TripleStore.class),
 				mock(ValueStore.class));
 		Method budgetMethod = LmdbFilterSelectivityStats.class.getDeclaredMethod(
@@ -1160,7 +1328,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void recordsLearnedFilterPassRatioForExternalBoundPatternLocalFilter() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-learned-filter").toFile();
+		File dataDir = createTemporaryDirectory("lmdb-eval-stats-learned-filter").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			loadData(repository);
@@ -1383,6 +1551,28 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		});
 		assertNotNull(found[0], "Expected query to contain a FILTER");
 		return found[0];
+	}
+
+	private static Object factorCostCacheKey(TupleExpr factor, Set<String> boundVars, double knownOutputRows,
+			boolean collectMetrics, Map<String, Set<org.eclipse.rdf4j.model.Value>> finiteBindingValues)
+			throws Exception {
+		Class<?> keyClass = Class.forName(LmdbEvaluationStatistics.class.getName() + "$FactorCostCacheKey");
+		Method method = keyClass.getDeclaredMethod("forBoundVars", TupleExpr.class, Set.class, double.class,
+				boolean.class, Map.class);
+		method.setAccessible(true);
+		return method.invoke(null, factor, boundVars, knownOutputRows, collectMetrics, finiteBindingValues);
+	}
+
+	private static BindingSetAssignment finiteAnchor(String bindingName, org.eclipse.rdf4j.model.Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<QueryBindingSet> bindingSets = new ArrayList<>(values.length);
+		for (org.eclipse.rdf4j.model.Value value : values) {
+			QueryBindingSet bindingSet = new QueryBindingSet();
+			bindingSet.addBinding(bindingName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(List.copyOf(bindingSets));
+		return assignment;
 	}
 
 	private static int invokeBudget(Method method, LmdbFilterSelectivityStats stats, double expectedRuntimeRows,

@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -125,6 +126,32 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 				"Sketch-only surface costing must not perform exact statement-source scans during planning");
 	}
 
+	@Test
+	void exactBoundPatternRowsUsesPatternCardinalityProviderForBoundProbe() throws Exception {
+		IRI hasObservation = VF.createIRI("urn:hasObservation");
+		Resource observation = VF.createIRI("urn:observation:1");
+		AtomicInteger providerCalls = new AtomicInteger();
+
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (hasObservation.equals(pattern.getPredicateVar().getValue())
+					&& observation.equals(pattern.getObjectVar().getValue())) {
+				providerCalls.incrementAndGet();
+				return 7.0d;
+			}
+			return -1.0d;
+		});
+
+		StatementPattern probe = new StatementPattern(Var.of("enc"), Var.of("hasObservation", hasObservation),
+				Var.of("obs"));
+
+		Long rows = invokeExactBoundPatternRows(estimator, probe, "obs", observation);
+
+		assertEquals(7L, rows, "Bound pattern probes should use page-walk cardinality estimates");
+		assertEquals(1, providerCalls.get(), "Expected one bound-pattern cardinality lookup");
+	}
+
 	private static Statement st(Resource s, IRI p, Value o) {
 		return VF.createStatement(s, p, o);
 	}
@@ -189,6 +216,14 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		Method method = target.getClass().getDeclaredMethod(name);
 		method.setAccessible(true);
 		method.invoke(target);
+	}
+
+	private static Long invokeExactBoundPatternRows(SketchBasedJoinEstimator estimator, StatementPattern pattern,
+			String sharedVarName, Value sharedValue) throws Exception {
+		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("exactBoundPatternRows",
+				StatementPattern.class, String.class, Value.class);
+		method.setAccessible(true);
+		return (Long) method.invoke(estimator, pattern, sharedVarName, sharedValue);
 	}
 
 	private static void clearSketchArray(AtomicReferenceArray<?> sketches) {

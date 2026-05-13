@@ -984,7 +984,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	void libraryMissingTitleFiniteAnchorUsesMemoPlannerNotFastPath(@TempDir Path dataDir) throws Exception {
+	void libraryMissingTitleFiniteAnchorKeepsExplicitPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
@@ -995,17 +995,16 @@ class LmdbThemeQueryRegressionIT {
 					String plan = snapshot.plan();
 					assertContains(plan, "finite-anchor:title[valid",
 							"Library q4 should still show the finite title anchor candidate cost\n" + plan);
-					assertContains(plan, "selected=empty-anchor:title",
-							"Library q4 should collapse the exact zero-row finite title lookup to EmptySet\n"
+					assertContains(plan, "selected=finite-anchor:title",
+							"Library q4 should keep the selected finite title anchor explicit; zero access rows are "
+									+ "not a formal domain contradiction\n"
 									+ plan);
-					assertContains(plan, "EmptySet",
-							"Library q4 exact zero-row finite title lookup should not build a join tree\n" + plan);
-					assertDoesNotContain(plan, "LeftJoin",
-							"Library q4 exact zero-row mandatory input should propagate through OPTIONAL and avoid "
-									+ "planning optional work\n" + plan);
-					assertDoesNotContain(plan, "http://example.com/theme/library/hasCopy",
-							"Library q4 exact zero-row mandatory input should make the correlated EXISTS filter "
-									+ "irrelevant\n" + plan);
+					assertDoesNotContain(plan, "selected=empty-anchor:title",
+							"Library q4 must not turn a physical zero-row finite lookup into an EmptySet rewrite\n"
+									+ plan);
+					assertContains(snapshot.renderedQuery(), "VALUES ?title { \"Book 1\" \"Book 2\" }",
+							"Library q4 should keep the generated finite anchor visible in the optimized query\n"
+									+ plan);
 					assertOccurrenceAtMost(plan, "optimizer.guaranteeOptionCandidates=", 1,
 							"Library q4 should report the heavy guarantee candidate summary once, not stamp it "
 									+ "onto every plan node\n" + plan);
@@ -1961,9 +1960,13 @@ class LmdbThemeQueryRegressionIT {
 					assertContains(plan, "anchorLookupComponents=");
 					assertContains(plan, "surfaceRows=");
 					assertContains(plan, "satisfiedFilters=");
-					assertMetricRowsAtLeast(plan, "surfaceRows", 1_000.0d,
-							"Medical q5 finite anchor should carry a positive join-surface estimate for the "
-									+ "value -> observation -> encounter path\n" + plan);
+					assertMetricRowsAtLeast(plan, "anchorAccessRows", 1_000.0d,
+							"Medical q5 finite anchor should carry the positive finite PO lookup estimate "
+									+ "without requiring exact join-surface refinement during candidate gating\n"
+									+ plan);
+					assertContains(plan, "stepSources=[lmdb-finite-binding-lookup:posc:[P, O]",
+							"Medical q5 finite anchor should cost the value lookup through the PO access path\n"
+									+ plan);
 					assertContains(plan, "optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
 							+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT]",
 							"Medical q5 value object should expose its integer-domain guarantee\n" + plan);
