@@ -33,9 +33,12 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
@@ -206,6 +209,47 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 
 		assertEquals(7L, rows, "Bound pattern probes should use page-walk cardinality estimates");
 		assertEquals(1, providerCalls.get(), "Expected one bound-pattern cardinality lookup");
+	}
+
+	@Test
+	void orderedCardinalityUsesPatternCardinalityProviderForSingleStatementPatternWhenSketchIsNotReady() {
+		IRI predicate = VF.createIRI("urn:page-walk-single-pattern");
+		AtomicInteger providerCalls = new AtomicInteger();
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.setPatternCardinalityProvider(pattern -> {
+			if (predicate.equals(pattern.getPredicateVar().getValue())) {
+				providerCalls.incrementAndGet();
+				return 11.0d;
+			}
+			return -1.0d;
+		});
+
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+
+		double rows = estimator.orderedCardinality(List.of(pattern));
+
+		assertEquals(11.0d, rows, 0.0d, "Single statement ordered cardinality should use page-walk estimate");
+		assertEquals(1, providerCalls.get(), "Expected one statement-pattern cardinality lookup");
+	}
+
+	@Test
+	void orderedCardinalityUsesBindingSetAssignmentRowsWhenSketchIsNotReady() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> rows = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("value", VF.createLiteral(i));
+			rows.add(row);
+		}
+		assignment.setBindingSets(rows);
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+
+		double cardinality = estimator.orderedCardinality(List.of(assignment));
+
+		assertEquals(3.0d, cardinality, 0.0d,
+				"Single binding-set assignment ordered cardinality should use the finite row count");
 	}
 
 	private static Statement st(Resource s, IRI p, Value o) {

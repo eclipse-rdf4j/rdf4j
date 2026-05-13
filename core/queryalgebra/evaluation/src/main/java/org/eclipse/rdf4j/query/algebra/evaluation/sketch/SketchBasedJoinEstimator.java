@@ -5798,7 +5798,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	public double orderedCardinality(List<TupleExpr> tupleExprs) {
-		if (!isReady() || tupleExprs == null || tupleExprs.isEmpty()) {
+		if (tupleExprs == null || tupleExprs.isEmpty()) {
+			recordRobustCardinalityPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
+			return -1;
+		}
+		Double singleFactorRows = estimateSingleFactorRows(tupleExprs);
+		if (singleFactorRows != null) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+			return normalizeRows(singleFactorRows);
+		}
+		if (!isReady()) {
 			recordRobustCardinalityPath(
 					isReady() ? SketchPlannerPath.UNSUPPORTED_SHAPE : SketchPlannerPath.ROBUST_NOT_READY);
 			return -1;
@@ -5820,6 +5829,30 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
 		return normalizeRows(estimate.outputRows);
+	}
+
+	private Double estimateSingleFactorRows(List<TupleExpr> tupleExprs) {
+		if (tupleExprs.size() != 1) {
+			return null;
+		}
+		TupleExpr tupleExpr = tupleExprs.get(0);
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			TuplePlanEstimate estimate = estimateBindingSetAssignment(assignment);
+			return estimate == null ? null : estimate.outputRows;
+		}
+		PatternCardinalityProvider provider = patternCardinalityProvider;
+		if (provider == null) {
+			return null;
+		}
+		PatternEstimateInput input = asSketchCompatibleInput(tupleExpr);
+		if (input == null) {
+			return null;
+		}
+		double rows = provider.estimate(input.pattern);
+		if (!Double.isFinite(rows) || rows < 0.0d) {
+			return null;
+		}
+		return applyFilterMultiplier(rows, input.filterMultiplier);
 	}
 
 	private TuplePlanEstimate orderedStatementPatternCardinality(List<TupleExpr> tupleExprs) {
