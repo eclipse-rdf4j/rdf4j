@@ -127,6 +127,10 @@ final class SketchJoinOrderPlanner {
 	private final double[][] localFilterPassRatioByVarMask;
 	private final boolean[][] localFilterPassRatioLoadedByVarMask;
 	private final Set<Value>[][] finiteBindingVariableValuesByState;
+	private final List<TupleExpr>[] selectedPrefixFactorsByState;
+	private final Map<String, Set<Value>>[] selectedFiniteBindingValuesByState;
+	private final Map<String, Set<Value>>[][] finiteBindingLookupValuesByState;
+	private final boolean[][] finiteBindingLookupValuesLoadedByState;
 	private final Map<Long, Long> boundVariableMaskMemo = new HashMap<>();
 	private final Map<Long, Set<String>> variableMaskSetMemo = new HashMap<>();
 	private final Map<AccessShapeKey, SketchBasedJoinEstimator.AccessShape> accessShapeMemo = new HashMap<>();
@@ -270,6 +274,10 @@ final class SketchJoinOrderPlanner {
 		this.localFilterPassRatioByVarMask = new double[variableSetsByMask.length][];
 		this.localFilterPassRatioLoadedByVarMask = new boolean[variableSetsByMask.length][];
 		this.finiteBindingVariableValuesByState = newValueSetMatrix(stateMemoSize);
+		this.selectedPrefixFactorsByState = newTupleExprListArray(stateMemoSize);
+		this.selectedFiniteBindingValuesByState = newFiniteBindingValueMapArray(stateMemoSize);
+		this.finiteBindingLookupValuesByState = newFiniteBindingValueMapMatrix(stateMemoSize);
+		this.finiteBindingLookupValuesLoadedByState = new boolean[stateMemoSize][];
 	}
 
 	private static int stateMemoSize(int factorCount) {
@@ -294,6 +302,21 @@ final class SketchJoinOrderPlanner {
 	@SuppressWarnings("unchecked")
 	private static Set<Value>[] newValueSetArray(int size) {
 		return (Set<Value>[]) new Set<?>[size];
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<TupleExpr>[] newTupleExprListArray(int size) {
+		return (List<TupleExpr>[]) new List<?>[size];
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Set<Value>>[] newFiniteBindingValueMapArray(int size) {
+		return (Map<String, Set<Value>>[]) new Map<?, ?>[size];
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Set<Value>>[][] newFiniteBindingValueMapMatrix(int size) {
+		return (Map<String, Set<Value>>[][]) new Map<?, ?>[size][];
 	}
 
 	PlanOutcome plan(JoinOrderPlanner.Algorithm algorithm) {
@@ -2925,6 +2948,9 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private long candidatesMask(StatePlan plan) {
+		if (plan.candidatesMaskLoaded) {
+			return plan.candidatesMask;
+		}
 		long candidates = factorUniverseMask & ~plan.mask();
 		long boundVarMask = plan.boundVarMask();
 		long legal = 0L;
@@ -2935,6 +2961,8 @@ final class SketchJoinOrderPlanner {
 				legal |= bit(candidate);
 			}
 		}
+		plan.candidatesMask = legal;
+		plan.candidatesMaskLoaded = true;
 		return legal;
 	}
 
@@ -2943,11 +2971,17 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private long candidateActionsMask(StatePlan plan) {
+		if (plan.candidateActionsMaskLoaded) {
+			return plan.candidateActionsMask;
+		}
 		long candidates = candidatesMask(plan);
 		candidates = delayFiniteCompletableLookupCandidates(plan, candidates);
 		candidates = delayUnfilteredFiniteAssignmentsUntilExactLookupGuards(plan, candidates);
 		candidates = preferBoundSubjectTypeGuards(plan.mask(), candidates);
-		return candidates | availableFilterActionMask(plan);
+		long actions = candidates | availableFilterActionMask(plan);
+		plan.candidateActionsMask = actions;
+		plan.candidateActionsMaskLoaded = true;
+		return actions;
 	}
 
 	private long delayFiniteCompletableLookupCandidates(StatePlan plan, long candidates) {
@@ -3112,8 +3146,13 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private long pendingBoundExactLookupGuardMask(StatePlan plan) {
+		if (plan.pendingBoundExactLookupGuardMaskLoaded) {
+			return plan.pendingBoundExactLookupGuardMask;
+		}
 		long candidates = candidatesMask(plan) & ~bindingSetAssignmentFactorMask;
 		if (candidates == 0L) {
+			plan.pendingBoundExactLookupGuardMask = 0L;
+			plan.pendingBoundExactLookupGuardMaskLoaded = true;
 			return 0L;
 		}
 		long boundVarMask = plan.boundVarMask();
@@ -3130,6 +3169,8 @@ final class SketchJoinOrderPlanner {
 				guards |= bit(candidate);
 			}
 		}
+		plan.pendingBoundExactLookupGuardMask = guards;
+		plan.pendingBoundExactLookupGuardMaskLoaded = true;
 		return guards;
 	}
 
@@ -3882,7 +3923,21 @@ final class SketchJoinOrderPlanner {
 		if (mask == 0L) {
 			return List.of();
 		}
-		return selectedPrefixFactorsMemo.computeIfAbsent(mask, this::selectedPrefixFactorsUncached);
+		int stateIndex = stateMemoIndex(mask);
+		if (stateIndex >= 0) {
+			List<TupleExpr> prefixFactors = selectedPrefixFactorsByState[stateIndex];
+			if (prefixFactors == null) {
+				prefixFactors = selectedPrefixFactorsUncached(mask);
+				selectedPrefixFactorsByState[stateIndex] = prefixFactors;
+			}
+			return prefixFactors;
+		}
+		List<TupleExpr> prefixFactors = selectedPrefixFactorsMemo.get(mask);
+		if (prefixFactors == null) {
+			prefixFactors = selectedPrefixFactorsUncached(mask);
+			selectedPrefixFactorsMemo.put(mask, prefixFactors);
+		}
+		return prefixFactors;
 	}
 
 	private List<TupleExpr> selectedPrefixFactorsUncached(long mask) {
@@ -3900,9 +3955,29 @@ final class SketchJoinOrderPlanner {
 
 	private Map<String, Set<Value>> finiteBindingLookupValues(int factorIndex, long mask,
 			long currentlyBoundVarMask) {
+		int stateIndex = stateMemoIndex(mask);
+		if (stateIndex >= 0 && currentlyBoundVarMask == boundVariableMask(mask)) {
+			Map<String, Set<Value>>[] values = finiteBindingLookupValuesByState[stateIndex];
+			boolean[] loaded = finiteBindingLookupValuesLoadedByState[stateIndex];
+			if (values == null) {
+				values = newFiniteBindingValueMapArray(factors.size());
+				finiteBindingLookupValuesByState[stateIndex] = values;
+				loaded = new boolean[factors.size()];
+				finiteBindingLookupValuesLoadedByState[stateIndex] = loaded;
+			}
+			if (!loaded[factorIndex]) {
+				values[factorIndex] = finiteBindingLookupValuesUncached(factorIndex, mask, currentlyBoundVarMask);
+				loaded[factorIndex] = true;
+			}
+			return values[factorIndex];
+		}
 		FiniteBindingLookupValuesKey key = new FiniteBindingLookupValuesKey(factorIndex, mask, currentlyBoundVarMask);
-		return finiteBindingLookupValuesMemo.computeIfAbsent(key,
-				ignored -> finiteBindingLookupValuesUncached(factorIndex, mask, currentlyBoundVarMask));
+		Map<String, Set<Value>> values = finiteBindingLookupValuesMemo.get(key);
+		if (values == null) {
+			values = finiteBindingLookupValuesUncached(factorIndex, mask, currentlyBoundVarMask);
+			finiteBindingLookupValuesMemo.put(key, values);
+		}
+		return values;
 	}
 
 	private Map<String, Set<Value>> finiteBindingLookupValuesUncached(int factorIndex, long mask,
@@ -3939,7 +4014,21 @@ final class SketchJoinOrderPlanner {
 		if (assignments == 0L) {
 			return Map.of();
 		}
-		return selectedFiniteBindingValuesMemo.computeIfAbsent(assignments, this::selectedFiniteBindingValuesUncached);
+		int stateIndex = stateMemoIndex(assignments);
+		if (stateIndex >= 0) {
+			Map<String, Set<Value>> values = selectedFiniteBindingValuesByState[stateIndex];
+			if (values == null) {
+				values = selectedFiniteBindingValuesUncached(assignments);
+				selectedFiniteBindingValuesByState[stateIndex] = values;
+			}
+			return values;
+		}
+		Map<String, Set<Value>> values = selectedFiniteBindingValuesMemo.get(assignments);
+		if (values == null) {
+			values = selectedFiniteBindingValuesUncached(assignments);
+			selectedFiniteBindingValuesMemo.put(assignments, values);
+		}
+		return values;
 	}
 
 	private Map<String, Set<Value>> selectedFiniteBindingValuesUncached(long assignments) {
@@ -5904,6 +5993,12 @@ final class SketchJoinOrderPlanner {
 		private final SketchBasedJoinEstimator.TuplePlanEstimate estimate;
 		private final double totalWork;
 		private final JoinCostVector costVector;
+		private boolean candidatesMaskLoaded;
+		private long candidatesMask;
+		private boolean candidateActionsMaskLoaded;
+		private long candidateActionsMask;
+		private boolean pendingBoundExactLookupGuardMaskLoaded;
+		private long pendingBoundExactLookupGuardMask;
 
 		private StatePlan(long mask, StatePlan parent, int lastFactor, int lastAction,
 				FactorPhysicalEstimate lastPhysicalEstimate, int orderSize,

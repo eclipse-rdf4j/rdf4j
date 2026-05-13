@@ -16,6 +16,7 @@ import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -666,8 +667,8 @@ class LmdbEvaluationStatistics
 		if (factor == null) {
 			return Optional.empty();
 		}
-		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundVars(factor, currentlyBoundVars, knownOutputRows,
-				collectMetrics, finiteBindingValues, estimationTier);
+		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundVars(factorFingerprint(factor), currentlyBoundVars,
+				knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
 		return estimateScopedFactorCost(cacheKey,
 				() -> estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
 						finiteBindingValues));
@@ -720,7 +721,7 @@ class LmdbEvaluationStatistics
 		if (factor == null) {
 			return Optional.empty();
 		}
-		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundMask(factor, variableNames, boundVarMask,
+		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundMask(factorFingerprint(factor), boundVarMask,
 				knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
 		return estimateScopedFactorCost(cacheKey,
 				() -> estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows,
@@ -768,6 +769,19 @@ class LmdbEvaluationStatistics
 		estimate = estimateSupplier.get();
 		scope.factorCostCache.put(cacheKey, estimate);
 		return estimate;
+	}
+
+	private Object factorFingerprint(TupleExpr factor) {
+		OptimizationCostScope scope = optimizationCostScope.get();
+		if (scope == null) {
+			return FactorCostCacheKey.factorFingerprint(factor);
+		}
+		Object fingerprint = scope.factorFingerprintCache.get(factor);
+		if (fingerprint == null) {
+			fingerprint = FactorCostCacheKey.factorFingerprint(factor);
+			scope.factorFingerprintCache.put(factor, fingerprint);
+		}
+		return fingerprint;
 	}
 
 	private boolean hasFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
@@ -2146,6 +2160,7 @@ class LmdbEvaluationStatistics
 
 	private static final class OptimizationCostScope {
 		private final Map<FactorCostCacheKey, Optional<FactorCostEstimate>> factorCostCache = new HashMap<>();
+		private final Map<TupleExpr, Object> factorFingerprintCache = new IdentityHashMap<>();
 		private final Map<FiniteDerivedSurfaceCacheKey, Optional<FiniteDerivedSurfaceEstimate>> finiteDerivedSurfaceCache = new HashMap<>();
 		private final Map<FiniteBranchRowsCacheKey, Double> finiteBranchRowsCache = new HashMap<>();
 		private long finiteDerivedSurfaceCacheHits;
@@ -2202,64 +2217,89 @@ class LmdbEvaluationStatistics
 	private static final class FactorCostCacheKey {
 		private final Object factorFingerprint;
 		private final Set<String> boundVars;
+		private final long boundVarMask;
+		private final boolean boundByMask;
 		private final long knownOutputRowsBits;
 		private final boolean collectMetrics;
 		private final Map<String, Set<Value>> finiteBindingValues;
 		private final JoinFactorCostModel.EstimationTier estimationTier;
 		private final int hashCode;
 
-		private FactorCostCacheKey(TupleExpr factor, Set<String> boundVars, double knownOutputRows,
+		private FactorCostCacheKey(Object factorFingerprint, Set<String> boundVars, double knownOutputRows,
 				boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
 				JoinFactorCostModel.EstimationTier estimationTier) {
-			this.factorFingerprint = factorFingerprint(factor);
-			this.boundVars = (boundVars);
+			this.factorFingerprint = factorFingerprint == null ? FactorCostCacheKey.factorFingerprint(null)
+					: factorFingerprint;
+			this.boundVars = immutableBoundVars(boundVars);
+			this.boundVarMask = 0L;
+			this.boundByMask = false;
 			this.knownOutputRowsBits = Double.doubleToLongBits(knownOutputRows);
 			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = (finiteBindingValues);
+			this.finiteBindingValues = finiteBindingValues == null ? Map.of() : finiteBindingValues;
 			this.estimationTier = estimationTier == null ? JoinFactorCostModel.EstimationTier.EXACT : estimationTier;
+			this.hashCode = computeHashCode();
+		}
+
+		private FactorCostCacheKey(Object factorFingerprint, long boundVarMask, double knownOutputRows,
+				boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
+				JoinFactorCostModel.EstimationTier estimationTier) {
+			this.factorFingerprint = factorFingerprint == null ? FactorCostCacheKey.factorFingerprint(null)
+					: factorFingerprint;
+			this.boundVars = Set.of();
+			this.boundVarMask = boundVarMask;
+			this.boundByMask = true;
+			this.knownOutputRowsBits = Double.doubleToLongBits(knownOutputRows);
+			this.collectMetrics = collectMetrics;
+			this.finiteBindingValues = finiteBindingValues == null ? Map.of() : finiteBindingValues;
+			this.estimationTier = estimationTier == null ? JoinFactorCostModel.EstimationTier.EXACT : estimationTier;
+			this.hashCode = computeHashCode();
+		}
+
+		private int computeHashCode() {
 			int result = factorFingerprint.hashCode();
-			result = 31 * result + this.boundVars.hashCode();
+			result = 31 * result + Boolean.hashCode(boundByMask);
+			result = 31 * result + (boundByMask ? Long.hashCode(boundVarMask) : boundVars.hashCode());
 			result = 31 * result + Long.hashCode(knownOutputRowsBits);
 			result = 31 * result + Boolean.hashCode(collectMetrics);
-			result = 31 * result + this.finiteBindingValues.hashCode();
-			result = 31 * result + this.estimationTier.hashCode();
-			this.hashCode = result;
+			result = 31 * result + finiteBindingValues.hashCode();
+			result = 31 * result + estimationTier.hashCode();
+			return result;
 		}
 
-		private static FactorCostCacheKey forBoundVars(TupleExpr factor, Set<String> boundVars,
+		private static FactorCostCacheKey forBoundVars(Object factorFingerprint, Set<String> boundVars,
 				double knownOutputRows, boolean collectMetrics) {
-			return forBoundVars(factor, boundVars, knownOutputRows, collectMetrics, Map.of());
+			return forBoundVars(factorFingerprint, boundVars, knownOutputRows, collectMetrics, Map.of());
 		}
 
-		private static FactorCostCacheKey forBoundVars(TupleExpr factor, Set<String> boundVars,
+		private static FactorCostCacheKey forBoundVars(Object factorFingerprint, Set<String> boundVars,
 				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues) {
-			return forBoundVars(factor, boundVars, knownOutputRows, collectMetrics, finiteBindingValues,
+			return forBoundVars(factorFingerprint, boundVars, knownOutputRows, collectMetrics, finiteBindingValues,
 					JoinFactorCostModel.EstimationTier.EXACT);
 		}
 
-		private static FactorCostCacheKey forBoundVars(TupleExpr factor, Set<String> boundVars,
+		private static FactorCostCacheKey forBoundVars(Object factorFingerprint, Set<String> boundVars,
 				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
 				JoinFactorCostModel.EstimationTier estimationTier) {
-			return new FactorCostCacheKey(factor, boundVars, knownOutputRows, collectMetrics, finiteBindingValues,
-					estimationTier);
+			return new FactorCostCacheKey(factorFingerprint, boundVars, knownOutputRows, collectMetrics,
+					finiteBindingValues, estimationTier);
 		}
 
-		private static FactorCostCacheKey forBoundMask(TupleExpr factor, String[] variableNames, long boundVarMask,
+		private static FactorCostCacheKey forBoundMask(Object factorFingerprint, long boundVarMask,
 				double knownOutputRows, boolean collectMetrics) {
-			return forBoundMask(factor, variableNames, boundVarMask, knownOutputRows, collectMetrics, Map.of());
+			return forBoundMask(factorFingerprint, boundVarMask, knownOutputRows, collectMetrics, Map.of());
 		}
 
-		private static FactorCostCacheKey forBoundMask(TupleExpr factor, String[] variableNames, long boundVarMask,
+		private static FactorCostCacheKey forBoundMask(Object factorFingerprint, long boundVarMask,
 				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues) {
-			return forBoundMask(factor, variableNames, boundVarMask, knownOutputRows, collectMetrics,
-					finiteBindingValues, JoinFactorCostModel.EstimationTier.EXACT);
+			return forBoundMask(factorFingerprint, boundVarMask, knownOutputRows, collectMetrics, finiteBindingValues,
+					JoinFactorCostModel.EstimationTier.EXACT);
 		}
 
-		private static FactorCostCacheKey forBoundMask(TupleExpr factor, String[] variableNames, long boundVarMask,
+		private static FactorCostCacheKey forBoundMask(Object factorFingerprint, long boundVarMask,
 				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
 				JoinFactorCostModel.EstimationTier estimationTier) {
-			return new FactorCostCacheKey(factor, immutableBoundVars(variableNames, boundVarMask), knownOutputRows,
-					collectMetrics, finiteBindingValues, estimationTier);
+			return new FactorCostCacheKey(factorFingerprint, boundVarMask, knownOutputRows, collectMetrics,
+					finiteBindingValues, estimationTier);
 		}
 
 		private static Set<String> immutableBoundVars(Set<String> boundVars) {
@@ -2267,22 +2307,6 @@ class LmdbEvaluationStatistics
 				return Set.of();
 			}
 			return Set.copyOf(boundVars);
-		}
-
-		private static Set<String> immutableBoundVars(String[] variableNames, long boundVarMask) {
-			if (variableNames == null || boundVarMask == 0L) {
-				return Set.of();
-			}
-			Set<String> boundVars = new HashSet<>();
-			long remaining = boundVarMask;
-			while (remaining != 0L) {
-				int id = Long.numberOfTrailingZeros(remaining);
-				remaining &= ~(1L << id);
-				if (id >= 0 && id < variableNames.length && variableNames[id] != null) {
-					boundVars.add(variableNames[id]);
-				}
-			}
-			return boundVars.isEmpty() ? Set.of() : boundVars;
 		}
 
 		private static Map<String, Set<Value>> immutableFiniteBindingValues(
@@ -2343,9 +2367,11 @@ class LmdbEvaluationStatistics
 			}
 			return knownOutputRowsBits == that.knownOutputRowsBits
 					&& collectMetrics == that.collectMetrics
+					&& boundByMask == that.boundByMask
+					&& (!boundByMask || boundVarMask == that.boundVarMask)
+					&& (boundByMask || boundVars.equals(that.boundVars))
 					&& estimationTier == that.estimationTier
 					&& factorFingerprint.equals(that.factorFingerprint)
-					&& boundVars.equals(that.boundVars)
 					&& finiteBindingValues.equals(that.finiteBindingValues);
 		}
 
