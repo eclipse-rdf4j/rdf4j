@@ -182,6 +182,14 @@ public interface JoinFactorCostModel {
 					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors);
 		}
 
+		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors,
+				EstimationTier estimationTier) {
+			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
+		}
+
 		public Set<String> getCurrentlyBoundVars() {
 			if (currentlyBoundVars == null) {
 				currentlyBoundVars = new VariableMaskSet(variableNames, currentlyBoundVarMask);

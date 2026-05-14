@@ -428,13 +428,13 @@ class LmdbEvaluationStatistics
 			return plan;
 		}
 
-		List<JoinOrderPlanner.PlanStep> enrichedSteps = new ArrayList<>(plan.getSteps().size());
+		List<JoinOrderPlanner.PlanStep> originalSteps = plan.getSteps();
+		List<JoinOrderPlanner.PlanStep> enrichedSteps = null;
 		Map<String, Set<Value>> finiteBindingValues = new HashMap<>();
 		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
 			TupleExpr tupleExpr = plan.getOrderedArgs().get(i);
-			JoinOrderPlanner.PlanStep step = plan.getSteps().get(i);
-			Map<String, String> stringMetrics = new HashMap<>(step.getStringMetrics());
-			Map<String, Double> doubleMetrics = new HashMap<>(step.getDoubleMetrics());
+			JoinOrderPlanner.PlanStep step = originalSteps.get(i);
+			JoinOrderPlanner.PlanStep enrichedStep = step;
 			Map<String, Set<Value>> finiteValuesForStep = finiteBindingValuesForStep(finiteBindingValues,
 					step.getBoundVarsBefore());
 			boolean hasFiniteValuesForStep = hasFiniteBindingValues(finiteValuesForStep);
@@ -442,13 +442,23 @@ class LmdbEvaluationStatistics
 				Optional<FactorCostEstimate> factorCostEstimate = estimateLmdbFactorCost(tupleExpr,
 						step.getBoundVarsBefore(), step.getFactorOutputRows(), true, finiteValuesForStep);
 				if (factorCostEstimate.isPresent()) {
+					Map<String, String> stringMetrics = new HashMap<>(step.getStringMetrics());
+					Map<String, Double> doubleMetrics = new HashMap<>(step.getDoubleMetrics());
 					stringMetrics.putAll(factorCostEstimate.get().getStringMetrics());
 					doubleMetrics.putAll(factorCostEstimate.get().getDoubleMetrics());
+					enrichedStep = new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(),
+							step.getFactorOutputRows(),
+							step.getPrefixOutputRows(), step.getStepWorkRows(), stringMetrics, doubleMetrics,
+							step.getAppliedFilterIndexes());
 				}
 			}
-			enrichedSteps.add(new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(), step.getFactorOutputRows(),
-					step.getPrefixOutputRows(), step.getStepWorkRows(), stringMetrics, doubleMetrics,
-					step.getAppliedFilterIndexes()));
+			if (enrichedSteps != null) {
+				enrichedSteps.add(enrichedStep);
+			} else if (enrichedStep != step) {
+				enrichedSteps = new ArrayList<>(originalSteps.size());
+				enrichedSteps.addAll(originalSteps.subList(0, i));
+				enrichedSteps.add(enrichedStep);
+			}
 			addFiniteBindingValues(finiteBindingValues, tupleExpr);
 		}
 
@@ -457,7 +467,8 @@ class LmdbEvaluationStatistics
 		summaryStringMetrics.put(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
 				"costModel=lmdb, accessPathSelection=per-step");
 		return new JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(), plan.getEstimatedTotalWork(),
-				plan.getDiagnostics(), summaryStringMetrics, plan.getSummaryDoubleMetrics(), enrichedSteps);
+				plan.getDiagnostics(), summaryStringMetrics, plan.getSummaryDoubleMetrics(),
+				enrichedSteps == null ? originalSteps : enrichedSteps);
 	}
 
 	private boolean hasAccessMetrics(JoinOrderPlanner.PlanStep step) {
@@ -2067,8 +2078,7 @@ class LmdbEvaluationStatistics
 			double factorRows) {
 		AccessPathEstimate bestEstimate = null;
 		int lookupComponentMask = lookupComponentMaskWithConstants(accessShape, accessShape.pattern());
-		List<TripleStore.IndexAccessPath> candidates = tripleStore
-				.indexAccessPaths(lookupComponentMask);
+		List<TripleStore.IndexAccessPath> candidates = tripleStore.indexAccessPaths(lookupComponentMask);
 		int candidateCount = candidates.size();
 		for (TripleStore.IndexAccessPath candidate : candidates) {
 			double rowsBefore = accessShape.estimateAccessRows(candidate.prefixComponentMask());
@@ -2523,6 +2533,19 @@ class LmdbEvaluationStatistics
 		return sketchBasedJoinEstimator.estimateFilterPass(filter);
 	}
 
+	Optional<FilterPassEstimate> estimatePatternLocalFilterPass(org.eclipse.rdf4j.query.algebra.ValueExpr condition,
+			StatementPattern pattern, Set<StatementPattern> originPatterns) {
+		if (filterSelectivityStats == null || condition == null || pattern == null || originPatterns == null
+				|| originPatterns.isEmpty()) {
+			return Optional.empty();
+		}
+		int localBoundComponentMask = localBoundComponentMaskForOriginPatterns(pattern, originPatterns);
+		if (localBoundComponentMask == 0) {
+			return Optional.empty();
+		}
+		return learnedLocalBoundFilterPass(condition, pattern, localBoundComponentMask);
+	}
+
 	private Optional<FilterPassEstimate> learnedLocalBoundFilterPass(Filter filter) {
 		if (filterSelectivityStats == null || filter == null || filter.getCondition() == null) {
 			return Optional.empty();
@@ -2535,19 +2558,25 @@ class LmdbEvaluationStatistics
 		if (localBoundComponentMask == 0) {
 			return Optional.empty();
 		}
+		return learnedLocalBoundFilterPass(filter.getCondition(), pattern, localBoundComponentMask);
+	}
+
+	private Optional<FilterPassEstimate> learnedLocalBoundFilterPass(
+			org.eclipse.rdf4j.query.algebra.ValueExpr condition, StatementPattern pattern,
+			int localBoundComponentMask) {
 		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
 		if (patternKey == null) {
 			return Optional.empty();
 		}
 		String filterKey = FilterSelectivityKeys.qualifyFilterKey(
-				FilterSelectivityKeys.filterKeyFor(filter.getCondition()), localBoundComponentMask);
+				FilterSelectivityKeys.filterKeyFor(condition), localBoundComponentMask);
 		double ratio = filterSelectivityStats.getFilterPassRatio(patternKey, filterKey);
 		if (ratio >= 0.0d && ratio <= 1.0d) {
 			return Optional.of(new FilterPassEstimate(ratio, FilterPassEstimate.Source.LEARNED_FILTER,
 					filterSelectivityStats.getFilterObservationCount(patternKey, filterKey)));
 		}
 		String templateKey = FilterSelectivityKeys.qualifyFilterKey(
-				FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern), localBoundComponentMask);
+				FilterSelectivityKeys.filterTemplateKeyFor(condition, pattern), localBoundComponentMask);
 		if (templateKey == null) {
 			return Optional.empty();
 		}
@@ -2593,6 +2622,19 @@ class LmdbEvaluationStatistics
 			return 0;
 		}
 		Set<String> externalBindingNames = externalBindingNames(filter.getArg(), pattern);
+		return localBoundComponentMaskForNames(pattern, externalBindingNames);
+	}
+
+	private int localBoundComponentMaskForOriginPatterns(StatementPattern pattern,
+			Set<StatementPattern> originPatterns) {
+		if (pattern == null || originPatterns == null || originPatterns.isEmpty()) {
+			return 0;
+		}
+		Set<String> externalBindingNames = externalBindingNames(originPatterns, pattern);
+		return localBoundComponentMaskForNames(pattern, externalBindingNames);
+	}
+
+	private int localBoundComponentMaskForNames(StatementPattern pattern, Set<String> externalBindingNames) {
 		int componentMask = 0;
 		componentMask |= localBoundComponentMask(pattern.getSubjectVar(), externalBindingNames, Component.S);
 		componentMask |= localBoundComponentMask(pattern.getPredicateVar(), externalBindingNames, Component.P);
@@ -2612,6 +2654,16 @@ class LmdbEvaluationStatistics
 	private Set<String> externalBindingNames(TupleExpr tupleExpr, StatementPattern excludedPattern) {
 		Set<String> names = new HashSet<>();
 		collectExternalBindingNames(tupleExpr, excludedPattern, names);
+		return names;
+	}
+
+	private Set<String> externalBindingNames(Set<StatementPattern> originPatterns, StatementPattern excludedPattern) {
+		Set<String> names = new HashSet<>();
+		for (StatementPattern pattern : originPatterns) {
+			if (pattern != excludedPattern) {
+				names.addAll(pattern.getBindingNames());
+			}
+		}
 		return names;
 	}
 

@@ -37,7 +37,7 @@ final class LmdbSmallLiteralFilterAnchors {
 		}
 		for (DeferredFilter filter : filters) {
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.condition);
-			if (anchor == null || !LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(filter.passEstimate)) {
+			if (anchor == null || !LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(filter.passEstimate())) {
 				continue;
 			}
 			String bindingName = anchor.getBindingNames().iterator().next();

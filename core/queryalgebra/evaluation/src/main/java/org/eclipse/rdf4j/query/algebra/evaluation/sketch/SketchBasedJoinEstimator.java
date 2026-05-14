@@ -4038,8 +4038,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return Optional.empty();
 		}
 		SketchJoinOrderPlanner planner = factorCostModel == null
-				? new SketchJoinOrderPlanner(this, workAdjuster, orderedArgs, initiallyBoundVars, deferredFilters)
-				: new SketchJoinOrderPlanner(this, factorCostModel, orderedArgs, initiallyBoundVars, deferredFilters);
+				? SketchJoinOrderPlanner.fixedOrder(this, workAdjuster, orderedArgs, initiallyBoundVars,
+						deferredFilters)
+				: SketchJoinOrderPlanner.fixedOrder(this, factorCostModel, orderedArgs, initiallyBoundVars,
+						deferredFilters);
 		return planner.estimateFixedOrder(algorithm).plan();
 	}
 
@@ -5820,6 +5822,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
 			return normalizeRows(estimate.outputRows);
 		}
+		estimate = orderedTupleExprCardinality(tupleExprs);
+		if (estimate != null) {
+			recordRobustCardinalityPath(SketchPlannerPath.ROBUST_USED);
+			return normalizeRows(estimate.outputRows);
+		}
 		TupleExpr orderedTree = leftDeepJoinTree(tupleExprs);
 		if (orderedTree == null) {
 			recordRobustCardinalityPath(SketchPlannerPath.UNSUPPORTED_SHAPE);
@@ -5983,6 +5990,51 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 		return estimate;
+	}
+
+	private TuplePlanEstimate orderedTupleExprCardinality(List<TupleExpr> tupleExprs) {
+		if (tupleExprs.isEmpty() || hasLateBindingSetAssignment(tupleExprs)) {
+			return null;
+		}
+
+		TuplePlanEstimate estimate;
+		int index;
+		if (tupleExprs.getFirst() instanceof BindingSetAssignment) {
+			if (tupleExprs.size() < 2) {
+				return estimateTupleExprPlan(tupleExprs.getFirst());
+			}
+			estimate = estimateBindingSetAssignmentJoinPlan(tupleExprs.get(0), tupleExprs.get(1), false,
+					Collections.emptySet());
+			if (estimate == null) {
+				return null;
+			}
+			index = 2;
+		} else {
+			estimate = estimateTupleExprPlan(tupleExprs.getFirst());
+			if (estimate == null) {
+				return null;
+			}
+			index = 1;
+		}
+
+		for (int i = index; i < tupleExprs.size(); i++) {
+			TuplePlanEstimate factorEstimate = estimateTupleExprPlan(tupleExprs.get(i));
+			if (factorEstimate == null) {
+				return null;
+			}
+			JoinStepEstimate step = estimateJoinStep(estimate, factorEstimate);
+			estimate = new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
+		}
+		return estimate;
+	}
+
+	private boolean hasLateBindingSetAssignment(List<TupleExpr> tupleExprs) {
+		for (int i = 1; i < tupleExprs.size(); i++) {
+			if (tupleExprs.get(i) instanceof BindingSetAssignment) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private TupleExpr leftDeepJoinTree(List<TupleExpr> tupleExprs) {

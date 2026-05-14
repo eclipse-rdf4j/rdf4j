@@ -125,10 +125,11 @@ final class GuaranteePlanOptionProvider {
 			return List.of();
 		}
 
+		Set<String> segmentBindingNames = segmentBindingNames(segment);
 		List<FilterPlanOption> options = new ArrayList<>();
 		for (int i = 0; i < filters.size(); i++) {
 			DeferredFilter filter = filters.get(i);
-			Optional<String> tautology = tautologicalFilter(filter.condition, domains, segmentBindingNames(segment));
+			Optional<String> tautology = tautologicalFilter(filter.condition, domains, segmentBindingNames);
 			if (tautology.isPresent()) {
 				List<DeferredFilter> rewrittenFilters = copyFilters(filters);
 				rewrittenFilters.remove(i);
@@ -136,8 +137,7 @@ final class GuaranteePlanOptionProvider {
 				continue;
 			}
 
-			Optional<ValueExprRewrite> rewrite = equalityRewrite(filter.condition, domains,
-					segmentBindingNames(segment));
+			Optional<ValueExprRewrite> rewrite = equalityRewrite(filter.condition, domains, segmentBindingNames);
 			if (rewrite.isEmpty()) {
 				continue;
 			}
@@ -886,7 +886,7 @@ final class GuaranteePlanOptionProvider {
 	private static DeferredFilter withCondition(DeferredFilter filter, ValueExpr condition) {
 		DeferredFilter rewritten = new DeferredFilter(condition, filter.requiredVars,
 				DeferredFilter.conditionBindingNames(condition), filter.conditionCost, filter.originalIndex,
-				filter.patternLocalBase, filter.originPatterns, filter.passEstimate);
+				filter.patternLocalBase, filter.originPatterns, filter.passEstimate());
 		rewritten.applied = filter.applied;
 		return rewritten;
 	}

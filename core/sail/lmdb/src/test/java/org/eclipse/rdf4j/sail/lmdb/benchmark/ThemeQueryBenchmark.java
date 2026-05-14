@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -104,31 +105,31 @@ public class ThemeQueryBenchmark {
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 
 	@Param({
-//			"0",
-//			"1",
-//			"2",
-//			"3",
-//			"4",
-//			"5",
-//			"6",
-//			"7",
-//			"8",
+			"0",
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
 			"9",
-//			"10",
+			"10",
 //			"11",
 //			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
+			"MEDICAL_RECORDS",
+			"SOCIAL_MEDIA",
 			"LIBRARY",
-//			"ENGINEERING",
-//			"HIGHLY_CONNECTED",
-//			"TRAIN",
-//			"ELECTRICAL_GRID",
-//			"PHARMA"
+			"ENGINEERING",
+			"HIGHLY_CONNECTED",
+			"TRAIN",
+			"ELECTRICAL_GRID",
+			"PHARMA"
 	})
 	public String themeName;
 
@@ -179,54 +180,72 @@ public class ThemeQueryBenchmark {
 	@Benchmark
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
-			long count;
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setMaxExecutionTime(70);
-			try (var evaluate = tupleQuery.evaluate()) {
-				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
-			}
+			QueryResultSummary result = evaluateQuery(tupleQuery, expectedCountBindingValue.isPresent());
+			assertExpectedResult(result, expectedCountBindingValue);
 
-			if (count != expected) {
-				throw new IllegalStateException(
-						"Unexpected result row count for " + queryDescription() + ": expected " + expected
-								+ " but got " + count);
-			}
-
-			return count;
+			return benchmarkResult(result, expectedCountBindingValue);
 		}
 	}
 
-	private long countRowsAndVerifyCountBinding(TupleQueryResult evaluate, OptionalLong expectedCountBindingValue) {
-		long count = 0;
-		while (evaluate.hasNext()) {
-			var bindingSet = evaluate.next();
-			count++;
-			if (expectedCountBindingValue.isPresent()) {
-				if (count > 1) {
-					throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
-							+ " but saw at least " + count + " rows");
-				}
-				var value = bindingSet.getValue(COUNT_BINDING_NAME);
-				if (!(value instanceof Literal literal)) {
-					throw new IllegalStateException("Expected literal ?" + COUNT_BINDING_NAME + " binding for "
-							+ queryDescription() + " but got " + value);
-				}
-				long actualCountBindingValue = literal.longValue();
-				long expectedValue = expectedCountBindingValue.getAsLong();
-				if (actualCountBindingValue != expectedValue) {
-					throw new IllegalStateException("Unexpected ?" + COUNT_BINDING_NAME + " binding for "
-							+ queryDescription() + ": expected " + expectedValue + " but got "
-							+ actualCountBindingValue);
+	private QueryResultSummary evaluateQuery(TupleQuery tupleQuery, boolean captureCountBinding) {
+		long rowCount = 0L;
+		Long countBindingValue = null;
+		try (TupleQueryResult result = tupleQuery.evaluate()) {
+			while (result.hasNext()) {
+				BindingSet bindings = result.next();
+				rowCount++;
+				if (captureCountBinding) {
+					if (rowCount > 1) {
+						throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
+								+ " but saw at least " + rowCount + " rows");
+					}
+					countBindingValue = countBindingValue(bindings);
 				}
 			}
 		}
-		if (expectedCountBindingValue.isPresent() && count == 0) {
-			throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
-					+ " but query returned no rows");
+		return new QueryResultSummary(rowCount, countBindingValue);
+	}
+
+	private Long countBindingValue(BindingSet bindings) {
+		var value = bindings.getValue(COUNT_BINDING_NAME);
+		if (value == null) {
+			return null;
 		}
-		return count;
+		if (value instanceof Literal literal) {
+			return literal.longValue();
+		}
+		throw new IllegalStateException("Unexpected aggregate binding type for " + COUNT_BINDING_NAME + ": " + value);
+	}
+
+	private void assertExpectedResult(QueryResultSummary result, OptionalLong expectedCountBindingValue) {
+		if (result.rowCount != expected) {
+			throw new IllegalStateException(
+					"Unexpected result row count for " + queryDescription() + ": expected " + expected
+							+ " but got " + result.rowCount);
+		}
+		if (expectedCountBindingValue.isPresent()) {
+			if (result.countBindingValue == null) {
+				throw new IllegalStateException("Expected literal ?" + COUNT_BINDING_NAME + " binding for "
+						+ queryDescription() + " but got null");
+			}
+			long expectedValue = expectedCountBindingValue.getAsLong();
+			if (result.countBindingValue != expectedValue) {
+				throw new IllegalStateException("Unexpected ?" + COUNT_BINDING_NAME + " binding for "
+						+ queryDescription() + ": expected " + expectedValue + " but got "
+						+ result.countBindingValue);
+			}
+		}
+	}
+
+	private long benchmarkResult(QueryResultSummary result, OptionalLong expectedCountBindingValue) {
+		if (expectedCountBindingValue.isPresent()) {
+			return result.countBindingValue;
+		}
+		return result.rowCount;
 	}
 
 	private String queryDescription() {
@@ -680,6 +699,22 @@ public class ThemeQueryBenchmark {
 
 	@Test
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
+	public void executeQueryReturnsAggregateMemberCountForLibraryQueryNine() throws IOException {
+		themeName = "LIBRARY";
+		z_queryIndex = 9;
+		setup();
+		try {
+			long expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme, z_queryIndex)
+					.orElseThrow();
+			assertEquals(expectedCountBindingValue, executeQuery(),
+					"Library q9 must validate the aggregate member count, not only the aggregate result row");
+		} finally {
+			tearDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 5, unit = TimeUnit.MINUTES)
 //	@Disabled
 	public void testQueryExplanation() throws IOException {
 		var queryIndexes = paramValues("z_queryIndex");
@@ -745,6 +780,9 @@ public class ThemeQueryBenchmark {
 		} catch (NoSuchFieldException e) {
 			throw new IllegalStateException("Missing field " + fieldName, e);
 		}
+	}
+
+	private record QueryResultSummary(long rowCount, Long aggregateCount) {
 	}
 
 	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {

@@ -688,13 +688,23 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					+ "selected=finite-anchor:authorName"),
 					"LIBRARY q9's inferred finite object domain should enter the Pareto option set and select "
 							+ "the authorName anchor:\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates=original[baseline")
+			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates=original[skipped-preselected")
 					&& optimizedPlan.contains("finite-anchor:authorName[valid"),
-					"LIBRARY q9 should explain both the original and finite-anchor candidate costs:\n"
+					"LIBRARY q9 should preselect the exact finite-anchor candidate without costing the original "
+							+ "baseline DP plan:\n"
 							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("optimizer.logicalExploration=mode=pareto"),
-					"LIBRARY q9's inferred finite object domain should be selected by the native Pareto planner "
-							+ "option path:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("optimizer.logicalExploration=mode=fixed-order"),
+					"LIBRARY q9's inferred finite object domain should be selected by fixed connected costing "
+							+ "before the expensive native Pareto planner option path:\n" + optimizedPlan);
+			assertEquals(1, countOccurrences(optimizedPlan, "optimizer.logicalExploration=mode=fixed-order"),
+					"Default optimized explanations should stamp fixed-order planner-summary diagnostics once "
+							+ "instead of repeating them on every q9 plan node:\n" + optimizedPlan);
+			assertFalse(optimizedPlan.contains("finalFrontier=[{order="),
+					"Default optimized explanations should not rebuild the verbose final-frontier order string "
+							+ "on the fixed-order hot path:\n" + optimizedPlan);
+			assertFalse(optimizedPlan.contains("stepFactors=") || optimizedPlan.contains("fixed-connectedOrder="),
+					"Default optimized explanations should not rebuild verbose guarantee-option step/order "
+							+ "diagnostics on the fixed-order hot path:\n" + optimizedPlan);
 			assertFalse(optimizedPlan.contains("bounded-greedy selected"),
 					"LIBRARY q9 should compare bounded greedy with the full planner instead of selecting it "
 							+ "early:\n" + optimizedPlan);
@@ -1402,6 +1412,16 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		int count = 0;
 		for (BindingSet ignored : assignment.getBindingSets()) {
 			count++;
+		}
+		return count;
+	}
+
+	private static int countOccurrences(String value, String needle) {
+		int count = 0;
+		int index = 0;
+		while ((index = value.indexOf(needle, index)) >= 0) {
+			count++;
+			index += needle.length();
 		}
 		return count;
 	}

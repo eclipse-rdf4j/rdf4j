@@ -247,8 +247,7 @@ final class LmdbDeferredFilterPlacer {
 		if (prefixFilters.isEmpty()) {
 			return tupleExpr;
 		}
-		TupleExpr filtered = tupleExpr;
-		return filterWrapper.wrap(filtered, prefixFilters, "bindingPrefix");
+		return filterWrapper.wrap(tupleExpr, prefixFilters, "bindingPrefix");
 	}
 
 	private void updateFinitePrefixBindingNames(Set<String> finitePrefixBindingNames, TupleExpr tupleExpr) {
@@ -923,12 +922,16 @@ final class LmdbDeferredFilterPlacer {
 			return Optional.empty();
 		}
 
+		for (TupleExpr root : roots) {
+			if (!(root instanceof BindingSetAssignment)) {
+				return Optional.empty();
+			}
+		}
+
 		List<BindingSetAssignment> assignments = new ArrayList<>(roots.size());
 		LinkedHashSet<String> bindingNames = new LinkedHashSet<>();
 		for (TupleExpr root : roots) {
-			if (!(root instanceof BindingSetAssignment assignment)) {
-				return Optional.empty();
-			}
+			BindingSetAssignment assignment = (BindingSetAssignment) root;
 			assignments.add(assignment);
 			bindingNames.addAll(assignment.getAssuredBindingNames());
 		}

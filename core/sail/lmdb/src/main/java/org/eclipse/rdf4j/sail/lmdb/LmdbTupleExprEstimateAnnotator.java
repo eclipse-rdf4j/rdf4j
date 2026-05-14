@@ -208,14 +208,47 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	@Override
 	public void meet(Filter node) {
 		node.getArg().visit(this);
-		EvaluationStatistics.FilterPassEstimate passEstimate = statistics == null ? null
-				: statistics.estimateFilterPass(node);
+		EvaluationStatistics.FilterPassEstimate passEstimate = existingFilterPassEstimate(node);
+		if (passEstimate == null && statistics != null && !LmdbJoinPlanSupport.containsExists(node.getCondition())) {
+			passEstimate = statistics.estimateFilterPass(node);
+		}
 		stampFilterTelemetry(node, passEstimate);
 
 		double childRows = nodeRows(node.getArg());
 		double rows = estimateFilterRows(node, childRows, passEstimate);
 		double workRows = passThroughWork(node.getArg(), childRows, true);
 		stampEstimate(node, rows, workRows, filterSelectivitySource(passEstimate, true));
+	}
+
+	private EvaluationStatistics.FilterPassEstimate existingFilterPassEstimate(Filter filter) {
+		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW);
+		if (!isValidPassRatio(passRatio)) {
+			passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);
+		}
+		if (!isValidPassRatio(passRatio)) {
+			return null;
+		}
+		EvaluationStatistics.FilterPassEstimate.Source source = existingFilterSource(filter);
+		if (source == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN) {
+			return null;
+		}
+		return new EvaluationStatistics.FilterPassEstimate(passRatio, source,
+				filter.getLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT));
+	}
+
+	private EvaluationStatistics.FilterPassEstimate.Source existingFilterSource(Filter filter) {
+		String source = filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
+		if (source == null) {
+			source = filter.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		}
+		if (source == null) {
+			return EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN;
+		}
+		try {
+			return EvaluationStatistics.FilterPassEstimate.Source.valueOf(source.toUpperCase(Locale.ROOT));
+		} catch (IllegalArgumentException ignored) {
+			return EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN;
+		}
 	}
 
 	@Override

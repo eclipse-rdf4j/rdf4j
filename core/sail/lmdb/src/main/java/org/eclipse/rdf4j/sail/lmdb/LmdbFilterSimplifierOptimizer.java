@@ -123,13 +123,13 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			annotateFilter(filter);
 			if (filter.getArg()instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
+			}
+			if (!rewriteSmallLiteralFilterAnchors(filter)) {
 				annotateFilter(filter);
 			}
-			rewriteSmallLiteralFilterAnchors(filter);
 		}
 	}
 
@@ -148,13 +148,16 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return new And(rightCondition.clone(), leftCondition.clone());
 	}
 
-	private void rewriteSmallLiteralFilterAnchors(Filter filter) {
+	private boolean rewriteSmallLiteralFilterAnchors(Filter filter) {
 		if (isVariableScopeChange(filter)) {
-			return;
+			return false;
 		}
 
 		TupleExpr arg = filter.getArg();
 		List<ValueExpr> conditions = LmdbJoinPlanSupport.splitConjuncts(filter.getCondition());
+		if (!hasSmallLiteralAnchorCandidate(conditions)) {
+			return false;
+		}
 		Set<String> mandatoryOptionalAnchorBindings = new HashSet<>();
 		Set<String> removableMandatoryOptionalAnchorBindings = new HashSet<>();
 		TupleExpr mandatoryArg = makeUnboundRejectingOptionalsMandatory(arg, conditions,
@@ -211,17 +214,39 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 		if (remainingConditions.isEmpty()) {
 			filter.replaceWith(anchors.isEmpty() ? arg : prependAnchors(arg, anchors));
-			return;
+			return true;
 		}
 
 		if (anchors.isEmpty()) {
-			return;
+			return false;
 		}
 
 		TupleExpr anchoredArg = prependAnchors(arg, anchors);
 		filter.setArg(anchoredArg);
 		filter.setCondition(LmdbJoinPlanSupport.combinedCondition(remainingConditions));
-		annotateFilter(filter);
+		return false;
+	}
+
+	private static boolean hasSmallLiteralAnchorCandidate(List<ValueExpr> conditions) {
+		for (ValueExpr condition : conditions) {
+			if (isSmallLiteralAnchorCandidate(condition)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isSmallLiteralAnchorCandidate(ValueExpr condition) {
+		if (condition instanceof ListMemberOperator || condition instanceof SameTerm) {
+			return true;
+		}
+		if (condition instanceof Compare compare) {
+			return compare.getOperator() == Compare.CompareOp.EQ;
+		}
+		if (condition instanceof Or or) {
+			return isSmallLiteralAnchorCandidate(or.getLeftArg()) || isSmallLiteralAnchorCandidate(or.getRightArg());
+		}
+		return false;
 	}
 
 	private static TupleExpr makeUnboundRejectingOptionalsMandatory(TupleExpr arg, List<ValueExpr> conditions,
@@ -908,7 +933,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private void annotateFilter(Filter filter) {
 		annotateIdFilters(filter);
-		if (statistics == null) {
+		if (statistics == null || LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
 			return;
 		}
 		double passRatio = filter.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO);

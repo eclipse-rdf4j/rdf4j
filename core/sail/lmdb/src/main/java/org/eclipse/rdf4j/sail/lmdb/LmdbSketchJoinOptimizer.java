@@ -114,9 +114,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final String FINITE_ANCHOR_PLANNER_ID = "lmdb-finite-anchor";
 	private static final String FINITE_ANCHOR_PLANNER_PATH = "CANONICAL_FINITE_ANCHOR";
 	private static final String LMDB_PHYSICAL_REFINEMENT = "costModel=lmdb, accessPathSelection=per-step";
+	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
+	private static final String LMDB_PLAN_ALTERNATIVES_PROPERTY = "rdf4j.optimizer.lmdb.planAlternatives";
 	private static final Set<String> ROOT_ONLY_PLAN_SUMMARY_STRING_METRICS = Set.of(
 			"optimizer.guaranteeOptionCandidates",
 			"satisfiedFilters");
+	private static final Set<String> DEFAULT_REPEATED_PLAN_SUMMARY_STRING_METRICS = Set.of(
+			TelemetryMetricNames.PLANNER_ALGORITHM);
 	private final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 
@@ -214,9 +218,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private List<Filter> contextualCostingFilters = List.of();
 		private double repeatedSubplanInvocations = 1.0d;
 		private TupleExpr repeatedSubplanSource;
+		private boolean cheapNestedStatementPatternCosting;
 		private final Map<TupleExpr, PlannedPrefixEstimate> selectedPlanPrefixByFactor = new IdentityHashMap<>();
 		private Map<String, String> selectedPlanSummaryStringMetrics = Map.of();
 		private Map<String, Double> selectedPlanSummaryDoubleMetrics = Map.of();
+		private final boolean traceGuaranteeDiagnostics = Boolean.getBoolean(TRACE_DIAGNOSTICS_PROPERTY)
+				|| Boolean.getBoolean(LMDB_PLAN_ALTERNATIVES_PROPERTY);
 
 		private JoinVisitor(Set<String> initiallyBoundVars) {
 			super(trackResultSize);
@@ -1661,6 +1668,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(repeatedSubplanInvocations)
 					|| LmdbJoinPlanSupport.isFiniteNonNegative(distinctLookupBindings)) {
+				if (cheapNestedStatementPatternCosting) {
+					return costModel.estimateFactorCost(statementPattern, JoinFactorCostModel.CostContext
+							.of(boundVars, repeatedSubplanInvocations, distinctLookupBindings, true)
+							.withEstimationTier(JoinFactorCostModel.EstimationTier.CHEAP));
+				}
 				List<TupleExpr> prefixFactors = nestedSurfacePrefixFactors();
 				Map<String, Set<Value>> finiteBindingValues = nestedFiniteBindingValues(prefixFactors);
 				if (!finiteBindingValues.isEmpty() && !prefixFactors.isEmpty()) {
@@ -2200,6 +2212,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Set<String> originalBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
+				if (optimizeSimpleSinglePatternFilterReplacement(replaceTarget, filterArg, additionalFilters,
+						originalBoundVars)) {
+					return;
+				}
 				CollectedJoinArgs collected = new CollectedJoinArgs();
 				collected.joinArgs.add(filterArg);
 				collected.deferredFilters.addAll(additionalFilters);
@@ -2211,6 +2227,41 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			} finally {
 				boundVars = originalBoundVars;
 			}
+		}
+
+		private boolean optimizeSimpleSinglePatternFilterReplacement(Filter replaceTarget, TupleExpr filterArg,
+				List<Filter> additionalFilters, Set<String> originalBoundVars) {
+			if (!(filterArg instanceof StatementPattern) || additionalFilters.isEmpty()) {
+				return false;
+			}
+			for (Filter filter : additionalFilters) {
+				if (LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
+					return false;
+				}
+			}
+			Set<String> scopeBindingNames = new HashSet<>(originalBoundVars);
+			scopeBindingNames.addAll(filterArg.getBindingNames());
+			List<DeferredFilter> filters = LmdbJoinPlanSupport.buildDeferredFilters(additionalFilters,
+					scopeBindingNames, statistics);
+			for (DeferredFilter filter : filters) {
+				if (!scopeBindingNames.containsAll(filter.conditionVars)) {
+					return false;
+				}
+			}
+			boolean originalCheapNestedStatementPatternCosting = cheapNestedStatementPatternCosting;
+			try {
+				cheapNestedStatementPatternCosting = true;
+				filterArg.visit(this);
+			} finally {
+				cheapNestedStatementPatternCosting = originalCheapNestedStatementPatternCosting;
+			}
+			TupleExpr root = filterArg;
+			for (DeferredFilter filter : filters) {
+				root = applyFilter(root, filter, "localPattern");
+				filter.applied = true;
+			}
+			replaceTarget.replaceWith(root);
+			return true;
 		}
 
 		private CollectedJoinArgs collectJoinArgs(Join join) {
@@ -2510,7 +2561,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				List<ValueExpr> remainingConditions = new ArrayList<>();
 				for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
 					BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition);
-					if (LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(statistics, filter, condition)
+					if (anchor != null
+							&& LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(statistics, filter, condition)
 							&& LmdbJoinPlanSupport.canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor)) {
 						insertSmallLiteralFilterAnchor(collected.joinArgs, filter.getArg(), anchor);
 					}
@@ -2835,16 +2887,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					segmentFilters.add(filter);
 				}
 			}
-			List<JoinOrderPlanner.FilterConstraint> plannerFilters = new ArrayList<>(
-					LmdbJoinPlanSupport.toPlannerFilterConstraints(segmentFilters));
 			List<DeferredFilter> segmentCostingOnlyFilters = new ArrayList<>();
 			for (DeferredFilter filter : costingOnlyFilters) {
 				if (segmentBindings.containsAll(filter.requiredVars)) {
 					segmentCostingOnlyFilters.add(filter);
 				}
 			}
-			plannerFilters.addAll(LmdbJoinPlanSupport.toPlannerFilterConstraints(segmentCostingOnlyFilters, true));
-			OrderedSegment ordered = orderSegment(segment, boundBeforeSegment, plannerFilters, segmentFilters);
+			OrderedSegment ordered = orderSegment(segment, boundBeforeSegment, segmentFilters,
+					segmentCostingOnlyFilters);
 			TupleExpr root = buildSegmentRoot(ordered.orderedArgs, segmentFilters, boundBeforeSegment,
 					ordered.filterPlacementSteps, ordered.rightDeepJoinTree);
 			if (root != null) {
@@ -2888,7 +2938,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private OrderedSegment orderSegment(List<TupleExpr> segment, Set<String> boundBeforeSegment,
-				List<JoinOrderPlanner.FilterConstraint> plannerFilters, List<DeferredFilter> segmentFilters) {
+				List<DeferredFilter> segmentFilters, List<DeferredFilter> segmentCostingOnlyFilters) {
 			clearSelectedPlanAnnotations();
 			if (!(statistics instanceof JoinOrderPlanner planner)) {
 				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
@@ -2906,7 +2956,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			int segmentFilterCount = segmentFilters.size();
 			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation();
 			GuaranteeChoices guaranteeChoices = guaranteeChoices(segment, segmentFilters);
+			List<JoinOrderPlanner.FilterConstraint> plannerFilters = null;
 			if (preferFiniteAnchorFastPath && !guaranteeChoices.hasChoiceOptions()) {
+				plannerFilters = plannerFilterConstraints(segmentFilters, segmentCostingOnlyFilters);
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
@@ -2918,6 +2970,24 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			JoinOrderPlanner.Algorithm algorithm = plannerAlgorithm(segment.size());
+			Optional<JoinOrderPlanner.JoinOrderPlan> preselectedPlan = preselectedFixedGuaranteePlanOption(segment,
+					boundBeforeSegment, segmentFilters, segmentCostingOnlyFilters, algorithm, planner,
+					guaranteeChoices);
+			if (preselectedPlan.isPresent()) {
+				JoinOrderPlanner.JoinOrderPlan selectedPlan = preselectedPlan.get();
+				applyPlannerStepEstimates(selectedPlan);
+				FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
+						selectedPlan.getOrderedArgs(), boundBeforeSegment);
+				List<TupleExpr> orderedArgs = finiteAssignmentReorder.orderedArgs();
+				segmentFilterCount = segmentFilters.size();
+				Map<Integer, Integer> filterPlacementSteps = finiteAssignmentReorder.changed()
+						? Map.of()
+						: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
+				return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
+			}
+			if (plannerFilters == null) {
+				plannerFilters = plannerFilterConstraints(segmentFilters, segmentCostingOnlyFilters);
+			}
 			JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(new ArrayList<>(segment),
 					new HashSet<>(boundBeforeSegment), algorithm, plannerFilters);
 			Optional<JoinOrderPlanner.JoinOrderPlan> plan = attempt.getPlan();
@@ -2953,6 +3023,70 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					? Map.of()
 					: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
 			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
+		}
+
+		private Optional<JoinOrderPlanner.JoinOrderPlan> preselectedFixedGuaranteePlanOption(List<TupleExpr> segment,
+				Set<String> boundBeforeSegment, List<DeferredFilter> segmentFilters,
+				List<DeferredFilter> segmentCostingOnlyFilters, JoinOrderPlanner.Algorithm algorithm,
+				JoinOrderPlanner planner, GuaranteeChoices guaranteeChoices) {
+			if (!preselectableFixedGuaranteeChoice(guaranteeChoices)) {
+				return Optional.empty();
+			}
+			GuaranteePlanOptionProvider.PlanOption option = guaranteeChoices.finiteAnchorOptions()
+					.getFirst();
+			if (option.satisfiedFilterIndex() < 0 || option.satisfiedFilterIndex() >= segmentFilters.size()) {
+				return Optional.empty();
+			}
+			List<JoinOrderPlanner.FilterConstraint> optionPlannerFilters = plannerFilterConstraints(segmentFilters,
+					segmentCostingOnlyFilters, option.satisfiedFilterIndex());
+			GuaranteeOptionPlanSelection candidateSelection = fixedGuaranteeOptionPlan(option.factors(),
+					boundBeforeSegment, optionPlannerFilters, algorithm, planner, option.name());
+			Optional<JoinOrderPlanner.JoinOrderPlan> candidate = candidateSelection.plan();
+			if (candidate.isEmpty()
+					|| !candidateSelection.details().startsWith("costing=fixed-connected")
+					|| !isValidPlannerOrder(option.factors(), candidate.get())) {
+				return Optional.empty();
+			}
+
+			segmentFilters.get(option.satisfiedFilterIndex()).applied = true;
+			segmentFilters.remove(option.satisfiedFilterIndex());
+			List<GuaranteeOptionCandidate> candidateSummaries = new ArrayList<>(2);
+			candidateSummaries.add(GuaranteeOptionCandidate.invalid("original", "skipped-preselected"));
+			candidateSummaries.add(GuaranteeOptionCandidate.valid(option.name(), candidate.get(),
+					guaranteeOptionComparableWork(candidate.get(), option.name()), "valid",
+					guaranteeOptionCandidateDetails(candidate.get(), option.satisfiedFilterIndex(),
+							candidateSelection.details())));
+			return Optional.of(withGuaranteeOptionMetrics(candidate.get(), guaranteeChoices.generatedCount(),
+					option.name(), candidateSummaries));
+		}
+
+		private List<JoinOrderPlanner.FilterConstraint> plannerFilterConstraints(List<DeferredFilter> segmentFilters,
+				List<DeferredFilter> segmentCostingOnlyFilters) {
+			return plannerFilterConstraints(segmentFilters, segmentCostingOnlyFilters, -1);
+		}
+
+		private List<JoinOrderPlanner.FilterConstraint> plannerFilterConstraints(List<DeferredFilter> segmentFilters,
+				List<DeferredFilter> segmentCostingOnlyFilters, int excludedSegmentFilterIndex) {
+			int size = segmentFilters.size() + segmentCostingOnlyFilters.size();
+			if (excludedSegmentFilterIndex < 0) {
+				List<JoinOrderPlanner.FilterConstraint> plannerFilters = new ArrayList<>(size);
+				LmdbJoinPlanSupport.addPlannerFilterConstraints(plannerFilters, segmentFilters, false);
+				LmdbJoinPlanSupport.addPlannerFilterConstraints(plannerFilters, segmentCostingOnlyFilters, true);
+				return plannerFilters;
+			}
+			List<JoinOrderPlanner.FilterConstraint> plannerFilters = new ArrayList<>(Math.max(0, size - 1));
+			for (int i = 0; i < segmentFilters.size(); i++) {
+				if (i != excludedSegmentFilterIndex) {
+					plannerFilters.add(LmdbJoinPlanSupport.toPlannerFilterConstraint(segmentFilters.get(i), false));
+				}
+			}
+			LmdbJoinPlanSupport.addPlannerFilterConstraints(plannerFilters, segmentCostingOnlyFilters, true);
+			return plannerFilters;
+		}
+
+		private boolean preselectableFixedGuaranteeChoice(GuaranteeChoices guaranteeChoices) {
+			return guaranteeChoices.finiteAnchorOptions().size() == 1
+					&& guaranteeChoices.filterOptions().isEmpty();
 		}
 
 		private GuaranteeChoices guaranteeChoices(List<TupleExpr> segment, List<DeferredFilter> segmentFilters) {
@@ -2991,28 +3125,33 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				List<JoinOrderPlanner.FilterConstraint> optionPlannerFilters = new ArrayList<>(
 						LmdbJoinPlanSupport.toPlannerFilterConstraints(optionSegmentFilters));
 				optionPlannerFilters.addAll(costOnlyFilters);
-				JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(option.factors(),
-						new HashSet<>(boundBeforeSegment), optionAlgorithm, optionPlannerFilters);
-				GuaranteeOptionPlanSelection candidateSelection = bestGuaranteeOptionPlan(option.factors(),
-						boundBeforeSegment, optionPlannerFilters, optionAlgorithm, planner, attempt.getPlan(),
-						option.name());
-				Optional<JoinOrderPlanner.JoinOrderPlan> candidate = candidateSelection.plan();
-				if (candidate.isEmpty() || !isValidPlannerOrder(option.factors(), candidate.get())) {
-					candidateSummaries.add(GuaranteeOptionCandidate.invalid(option.name(), "no-valid-plan"));
-					continue;
-				}
 				double optionBestComparableWork = bestComparableWork;
 				if ("original".equals(selectedOption)
 						&& option.satisfiedFilterIndex() >= 0
 						&& option.satisfiedFilterIndex() < segmentFilters.size()) {
 					optionBestComparableWork += segmentFilters.get(option.satisfiedFilterIndex()).conditionCost;
 				}
-				double candidateComparableWork = candidate.get().getEstimatedTotalWork()
-						- generatedFiniteAnchorAssignmentWork(candidate.get(), option.name());
+				GuaranteeOptionPlanSelection candidateSelection = fixedGuaranteeOptionPlan(option.factors(),
+						boundBeforeSegment, optionPlannerFilters, optionAlgorithm, planner, option.name());
+				Optional<JoinOrderPlanner.JoinOrderPlan> candidate = candidateSelection.plan();
+				if (candidate.isEmpty()
+						|| !guaranteePlanOptionBeats(candidate.get(),
+								guaranteeOptionComparableWork(candidate.get(), option.name()), bestPlan,
+								optionBestComparableWork, option.satisfiedFilterIndex() >= 0)) {
+					JoinOrderPlanner.PlanningAttempt attempt = planner.planJoinOrderAttempt(option.factors(),
+							new HashSet<>(boundBeforeSegment), optionAlgorithm, optionPlannerFilters);
+					candidateSelection = bestGuaranteeOptionPlan(option.factors(), boundBeforeSegment,
+							optionPlannerFilters, optionAlgorithm, planner, attempt.getPlan(), option.name());
+					candidate = candidateSelection.plan();
+				}
+				if (candidate.isEmpty() || !isValidPlannerOrder(option.factors(), candidate.get())) {
+					candidateSummaries.add(GuaranteeOptionCandidate.invalid(option.name(), "no-valid-plan"));
+					continue;
+				}
+				double candidateComparableWork = guaranteeOptionComparableWork(candidate.get(), option.name());
 				candidateSummaries.add(GuaranteeOptionCandidate.valid(option.name(), candidate.get(),
 						candidateComparableWork, "valid",
-						appendGuaranteeOptionDetails(
-								guaranteeOptionDetails(candidate.get(), option.satisfiedFilterIndex()),
+						guaranteeOptionCandidateDetails(candidate.get(), option.satisfiedFilterIndex(),
 								candidateSelection.details())));
 				if (guaranteePlanOptionBeats(candidate.get(), candidateComparableWork, bestPlan,
 						optionBestComparableWork, option.satisfiedFilterIndex() >= 0)) {
@@ -3071,6 +3210,23 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				Optional<JoinOrderPlanner.JoinOrderPlan> dynamicPlan, String optionName) {
 			List<NamedGuaranteePlan> candidates = new ArrayList<>(3);
 			addGuaranteePlanCandidate(candidates, "dynamic", dynamicPlan, optionFactors, optionName);
+			addFixedGuaranteePlanCandidates(candidates, optionFactors, boundBeforeSegment, optionPlannerFilters,
+					optionAlgorithm, planner, optionName);
+			return bestGuaranteeOptionPlan(candidates);
+		}
+
+		private GuaranteeOptionPlanSelection fixedGuaranteeOptionPlan(List<TupleExpr> optionFactors,
+				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> optionPlannerFilters,
+				JoinOrderPlanner.Algorithm optionAlgorithm, JoinOrderPlanner planner, String optionName) {
+			List<NamedGuaranteePlan> candidates = new ArrayList<>(2);
+			addFixedGuaranteePlanCandidates(candidates, optionFactors, boundBeforeSegment, optionPlannerFilters,
+					optionAlgorithm, planner, optionName);
+			return bestGuaranteeOptionPlan(candidates);
+		}
+
+		private void addFixedGuaranteePlanCandidates(List<NamedGuaranteePlan> candidates, List<TupleExpr> optionFactors,
+				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> optionPlannerFilters,
+				JoinOrderPlanner.Algorithm optionAlgorithm, JoinOrderPlanner planner, String optionName) {
 			Optional<List<TupleExpr>> connectedOrder = finiteAnchorConnectedOrder(optionFactors, boundBeforeSegment,
 					optionName);
 			addGuaranteePlanCandidate(candidates, "fixed-connected",
@@ -3085,6 +3241,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 								new HashSet<>(boundBeforeSegment), optionAlgorithm, optionPlannerFilters)),
 						optionFactors, optionName);
 			}
+		}
+
+		private GuaranteeOptionPlanSelection bestGuaranteeOptionPlan(List<NamedGuaranteePlan> candidates) {
 			if (candidates.isEmpty()) {
 				return new GuaranteeOptionPlanSelection(Optional.empty(), "");
 			}
@@ -3104,13 +3263,19 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (plan.isEmpty() || !isValidPlannerOrder(optionFactors, plan.get())) {
 				return;
 			}
-			double comparableWork = plan.get()
-					.getEstimatedTotalWork() - generatedFiniteAnchorAssignmentWork(plan.get(), optionName);
+			double comparableWork = guaranteeOptionComparableWork(plan.get(), optionName);
 			candidates.add(new NamedGuaranteePlan(name, plan.get(), comparableWork));
+		}
+
+		private double guaranteeOptionComparableWork(JoinOrderPlanner.JoinOrderPlan plan, String optionName) {
+			return plan.getEstimatedTotalWork() - generatedFiniteAnchorAssignmentWork(plan, optionName);
 		}
 
 		private String guaranteeOptionCostingDetails(List<NamedGuaranteePlan> candidates, NamedGuaranteePlan best) {
 			StringBuilder details = new StringBuilder("costing=").append(best.name());
+			if (!traceGuaranteeDiagnostics) {
+				return details.toString();
+			}
 			for (NamedGuaranteePlan candidate : candidates) {
 				details.append(' ')
 						.append(candidate.name())
@@ -3183,6 +3348,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return first + ' ' + second;
 		}
 
+		private String guaranteeOptionCandidateDetails(JoinOrderPlanner.JoinOrderPlan plan, int satisfiedFilterIndex,
+				String costingDetails) {
+			String planDetails = traceGuaranteeDiagnostics
+					? guaranteeOptionDetails(plan, satisfiedFilterIndex)
+					: guaranteeOptionConciseDetails(satisfiedFilterIndex);
+			return appendGuaranteeOptionDetails(planDetails, costingDetails);
+		}
+
+		private String guaranteeOptionConciseDetails(int satisfiedFilterIndex) {
+			return satisfiedFilterIndex >= 0 ? "satisfiedFilters=" + satisfiedFilterIndex : "";
+		}
+
 		private record GuaranteeOptionPlanSelection(Optional<JoinOrderPlanner.JoinOrderPlan> plan, String details) {
 		}
 
@@ -3236,6 +3413,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return Optional.empty();
 			}
 
+			List<Set<String>> patternBindings = new ArrayList<>(patterns.size());
+			for (TupleExpr pattern : patterns) {
+				patternBindings.add(plannerBindingNames(pattern.getBindingNames()));
+			}
+
 			List<TupleExpr> ordered = new ArrayList<>(optionFactors.size());
 			Set<String> bound = new HashSet<>(boundBeforeSegment);
 			Set<String> generatedAnchorNames = new HashSet<>();
@@ -3252,35 +3434,40 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 			int connectedPatternCount = 0;
 			while (connectedPatternCount < patterns.size()) {
-				int selectedIndex = selectFiniteAnchorConnectedPattern(patterns, connectedPatternCount, bound,
+				int selectedIndex = selectFiniteAnchorConnectedPattern(patterns, patternBindings, connectedPatternCount,
+						bound,
 						generatedAnchorNames);
 				if (selectedIndex < 0) {
 					return Optional.empty();
 				}
 				TupleExpr selected = patterns.get(selectedIndex);
+				Set<String> selectedBindings = patternBindings.get(selectedIndex);
 				movePatternToConnectedPrefix(patterns, connectedPatternCount, selectedIndex);
+				moveSetToConnectedPrefix(patternBindings, connectedPatternCount, selectedIndex);
 				ordered.add(selected);
-				bound.addAll(plannerBindingNames(selected.getBindingNames()));
+				bound.addAll(selectedBindings);
 				connectedPatternCount++;
 			}
 			return ordered.size() == optionFactors.size() ? Optional.of(ordered) : Optional.empty();
 		}
 
-		private int selectFiniteAnchorConnectedPattern(List<TupleExpr> patterns, int firstCandidateIndex,
-				Set<String> bound, Set<String> generatedAnchorNames) {
+		private int selectFiniteAnchorConnectedPattern(List<TupleExpr> patterns,
+				List<Set<String>> patternBindings, int firstCandidateIndex, Set<String> bound,
+				Set<String> generatedAnchorNames) {
 			int selectedIndex = -1;
 			int selectedScore = Integer.MIN_VALUE;
 			boolean selectedSubjectTypeGuard = false;
 			for (int i = firstCandidateIndex; i < patterns.size(); i++) {
-				Set<String> tupleBindings = plannerBindingNames(patterns.get(i)
-						.getBindingNames());
+				Set<String> tupleBindings = patternBindings.get(i);
 				if (tupleBindings.isEmpty() || Collections.disjoint(bound, tupleBindings)) {
 					continue;
 				}
 				if (bound.containsAll(tupleBindings)) {
 					return i;
 				}
-				int score = downstreamBindingReuseScore(patterns, firstCandidateIndex, i, tupleBindings, bound);
+				int score = downstreamBindingReuseScoreFromBindings(patternBindings, firstCandidateIndex, i,
+						tupleBindings,
+						bound);
 				if (!Collections.disjoint(generatedAnchorNames, tupleBindings)) {
 					score += 20_000;
 				} else {
@@ -3468,12 +3655,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private JoinOrderPlanner.JoinOrderPlan withGuaranteeOptionMetrics(JoinOrderPlanner.JoinOrderPlan plan,
 				int generatedOptions, String selectedOption, List<GuaranteeOptionCandidate> candidateSummaries) {
-			Map<String, String> summaryStringMetrics = new LinkedHashMap<>(plan.getSummaryStringMetrics());
-			summaryStringMetrics.putAll(guaranteeOptionMetricMap(generatedOptions, selectedOption,
+			return plan.withAdditionalSummaryStringMetrics(guaranteeOptionMetricMap(generatedOptions, selectedOption,
 					candidateSummaries));
-			return new JoinOrderPlanner.JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(),
-					plan.getEstimatedTotalWork(), plan.getDiagnostics(), summaryStringMetrics,
-					plan.getSummaryDoubleMetrics(), plan.getSteps());
 		}
 
 		private Map<String, String> guaranteeOptionMetricMap(int generatedOptions, String selectedOption,
@@ -3898,10 +4081,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private Optional<DeferredFilter> lowEvidenceSampledZeroLocalFilter(List<DeferredFilter> segmentFilters,
 				TupleExpr firstArg) {
 			for (DeferredFilter filter : segmentFilters) {
+				EvaluationStatistics.FilterPassEstimate passEstimate = filter.passEstimate();
 				if (filter.patternLocalBase == firstArg
-						&& filter.passEstimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED
-						&& filter.passEstimate.getEvidenceCount() < SAMPLED_ZERO_PASS_RATIO_MIN_EVIDENCE
-						&& filter.passEstimate.getPassRatio() <= 0.0d) {
+						&& passEstimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED
+						&& passEstimate.getEvidenceCount() < SAMPLED_ZERO_PASS_RATIO_MIN_EVIDENCE
+						&& passEstimate.getPassRatio() <= 0.0d) {
 					return Optional.of(filter);
 				}
 			}
@@ -3995,7 +4179,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				if (!isStrongLocalLearnedFilter(filter) || !segmentIdentities.contains(filter.patternLocalBase)) {
 					continue;
 				}
-				double passRatio = filter.passEstimate.getPassRatio();
+				double passRatio = filter.passEstimate().getPassRatio();
 				if (best == null || passRatio < bestPassRatio) {
 					best = filter;
 					bestPassRatio = passRatio;
@@ -4005,16 +4189,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean isStrongLocalLearnedFilter(DeferredFilter filter) {
+			EvaluationStatistics.FilterPassEstimate passEstimate = filter.passEstimate();
 			if (filter.patternLocalBase == null
 					|| filter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
 					|| LmdbJoinPlanSupport.containsExists(filter.condition)
-					|| !LmdbJoinPlanSupport.isValidPassRatio(filter.passEstimate.getPassRatio())
-					|| filter.passEstimate.getPassRatio() > CORRELATED_NOT_EXISTS_FILTER_PREFIX_MAX_PASS_RATIO
-					|| filter.passEstimate.getEvidenceCount() < CORRELATED_NOT_EXISTS_FILTER_PREFIX_MIN_EVIDENCE
-					|| filter.passEstimate.getConfidenceScore() < 0.50d) {
+					|| !LmdbJoinPlanSupport.isValidPassRatio(passEstimate.getPassRatio())
+					|| passEstimate.getPassRatio() > CORRELATED_NOT_EXISTS_FILTER_PREFIX_MAX_PASS_RATIO
+					|| passEstimate.getEvidenceCount() < CORRELATED_NOT_EXISTS_FILTER_PREFIX_MIN_EVIDENCE
+					|| passEstimate.getConfidenceScore() < 0.50d) {
 				return false;
 			}
-			EvaluationStatistics.FilterPassEstimate.Source source = filter.passEstimate.getSource();
+			EvaluationStatistics.FilterPassEstimate.Source source = passEstimate.getSource();
 			return source == EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER
 					|| source == EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE
 					|| source == EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN;
@@ -4183,6 +4368,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				patterns.set(i, patterns.get(i - 1));
 			}
 			patterns.set(connectedPatternCount, selected);
+		}
+
+		private void moveSetToConnectedPrefix(List<Set<String>> sets, int connectedPatternCount,
+				int selectedIndex) {
+			if (selectedIndex == connectedPatternCount) {
+				return;
+			}
+			Set<String> selected = sets.get(selectedIndex);
+			for (int i = selectedIndex; i > connectedPatternCount; i--) {
+				sets.set(i, sets.get(i - 1));
+			}
+			sets.set(connectedPatternCount, selected);
 		}
 
 		private void promoteSubjectTypeGuardsBeforeUnanchoredFanout(List<TupleExpr> connectedPatterns,
@@ -4460,6 +4657,28 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 				Set<String> otherBindings = plannerBindingNames(patterns.get(i)
 						.getBindingNames());
+				for (String introducedBinding : introducedBindings) {
+					if (otherBindings.contains(introducedBinding)) {
+						score++;
+					}
+				}
+			}
+			return score;
+		}
+
+		private int downstreamBindingReuseScoreFromBindings(List<Set<String>> patternBindings, int firstCandidateIndex,
+				int candidateIndex, Set<String> candidateBindings, Set<String> bound) {
+			Set<String> introducedBindings = new HashSet<>(candidateBindings);
+			introducedBindings.removeAll(bound);
+			if (introducedBindings.isEmpty()) {
+				return 0;
+			}
+			int score = 0;
+			for (int i = firstCandidateIndex; i < patternBindings.size(); i++) {
+				if (i == candidateIndex) {
+					continue;
+				}
+				Set<String> otherBindings = patternBindings.get(i);
 				for (String introducedBinding : introducedBindings) {
 					if (otherBindings.contains(introducedBinding)) {
 						score++;
@@ -4750,34 +4969,37 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			Filter filter = new Filter(root, deferredFilter.condition.clone());
 			LmdbFilterSimplifierOptimizer.annotateIdFilters(filter);
-			optimizeConditionSubqueries(filter.getCondition(), root,
-					estimatedSubplanInvocationRows(root), root);
-			double passRatio = deferredFilter.passEstimate.getPlanningPassRatio();
+			if (LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
+				optimizeConditionSubqueries(filter.getCondition(), root,
+						estimatedSubplanInvocationRows(root), root);
+			}
+			EvaluationStatistics.FilterPassEstimate passEstimate = deferredFilter.passEstimate();
+			double passRatio = passEstimate.getPlanningPassRatio();
 			if (LmdbJoinPlanSupport.isValidPassRatio(passRatio)) {
 				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
 			}
-			if (LmdbJoinPlanSupport.isValidPassRatio(deferredFilter.passEstimate.getPassRatio())) {
+			if (LmdbJoinPlanSupport.isValidPassRatio(passEstimate.getPassRatio())) {
 				filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW,
-						deferredFilter.passEstimate.getPassRatio());
+						passEstimate.getPassRatio());
 			}
 			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_LOWER,
-					deferredFilter.passEstimate.getLower95PassRatio());
+					passEstimate.getLower95PassRatio());
 			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_UPPER,
-					deferredFilter.passEstimate.getUpper95PassRatio());
+					passEstimate.getUpper95PassRatio());
 			filter.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
-					deferredFilter.passEstimate.getConfidenceScore());
+					passEstimate.getConfidenceScore());
 			filter.setStringMetricPlanned(TelemetryMetricNames.DEFERRED_FILTER_SCOPE, placement);
 			filter.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_STRATEGY, "lmdb-sketch-filter-" + placement);
-			String source = filterSelectivitySource(deferredFilter.passEstimate);
+			String source = filterSelectivitySource(passEstimate);
 			if (source != null) {
 				filter.setStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, source);
 				filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, source);
 			} else {
 				filter.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-synthetic");
 			}
-			if (deferredFilter.passEstimate.getEvidenceCount() >= 0L) {
+			if (passEstimate.getEvidenceCount() >= 0L) {
 				filter.setLongMetricPlanned(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
-						deferredFilter.passEstimate.getEvidenceCount());
+						passEstimate.getEvidenceCount());
 			}
 			stampFilterEstimate(filter, root, passRatio);
 			return filter;
@@ -4921,17 +5143,28 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private void stampPlanSummaryMetrics(QueryModelNode node) {
 			for (Map.Entry<String, String> entry : selectedPlanSummaryStringMetrics.entrySet()) {
-				if (ROOT_ONLY_PLAN_SUMMARY_STRING_METRICS.contains(entry.getKey())) {
+				if (!shouldStampRepeatedPlanSummaryStringMetric(entry.getKey())) {
 					continue;
 				}
 				node.setStringMetricPlanned(entry.getKey(), entry.getValue());
 			}
 			for (Map.Entry<String, Double> entry : selectedPlanSummaryDoubleMetrics.entrySet()) {
-				if (TelemetryMetricNames.PLANNED_WORK_ROWS.equals(entry.getKey())) {
+				if (!shouldStampRepeatedPlanSummaryDoubleMetric(entry.getKey())) {
 					continue;
 				}
 				node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
 			}
+		}
+
+		private boolean shouldStampRepeatedPlanSummaryStringMetric(String metricName) {
+			if (ROOT_ONLY_PLAN_SUMMARY_STRING_METRICS.contains(metricName)) {
+				return false;
+			}
+			return traceGuaranteeDiagnostics || DEFAULT_REPEATED_PLAN_SUMMARY_STRING_METRICS.contains(metricName);
+		}
+
+		private boolean shouldStampRepeatedPlanSummaryDoubleMetric(String metricName) {
+			return traceGuaranteeDiagnostics && !TelemetryMetricNames.PLANNED_WORK_ROWS.equals(metricName);
 		}
 
 		private double syntheticJoinResultEstimate(TupleExpr left, TupleExpr right) {

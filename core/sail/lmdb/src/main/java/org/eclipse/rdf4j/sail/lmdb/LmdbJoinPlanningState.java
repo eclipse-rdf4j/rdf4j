@@ -42,7 +42,9 @@ final class DeferredFilter {
 	final int originalIndex;
 	final StatementPattern patternLocalBase;
 	final Set<StatementPattern> originPatterns;
-	final EvaluationStatistics.FilterPassEstimate passEstimate;
+	private final Filter sourceFilter;
+	private final EvaluationStatistics statistics;
+	private EvaluationStatistics.FilterPassEstimate passEstimate;
 	boolean applied;
 
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars,
@@ -55,6 +57,21 @@ final class DeferredFilter {
 	DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
 			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
 			Set<StatementPattern> originPatterns, EvaluationStatistics.FilterPassEstimate passEstimate) {
+		this(condition, requiredVars, conditionVars, conditionCost, originalIndex, patternLocalBase, originPatterns,
+				null, null, passEstimate);
+	}
+
+	DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
+			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
+			Set<StatementPattern> originPatterns, Filter sourceFilter, EvaluationStatistics statistics) {
+		this(condition, requiredVars, conditionVars, conditionCost, originalIndex, patternLocalBase, originPatterns,
+				sourceFilter, statistics, null);
+	}
+
+	private DeferredFilter(ValueExpr condition, Set<String> requiredVars, Set<String> conditionVars,
+			int conditionCost, int originalIndex, StatementPattern patternLocalBase,
+			Set<StatementPattern> originPatterns, Filter sourceFilter, EvaluationStatistics statistics,
+			EvaluationStatistics.FilterPassEstimate passEstimate) {
 		this.condition = condition;
 		this.requiredVars = Set.copyOf(requiredVars);
 		this.conditionVars = Set.copyOf(conditionVars);
@@ -62,7 +79,25 @@ final class DeferredFilter {
 		this.originalIndex = originalIndex;
 		this.patternLocalBase = patternLocalBase;
 		this.originPatterns = identityCopy(originPatterns);
+		this.sourceFilter = sourceFilter;
+		this.statistics = statistics;
 		this.passEstimate = passEstimate;
+	}
+
+	EvaluationStatistics.FilterPassEstimate passEstimate() {
+		EvaluationStatistics.FilterPassEstimate estimate = passEstimate;
+		if (estimate == null) {
+			if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+				estimate = lmdbStatistics
+						.estimatePatternLocalFilterPass(condition, patternLocalBase, originPatterns)
+						.orElse(null);
+			}
+			if (estimate == null) {
+				estimate = LmdbJoinPlanSupport.estimateFilterPass(statistics, sourceFilter, condition);
+			}
+			passEstimate = estimate;
+		}
+		return estimate;
 	}
 
 	static Set<String> conditionBindingNames(ValueExpr condition) {

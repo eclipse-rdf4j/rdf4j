@@ -172,7 +172,7 @@ final class SketchJoinOrderPlanner {
 			List<TupleExpr> expressions,
 			Set<String> initiallyBoundVars,
 			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
-		this(estimator, workAdjuster, null, expressions, initiallyBoundVars, deferredFilters, 1.0d);
+		this(estimator, workAdjuster, null, expressions, initiallyBoundVars, deferredFilters, 1.0d, true);
 	}
 
 	SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
@@ -181,7 +181,7 @@ final class SketchJoinOrderPlanner {
 			Set<String> initiallyBoundVars,
 			List<JoinOrderPlanner.FilterConstraint> deferredFilters,
 			double initialPrefixRows) {
-		this(estimator, workAdjuster, null, expressions, initiallyBoundVars, deferredFilters, initialPrefixRows);
+		this(estimator, workAdjuster, null, expressions, initiallyBoundVars, deferredFilters, initialPrefixRows, true);
 	}
 
 	SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
@@ -190,7 +190,7 @@ final class SketchJoinOrderPlanner {
 			Set<String> initiallyBoundVars,
 			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
 		this(estimator, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP, factorCostModel, expressions,
-				initiallyBoundVars, deferredFilters, 1.0d);
+				initiallyBoundVars, deferredFilters, 1.0d, true);
 	}
 
 	SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
@@ -200,7 +200,25 @@ final class SketchJoinOrderPlanner {
 			List<JoinOrderPlanner.FilterConstraint> deferredFilters,
 			double initialPrefixRows) {
 		this(estimator, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP, factorCostModel, expressions,
-				initiallyBoundVars, deferredFilters, initialPrefixRows);
+				initiallyBoundVars, deferredFilters, initialPrefixRows, true);
+	}
+
+	static SketchJoinOrderPlanner fixedOrder(SketchBasedJoinEstimator estimator,
+			SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster,
+			List<TupleExpr> expressions,
+			Set<String> initiallyBoundVars,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		return new SketchJoinOrderPlanner(estimator, workAdjuster, null, expressions, initiallyBoundVars,
+				deferredFilters, 1.0d, false);
+	}
+
+	static SketchJoinOrderPlanner fixedOrder(SketchBasedJoinEstimator estimator,
+			JoinFactorCostModel factorCostModel,
+			List<TupleExpr> expressions,
+			Set<String> initiallyBoundVars,
+			List<JoinOrderPlanner.FilterConstraint> deferredFilters) {
+		return new SketchJoinOrderPlanner(estimator, SketchBasedJoinEstimator.JoinOrderWorkAdjuster.NO_OP,
+				factorCostModel, expressions, initiallyBoundVars, deferredFilters, 1.0d, false);
 	}
 
 	private SketchJoinOrderPlanner(SketchBasedJoinEstimator estimator,
@@ -209,7 +227,8 @@ final class SketchJoinOrderPlanner {
 			List<TupleExpr> expressions,
 			Set<String> initiallyBoundVars,
 			List<JoinOrderPlanner.FilterConstraint> deferredFilters,
-			double initialPrefixRows) {
+			double initialPrefixRows,
+			boolean arrayMemoEnabled) {
 		this.estimator = Objects.requireNonNull(estimator, "estimator");
 		this.workAdjuster = Objects.requireNonNull(workAdjuster, "workAdjuster");
 		this.factorCostModel = factorCostModel;
@@ -258,11 +277,11 @@ final class SketchJoinOrderPlanner {
 				this.deferredFilterRequiredVarMasks, this.variableNames.length);
 		this.statementInteractionMasks = buildStatementInteractionMasks(this.factors, variableIds,
 				this.variableNames.length);
-		this.stateMemoSize = stateMemoSize(this.factors.size());
+		this.stateMemoSize = arrayMemoEnabled ? stateMemoSize(this.factors.size()) : 0;
 		this.variablesMaskByState = new long[stateMemoSize];
 		this.boundVariableMaskByState = new long[stateMemoSize];
 		this.finiteBindingAssignmentPrefixRowsByState = new double[stateMemoSize];
-		this.variableSetsByMask = variableSetMemoSize(this.variableNames.length);
+		this.variableSetsByMask = arrayMemoEnabled ? variableSetMemoSize(this.variableNames.length) : newSetArray(0);
 		Arrays.fill(variablesMaskByState, UNCOMPUTED_MASK);
 		Arrays.fill(boundVariableMaskByState, UNCOMPUTED_MASK);
 		this.accessShapeByState = new SketchBasedJoinEstimator.AccessShape[stateMemoSize][];
@@ -395,8 +414,10 @@ final class SketchJoinOrderPlanner {
 		logicalAcceptedCount = factors.size();
 		logicalFinalFrontierWidth = 1;
 		logicalMaxFrontierWidth = 1;
-		logicalFinalFrontierSummary = "[{order=" + describeFactorOrder(result) + ", vector=" + result.costVector()
-				+ "}]";
+		if (traceDiagnostics) {
+			logicalFinalFrontierSummary = "[{order=" + describeFactorOrder(result) + ", vector="
+					+ result.costVector() + "}]";
+		}
 		recordDebug("fixed result: order=" + describeFactorOrder(result) + " estimate="
 				+ result.estimate().summary() + " workRows=" + result.totalWork());
 		return new PlanOutcome(Optional.of(toJoinOrderPlan(result, algorithm)),
@@ -2813,6 +2834,10 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private void captureFinalFrontierSummary(ParetoJoinMemoPlanner.Result<StatePlan> result) {
+		if (!traceDiagnostics) {
+			logicalFinalFrontierSummary = "[]";
+			return;
+		}
 		if (result == null || result.finalEntries().isEmpty()) {
 			logicalFinalFrontierSummary = "[]";
 			return;
@@ -3907,8 +3932,7 @@ final class SketchJoinOrderPlanner {
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(variableNames,
 				currentlyBoundVarMask,
 				outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, false, finiteBindingValues,
-				selectedPrefixFactors(mask))
-				.withEstimationTier(estimationTier);
+				selectedPrefixFactors(mask), estimationTier);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = factorCostModel
 				.estimateFactorCost(factors.get(factorIndex).tupleExpr(), context);
 		return estimate.orElse(null);
@@ -5593,18 +5617,34 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private String logicalExplorationSummary(JoinCostVector finalVector) {
-		return "mode=" + (logicalExplorationMode == null ? "unknown" : logicalExplorationMode)
-				+ ", frontierLimit=" + FRONTIER_LIMIT
-				+ ", beamWidth=" + GREEDY_BEAM_WIDTH
-				+ ", candidates=" + logicalCandidateCount
-				+ ", accepted=" + logicalAcceptedCount
-				+ ", rejectedAlternatives=" + logicalRejectedAlternatives
-				+ ", dominated=" + logicalDominatedCount
-				+ ", trimmed=" + logicalTrimmedCount
-				+ ", maxFrontierWidth=" + logicalMaxFrontierWidth
-				+ ", finalFrontierWidth=" + logicalFinalFrontierWidth
-				+ ", finalVector=" + finalVector
-				+ ", finalFrontier=" + logicalFinalFrontierSummary;
+		StringBuilder builder = new StringBuilder(192);
+		builder.append("mode=")
+				.append(logicalExplorationMode == null ? "unknown" : logicalExplorationMode)
+				.append(", frontierLimit=")
+				.append(FRONTIER_LIMIT)
+				.append(", beamWidth=")
+				.append(GREEDY_BEAM_WIDTH)
+				.append(", candidates=")
+				.append(logicalCandidateCount)
+				.append(", accepted=")
+				.append(logicalAcceptedCount)
+				.append(", rejectedAlternatives=")
+				.append(logicalRejectedAlternatives)
+				.append(", dominated=")
+				.append(logicalDominatedCount)
+				.append(", trimmed=")
+				.append(logicalTrimmedCount)
+				.append(", maxFrontierWidth=")
+				.append(logicalMaxFrontierWidth)
+				.append(", finalFrontierWidth=")
+				.append(logicalFinalFrontierWidth)
+				.append(", finalVector=")
+				.append(finalVector);
+		if (traceDiagnostics) {
+			builder.append(", finalFrontier=")
+					.append(logicalFinalFrontierSummary);
+		}
+		return builder.toString();
 	}
 
 	private String runtimeCorrectionHints() {
