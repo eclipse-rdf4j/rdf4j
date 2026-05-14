@@ -18,12 +18,15 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
@@ -31,7 +34,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 /**
  * Final adapter that materializes ID-binding records to BindingSets once, at the end of a join chain.
  */
-final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet> {
+final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet> implements IndexReportingIterator {
 
 	private final RecordIterator input;
 	private final IdBindingInfo info;
@@ -39,16 +42,25 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 	private final BindingSet initial;
 	private final ValueStore valueStore;
 	private final Map<String, Long> constantBindings;
+	private final QueryModelNode metricNode;
 	private List<ConstEntry> constantEntries;
+	private long outputRows;
+	private boolean metricsFlushed;
 
 	LmdbIdFinalBindingSetIteration(RecordIterator input, IdBindingInfo info, QueryEvaluationContext context,
 			BindingSet initial, ValueStore valueStore, Map<String, Long> constantBindings) {
+		this(input, info, context, initial, valueStore, constantBindings, null);
+	}
+
+	LmdbIdFinalBindingSetIteration(RecordIterator input, IdBindingInfo info, QueryEvaluationContext context,
+			BindingSet initial, ValueStore valueStore, Map<String, Long> constantBindings, QueryModelNode metricNode) {
 		this.input = input;
 		this.info = info;
 		this.context = context;
 		this.initial = initial;
 		this.valueStore = valueStore;
 		this.constantBindings = constantBindings;
+		this.metricNode = metricNode;
 		this.constantEntries = Collections.emptyList();
 		if (!constantBindings.isEmpty()) {
 			List<ConstEntry> entries = new ArrayList<>(constantBindings.size());
@@ -89,6 +101,7 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 				}
 			}
 			if (info.applyRecord(rec, bs, valueStore)) {
+				outputRows++;
 				return bs;
 			}
 		}
@@ -97,7 +110,68 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		input.close();
+		try {
+			input.close();
+		} finally {
+			flushMetrics();
+		}
+	}
+
+	@Override
+	public String getIndexName() {
+		return input.getIndexName();
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		flushMetrics();
+		return input.getSourceRowsScannedActual();
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		flushMetrics();
+		return input.getSourceRowsMatchedActual();
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		flushMetrics();
+		return input.getSourceRowsFilteredActual();
+	}
+
+	private void flushMetrics() {
+		if (metricsFlushed || metricNode == null) {
+			return;
+		}
+		metricsFlushed = true;
+
+		long scanned = input.getSourceRowsScannedActual();
+		if (scanned >= 0 && metricNode.getSourceRowsScannedActual() < 0) {
+			metricNode.setSourceRowsScannedActual(scanned);
+		}
+		long matched = input.getSourceRowsMatchedActual();
+		if (matched >= 0 && metricNode.getSourceRowsMatchedActual() < 0) {
+			metricNode.setSourceRowsMatchedActual(matched);
+		}
+		long filtered = input.getSourceRowsFilteredActual();
+		if (filtered >= 0 && metricNode.getSourceRowsFilteredActual() < 0) {
+			metricNode.setSourceRowsFilteredActual(filtered);
+		}
+		if (metricNode.getResultSizeActual() < 0) {
+			metricNode.setResultSizeActual(outputRows);
+		}
+		if (input instanceof LmdbIdJoinMetricReporter) {
+			LmdbIdJoinMetricReporter reporter = (LmdbIdJoinMetricReporter) input;
+			long leftRows = reporter.getLeftRowsProbedActual();
+			if (leftRows >= 0) {
+				metricNode.setLongMetricActual(TelemetryMetricNames.LEFT_ROWS_PROBED_ACTUAL, leftRows);
+			}
+			long rightRows = reporter.getRightRowsScannedActual();
+			if (rightRows >= 0) {
+				metricNode.setLongMetricActual(TelemetryMetricNames.RIGHT_ROWS_SCANNED_ACTUAL, rightRows);
+			}
+		}
 	}
 
 	private static final class ConstEntry {
@@ -115,4 +189,11 @@ final class LmdbIdFinalBindingSetIteration extends LookAheadIteration<BindingSet
 			this.id = id;
 		}
 	}
+}
+
+interface LmdbIdJoinMetricReporter {
+
+	long getLeftRowsProbedActual();
+
+	long getRightRowsScannedActual();
 }

@@ -28,6 +28,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -1045,6 +1046,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void repeatedFilterSamplingNeedUsesSingleRuntimeRowsProbe() throws Exception {
+		Path tempDir = Files.createTempDirectory("lmdb-eval-stats-runtime-rows-cache");
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI predicate = vf.createIRI("urn:test:follows");
 		IRI excludedObject = vf.createIRI("urn:test:user:0");
@@ -1053,57 +1055,66 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(valueStore.getId(predicate)).thenReturn(7L);
 		when(tripleStore.cardinality(LmdbValue.UNKNOWN_ID, 7L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
 				.thenReturn(128.0d);
-		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
-				Files.createTempDirectory("lmdb-eval-stats-runtime-rows-cache").resolve("join-estimator.rjes"),
-				tripleStore,
-				valueStore,
-				false,
-				0L,
-				0,
-				true);
-		StatementPattern pattern = new StatementPattern(
-				Var.of("s"),
-				Var.of("p", predicate),
-				Var.of("o"));
-		Filter filter = new Filter(pattern.clone(),
-				new Compare(Var.of("o"), new ValueConstant(excludedObject), Compare.CompareOp.NE));
+		try {
+			LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
+					tempDir.resolve("join-estimator.rjes"),
+					tripleStore,
+					valueStore,
+					false,
+					0L,
+					0,
+					true);
+			StatementPattern pattern = new StatementPattern(
+					Var.of("s"),
+					Var.of("p", predicate),
+					Var.of("o"));
+			Filter filter = new Filter(pattern.clone(),
+					new Compare(Var.of("o"), new ValueConstant(excludedObject), Compare.CompareOp.NE));
 
-		stats.estimateFilterPass(filter, pattern);
-		stats.estimateFilterPass(filter, pattern);
+			stats.estimateFilterPass(filter, pattern);
+			stats.estimateFilterPass(filter, pattern);
 
-		verify(tripleStore, times(1)).cardinality(
-				LmdbValue.UNKNOWN_ID,
-				7L,
-				LmdbValue.UNKNOWN_ID,
-				LmdbValue.UNKNOWN_ID);
-		List<?> requests = drainBackgroundSamplingRequests(stats, 10);
-		assertEquals(1, requests.size(), "Expected repeated foreground needs to share one request");
-		assertEquals(2L, invokeLong(requests.getFirst(), "voteCount"));
+			verify(tripleStore, times(1)).cardinality(
+					LmdbValue.UNKNOWN_ID,
+					7L,
+					LmdbValue.UNKNOWN_ID,
+					LmdbValue.UNKNOWN_ID);
+			List<?> requests = drainBackgroundSamplingRequests(stats, 10);
+			assertEquals(1, requests.size(), "Expected repeated foreground needs to share one request");
+			assertEquals(2L, invokeLong(requests.getFirst(), "voteCount"));
+		} finally {
+			LmdbTestUtil.deleteDir(tempDir);
+		}
 	}
 
 	@Test
 	void optimizerSamplingBudgetScalesWithExpectedRuntimeAndBenefit() throws Exception {
-		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
-				Files.createTempDirectory("lmdb-eval-stats-sampling-budget").resolve("join-estimator.rjes"),
-				mock(TripleStore.class),
-				mock(ValueStore.class));
-		Method budgetMethod = LmdbFilterSelectivityStats.class.getDeclaredMethod(
-				"optimizerSamplingRowBudget",
-				double.class,
-				double.class,
-				double.class);
-		budgetMethod.setAccessible(true);
+		Path tempDir = Files.createTempDirectory("lmdb-eval-stats-sampling-budget");
+		try {
+			LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
+					tempDir.resolve("join-estimator.rjes"),
+					mock(TripleStore.class),
+					mock(ValueStore.class));
+			Method budgetMethod = LmdbFilterSelectivityStats.class.getDeclaredMethod(
+					"optimizerSamplingRowBudget",
+					double.class,
+					double.class,
+					double.class);
+			budgetMethod.setAccessible(true);
 
-		int highRuntimeLowBenefit = invokeBudget(budgetMethod, stats, 100_000.0d, 10.0d, 1.0d);
-		int highRuntimeHighBenefit = invokeBudget(budgetMethod, stats, 100_000.0d, 75_000.0d, 1.0d);
-		int cappedHugeBenefit = invokeBudget(budgetMethod, stats, 1_000_000.0d, 900_000.0d, 1.0d);
+			int highRuntimeLowBenefit = invokeBudget(budgetMethod, stats, 100_000.0d, 10.0d, 1.0d);
+			int highRuntimeHighBenefit = invokeBudget(budgetMethod, stats, 100_000.0d, 75_000.0d, 1.0d);
+			int cappedHugeBenefit = invokeBudget(budgetMethod, stats, 1_000_000.0d, 900_000.0d, 1.0d);
 
-		assertEquals(0, highRuntimeLowBenefit,
-				"Low-benefit choices should not spend optimizer-time sampling rows just because a query is large");
-		assertTrue(highRuntimeHighBenefit > highRuntimeLowBenefit,
-				"Sampling row budget should increase when the expected plan benefit increases");
-		assertEquals(LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_ROWS, cappedHugeBenefit,
-				"Proportional sampling must still respect the configured hard row cap");
+			assertEquals(0, highRuntimeLowBenefit,
+					"Low-benefit choices should not spend optimizer-time sampling rows just because a query is large");
+			assertTrue(highRuntimeHighBenefit > highRuntimeLowBenefit,
+					"Sampling row budget should increase when the expected plan benefit increases");
+			assertEquals(LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_ROWS, cappedHugeBenefit,
+					"Proportional sampling must still respect the configured hard row cap");
+		} finally {
+			LmdbTestUtil.deleteDir(tempDir);
+		}
 	}
 
 	@Test

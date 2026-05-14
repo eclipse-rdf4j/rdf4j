@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -22,9 +23,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -123,6 +127,48 @@ class LmdbSketchJoinOptimizerTest {
 		assertEquals(boundA, valueJoin.getLeftArg());
 		assertEquals(boundB, valueJoin.getRightArg());
 		assertEquals(List.of(boundA, boundB, aFollowsB, bFollowsC), joinArgs(root.getArg()));
+	}
+
+	@Test
+	void marksSketchPlannedSharedStatementPairAsIdJoinAtReadCommitted() {
+		StatementPattern personKnowsOther = statementPattern("person", "knows", "other");
+		StatementPattern personLikesItem = statementPattern("person", "likes", "item");
+		QueryRoot root = new QueryRoot(new Join(personKnowsOther, personLikesItem));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(personKnowsOther, personLikesItem));
+
+		withCurrentDataset(IsolationLevels.READ_COMMITTED,
+				() -> new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null));
+
+		Join join = assertInstanceOf(Join.class, root.getArg());
+		assertEquals("LmdbIdJoinIterator", join.getAlgorithmName());
+	}
+
+	@Test
+	void doesNotMarkSketchPlannedIdJoinAboveReadCommitted() {
+		StatementPattern personKnowsOther = statementPattern("person", "knows", "other");
+		StatementPattern personLikesItem = statementPattern("person", "likes", "item");
+		QueryRoot root = new QueryRoot(new Join(personKnowsOther, personLikesItem));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(personKnowsOther, personLikesItem));
+
+		withCurrentDataset(IsolationLevels.SNAPSHOT_READ,
+				() -> new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null));
+
+		Join join = assertInstanceOf(Join.class, root.getArg());
+		assertNull(join.getAlgorithmName());
+	}
+
+	@Test
+	void doesNotMarkSketchPlannedCartesianStatementPairAsIdJoin() {
+		StatementPattern personKnowsOther = statementPattern("person", "knows", "other");
+		StatementPattern itemTaggedLabel = statementPattern("item", "tagged", "label");
+		QueryRoot root = new QueryRoot(new Join(personKnowsOther, itemTaggedLabel));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(personKnowsOther, itemTaggedLabel));
+
+		withCurrentDataset(IsolationLevels.READ_COMMITTED,
+				() -> new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null));
+
+		Join join = assertInstanceOf(Join.class, root.getArg());
+		assertNull(join.getAlgorithmName());
 	}
 
 	@Test
@@ -613,6 +659,15 @@ class LmdbSketchJoinOptimizerTest {
 		return new Compare(new Var(leftName), new Var(rightName), Compare.CompareOp.NE);
 	}
 
+	private static void withCurrentDataset(IsolationLevel isolationLevel, Runnable task) {
+		LmdbEvaluationStrategy.setCurrentDataset(new PlannerDataset(isolationLevel));
+		try {
+			task.run();
+		} finally {
+			LmdbEvaluationStrategy.clearCurrentDataset();
+		}
+	}
+
 	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
 		List<TupleExpr> args = new ArrayList<>();
 		collectJoinArgs(tupleExpr, args);
@@ -772,6 +827,37 @@ class LmdbSketchJoinOptimizerTest {
 		Join join = assertInstanceOf(Join.class, joinRoot);
 		assertTrue(assertInstanceOf(VariableScopeChange.class, join.getLeftArg()).isVariableScopeChange());
 		assertTrue(containsBindingSetAssignment(join.getRightArg(), "target"));
+	}
+
+	private static final class PlannerDataset implements LmdbEvaluationDataset {
+
+		private final IsolationLevel isolationLevel;
+
+		private PlannerDataset(IsolationLevel isolationLevel) {
+			this.isolationLevel = isolationLevel;
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings)
+				throws QueryEvaluationException {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex, long[] patternIds) throws QueryEvaluationException {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return null;
+		}
+
+		@Override
+		public IsolationLevel getIsolationLevel() {
+			return isolationLevel;
+		}
 	}
 
 	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner,

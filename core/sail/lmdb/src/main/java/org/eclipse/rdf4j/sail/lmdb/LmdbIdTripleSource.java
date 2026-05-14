@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -33,6 +35,17 @@ public interface LmdbIdTripleSource {
 	RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,
 			RecordIterator reuse) throws QueryEvaluationException;
+
+	default List<String> getIndexFieldSequences() {
+		return List.of();
+	}
+
+	default RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+			LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] quadReuse,
+			RecordIterator iteratorReuse)
+			throws QueryEvaluationException {
+		return null;
+	}
 
 	/**
 	 * Create an ordered iterator over ID-level bindings; may fall back to the unordered iterator if unsupported.

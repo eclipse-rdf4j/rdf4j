@@ -25,6 +25,12 @@ public final class LmdbTestUtil {
 	private LmdbTestUtil() {
 	}
 
+	public static LmdbStore newStoreWithLmdbEvaluationStrategy(File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir);
+		store.setEvaluationStrategyFactory(new LmdbEvaluationStrategyFactory(null));
+		return store;
+	}
+
 	public static void deleteDir(File dataDir) {
 		if (dataDir == null || !dataDir.exists()) {
 			return;

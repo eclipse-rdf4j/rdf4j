@@ -49,7 +49,7 @@ public class LmdbIdJoinDisableOnChangesTest {
 
 	@Test
 	public void idJoinDisabledWhenOverlayPresent(@TempDir java.nio.file.Path tempDir) throws Exception {
-		LmdbStore store = new LmdbStore(tempDir.toFile());
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 

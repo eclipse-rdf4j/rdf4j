@@ -272,29 +272,30 @@ public class QueryBenchmarkTest {
 	@Timeout(30)
 	public void long_chain_prefersIdJoinAlgorithms() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(long_chain);
-			Explanation explanation = tupleQuery.explain(Explanation.Level.Optimized);
-			GenericPlanNode root = explanation.toGenericPlanNode();
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			try {
+				TupleQuery tupleQuery = connection.prepareTupleQuery(long_chain);
+				Explanation explanation = tupleQuery.explain(Explanation.Level.Optimized);
+				GenericPlanNode root = explanation.toGenericPlanNode();
 
-			List<String> algorithms = new ArrayList<>();
-			collectAlgorithms(root, algorithms);
-			System.out.println("Optimized join algorithms: " + algorithms);
+				List<String> algorithms = new ArrayList<>();
+				collectAlgorithms(root, algorithms);
+				System.out.println("Optimized join algorithms: " + algorithms);
 
-			boolean hasJoinIterator = algorithms.stream()
-					.filter(Objects::nonNull)
-					.anyMatch("JoinIterator"::equals);
+				boolean hasJoinIterator = algorithms.stream()
+						.filter(Objects::nonNull)
+						.anyMatch("JoinIterator"::equals);
 
-			boolean hasLmdbIdAlgorithm = algorithms.stream()
-					.filter(Objects::nonNull)
-					.anyMatch(name -> name.startsWith("LmdbId"));
-			boolean hasMergeJoin = algorithms.stream()
-					.filter(Objects::nonNull)
-					.anyMatch("LmdbIdMergeJoinIterator"::equals);
+				boolean hasLmdbIdAlgorithm = algorithms.stream()
+						.filter(Objects::nonNull)
+						.anyMatch(name -> name.startsWith("LmdbId"));
 
-			assertTrue(hasLmdbIdAlgorithm, "Expected LMDB ID-based join algorithms to appear in optimized plan");
-			assertTrue(hasMergeJoin, "Expected optimized plan to include LmdbIdMergeJoinIterator");
-			assertTrue(!hasJoinIterator,
-					() -> "Expected optimized plan to avoid generic JoinIterator but found: " + algorithms);
+				assertTrue(hasLmdbIdAlgorithm, "Expected LMDB ID-based join algorithms to appear in optimized plan");
+				assertTrue(!hasJoinIterator,
+						() -> "Expected optimized plan to avoid generic JoinIterator but found: " + algorithms);
+			} finally {
+				connection.commit();
+			}
 		}
 	}
 

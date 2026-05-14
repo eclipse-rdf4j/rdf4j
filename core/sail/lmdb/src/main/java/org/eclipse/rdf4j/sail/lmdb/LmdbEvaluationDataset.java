@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -226,6 +227,17 @@ public interface LmdbEvaluationDataset {
 	 *         available
 	 */
 	default String selectBestIndex(long subj, long pred, long obj, long context) {
+		return null;
+	}
+
+	default List<String> getIndexFieldSequences() {
+		return List.of();
+	}
+
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, long[] quadReuse, RecordIterator iteratorReuse)
+			throws QueryEvaluationException {
 		return null;
 	}
 

@@ -11,9 +11,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -37,10 +39,16 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	private static final Logger log = LoggerFactory.getLogger(LmdbOverlayEvaluationDataset.class);
 	private final TripleSource tripleSource;
 	private final ValueStore valueStore;
+	private final LmdbEvaluationDataset delegate;
 
 	LmdbOverlayEvaluationDataset(TripleSource tripleSource, ValueStore valueStore) {
+		this(tripleSource, valueStore, null);
+	}
+
+	LmdbOverlayEvaluationDataset(TripleSource tripleSource, ValueStore valueStore, LmdbEvaluationDataset delegate) {
 		this.tripleSource = tripleSource;
 		this.valueStore = valueStore;
+		this.delegate = delegate;
 	}
 
 	@Override
@@ -188,8 +196,9 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
 			RecordIterator iteratorReuse)
 			throws QueryEvaluationException {
-		// Prefer an ID-level path if the TripleSource supports it and we can trust overlay correctness.
-		if (tripleSource instanceof LmdbIdTripleSource) {
+		// Prefer an ID-level path only for pure overlays. When wrapping a real LMDB dataset, use the value-level
+		// TripleSource path below so snapshot and transaction overlay visibility cannot be bypassed.
+		if (delegate == null && tripleSource instanceof LmdbIdTripleSource) {
 			// The overlay dataset is represented by this LmdbOverlayEvaluationDataset; the tripleSource reflects the
 			// current branch dataset state (including transaction overlays). Therefore, using ID-level access here is
 			// correct when available.
@@ -276,6 +285,8 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 					}
 				}
 			};
+		} catch (InvalidQueryValueException e) {
+			return LmdbIdJoinIterator.emptyRecordIterator();
 		} catch (QueryEvaluationException e) {
 			throw e;
 		} catch (Exception e) {
@@ -344,12 +355,69 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	}
 
 	@Override
+	public IsolationLevel getIsolationLevel() {
+		return delegate != null ? delegate.getIsolationLevel() : LmdbEvaluationDataset.super.getIsolationLevel();
+	}
+
+	@Override
+	public void refreshSnapshot() throws QueryEvaluationException {
+		if (delegate != null) {
+			delegate.refreshSnapshot();
+		}
+	}
+
+	@Override
+	public boolean hasTransactionChanges() {
+		return delegate != null && delegate.hasTransactionChanges();
+	}
+
+	@Override
 	public String selectBestIndex(long subj, long pred, long obj, long context) {
+		if (delegate != null) {
+			return delegate.selectBestIndex(subj, pred, obj, context);
+		}
 		var currentDataset = LmdbEvaluationStrategy.getCurrentDataset();
 		if (currentDataset.isPresent()) {
 			LmdbEvaluationDataset delegate = currentDataset.get();
 			if (delegate != this) {
 				return delegate.selectBestIndex(subj, pred, obj, context);
+			}
+		}
+		return null;
+	}
+
+	@Override
+	public List<String> getIndexFieldSequences() {
+		if (delegate != null) {
+			return delegate.getIndexFieldSequences();
+		}
+		var currentDataset = LmdbEvaluationStrategy.getCurrentDataset();
+		if (currentDataset.isPresent()) {
+			LmdbEvaluationDataset delegate = currentDataset.get();
+			if (delegate != this) {
+				return delegate.getIndexFieldSequences();
+			}
+		}
+		return List.of();
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, long[] quadReuse, RecordIterator iteratorReuse)
+			throws QueryEvaluationException {
+		if (hasTransactionChanges()) {
+			return null;
+		}
+		if (delegate != null) {
+			return delegate.getRecordIterator(indexFieldSequence, subj, pred, obj, context, keyBuffers,
+					quadReuse, iteratorReuse);
+		}
+		var currentDataset = LmdbEvaluationStrategy.getCurrentDataset();
+		if (currentDataset.isPresent()) {
+			LmdbEvaluationDataset delegate = currentDataset.get();
+			if (delegate != this) {
+				return delegate.getRecordIterator(indexFieldSequence, subj, pred, obj, context, keyBuffers,
+						quadReuse, iteratorReuse);
 			}
 		}
 		return null;
@@ -374,13 +442,13 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 		try {
 			Value value = valueStore.getLazyValue(id);
 			if (requireResource && !(value instanceof Resource)) {
-				throw new QueryEvaluationException("Expected resource-bound value");
+				throw new InvalidQueryValueException();
 			}
 			if (requireIri && !(value instanceof IRI)) {
-				throw new QueryEvaluationException("Expected IRI-bound value");
+				throw new InvalidQueryValueException();
 			}
 			if (value instanceof Resource && value.isTriple()) {
-				throw new QueryEvaluationException("Triple-valued resources are not supported in LMDB joins");
+				throw new InvalidQueryValueException();
 			}
 			return value;
 		} catch (Exception e) {
@@ -443,5 +511,10 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			}
 		}
 		return valueStore.getId(value, true);
+	}
+
+	private static final class InvalidQueryValueException extends QueryEvaluationException {
+
+		private static final long serialVersionUID = -1962303674613107740L;
 	}
 }

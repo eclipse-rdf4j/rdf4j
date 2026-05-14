@@ -40,6 +40,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbIdJoinIsolationTest {
@@ -54,7 +55,7 @@ class LmdbIdJoinIsolationTest {
 
 	@BeforeEach
 	void setUp(@TempDir Path tempDir) {
-		repository = new SailRepository(new LmdbStore(tempDir.toFile()));
+		repository = new SailRepository(LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile()));
 		repository.init();
 	}
 
@@ -65,13 +66,17 @@ class LmdbIdJoinIsolationTest {
 		}
 	}
 
-	private static Stream<IsolationLevel> isolationLevels() {
-		return Stream.of(IsolationLevels.SNAPSHOT_READ, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+	private static Stream<Arguments> isolationLevels() {
+		return Stream.of(
+				Arguments.of(IsolationLevels.READ_COMMITTED, true),
+				Arguments.of(IsolationLevels.SNAPSHOT_READ, false),
+				Arguments.of(IsolationLevels.SNAPSHOT, false),
+				Arguments.of(IsolationLevels.SERIALIZABLE, false));
 	}
 
 	@ParameterizedTest
 	@MethodSource("isolationLevels")
-	void joinReflectsCommittedChanges(IsolationLevel isolationLevel) throws Exception {
+	void joinReflectsCommittedChanges(IsolationLevel isolationLevel, boolean expectIdJoin) throws Exception {
 		String query = "SELECT ?person ?liked WHERE {\n" +
 				"  GRAPH <" + CTX1 + "> { ?person <" + KNOWS + "> ?friend . }\n" +
 				"  GRAPH <" + CTX2 + "> { ?person <" + LIKES + "> ?liked . }\n" +
@@ -128,13 +133,26 @@ class LmdbIdJoinIsolationTest {
 
 			ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 			TupleExpr tupleExpr = parsed.getTupleExpr();
-			SailConnection sailConnection = conn2.getSailConnection();
-			sailConnection.explain(Explanation.Level.Optimized, tupleExpr, null,
-					EmptyBindingSet.getInstance(), true, 0);
-			Join join = unwrapJoin(tupleExpr);
-			assertThat(join.getAlgorithmName())
-					.withFailMessage("left=%s right=%s", join.getLeftArg().getClass(), join.getRightArg().getClass())
-					.isEqualTo("LmdbIdJoinIterator");
+			conn2.begin(isolationLevel);
+			try {
+				SailConnection sailConnection = conn2.getSailConnection();
+				sailConnection.explain(Explanation.Level.Optimized, tupleExpr, null,
+						EmptyBindingSet.getInstance(), true, 0);
+				Join join = unwrapJoin(tupleExpr);
+				if (expectIdJoin) {
+					assertThat(join.getAlgorithmName())
+							.withFailMessage("left=%s right=%s", join.getLeftArg().getClass(),
+									join.getRightArg().getClass())
+							.isEqualTo("LmdbIdJoinIterator");
+				} else {
+					assertThat(join.getAlgorithmName())
+							.withFailMessage("left=%s right=%s", join.getLeftArg().getClass(),
+									join.getRightArg().getClass())
+							.isNotEqualTo("LmdbIdJoinIterator");
+				}
+			} finally {
+				conn2.commit();
+			}
 		}
 	}
 

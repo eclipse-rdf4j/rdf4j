@@ -53,21 +53,8 @@ public class LmdbOrderedTest {
 			store.shutDown();
 		}
 		if (dataDir != null) {
-			deleteRecursively(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
-	}
-
-	private static void deleteRecursively(File f) {
-		if (f.isDirectory()) {
-			File[] files = f.listFiles();
-			if (files != null) {
-				for (File c : files) {
-					deleteRecursively(c);
-				}
-			}
-		}
-		// ignore result; best-effort cleanup
-		f.delete();
 	}
 
 	@Test

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -168,6 +169,27 @@ public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource impleme
 		}
 		return LmdbIdTripleSource.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
 				patternIds, order, reuse, quadReuse);
+	}
+
+	@Override
+	public List<String> getIndexFieldSequences() {
+		if (dataset instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) dataset).getIndexFieldSequences();
+		}
+		return LmdbIdTripleSource.super.getIndexFieldSequences();
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+			LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] quadReuse,
+			RecordIterator iteratorReuse)
+			throws QueryEvaluationException {
+		if (dataset instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) dataset).getRecordIterator(indexFieldSequence, subj, pred, obj, context,
+					keyBuffers, quadReuse, iteratorReuse);
+		}
+		return LmdbIdTripleSource.super.getRecordIterator(indexFieldSequence, subj, pred, obj, context,
+				keyBuffers, quadReuse, iteratorReuse);
 	}
 
 	private long selectQueryId(long patternId, long[] binding, int index) {

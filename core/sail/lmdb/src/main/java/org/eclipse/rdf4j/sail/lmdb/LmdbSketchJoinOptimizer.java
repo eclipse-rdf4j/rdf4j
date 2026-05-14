@@ -80,6 +80,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinIterator;
 
 final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
@@ -3734,8 +3735,34 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					join.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
 				}
 			}
+			if (isPlannerIdJoinCandidate(left, right)) {
+				join.setAlgorithm(LmdbIdJoinIterator.class.getSimpleName());
+			}
 			stampPlanSummaryMetrics(join);
 			return join;
+		}
+
+		private boolean isPlannerIdJoinCandidate(TupleExpr left, TupleExpr right) {
+			if (!LmdbEvaluationStrategy.currentDatasetAllowsIdJoins()
+					|| !(right instanceof StatementPattern)
+					|| !isStatementPatternJoinTree(left)) {
+				return false;
+			}
+			Set<String> leftBindings = plannerBindingNames(left.getBindingNames());
+			Set<String> rightBindings = plannerBindingNames(right.getBindingNames());
+			return !leftBindings.isEmpty() && !rightBindings.isEmpty() && !Collections.disjoint(leftBindings,
+					rightBindings);
+		}
+
+		private boolean isStatementPatternJoinTree(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				return true;
+			}
+			if (tupleExpr instanceof Join join && LmdbIdJoinIterator.class.getSimpleName()
+					.equals(join.getAlgorithmName())) {
+				return isStatementPatternJoinTree(join.getLeftArg()) && isStatementPatternJoinTree(join.getRightArg());
+			}
+			return false;
 		}
 
 		private PlannedPrefixEstimate selectedPlanPrefixEstimate(TupleExpr left, TupleExpr right) {

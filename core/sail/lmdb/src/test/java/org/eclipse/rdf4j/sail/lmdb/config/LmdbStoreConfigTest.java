@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -127,6 +128,14 @@ class LmdbStoreConfigTest {
 		assertThat(new LmdbStoreConfig().getInlineLiterals()).isTrue();
 	}
 
+	@Test
+	void dupsortConfigApiIsRemoved() {
+		assertThat(Arrays.stream(LmdbStoreConfig.class.getMethods()).map(Method::getName))
+				.doesNotContain("isDupsortIndices", "setDupsortIndices", "isDupsortRead", "setDupsortRead");
+		assertThat(Arrays.stream(LmdbStoreSchema.class.getFields()).map(field -> field.getName()))
+				.doesNotContain("DUPSORT_INDICES", "DUPSORT_READ");
+	}
+
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
 	void testThatLmdbStoreConfigParseAndExportNoReadahead(final boolean noReadahead) {
@@ -172,30 +181,6 @@ class LmdbStoreConfigTest {
 				LmdbStoreConfig::getValueHashCacheEnabled,
 				valueHashCacheEnabled,
 				valueHashCacheEnabled
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(booleans = { true, false })
-	void testThatLmdbStoreConfigParseAndExportDupsortIndices(final boolean dupsortIndices) {
-		testParseAndExport(
-				LmdbStoreSchema.DUPSORT_INDICES,
-				Values.literal(dupsortIndices),
-				LmdbStoreConfig::isDupsortIndices,
-				dupsortIndices,
-				!dupsortIndices
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(booleans = { true, false })
-	void testThatLmdbStoreConfigParseAndExportDupsortRead(final boolean dupsortRead) {
-		testParseAndExport(
-				LmdbStoreSchema.DUPSORT_READ,
-				Values.literal(dupsortRead),
-				LmdbStoreConfig::isDupsortRead,
-				dupsortRead,
-				!dupsortRead
 		);
 	}
 

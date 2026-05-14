@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdBGPQueryEvaluationStep;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinIterator;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdMergeJoinQueryEvaluationStep;
 
@@ -59,7 +60,7 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			TripleSource idCapableTs = (tripleSource instanceof LmdbIdTripleSource)
 					? tripleSource
 					: new LmdbIdTripleSourceAdapter(tripleSource, valueStore);
-			effectiveDataset = new LmdbOverlayEvaluationDataset(idCapableTs, valueStore);
+			effectiveDataset = new LmdbOverlayEvaluationDataset(idCapableTs, valueStore, datasetRef);
 		}
 		LmdbQueryEvaluationContext baseContext = new LmdbQueryEvaluationContext(dataset, tripleSource.getValueFactory(),
 				tripleSource.getComparator(), effectiveDataset, valueStore);
@@ -76,6 +77,7 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Override
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) {
+		boolean plannerRequestedIdJoin = LmdbIdJoinIterator.class.getSimpleName().equals(node.getAlgorithmName());
 		QueryEvaluationStep defaultStep = super.prepare(node, context);
 		if (Boolean.getBoolean("rdf4j.lmdb.disableIdJoins")) {
 			return defaultStep;
@@ -87,10 +89,16 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 			if (ds.hasTransactionChanges() || connectionHasChanges()) {
 				return defaultStep;
 			}
+			if (!idJoinsAllowedForIsolation(ds.getIsolationLevel())) {
+				return defaultStep;
+			}
 
 			if (node.isMergeJoin() && node.getOrder() != null && node.getLeftArg() instanceof StatementPattern
 					&& node.getRightArg() instanceof StatementPattern) {
 				return new LmdbIdMergeJoinQueryEvaluationStep(node, context, defaultStep);
+			}
+			if (!plannerRequestedIdJoin) {
+				return defaultStep;
 			}
 			// Try to flatten a full BGP of statement patterns
 			List<StatementPattern> patterns = new ArrayList<>();
@@ -104,7 +112,7 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 								? tripleSource
 								: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
 						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
-								valueStoreOpt.get());
+								valueStoreOpt.get(), ds);
 						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
 								overlay,
 								valueStoreOpt.get());
@@ -119,7 +127,7 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 							? tripleSource
 							: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
 					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
-							valueStoreOpt.get());
+							valueStoreOpt.get(), ds);
 					QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context, overlay,
 							valueStoreOpt.get());
 					LmdbIdBGPQueryEvaluationStep overlayStep = new LmdbIdBGPQueryEvaluationStep(node, patterns,
@@ -140,7 +148,7 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 								? tripleSource
 								: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
 						LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
-								valueStoreOpt.get());
+								valueStoreOpt.get(), ds);
 						QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context,
 								overlay,
 								valueStoreOpt.get());
@@ -154,7 +162,7 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 							? tripleSource
 							: new LmdbIdTripleSourceAdapter(tripleSource, valueStoreOpt.get());
 					LmdbOverlayEvaluationDataset overlay = new LmdbOverlayEvaluationDataset(idCapableTs,
-							valueStoreOpt.get());
+							valueStoreOpt.get(), ds);
 					QueryEvaluationContext overlayContext = new LmdbDelegatingQueryEvaluationContext(context, overlay,
 							valueStoreOpt.get());
 					LmdbIdJoinQueryEvaluationStep overlayStep = new LmdbIdJoinQueryEvaluationStep(this, node,
@@ -187,6 +195,17 @@ public class LmdbEvaluationStrategy extends StrictEvaluationStrategy {
 		IsolationLevel isolation = dataset.getIsolationLevel();
 		return isolation == IsolationLevels.SNAPSHOT || isolation == IsolationLevels.SERIALIZABLE
 				|| isolation == IsolationLevels.SNAPSHOT_READ;
+	}
+
+	static boolean currentDatasetAllowsIdJoins() {
+		return getCurrentDataset()
+				.map(LmdbEvaluationDataset::getIsolationLevel)
+				.map(LmdbEvaluationStrategy::idJoinsAllowedForIsolation)
+				.orElse(false);
+	}
+
+	static boolean idJoinsAllowedForIsolation(IsolationLevel isolation) {
+		return isolation != null && IsolationLevels.READ_COMMITTED.isCompatibleWith(isolation);
 	}
 
 	static void setCurrentDataset(LmdbEvaluationDataset dataset) {

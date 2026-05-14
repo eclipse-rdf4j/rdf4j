@@ -78,7 +78,7 @@ class LmdbQueryDebugTest {
 			}
 		} finally {
 			repo.shutDown();
-			org.apache.commons.io.FileUtils.deleteDirectory(dataDir);
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 }

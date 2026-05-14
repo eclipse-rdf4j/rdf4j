@@ -2066,10 +2066,10 @@ class LmdbSailStore implements SailStore {
 					return emptyRecordIterator();
 				}
 
-				ByteBuffer minKeyBuf = keyBuffers != null ? keyBuffers.minKey() : null;
-				ByteBuffer maxKeyBuf = keyBuffers != null ? keyBuffers.maxKey() : null;
-				RecordIterator reuse = (iteratorReuse instanceof LmdbRecordIterator
-						|| iteratorReuse instanceof LmdbDupRecordIterator) ? iteratorReuse : null;
+				boolean useKeyBuffers = hasBoundComponent(subjID, predID, objID, contextID);
+				ByteBuffer minKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.maxKey() : null;
+				RecordIterator reuse = iteratorReuse instanceof LmdbRecordIterator ? iteratorReuse : null;
 				return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, minKeyBuf, maxKeyBuf,
 						null, reuse);
 			} catch (IOException e) {
@@ -2122,16 +2122,15 @@ class LmdbSailStore implements SailStore {
 				long objQuery = selectQueryId(patternIds[TripleStore.OBJ_IDX], binding, objIndex);
 				long ctxQuery = selectQueryId(patternIds[TripleStore.CONTEXT_IDX], binding, ctxIndex);
 
-				ByteBuffer minKeyBuf = keyBuffers != null ? keyBuffers.minKey() : null;
-				ByteBuffer maxKeyBuf = keyBuffers != null ? keyBuffers.maxKey() : null;
+				boolean useKeyBuffers = hasBoundComponent(subjQuery, predQuery, objQuery, ctxQuery);
+				ByteBuffer minKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.maxKey() : null;
 
 				BindingProjectingIterator projectingReuse = iteratorReuse instanceof BindingProjectingIterator
 						? (BindingProjectingIterator) iteratorReuse
 						: null;
 				RecordIterator baseReuse = projectingReuse != null ? projectingReuse.getReusableBase()
-						: (iteratorReuse instanceof LmdbRecordIterator || iteratorReuse instanceof LmdbDupRecordIterator
-								? iteratorReuse
-								: null);
+						: (iteratorReuse instanceof LmdbRecordIterator ? iteratorReuse : null);
 
 				RecordIterator raw = tripleStore.getTriples(txn, subjQuery, predQuery, objQuery, ctxQuery, explicit,
 						minKeyBuf, maxKeyBuf, quadReuse, baseReuse);
@@ -2168,10 +2167,7 @@ class LmdbSailStore implements SailStore {
 
 				BindingProjectingIterator result = projectingReuse != null ? projectingReuse
 						: new BindingProjectingIterator();
-				RecordIterator reusableBase = (raw instanceof LmdbRecordIterator
-						|| raw instanceof LmdbDupRecordIterator)
-								? raw
-								: null;
+				RecordIterator reusableBase = raw instanceof LmdbRecordIterator ? raw : null;
 				result.configure(raw, reusableBase, binding, subjIndex, predIndex, objIndex, ctxIndex, reuse);
 				return result;
 			} catch (IOException e) {
@@ -2332,6 +2328,37 @@ class LmdbSailStore implements SailStore {
 		public String selectBestIndex(long subj, long pred, long obj, long context) {
 			TripleStore.TripleIndex index = tripleStore.getBestIndex(subj, pred, obj, context);
 			return index == null ? null : new String(index.getFieldSeq());
+		}
+
+		@Override
+		public List<String> getIndexFieldSequences() {
+			List<TripleStore.TripleIndex> indexes = tripleStore.getAllIndexes();
+			List<String> fieldSequences = new ArrayList<>(indexes.size());
+			for (TripleStore.TripleIndex index : indexes) {
+				fieldSequences.add(new String(index.getFieldSeq()));
+			}
+			return List.copyOf(fieldSequences);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj,
+				long context, KeyRangeBuffers keyBuffers, long[] quadReuse,
+				RecordIterator iteratorReuse)
+				throws QueryEvaluationException {
+			try {
+				boolean useKeyBuffers = hasBoundComponent(subj, pred, obj, context);
+				ByteBuffer minKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.maxKey() : null;
+				RecordIterator reuse = iteratorReuse instanceof LmdbRecordIterator ? iteratorReuse : null;
+				return tripleStore.getTriplesUsingIndex(txn, indexFieldSequence, subj, pred, obj, context, explicit,
+						minKeyBuf, maxKeyBuf, quadReuse, reuse);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to create LMDB index scan iterator", e);
+			}
+		}
+
+		private boolean hasBoundComponent(long subj, long pred, long obj, long context) {
+			return subj > 0 || pred > 0 || obj > 0 || context >= 0;
 		}
 
 		@Override

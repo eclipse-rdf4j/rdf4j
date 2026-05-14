@@ -143,9 +143,8 @@ class SubjectPredicateIndexDistributionDebugTest {
 	}
 
 	@Test
-	void debugListLanguagesNoDupsortRead(@TempDir Path tempDir) throws Exception {
+	void debugListLanguagesStandardIndexes(@TempDir Path tempDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-		config.setDupsortRead(false);
 		SailRepository lmdbRepository = new SailRepository(new LmdbStore(tempDir.resolve("lmdb").toFile(), config));
 		SailRepository memoryRepository = new SailRepository(new MemoryStore());
 
@@ -160,8 +159,8 @@ class SubjectPredicateIndexDistributionDebugTest {
 			List<String> lmdbLangs = getLanguages(lmdbConn);
 			List<String> memLangs = getLanguages(memoryConn);
 
-			System.out.println("[no-dupsort] LMDB languages:  " + lmdbLangs);
-			System.out.println("[no-dupsort] MEM  languages:  " + memLangs);
+			System.out.println("[standard] LMDB languages:  " + lmdbLangs);
+			System.out.println("[standard] MEM  languages:  " + memLangs);
 		} finally {
 			lmdbRepository.shutDown();
 			memoryRepository.shutDown();

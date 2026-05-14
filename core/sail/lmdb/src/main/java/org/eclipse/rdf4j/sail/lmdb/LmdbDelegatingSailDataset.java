@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -146,5 +147,24 @@ final class LmdbDelegatingSailDataset implements SailDataset, LmdbEvaluationData
 	@Override
 	public ValueStore getValueStore() {
 		return valueStore;
+	}
+
+	@Override
+	public List<String> getIndexFieldSequences() {
+		if (delegate instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) delegate).getIndexFieldSequences();
+		}
+		return List.of();
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, long[] quadReuse, RecordIterator iteratorReuse)
+			throws QueryEvaluationException {
+		if (delegate instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) delegate).getRecordIterator(indexFieldSequence, subj, pred, obj, context,
+					keyBuffers, quadReuse, iteratorReuse);
+		}
+		return null;
 	}
 }

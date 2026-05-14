@@ -22,6 +22,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -64,7 +65,8 @@ public class LmdbIdJoinEvaluationTest {
 
 	@Test
 	public void simpleJoinUsesIdIterator(@TempDir Path tempDir) throws Exception {
-		LmdbStore store = new LmdbStore(tempDir.toFile());
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
@@ -118,7 +120,7 @@ public class LmdbIdJoinEvaluationTest {
 
 	@Test
 	public void mergeJoinRequestsLmdbMergeIterator(@TempDir Path tempDir) throws Exception {
-		LmdbStore store = new LmdbStore(tempDir.toFile());
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
@@ -156,7 +158,7 @@ public class LmdbIdJoinEvaluationTest {
 		join.setMergeJoin(true);
 
 		SailSource branch = store.getBackingStore().getExplicitSailSource();
-		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
 		try {
 			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
@@ -186,7 +188,7 @@ public class LmdbIdJoinEvaluationTest {
 
 	@Test
 	public void mergeJoinUsesArrayDatasetApi(@TempDir Path tempDir) throws Exception {
-		LmdbStore store = new LmdbStore(tempDir.toFile());
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
@@ -223,7 +225,7 @@ public class LmdbIdJoinEvaluationTest {
 		join.setMergeJoin(true);
 
 		SailSource branch = store.getBackingStore().getExplicitSailSource();
-		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
 
 		try {
 			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
@@ -252,7 +254,7 @@ public class LmdbIdJoinEvaluationTest {
 
 	@Test
 	public void mergeJoinRespectsQueryBindings(@TempDir Path tempDir) throws Exception {
-		LmdbStore store = new LmdbStore(tempDir.toFile());
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
@@ -291,7 +293,7 @@ public class LmdbIdJoinEvaluationTest {
 		join.setMergeJoin(true);
 
 		SailSource branch = store.getBackingStore().getExplicitSailSource();
-		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
 
 		try {
 			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
@@ -346,7 +348,7 @@ public class LmdbIdJoinEvaluationTest {
 
 	@Test
 	public void mergeJoinFallsBackWhenOrderUnsupported(@TempDir Path tempDir) throws Exception {
-		LmdbStore store = new LmdbStore(tempDir.toFile());
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
@@ -399,7 +401,7 @@ public class LmdbIdJoinEvaluationTest {
 		assertThat(right.getStatementOrder()).isEqualTo(StatementOrder.O);
 
 		SailSource branch = store.getBackingStore().getExplicitSailSource();
-		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
 
 		try {
 			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
@@ -445,7 +447,7 @@ public class LmdbIdJoinEvaluationTest {
 
 	@Test
 	public void joinUsesRecordIteratorsForLeftSide(@TempDir Path tempDir) throws Exception {
-		LmdbStore store = new LmdbStore(tempDir.toFile());
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
@@ -474,7 +476,7 @@ public class LmdbIdJoinEvaluationTest {
 		Join join = (Join) joinExpr;
 
 		SailSource branch = store.getBackingStore().getExplicitSailSource();
-		SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
 		try {
 			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
@@ -599,6 +601,11 @@ public class LmdbIdJoinEvaluationTest {
 		@Override
 		public boolean hasTransactionChanges() {
 			return delegate.hasTransactionChanges();
+		}
+
+		@Override
+		public IsolationLevel getIsolationLevel() {
+			return delegate.getIsolationLevel();
 		}
 	}
 }

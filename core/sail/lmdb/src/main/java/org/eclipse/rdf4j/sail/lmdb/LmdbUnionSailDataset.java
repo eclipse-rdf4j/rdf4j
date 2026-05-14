@@ -12,6 +12,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -195,6 +197,37 @@ final class LmdbUnionSailDataset implements SailDataset, LmdbEvaluationDataset {
 	@Override
 	public ValueStore getValueStore() {
 		return valueStore;
+	}
+
+	@Override
+	public List<String> getIndexFieldSequences() {
+		if (dataset1 instanceof LmdbEvaluationDataset && dataset2 instanceof LmdbEvaluationDataset) {
+			LinkedHashSet<String> common = new LinkedHashSet<>(((LmdbEvaluationDataset) dataset1)
+					.getIndexFieldSequences());
+			common.retainAll(((LmdbEvaluationDataset) dataset2).getIndexFieldSequences());
+			return List.copyOf(common);
+		}
+		return List.of();
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, long[] quadReuse, RecordIterator iteratorReuse)
+			throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		if (dataset1 instanceof LmdbEvaluationDataset && dataset2 instanceof LmdbEvaluationDataset) {
+			RecordIterator r1 = ((LmdbEvaluationDataset) dataset1).getRecordIterator(indexFieldSequence, subj, pred,
+					obj, context, keyBuffers, quadReuse, iteratorReuse);
+			RecordIterator r2 = ((LmdbEvaluationDataset) dataset2).getRecordIterator(indexFieldSequence, subj, pred,
+					obj, context, keyBuffers, quadReuse, null);
+			if (r1 == null) {
+				return r2;
+			}
+			if (r2 == null) {
+				return r1;
+			}
+			return chain(r1, r2);
+		}
+		return null;
 	}
 
 	private RecordIterator chain(RecordIterator left, RecordIterator right) {

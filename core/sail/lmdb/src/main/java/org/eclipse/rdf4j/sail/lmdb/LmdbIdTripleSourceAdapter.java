@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -183,6 +184,40 @@ final class LmdbIdTripleSourceAdapter implements TripleSource, LmdbIdTripleSourc
 		if (delegate instanceof LmdbIdTripleSource) {
 			return ((LmdbIdTripleSource) delegate).getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex,
 					ctxIndex, patternIds, order, keyBuffers, bindingReuse, quadReuse);
+		}
+		return null;
+	}
+
+	@Override
+	public List<String> getIndexFieldSequences() {
+		if (delegate instanceof LmdbIdTripleSource) {
+			return ((LmdbIdTripleSource) delegate).getIndexFieldSequences();
+		}
+		if (!LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
+			var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
+			if (dsOpt.isPresent()) {
+				return dsOpt.get().getIndexFieldSequences();
+			}
+		}
+		return List.of();
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+			LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] quadReuse,
+			RecordIterator iteratorReuse)
+			throws QueryEvaluationException {
+		if (delegate instanceof LmdbIdTripleSource) {
+			return ((LmdbIdTripleSource) delegate).getRecordIterator(indexFieldSequence, subj, pred, obj, context,
+					keyBuffers, quadReuse, iteratorReuse);
+		}
+		if (!LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
+			var dsOpt = LmdbEvaluationStrategy.getCurrentDataset();
+			if (dsOpt.isPresent()) {
+				return dsOpt.get()
+						.getRecordIterator(indexFieldSequence, subj, pred, obj, context, keyBuffers,
+								quadReuse, iteratorReuse);
+			}
 		}
 		return null;
 	}

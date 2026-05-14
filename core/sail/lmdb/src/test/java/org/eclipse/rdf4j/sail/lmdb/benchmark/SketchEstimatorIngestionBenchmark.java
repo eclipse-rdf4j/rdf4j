@@ -14,11 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -30,6 +28,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -132,17 +131,7 @@ public class SketchEstimatorIngestionBenchmark {
 			if (estimator != null) {
 				estimator.close();
 			}
-			if (tempDir != null) {
-				try (Stream<Path> paths = Files.walk(tempDir)) {
-					paths.sorted(Comparator.reverseOrder()).forEach(path -> {
-						try {
-							Files.deleteIfExists(path);
-						} catch (Exception ignored) {
-							// Best effort cleanup for benchmark scratch files.
-						}
-					});
-				}
-			}
+			LmdbTestUtil.deleteDir(tempDir);
 		}
 	}
 

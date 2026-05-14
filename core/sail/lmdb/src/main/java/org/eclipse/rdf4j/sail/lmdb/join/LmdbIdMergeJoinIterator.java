@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  * Merge join iterator that operates entirely on LMDB ID records. Materialization to
  * {@link org.eclipse.rdf4j.query.BindingSet} happens in a separate {@link LmdbIdFinalBindingSetIteration}.
  */
-public class LmdbIdMergeJoinIterator implements RecordIterator {
+public class LmdbIdMergeJoinIterator implements RecordIterator, LmdbIdJoinMetricReporter {
 
 	private final PeekMarkRecordIterator leftIterator;
 	private final PeekMarkRecordIterator rightIterator;
@@ -52,6 +52,9 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 	private final int rightMergeColumn;
 	private static final boolean DEBUG = Boolean.getBoolean("rdf4j.lmdb.mergeJoinDebug");
 	private final AtomicInteger debugCounter = DEBUG ? new AtomicInteger() : null;
+	private long leftRowsProbedActual;
+	private long rightRowsScannedActual;
+	private long outputRowsActual;
 
 	public LmdbIdMergeJoinIterator(RecordIterator leftIterator, RecordIterator rightIterator,
 			LmdbIdJoinIterator.PatternInfo leftInfo, LmdbIdJoinIterator.PatternInfo rightInfo, String mergeVariable,
@@ -102,6 +105,8 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 			long[] nextRecord = computeNextElement();
 			if (nextRecord == null) {
 				close();
+			} else {
+				outputRowsActual++;
 			}
 			return nextRecord;
 		} catch (RuntimeException e) {
@@ -150,7 +155,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 					return null;
 				}
 			} else {
-				rightIterator.next();
+				nextRightRecord();
 			}
 		}
 	}
@@ -179,6 +184,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 			currentLeftRecord = candidate;
 			currentLeftKey = key(candidate, leftMergeColumn);
 			hasCurrentLeftKey = true;
+			leftRowsProbedActual++;
 			return true;
 		}
 
@@ -205,7 +211,7 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 	private long[] equal() {
 		while (rightIterator.hasNext()) {
 			if (rightIterator.isResettable()) {
-				long[] result = joinWithCurrentLeft(rightIterator.next());
+				long[] result = joinWithCurrentLeft(nextRightRecord());
 				if (result != null) {
 					return result;
 				}
@@ -214,13 +220,21 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 				if (currentLeftValueAndPeekEquals == 0 && !rightIterator.isMarked()) {
 					rightIterator.mark();
 				}
-				long[] result = joinWithCurrentLeft(rightIterator.next());
+				long[] result = joinWithCurrentLeft(nextRightRecord());
 				if (result != null) {
 					return result;
 				}
 			}
 		}
 		return null;
+	}
+
+	private long[] nextRightRecord() {
+		long[] rightRecord = rightIterator.next();
+		if (rightRecord != null) {
+			rightRowsScannedActual++;
+		}
+		return rightRecord;
 	}
 
 	private void doLeftPeek() {
@@ -334,6 +348,32 @@ public class LmdbIdMergeJoinIterator implements RecordIterator {
 		} finally {
 			rightIterator.close();
 		}
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		return leftRowsProbedActual + rightRowsScannedActual;
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		return outputRowsActual;
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		long scanned = getSourceRowsScannedActual();
+		return Math.max(0, scanned - outputRowsActual);
+	}
+
+	@Override
+	public long getLeftRowsProbedActual() {
+		return leftRowsProbedActual;
+	}
+
+	@Override
+	public long getRightRowsScannedActual() {
+		return rightRowsScannedActual;
 	}
 
 }

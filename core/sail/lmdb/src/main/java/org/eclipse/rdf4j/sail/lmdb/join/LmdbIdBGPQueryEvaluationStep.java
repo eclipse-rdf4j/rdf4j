@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static final String ID_JOIN_ALGORITHM = LmdbIdJoinIterator.class.getSimpleName();
+	private static final String NARY_ID_SCAN_ALGORITHM = LmdbIdNaryIndexScanIterator.class.getSimpleName();
 
 	private final List<PatternPlan> plans;
 	private final List<RawPattern> rawPatterns;
@@ -67,6 +68,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	private final List<MergeSpec> mergeSpecs;
 	private final Set<Join> mergeJoinNodes;
 	private final Map<StatementPattern, KeyRangeBuffers> patternBuffers = new HashMap<>();
+	private final NaryScanPlan naryScanPlan;
 
 	public LmdbIdBGPQueryEvaluationStep(Join root, List<StatementPattern> patterns, QueryEvaluationContext context,
 			QueryEvaluationStep fallbackStep) {
@@ -137,6 +139,9 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				mergeJoinNodes.add(spec.join);
 			}
 		}
+		this.naryScanPlan = datasetOpt
+				.flatMap(dataset -> NaryScanPlan.create(dataset, rawPatterns, planList, finalInfo, mergeSpecs))
+				.orElse(null);
 	}
 
 	public boolean shouldUseFallbackImmediately() {
@@ -144,7 +149,11 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	public void applyAlgorithmTag() {
-		markJoinTreeWithIdAlgorithm(root, mergeJoinNodes);
+		if (naryScanPlan != null) {
+			markJoinTreeWithNaryAlgorithm(root);
+		} else {
+			markJoinTreeWithIdAlgorithm(root, mergeJoinNodes);
+		}
 	}
 
 	@Override
@@ -185,7 +194,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				iter = stages.get(i).joinWith(iter, dataset, valueStore);
 			}
 
-			return new LmdbIdFinalBindingSetIteration(iter, finalInfo, context, bindings, valueStore, constantBindings);
+			return new LmdbIdFinalBindingSetIteration(iter, finalInfo, context, bindings, valueStore, constantBindings,
+					root);
 		} catch (QueryEvaluationException e) {
 			throw e;
 		}
@@ -247,7 +257,19 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
+	private static void markJoinTreeWithNaryAlgorithm(TupleExpr expr) {
+		if (expr instanceof Join) {
+			Join join = (Join) expr;
+			join.setAlgorithm(NARY_ID_SCAN_ALGORITHM);
+			markJoinTreeWithNaryAlgorithm(join.getLeftArg());
+			markJoinTreeWithNaryAlgorithm(join.getRightArg());
+		}
+	}
+
 	private List<Stage> buildStages() {
+		if (naryScanPlan != null) {
+			return List.of(new NaryScanStage(naryScanPlan));
+		}
 		List<Stage> stages = new ArrayList<>();
 		boolean[] consumed = new boolean[plans.size()];
 		for (MergeSpec spec : mergeSpecs) {
@@ -355,6 +377,42 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 
 		RecordIterator joinWith(RecordIterator left, LmdbEvaluationDataset dataset, ValueStore valueStore)
 				throws QueryEvaluationException;
+	}
+
+	private static final class NaryScanStage implements Stage {
+		private final NaryScanPlan plan;
+		private final KeyRangeBuffers keyBuffers = KeyRangeBuffers.acquire();
+		private long[] quadScratch;
+		private RecordIterator reusableIterator;
+
+		private NaryScanStage(NaryScanPlan plan) {
+			this.plan = plan;
+		}
+
+		@Override
+		public RecordIterator createInitialIterator(LmdbEvaluationDataset dataset, long[] initialBinding,
+				ValueStore valueStore) throws QueryEvaluationException {
+			if (quadScratch == null) {
+				quadScratch = new long[4];
+			}
+			long[] scanIds = plan.scanIds(initialBinding);
+			RecordIterator raw = dataset.getRecordIterator(plan.indexFieldSequence, scanIds[TripleStore.SUBJ_IDX],
+					scanIds[TripleStore.PRED_IDX], scanIds[TripleStore.OBJ_IDX], scanIds[TripleStore.CONTEXT_IDX],
+					keyBuffers, quadScratch, reusableIterator);
+			if (raw == null) {
+				reusableIterator = null;
+				return LmdbIdJoinIterator.emptyRecordIterator();
+			}
+			reusableIterator = raw;
+			return new LmdbIdNaryIndexScanIterator(raw, plan.patternSpecs, initialBinding, plan.anchorComponent,
+					plan.anchorBindingIndex);
+		}
+
+		@Override
+		public RecordIterator joinWith(RecordIterator left, LmdbEvaluationDataset dataset, ValueStore valueStore)
+				throws QueryEvaluationException {
+			throw new QueryEvaluationException("N-ary index scan must be the first and only BGP stage");
+		}
 	}
 
 	private static final class PatternStage implements Stage {
@@ -545,7 +603,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
-	private static final class BindingJoinRecordIterator implements RecordIterator {
+	private static final class BindingJoinRecordIterator implements RecordIterator, LmdbIdJoinMetricReporter {
 		private final RecordIterator left;
 		private final LmdbEvaluationDataset dataset;
 		private final PatternPlan plan;
@@ -554,6 +612,8 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 		private long[] rightScratch;
 		private long[] quadScratch;
 		private RecordIterator reusableRight;
+		private long leftRowsProbedActual;
+		private long rightRowsScannedActual;
 
 		private BindingJoinRecordIterator(RecordIterator left, LmdbEvaluationDataset dataset, PatternPlan plan,
 				KeyRangeBuffers keyBuffers) {
@@ -569,6 +629,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				if (currentRight != null) {
 					long[] next = currentRight.next();
 					if (next != null) {
+						rightRowsScannedActual++;
 						return next;
 					}
 					if (reusableRight == null && currentRight != LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR) {
@@ -585,6 +646,7 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 				if (leftBinding == null) {
 					return null;
 				}
+				leftRowsProbedActual++;
 				if (rightScratch == null || rightScratch.length < leftBinding.length) {
 					rightScratch = new long[leftBinding.length];
 				}
@@ -647,6 +709,263 @@ public final class LmdbIdBGPQueryEvaluationStep implements QueryEvaluationStep {
 			// Rethrow the first failure after attempting all closes
 			if (first != null) {
 				throw first;
+			}
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			long leftRows = left.getSourceRowsScannedActual();
+			if (leftRows < 0) {
+				return rightRowsScannedActual;
+			}
+			return leftRows + rightRowsScannedActual;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			long leftRows = left.getSourceRowsMatchedActual();
+			if (leftRows < 0) {
+				return rightRowsScannedActual;
+			}
+			return leftRows + rightRowsScannedActual;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			long leftRows = left.getSourceRowsFilteredActual();
+			return Math.max(0, leftRows);
+		}
+
+		@Override
+		public long getLeftRowsProbedActual() {
+			if (left instanceof LmdbIdJoinMetricReporter) {
+				long nestedLeftRows = ((LmdbIdJoinMetricReporter) left).getLeftRowsProbedActual();
+				if (nestedLeftRows >= 0) {
+					return nestedLeftRows + leftRowsProbedActual;
+				}
+			}
+			return leftRowsProbedActual;
+		}
+
+		@Override
+		public long getRightRowsScannedActual() {
+			if (left instanceof LmdbIdJoinMetricReporter) {
+				long nestedRightRows = ((LmdbIdJoinMetricReporter) left).getRightRowsScannedActual();
+				if (nestedRightRows >= 0) {
+					return nestedRightRows + rightRowsScannedActual;
+				}
+			}
+			return rightRowsScannedActual;
+		}
+	}
+
+	private static final class NaryScanPlan {
+		private final String indexFieldSequence;
+		private final int anchorComponent;
+		private final int anchorBindingIndex;
+		private final long[] scanIds;
+		private final List<LmdbIdNaryIndexScanIterator.PatternSpec> patternSpecs;
+
+		private NaryScanPlan(String indexFieldSequence, int anchorComponent, int anchorBindingIndex, long[] scanIds,
+				List<LmdbIdNaryIndexScanIterator.PatternSpec> patternSpecs) {
+			this.indexFieldSequence = indexFieldSequence;
+			this.anchorComponent = anchorComponent;
+			this.anchorBindingIndex = anchorBindingIndex;
+			this.scanIds = scanIds;
+			this.patternSpecs = patternSpecs;
+		}
+
+		private static Optional<NaryScanPlan> create(LmdbEvaluationDataset dataset, List<RawPattern> rawPatterns,
+				List<PatternPlan> plans, IdBindingInfo finalInfo, List<MergeSpec> mergeSpecs) {
+			if (!mergeSpecs.isEmpty() || rawPatterns.size() < 3) {
+				return Optional.empty();
+			}
+			Set<String> anchorCandidates = sharedVariables(rawPatterns);
+			if (anchorCandidates.isEmpty()) {
+				return Optional.empty();
+			}
+
+			NaryScanPlan best = null;
+			int bestAnchorIndexPosition = Integer.MAX_VALUE;
+			for (String anchorVariable : anchorCandidates) {
+				int anchorComponent = commonSingleComponent(rawPatterns, anchorVariable);
+				if (anchorComponent < 0) {
+					continue;
+				}
+				for (String indexFieldSequence : dataset.getIndexFieldSequences()) {
+					int anchorIndexPosition = indexFieldSequence.indexOf(fieldForComponent(anchorComponent));
+					if (anchorIndexPosition < 0 || !earlierFieldsAreConcreteAndIdentical(indexFieldSequence,
+							anchorIndexPosition, rawPatterns)) {
+						continue;
+					}
+					long[] scanIds = commonConcreteIds(rawPatterns);
+					for (int i = 0; i < anchorIndexPosition; i++) {
+						int component = componentForField(indexFieldSequence.charAt(i));
+						scanIds[component] = rawPatterns.get(0).patternIds[component];
+					}
+					List<LmdbIdNaryIndexScanIterator.PatternSpec> specs = new ArrayList<>(rawPatterns.size());
+					for (int i = 0; i < rawPatterns.size(); i++) {
+						PatternPlan plan = plans.get(i);
+						RawPattern raw = rawPatterns.get(i);
+						specs.add(new LmdbIdNaryIndexScanIterator.PatternSpec(plan.patternIds.clone(),
+								new int[] { plan.subjIndex, plan.predIndex, plan.objIndex, plan.ctxIndex },
+								new String[] { raw.subjVar, raw.predVar, raw.objVar, raw.ctxVar }));
+					}
+					if (best == null || anchorIndexPosition < bestAnchorIndexPosition) {
+						best = new NaryScanPlan(indexFieldSequence, anchorComponent, finalInfo.getIndex(anchorVariable),
+								scanIds, specs);
+						bestAnchorIndexPosition = anchorIndexPosition;
+					}
+				}
+			}
+			return Optional.ofNullable(best);
+		}
+
+		private long[] scanIds(long[] initialBinding) {
+			long[] ids = scanIds.clone();
+			if (anchorBindingIndex >= 0) {
+				long boundAnchor = initialBinding[anchorBindingIndex];
+				if (boundAnchor != LmdbValue.UNKNOWN_ID) {
+					ids[anchorComponent] = boundAnchor;
+				}
+			}
+			return ids;
+		}
+
+		private static Set<String> sharedVariables(List<RawPattern> rawPatterns) {
+			Set<String> shared = variables(rawPatterns.get(0));
+			for (int i = 1; i < rawPatterns.size(); i++) {
+				shared.retainAll(variables(rawPatterns.get(i)));
+				if (shared.isEmpty()) {
+					return shared;
+				}
+			}
+			return shared;
+		}
+
+		private static Set<String> variables(RawPattern raw) {
+			Set<String> variables = new HashSet<>();
+			addVariable(variables, raw.subjVar);
+			addVariable(variables, raw.predVar);
+			addVariable(variables, raw.objVar);
+			addVariable(variables, raw.ctxVar);
+			return variables;
+		}
+
+		private static void addVariable(Set<String> variables, String varName) {
+			if (varName != null) {
+				variables.add(varName);
+			}
+		}
+
+		private static int commonSingleComponent(List<RawPattern> rawPatterns, String variableName) {
+			int component = singleComponent(rawPatterns.get(0), variableName);
+			if (component < 0) {
+				return -1;
+			}
+			for (int i = 1; i < rawPatterns.size(); i++) {
+				if (singleComponent(rawPatterns.get(i), variableName) != component) {
+					return -1;
+				}
+			}
+			return component;
+		}
+
+		private static int singleComponent(RawPattern raw, String variableName) {
+			int found = -1;
+			for (int component = 0; component < 4; component++) {
+				String varName = varName(raw, component);
+				if (variableName.equals(varName)) {
+					if (found >= 0) {
+						return -1;
+					}
+					found = component;
+				}
+			}
+			return found;
+		}
+
+		private static boolean earlierFieldsAreConcreteAndIdentical(String indexFieldSequence, int anchorIndexPosition,
+				List<RawPattern> rawPatterns) {
+			for (int i = 0; i < anchorIndexPosition; i++) {
+				int component = componentForField(indexFieldSequence.charAt(i));
+				long value = rawPatterns.get(0).patternIds[component];
+				if (value == LmdbValue.UNKNOWN_ID) {
+					return false;
+				}
+				for (int j = 1; j < rawPatterns.size(); j++) {
+					if (rawPatterns.get(j).patternIds[component] != value) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		private static long[] commonConcreteIds(List<RawPattern> rawPatterns) {
+			long[] ids = new long[4];
+			Arrays.fill(ids, LmdbValue.UNKNOWN_ID);
+			for (int component = 0; component < 4; component++) {
+				long value = rawPatterns.get(0).patternIds[component];
+				if (value == LmdbValue.UNKNOWN_ID) {
+					continue;
+				}
+				boolean same = true;
+				for (int i = 1; i < rawPatterns.size(); i++) {
+					if (rawPatterns.get(i).patternIds[component] != value) {
+						same = false;
+						break;
+					}
+				}
+				if (same) {
+					ids[component] = value;
+				}
+			}
+			return ids;
+		}
+
+		private static String varName(RawPattern raw, int component) {
+			switch (component) {
+			case TripleStore.SUBJ_IDX:
+				return raw.subjVar;
+			case TripleStore.PRED_IDX:
+				return raw.predVar;
+			case TripleStore.OBJ_IDX:
+				return raw.objVar;
+			case TripleStore.CONTEXT_IDX:
+				return raw.ctxVar;
+			default:
+				throw new IllegalArgumentException("Unknown statement component: " + component);
+			}
+		}
+
+		private static char fieldForComponent(int component) {
+			switch (component) {
+			case TripleStore.SUBJ_IDX:
+				return 's';
+			case TripleStore.PRED_IDX:
+				return 'p';
+			case TripleStore.OBJ_IDX:
+				return 'o';
+			case TripleStore.CONTEXT_IDX:
+				return 'c';
+			default:
+				throw new IllegalArgumentException("Unknown statement component: " + component);
+			}
+		}
+
+		private static int componentForField(char field) {
+			switch (field) {
+			case 's':
+				return TripleStore.SUBJ_IDX;
+			case 'p':
+				return TripleStore.PRED_IDX;
+			case 'o':
+				return TripleStore.OBJ_IDX;
+			case 'c':
+				return TripleStore.CONTEXT_IDX;
+			default:
+				throw new IllegalArgumentException("Unknown index field: " + field);
 			}
 		}
 	}
