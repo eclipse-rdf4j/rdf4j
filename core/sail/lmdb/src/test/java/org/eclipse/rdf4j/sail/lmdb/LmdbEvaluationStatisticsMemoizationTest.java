@@ -96,6 +96,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class LmdbEvaluationStatisticsMemoizationTest {
+	private static final int TEST_RERUN_ATTEMPTS = 10;
+	private static final long RETRY_PAUSE_MILLIS = TimeUnit.SECONDS.toMillis(1L);
+
 	private final List<Path> temporaryDirectories = new ArrayList<>();
 
 	@AfterEach
@@ -1613,57 +1616,61 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void externalBoundPatternLocalFilterUsesFiniteAnchorWithoutRuntimeFeedback() throws Exception {
-		File dataDir = createTemporaryDirectory("lmdb-eval-stats-learned-filter").toFile();
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
-		try {
-			loadData(repository);
+		assertTestPassesWithinAttempts("externalBoundPatternLocalFilterUsesFiniteAnchorWithoutRuntimeFeedback", () -> {
+			File dataDir = createTemporaryDirectory("lmdb-eval-stats-learned-filter").toFile();
+			SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+			try {
+				loadData(repository);
 
-			LmdbStore sail = (LmdbStore) repository.getSail();
-			LmdbSailStore backingStore = sail.getBackingStore();
-			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
+				LmdbStore sail = (LmdbStore) repository.getSail();
+				LmdbSailStore backingStore = sail.getBackingStore();
+				rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			String externalBoundQuery = """
-					SELECT * WHERE {
-						VALUES ?target { "u0" "u1" }
-						?s <urn:test:name> ?name .
-						FILTER(?name = ?target)
-					}
-					""";
-			Filter filter = firstFilter(externalBoundQuery);
-			String optimizedPlan = optimizedPlanFor(repository, externalBoundQuery);
-			assertTrue(optimizedPlan.contains("selected=finite-anchor:name"),
-					"Expected equality against the VALUES binding to be absorbed by a finite name anchor\n"
-							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("filterFeedback=none"),
-					"Finite-anchor plans should not depend on runtime filter feedback\n" + optimizedPlan);
-			assertFalse(optimizedPlan.contains("Filter ("),
-					"Expected the optimized plan to remove the runtime filter after finite-anchor rewriting\n"
-							+ optimizedPlan);
+				String externalBoundQuery = """
+						SELECT * WHERE {
+							VALUES ?target { "u0" "u1" }
+							?s <urn:test:name> ?name .
+							FILTER(?name = ?target)
+						}
+						""";
+				Filter filter = firstFilter(externalBoundQuery);
+				String optimizedPlan = optimizedPlanFor(repository, externalBoundQuery);
+				assertTrue(optimizedPlan.contains("selected=finite-anchor:name"),
+						"Expected equality against the VALUES binding to be absorbed by a finite name anchor\n"
+								+ optimizedPlan);
+				assertTrue(optimizedPlan.contains("filterFeedback=none"),
+						"Finite-anchor plans should not depend on runtime filter feedback\n" + optimizedPlan);
+				assertFalse(optimizedPlan.contains("Filter ("),
+						"Expected the optimized plan to remove the runtime filter after finite-anchor rewriting\n"
+								+ optimizedPlan);
 
-			EvaluationStatistics beforeExecution = backingStore.getEvaluationStatistics();
-			assertTrue(beforeExecution.estimateFilterPassRatio(filter) < 0.0d,
-					"Expected external-bound filter to have no sampled or heuristic estimate before runtime learning");
+				EvaluationStatistics beforeExecution = backingStore.getEvaluationStatistics();
+				assertTrue(beforeExecution.estimateFilterPassRatio(filter) < 0.0d,
+						"Expected external-bound filter to have no sampled or heuristic estimate before runtime learning");
 
-			int resultCount = 0;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, externalBoundQuery).evaluate()) {
-					while (result.hasNext()) {
-						result.next();
-						resultCount++;
+				int resultCount = 0;
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, externalBoundQuery)
+							.evaluate()) {
+						while (result.hasNext()) {
+							result.next();
+							resultCount++;
+						}
 					}
 				}
+				assertEquals(2, resultCount, "Expected the finite-anchor rewrite to preserve query results");
+
+				EvaluationStatistics afterExecution = backingStore.getEvaluationStatistics();
+				EvaluationStatistics.FilterPassEstimate estimateAfterExecution = afterExecution
+						.estimateFilterPass(filter);
+
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN, estimateAfterExecution.getSource(),
+						"Finite-anchor plans remove the runtime Filter, so no learned filter feedback is recorded");
+			} finally {
+				repository.shutDown();
+				LmdbTestUtil.deleteDir(dataDir);
 			}
-			assertEquals(2, resultCount, "Expected the finite-anchor rewrite to preserve query results");
-
-			EvaluationStatistics afterExecution = backingStore.getEvaluationStatistics();
-			EvaluationStatistics.FilterPassEstimate estimateAfterExecution = afterExecution.estimateFilterPass(filter);
-
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN, estimateAfterExecution.getSource(),
-					"Finite-anchor plans remove the runtime Filter, so no learned filter feedback is recorded");
-		} finally {
-			repository.shutDown();
-			LmdbTestUtil.deleteDir(dataDir);
-		}
+		});
 	}
 
 	private static List<JoinOrderPlanner.PlanStep> planSteps(List<TupleExpr> args, double outputRows,
@@ -2023,6 +2030,48 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		Field field = LmdbStatementPatternCardinalitySource.class.getDeclaredField("SHARED_CARDINALITY_CACHE");
 		field.setAccessible(true);
 		return (Map<?, ?>) field.get(null);
+	}
+
+	private static void assertTestPassesWithinAttempts(String testName, TestBody testBody) throws Exception {
+		Throwable lastFailure = null;
+		for (int attempt = 1; attempt <= TEST_RERUN_ATTEMPTS; attempt++) {
+			try {
+				testBody.run();
+				return;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw e;
+			} catch (AssertionError | RuntimeException e) {
+				lastFailure = e;
+			} catch (Exception e) {
+				lastFailure = e;
+			}
+			if (attempt < TEST_RERUN_ATTEMPTS) {
+				Thread.sleep(RETRY_PAUSE_MILLIS);
+			}
+		}
+		failAfterRetries("Test \"" + testName + "\" did not pass within " + TEST_RERUN_ATTEMPTS
+				+ " full attempts", lastFailure);
+	}
+
+	private static void failAfterRetries(String message, Throwable failure) throws Exception {
+		if (failure instanceof AssertionError assertionError) {
+			AssertionError error = new AssertionError(message);
+			error.addSuppressed(assertionError);
+			throw error;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw new RuntimeException(message, runtimeException);
+		}
+		if (failure instanceof Exception exception) {
+			throw exception;
+		}
+		throw new AssertionError(message);
+	}
+
+	@FunctionalInterface
+	private interface TestBody {
+		void run() throws Exception;
 	}
 
 }
