@@ -693,32 +693,26 @@ class LmdbThemeQueryRegressionIT {
 					boolean finiteThresholdWeightAnchor = renderedQuery.contains("VALUES (?threshold ?w)");
 					assertPlannerDiagnosticsPresent(theme, 10, plan);
 					assertContains(renderedQuery, "FILTER NOT EXISTS");
-					if (finiteThresholdWeightAnchor) {
-						assertBefore(renderedQuery, "VALUES (?threshold ?w)",
-								"<http://example.com/theme/connected/weight> ?w",
-								"Highly connected q10 should bind the finite threshold/weight anchor before "
-										+ "probing the outer weight rows\n" + plan);
-						assertContains(plan,
-								"BindingSetAssignment ([[threshold=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>]])");
-						assertContains(plan,
-								"BindingSetAssignment ([[w=\"1\"^^<http://www.w3.org/2001/XMLSchema#int>]");
-					} else {
-						assertBefore(renderedQuery, "VALUES ?threshold { 3 }",
-								"?node a <http://example.com/theme/connected/Node>",
-								"Highly connected q10 should bind the singleton threshold before the typed-node "
-										+ "loop\n" + plan);
-						assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
-								"<http://example.com/theme/connected/weight> ?w",
-								"Highly connected q10 should bind typed nodes before expanding the outer weight "
-										+ "fanout\n" + plan);
-						assertBefore(renderedQuery, "FILTER NOT EXISTS",
-								"<http://example.com/theme/connected/weight> ?w",
-								"Highly connected q10 should run correlated anti-exists probes once per typed node "
-										+ "before multiplying rows through the outer weight fanout\n" + plan);
-						assertContains(plan, "source=sketch_nested_not_exists",
-								"Highly connected q10 should charge the correlated anti-exists scope against "
-										+ "the typed-node prefix\n" + plan);
-					}
+					Assertions.assertFalse(finiteThresholdWeightAnchor,
+							"Highly connected q10 must not use the finite threshold/weight anchor: the weight "
+									+ "values are high-fanout and make the anti-exists probes run per candidate "
+									+ "weight row\n" + plan);
+					assertBefore(renderedQuery, "VALUES ?threshold { 3 }",
+							"?node a <http://example.com/theme/connected/Node>",
+							"Highly connected q10 should bind the singleton threshold before the typed-node "
+									+ "loop\n" + plan);
+					assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q10 should bind typed nodes before expanding the outer weight "
+									+ "fanout\n" + plan);
+					assertBefore(renderedQuery,
+							"?node <http://example.com/theme/connected/connectsTo> ?n2",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q10 should run correlated anti-exists probes once per typed node "
+									+ "before multiplying rows through the outer weight fanout\n" + plan);
+					assertContains(plan, "source=sketch_nested_not_exists",
+							"Highly connected q10 should charge the correlated anti-exists scope against "
+									+ "the typed-node prefix\n" + plan);
 				});
 			} finally {
 				shutdownAndRelease(repository, store);

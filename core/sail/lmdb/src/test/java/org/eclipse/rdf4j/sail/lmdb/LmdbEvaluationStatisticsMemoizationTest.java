@@ -240,9 +240,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		for (int i = 0; i < 6; i++) {
 			args.add(new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
 		}
-		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 1.0d, 1.0d);
+		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 1.0d, 2_000.0d);
 		JoinOrderPlanner.JoinOrderPlan boundedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 1.0d,
-				6.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
+				12_000.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
 		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 2.0d, 2.0d);
 		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 2.0d,
 				12.0d, List.of("pareto selected"),
@@ -278,6 +278,95 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void cheapBoundedGreedyWithDeferredFiltersSkipsDynamicProgramming() {
+		List<TupleExpr> args = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			args.add(new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
+		}
+		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 512.0d, 1.0d);
+		JoinOrderPlanner.JoinOrderPlan boundedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 512.0d,
+				38.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
+		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 2.0d, 2.0d);
+		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 2.0d,
+				12.0d, List.of("pareto selected"),
+				Map.of(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION,
+						"mode=pareto-memo, finalVector=JoinCostVector{}"),
+				Map.of(), selectedSteps);
+		ScriptedJoinEstimator estimator = new ScriptedJoinEstimator(boundedGreedy, selectedPareto);
+		try {
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null) {
+				@Override
+				public boolean supportsJoinEstimation() {
+					return true;
+				}
+			};
+
+			JoinOrderPlanner.FilterConstraint deferredFilter = new JoinOrderPlanner.FilterConstraint(Set.of("s0"),
+					1.0d, JoinOrderPlanner.FILTER_COST_CHEAP, "deferred");
+			JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of(deferredFilter));
+
+			assertEquals(JoinOrderPlanner.Algorithm.GREEDY, attempt.getAlgorithm(),
+					"Very cheap bounded greedy plans should skip the full dynamic planner");
+			assertEquals(0, estimator.dynamicProgrammingAttempts(),
+					"The full planner should not run when the bounded greedy work estimate is below the cutoff");
+			JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
+			String decisionTrace = plan.getSummaryStringMetrics()
+					.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
+			assertNotNull(decisionTrace, "Selected plan should explain the cheap bounded-greedy shortcut");
+			assertTrue(decisionTrace.contains("boundedGreedyAcceptedReason=belowPlanningCost"), decisionTrace);
+			assertTrue(decisionTrace.contains("bounded-greedy selected"), decisionTrace);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
+	void boundedGreedyBelowPlanningCostSkipsDynamicProgramming() {
+		List<TupleExpr> args = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			args.add(new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
+		}
+		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 29.0d, 58.0d);
+		JoinOrderPlanner.JoinOrderPlan boundedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 29.0d,
+				387.0d, List.of("greedy bounded"), Map.of(),
+				Map.of(TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, 58.0d), greedySteps);
+		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 2.0d, 2.0d);
+		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 2.0d,
+				12.0d, List.of("pareto selected"),
+				Map.of(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION,
+						"mode=pareto-memo, finalVector=JoinCostVector{}"),
+				Map.of(), selectedSteps);
+		ScriptedJoinEstimator estimator = new ScriptedJoinEstimator(boundedGreedy, selectedPareto);
+		try {
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null) {
+				@Override
+				public boolean supportsJoinEstimation() {
+					return true;
+				}
+			};
+
+			JoinOrderPlanner.FilterConstraint deferredFilter = new JoinOrderPlanner.FilterConstraint(Set.of("s0"),
+					1.0d, JoinOrderPlanner.FILTER_COST_CHEAP, "deferred");
+			JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of(deferredFilter));
+
+			assertEquals(JoinOrderPlanner.Algorithm.GREEDY, attempt.getAlgorithm(),
+					"Low-work bounded greedy plans should skip the full dynamic planner");
+			assertEquals(0, estimator.dynamicProgrammingAttempts(),
+					"The full planner should not run when bounded greedy is cheaper than planning overhead");
+			JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
+			String decisionTrace = plan.getSummaryStringMetrics()
+					.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
+			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy shortcut");
+			assertTrue(decisionTrace.contains("boundedGreedyAcceptedReason=belowPlanningCost"), decisionTrace);
+			assertTrue(decisionTrace.contains("bounded-greedy selected"), decisionTrace);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
 	void boundedGreedyIsComparedWhenFiniteAssignmentsArePresent() {
 		List<TupleExpr> args = new ArrayList<>();
 		args.add(finiteAssignment("target", "Author 1", "Author 2"));
@@ -286,7 +375,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 1.0d, 1.0d);
 		JoinOrderPlanner.JoinOrderPlan boundedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 1.0d,
-				6.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
+				600.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
 		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 2.0d, 2.0d);
 		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 2.0d,
 				12.0d, List.of("pareto selected"),
@@ -320,6 +409,50 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void cheapBoundedGreedyWithFiniteAssignmentsSkipsDynamicProgramming() {
+		List<TupleExpr> args = new ArrayList<>();
+		args.add(finiteAssignment("target", "Author 1", "Author 2"));
+		for (int i = 0; i < 6; i++) {
+			args.add(new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
+		}
+		List<JoinOrderPlanner.PlanStep> greedySteps = planSteps(args, 1.0d, 1.0d);
+		JoinOrderPlanner.JoinOrderPlan boundedGreedy = new JoinOrderPlanner.JoinOrderPlan(args, 1.0d,
+				6.0d, List.of("greedy bounded"), Map.of(), Map.of(), greedySteps);
+		List<JoinOrderPlanner.PlanStep> selectedSteps = planSteps(args, 2.0d, 2.0d);
+		JoinOrderPlanner.JoinOrderPlan selectedPareto = new JoinOrderPlanner.JoinOrderPlan(args, 2.0d,
+				12.0d, List.of("pareto selected"),
+				Map.of(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION,
+						"mode=pareto-memo, finalVector=JoinCostVector{}"),
+				Map.of(), selectedSteps);
+		ScriptedJoinEstimator estimator = new ScriptedJoinEstimator(boundedGreedy, selectedPareto);
+		try {
+			LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(null, null, estimator, null, null) {
+				@Override
+				public boolean supportsJoinEstimation() {
+					return true;
+				}
+			};
+
+			JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
+					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of());
+
+			assertEquals(JoinOrderPlanner.Algorithm.GREEDY, attempt.getAlgorithm(),
+					"Low-work finite assignment plans should skip the full dynamic planner");
+			assertEquals(0, estimator.dynamicProgrammingAttempts(),
+					"The full planner should not run when bounded greedy is cheaper than planning overhead");
+			JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
+			String decisionTrace = plan.getSummaryStringMetrics()
+					.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
+			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy shortcut");
+			assertTrue(decisionTrace.contains("boundedGreedyAcceptedReason=belowPlanningCost"), decisionTrace);
+			assertTrue(decisionTrace.contains("boundedGreedyComparisonReason=finiteAssignments"), decisionTrace);
+			assertTrue(decisionTrace.contains("bounded-greedy selected"), decisionTrace);
+		} finally {
+			estimator.close();
+		}
+	}
+
+	@Test
 	void cachesEquivalentStatementPatternCardinalitiesByResolvedIds() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-memoization").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
@@ -346,7 +479,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void factorCostCacheKeyUsesStructuralStatementPatternFingerprint() throws Exception {
+	void factorCostFingerprintUsesStructuralStatementPatternFingerprint() throws Exception {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		StatementPattern first = new StatementPattern(
 				Var.of("s"),
@@ -354,8 +487,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("o"));
 		StatementPattern second = first.clone();
 
-		Object firstKey = factorCostCacheKey(first, Set.of("s"), Double.NaN, true, Map.of());
-		Object secondKey = factorCostCacheKey(second, Set.of("s"), Double.NaN, true, Map.of());
+		Object firstKey = factorCostFingerprint(first);
+		Object secondKey = factorCostFingerprint(second);
 
 		assertNotSame(first, second, "Test must use distinct cloned tuple expressions");
 		assertEquals(firstKey, secondKey,
@@ -365,13 +498,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void factorCostCacheKeyUsesStructuralFiniteAnchorFingerprint() throws Exception {
+	void factorCostFingerprintUsesStructuralFiniteAnchorFingerprint() throws Exception {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		BindingSetAssignment first = finiteAnchor("value", vf.createLiteral(60), vf.createLiteral(50));
 		BindingSetAssignment second = finiteAnchor("value", vf.createLiteral(50), vf.createLiteral(60));
 
-		Object firstKey = factorCostCacheKey(first, Set.of(), Double.NaN, true, Map.of());
-		Object secondKey = factorCostCacheKey(second, Set.of(), Double.NaN, true, Map.of());
+		Object firstKey = factorCostFingerprint(first);
+		Object secondKey = factorCostFingerprint(second);
 
 		assertNotSame(first, second, "Test must use distinct finite-anchor tuple expressions");
 		assertEquals(firstKey, secondKey,
@@ -528,6 +661,69 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of());
 		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of());
 		verify(cardinalitySource, times(3)).estimateIds(anyLong(), anyLong(), anyLong(), anyLong());
+	}
+
+	@Test
+	void finiteBindingLookupDoesNotApplyLearnedFilterWhenFiniteValuesSatisfyListMember() throws Exception {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath posc = mock(TripleStore.IndexAccessPath.class);
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int objectBit = 1 << SketchBasedJoinEstimator.Component.O.ordinal();
+		when(posc.indexFieldSequence()).thenReturn("posc");
+		when(posc.prefixLength()).thenReturn(2);
+		when(posc.prefixComponentMask()).thenReturn(predicateBit | objectBit);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc));
+		ValueStore valueStore = mock(ValueStore.class);
+		LmdbStatementPatternCardinalitySource cardinalitySource = mock(LmdbStatementPatternCardinalitySource.class);
+		when(cardinalitySource.estimateIds(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(10.0d);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator, null,
+				cardinalitySource);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI weight = vf.createIRI("urn:test:weight");
+		var value1 = vf.createLiteral(1);
+		var value2 = vf.createLiteral(2);
+		var value3 = vf.createLiteral(3);
+		var value4 = vf.createLiteral(4);
+		StatementPattern pattern = new StatementPattern(
+				Var.of("node"),
+				Var.of("predicate", weight),
+				Var.of("w"));
+		ListMemberOperator condition = new ListMemberOperator();
+		condition.addArgument(Var.of("w"));
+		condition.addArgument(new ValueConstant(value1));
+		condition.addArgument(new ValueConstant(value2));
+		condition.addArgument(new ValueConstant(value3));
+		condition.addArgument(new ValueConstant(value4));
+		Filter filter = new Filter(pattern, condition);
+
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(pattern);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(predicateBit | objectBit);
+		when(accessShape.filterMultiplier()).thenReturn(0.25d);
+		when(estimator.factorOutputRowsForJoinOrdering(filter, Set.of("w"))).thenReturn(10.0d);
+		when(estimator.accessShapeForJoinOrdering(filter, Set.of("w"))).thenReturn(accessShape);
+		when(valueStore.getId(weight)).thenReturn(10L);
+		when(valueStore.getId(value1)).thenReturn(1L);
+		when(valueStore.getId(value2)).thenReturn(2L);
+		when(valueStore.getId(value3)).thenReturn(3L);
+		when(valueStore.getId(value4)).thenReturn(4L);
+
+		Map<String, Set<org.eclipse.rdf4j.model.Value>> finiteValues = Map.of("w",
+				Set.of(value1, value2, value3, value4));
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("w"),
+				1.0d, 1.0d, false, true, finiteValues, List.of());
+
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(filter, context)
+				.orElseThrow();
+
+		assertEquals(40.0d, estimate.getOutputRows());
+		assertEquals(40.0d, estimate.getWorkRows());
+		assertEquals("finite_binding",
+				estimate.getStringMetrics().get(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE));
+		assertEquals(1.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO));
 	}
 
 	@Test
@@ -840,7 +1036,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_WORK_ROWS + "="), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION + "="), plan);
-			assertTrue(plan.contains("finalFrontier=["), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE + "="), plan);
 			assertTrue(plan.lines()
 					.anyMatch(line -> line.contains("Join") && line.contains("resultSizeEstimate=")
@@ -1413,7 +1608,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void recordsLearnedFilterPassRatioForExternalBoundPatternLocalFilter() throws Exception {
+	void externalBoundPatternLocalFilterUsesFiniteAnchorWithoutRuntimeFeedback() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-learned-filter").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
@@ -1431,37 +1626,36 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					}
 					""";
 			Filter filter = firstFilter(externalBoundQuery);
+			String optimizedPlan = optimizedPlanFor(repository, externalBoundQuery);
+			assertTrue(optimizedPlan.contains("selected=finite-anchor:name"),
+					"Expected equality against the VALUES binding to be absorbed by a finite name anchor\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("filterFeedback=none"),
+					"Finite-anchor plans should not depend on runtime filter feedback\n" + optimizedPlan);
+			assertFalse(optimizedPlan.contains("Filter ("),
+					"Expected the optimized plan to remove the runtime filter after finite-anchor rewriting\n"
+							+ optimizedPlan);
+
 			EvaluationStatistics beforeExecution = backingStore.getEvaluationStatistics();
 			assertTrue(beforeExecution.estimateFilterPassRatio(filter) < 0.0d,
 					"Expected external-bound filter to have no sampled or heuristic estimate before runtime learning");
 
+			int resultCount = 0;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, externalBoundQuery).evaluate()) {
 					while (result.hasNext()) {
 						result.next();
+						resultCount++;
 					}
 				}
 			}
+			assertEquals(2, resultCount, "Expected the finite-anchor rewrite to preserve query results");
 
 			EvaluationStatistics afterExecution = backingStore.getEvaluationStatistics();
-			Filter plannedFilterAfterLiteralAnchor = firstFilter("""
-					SELECT * WHERE {
-						VALUES ?target { "u0" "u1" }
-						VALUES ?name { "u0" "u1" }
-						?s <urn:test:name> ?name .
-						FILTER(?name = ?target)
-					}
-					""");
-			EvaluationStatistics.FilterPassEstimate learnedEstimate = afterExecution
-					.estimateFilterPass(plannedFilterAfterLiteralAnchor);
-			double learnedPassRatio = learnedEstimate.getPassRatio();
+			EvaluationStatistics.FilterPassEstimate estimateAfterExecution = afterExecution.estimateFilterPass(filter);
 
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, learnedEstimate.getSource(),
-					"Expected runtime feedback to be keyed by the local bound-component mask used after anchoring");
-			assertTrue(learnedPassRatio >= 0.0d && learnedPassRatio <= 1.0d,
-					"Expected runtime evaluation to record a valid learned pass ratio");
-			assertTrue(learnedEstimate.getEvidenceCount() > 0L,
-					"Expected runtime evaluation to retain evidence for external-bound pattern-local filters");
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN, estimateAfterExecution.getSource(),
+					"Finite-anchor plans remove the runtime Filter, so no learned filter feedback is recorded");
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1495,6 +1689,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	private static final class ScriptedJoinEstimator extends SketchBasedJoinEstimator {
 		private final JoinOrderPlanner.JoinOrderPlan greedyPlan;
 		private final JoinOrderPlanner.JoinOrderPlan selectedPlan;
+		private int dynamicProgrammingAttempts;
 
 		ScriptedJoinEstimator(JoinOrderPlanner.JoinOrderPlan greedyPlan,
 				JoinOrderPlanner.JoinOrderPlan selectedPlan) {
@@ -1518,8 +1713,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				return JoinOrderPlanner.PlanningAttempt.planned(greedyPlan, "sketch", algorithm, "ROBUST_USED",
 						greedyPlan.getDiagnostics());
 			}
+			dynamicProgrammingAttempts++;
 			return JoinOrderPlanner.PlanningAttempt.planned(selectedPlan, "sketch", algorithm, "ROBUST_USED",
 					selectedPlan.getDiagnostics());
+		}
+
+		int dynamicProgrammingAttempts() {
+			return dynamicProgrammingAttempts;
 		}
 	}
 
@@ -1683,14 +1883,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		return found[0];
 	}
 
-	private static Object factorCostCacheKey(TupleExpr factor, Set<String> boundVars, double knownOutputRows,
-			boolean collectMetrics, Map<String, Set<org.eclipse.rdf4j.model.Value>> finiteBindingValues)
-			throws Exception {
+	private static Object factorCostFingerprint(TupleExpr factor) throws Exception {
 		Class<?> keyClass = Class.forName(LmdbEvaluationStatistics.class.getName() + "$FactorCostCacheKey");
-		Method method = keyClass.getDeclaredMethod("forBoundVars", TupleExpr.class, Set.class, double.class,
-				boolean.class, Map.class);
+		Method method = keyClass.getDeclaredMethod("factorFingerprint", TupleExpr.class);
 		method.setAccessible(true);
-		return method.invoke(null, factor, boundVars, knownOutputRows, collectMetrics, finiteBindingValues);
+		return method.invoke(null, factor);
 	}
 
 	private static BindingSetAssignment finiteAnchor(String bindingName, org.eclipse.rdf4j.model.Value... values) {

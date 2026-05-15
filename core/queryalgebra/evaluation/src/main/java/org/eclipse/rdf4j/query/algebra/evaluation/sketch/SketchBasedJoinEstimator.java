@@ -246,7 +246,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private final int joinBoundComponentMask;
 		private final int filterLookupComponentMask;
 		private final int lookupBoundComponentMask;
-		private final double[] accessRowsByPrefixMask = new double[COMPONENT_MASK_COUNT];
+		private int firstAccessRowsPrefixMask = -1;
+		private double firstAccessRows = Double.NaN;
+		private double[] accessRowsByPrefixMask;
 		private final AccessRowsEstimator accessRowsEstimator;
 
 		private AccessShape(StatementPattern pattern, double filterMultiplier, int patternConstantComponentMask,
@@ -254,13 +256,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				AccessRowsEstimator accessRowsEstimator) {
 			this.pattern = Objects.requireNonNull(pattern, "pattern");
 			this.filterMultiplier = filterMultiplier;
-			this.joinBoundVarNamesByComponent = joinBoundVarNamesByComponent.clone();
+			this.joinBoundVarNamesByComponent = Objects.requireNonNull(joinBoundVarNamesByComponent,
+					"joinBoundVarNamesByComponent");
 			this.joinBoundComponentMask = componentMask(joinBoundVarNamesByComponent);
 			this.filterLookupComponentMask = filterLookupComponentMask;
 			this.lookupBoundComponentMask = patternConstantComponentMask | joinBoundComponentMask
 					| filterLookupComponentMask;
 			this.accessRowsEstimator = Objects.requireNonNull(accessRowsEstimator, "accessRowsEstimator");
-			Arrays.fill(accessRowsByPrefixMask, Double.NaN);
 		}
 
 		public StatementPattern pattern() {
@@ -300,14 +302,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		public double estimateAccessRows(int prefixMask) {
-			double cachedRows = accessRowsByPrefixMask[prefixMask];
-			if (!Double.isNaN(cachedRows)) {
-				return cachedRows;
+			if (firstAccessRowsPrefixMask == prefixMask && !Double.isNaN(firstAccessRows)) {
+				return firstAccessRows;
+			}
+			double[] rowsByPrefixMask = accessRowsByPrefixMask;
+			if (rowsByPrefixMask != null) {
+				double cachedRows = rowsByPrefixMask[prefixMask];
+				if (!Double.isNaN(cachedRows)) {
+					return cachedRows;
+				}
 			}
 			double rows = accessRowsEstimator.estimate(prefixMask);
-			if (!Double.isNaN(rows)) {
-				accessRowsByPrefixMask[prefixMask] = rows;
+			if (Double.isNaN(rows)) {
+				return rows;
 			}
+			if (firstAccessRowsPrefixMask < 0) {
+				firstAccessRowsPrefixMask = prefixMask;
+				firstAccessRows = rows;
+				return rows;
+			}
+			if (rowsByPrefixMask == null) {
+				rowsByPrefixMask = new double[COMPONENT_MASK_COUNT];
+				Arrays.fill(rowsByPrefixMask, Double.NaN);
+				rowsByPrefixMask[firstAccessRowsPrefixMask] = firstAccessRows;
+				accessRowsByPrefixMask = rowsByPrefixMask;
+			}
+			rowsByPrefixMask[prefixMask] = rows;
 			return rows;
 		}
 
@@ -4712,6 +4732,109 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new JoinStepEstimate(outputRows, mergedStats);
 	}
 
+	double estimateJoinStepOutputRowsForJoinOrdering(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache) {
+		return estimateJoinStepOutputRows(left, right, sketchIntersectionCache, true);
+	}
+
+	private double estimateJoinStepOutputRows(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
+		if (left.outputRows <= 0.0d || right.baseRows <= 0.0d) {
+			return 0.0d;
+		}
+		SmallVarStatsMap leftSmall = asSmallVarStats(left.varStats);
+		SmallVarStatsMap rightSmall = asSmallVarStats(right.varStats);
+		if (leftSmall != null && leftSmall.sameDictionary(rightSmall)) {
+			return estimateJoinStepOutputRowsSmall(left, right, sketchIntersectionCache, leftSmall, rightSmall,
+					useSketches);
+		}
+
+		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
+		double rawRows = Double.POSITIVE_INFINITY;
+		boolean hasSharedVars = false;
+		for (Map.Entry<String, VarPlanStats> entry : left.varStats.entrySet()) {
+			VarPlanStats rightStats = right.varStats.get(entry.getKey());
+			if (rightStats == null) {
+				continue;
+			}
+			VarPlanStats leftStats = entry.getValue();
+			SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftStats,
+					rightStats, disconnectedRows, sketchIntersectionCache, useSketches);
+			if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
+					&& right.localFilterMultiplier == 1.0d
+					&& leftStats.pattern != null && rightStats.pattern != null) {
+				Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftStats.pattern, rightStats.pattern,
+						entry.getKey(), leftStats.distinct, rightStats.distinct, left.outputRows, right.baseRows,
+						disconnectedRows);
+				if (exactJoinRows != null && exactJoinRows > 0.0d) {
+					shared = new SharedVarEstimate(exactJoinRows, Math.min(leftStats.distinct, rightStats.distinct),
+							null);
+				}
+			}
+			rawRows = Math.min(rawRows, shared.rows);
+			hasSharedVars = true;
+		}
+
+		if (!hasSharedVars) {
+			rawRows = disconnectedRows;
+		} else {
+			rawRows = Math.min(rawRows, disconnectedRows);
+		}
+		return normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
+	}
+
+	private double estimateJoinStepOutputRowsSmall(TuplePlanEstimate left, TuplePlanEstimate right,
+			JoinOrderingSketchIntersectionCache sketchIntersectionCache, SmallVarStatsMap leftStatsMap,
+			SmallVarStatsMap rightStatsMap, boolean useSketches) {
+		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
+		double rawRows = Double.POSITIVE_INFINITY;
+		boolean hasSharedVars = false;
+
+		if ((leftStatsMap.variableMask() & rightStatsMap.variableMask()) != 0L) {
+			for (int i = 0; i < leftStatsMap.size(); i++) {
+				int id = leftStatsMap.idAt(i);
+				if (id == VariableDictionary.NO_ID) {
+					continue;
+				}
+				if (!rightStatsMap.containsId(id)) {
+					continue;
+				}
+				int rightIndex = rightStatsMap.indexForId(id);
+				if (rightIndex < 0) {
+					continue;
+				}
+				double leftDistinct = leftStatsMap.distinctAt(i);
+				double rightDistinct = rightStatsMap.distinctAt(rightIndex);
+				ArrayOfDoublesSketch leftSketch = leftStatsMap.sketchAt(i);
+				ArrayOfDoublesSketch rightSketch = rightStatsMap.sketchAt(rightIndex);
+				StatementPattern leftPattern = leftStatsMap.patternAt(i);
+				StatementPattern rightPattern = rightStatsMap.patternAt(rightIndex);
+				SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftDistinct,
+						leftSketch, rightDistinct, rightSketch, leftPattern, rightPattern, disconnectedRows,
+						sketchIntersectionCache, useSketches);
+				if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
+						&& right.localFilterMultiplier == 1.0d
+						&& leftPattern != null && rightPattern != null) {
+					Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftPattern, rightPattern,
+							leftStatsMap.keyAt(i), leftDistinct, rightDistinct, left.outputRows, right.baseRows,
+							disconnectedRows);
+					if (exactJoinRows != null && exactJoinRows > 0.0d) {
+						shared = new SharedVarEstimate(exactJoinRows, Math.min(leftDistinct, rightDistinct), null);
+					}
+				}
+				rawRows = Math.min(rawRows, shared.rows);
+				hasSharedVars = true;
+			}
+		}
+
+		if (!hasSharedVars) {
+			rawRows = disconnectedRows;
+		} else {
+			rawRows = Math.min(rawRows, disconnectedRows);
+		}
+		return normalizeRows(applyFilterMultiplier(rawRows, right.localFilterMultiplier));
+	}
+
 	private JoinStepEstimate estimateJoinStepSmall(TuplePlanEstimate left, TuplePlanEstimate right,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache, SmallVarStatsMap leftStatsMap,
 			SmallVarStatsMap rightStatsMap, boolean useSketches) {
@@ -7882,25 +8005,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private AccessShape buildAccessShape(StatementPattern pattern, Set<String> currentlyBoundVars,
 			double filterMultiplier, int filterLookupComponentMask) {
-		StatementPattern patternClone = pattern.clone();
-		int patternConstantComponentMask = collectPatternConstantComponentMask(patternClone);
-		String[] joinBoundVarNamesByComponent = collectJoinBoundVarNames(patternClone,
+		int patternConstantComponentMask = collectPatternConstantComponentMask(pattern);
+		String[] joinBoundVarNamesByComponent = collectJoinBoundVarNames(pattern,
 				currentlyBoundVars);
-		return new AccessShape(patternClone, filterMultiplier, patternConstantComponentMask,
+		return new AccessShape(pattern, filterMultiplier, patternConstantComponentMask,
 				joinBoundVarNamesByComponent,
 				filterLookupComponentMask,
-				prefixMask -> estimateAccessRows(patternClone, joinBoundVarNamesByComponent, prefixMask));
+				prefixMask -> estimateAccessRows(pattern, patternConstantComponentMask, joinBoundVarNamesByComponent,
+						prefixMask));
 	}
 
 	private AccessShape buildAccessShape(StatementPattern pattern, OptimizationScopeState scope,
 			long currentlyBoundVarMask, double filterMultiplier, int filterLookupComponentMask) {
-		StatementPattern patternClone = pattern.clone();
-		int patternConstantComponentMask = collectPatternConstantComponentMask(patternClone);
-		String[] joinBoundVarNamesByComponent = collectJoinBoundVarNames(patternClone, scope, currentlyBoundVarMask);
-		return new AccessShape(patternClone, filterMultiplier, patternConstantComponentMask,
+		int patternConstantComponentMask = collectPatternConstantComponentMask(pattern);
+		String[] joinBoundVarNamesByComponent = collectJoinBoundVarNames(pattern, scope, currentlyBoundVarMask);
+		return new AccessShape(pattern, filterMultiplier, patternConstantComponentMask,
 				joinBoundVarNamesByComponent,
 				filterLookupComponentMask,
-				prefixMask -> estimateAccessRows(patternClone, joinBoundVarNamesByComponent, prefixMask));
+				prefixMask -> estimateAccessRows(pattern, patternConstantComponentMask, joinBoundVarNamesByComponent,
+						prefixMask));
 	}
 
 	private int collectPatternConstantComponentMask(StatementPattern pattern) {
@@ -7949,9 +8072,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return components;
 	}
 
-	private double estimateAccessRows(StatementPattern pattern, String[] joinBoundVarNamesByComponent,
-			int prefixComponentMask) {
-		StatementPattern accessPattern = patternForAccessPrefix(pattern, prefixComponentMask);
+	private double estimateAccessRows(StatementPattern pattern, int patternConstantComponentMask,
+			String[] joinBoundVarNamesByComponent, int prefixComponentMask) {
+		StatementPattern accessPattern = patternForAccessPrefix(pattern, patternConstantComponentMask,
+				prefixComponentMask);
 		OptimizationScopeState scope = optimizationScope.get();
 		TuplePlanEstimate estimate;
 		if (scope == null) {
@@ -8030,7 +8154,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return false;
 	}
 
-	private StatementPattern patternForAccessPrefix(StatementPattern pattern, int prefixComponentMask) {
+	private StatementPattern patternForAccessPrefix(StatementPattern pattern, int patternConstantComponentMask,
+			int prefixComponentMask) {
+		if ((patternConstantComponentMask & ~prefixComponentMask) == 0) {
+			return pattern;
+		}
 		StatementPattern accessPattern = pattern.clone();
 		for (Component component : COMPONENT_VALUES) {
 			if ((prefixComponentMask & (1 << component.ordinal())) != 0) {

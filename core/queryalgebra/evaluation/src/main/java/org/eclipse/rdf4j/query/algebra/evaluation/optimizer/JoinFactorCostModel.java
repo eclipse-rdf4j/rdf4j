@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.LongFunction;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -55,7 +56,9 @@ public interface JoinFactorCostModel {
 		private final boolean nestedIteratorInvocation;
 		private final boolean collectMetrics;
 		private final Map<String, Set<Value>> finiteBindingValues;
-		private final List<TupleExpr> prefixFactors;
+		private List<TupleExpr> prefixFactors;
+		private final LongFunction<List<TupleExpr>> prefixFactorProvider;
+		private final long prefixFactorMask;
 		private final EstimationTier estimationTier;
 
 		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
@@ -90,6 +93,8 @@ public interface JoinFactorCostModel {
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
 			this.prefixFactors = immutablePrefixFactors(prefixFactors);
+			this.prefixFactorProvider = null;
+			this.prefixFactorMask = 0L;
 			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
 		}
 
@@ -110,6 +115,8 @@ public interface JoinFactorCostModel {
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = Map.of();
 			this.prefixFactors = List.of();
+			this.prefixFactorProvider = null;
+			this.prefixFactorMask = 0L;
 			this.estimationTier = EstimationTier.EXACT;
 		}
 
@@ -140,6 +147,26 @@ public interface JoinFactorCostModel {
 			this.collectMetrics = collectMetrics;
 			this.finiteBindingValues = (finiteBindingValues);
 			this.prefixFactors = (prefixFactors);
+			this.prefixFactorProvider = null;
+			this.prefixFactorMask = 0L;
+			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
+		}
+
+		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, LongFunction<List<TupleExpr>> prefixFactorProvider,
+				long prefixFactorMask, EstimationTier estimationTier) {
+			this.currentlyBoundVars = currentlyBoundVarMask == 0L ? Set.of() : null;
+			this.variableNames = variableNames;
+			this.currentlyBoundVarMask = currentlyBoundVarMask;
+			this.outerPrefixRows = outerPrefixRows;
+			this.distinctLookupBindings = distinctLookupBindings;
+			this.nestedIteratorInvocation = nestedIteratorInvocation;
+			this.collectMetrics = collectMetrics;
+			this.finiteBindingValues = finiteBindingValues;
+			this.prefixFactors = null;
+			this.prefixFactorProvider = prefixFactorProvider;
+			this.prefixFactorMask = prefixFactorMask;
 			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
 		}
 
@@ -190,6 +217,15 @@ public interface JoinFactorCostModel {
 					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
 		}
 
+		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, LongFunction<List<TupleExpr>> prefixFactorProvider,
+				long prefixFactorMask, EstimationTier estimationTier) {
+			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactorProvider,
+					prefixFactorMask, estimationTier);
+		}
+
 		public Set<String> getCurrentlyBoundVars() {
 			if (currentlyBoundVars == null) {
 				currentlyBoundVars = new VariableMaskSet(variableNames, currentlyBoundVarMask);
@@ -230,6 +266,11 @@ public interface JoinFactorCostModel {
 		}
 
 		public List<TupleExpr> getPrefixFactors() {
+			if (prefixFactors == null) {
+				prefixFactors = prefixFactorProvider == null
+						? List.of()
+						: immutablePrefixFactors(prefixFactorProvider.apply(prefixFactorMask));
+			}
 			return prefixFactors;
 		}
 
@@ -242,11 +283,17 @@ public interface JoinFactorCostModel {
 				return this;
 			}
 			if (variableNames != null) {
+				if (prefixFactorProvider != null && prefixFactors == null) {
+					return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows,
+							distinctLookupBindings, nestedIteratorInvocation, collectMetrics, finiteBindingValues,
+							prefixFactorProvider, prefixFactorMask, estimationTier);
+				}
 				return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
-						nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
+						nestedIteratorInvocation, collectMetrics, finiteBindingValues, getPrefixFactors(),
+						estimationTier);
 			}
 			return new CostContext(getCurrentlyBoundVars(), outerPrefixRows, distinctLookupBindings,
-					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, getPrefixFactors(), estimationTier);
 		}
 
 		private static Map<String, Set<Value>> immutableFiniteBindingValues(

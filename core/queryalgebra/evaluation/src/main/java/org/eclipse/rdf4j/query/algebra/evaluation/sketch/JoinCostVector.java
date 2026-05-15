@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 final class JoinCostVector implements Comparable<JoinCostVector> {
 
 	private static final double WORK_EQUIVALENCE_ABSOLUTE_ROWS = 4.0d;
-	private static final double WORK_EQUIVALENCE_RELATIVE_RATIO = 0.05d;
+	private static final double WORK_EQUIVALENCE_RELATIVE_RATIO = 0.10d;
 
 	private final double totalWorkRows;
 	private final double finalRows;

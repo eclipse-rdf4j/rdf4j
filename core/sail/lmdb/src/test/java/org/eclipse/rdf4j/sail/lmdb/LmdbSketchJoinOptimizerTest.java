@@ -577,6 +577,24 @@ class LmdbSketchJoinOptimizerTest {
 				"Cheaper high-pass filtered anti-probe should not be forced into materialized MINUS");
 	}
 
+	@Test
+	void rewritesTransparentExtensionSelfLoopMinusWhenCorrelatedLookupIsCheaper() {
+		StatementPattern nodeType = statementPattern("node", "type", "nodeType");
+		StatementPattern nodeWeight = statementPattern("node", "weight", "weight");
+		Extension right = new Extension(statementPattern("node", "connectsTo", "node"));
+		right.addElement(new ExtensionElem(new Var("node"), "_anon_path_self_loop"));
+		QueryRoot root = new QueryRoot(new Difference(new Join(nodeType, nodeWeight), right));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.transparentExtensionSelfLoopAntiProbe(), false)
+				.optimize(root, null, null);
+
+		TupleExpr replacement = root.getArg();
+		assertFalse(containsDifference(replacement),
+				"Transparent path/BIND wrapper should not hide the cheap correlated self-loop lookup");
+		assertTrue(containsNotExistsFilter(replacement),
+				"Cheap correlated self-loop anti-probe should use NOT EXISTS instead of materialized MINUS");
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
@@ -786,6 +804,7 @@ class LmdbSketchJoinOptimizerTest {
 		private boolean repeatedFiniteAntiProbeMoreExpensive;
 		private boolean lowPassFilteredAntiProbeLacksWorkProof;
 		private boolean highPassFilteredAntiProbeCheaper;
+		private boolean transparentExtensionSelfLoopAntiProbe;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -835,6 +854,12 @@ class LmdbSketchJoinOptimizerTest {
 			return statistics;
 		}
 
+		static PlanningStatistics transparentExtensionSelfLoopAntiProbe() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.transparentExtensionSelfLoopAntiProbe = true;
+			return statistics;
+		}
+
 		@Override
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof Join) {
@@ -860,6 +885,21 @@ class LmdbSketchJoinOptimizerTest {
 
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (transparentExtensionSelfLoopAntiProbe) {
+				if (factor instanceof Extension) {
+					return Optional.of(new FactorCostEstimate(300_000.0d, 300_000.0d));
+				}
+				if (isConnectsToPattern(factor)) {
+					if (currentlyBoundVars.contains("node")) {
+						return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
+					}
+					return Optional.of(new FactorCostEstimate(300_000.0d, 300_000.0d));
+				}
+				if (factor.getBindingNames().contains("node")) {
+					return Optional.of(new FactorCostEstimate(50_000.0d, 10_000.0d));
+				}
+				return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+			}
 			if (lowPassFilteredAntiProbeLacksWorkProof) {
 				if (factor.getBindingNames().contains("neighbor")) {
 					if (currentlyBoundVars.contains("node")) {
@@ -918,6 +958,14 @@ class LmdbSketchJoinOptimizerTest {
 				return Optional.of(new FactorCostEstimate(1_000.0d, 1_000.0d));
 			}
 			return Optional.of(new FactorCostEstimate(100.0d, 100.0d));
+		}
+
+		private static boolean isConnectsToPattern(TupleExpr factor) {
+			if (!(factor instanceof StatementPattern statementPattern)) {
+				return false;
+			}
+			return statementPattern.getPredicateVar().hasValue()
+					&& "urn:connectsTo".equals(statementPattern.getPredicateVar().getValue().stringValue());
 		}
 
 		private static FactorCostEstimate accessPathEstimate(double workRows, double outputRows,

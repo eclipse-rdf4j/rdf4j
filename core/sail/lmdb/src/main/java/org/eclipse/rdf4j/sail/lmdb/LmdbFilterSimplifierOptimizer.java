@@ -172,17 +172,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		List<BindingSetAssignment> anchors = new ArrayList<>();
 		List<ValueExpr> remainingConditions = new ArrayList<>();
 		for (ValueExpr condition : conditions) {
-			BindingSetAssignment valuesVariableAnchor = valuesVariableFilterAnchor(condition, assignmentValues);
-			BindingSetAssignment materializedValuesVariableAnchor = materializedSmallLiteralFilterAnchor(filter,
-					condition, valuesVariableAnchor, assuredBindings);
-			if (valuesVariableAnchor != null
-					&& isSelectiveSmallLiteralAnchor(filter, condition)
-					&& materializedValuesVariableAnchor != null) {
-				anchors.add(materializedValuesVariableAnchor);
-				remainingConditions.add(condition);
-				continue;
-			}
-
 			BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(condition,
 					LmdbFilterSimplifierOptimizer::isPotentialSmallLiteralAnchorValue);
 			if (shouldDropMandatoryOptionalFilter(anchor, mandatoryOptionalAnchorBindings,
@@ -198,14 +187,19 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 					&& !shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
 				continue;
 			}
+			if (LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition) != null) {
+				remainingConditions.add(condition);
+				continue;
+			}
 			BindingSetAssignment materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor,
 					assuredBindings);
 			if (materializedAnchor != null) {
-				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
-					anchors.add(materializedAnchor);
-				}
 				if (shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
 					remainingConditions.add(condition);
+					continue;
+				}
+				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
+					anchors.add(materializedAnchor);
 				}
 			} else {
 				remainingConditions.add(condition);

@@ -93,6 +93,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	private static final double FINITE_BINDING_GUARD_PRODUCT_LIMIT = 5000.0d;
+	private static final double CANONICAL_FINITE_ANCHOR_FASTPATH_MAX_WORK_ROWS = 512.0d;
 	private static final double CANONICAL_FINITE_ANCHOR_SELECTIVE_FILTER_PASS_RATIO = 0.75d;
 	private static final double FILTERED_CORRELATED_ANTI_PROBE_WORK_THRESHOLD = 0.50d;
 	private static final double LOW_PASS_FILTERED_CORRELATED_ANTI_PROBE_WORK_THRESHOLD = 0.10d;
@@ -107,9 +108,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final int MAX_GUARANTEE_OPTION_CANDIDATE_METRICS = 8;
 	private static final double GUARANTEE_OPTION_WORK_EQUIVALENCE_ABSOLUTE_ROWS = 4.0d;
 	private static final double GUARANTEE_OPTION_WORK_EQUIVALENCE_RELATIVE_RATIO = 0.05d;
+	private static final double SPECULATIVE_ANCHOR_STRONG_WORK_IMPROVEMENT_RATIO = 0.40d;
 	private static final double SPECULATIVE_ANCHOR_WORK_IMPROVEMENT_RATIO = 0.80d;
 	private static final double SPECULATIVE_ANCHOR_ROW_IMPROVEMENT_RATIO = 0.50d;
-	private static final double SPECULATIVE_ANCHOR_MAX_ROW_GROWTH_RATIO = 1.50d;
+	private static final double SPECULATIVE_ANCHOR_MAX_ROW_GROWTH_RATIO = 2.00d;
 	private static final double SPECULATIVE_ANCHOR_SMALL_OUTPUT_ROWS = 512.0d;
 	private static final String FINITE_ANCHOR_PLANNER_ID = "lmdb-finite-anchor";
 	private static final String FINITE_ANCHOR_PLANNER_PATH = "CANONICAL_FINITE_ANCHOR";
@@ -1537,6 +1539,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private Optional<AntiJoinCost> estimateAntiJoinCost(JoinFactorCostModel costModel, TupleExpr tupleExpr,
 				Set<String> boundVars) {
+			TupleExpr transparentSinglePattern = transparentSinglePatternExtensionArg(tupleExpr);
+			if (transparentSinglePattern != null) {
+				return estimateAntiJoinCost(costModel, transparentSinglePattern, boundVars);
+			}
 			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(tupleExpr,
 					boundVars);
 			if (estimate.isPresent()
@@ -1550,6 +1556,16 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return Optional.of(new AntiJoinCost(rows, rows, Double.NaN));
 			}
 			return Optional.empty();
+		}
+
+		private TupleExpr transparentSinglePatternExtensionArg(TupleExpr tupleExpr) {
+			TupleExpr current = tupleExpr;
+			boolean unwrapped = false;
+			while (current instanceof Extension extension && !TupleExprs.isVariableScopeChange(extension)) {
+				current = extension.getArg();
+				unwrapped = true;
+			}
+			return unwrapped && current instanceof StatementPattern ? current : null;
 		}
 
 		private boolean isSafeMinusNotExistsRightArg(TupleExpr tupleExpr, Set<String> leftBindingNames) {
@@ -2963,10 +2979,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
 					List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
-					applyFiniteAnchorPlannerMetrics(orderedArgs);
-					FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
-							orderedArgs, boundBeforeSegment);
-					return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(), true);
+					Optional<JoinOrderPlanner.JoinOrderPlan> canonicalFiniteAnchorPlan = planner.estimateJoinOrder(
+							orderedArgs, new HashSet<>(boundBeforeSegment), plannerAlgorithm(orderedArgs.size()),
+							plannerFilters);
+					if (canonicalFiniteAnchorPlan.isPresent()
+							&& isValidPlannerOrder(segment, canonicalFiniteAnchorPlan.get())
+							&& cheapCanonicalFiniteAnchorFastPath(canonicalFiniteAnchorPlan.get())) {
+						applyFiniteAnchorPlannerMetrics(orderedArgs);
+						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
+								orderedArgs, boundBeforeSegment);
+						return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(),
+								true);
+					}
 				}
 			}
 			JoinOrderPlanner.Algorithm algorithm = plannerAlgorithm(segment.size());
@@ -3025,6 +3049,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
 		}
 
+		private boolean cheapCanonicalFiniteAnchorFastPath(JoinOrderPlanner.JoinOrderPlan plan) {
+			double workRows = plan.getEstimatedTotalWork();
+			return LmdbJoinPlanSupport.isFiniteNonNegative(workRows)
+					&& workRows <= CANONICAL_FINITE_ANCHOR_FASTPATH_MAX_WORK_ROWS;
+		}
+
 		private Optional<JoinOrderPlanner.JoinOrderPlan> preselectedFixedGuaranteePlanOption(List<TupleExpr> segment,
 				Set<String> boundBeforeSegment, List<DeferredFilter> segmentFilters,
 				List<DeferredFilter> segmentCostingOnlyFilters, JoinOrderPlanner.Algorithm algorithm,
@@ -3047,13 +3077,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					|| !isValidPlannerOrder(option.factors(), candidate.get())) {
 				return Optional.empty();
 			}
+			double candidateComparableWork = guaranteeOptionComparableWork(candidate.get(), option.name());
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateComparableWork)
+					|| candidateComparableWork > CANONICAL_FINITE_ANCHOR_FASTPATH_MAX_WORK_ROWS) {
+				return Optional.empty();
+			}
 
 			segmentFilters.get(option.satisfiedFilterIndex()).applied = true;
 			segmentFilters.remove(option.satisfiedFilterIndex());
 			List<GuaranteeOptionCandidate> candidateSummaries = new ArrayList<>(2);
 			candidateSummaries.add(GuaranteeOptionCandidate.invalid("original", "skipped-preselected"));
 			candidateSummaries.add(GuaranteeOptionCandidate.valid(option.name(), candidate.get(),
-					guaranteeOptionComparableWork(candidate.get(), option.name()), "valid",
+					candidateComparableWork, "valid",
 					guaranteeOptionCandidateDetails(candidate.get(), option.satisfiedFilterIndex(),
 							candidateSelection.details())));
 			return Optional.of(withGuaranteeOptionMetrics(candidate.get(), guaranteeChoices.generatedCount(),
@@ -3352,12 +3387,21 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				String costingDetails) {
 			String planDetails = traceGuaranteeDiagnostics
 					? guaranteeOptionDetails(plan, satisfiedFilterIndex)
-					: guaranteeOptionConciseDetails(satisfiedFilterIndex);
+					: guaranteeOptionConciseDetails(plan, satisfiedFilterIndex);
 			return appendGuaranteeOptionDetails(planDetails, costingDetails);
 		}
 
-		private String guaranteeOptionConciseDetails(int satisfiedFilterIndex) {
-			return satisfiedFilterIndex >= 0 ? "satisfiedFilters=" + satisfiedFilterIndex : "";
+		private String guaranteeOptionConciseDetails(JoinOrderPlanner.JoinOrderPlan plan, int satisfiedFilterIndex) {
+			Map<String, String> details = new LinkedHashMap<>();
+			for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+				if (addFiniteAccessGuaranteeDetails(details, step)) {
+					break;
+				}
+			}
+			if (satisfiedFilterIndex >= 0) {
+				details.put("satisfiedFilters", String.valueOf(satisfiedFilterIndex));
+			}
+			return formatGuaranteeDetails(details);
 		}
 
 		private record GuaranteeOptionPlanSelection(Optional<JoinOrderPlanner.JoinOrderPlan> plan, String details) {
@@ -3530,6 +3574,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& !anchorRowsGrowTooMuch(candidate.getEstimatedFinalRows(), incumbent.getEstimatedFinalRows())) {
 				return true;
 			}
+			if (candidateComparableWork <= incumbentComparableWork * SPECULATIVE_ANCHOR_STRONG_WORK_IMPROVEMENT_RATIO
+					&& !anchorIntermediateRowsGrowTooMuch(candidate, incumbent)) {
+				return true;
+			}
 			double candidateRows = bestFiniteRows(candidate);
 			double incumbentRows = bestFiniteRows(incumbent);
 			return LmdbJoinPlanSupport.isFiniteNonNegative(candidateRows)
@@ -3547,6 +3595,16 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& LmdbJoinPlanSupport.isFiniteNonNegative(incumbentRows)
 					&& incumbentRows > 0.0d
 					&& candidateRows > incumbentRows * SPECULATIVE_ANCHOR_MAX_ROW_GROWTH_RATIO;
+		}
+
+		private boolean anchorIntermediateRowsGrowTooMuch(JoinOrderPlanner.JoinOrderPlan candidate,
+				JoinOrderPlanner.JoinOrderPlan incumbent) {
+			double candidateRows = maxIntermediateRows(candidate);
+			double incumbentRows = maxIntermediateRows(incumbent);
+			return LmdbJoinPlanSupport.isFiniteNonNegative(candidateRows)
+					&& LmdbJoinPlanSupport.isFiniteNonNegative(incumbentRows)
+					&& incumbentRows > 0.0d
+					&& candidateRows > incumbentRows;
 		}
 
 		private double bestFiniteRows(JoinOrderPlanner.JoinOrderPlan plan) {
@@ -3749,35 +3807,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 				appliedFilterIndexes.addAll(step.getAppliedFilterIndexes());
 				Map<String, String> stringMetrics = step.getStringMetrics();
-				Map<String, Double> doubleMetrics = step.getDoubleMetrics();
 				String source = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
 				if (source != null && !source.isEmpty()) {
 					stepSources.add(source + ":"
 							+ stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_INDEX_NAME, "n/a") + ":"
 							+ stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "n/a"));
 				}
-				boolean finiteAccess = "lmdb-finite-binding-lookup".equals(source)
-						|| "lmdb-finite-derived-surface".equals(source);
-				if (!finiteAccess) {
-					continue;
-				}
-				details.putIfAbsent("anchorIndex", stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_INDEX_NAME,
-						"n/a"));
-				details.putIfAbsent("anchorLookupComponents",
-						stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "n/a"));
-				double accessRows = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(accessRows)) {
-					details.putIfAbsent("anchorAccessRows", formatGuaranteeMetric(accessRows));
-				}
-				double workRows = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
-						step.getStepWorkRows());
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
-					details.putIfAbsent("anchorWorkRows", formatGuaranteeMetric(workRows));
-				}
-				Double surfaceRows = doubleMetrics.get("plannedSurfaceRows");
-				if (surfaceRows != null && LmdbJoinPlanSupport.isFiniteNonNegative(surfaceRows)) {
-					putBetterPositiveGuaranteeMetric(details, "surfaceRows", surfaceRows);
-				}
+				addFiniteAccessGuaranteeDetails(details, step);
 			}
 			if (!stepWorkRows.isEmpty()) {
 				details.put("stepWork", stepWorkRows.toString());
@@ -3804,6 +3840,40 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& LmdbJoinPlanSupport.isFiniteNonNegative(plan.getEstimatedFinalRows())) {
 				details.put("surfaceRows", formatGuaranteeMetric(plan.getEstimatedFinalRows()));
 			}
+			return formatGuaranteeDetails(details);
+		}
+
+		private boolean addFiniteAccessGuaranteeDetails(Map<String, String> details,
+				JoinOrderPlanner.PlanStep step) {
+			Map<String, String> stringMetrics = step.getStringMetrics();
+			String source = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			boolean finiteAccess = "lmdb-finite-binding-lookup".equals(source)
+					|| "lmdb-finite-derived-surface".equals(source);
+			if (!finiteAccess) {
+				return false;
+			}
+			Map<String, Double> doubleMetrics = step.getDoubleMetrics();
+			details.putIfAbsent("anchorIndex", stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_INDEX_NAME,
+					"n/a"));
+			details.putIfAbsent("anchorLookupComponents",
+					stringMetrics.getOrDefault(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "n/a"));
+			double accessRows = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(accessRows)) {
+				details.putIfAbsent("anchorAccessRows", formatGuaranteeMetric(accessRows));
+			}
+			double workRows = doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
+					step.getStepWorkRows());
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(workRows)) {
+				details.putIfAbsent("anchorWorkRows", formatGuaranteeMetric(workRows));
+			}
+			Double surfaceRows = doubleMetrics.get("plannedSurfaceRows");
+			if (surfaceRows != null && LmdbJoinPlanSupport.isFiniteNonNegative(surfaceRows)) {
+				putBetterPositiveGuaranteeMetric(details, "surfaceRows", surfaceRows);
+			}
+			return true;
+		}
+
+		private String formatGuaranteeDetails(Map<String, String> details) {
 			if (details.isEmpty()) {
 				return "";
 			}

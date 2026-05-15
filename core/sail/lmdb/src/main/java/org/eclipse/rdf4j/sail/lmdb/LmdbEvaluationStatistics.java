@@ -29,13 +29,19 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -44,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -66,7 +73,10 @@ class LmdbEvaluationStatistics
 	private static final double BOUNDED_GREEDY_MAX_FINAL_ROWS = 1_024.0d;
 	private static final double BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_WORK_ROWS = 50_000.0d;
 	private static final double BOUNDED_GREEDY_MAX_DIRECT_LOOKUP_ROWS = 4_096.0d;
+	private static final double BOUNDED_GREEDY_PLANNING_COST_WORK_ROWS = 512.0d;
 	private static final int BOUNDED_GREEDY_MIN_DIRECT_LOOKUP_STEPS = 2;
+	private static final String BOUNDED_GREEDY_REASON_DEFERRED_FILTERS = "deferredFilters";
+	private static final String BOUNDED_GREEDY_REASON_FINITE_ASSIGNMENTS = "finiteAssignments";
 	private static final int FINITE_LOOKUP_MAX_COMBINATIONS = 256;
 	private static final int FINITE_DERIVED_SURFACE_MAX_FACTORS = 8;
 	private static final double FINITE_DERIVED_SURFACE_MIN_COMPLETE_LOOKUP_ROWS = 128.0d;
@@ -227,8 +237,20 @@ class LmdbEvaluationStatistics
 					.planJoinOrderAttempt(args, initiallyBoundVars, Algorithm.GREEDY, this, deferredFilters));
 			String boundedGreedyComparisonReason = boundedGreedyComparisonReason(args, deferredFilters);
 			boolean compareWithFullPlanner = boundedGreedyComparisonReason != null;
-			if (isBoundedGreedyPlan(boundedGreedyAttempt) && !compareWithFullPlanner) {
-				return withDecisionTrace(boundedGreedyAttempt, boundedGreedySelectedTrace(boundedGreedyAttempt));
+			if (isBoundedGreedyPlan(boundedGreedyAttempt)) {
+				if (!compareWithFullPlanner) {
+					return withDecisionTrace(boundedGreedyAttempt, boundedGreedySelectedTrace(boundedGreedyAttempt));
+				}
+				if (isBelowPlanningCostBoundedGreedyPlan(boundedGreedyAttempt)) {
+					return withDecisionTrace(boundedGreedyAttempt,
+							belowPlanningCostBoundedGreedySelectedTrace(boundedGreedyAttempt,
+									boundedGreedyComparisonReason));
+				}
+				if (isFiniteDirectLookupBoundedGreedyPlan(boundedGreedyAttempt)) {
+					return withDecisionTrace(boundedGreedyAttempt,
+							finiteDirectLookupBoundedGreedySelectedTrace(boundedGreedyAttempt,
+									boundedGreedyComparisonReason));
+				}
 			}
 			PlanningAttempt selectedAttempt = toLmdbPlanningAttempt(sketchBasedJoinEstimator
 					.planJoinOrderAttempt(args, initiallyBoundVars, algorithm, this, deferredFilters));
@@ -262,10 +284,10 @@ class LmdbEvaluationStatistics
 
 	private String boundedGreedyComparisonReason(List<TupleExpr> args, List<FilterConstraint> deferredFilters) {
 		if (deferredFilters != null && !deferredFilters.isEmpty()) {
-			return "deferredFilters";
+			return BOUNDED_GREEDY_REASON_DEFERRED_FILTERS;
 		}
 		if (hasFiniteAssignmentFactor(args)) {
-			return "finiteAssignments";
+			return BOUNDED_GREEDY_REASON_FINITE_ASSIGNMENTS;
 		}
 		return null;
 	}
@@ -292,6 +314,21 @@ class LmdbEvaluationStatistics
 		return isSmallBoundedGreedyPlan(plan) || isFiniteDirectLookupGreedyPlan(plan);
 	}
 
+	private boolean isBelowPlanningCostBoundedGreedyPlan(PlanningAttempt attempt) {
+		if (attempt.getPlan().isEmpty()) {
+			return false;
+		}
+		double estimatedWorkRows = attempt.getPlan().get().getEstimatedTotalWork();
+		return isFiniteNonNegative(estimatedWorkRows)
+				&& estimatedWorkRows <= BOUNDED_GREEDY_PLANNING_COST_WORK_ROWS;
+	}
+
+	private boolean isFiniteDirectLookupBoundedGreedyPlan(PlanningAttempt attempt) {
+		return attempt.getPlan()
+				.map(this::isFiniteDirectLookupGreedyPlan)
+				.orElse(false);
+	}
+
 	private PlanningAttempt withDecisionTrace(PlanningAttempt attempt, String decisionTrace) {
 		if (attempt.getPlan().isEmpty() || decisionTrace == null || decisionTrace.isEmpty()) {
 			return attempt;
@@ -309,6 +346,18 @@ class LmdbEvaluationStatistics
 
 	private String boundedGreedySelectedTrace(PlanningAttempt boundedGreedyAttempt) {
 		return "bounded-greedy selected (" + attemptEstimateSummary(boundedGreedyAttempt) + ")";
+	}
+
+	private String belowPlanningCostBoundedGreedySelectedTrace(PlanningAttempt boundedGreedyAttempt,
+			String comparisonReason) {
+		return "boundedGreedyAcceptedReason=belowPlanningCost, boundedGreedyComparisonReason=" + comparisonReason
+				+ ", bounded-greedy selected (" + attemptEstimateSummary(boundedGreedyAttempt) + ")";
+	}
+
+	private String finiteDirectLookupBoundedGreedySelectedTrace(PlanningAttempt boundedGreedyAttempt,
+			String comparisonReason) {
+		return "boundedGreedyAcceptedReason=finiteDirectLookup, boundedGreedyComparisonReason=" + comparisonReason
+				+ ", bounded-greedy selected (" + attemptEstimateSummary(boundedGreedyAttempt) + ")";
 	}
 
 	private String boundedGreedyRejectedTrace(PlanningAttempt boundedGreedyAttempt, PlanningAttempt selectedAttempt) {
@@ -431,6 +480,7 @@ class LmdbEvaluationStatistics
 		List<JoinOrderPlanner.PlanStep> originalSteps = plan.getSteps();
 		List<JoinOrderPlanner.PlanStep> enrichedSteps = null;
 		Map<String, Set<Value>> finiteBindingValues = new HashMap<>();
+		List<TupleExpr> prefixFactors = new ArrayList<>(plan.getOrderedArgs().size());
 		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
 			TupleExpr tupleExpr = plan.getOrderedArgs().get(i);
 			JoinOrderPlanner.PlanStep step = originalSteps.get(i);
@@ -439,8 +489,8 @@ class LmdbEvaluationStatistics
 					step.getBoundVarsBefore());
 			boolean hasFiniteValuesForStep = hasFiniteBindingValues(finiteValuesForStep);
 			if (!hasAccessMetrics(step) || (hasFiniteValuesForStep && !hasFiniteDerivedSurfaceSource(step))) {
-				Optional<FactorCostEstimate> factorCostEstimate = estimateLmdbFactorCost(tupleExpr,
-						step.getBoundVarsBefore(), step.getFactorOutputRows(), true, finiteValuesForStep);
+				Optional<FactorCostEstimate> factorCostEstimate = estimateEnrichedFactorCost(tupleExpr, step,
+						finiteValuesForStep, hasFiniteValuesForStep, prefixFactors);
 				if (factorCostEstimate.isPresent()) {
 					Map<String, String> stringMetrics = new HashMap<>(step.getStringMetrics());
 					Map<String, Double> doubleMetrics = new HashMap<>(step.getDoubleMetrics());
@@ -460,6 +510,7 @@ class LmdbEvaluationStatistics
 				enrichedSteps.add(enrichedStep);
 			}
 			addFiniteBindingValues(finiteBindingValues, tupleExpr);
+			prefixFactors.add(tupleExpr);
 		}
 
 		Map<String, String> summaryStringMetrics = new HashMap<>(plan.getSummaryStringMetrics());
@@ -469,6 +520,17 @@ class LmdbEvaluationStatistics
 		return new JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(), plan.getEstimatedTotalWork(),
 				plan.getDiagnostics(), summaryStringMetrics, plan.getSummaryDoubleMetrics(),
 				enrichedSteps == null ? originalSteps : enrichedSteps);
+	}
+
+	private Optional<FactorCostEstimate> estimateEnrichedFactorCost(TupleExpr tupleExpr, JoinOrderPlanner.PlanStep step,
+			Map<String, Set<Value>> finiteValuesForStep, boolean hasFiniteValuesForStep,
+			List<TupleExpr> prefixFactors) {
+		if (hasFiniteValuesForStep && !prefixFactors.isEmpty()) {
+			return estimateFactorCost(tupleExpr, JoinFactorCostModel.CostContext.of(step.getBoundVarsBefore(),
+					step.getPrefixOutputRows(), Double.NaN, false, true, finiteValuesForStep, prefixFactors));
+		}
+		return estimateLmdbFactorCost(tupleExpr, step.getBoundVarsBefore(), step.getFactorOutputRows(), true,
+				finiteValuesForStep);
 	}
 
 	private boolean hasAccessMetrics(JoinOrderPlanner.PlanStep step) {
@@ -544,7 +606,8 @@ class LmdbEvaluationStatistics
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor,
 			JoinFactorCostModel.CostContext context) {
 		if (context.hasCurrentlyBoundVarMask()) {
-			return estimateLmdbFactorCost(factor, context.getVariableNames(), context.getCurrentlyBoundVarMask(),
+			return estimateLmdbFactorCost(factor, context.getVariableNames(),
+					context.getCurrentlyBoundVarMask(),
 					Double.NaN, context.shouldCollectMetrics(), context.getFiniteBindingValues(),
 					context.getEstimationTier());
 		}
@@ -678,9 +741,8 @@ class LmdbEvaluationStatistics
 		if (factor == null) {
 			return Optional.empty();
 		}
-		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundVars(factorFingerprint(factor), currentlyBoundVars,
-				knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
-		return estimateScopedFactorCost(cacheKey,
+		return estimateScopedSetFactorCost(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
+				finiteBindingValues, estimationTier,
 				() -> estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
 						finiteBindingValues));
 	}
@@ -705,8 +767,8 @@ class LmdbEvaluationStatistics
 
 		SketchBasedJoinEstimator.AccessShape accessShape = sketchBasedJoinEstimator
 				.accessShapeForJoinOrdering(factor, boundVars);
-		Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(accessShape, outputRows,
-				finiteBindingValues, collectMetrics);
+		Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(factor, accessShape,
+				outputRows, finiteBindingValues, collectMetrics);
 		if (finiteLookupEstimate.isPresent()) {
 			return finiteLookupEstimate;
 		}
@@ -732,9 +794,8 @@ class LmdbEvaluationStatistics
 		if (factor == null) {
 			return Optional.empty();
 		}
-		FactorCostCacheKey cacheKey = FactorCostCacheKey.forBoundMask(factorFingerprint(factor), boundVarMask,
-				knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
-		return estimateScopedFactorCost(cacheKey,
+		return estimateScopedMaskFactorCost(factor, boundVarMask, knownOutputRows, collectMetrics,
+				finiteBindingValues, estimationTier,
 				() -> estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows,
 						collectMetrics, finiteBindingValues));
 	}
@@ -759,27 +820,90 @@ class LmdbEvaluationStatistics
 
 		SketchBasedJoinEstimator.AccessShape accessShape = sketchBasedJoinEstimator
 				.accessShapeForJoinOrdering(factor, variableNames, boundVarMask);
-		Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(accessShape, outputRows,
-				finiteBindingValues, collectMetrics);
+		Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(factor, accessShape,
+				outputRows, finiteBindingValues, collectMetrics);
 		if (finiteLookupEstimate.isPresent()) {
 			return finiteLookupEstimate;
 		}
 		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics);
 	}
 
-	private Optional<FactorCostEstimate> estimateScopedFactorCost(FactorCostCacheKey cacheKey,
+	private Optional<FactorCostEstimate> estimateScopedSetFactorCost(TupleExpr factor, Set<String> boundVars,
+			double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
+			JoinFactorCostModel.EstimationTier estimationTier,
 			Supplier<Optional<FactorCostEstimate>> estimateSupplier) {
 		OptimizationCostScope scope = optimizationCostScope.get();
 		if (scope == null) {
 			return estimateSupplier.get();
 		}
-		Optional<FactorCostEstimate> estimate = scope.factorCostCache.get(cacheKey);
-		if (estimate != null) {
-			return estimate;
+		Set<String> lookupBoundVars = boundVars == null ? Set.of() : boundVars;
+		long knownOutputRowsBits = Double.doubleToLongBits(knownOutputRows);
+		Map<String, Set<Value>> finiteValues = emptyFiniteBindingValues(finiteBindingValues);
+		JoinFactorCostModel.EstimationTier normalizedTier = estimationTier == null
+				? JoinFactorCostModel.EstimationTier.EXACT
+				: estimationTier;
+		SetFactorCostCacheEntry head = scope.setFactorCostCache.get(factor);
+		SetFactorCostCacheEntry previous = null;
+		SetFactorCostCacheEntry entry = head;
+		while (entry != null) {
+			if (entry.matches(lookupBoundVars, knownOutputRowsBits, collectMetrics, finiteValues, normalizedTier)) {
+				if (previous != null) {
+					previous.next = entry.next;
+					entry.next = head;
+					scope.setFactorCostCache.put(factor, entry);
+				}
+				return entry.estimate;
+			}
+			previous = entry;
+			entry = entry.next;
 		}
-		estimate = estimateSupplier.get();
-		scope.factorCostCache.put(cacheKey, estimate);
+		Optional<FactorCostEstimate> estimate = estimateSupplier.get();
+		scope.setFactorCostCache.put(factor,
+				new SetFactorCostCacheEntry(FactorCostCacheKey.immutableBoundVars(lookupBoundVars),
+						knownOutputRowsBits, collectMetrics, finiteValues, normalizedTier, estimate, head));
 		return estimate;
+	}
+
+	private Optional<FactorCostEstimate> estimateScopedMaskFactorCost(TupleExpr factor, long boundVarMask,
+			double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
+			JoinFactorCostModel.EstimationTier estimationTier,
+			Supplier<Optional<FactorCostEstimate>> estimateSupplier) {
+		OptimizationCostScope scope = optimizationCostScope.get();
+		if (scope == null) {
+			return estimateSupplier.get();
+		}
+		long knownOutputRowsBits = Double.doubleToLongBits(knownOutputRows);
+		Map<String, Set<Value>> finiteValues = emptyFiniteBindingValues(finiteBindingValues);
+		JoinFactorCostModel.EstimationTier normalizedTier = estimationTier == null
+				? JoinFactorCostModel.EstimationTier.EXACT
+				: estimationTier;
+		MaskFactorCostCacheEntry head = scope.maskFactorCostCache.get(factor);
+		MaskFactorCostCacheEntry previous = null;
+		MaskFactorCostCacheEntry entry = head;
+		while (entry != null) {
+			if (entry.matches(boundVarMask, knownOutputRowsBits, collectMetrics, finiteValues, normalizedTier)) {
+				if (previous != null) {
+					previous.next = entry.next;
+					entry.next = head;
+					scope.maskFactorCostCache.put(factor, entry);
+				}
+				return entry.estimate;
+			}
+			previous = entry;
+			entry = entry.next;
+		}
+		Optional<FactorCostEstimate> estimate = estimateSupplier.get();
+		scope.maskFactorCostCache.put(factor,
+				new MaskFactorCostCacheEntry(boundVarMask, knownOutputRowsBits, collectMetrics, finiteValues,
+						normalizedTier, estimate, head));
+		return estimate;
+	}
+
+	private Map<String, Set<Value>> emptyFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
+		if (finiteBindingValues == null || finiteBindingValues.isEmpty()) {
+			return Map.of();
+		}
+		return finiteBindingValues;
 	}
 
 	private Object factorFingerprint(TupleExpr factor) {
@@ -1468,7 +1592,7 @@ class LmdbEvaluationStatistics
 		return true;
 	}
 
-	private Optional<FactorCostEstimate> estimateFiniteBindingLookupCost(
+	private Optional<FactorCostEstimate> estimateFiniteBindingLookupCost(TupleExpr factor,
 			SketchBasedJoinEstimator.AccessShape accessShape, double outputRows,
 			Map<String, Set<Value>> finiteBindingValues, boolean collectMetrics) {
 		if (accessShape == null || !hasFiniteBindingValues(finiteBindingValues)) {
@@ -1530,9 +1654,13 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(accessRows)) {
 			return Optional.empty();
 		}
+		double finiteFilterMultiplier = finiteBindingFilterMultiplier(factor, finiteBindingValues);
+		double filterMultiplier = isFiniteNonNegative(finiteFilterMultiplier)
+				? finiteFilterMultiplier
+				: accessShape.filterMultiplier();
 		double rowsAfterFilter = accessRows;
-		if (isFiniteNonNegative(accessShape.filterMultiplier()) && accessShape.filterMultiplier() < 1.0d) {
-			rowsAfterFilter *= accessShape.filterMultiplier();
+		if (isFiniteNonNegative(filterMultiplier) && filterMultiplier < 1.0d) {
+			rowsAfterFilter *= filterMultiplier;
 		}
 		if (!isFiniteNonNegative(rowsAfterFilter)) {
 			return Optional.empty();
@@ -1550,6 +1678,9 @@ class LmdbEvaluationStatistics
 				componentMaskString(accessPathEstimate.lookupComponentMask()));
 		stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, accessMode(accessPathEstimate));
 		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-finite-binding-lookup");
+		if (isFiniteNonNegative(finiteFilterMultiplier)) {
+			stringMetrics.put(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, "finite_binding");
+		}
 		if (accessPathEstimate.missingLookupComponentMask() != 0) {
 			stringMetrics.put(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS,
 					componentMaskString(accessPathEstimate.missingLookupComponentMask()));
@@ -1561,6 +1692,9 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES,
 				(double) accessPathEstimate.candidateCount());
 		doubleMetrics.put("plannedRepeatedInvocations", (double) lookupCombinations);
+		if (isFiniteNonNegative(finiteFilterMultiplier)) {
+			doubleMetrics.put(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, finiteFilterMultiplier);
+		}
 		if (accessPathEstimate.rowsAfterFilterAtAccess() != accessPathEstimate.rowsBeforeFilterAtAccess()) {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS_AFTER_FILTER,
 					accessPathEstimate.rowsAfterFilterAtAccess());
@@ -1570,6 +1704,174 @@ class LmdbEvaluationStatistics
 				stringMetrics, doubleMetrics, true, accessPathEstimate.directLookup(),
 				accessPathEstimate.lookupComponentMask(), accessPathEstimate.missingLookupComponentMask(),
 				accessPathEstimate.rowsBeforeFilterAtAccess(), true, true));
+	}
+
+	private double finiteBindingFilterMultiplier(TupleExpr factor, Map<String, Set<Value>> finiteBindingValues) {
+		if (!(factor instanceof Filter filter) || filter.getCondition() == null
+				|| !hasFiniteBindingValues(finiteBindingValues)) {
+			return Double.NaN;
+		}
+
+		List<String> variableNames = new ArrayList<>();
+		if (!collectFiniteFilterVariables(filter.getCondition(), finiteBindingValues, variableNames, new HashSet<>())
+				|| variableNames.isEmpty()) {
+			return Double.NaN;
+		}
+
+		int combinations = 1;
+		for (String variableName : variableNames) {
+			Set<Value> values = finiteBindingValues.get(variableName);
+			if (values == null || values.isEmpty()) {
+				return Double.NaN;
+			}
+			combinations *= values.size();
+			if (combinations > FINITE_LOOKUP_MAX_COMBINATIONS) {
+				return Double.NaN;
+			}
+		}
+
+		FiniteFilterCounter counter = new FiniteFilterCounter();
+		countFiniteFilterMatches(filter.getCondition(), finiteBindingValues, variableNames, 0, new LinkedHashMap<>(),
+				counter);
+		if (counter.total == 0) {
+			return Double.NaN;
+		}
+		return (double) counter.matched / counter.total;
+	}
+
+	private boolean collectFiniteFilterVariables(ValueExpr condition, Map<String, Set<Value>> finiteBindingValues,
+			List<String> variableNames, Set<String> seen) {
+		if (condition instanceof Var var) {
+			if (var.hasValue()) {
+				return true;
+			}
+			String name = var.getName();
+			if (name == null) {
+				return false;
+			}
+			Set<Value> values = finiteBindingValues.get(name);
+			if (values == null || values.isEmpty()) {
+				return false;
+			}
+			if (seen.add(name)) {
+				variableNames.add(name);
+			}
+			return true;
+		}
+		if (condition instanceof ValueConstant) {
+			return true;
+		}
+		if (condition instanceof And and) {
+			return collectFiniteFilterVariables(and.getLeftArg(), finiteBindingValues, variableNames, seen)
+					&& collectFiniteFilterVariables(and.getRightArg(), finiteBindingValues, variableNames, seen);
+		}
+		if (condition instanceof Compare compare) {
+			return collectFiniteFilterVariables(compare.getLeftArg(), finiteBindingValues, variableNames, seen)
+					&& collectFiniteFilterVariables(compare.getRightArg(), finiteBindingValues, variableNames, seen);
+		}
+		if (condition instanceof ListMemberOperator listMemberOperator) {
+			for (ValueExpr argument : listMemberOperator.getArguments()) {
+				if (!collectFiniteFilterVariables(argument, finiteBindingValues, variableNames, seen)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private void countFiniteFilterMatches(ValueExpr condition, Map<String, Set<Value>> finiteBindingValues,
+			List<String> variableNames, int index, Map<String, Value> bindings, FiniteFilterCounter counter) {
+		if (index == variableNames.size()) {
+			Boolean matched = evaluateFiniteFilterCondition(condition, bindings);
+			if (matched != null) {
+				counter.total++;
+				if (matched) {
+					counter.matched++;
+				}
+			}
+			return;
+		}
+
+		String variableName = variableNames.get(index);
+		Set<Value> values = finiteBindingValues.get(variableName);
+		if (values == null || values.isEmpty()) {
+			return;
+		}
+		for (Value value : values) {
+			bindings.put(variableName, value);
+			countFiniteFilterMatches(condition, finiteBindingValues, variableNames, index + 1, bindings, counter);
+		}
+		bindings.remove(variableName);
+	}
+
+	private Boolean evaluateFiniteFilterCondition(ValueExpr condition, Map<String, Value> bindings) {
+		if (condition instanceof And and) {
+			Boolean left = evaluateFiniteFilterCondition(and.getLeftArg(), bindings);
+			if (left == null || !left) {
+				return left;
+			}
+			return evaluateFiniteFilterCondition(and.getRightArg(), bindings);
+		}
+		if (condition instanceof Compare compare) {
+			Value left = evaluateFiniteFilterValue(compare.getLeftArg(), bindings);
+			Value right = evaluateFiniteFilterValue(compare.getRightArg(), bindings);
+			if (left == null || right == null) {
+				return null;
+			}
+			try {
+				return QueryEvaluationUtil.compare(left, right, compare.getOperator(), false);
+			} catch (ValueExprEvaluationException e) {
+				return false;
+			}
+		}
+		if (condition instanceof ListMemberOperator listMemberOperator) {
+			List<ValueExpr> arguments = listMemberOperator.getArguments();
+			if (arguments == null || arguments.size() < 2) {
+				return null;
+			}
+			Value left = evaluateFiniteFilterValue(arguments.getFirst(), bindings);
+			if (left == null) {
+				return null;
+			}
+			for (int i = 1; i < arguments.size(); i++) {
+				Value right = evaluateFiniteFilterValue(arguments.get(i), bindings);
+				if (right == null) {
+					return null;
+				}
+				if (finiteValuesEqual(left, right)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return null;
+	}
+
+	private Value evaluateFiniteFilterValue(ValueExpr expression, Map<String, Value> bindings) {
+		if (expression instanceof Var var) {
+			if (var.hasValue()) {
+				return var.getValue();
+			}
+			return var.getName() == null ? null : bindings.get(var.getName());
+		}
+		if (expression instanceof ValueConstant valueConstant) {
+			return valueConstant.getValue();
+		}
+		return null;
+	}
+
+	private boolean finiteValuesEqual(Value left, Value right) {
+		try {
+			return QueryEvaluationUtil.compare(left, right, Compare.CompareOp.EQ, false);
+		} catch (ValueExprEvaluationException e) {
+			return left.equals(right);
+		}
+	}
+
+	private static final class FiniteFilterCounter {
+		private int total;
+		private int matched;
 	}
 
 	private int finiteLookupComponentMask(SketchBasedJoinEstimator.AccessShape accessShape, StatementPattern pattern,
@@ -1832,10 +2134,25 @@ class LmdbEvaluationStatistics
 	}
 
 	private void addFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues, TupleExpr tupleExpr) {
-		BindingSetAssignment assignment = bindingSetAssignmentBase(tupleExpr);
-		if (assignment == null) {
+		if (tupleExpr == null) {
 			return;
 		}
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			addFiniteBindingValues(finiteBindingValues, assignment);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			addFiniteBindingValues(finiteBindingValues, filter.getArg());
+			return;
+		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			addFiniteBindingValues(finiteBindingValues, join.getLeftArg());
+			addFiniteBindingValues(finiteBindingValues, join.getRightArg());
+		}
+	}
+
+	private void addFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues,
+			BindingSetAssignment assignment) {
 		Map<String, Set<Value>> assignmentValues = new HashMap<>();
 		for (BindingSet bindingSet : assignment.getBindingSets()) {
 			for (String bindingName : bindingSet.getBindingNames()) {
@@ -1852,16 +2169,6 @@ class LmdbEvaluationStatistics
 				return intersection.isEmpty() ? Set.of() : Set.copyOf(intersection);
 			});
 		}
-	}
-
-	private BindingSetAssignment bindingSetAssignmentBase(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof BindingSetAssignment assignment) {
-			return assignment;
-		}
-		if (tupleExpr instanceof Filter filter) {
-			return bindingSetAssignmentBase(filter.getArg());
-		}
-		return null;
 	}
 
 	private static final class UnionBindingNameSet extends AbstractSet<String> {
@@ -2085,6 +2392,14 @@ class LmdbEvaluationStatistics
 			if (!isFiniteNonNegative(rowsBefore)) {
 				continue;
 			}
+			int coveredLookupComponentMask = lookupComponentMask & candidate.prefixComponentMask();
+			int missingLookupComponentMask = lookupComponentMask & ~candidate.prefixComponentMask();
+			if (missingLookupComponentMask != 0) {
+				double rowsBeforeLowerBound = rowsBeforeFilterLowerBound(factorRows, accessShape.filterMultiplier());
+				if (isFiniteNonNegative(rowsBeforeLowerBound) && rowsBeforeLowerBound > rowsBefore) {
+					rowsBefore = rowsBeforeLowerBound;
+				}
+			}
 			boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, candidate.prefixComponentMask())
 					&& isFiniteNonNegative(accessShape.filterMultiplier())
 					&& accessShape.filterMultiplier() < 1.0d;
@@ -2107,8 +2422,6 @@ class LmdbEvaluationStatistics
 			if (!isFiniteNonNegative(workRows)) {
 				continue;
 			}
-			int coveredLookupComponentMask = lookupComponentMask & candidate.prefixComponentMask();
-			int missingLookupComponentMask = lookupComponentMask & ~candidate.prefixComponentMask();
 			AccessPathEstimate estimate = new AccessPathEstimate(workRows, plannedRowsBefore, plannedRowsAfter,
 					candidate.indexFieldSequence(), candidate.prefixLength(), candidate.prefixComponentMask(),
 					directLookup, coveredLookupComponentMask, missingLookupComponentMask, candidateCount);
@@ -2123,6 +2436,19 @@ class LmdbEvaluationStatistics
 				? new AccessPathEstimate(factorRows, factorRows, factorRows, "", 0, 0, false,
 						lookupComponentMask, lookupComponentMask, candidateCount)
 				: null;
+	}
+
+	private double rowsBeforeFilterLowerBound(double factorRows, double filterMultiplier) {
+		if (!isFiniteNonNegative(factorRows)) {
+			return Double.NaN;
+		}
+		if (isFiniteNonNegative(filterMultiplier) && filterMultiplier > 0.0d && filterMultiplier < 1.0d) {
+			double rowsBeforeFilter = factorRows / filterMultiplier;
+			if (isFiniteNonNegative(rowsBeforeFilter)) {
+				return rowsBeforeFilter;
+			}
+		}
+		return factorRows;
 	}
 
 	private int compareAccessPathEstimate(AccessPathEstimate left, AccessPathEstimate right) {
@@ -2169,7 +2495,8 @@ class LmdbEvaluationStatistics
 	}
 
 	private static final class OptimizationCostScope {
-		private final Map<FactorCostCacheKey, Optional<FactorCostEstimate>> factorCostCache = new HashMap<>();
+		private final Map<TupleExpr, SetFactorCostCacheEntry> setFactorCostCache = new IdentityHashMap<>();
+		private final Map<TupleExpr, MaskFactorCostCacheEntry> maskFactorCostCache = new IdentityHashMap<>();
 		private final Map<TupleExpr, Object> factorFingerprintCache = new IdentityHashMap<>();
 		private final Map<FiniteDerivedSurfaceCacheKey, Optional<FiniteDerivedSurfaceEstimate>> finiteDerivedSurfaceCache = new HashMap<>();
 		private final Map<FiniteBranchRowsCacheKey, Double> finiteBranchRowsCache = new HashMap<>();
@@ -2181,6 +2508,88 @@ class LmdbEvaluationStatistics
 		private long sketchJoinSurfaceCalls;
 		private long fallbackJoinSurfaceCalls;
 		private int depth;
+	}
+
+	private static final class SetFactorCostCacheEntry {
+		private final Set<String> boundVars;
+		private final long knownOutputRowsBits;
+		private final boolean collectMetrics;
+		private final Map<String, Set<Value>> finiteBindingValues;
+		private final JoinFactorCostModel.EstimationTier estimationTier;
+		private final Optional<FactorCostEstimate> estimate;
+		private SetFactorCostCacheEntry next;
+
+		private SetFactorCostCacheEntry(Set<String> boundVars, long knownOutputRowsBits, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
+				Optional<FactorCostEstimate> estimate, SetFactorCostCacheEntry next) {
+			this.boundVars = boundVars;
+			this.knownOutputRowsBits = knownOutputRowsBits;
+			this.collectMetrics = collectMetrics;
+			this.finiteBindingValues = finiteBindingValues;
+			this.estimationTier = estimationTier;
+			this.estimate = estimate;
+			this.next = next;
+		}
+
+		private boolean matches(Set<String> boundVars, long knownOutputRowsBits, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+			return this.knownOutputRowsBits == knownOutputRowsBits
+					&& this.collectMetrics == collectMetrics
+					&& this.estimationTier == estimationTier
+					&& this.boundVars.equals(boundVars)
+					&& sameFiniteBindingValues(finiteBindingValues);
+		}
+
+		private boolean sameFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
+			if (this.finiteBindingValues == finiteBindingValues) {
+				return true;
+			}
+			if (this.finiteBindingValues.isEmpty() && finiteBindingValues.isEmpty()) {
+				return true;
+			}
+			return this.finiteBindingValues.equals(finiteBindingValues);
+		}
+	}
+
+	private static final class MaskFactorCostCacheEntry {
+		private final long boundVarMask;
+		private final long knownOutputRowsBits;
+		private final boolean collectMetrics;
+		private final Map<String, Set<Value>> finiteBindingValues;
+		private final JoinFactorCostModel.EstimationTier estimationTier;
+		private final Optional<FactorCostEstimate> estimate;
+		private MaskFactorCostCacheEntry next;
+
+		private MaskFactorCostCacheEntry(long boundVarMask, long knownOutputRowsBits, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
+				Optional<FactorCostEstimate> estimate, MaskFactorCostCacheEntry next) {
+			this.boundVarMask = boundVarMask;
+			this.knownOutputRowsBits = knownOutputRowsBits;
+			this.collectMetrics = collectMetrics;
+			this.finiteBindingValues = finiteBindingValues;
+			this.estimationTier = estimationTier;
+			this.estimate = estimate;
+			this.next = next;
+		}
+
+		private boolean matches(long boundVarMask, long knownOutputRowsBits, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+			return this.boundVarMask == boundVarMask
+					&& this.knownOutputRowsBits == knownOutputRowsBits
+					&& this.collectMetrics == collectMetrics
+					&& this.estimationTier == estimationTier
+					&& sameFiniteBindingValues(finiteBindingValues);
+		}
+
+		private boolean sameFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues) {
+			if (this.finiteBindingValues == finiteBindingValues) {
+				return true;
+			}
+			if (this.finiteBindingValues.isEmpty() && finiteBindingValues.isEmpty()) {
+				return true;
+			}
+			return this.finiteBindingValues.equals(finiteBindingValues);
+		}
 	}
 
 	private record OptimizationCounterSnapshot(boolean scoped, long finiteDerivedSurfaceCacheHits,
@@ -2225,91 +2634,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private static final class FactorCostCacheKey {
-		private final Object factorFingerprint;
-		private final Set<String> boundVars;
-		private final long boundVarMask;
-		private final boolean boundByMask;
-		private final long knownOutputRowsBits;
-		private final boolean collectMetrics;
-		private final Map<String, Set<Value>> finiteBindingValues;
-		private final JoinFactorCostModel.EstimationTier estimationTier;
-		private final int hashCode;
-
-		private FactorCostCacheKey(Object factorFingerprint, Set<String> boundVars, double knownOutputRows,
-				boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
-				JoinFactorCostModel.EstimationTier estimationTier) {
-			this.factorFingerprint = factorFingerprint == null ? FactorCostCacheKey.factorFingerprint(null)
-					: factorFingerprint;
-			this.boundVars = immutableBoundVars(boundVars);
-			this.boundVarMask = 0L;
-			this.boundByMask = false;
-			this.knownOutputRowsBits = Double.doubleToLongBits(knownOutputRows);
-			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = finiteBindingValues == null ? Map.of() : finiteBindingValues;
-			this.estimationTier = estimationTier == null ? JoinFactorCostModel.EstimationTier.EXACT : estimationTier;
-			this.hashCode = computeHashCode();
-		}
-
-		private FactorCostCacheKey(Object factorFingerprint, long boundVarMask, double knownOutputRows,
-				boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
-				JoinFactorCostModel.EstimationTier estimationTier) {
-			this.factorFingerprint = factorFingerprint == null ? FactorCostCacheKey.factorFingerprint(null)
-					: factorFingerprint;
-			this.boundVars = Set.of();
-			this.boundVarMask = boundVarMask;
-			this.boundByMask = true;
-			this.knownOutputRowsBits = Double.doubleToLongBits(knownOutputRows);
-			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = finiteBindingValues == null ? Map.of() : finiteBindingValues;
-			this.estimationTier = estimationTier == null ? JoinFactorCostModel.EstimationTier.EXACT : estimationTier;
-			this.hashCode = computeHashCode();
-		}
-
-		private int computeHashCode() {
-			int result = factorFingerprint.hashCode();
-			result = 31 * result + Boolean.hashCode(boundByMask);
-			result = 31 * result + (boundByMask ? Long.hashCode(boundVarMask) : boundVars.hashCode());
-			result = 31 * result + Long.hashCode(knownOutputRowsBits);
-			result = 31 * result + Boolean.hashCode(collectMetrics);
-			result = 31 * result + finiteBindingValues.hashCode();
-			result = 31 * result + estimationTier.hashCode();
-			return result;
-		}
-
-		private static FactorCostCacheKey forBoundVars(Object factorFingerprint, Set<String> boundVars,
-				double knownOutputRows, boolean collectMetrics) {
-			return forBoundVars(factorFingerprint, boundVars, knownOutputRows, collectMetrics, Map.of());
-		}
-
-		private static FactorCostCacheKey forBoundVars(Object factorFingerprint, Set<String> boundVars,
-				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues) {
-			return forBoundVars(factorFingerprint, boundVars, knownOutputRows, collectMetrics, finiteBindingValues,
-					JoinFactorCostModel.EstimationTier.EXACT);
-		}
-
-		private static FactorCostCacheKey forBoundVars(Object factorFingerprint, Set<String> boundVars,
-				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
-				JoinFactorCostModel.EstimationTier estimationTier) {
-			return new FactorCostCacheKey(factorFingerprint, boundVars, knownOutputRows, collectMetrics,
-					finiteBindingValues, estimationTier);
-		}
-
-		private static FactorCostCacheKey forBoundMask(Object factorFingerprint, long boundVarMask,
-				double knownOutputRows, boolean collectMetrics) {
-			return forBoundMask(factorFingerprint, boundVarMask, knownOutputRows, collectMetrics, Map.of());
-		}
-
-		private static FactorCostCacheKey forBoundMask(Object factorFingerprint, long boundVarMask,
-				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues) {
-			return forBoundMask(factorFingerprint, boundVarMask, knownOutputRows, collectMetrics, finiteBindingValues,
-					JoinFactorCostModel.EstimationTier.EXACT);
-		}
-
-		private static FactorCostCacheKey forBoundMask(Object factorFingerprint, long boundVarMask,
-				double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
-				JoinFactorCostModel.EstimationTier estimationTier) {
-			return new FactorCostCacheKey(factorFingerprint, boundVarMask, knownOutputRows, collectMetrics,
-					finiteBindingValues, estimationTier);
+		private FactorCostCacheKey() {
 		}
 
 		private static Set<String> immutableBoundVars(Set<String> boundVars) {
@@ -2317,21 +2642,6 @@ class LmdbEvaluationStatistics
 				return Set.of();
 			}
 			return Set.copyOf(boundVars);
-		}
-
-		private static Map<String, Set<Value>> immutableFiniteBindingValues(
-				Map<String, Set<Value>> finiteBindingValues) {
-			if (finiteBindingValues == null || finiteBindingValues.isEmpty()) {
-				return Map.of();
-			}
-			Map<String, Set<Value>> copy = new LinkedHashMap<>();
-			for (Map.Entry<String, Set<Value>> entry : finiteBindingValues.entrySet()) {
-				if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isEmpty()) {
-					continue;
-				}
-				copy.put(entry.getKey(), Set.copyOf(entry.getValue()));
-			}
-			return copy.isEmpty() ? Map.of() : copy;
 		}
 
 		private static Object factorFingerprint(TupleExpr factor) {
@@ -2342,24 +2652,24 @@ class LmdbEvaluationStatistics
 				return BindingSetAssignmentFactorFingerprint.of(bindingSetAssignment);
 			}
 			if (factor instanceof Filter filter) {
-				return new UnaryFactorFingerprint("Filter", factorFingerprint(filter.getArg()),
+				return UnaryFactorFingerprint.of("Filter", factorFingerprint(filter.getArg()),
 						valueExprFingerprint(filter.getCondition()));
 			}
 			if (factor instanceof LeftJoin leftJoin) {
-				return new BinaryFactorFingerprint("LeftJoin", factorFingerprint(leftJoin.getLeftArg()),
+				return BinaryFactorFingerprint.of("LeftJoin", factorFingerprint(leftJoin.getLeftArg()),
 						factorFingerprint(leftJoin.getRightArg()), valueExprFingerprint(leftJoin.getCondition()));
 			}
 			if (factor instanceof Join join) {
-				return new BinaryFactorFingerprint("Join", factorFingerprint(join.getLeftArg()),
+				return BinaryFactorFingerprint.of("Join", factorFingerprint(join.getLeftArg()),
 						factorFingerprint(join.getRightArg()), null);
 			}
-			return new FallbackFactorFingerprint(factor == null ? "null" : factor.getClass().getName(),
+			return FallbackFactorFingerprint.of(factor == null ? "null" : factor.getClass().getName(),
 					factor == null ? "" : factor.toString());
 		}
 
 		private static Object valueExprFingerprint(Object valueExpr) {
 			return valueExpr == null ? null
-					: new FallbackFactorFingerprint(valueExpr.getClass().getName(),
+					: FallbackFactorFingerprint.of(valueExpr.getClass().getName(),
 							valueExpr.toString());
 		}
 
@@ -2367,52 +2677,66 @@ class LmdbEvaluationStatistics
 			return value == null ? "" : value.getType().name() + ':' + value;
 		}
 
-		@Override
-		public boolean equals(Object other) {
-			if (this == other) {
-				return true;
-			}
-			if (!(other instanceof FactorCostCacheKey that)) {
-				return false;
-			}
-			return knownOutputRowsBits == that.knownOutputRowsBits
-					&& collectMetrics == that.collectMetrics
-					&& boundByMask == that.boundByMask
-					&& (!boundByMask || boundVarMask == that.boundVarMask)
-					&& (boundByMask || boundVars.equals(that.boundVars))
-					&& estimationTier == that.estimationTier
-					&& factorFingerprint.equals(that.factorFingerprint)
-					&& finiteBindingValues.equals(that.finiteBindingValues);
+		private static int nullableHash(Object value) {
+			return value == null ? 0 : value.hashCode();
 		}
 
-		@Override
-		public int hashCode() {
-			return hashCode;
+		private static int hashStep(int seed, Object value) {
+			return 31 * seed + nullableHash(value);
 		}
 
-		private record StatementPatternFactorFingerprint(StatementPattern.Scope scope, VarFingerprint subject,
+		private static int hashStep(int seed, boolean value) {
+			return 31 * seed + (value ? 1 : 0);
+		}
+
+		private record StatementPatternFactorFingerprint(int hash, StatementPattern.Scope scope, VarFingerprint subject,
 				VarFingerprint predicate, VarFingerprint object, VarFingerprint context) {
 
 			private static StatementPatternFactorFingerprint of(StatementPattern statementPattern) {
-				return new StatementPatternFactorFingerprint(statementPattern.getScope(),
-						VarFingerprint.of(statementPattern.getSubjectVar()),
-						VarFingerprint.of(statementPattern.getPredicateVar()),
-						VarFingerprint.of(statementPattern.getObjectVar()),
-						VarFingerprint.of(statementPattern.getContextVar()));
+				StatementPattern.Scope scope = statementPattern.getScope();
+				VarFingerprint subject = VarFingerprint.of(statementPattern.getSubjectVar());
+				VarFingerprint predicate = VarFingerprint.of(statementPattern.getPredicateVar());
+				VarFingerprint object = VarFingerprint.of(statementPattern.getObjectVar());
+				VarFingerprint context = VarFingerprint.of(statementPattern.getContextVar());
+				int hash = nullableHash(scope);
+				hash = hashStep(hash, subject);
+				hash = hashStep(hash, predicate);
+				hash = hashStep(hash, object);
+				hash = hashStep(hash, context);
+				return new StatementPatternFactorFingerprint(hash, scope, subject, predicate, object, context);
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
 			}
 		}
 
-		private record VarFingerprint(String name, Value value, boolean anonymous, boolean constant) {
+		private record VarFingerprint(int hash, String name, Value value, boolean anonymous, boolean constant) {
 
 			private static VarFingerprint of(Var var) {
 				if (var == null) {
 					return null;
 				}
-				return new VarFingerprint(var.getName(), var.getValue(), var.isAnonymous(), var.isConstant());
+				String name = var.getName();
+				Value value = var.getValue();
+				boolean anonymous = var.isAnonymous();
+				boolean constant = var.isConstant();
+				int hash = nullableHash(name);
+				hash = hashStep(hash, value);
+				hash = hashStep(hash, anonymous);
+				hash = hashStep(hash, constant);
+				return new VarFingerprint(hash, name, value, anonymous, constant);
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
 			}
 		}
 
-		private record BindingSetAssignmentFactorFingerprint(Set<String> bindingNames, List<String> bindingRows) {
+		private record BindingSetAssignmentFactorFingerprint(int hash, Set<String> bindingNames,
+				List<String> bindingRows) {
 
 			private static BindingSetAssignmentFactorFingerprint of(BindingSetAssignment bindingSetAssignment) {
 				List<String> bindingRows = new ArrayList<>();
@@ -2428,20 +2752,61 @@ class LmdbEvaluationStatistics
 					}
 				}
 				bindingRows.sort(String::compareTo);
-				return new BindingSetAssignmentFactorFingerprint(bindingSetAssignment.getBindingNames(), bindingRows);
+				Set<String> bindingNames = Set.copyOf(bindingSetAssignment.getBindingNames());
+				int hash = nullableHash(bindingNames);
+				hash = hashStep(hash, bindingRows);
+				return new BindingSetAssignmentFactorFingerprint(hash, bindingNames, bindingRows);
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
 			}
 		}
 
-		private record UnaryFactorFingerprint(String operator, Object arg, Object condition) {
+		private record UnaryFactorFingerprint(int hash, String operator, Object arg, Object condition) {
 
+			private static UnaryFactorFingerprint of(String operator, Object arg, Object condition) {
+				int hash = nullableHash(operator);
+				hash = hashStep(hash, arg);
+				hash = hashStep(hash, condition);
+				return new UnaryFactorFingerprint(hash, operator, arg, condition);
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
+			}
 		}
 
-		private record BinaryFactorFingerprint(String operator, Object left, Object right, Object condition) {
+		private record BinaryFactorFingerprint(int hash, String operator, Object left, Object right, Object condition) {
 
+			private static BinaryFactorFingerprint of(String operator, Object left, Object right, Object condition) {
+				int hash = nullableHash(operator);
+				hash = hashStep(hash, left);
+				hash = hashStep(hash, right);
+				hash = hashStep(hash, condition);
+				return new BinaryFactorFingerprint(hash, operator, left, right, condition);
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
+			}
 		}
 
-		private record FallbackFactorFingerprint(String type, String tree) {
+		private record FallbackFactorFingerprint(int hash, String type, String tree) {
 
+			private static FallbackFactorFingerprint of(String type, String tree) {
+				int hash = nullableHash(type);
+				hash = hashStep(hash, tree);
+				return new FallbackFactorFingerprint(hash, type, tree);
+			}
+
+			@Override
+			public int hashCode() {
+				return hash;
+			}
 		}
 	}
 
