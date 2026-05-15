@@ -138,7 +138,8 @@ class LmdbSketchJoinOptimizerTest {
 
 		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
 
-		assertEquals(0, statistics.planningAttempts);
+		assertEquals(1, statistics.planningAttempts,
+				"The optimizer may ask the join-order planner for the full segment before preserving the local order");
 		assertEquals(0, statistics.joinCardinalityRequests);
 		List<TupleExpr> orderedArgs = joinArgs(root.getArg());
 		assertEquals(boundDisease, orderedArgs.get(0));

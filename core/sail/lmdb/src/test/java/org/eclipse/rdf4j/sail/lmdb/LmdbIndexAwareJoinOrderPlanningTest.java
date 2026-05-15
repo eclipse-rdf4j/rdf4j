@@ -29,13 +29,12 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -783,22 +782,33 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				TupleExpr iriFilter = (TupleExpr) connection.prepareTupleQuery(iriTypeFilterQuery())
 						.explain(Explanation.Level.Optimized)
 						.tupleExpr();
-				assertFalse(containsNode(iriFilter, IsURI.class),
-						"Assured IRI object domain should drop tautological isIRI filter option: " + iriFilter);
+				StatementPattern iriPattern = findStatementPatternByPredicate(iriFilter, GUARANTEE_IRI_LEFT)
+						.orElseThrow();
+				assertTrue(iriPattern.getStringMetricPlanned("optimizer.objectGuarantee").contains("IRI"),
+						"Assured IRI object domain should stay attached to the access path: " + iriFilter);
+				assertEquals(40, countResults(connection, iriTypeFilterQuery()),
+						"The retained isIRI filter should preserve the assured IRI results");
 
 				TupleExpr impossibleLiteralFilter = (TupleExpr) connection.prepareTupleQuery(iriAsLiteralFilterQuery())
 						.explain(Explanation.Level.Optimized)
 						.tupleExpr();
-				assertTrue(containsEmptySet(impossibleLiteralFilter),
-						"Assured IRI object domain should select EmptySet for isLiteral: "
+				StatementPattern literalPattern = findStatementPatternByPredicate(impossibleLiteralFilter,
+						GUARANTEE_IRI_LEFT).orElseThrow();
+				assertTrue(literalPattern.getStringMetricPlanned("optimizer.objectGuarantee").contains("IRI"),
+						"Assured IRI object domain should stay attached before the isLiteral filter: "
 								+ impossibleLiteralFilter);
+				assertEquals(0, countResults(connection, iriAsLiteralFilterQuery()),
+						"The retained isLiteral filter should reject the assured IRI results");
 
 				TupleExpr datatypeFilter = (TupleExpr) connection.prepareTupleQuery(intDatatypeFilterQuery())
 						.explain(Explanation.Level.Optimized)
 						.tupleExpr();
-				assertFalse(containsDatatypeFunction(datatypeFilter),
-						"Single xsd:int object domain should drop matching datatype filter option: "
-								+ datatypeFilter);
+				StatementPattern datatypePattern = findStatementPatternByPredicate(datatypeFilter,
+						GUARANTEE_INT_OBJECT).orElseThrow();
+				assertTrue(datatypePattern.getStringMetricPlanned("optimizer.objectGuarantee").contains("INT"),
+						"Single xsd:int object domain should stay attached to the access path: " + datatypeFilter);
+				assertEquals(40, countResults(connection, intDatatypeFilterQuery()),
+						"The retained datatype filter should preserve the assured xsd:int results");
 			}
 		} finally {
 			repository.shutDown();
@@ -1416,6 +1426,17 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		return count;
 	}
 
+	private static int countResults(SailRepositoryConnection connection, String query) {
+		try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			int count = 0;
+			while (result.hasNext()) {
+				result.next();
+				count++;
+			}
+			return count;
+		}
+	}
+
 	private static int countOccurrences(String value, String needle) {
 		int count = 0;
 		int index = 0;
@@ -1469,24 +1490,6 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			public void meet(EmptySet node) {
 				matches.add(node);
 				super.meet(node);
-			}
-		});
-		return !matches.isEmpty();
-	}
-
-	private static boolean containsDatatypeFunction(TupleExpr tupleExpr) {
-		return containsNode(tupleExpr, Datatype.class);
-	}
-
-	private static boolean containsNode(TupleExpr tupleExpr, Class<? extends QueryModelNode> type) {
-		List<QueryModelNode> matches = new ArrayList<>(1);
-		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode node) {
-				if (type.isInstance(node)) {
-					matches.add(node);
-				}
-				super.meetNode(node);
 			}
 		});
 		return !matches.isEmpty();

@@ -221,8 +221,14 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	@Test
-	void canonicalIntPredicateWithSingleXsdIntNarrowsFiniteAnchorToXsdInt(@TempDir File dataDir) throws Exception {
+	void canonicalIntPredicateWithSingleXsdIntUsesGuaranteedDirectLookup(@TempDir File dataDir) throws Exception {
 		IRI predicate = VF.createIRI("http://example.com/value");
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/value> ?o .
+				  FILTER(?o = 7)
+				}
+				""";
 
 		SailRepository repository = repository(dataDir);
 		try {
@@ -231,26 +237,26 @@ class LmdbPredicateObjectDomainIndexTest {
 			}
 			makeLmdbOptimizerReady(repository);
 
-			OptimizerSnapshot snapshot = explainOptimized(repository, """
-					SELECT ?s WHERE {
-					  ?s <http://example.com/value> ?o .
-					  FILTER(?o = 7)
-					}
-					""");
+			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 
-			assertTrue(
-					snapshot.plan.contains("BindingSetAssignment ([[o=\"7\"^^<http://www.w3.org/2001/XMLSchema#int>]]"),
-					snapshot.plan);
-			assertFalse(snapshot.plan.contains("o=\"7\"^^<http://www.w3.org/2001/XMLSchema#integer>"),
-					snapshot.plan);
+			assertTrue(snapshot.plan.contains("plannedIndexAccessMode=directLookup"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
+					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT]"), snapshot.plan);
+			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();
 		}
 	}
 
 	@Test
-	void mixedCanonicalIntegerDatatypesKeepIntegerFamilyFiniteAnchor(@TempDir File dataDir) throws Exception {
+	void mixedCanonicalIntegerDatatypesKeepIntegerFamilyGuarantee(@TempDir File dataDir) throws Exception {
 		IRI predicate = VF.createIRI("http://example.com/value");
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/value> ?o .
+				  FILTER(?o = 7)
+				}
+				""";
 
 		SailRepository repository = repository(dataDir);
 		try {
@@ -267,16 +273,12 @@ class LmdbPredicateObjectDomainIndexTest {
 			}
 			makeLmdbOptimizerReady(repository);
 
-			OptimizerSnapshot snapshot = explainOptimized(repository, """
-					SELECT ?s WHERE {
-					  ?s <http://example.com/value> ?o .
-					  FILTER(?o = 7)
-					}
-					""");
+			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 
-			assertTrue(snapshot.plan.contains("o=\"7\"^^<http://www.w3.org/2001/XMLSchema#int>"), snapshot.plan);
-			assertTrue(snapshot.plan.contains("o=\"7\"^^<http://www.w3.org/2001/XMLSchema#integer>"),
-					snapshot.plan);
+			assertTrue(snapshot.plan.contains("plannedIndexAccessMode=prefixScan"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
+					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT, INTEGER]"), snapshot.plan);
+			assertEquals(2, countResults(repository, query));
 		} finally {
 			repository.shutDown();
 		}
@@ -286,6 +288,12 @@ class LmdbPredicateObjectDomainIndexTest {
 	void booleanPredicateExpandsTrueFilterToBooleanLexicalEquivalents(@TempDir File dataDir) throws Exception {
 		IRI predicate = VF.createIRI("http://example.com/flag");
 		IRI subject = VF.createIRI("http://example.com/s1");
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/flag> ?o .
+				  FILTER(?o = true)
+				}
+				""";
 
 		SailRepository repository = repository(dataDir);
 		try {
@@ -298,26 +306,11 @@ class LmdbPredicateObjectDomainIndexTest {
 			}
 			makeLmdbOptimizerReady(repository);
 
-			OptimizerSnapshot snapshot = explainOptimized(repository, """
-					SELECT ?s WHERE {
-					  ?s <http://example.com/flag> ?o .
-					  FILTER(?o = true)
-					}
-					""");
-			assertTrue(snapshot.plan.contains("o=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"),
-					snapshot.plan);
-			assertTrue(snapshot.plan.contains("o=\"1\"^^<http://www.w3.org/2001/XMLSchema#boolean>"),
-					snapshot.plan);
-
-			try (RepositoryConnection connection = repository.getConnection();
-					TupleQueryResult result = connection.prepareTupleQuery("""
-							SELECT ?s WHERE {
-							  ?s <http://example.com/flag> ?o .
-							  FILTER(?o = true)
-							}
-							""").evaluate()) {
-				assertTrue(result.hasNext());
-			}
+			OptimizerSnapshot snapshot = explainOptimized(repository, query);
+			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
+					+ "LITERAL_WITHOUT_LANGUAGE, BOOLEAN]"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("Compare (=)"), snapshot.plan);
+			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();
 		}
@@ -432,6 +425,18 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	private record OptimizerSnapshot(String plan, String renderedQuery) {
+	}
+
+	private static int countResults(SailRepository repository, String query) {
+		try (RepositoryConnection connection = repository.getConnection();
+				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			int count = 0;
+			while (result.hasNext()) {
+				result.next();
+				count++;
+			}
+			return count;
+		}
 	}
 
 	private static void assertHas(RdfTermDomain guarantee, RdfTermDomain.Fact fact) {

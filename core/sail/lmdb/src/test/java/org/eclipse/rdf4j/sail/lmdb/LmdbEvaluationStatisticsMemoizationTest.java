@@ -263,15 +263,17 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
 					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of(deferredFilter));
 
-			assertEquals(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, attempt.getAlgorithm(),
-					"Deferred filters should make bounded greedy a compared candidate, not the early winner");
+			assertEquals(JoinOrderPlanner.Algorithm.GREEDY, attempt.getAlgorithm(),
+					"Deferred filters may still use bounded greedy when every statement pattern is a direct lookup");
+			assertEquals(0, estimator.dynamicProgrammingAttempts(),
+					"The full planner should not run when bounded greedy has direct lookup evidence");
 			JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
 			String decisionTrace = plan.getSummaryStringMetrics()
 					.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
-			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy comparison");
-			assertTrue(decisionTrace.contains("boundedGreedyCompared=true"), decisionTrace);
-			assertTrue(decisionTrace.contains("boundedGreedyRejectedReason=deferredFilters"), decisionTrace);
-			assertTrue(decisionTrace.contains("pareto-memo selected"), decisionTrace);
+			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy shortcut");
+			assertTrue(decisionTrace.contains("boundedGreedyAcceptedReason=finiteDirectLookup"), decisionTrace);
+			assertTrue(decisionTrace.contains("boundedGreedyComparisonReason=deferredFilters"), decisionTrace);
+			assertTrue(decisionTrace.contains("bounded-greedy selected"), decisionTrace);
 		} finally {
 			estimator.close();
 		}
@@ -394,15 +396,17 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			JoinOrderPlanner.PlanningAttempt attempt = statistics.planJoinOrderAttempt(args, Set.of(),
 					JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, List.of());
 
-			assertEquals(JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, attempt.getAlgorithm(),
-					"Finite assignments should make bounded greedy a compared candidate, not the early winner");
+			assertEquals(JoinOrderPlanner.Algorithm.GREEDY, attempt.getAlgorithm(),
+					"Finite assignments may still use bounded greedy when every statement pattern is a direct lookup");
+			assertEquals(0, estimator.dynamicProgrammingAttempts(),
+					"The full planner should not run when bounded greedy has direct lookup evidence");
 			JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().orElseThrow();
 			String decisionTrace = plan.getSummaryStringMetrics()
 					.get(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE);
-			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy comparison");
-			assertTrue(decisionTrace.contains("boundedGreedyCompared=true"), decisionTrace);
-			assertTrue(decisionTrace.contains("boundedGreedyRejectedReason=finiteAssignments"), decisionTrace);
-			assertTrue(decisionTrace.contains("pareto-memo selected"), decisionTrace);
+			assertNotNull(decisionTrace, "Selected plan should explain the bounded-greedy shortcut");
+			assertTrue(decisionTrace.contains("boundedGreedyAcceptedReason=finiteDirectLookup"), decisionTrace);
+			assertTrue(decisionTrace.contains("boundedGreedyComparisonReason=finiteAssignments"), decisionTrace);
+			assertTrue(decisionTrace.contains("bounded-greedy selected"), decisionTrace);
 		} finally {
 			estimator.close();
 		}

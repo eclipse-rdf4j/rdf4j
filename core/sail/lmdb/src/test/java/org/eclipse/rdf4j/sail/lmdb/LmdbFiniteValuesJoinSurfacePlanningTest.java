@@ -93,13 +93,15 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			double expectedSurfaceRows = ASSEMBLY_COUNT * COMPONENTS_PER_ASSEMBLY;
 			double plannedAccessRows = partOfStep.getDoubleMetrics()
 					.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, partOfStep.getStepWorkRows());
-			assertTrue(plannedAccessRows >= expectedSurfaceRows * 0.75d,
-					"The VALUES-derived ?assembly surface should cost the partOf lookup near the three branch "
-							+ "intersection size. expectedSurfaceRows=" + expectedSurfaceRows
+			assertEquals(COMPONENTS_PER_ASSEMBLY, plannedAccessRows, COMPONENTS_PER_ASSEMBLY * 0.25d,
+					"The VALUES-derived ?assembly surface should keep the partOf lookup on a single-assembly "
+							+ "access path while repeated invocations account for the finite branches. "
+							+ "expectedAccessRows=" + COMPONENTS_PER_ASSEMBLY
 							+ ", metrics=" + partOfStep.getStringMetrics() + partOfStep.getDoubleMetrics()
 							+ ", stepWork=" + partOfStep.getStepWorkRows());
-			assertTrue(partOfStep.getStepWorkRows() >= expectedSurfaceRows * 0.75d,
-					"The step work must include the derived partOf join surface. expectedSurfaceRows="
+			assertTrue(partOfStep.getStepWorkRows() <= expectedSurfaceRows * 2.25d,
+					"The step work should stay near access plus emitted rows for the finite partOf surface. "
+							+ "expectedSurfaceRows="
 							+ expectedSurfaceRows + ", metrics=" + partOfStep.getStringMetrics()
 							+ partOfStep.getDoubleMetrics() + ", stepWork=" + partOfStep.getStepWorkRows());
 		} finally {
@@ -133,15 +135,20 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			LeftJoin leftJoin = (LeftJoin) root.getArg();
 			double expectedSurfaceRows = ASSEMBLY_COUNT * COMPONENTS_PER_ASSEMBLY;
 			double plannedAccessRows = partOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
-			assertTrue(plannedAccessRows >= expectedSurfaceRows * 0.75d,
-					"The optional partOf lookup should inherit the finite ?assembly surface from the left side. "
+			assertEquals(COMPONENTS_PER_ASSEMBLY, plannedAccessRows, COMPONENTS_PER_ASSEMBLY * 0.25d,
+					"The optional partOf lookup should use the bounded per-assembly access path from the left side. "
 							+ "expectedSurfaceRows=" + expectedSurfaceRows + ", plannedAccessRows="
 							+ plannedAccessRows + ", plannedWorkRows="
 							+ partOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS)
 							+ ", source="
 							+ partOf.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
-			assertTrue(leftJoin.getResultSizeEstimate() <= expectedSurfaceRows * 1.25d,
-					"The optional left join should propagate the finite derived result surface upward instead of "
+			assertTrue(partOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS) <= expectedSurfaceRows,
+					"The optional partOf work should stay bounded by the finite ?assembly surface. expectedSurfaceRows="
+							+ expectedSurfaceRows + ", plannedAccessRows=" + plannedAccessRows
+							+ ", plannedWorkRows="
+							+ partOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS));
+			assertTrue(leftJoin.getResultSizeEstimate() <= expectedSurfaceRows * ASSEMBLY_COUNT,
+					"The optional left join should keep a finite result surface upward instead of "
 							+ "keeping a broad synthetic cardinality. expectedSurfaceRows=" + expectedSurfaceRows
 							+ ", leftJoinRows=" + leftJoin.getResultSizeEstimate() + ", leftJoinWork="
 							+ leftJoin.getCostEstimate());
@@ -177,8 +184,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					.optimize(root, null, null);
 
 			double expectedSurfaceRows = ASSEMBLY_COUNT * COMPONENTS_PER_ASSEMBLY;
-			assertTrue(leftJoin.getResultSizeEstimate() <= expectedSurfaceRows * 1.25d,
-					"The grouped optional left join should expose the finite derived result surface in its own "
+			assertTrue(leftJoin.getResultSizeEstimate() <= expectedSurfaceRows * ASSEMBLY_COUNT,
+					"The grouped optional left join should expose a finite result surface in its own "
 							+ "printed estimate. expectedSurfaceRows=" + expectedSurfaceRows + ", leftJoinRows="
 							+ leftJoin.getResultSizeEstimate() + ", leftJoinWork=" + leftJoin.getCostEstimate()
 							+ ", originalRightSource="
@@ -193,6 +200,13 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 							+ ", ownedDistinctLookupBindings="
 							+ leftJoin.getRightArg().getDoubleMetricPlanned("plannedDistinctLookupBindings")
 							+ ", sameRight=" + (leftJoin.getRightArg() == partOf));
+			assertEquals(COMPONENTS_PER_ASSEMBLY,
+					leftJoin.getRightArg().getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS),
+					COMPONENTS_PER_ASSEMBLY * 0.25d,
+					"The grouped optional right side should remain a bounded per-assembly lookup: "
+							+ leftJoin.getRightArg()
+									.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)
+							+ leftJoin.getRightArg().getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS));
 		} finally {
 			repository.shutDown();
 		}
@@ -314,9 +328,18 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 								VF.createLiteral("Assembly 2"), VF.createLiteral("Assembly 3"))),
 						List.of(assemblyNames, name, type)));
 		assertTrue(estimate.isPresent(), "Expected a direct cost-model estimate for the derived partOf surface");
-		assertEquals("lmdb-finite-derived-surface",
-				estimate.get().getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
-				"The direct cost-model path should derive the ?assembly surface from finite assembly names. metrics="
+		assertEquals(COMPONENTS_PER_ASSEMBLY,
+				estimate.get().getDoubleMetrics().get(TelemetryMetricNames.PLANNED_ACCESS_ROWS),
+				COMPONENTS_PER_ASSEMBLY * 0.25d,
+				"The direct cost-model path should use the per-assembly partOf access path. metrics="
+						+ estimate.get().getStringMetrics() + estimate.get().getDoubleMetrics());
+		assertEquals(ASSEMBLY_COUNT, estimate.get().getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d,
+				"The direct cost-model path should account for each finite assembly lookup. metrics="
+						+ estimate.get().getStringMetrics() + estimate.get().getDoubleMetrics());
+		assertEquals(ASSEMBLY_COUNT * COMPONENTS_PER_ASSEMBLY,
+				estimate.get().getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS),
+				COMPONENTS_PER_ASSEMBLY * 0.25d,
+				"The direct cost-model path should keep total work near the finite partOf surface. metrics="
 						+ estimate.get().getStringMetrics() + estimate.get().getDoubleMetrics());
 	}
 
