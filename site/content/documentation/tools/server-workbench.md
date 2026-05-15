@@ -10,12 +10,14 @@ In this chapter, we explain how you can install RDF4J Server (the actual databas
 
 ## Required software
 
-RDF4J Server and RDF4J Workbench requires the following software:
+RDF4J Server and RDF4J Workbench require a Java runtime and a compatible Java Servlet Container. The required versions depend on the RDF4J version you are deploying:
 
-- Java 25 or newer
-- A Java Servlet Container that supports Java Servlet API 3.1 and Java Server Pages (JSP) 2.2, or newer.
+| RDF4J Version | Java Version | Jakarta EE / Javax   | Apache Tomcat | Jetty       |
+|---------------|--------------|----------------------|---------------|-------------|
+| 6.x           | Java 25      | Jakarta EE (> EE 10) | Tomcat 11+    | Jetty 12.1+ |
+| 5.x           | Java 11      | Javax (Java EE)      | Tomcat 9      | Jetty 9     |
 
-We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) (version 9.0) or [Jetty](https://jetty.org) (version 9.4)
+We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) (version 10.0) or [Jetty](https://jetty.org) (version 12.1)
 
 ## Deploying Server and Workbench
 
