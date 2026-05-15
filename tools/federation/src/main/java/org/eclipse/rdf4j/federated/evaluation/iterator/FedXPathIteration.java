@@ -147,7 +147,7 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 		case END:
 			return (v, vp) -> ((ValuePair) vp).endValue = v;
 		default:
-			return (v, vp) -> {
+			return (_, _) -> {
 				throw new IllegalStateException("A value is being asked to be set where we never expected one");
 			};
 		}
@@ -166,7 +166,7 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 		case END:
 			return (vp) -> ((ValuePair) vp).endValue;
 		default:
-			return (vp) -> {
+			return (_) -> {
 				throw new IllegalStateException("A value is being asked to be set where we never expected one");
 			};
 		}
@@ -185,7 +185,7 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 		case END:
 			return (vp) -> ((ValuePair) vp).endValue != null;
 		default:
-			return (vp) -> {
+			return (_) -> {
 				throw new IllegalStateException("A value is being asked to be set where we never expected one");
 			};
 		}

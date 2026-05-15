@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
@@ -266,14 +265,7 @@ public class FedXConnection extends AbstractSailConnection {
 		// execute the union in a separate thread
 		federationContext.getManager().getExecutor().execute(union);
 		CollectionFactory cf = federation.getCollectionFactory().get();
-		ExceptionConvertingIteration<Resource, SailException> conv = new ExceptionConvertingIteration<>(union) {
-
-			@Override
-			protected SailException convert(RuntimeException e) {
-				return new SailException(e);
-			}
-		};
-		return new DistinctIteration<Resource>(conv, cf::createSet) {
+		return new DistinctIteration<Resource>(union, cf::createSet) {
 
 			@Override
 			protected void handleClose() {
@@ -305,36 +297,12 @@ public class FedXConnection extends AbstractSailConnection {
 	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 
-		try {
-			Dataset dataset = new SimpleDataset();
-			FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
-			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
-					dataset);
-			federationContext.getMonitoringService().monitorQuery(queryInfo);
-			CloseableIteration<Statement> res = null;
-			try {
-				res = strategy.getStatements(queryInfo, subj, pred, obj, contexts);
-				return new ExceptionConvertingIteration<>(res) {
-					@Override
-					protected SailException convert(RuntimeException e) {
-						return new SailException(e);
-					}
-				};
-			} catch (Throwable t) {
-				if (res != null) {
-					res.close();
-				}
-				throw t;
-			}
-
-		} catch (RuntimeException e) {
-			throw e;
-		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
-			throw new SailException(e);
-		}
+		Dataset dataset = new SimpleDataset();
+		FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
+		QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
+				dataset);
+		federationContext.getMonitoringService().monitorQuery(queryInfo);
+		return strategy.getStatements(queryInfo, subj, pred, obj, contexts);
 	}
 
 	@Override
