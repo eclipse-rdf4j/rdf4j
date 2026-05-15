@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
@@ -117,16 +116,7 @@ public class SailTripleSource extends TripleSourceBase {
 				repoResult = conn.getStatements(subj, pred, obj,
 						queryInfo.getIncludeInferred(), contexts);
 
-// XXX implementation remark and TODO taken from Sesame
-				// The same variable might have been used multiple times in this
-				// StatementPattern, verify value equality in those cases.
-
-				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
-					@Override
-					protected QueryEvaluationException convert(RuntimeException arg0) {
-						return new QueryEvaluationException(arg0);
-					}
-				});
+				resultHolder.set(repoResult);
 			} catch (Throwable t) {
 				if (repoResult != null) {
 					repoResult.close();

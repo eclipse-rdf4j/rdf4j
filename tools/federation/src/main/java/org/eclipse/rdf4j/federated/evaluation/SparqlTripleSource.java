@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
@@ -191,15 +190,7 @@ public class SparqlTripleSource extends TripleSourceBase {
 			try {
 				repoResult = conn.getStatements(subj, pred, obj,
 						queryInfo.getIncludeInferred(), contexts);
-				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
-					@Override
-					protected QueryEvaluationException convert(RuntimeException ex) {
-						if (ex instanceof QueryEvaluationException) {
-							return (QueryEvaluationException) ex;
-						}
-						return new QueryEvaluationException(ex);
-					}
-				});
+				resultHolder.set(repoResult);
 			} catch (Throwable t) {
 				if (repoResult != null) {
 					repoResult.close();
