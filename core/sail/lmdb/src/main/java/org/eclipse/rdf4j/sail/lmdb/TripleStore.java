@@ -31,6 +31,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
@@ -76,7 +77,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.function.Consumer;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
@@ -124,6 +124,8 @@ class TripleStore implements Closeable {
 	 */
 	private static final String DEFAULT_INDEXES = "spoc,posc";
 	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
+	private static final String STATEMENT_FINGERPRINT_DB = "statement-fingerprint";
+	private static final byte STATEMENT_FINGERPRINT_KEY = 1;
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -145,6 +147,7 @@ class TripleStore implements Closeable {
 
 	private long env;
 	private final int contextsDbi;
+	private final int statementFingerprintDbi;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -161,6 +164,7 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixOffsets = new int[256];
 
 	private TxnRecordCache recordCache = null;
+	private StatementFingerprintCommitter statementFingerprintCommitter = null;
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this(dir, new StoreProperties(dir), config, valueStore);
@@ -184,8 +188,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 49));
+		// 1 for contexts, 1 for metadata, 48 for all possible triple indexes (24 explicit + 24 inferred)
+		E(mdb_env_set_maxdbs(env, 50));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -203,6 +207,13 @@ class TripleStore implements Closeable {
 			IntBuffer ip = stack.mallocInt(1);
 			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
 				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
+			}
+			return ip.get(0);
+		});
+		statementFingerprintDbi = transaction(env, (stack, txn) -> {
+			IntBuffer ip = stack.mallocInt(1);
+			if (mdb_dbi_open(txn, STATEMENT_FINGERPRINT_DB, 0, ip) == MDB_NOTFOUND) {
+				E(mdb_dbi_open(txn, STATEMENT_FINGERPRINT_DB, MDB_CREATE, ip));
 			}
 			return ip.get(0);
 		});
@@ -674,6 +685,51 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	LmdbStatementFingerprint readStatementFingerprint() throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(1);
+			keyBuf.put(STATEMENT_FINGERPRINT_KEY);
+			keyVal.mv_data(keyBuf.flip());
+			keyVal.mv_size(1);
+
+			MDBVal dataVal = MDBVal.malloc(stack);
+			int rc = mdb_get(txn, statementFingerprintDbi, keyVal, dataVal);
+			if (rc == MDB_NOTFOUND) {
+				return null;
+			}
+			E(rc);
+			ByteBuffer data = Objects.requireNonNull(dataVal.mv_data()).duplicate();
+			return LmdbStatementFingerprint.readFrom(data);
+		});
+	}
+
+	void writeStatementFingerprintCurrentTransaction(LmdbStatementFingerprint fingerprint) throws IOException {
+		writeStatementFingerprint(writeTxn, fingerprint);
+	}
+
+	void writeStatementFingerprint(long txn, LmdbStatementFingerprint fingerprint) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(1);
+			keyBuf.put(STATEMENT_FINGERPRINT_KEY);
+			keyVal.mv_data(keyBuf.flip());
+			keyVal.mv_size(1);
+
+			MDBVal dataVal = MDBVal.malloc(stack);
+			ByteBuffer dataBuf = stack.malloc(LmdbStatementFingerprint.ENCODED_LENGTH);
+			LmdbStatementFingerprint.writeTo(dataBuf, fingerprint);
+			dataVal.mv_size(LmdbStatementFingerprint.ENCODED_LENGTH);
+			E(mdb_put(txn, statementFingerprintDbi, keyVal, dataVal, MDB_RESERVE));
+			dataVal.mv_data().put(dataBuf.flip());
+
+		}
+	}
+
+	void setStatementFingerprintCommitter(StatementFingerprintCommitter statementFingerprintCommitter) {
+		this.statementFingerprintCommitter = statementFingerprintCommitter;
+	}
+
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
@@ -1040,8 +1096,14 @@ class TripleStore implements Closeable {
 	int localCount = 0;
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		return storeTripleWithResult(subj, pred, obj, context, explicit).isAdded();
+	}
+
+	StatementWriteResult storeTripleWithResult(long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
 		TripleIndex mainIndex = indexes.get(0);
 		boolean stAdded;
+		boolean foundImplicit = false;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack);
 			// use calloc to get an empty data value
@@ -1063,15 +1125,19 @@ class TripleStore implements Closeable {
 				long[] quad = new long[] { subj, pred, obj, context };
 				boolean mainExplicitExists = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == MDB_SUCCESS;
 				boolean mainInferredExists = mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
+				boolean promotedFromInferred = false;
 				if (explicit) {
 					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
 					if (inferredCacheState == TxnRecordCache.RecordState.ADD
 							|| inferredCacheState == TxnRecordCache.RecordState.ABSENT && mainInferredExists) {
 						recordCache.removeRecord(quad, false, true);
+						promotedFromInferred = true;
 					}
 				}
 				// put record in cache and return immediately
-				return recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
+				boolean added = recordCache.storeRecord(quad, explicit,
+						explicit ? !mainExplicitExists : !mainInferredExists);
+				return new StatementWriteResult(added, promotedFromInferred);
 			}
 
 			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
@@ -1081,7 +1147,6 @@ class TripleStore implements Closeable {
 
 			stAdded = rc == MDB_SUCCESS;
 
-			boolean foundImplicit = false;
 			if (explicit && stAdded) {
 				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
 			}
@@ -1108,7 +1173,10 @@ class TripleStore implements Closeable {
 
 		logAddedStatements(stAdded ? 1 : 0);
 
-		return stAdded;
+		if (!stAdded && !foundImplicit) {
+			return StatementWriteResult.UNCHANGED;
+		}
+		return new StatementWriteResult(stAdded, foundImplicit);
 	}
 
 	@Experimental
@@ -1509,12 +1577,12 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
-			boolean explicit, Consumer<long[]> handler) throws IOException {
+			boolean explicit, QuadConsumer handler) throws IOException {
 		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
 		removeTriples(records, explicit, handler);
 	}
 
-	public void removeTriples(RecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
+	public void removeTriples(RecordIterator it, boolean explicit, QuadConsumer handler) throws IOException {
 		try (it; MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyValue = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
@@ -1530,8 +1598,9 @@ class TripleStore implements Closeable {
 					}
 				}
 				if (recordCache != null) {
-					recordCache.removeRecord(quad, explicit, true);
-					handler.accept(quad);
+					if (recordCache.removeRecord(quad, explicit, true)) {
+						handler.accept(quad);
+					}
 					continue;
 				}
 
@@ -1549,6 +1618,12 @@ class TripleStore implements Closeable {
 				handler.accept(quad);
 			}
 		}
+	}
+
+	@FunctionalInterface
+	interface QuadConsumer {
+
+		void accept(long[] quad) throws IOException;
 	}
 
 	protected void updateFromCache() throws IOException {
@@ -1617,10 +1692,18 @@ class TripleStore implements Closeable {
 	 */
 	void endTransaction(boolean commit) throws IOException {
 		if (writeTxn != 0) {
+			StatementFingerprintCommitter committer = statementFingerprintCommitter;
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
 					try {
+						if (committer != null) {
+							if (recordCache != null) {
+								committer.writeDirty(writeTxn);
+							} else {
+								committer.writeClean(writeTxn);
+							}
+						}
 						E(mdb_txn_commit(writeTxn));
 						if (recordCache != null) {
 							StampedLongAdderLockManager lockManager = txnManager.lockManager();
@@ -1642,6 +1725,9 @@ class TripleStore implements Closeable {
 									writeTxn = pp.get(0);
 								}
 								updateFromCache();
+								if (committer != null) {
+									committer.writeClean(writeTxn);
+								}
 								// finally, commit write transaction
 								E(mdb_txn_commit(writeTxn));
 							} finally {
@@ -1657,15 +1743,25 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
+						if (committer != null) {
+							committer.committed();
+						}
 					} catch (IOException e) {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
+						if (committer != null) {
+							committer.rolledBack();
+						}
 						throw e;
 					}
 				} else {
 					mdb_txn_abort(writeTxn);
+					if (committer != null) {
+						committer.rolledBack();
+					}
 				}
 			} finally {
+				statementFingerprintCommitter = null;
 				writeTxn = 0;
 				// ensure that record cache is always reset
 				if (recordCache != null) {
@@ -1677,6 +1773,17 @@ class TripleStore implements Closeable {
 				}
 			}
 		}
+	}
+
+	interface StatementFingerprintCommitter {
+
+		void writeDirty(long txn) throws IOException;
+
+		void writeClean(long txn) throws IOException;
+
+		void committed();
+
+		void rolledBack();
 	}
 
 	public void commit() throws IOException {

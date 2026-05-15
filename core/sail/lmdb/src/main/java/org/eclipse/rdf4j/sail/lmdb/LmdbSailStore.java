@@ -65,6 +65,7 @@ class LmdbSailStore implements SailStore {
 	private final TripleStore tripleStore;
 
 	private final ValueStore valueStore;
+	private final StatementFingerprintTracker statementFingerprint;
 	private final int bulkOperationSize;
 
 	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
@@ -142,6 +143,7 @@ class LmdbSailStore implements SailStore {
 	class AddQuadOperation implements Operation {
 		long s, p, o, c;
 		boolean explicit;
+		StatementFingerprintTracker.StatementHash statementHash;
 
 		@Override
 		public void execute() throws IOException {
@@ -155,7 +157,12 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(o);
 				unusedIds.remove(c);
 			}
-			tripleStore.storeTriple(s, p, o, c, explicit);
+			if (statementFingerprint == null) {
+				tripleStore.storeTriple(s, p, o, c, explicit);
+				return;
+			}
+			StatementWriteResult result = tripleStore.storeTripleWithResult(s, p, o, c, explicit);
+			recordStatementAdd(s, p, o, c, statementHash, explicit, result);
 		}
 	}
 
@@ -164,6 +171,7 @@ class LmdbSailStore implements SailStore {
 		final long[] predicates;
 		final long[] objects;
 		final long[] contexts;
+		final StatementFingerprintTracker.StatementHash[] statementHashes;
 		final boolean explicit;
 		final int capacity;
 		int size;
@@ -175,6 +183,8 @@ class LmdbSailStore implements SailStore {
 			this.predicates = new long[capacity];
 			this.objects = new long[capacity];
 			this.contexts = new long[capacity];
+			this.statementHashes = statementFingerprint == null ? null
+					: new StatementFingerprintTracker.StatementHash[capacity];
 		}
 
 		void add(long subject, long predicate, long object, long context) {
@@ -205,6 +215,16 @@ class LmdbSailStore implements SailStore {
 					unusedIds.remove(objects[i]);
 					unusedIds.remove(contexts[i]);
 				}
+			}
+			if (statementFingerprint != null) {
+				for (int i = 0; i < size; i++) {
+					StatementWriteResult result = tripleStore.storeTripleWithResult(subjects[i], predicates[i],
+							objects[i],
+							contexts[i], explicit);
+					recordStatementAdd(subjects[i], predicates[i], objects[i], contexts[i],
+							statementHashes == null ? null : statementHashes[i], explicit, result);
+				}
+				return;
 			}
 			if (size < capacity) {
 				for (int i = 0; i < size; i++) {
@@ -257,13 +277,77 @@ class LmdbSailStore implements SailStore {
 			namespaceStore = new NamespaceStore(dataDir);
 			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
+			boolean newStore = !properties.isLoaded();
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
+			statementFingerprint = config.getStatementFingerprintEnabled()
+					? new StatementFingerprintTracker(tripleStore, valueStore, newStore)
+					: null;
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
 		} finally {
 			if (!initialized) {
 				close();
 			}
+		}
+	}
+
+	LmdbStatementFingerprint getStatementFingerprint() {
+		return statementFingerprint == null ? LmdbStatementFingerprint.unavailable() : statementFingerprint.snapshot();
+	}
+
+	void rebuildStatementFingerprint() throws IOException {
+		if (statementFingerprint == null) {
+			return;
+		}
+		sinkStoreAccessLock.lock();
+		try {
+			if (storeTxnStarted.get()) {
+				throw new IOException("Cannot rebuild LMDB statement fingerprint while a write transaction is active");
+			}
+			statementFingerprint.rebuild();
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	private StatementFingerprintTracker.StatementHash statementHash(long subjId, Resource subj, long predId, IRI pred,
+			long objId, Value obj, long contextId, Resource context) {
+		return statementFingerprint == null ? null
+				: statementFingerprint.statementHash(subjId, subj, predId, pred, objId, obj, contextId, context);
+	}
+
+	private void recordStatementAdd(long subj, long pred, long obj, long context,
+			StatementFingerprintTracker.StatementHash statementHash, boolean explicit,
+			StatementWriteResult result) throws IOException {
+		if (statementFingerprint != null) {
+			if (statementHash == null) {
+				statementFingerprint.recordAdd(subj, pred, obj, context, explicit, result);
+			} else {
+				statementFingerprint.recordAdd(statementHash, explicit, result);
+			}
+		}
+	}
+
+	private void recordStatementRemove(long[] quad, boolean explicit) throws IOException {
+		if (statementFingerprint != null) {
+			statementFingerprint.recordRemove(quad, explicit);
+		}
+	}
+
+	private void prepareStatementFingerprintCommit() {
+		if (statementFingerprint == null) {
+			return;
+		}
+		TripleStore.StatementFingerprintCommitter committer = statementFingerprint.prepareCommitter();
+		if (committer != null) {
+			tripleStore.setStatementFingerprintCommitter(committer);
+		}
+	}
+
+	private void rollbackStatementFingerprint() {
+		tripleStore.setStatementFingerprintCommitter(null);
+		if (statementFingerprint != null) {
+			statementFingerprint.rollback();
 		}
 	}
 
@@ -289,6 +373,7 @@ class LmdbSailStore implements SailStore {
 				} else {
 					tripleStore.rollback();
 				}
+				rollbackStatementFingerprint();
 			}
 		} catch (Exception e) {
 			logger.warn("Failed to rollback LMDB transaction", e);
@@ -568,6 +653,7 @@ class LmdbSailStore implements SailStore {
 					}
 					if (activeTxn) {
 						if (!multiThreadingActive) {
+							prepareStatementFingerprintCommit();
 							tripleStore.commit();
 							filterUsedIdsInTripleStore();
 						}
@@ -701,6 +787,11 @@ class LmdbSailStore implements SailStore {
 						}
 						bulk.contexts[batchIndex] = contextId;
 					}
+					if (bulk.statementHashes != null) {
+						bulk.statementHashes[batchIndex] = statementHash(bulk.subjects[batchIndex], subj,
+								bulk.predicates[batchIndex], pred, bulk.objects[batchIndex], obj,
+								bulk.contexts[batchIndex], context);
+					}
 
 					if (bulk.isFull()) {
 						submitOperation(bulk);
@@ -793,6 +884,7 @@ class LmdbSailStore implements SailStore {
 						q.c = contextId;
 					}
 					q.explicit = explicit;
+					q.statementHash = statementHash(q.s, subj, q.p, pred, q.o, obj, q.c, context);
 
 					if (multiThreadingActive) {
 						while (!opQueue.add(q)) {
@@ -855,6 +947,7 @@ class LmdbSailStore implements SailStore {
 												Operation op = opQueue.remove();
 												if (op != null) {
 													if (op == COMMIT_TRANSACTION) {
+														prepareStatementFingerprintCommit();
 														tripleStore.commit();
 														filterUsedIdsInTripleStore();
 
@@ -863,6 +956,7 @@ class LmdbSailStore implements SailStore {
 														break;
 													} else if (op == ROLLBACK_TRANSACTION) {
 														tripleStore.rollback();
+														rollbackStatementFingerprint();
 														nextTransactionAsync = false;
 														asyncTransactionFinished = true;
 														break;
@@ -936,6 +1030,7 @@ class LmdbSailStore implements SailStore {
 				q.o = valueStore.storeValue(obj);
 				q.c = context == null ? 0 : valueStore.storeValue(context);
 				q.explicit = explicit;
+				q.statementHash = statementHash(q.s, subj, q.p, pred, q.o, obj, q.c, context);
 
 				submitOperation(q);
 			} catch (IOException e) {
@@ -977,6 +1072,7 @@ class LmdbSailStore implements SailStore {
 			for (long contextId : contexts) {
 				tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 					removeCount[0]++;
+					recordStatementRemove(quad, explicit);
 					for (long id : quad) {
 						if (id != 0L && !ValueIds.isInlined(id)) {
 							// only add references, exclude inlined values

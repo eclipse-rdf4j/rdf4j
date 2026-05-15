@@ -113,8 +113,8 @@ final class TxnRecordCache {
 		return update(quad, explicit, OP_ADD, contextDelta);
 	}
 
-	protected void removeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
-		update(quad, explicit, OP_REMOVE, contextDelta);
+	protected boolean removeRecord(long[] quad, boolean explicit, boolean contextDelta) throws IOException {
+		return update(quad, explicit, OP_REMOVE, contextDelta);
 	}
 
 	protected RecordState getRecordState(long[] quad, boolean explicit) throws IOException {
@@ -173,9 +173,12 @@ final class TxnRecordCache {
 				}
 				return !found;
 			} else {
-				if (foundExplicit && explicit || foundImplicit && !explicit) {
+				RecordState requestedState = getRecordState(quad, explicit);
+				if (requestedState == RecordState.ADD) {
 					// simply delete quad from cache
 					E(mdb_del(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal));
+				} else if (requestedState == RecordState.REMOVE) {
+					return false;
 				} else {
 					// mark as remove
 					dataVal.mv_data(stack.bytes(encode(operation, contextDelta)));
