@@ -96,7 +96,7 @@ public abstract class FedXBaseTest {
 			// Some query results will automatically close themselves when they are exhausted. To properly test that
 			// query results are closed correctly we need to evaluate the query without retrieving any elements.
 			if (doubleCheckClose) {
-				try (TupleQueryResult evaluate = ((TupleQuery) query).evaluate()) {
+				try (TupleQueryResult _ = ((TupleQuery) query).evaluate()) {
 					// do nothing
 				}
 			}

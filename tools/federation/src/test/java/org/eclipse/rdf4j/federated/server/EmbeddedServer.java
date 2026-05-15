@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Paths;
 
+import org.eclipse.jetty.ee.webapp.WebAppClassLoading;
 import org.eclipse.jetty.ee11.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
@@ -51,7 +52,7 @@ public class EmbeddedServer {
 		jetty.addConnector(conn);
 
 		WebAppContext webapp = new WebAppContext();
-		WebAppContext.addServerClasses(jetty, "org.slf4j.", "ch.qos.logback.");
+		WebAppClassLoading.addProtectedClasses(jetty, "org.slf4j.", "ch.qos.logback.");
 		webapp.setContextPath(contextPath);
 		webapp.setTempDirectory(new File("temp/webapp/"));
 		webapp.setWar(warPath);
