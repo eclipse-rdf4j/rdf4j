@@ -391,7 +391,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		SketchBasedJoinEstimator.Config defaults = SketchBasedJoinEstimator.Config.defaults();
 		assertEquals(64, defaults.zeroIntersectionExactDistinctLimit);
 		assertEquals(128.0d, defaults.zeroIntersectionSkewRatio, 0.0d);
-		assertEquals(1_000_000L, defaults.zeroIntersectionRowBudget);
+		assertEquals(4096L, defaults.zeroIntersectionRowBudget);
 		assertEquals(128, defaults.zeroIntersectionSampleSize);
 
 		SketchBasedJoinEstimator.Config configured = SketchBasedJoinEstimator.Config.defaults()

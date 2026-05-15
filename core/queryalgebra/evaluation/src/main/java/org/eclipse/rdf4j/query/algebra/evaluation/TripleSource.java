@@ -105,15 +105,7 @@ public interface TripleSource extends AvailableStatementOrder {
 	 */
 	default long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws QueryEvaluationException {
-		long count = 0;
-		try (CloseableIteration<? extends Statement> statements = getStatements(statementPattern, subj, pred, obj,
-				contexts)) {
-			while (statements.hasNext()) {
-				statements.next();
-				count++;
-			}
-		}
-		return count;
+		return getStatementCount(subj, pred, obj, contexts);
 	}
 
 	/**
