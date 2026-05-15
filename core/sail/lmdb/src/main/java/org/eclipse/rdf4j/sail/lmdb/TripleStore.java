@@ -2156,7 +2156,12 @@ public class TripleStore implements Closeable {
 		endTransaction(false);
 	}
 
-	interface KeyBuilder {
+	/**
+	 * Public for LMDB generated operators only. This is not a stable RDF4J application API.
+	 */
+	@Experimental
+	@InternalUseOnly
+	public interface KeyBuilder {
 		void writeMin(ByteBuffer buffer);
 
 		void writeMax(ByteBuffer buffer);
@@ -2167,7 +2172,12 @@ public class TripleStore implements Closeable {
 		int score(long subj, long pred, long obj, long context);
 	}
 
-	class TripleIndex {
+	/**
+	 * Public for LMDB generated operators only. This is not a stable RDF4J application API.
+	 */
+	@Experimental
+	@InternalUseOnly
+	public class TripleIndex {
 
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;
@@ -2250,7 +2260,7 @@ public class TripleStore implements Closeable {
 			return patternScoreFunction.score(subj, pred, obj, context);
 		}
 
-		KeyBuilder keyBuilder(long subj, long pred, long obj, long context) {
+		public KeyBuilder keyBuilder(long subj, long pred, long obj, long context) {
 			return new KeyBuilder() {
 
 				@Override
@@ -2266,7 +2276,7 @@ public class TripleStore implements Closeable {
 			};
 		}
 
-		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+		public void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
 				long prevObj, long prevContext) {
 			subj = subj <= 0 ? 0 : subj;
 			pred = pred <= 0 ? 0 : pred;
@@ -2280,7 +2290,7 @@ public class TripleStore implements Closeable {
 			toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 		}
 
-		void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+		public void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
 				long prevObj, long prevContext) {
 			subj = subj <= 0 ? Long.MAX_VALUE : subj;
 			pred = pred <= 0 ? Long.MAX_VALUE : pred;
@@ -2296,7 +2306,7 @@ public class TripleStore implements Closeable {
 			toKey(bb, subj, pred, obj, context, prevSubjNorm, prevPredNorm, prevObjNorm, prevContextNorm);
 		}
 
-		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
+		public GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
 			int length = getLength(subj, pred, obj, context);
 
 			ByteBuffer bb = ByteBuffer.allocate(length);
@@ -2326,11 +2336,11 @@ public class TripleStore implements Closeable {
 			return length;
 		}
 
-		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		public void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
 			toKey(bb, subj, pred, obj, context, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID, NO_PREVIOUS_ID);
 		}
 
-		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
+		public void toKey(ByteBuffer bb, long subj, long pred, long obj, long context, long prevSubj, long prevPred,
 				long prevObj, long prevContext) {
 
 			boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
@@ -2353,11 +2363,11 @@ public class TripleStore implements Closeable {
 					prevContext);
 		}
 
-		void keyToQuad(ByteBuffer key, long[] quad) {
+		public void keyToQuad(ByteBuffer key, long[] quad) {
 			readQuadUnsigned(key, indexMap, quad);
 		}
 
-		void keyToQuad(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
+		public void keyToQuad(ByteBuffer key, long subj, long pred, long obj, long context, long[] quad) {
 			keyReader.read(key, subj, pred, obj, context, quad);
 		}
 

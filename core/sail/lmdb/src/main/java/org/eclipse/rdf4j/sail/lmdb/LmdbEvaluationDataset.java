@@ -148,6 +148,18 @@ public interface LmdbEvaluationDataset {
 				bindingReuse, quadReuse);
 	}
 
+	@InternalUseOnly
+	default RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,
+			RecordIterator iteratorReuse, LmdbIdPredicatePlan predicatePlan)
+			throws QueryEvaluationException {
+		if (predicatePlan == null) {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+					bindingReuse, quadReuse, iteratorReuse);
+		}
+		return null;
+	}
+
 	/**
 	 * Create an ordered {@link RecordIterator} for the supplied pattern expressed via internal IDs and binding indexes.
 	 * Implementations may fall back to the unordered iterator when the requested order is unsupported.

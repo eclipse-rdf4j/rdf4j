@@ -2116,6 +2116,16 @@ class LmdbSailStore implements SailStore {
 				long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
 				RecordIterator iteratorReuse)
 				throws QueryEvaluationException {
+			return getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers, reuse,
+					quadReuse, iteratorReuse, null);
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex,
+				long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
+				RecordIterator iteratorReuse, LmdbIdPredicatePlan predicatePlan)
+				throws QueryEvaluationException {
 			try {
 				long subjQuery = selectQueryId(patternIds[TripleStore.SUBJ_IDX], binding, subjIndex);
 				long predQuery = selectQueryId(patternIds[TripleStore.PRED_IDX], binding, predIndex);
@@ -2163,6 +2173,19 @@ class LmdbSailStore implements SailStore {
 							baseIterator.close();
 						}
 					};
+				}
+
+				RecordIterator generated = predicatePlan == null
+						? LmdbGeneratedRecordIteratorFactory.tryCreateProjectionIterator(raw, binding, subjIndex,
+								predIndex, objIndex, ctxIndex, reuse)
+						: LmdbGeneratedRecordIteratorFactory.tryCreateFilteredProjectionIterator(raw, binding,
+								subjIndex, predIndex, objIndex, ctxIndex, predicatePlan, reuse);
+				if (generated != null) {
+					return generated;
+				}
+				if (predicatePlan != null) {
+					raw.close();
+					return null;
 				}
 
 				BindingProjectingIterator result = projectingReuse != null ? projectingReuse
