@@ -49,8 +49,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <p>
  * Notes:
  *
- * - currently requires to manually set SPARQLServerBaseTest.MAX_ENDPOINTS to 20 - requires to remove the "Disabled"
- * annotation
+ * requires to remove the "Disabled" annotation
  * </p>
  *
  * <pre>
@@ -111,6 +110,11 @@ public class SourceSelectionPerformanceTest extends SPARQLBaseTest {
 
 		// optionally force ASK queries
 		// fedxRule.withConfiguration(c -> c.withEnableGroupedSourceSelection(false));
+	}
+
+	@Override
+	protected int getMaxEndpoints() {
+		return 20;
 	}
 
 	/**
