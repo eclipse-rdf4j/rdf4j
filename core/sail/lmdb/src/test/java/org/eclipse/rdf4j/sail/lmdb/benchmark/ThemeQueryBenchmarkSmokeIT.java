@@ -86,6 +86,16 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void executeQueryVerifiesExpectedCountBindingForPharmaQueryZero() throws Exception {
+		assertThemeQueryCount(Theme.PHARMA, 0);
+	}
+
+	@Test
+	void catalogRecordsExpectedCountBindingForPharmaQueryZero() {
+		assertEquals(18L, ThemeQueryCatalog.expectedCountBindingValueFor(Theme.PHARMA, 0).orElseThrow());
+	}
+
+	@Test
 	void executeQueryReturnsExpectedCountForPharmaQueryTwo() throws Exception {
 		assertThemeQueryCount(Theme.PHARMA, 2);
 	}

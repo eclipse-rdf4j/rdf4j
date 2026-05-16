@@ -19,6 +19,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -96,6 +98,7 @@ public class ThemeQueryBenchmark {
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String COUNT_BINDING_NAME = "count";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
@@ -177,20 +180,58 @@ public class ThemeQueryBenchmark {
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
 			long count;
+			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
+					z_queryIndex);
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setMaxExecutionTime(70);
 			try (var evaluate = tupleQuery.evaluate()) {
-				count = evaluate
-						.stream()
-						.count();
+				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
 			}
 
 			if (count != expected) {
-				throw new IllegalStateException("Unexpected count: expected " + expected + " but got " + count);
+				throw new IllegalStateException(
+						"Unexpected result row count for " + queryDescription() + ": expected " + expected
+								+ " but got " + count);
 			}
 
 			return count;
 		}
+	}
+
+	private long countRowsAndVerifyCountBinding(TupleQueryResult evaluate, OptionalLong expectedCountBindingValue) {
+		long count = 0;
+		while (evaluate.hasNext()) {
+			var bindingSet = evaluate.next();
+			count++;
+			if (expectedCountBindingValue.isPresent()) {
+				if (count > 1) {
+					throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
+							+ " but saw at least " + count + " rows");
+				}
+				var value = bindingSet.getValue(COUNT_BINDING_NAME);
+				if (!(value instanceof Literal literal)) {
+					throw new IllegalStateException("Expected literal ?" + COUNT_BINDING_NAME + " binding for "
+							+ queryDescription() + " but got " + value);
+				}
+				long actualCountBindingValue = literal.longValue();
+				long expectedValue = expectedCountBindingValue.getAsLong();
+				if (actualCountBindingValue != expectedValue) {
+					throw new IllegalStateException("Unexpected ?" + COUNT_BINDING_NAME + " binding for "
+							+ queryDescription() + ": expected " + expectedValue + " but got "
+							+ actualCountBindingValue);
+				}
+			}
+		}
+		if (expectedCountBindingValue.isPresent() && count == 0) {
+			throw new IllegalStateException("Expected exactly one count row for " + queryDescription()
+					+ " but query returned no rows");
+		}
+		return count;
+	}
+
+	private String queryDescription() {
+		return themeName + " query " + z_queryIndex + " ("
+				+ ThemeQueryCatalog.benchmarkQueryFor(theme, z_queryIndex).getName() + ")";
 	}
 
 	private void ensureDataLoadedAndValidated() throws IOException {
