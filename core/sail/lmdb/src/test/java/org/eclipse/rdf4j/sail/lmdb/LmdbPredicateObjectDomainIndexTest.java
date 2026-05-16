@@ -16,12 +16,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -31,12 +36,93 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbPredicateObjectDomainIndexTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	private static final IRI PREDICATE_GUARANTEE_INDEX_ENABLED = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexEnabled");
+
+	private static final IRI PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexAutoRebuild");
+
+	private static final IRI PREDICATE_GUARANTEE_EXCLUDED_PREDICATES = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeExcludedPredicates");
+
+	@Test
+	void predicateGuaranteeIndexCanBeDisabled(@TempDir File dataDir) {
+		IRI predicate = VF.createIRI("http://example.com/value");
+		IRI subject = VF.createIRI("http://example.com/s1");
+		LmdbStoreConfig config = configWith(PREDICATE_GUARANTEE_INDEX_ENABLED, VF.createLiteral(false));
+
+		SailRepository repository = repository(dataDir, config);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(subject, predicate, VF.createLiteral("7", XSD.INT));
+			}
+
+			assertFalse(knownGuarantee(repository, predicate).isPresent());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void predicateGuaranteeIndexSkipsExcludedPredicates(@TempDir File dataDir) {
+		IRI excludedPredicate = VF.createIRI("http://example.com/excluded");
+		IRI trackedPredicate = VF.createIRI("http://example.com/tracked");
+		IRI subject = VF.createIRI("http://example.com/s1");
+		LmdbStoreConfig config = configWith(PREDICATE_GUARANTEE_EXCLUDED_PREDICATES,
+				VF.createLiteral(excludedPredicate.stringValue()));
+
+		SailRepository repository = repository(dataDir, config);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(subject, excludedPredicate, VF.createLiteral("7", XSD.INT));
+				connection.add(subject, trackedPredicate, VF.createLiteral("8", XSD.INT));
+			}
+
+			assertFalse(knownGuarantee(repository, excludedPredicate).isPresent());
+			assertHas(knownGuarantee(repository, trackedPredicate).orElseThrow(), RdfTermDomain.Fact.CANONICAL_INTEGER);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void predicateGuaranteeStartupRebuildCanBeDisabled(@TempDir File dataDir) {
+		IRI predicate = VF.createIRI("http://example.com/value");
+		IRI canonicalSubject = VF.createIRI("http://example.com/s1");
+		IRI nonCanonicalSubject = VF.createIRI("http://example.com/s2");
+		Literal canonical = VF.createLiteral("7", XSD.INT);
+		Literal leadingZero = VF.createLiteral("007", XSD.INT);
+
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(canonicalSubject, predicate, canonical);
+				connection.add(nonCanonicalSubject, predicate, leadingZero);
+				connection.remove(nonCanonicalSubject, predicate, leadingZero);
+			}
+			assertFalse(guarantee(repository, predicate).has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = repository(dataDir,
+				configWith(PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, VF.createLiteral(false)));
+		try {
+			RdfTermDomain guarantee = guarantee(reopened, predicate);
+			assertHas(guarantee, RdfTermDomain.Fact.NUMBER);
+			assertFalse(guarantee.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+		} finally {
+			reopened.shutDown();
+		}
+	}
 
 	@Test
 	void rebuildsDegradedGuaranteeOnRestartAfterPotentiallyRestoringDelete(@TempDir File dataDir) {
@@ -389,19 +475,40 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	private static SailRepository repository(File dataDir) {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-				.setOptimizerSamplingEnabled(false)
-				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		return repository(dataDir, baseConfig());
+	}
+
+	private static SailRepository repository(File dataDir, LmdbStoreConfig config) {
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		repository.init();
 		return repository;
 	}
 
+	private static LmdbStoreConfig baseConfig() {
+		return new LmdbStoreConfig("spoc,posc")
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+	}
+
+	private static LmdbStoreConfig configWith(IRI property, Literal value) {
+		Resource implNode = VF.createBNode();
+		Model configModel = new ModelBuilder()
+				.add(implNode, property, value)
+				.build();
+		LmdbStoreConfig config = baseConfig();
+		config.parse(configModel, implNode);
+		return config;
+	}
+
 	private static RdfTermDomain guarantee(SailRepository repository, IRI predicate) {
+		return knownGuarantee(repository, predicate).orElse(RdfTermDomain.UNRESTRICTED);
+	}
+
+	private static Optional<RdfTermDomain> knownGuarantee(SailRepository repository, IRI predicate) {
 		LmdbStore sail = (LmdbStore) repository.getSail();
 		LmdbPredicateObjectDomainSource source = (LmdbPredicateObjectDomainSource) sail.getBackingStore()
 				.getEvaluationStatistics();
-		return source.getRdfTermDomain(predicate);
+		return source.getKnownRdfTermDomain(predicate);
 	}
 
 	private static void makeLmdbOptimizerReady(SailRepository repository) throws InterruptedException {

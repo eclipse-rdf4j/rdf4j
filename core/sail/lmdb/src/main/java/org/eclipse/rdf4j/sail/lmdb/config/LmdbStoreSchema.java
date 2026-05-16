@@ -124,6 +124,12 @@ public class LmdbStoreSchema {
 
 	public final static IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
 
+	public final static IRI PREDICATE_GUARANTEE_INDEX_ENABLED;
+
+	public final static IRI PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD;
+
+	public final static IRI PREDICATE_GUARANTEE_EXCLUDED_PREDICATES;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#inlineLiterals</tt>
 	 */
@@ -160,6 +166,11 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "backgroundRawSamplingEnabled");
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
+		PREDICATE_GUARANTEE_INDEX_ENABLED = factory.createIRI(NAMESPACE, "predicateGuaranteeIndexEnabled");
+		PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD = factory.createIRI(NAMESPACE,
+				"predicateGuaranteeIndexAutoRebuild");
+		PREDICATE_GUARANTEE_EXCLUDED_PREDICATES = factory.createIRI(NAMESPACE,
+				"predicateGuaranteeExcludedPredicates");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}
 }

@@ -77,9 +77,27 @@ class LmdbStoreConfigTest {
 	private static final IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "backgroundRawSamplingMaxMillisPerCycle");
 
+	private static final IRI PREDICATE_GUARANTEE_INDEX_ENABLED = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexEnabled");
+
+	private static final IRI PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexAutoRebuild");
+
+	private static final IRI PREDICATE_GUARANTEE_EXCLUDED_PREDICATES = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeExcludedPredicates");
+
 	@Test
 	void pageCardinalityEstimatorDefaultsToEnabled() {
 		assertThat(new LmdbStoreConfig().getPageCardinalityEstimator()).isTrue();
+	}
+
+	@Test
+	void predicateGuaranteeIndexDefaultsToEnabledWithStartupRebuildsAndNoExclusions() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeBooleanGetter(config, "getPredicateGuaranteeIndexEnabled")).isTrue();
+		assertThat(invokeBooleanGetter(config, "getPredicateGuaranteeIndexAutoRebuild")).isTrue();
+		assertThat(invokeStringGetter(config, "getPredicateGuaranteeExcludedPredicates")).isEmpty();
 	}
 
 	@Test
@@ -367,6 +385,43 @@ class LmdbStoreConfigTest {
 		);
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeIndexEnabled(final boolean enabled) {
+		testParseAndExportReflective(
+				PREDICATE_GUARANTEE_INDEX_ENABLED,
+				Values.literal(enabled),
+				"getPredicateGuaranteeIndexEnabled",
+				enabled,
+				!enabled
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeIndexAutoRebuild(final boolean enabled) {
+		testParseAndExportReflective(
+				PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD,
+				Values.literal(enabled),
+				"getPredicateGuaranteeIndexAutoRebuild",
+				enabled,
+				!enabled
+		);
+	}
+
+	@Test
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeExcludedPredicates() {
+		Literal excludedPredicates = Values.literal("http://example.com/a, http://example.com/b");
+
+		testParseAndExport(
+				PREDICATE_GUARANTEE_EXCLUDED_PREDICATES,
+				excludedPredicates,
+				config -> invokeStringGetter(config, "getPredicateGuaranteeExcludedPredicates"),
+				excludedPredicates.getLabel(),
+				true
+		);
+	}
+
 	// TODO: Add more tests for other properties
 
 	@Test
@@ -502,6 +557,15 @@ class LmdbStoreConfigTest {
 		try {
 			Method getter = config.getClass().getMethod(getterName);
 			return (int) getter.invoke(config);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private String invokeStringGetter(LmdbStoreConfig config, String getterName) {
+		try {
+			Method getter = config.getClass().getMethod(getterName);
+			return (String) getter.invoke(config);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
 		}

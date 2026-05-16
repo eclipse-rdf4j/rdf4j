@@ -13,6 +13,10 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -127,6 +131,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean backgroundRawSamplingEnabled = true;
 
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	private boolean predicateGuaranteeIndexEnabled = true;
+
+	private boolean predicateGuaranteeIndexAutoRebuild = true;
+
+	private String predicateGuaranteeExcludedPredicates = "";
 
 	/*--------------*
 	 * Constructors *
@@ -406,6 +416,54 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean getPredicateGuaranteeIndexEnabled() {
+		return predicateGuaranteeIndexEnabled;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeIndexEnabled(boolean predicateGuaranteeIndexEnabled) {
+		this.predicateGuaranteeIndexEnabled = predicateGuaranteeIndexEnabled;
+		return this;
+	}
+
+	public boolean getPredicateGuaranteeIndexAutoRebuild() {
+		return predicateGuaranteeIndexAutoRebuild;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeIndexAutoRebuild(boolean predicateGuaranteeIndexAutoRebuild) {
+		this.predicateGuaranteeIndexAutoRebuild = predicateGuaranteeIndexAutoRebuild;
+		return this;
+	}
+
+	public String getPredicateGuaranteeExcludedPredicates() {
+		return predicateGuaranteeExcludedPredicates;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeExcludedPredicates(String predicateGuaranteeExcludedPredicates) {
+		this.predicateGuaranteeExcludedPredicates = predicateGuaranteeExcludedPredicates == null
+				? ""
+				: predicateGuaranteeExcludedPredicates.trim();
+		return this;
+	}
+
+	public Set<String> getPredicateGuaranteeExcludedPredicateSet() {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return Collections.emptySet();
+		}
+		Set<String> excludedPredicates = new LinkedHashSet<>();
+		StringTokenizer tokenizer = new StringTokenizer(predicateGuaranteeExcludedPredicates, ", \t\r\n");
+		while (tokenizer.hasMoreTokens()) {
+			String predicate = tokenizer.nextToken().trim();
+			if (predicate.length() > 1 && predicate.charAt(0) == '<'
+					&& predicate.charAt(predicate.length() - 1) == '>') {
+				predicate = predicate.substring(1, predicate.length() - 1);
+			}
+			if (!predicate.isEmpty()) {
+				excludedPredicates.add(predicate);
+			}
+		}
+		return Collections.unmodifiableSet(excludedPredicates);
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -504,6 +562,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (backgroundRawSamplingMaxMillisPerCycle != BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE) {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
+		}
+		if (!predicateGuaranteeIndexEnabled) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED, vf.createLiteral(false));
+		}
+		if (!predicateGuaranteeIndexAutoRebuild) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, vf.createLiteral(false));
+		}
+		if (!predicateGuaranteeExcludedPredicates.isEmpty()) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_EXCLUDED_PREDICATES,
+					vf.createLiteral(predicateGuaranteeExcludedPredicates));
 		}
 		return implNode;
 	}
@@ -746,6 +814,35 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED, null))
+					.ifPresent(lit -> {
+						try {
+							setPredicateGuaranteeIndexEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for "
+											+ LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, null))
+					.ifPresent(lit -> {
+						try {
+							setPredicateGuaranteeIndexAutoRebuild(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for "
+											+ LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.PREDICATE_GUARANTEE_EXCLUDED_PREDICATES, null))
+					.ifPresent(lit -> setPredicateGuaranteeExcludedPredicates(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

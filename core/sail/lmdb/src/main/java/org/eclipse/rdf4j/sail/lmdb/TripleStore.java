@@ -179,6 +179,10 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	private final AtomicLong dataRevision = new AtomicLong();
+	private final boolean predicateGuaranteeIndexEnabled;
+	private final boolean predicateGuaranteeIndexAutoRebuild;
+	private final Set<String> predicateGuaranteeExcludedPredicates;
+	private boolean predicateGuaranteeIndexReadable;
 
 	private TxnRecordCache recordCache = null;
 	private final Map<Long, PendingRdfTermDomain> pendingRdfTermDomains = new HashMap<>();
@@ -197,6 +201,9 @@ class TripleStore implements Closeable {
 		this.autoGrow = config.getAutoGrow();
 		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
 		this.valueStore = valueStore;
+		this.predicateGuaranteeIndexEnabled = config.getPredicateGuaranteeIndexEnabled();
+		this.predicateGuaranteeIndexAutoRebuild = config.getPredicateGuaranteeIndexAutoRebuild();
+		this.predicateGuaranteeExcludedPredicates = config.getPredicateGuaranteeExcludedPredicateSet();
 		// create directory if it not exists
 		this.dir.mkdirs();
 
@@ -313,15 +320,34 @@ class TripleStore implements Closeable {
 	}
 
 	private void initializeRdfTermDomains() throws IOException {
-		if (valueStore == null) {
+		if (valueStore == null || !predicateGuaranteeIndexEnabled) {
+			if (!predicateGuaranteeIndexEnabled) {
+				properties.setRdfTermDomainsVersion(PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled");
+			}
 			return;
 		}
-		if (PREDICATE_OBJECT_DOMAINS_VERSION.equals(properties.getRdfTermDomainsVersion())) {
-			rebuildMarkedRdfTermDomains();
+		String currentVersion = currentRdfTermDomainsVersion();
+		if (currentVersion.equals(properties.getRdfTermDomainsVersion())) {
+			predicateGuaranteeIndexReadable = true;
+			if (predicateGuaranteeIndexAutoRebuild) {
+				rebuildMarkedRdfTermDomains();
+			}
+			return;
+		}
+		if (!predicateGuaranteeIndexAutoRebuild && properties.isLoaded()) {
 			return;
 		}
 		rebuildRdfTermDomains();
-		properties.setRdfTermDomainsVersion(PREDICATE_OBJECT_DOMAINS_VERSION);
+		properties.setRdfTermDomainsVersion(currentVersion);
+		predicateGuaranteeIndexReadable = true;
+	}
+
+	private String currentRdfTermDomainsVersion() {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return PREDICATE_OBJECT_DOMAINS_VERSION;
+		}
+		return PREDICATE_OBJECT_DOMAINS_VERSION + "-exclude-"
+				+ Integer.toHexString(predicateGuaranteeExcludedPredicates.hashCode());
 	}
 
 	private void rebuildRdfTermDomains() throws IOException {
@@ -344,6 +370,9 @@ class TripleStore implements Closeable {
 							}
 							previousPredicate = quad[PRED_IDX];
 							previousObject = quad[OBJ_IDX];
+							if (isPredicateGuaranteeExcluded(quad[PRED_IDX])) {
+								continue;
+							}
 							Value object = valueStore.getValue(quad[OBJ_IDX]);
 							guarantees.merge(quad[PRED_IDX],
 									PendingRdfTermDomain.of(RdfTermDomain.classify(object)),
@@ -425,6 +454,14 @@ class TripleStore implements Closeable {
 	}
 
 	private void rebuildRdfTermDomain(long predicateId) throws IOException {
+		if (isPredicateGuaranteeExcluded(predicateId)) {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+				deleteRdfTermDomain(keyVal);
+				deleteRdfTermDomainDegradation(keyVal);
+			}
+			return;
+		}
 		RdfTermDomain rebuilt = null;
 		long observedMask = 0L;
 		for (boolean explicit : new boolean[] { true, false }) {
@@ -467,6 +504,9 @@ class TripleStore implements Closeable {
 	}
 
 	void recordRdfTermDomain(long predicateId, Value object) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
 		RdfTermDomain observed = RdfTermDomain.classify(object);
 		if (recordCache != null) {
 			pendingRdfTermDomains.merge(predicateId, PendingRdfTermDomain.of(observed),
@@ -477,6 +517,9 @@ class TripleStore implements Closeable {
 	}
 
 	void recordPredicateObjectRemoval(long predicateId, Value object) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
 		RdfTermDomain removed = RdfTermDomain.classify(object);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
@@ -505,6 +548,10 @@ class TripleStore implements Closeable {
 	}
 
 	Optional<RdfTermDomain> getKnownRdfTermDomain(long predicateId) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || !predicateGuaranteeIndexReadable
+				|| isPredicateGuaranteeExcluded(predicateId)) {
+			return Optional.empty();
+		}
 		return txnManager.doWith((stack, txn) -> {
 			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
 
@@ -525,6 +572,9 @@ class TripleStore implements Closeable {
 			return;
 		}
 		for (Map.Entry<Long, PendingRdfTermDomain> entry : pendingRdfTermDomains.entrySet()) {
+			if (isPredicateGuaranteeExcluded(entry.getKey())) {
+				continue;
+			}
 			updateRdfTermDomain(entry.getKey(), entry.getValue());
 		}
 		pendingRdfTermDomains.clear();
@@ -532,6 +582,9 @@ class TripleStore implements Closeable {
 
 	private void updateRdfTermDomain(long predicateId, PendingRdfTermDomain pending)
 			throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
 
@@ -653,6 +706,17 @@ class TripleStore implements Closeable {
 		keyBuf.flip();
 		keyVal.mv_data(keyBuf);
 		return keyVal;
+	}
+
+	private boolean isPredicateGuaranteeExcluded(long predicateId) throws IOException {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return false;
+		}
+		if (valueStore == null) {
+			return false;
+		}
+		Value predicate = valueStore.getValue(predicateId);
+		return predicate != null && predicateGuaranteeExcludedPredicates.contains(predicate.stringValue());
 	}
 
 	private record PendingRdfTermDomain(RdfTermDomain guarantee, long observedMask) {
