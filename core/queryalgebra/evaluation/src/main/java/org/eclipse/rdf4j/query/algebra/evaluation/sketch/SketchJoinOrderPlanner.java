@@ -56,13 +56,11 @@ import org.slf4j.LoggerFactory;
 @Experimental
 final class SketchJoinOrderPlanner {
 
-	static final int MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS = JoinOrderPlanner.DEFAULT_DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT;
-
 	private static final long UNCOMPUTED_MASK = Long.MIN_VALUE;
 	private static final int ARRAY_MEMO_MAX_FACTORS = 16;
 	private static final int MEMO_GROUP_ARRAY_MAX_BITS = 20;
-	private static final int FRONTIER_LIMIT = 8;
-	private static final int GREEDY_BEAM_WIDTH = 8;
+	private static final int DEFAULT_FRONTIER_LIMIT = 8;
+	private static final int DEFAULT_GREEDY_BEAM_WIDTH = 8;
 	private static final double STRUCTURAL_WORK_EQUIVALENCE_ROWS = 4.0d;
 	private static final double ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO = 3.0d;
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
@@ -74,6 +72,8 @@ final class SketchJoinOrderPlanner {
 	private static final double DEFERRED_FILTER_ORDERING_MAX_PASS_RATIO = 0.5d;
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
 	private static final String LMDB_PLAN_ALTERNATIVES_PROPERTY = "rdf4j.optimizer.lmdb.planAlternatives";
+	private static final String FRONTIER_LIMIT_PROPERTY = "rdf4j.optimizer.sketchPlanner.frontierLimit";
+	private static final String GREEDY_BEAM_WIDTH_PROPERTY = "rdf4j.optimizer.sketchPlanner.greedyBeamWidth";
 	static final double SMALL_BINDING_SET_ASSIGNMENT_MAX_ROWS = 64.0d;
 	private static final SketchBasedJoinEstimator.Component[] COMPONENT_VALUES = SketchBasedJoinEstimator.Component
 			.values();
@@ -141,6 +141,9 @@ final class SketchJoinOrderPlanner {
 	private final int plannedFilterActionCount;
 	private final List<String> diagnostics = new ArrayList<>();
 	private final boolean traceDiagnostics;
+	private final int dynamicProgrammingJoinArgLimit;
+	private final int frontierLimit;
+	private final int greedyBeamWidth;
 	private int logicalCandidateCount;
 	private int logicalAcceptedCount;
 	private int logicalRejectedAlternatives;
@@ -214,6 +217,9 @@ final class SketchJoinOrderPlanner {
 				: List.copyOf(deferredFilters);
 		this.traceDiagnostics = Boolean.getBoolean(TRACE_DIAGNOSTICS_PROPERTY)
 				|| Boolean.getBoolean(LMDB_PLAN_ALTERNATIVES_PROPERTY);
+		this.dynamicProgrammingJoinArgLimit = JoinOrderPlanner.dynamicProgrammingJoinArgLimit();
+		this.frontierLimit = intSystemProperty(FRONTIER_LIMIT_PROPERTY, DEFAULT_FRONTIER_LIMIT, 1);
+		this.greedyBeamWidth = intSystemProperty(GREEDY_BEAM_WIDTH_PROPERTY, DEFAULT_GREEDY_BEAM_WIDTH, 1);
 		FactorBuildResult factorBuildResult = buildFactors(expressions);
 		this.factors = factorBuildResult.factors();
 		this.factorRejectionPath = factorBuildResult.rejectionPath();
@@ -266,6 +272,18 @@ final class SketchJoinOrderPlanner {
 		this.finiteBindingVariableValuesByState = newValueSetMatrix(stateMemoSize);
 	}
 
+	private static int intSystemProperty(String propertyName, int defaultValue, int minimumValue) {
+		String value = System.getProperty(propertyName);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			return Math.max(minimumValue, Integer.parseInt(value.trim()));
+		} catch (NumberFormatException ignored) {
+			return defaultValue;
+		}
+	}
+
 	private static int stateMemoSize(int factorCount) {
 		return factorCount >= 0 && factorCount <= ARRAY_MEMO_MAX_FACTORS ? 1 << factorCount : 0;
 	}
@@ -312,10 +330,10 @@ final class SketchJoinOrderPlanner {
 			return new PlanOutcome(Optional.empty(), classification, List.copyOf(diagnostics), null);
 		}
 		if (algorithm == JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING
-				&& factors.size() > MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS) {
+				&& factors.size() > dynamicProgrammingJoinArgLimit) {
 			recordDebug("rejected: path=" + SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE
 					+ " factorCount=" + factors.size() + " maxDynamicProgrammingArgs="
-					+ MAX_DYNAMIC_PROGRAMMING_JOIN_ARGS);
+					+ dynamicProgrammingJoinArgLimit);
 			return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
 					List.copyOf(diagnostics), null);
 		}
@@ -2749,7 +2767,7 @@ final class SketchJoinOrderPlanner {
 		ParetoJoinMemoPlanner.Result<StatePlan> result = memoPlanner().planBeam();
 		applyPlannerStats(result.stats());
 		captureFinalFrontierSummary(result);
-		recordDebug("pareto beam: finalWidth=" + logicalFinalFrontierWidth + " limit=" + GREEDY_BEAM_WIDTH
+		recordDebug("pareto beam: finalWidth=" + logicalFinalFrontierWidth + " limit=" + greedyBeamWidth
 				+ " bestOrder=" + (result.best() == null ? "<none>" : describeFactorOrder(result.best())));
 		recordFinalFrontierDiagnostics(result);
 		return result.best();
@@ -2760,7 +2778,7 @@ final class SketchJoinOrderPlanner {
 		ParetoJoinMemoPlanner.Result<StatePlan> result = memoPlanner().planMemo();
 		applyPlannerStats(result.stats());
 		captureFinalFrontierSummary(result);
-		recordDebug("pareto memo: finalWidth=" + logicalFinalFrontierWidth + " limit=" + FRONTIER_LIMIT
+		recordDebug("pareto memo: finalWidth=" + logicalFinalFrontierWidth + " limit=" + frontierLimit
 				+ " bestOrder=" + (result.best() == null ? "<none>" : describeFactorOrder(result.best())));
 		recordFinalFrontierDiagnostics(result);
 		return result.best();
@@ -2772,7 +2790,7 @@ final class SketchJoinOrderPlanner {
 			return;
 		}
 		StringBuilder builder = new StringBuilder("[");
-		int limit = Math.min(FRONTIER_LIMIT, result.finalEntries().size());
+		int limit = Math.min(frontierLimit, result.finalEntries().size());
 		for (int i = 0; i < limit; i++) {
 			if (i > 0) {
 				builder.append(", ");
@@ -2804,7 +2822,7 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private ParetoJoinMemoPlanner<StatePlan> memoPlanner() {
-		return new ParetoJoinMemoPlanner<>(factors.size(), maxPlanActionCount(), FRONTIER_LIMIT, GREEDY_BEAM_WIDTH,
+		return new ParetoJoinMemoPlanner<>(factors.size(), maxPlanActionCount(), frontierLimit, greedyBeamWidth,
 				this::seedPlan,
 				this::extendAction, StatePlan::mask, StatePlan::actionSize,
 				this::memoGroupKey,
@@ -5239,8 +5257,8 @@ final class SketchJoinOrderPlanner {
 
 	private String logicalExplorationSummary(JoinCostVector finalVector) {
 		return "mode=" + (logicalExplorationMode == null ? "unknown" : logicalExplorationMode)
-				+ ", frontierLimit=" + FRONTIER_LIMIT
-				+ ", beamWidth=" + GREEDY_BEAM_WIDTH
+				+ ", frontierLimit=" + frontierLimit
+				+ ", beamWidth=" + greedyBeamWidth
 				+ ", candidates=" + logicalCandidateCount
 				+ ", accepted=" + logicalAcceptedCount
 				+ ", rejectedAlternatives=" + logicalRejectedAlternatives
