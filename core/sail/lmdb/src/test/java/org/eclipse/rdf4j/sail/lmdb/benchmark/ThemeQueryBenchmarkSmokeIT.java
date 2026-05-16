@@ -49,6 +49,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String PHARMA_HAS_RESULT_LABEL = "pharma-hasResult";
 	private static final String PHARMA_HAS_ARM_LABEL = "pharma-hasArm";
 	private static final String PHARMA_P_VALUE_FILTER = "pharma-pValue-filter";
+	private static final int QUERY_EXECUTION_REPETITIONS = 5;
 
 	@Test
 	void executeQueryReturnsExpectedCountForMedicalRecordsQueryTwo() throws Exception {
@@ -58,23 +59,21 @@ class ThemeQueryBenchmarkSmokeIT {
 
 		benchmark.setup();
 		try {
-			assertEquals(ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, 2), benchmark.executeQuery());
+			assertBenchmarkQueryCount(benchmark, Theme.MEDICAL_RECORDS, 2);
 		} finally {
 			benchmark.tearDown();
 		}
 	}
 
 	@Test
-	void executeQueryTwiceReturnsExpectedCountForMedicalRecordsQueryTwo() throws Exception {
+	void executeQueryRepeatedlyReturnsExpectedCountForMedicalRecordsQueryTwo() throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
 		benchmark.z_queryIndex = 2;
 
 		benchmark.setup();
 		try {
-			long expected = ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, 2);
-			assertEquals(expected, benchmark.executeQuery());
-			assertEquals(expected, benchmark.executeQuery());
+			assertBenchmarkQueryCount(benchmark, Theme.MEDICAL_RECORDS, 2);
 		} finally {
 			benchmark.tearDown();
 		}
@@ -83,6 +82,16 @@ class ThemeQueryBenchmarkSmokeIT {
 	@Test
 	void executeQueryReturnsExpectedCountForPharmaQueryOne() throws Exception {
 		assertThemeQueryCount(Theme.PHARMA, 1);
+	}
+
+	@Test
+	void executeQueryVerifiesExpectedCountBindingForPharmaQueryZero() throws Exception {
+		assertThemeQueryCount(Theme.PHARMA, 0);
+	}
+
+	@Test
+	void catalogRecordsExpectedCountBindingForPharmaQueryZero() {
+		assertEquals(18L, ThemeQueryCatalog.expectedCountBindingValueFor(Theme.PHARMA, 0).orElseThrow());
 	}
 
 	@Test
@@ -100,7 +109,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		first.z_queryIndex = 0;
 		first.setup();
 		try {
-			assertEquals(ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, 0), first.executeQuery());
+			assertBenchmarkQueryCount(first, Theme.MEDICAL_RECORDS, 0);
 		} finally {
 			first.tearDown();
 		}
@@ -119,7 +128,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		second.z_queryIndex = 1;
 		second.setup();
 		try {
-			assertEquals(ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, 1), second.executeQuery());
+			assertBenchmarkQueryCount(second, Theme.MEDICAL_RECORDS, 1);
 		} finally {
 			second.tearDown();
 		}
@@ -137,9 +146,18 @@ class ThemeQueryBenchmarkSmokeIT {
 
 		benchmark.setup();
 		try {
-			assertEquals(ThemeQueryCatalog.expectedCountFor(theme, queryIndex), benchmark.executeQuery());
+			assertBenchmarkQueryCount(benchmark, theme, queryIndex);
 		} finally {
 			benchmark.tearDown();
+		}
+	}
+
+	private static void assertBenchmarkQueryCount(ThemeQueryBenchmark benchmark, Theme theme, int queryIndex) {
+		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+		for (int repetition = 1; repetition <= QUERY_EXECUTION_REPETITIONS; repetition++) {
+			assertEquals(expected, benchmark.executeQuery(),
+					"Unexpected row count for " + theme + " query " + queryIndex + " on repetition " + repetition
+							+ " of " + QUERY_EXECUTION_REPETITIONS);
 		}
 	}
 
