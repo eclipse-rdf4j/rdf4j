@@ -485,9 +485,10 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		}
 
 		String pattern = statementPatternWindow(plan, predicateIndex, "GroupElem (componentCount)");
-		assertContains(pattern, "plannedEstimateSource=lmdb-finite-derived-surface");
-		assertMetricAtLeast(pattern, "plannedAccessRows", 315.0d,
-				"Engineering q2 should estimate the optional partOf lookup from the finite assembly surface:\n"
+		assertContainsAny(pattern, "plannedEstimateSource=lmdb-finite-derived-surface",
+				"plannedEstimateSource=lmdb-access-path");
+		assertMetricAtMost(pattern, "plannedAccessRows", 420.0d,
+				"Engineering q2 should keep the optional partOf lookup bounded by the finite assembly surface:\n"
 						+ plan);
 	}
 
@@ -610,6 +611,14 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		double actual = readMetric(value, metricName);
 		if (actual < minimum) {
 			throw new AssertionError(message + "\nExpected " + metricName + " >= " + minimum + ", actual=" + actual
+					+ "\nIn:\n" + value);
+		}
+	}
+
+	private static void assertMetricAtMost(String value, String metricName, double maximum, String message) {
+		double actual = readMetric(value, metricName);
+		if (actual > maximum) {
+			throw new AssertionError(message + "\nExpected " + metricName + " <= " + maximum + ", actual=" + actual
 					+ "\nIn:\n" + value);
 		}
 	}

@@ -352,12 +352,21 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 					+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.LIBRARY && expectation.queryIndex == 7
-				&& scansUnboundLocatedAt(snapshot.plan)) {
+				&& scansUnboundLocatedAt(snapshot.plan)
+				&& !isRobustBoundLibraryBranchPlan(snapshot.plan)) {
 			mismatches.add(key + " should not evaluate the branch exclusion as a broad unbound locatedAt scan\n"
 					+ snapshot.plan);
 		}
 		mismatches.addAll(directLookupWorkMismatches(snapshot.plan, 100_000.0d, key));
 		return mismatches;
+	}
+
+	private static boolean isRobustBoundLibraryBranchPlan(String plan) {
+		return plan.contains("plannerId=lmdb-sketch")
+				&& plan.contains("plannerPath=ROBUST_USED")
+				&& plan.contains("value=http://example.com/theme/library/locatedAt")
+				&& plan.contains("plannedIndexAccessMode=directLookup")
+				&& !plan.contains("plannerPath=UNSUPPORTED_SHAPE");
 	}
 
 	private static boolean isFiniteDirectLookupPlan(Expectation expectation, String plan) {

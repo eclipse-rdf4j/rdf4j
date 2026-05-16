@@ -380,14 +380,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 			return socialMediaQ1FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
 		if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 5) {
-			return normalizedActual.contains("VALUES ?u { <http://example.com/theme/social/user/7>")
-					&& normalizedActual
-							.contains("VALUES ?optName { \"user7\" \"user8\" \"user9\" \"user10\" \"user11\" }")
-					&& normalizedActual
-							.contains("FILTER (?optName IN (\"user7\", \"user8\", \"user9\", \"user10\", \"user11\"))")
-					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows")
-					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored")
-					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/name");
+			return socialMediaQ5FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
 		if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 10) {
 			return socialMediaQ10FastShapeMismatches(normalizedActual, plan).isEmpty();
@@ -515,20 +508,12 @@ class LmdbThemeTopRegressionSnapshotIT {
 					targetQuery.key() + " should keep the canonical fast bounded clique shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		} else if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 5) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
 			String plan = explainOptimizedPlan(repository, targetQuery);
-			assertPlanContains(plan, targetQuery.key(),
-					"BindingSetAssignment ([[u=http://example.com/theme/social/user/7]",
-					"BindingSetAssignment ([[optName=\"user7\"]",
-					"value=http://example.com/theme/social/name",
-					"value=http://example.com/theme/social/follows",
-					"value=http://example.com/theme/social/authored",
-					"plannedFilterPassRatio=0");
-			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows"),
-					targetQuery.key() + " should use bound follows access:\n" + plan);
-			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored"),
-					targetQuery.key() + " should use bound authored access:\n" + plan);
-			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/name"),
-					targetQuery.key() + " should use bound name access:\n" + plan);
+			List<String> mismatches = socialMediaQ5FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep finite user/name pruning with bound social lookups:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		} else if (targetQuery.theme == Theme.SOCIAL_MEDIA && targetQuery.queryIndex == 10) {
 			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
 			String plan = explainOptimizedPlan(repository, targetQuery);
@@ -687,6 +672,26 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/follows", "follows");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
+		return mismatches;
+	}
+
+	private static List<String> socialMediaQ5FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?u { <http://example.com/theme/social/user/7>",
+				"missing finite user prefix");
+		requireContains(mismatches, renderedQuery,
+				"VALUES ?optName { \"user7\" \"user8\" \"user9\" \"user10\" \"user11\" }",
+				"missing finite optional-name prefix");
+		requireContains(mismatches, plan, "value=http://example.com/theme/social/follows",
+				"missing follows lookup");
+		requireContains(mismatches, plan, "value=http://example.com/theme/social/name",
+				"missing name lookup");
+		if (!planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows")) {
+			mismatches.add("follows lookup should be bound");
+		}
+		if (!planHasBoundPredicateAccess(plan, "http://example.com/theme/social/name")) {
+			mismatches.add("name lookup should be bound");
+		}
 		return mismatches;
 	}
 

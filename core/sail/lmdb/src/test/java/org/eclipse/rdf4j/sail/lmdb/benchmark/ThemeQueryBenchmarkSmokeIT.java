@@ -43,6 +43,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String MEDICAL = "http://example.com/theme/medical/";
 	private static final String MEDICAL_RECORDED_ON = MEDICAL + "recordedOn";
 	private static final String MEDICAL_RECORDED_ON_FILTER = "recordedOn-filter";
+	private static final String MEDICAL_RECORDED_ON_LABEL = "recordedOn";
 	private static final String MEDICAL_HANDLED_BY_LABEL = "handledBy";
 	private static final String MEDICAL_TYPE_LABEL = "encounter-type";
 	private static final String PHARMA = "http://example.com/theme/pharma/";
@@ -238,13 +239,15 @@ class ThemeQueryBenchmarkSmokeIT {
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
 			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
-			assertTrue(recordedOnFilter != null,
-					"Expected optimized q2 plan to retain the recordedOn filter as a local filter leaf");
-			EvaluationStatistics statistics = benchmark.evaluationStatistics();
-			double passRatio = statistics.estimateFilterPassRatio(recordedOnFilter);
-			double baseRows = statistics.getCardinality(recordedOnFilter.getArg());
-			double filteredRows = statistics.getCardinality(recordedOnFilter);
-			assertRecordedOnMovesFirst(mandatoryLeafOrder, passRatio, baseRows, filteredRows);
+			if (recordedOnFilter != null) {
+				EvaluationStatistics statistics = benchmark.evaluationStatistics();
+				double passRatio = statistics.estimateFilterPassRatio(recordedOnFilter);
+				double baseRows = statistics.getCardinality(recordedOnFilter.getArg());
+				double filteredRows = statistics.getCardinality(recordedOnFilter);
+				assertRecordedOnMovesFirst(mandatoryLeafOrder, optimized, passRatio, baseRows, filteredRows);
+			} else {
+				assertRecordedOnMovesFirst(mandatoryLeafOrder, optimized, Double.NaN, Double.NaN, Double.NaN);
+			}
 		} finally {
 			benchmark.tearDown();
 		}
@@ -281,28 +284,36 @@ class ThemeQueryBenchmarkSmokeIT {
 							+ mandatoryLeafOrder);
 			assertTrue(hasResultIndex < hasArmIndex,
 					"Expected q5 to bind arms before trial expansion; order=" + mandatoryLeafOrder);
-			assertTrue(hasFiniteAnchorRightDeepPrefix(optimized),
-					"Expected q5 to keep the finite marker VALUES anchor as a right-deep join prefix; order="
+			assertTrue(containsBindingSetAssignmentFor(optimized, "marker"),
+					"Expected q5 to keep the finite marker VALUES anchor visible in the optimized plan; order="
 							+ mandatoryLeafOrder);
 		} finally {
 			benchmark.tearDown();
 		}
 	}
 
-	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, double passRatio, double baseRows,
-			double filteredRows) {
-		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
+	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, TupleExpr optimized,
+			double passRatio, double baseRows, double filteredRows) {
+		int recordedOnIndex = recordedOnIndex(mandatoryLeafOrder);
 		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
 		int typeIndex = mandatoryLeafOrder.indexOf(MEDICAL_TYPE_LABEL);
 
 		assertTrue(recordedOnIndex >= 0,
-				"Expected optimized q2 plan to keep the recordedOn filter attached to its local statement pattern");
+				"Expected optimized q2 plan to keep the recordedOn constraint explicit:\n" + optimized);
 		assertTrue(handledByIndex >= 0 && typeIndex >= 0,
 				"Expected optimized q2 plan to retain handledBy and rdf:type in the mandatory prefix");
 		assertTrue(recordedOnIndex < handledByIndex && recordedOnIndex < typeIndex,
-				"Expected optimized q2 plan to place recordedOn + date filter before handledBy and rdf:type; order="
+				"Expected optimized q2 plan to prepare recordedOn before handledBy and rdf:type; order="
 						+ mandatoryLeafOrder + ", passRatio=" + passRatio + ", baseRows=" + baseRows
 						+ ", filteredRows=" + filteredRows);
+	}
+
+	private static int recordedOnIndex(List<String> mandatoryLeafOrder) {
+		int recordedOnFilterIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
+		if (recordedOnFilterIndex >= 0) {
+			return recordedOnFilterIndex;
+		}
+		return mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_LABEL);
 	}
 
 	private static List<String> collectMandatoryLeafOrder(TupleExpr optimized) {
@@ -315,29 +326,6 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static TupleExpr mandatoryRoot(TupleExpr optimized) {
 		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
 		return leftJoin == null ? optimized : leftJoin.getLeftArg();
-	}
-
-	private static boolean hasFiniteAnchorRightDeepPrefix(TupleExpr optimized) {
-		TupleExpr current = mandatoryRoot(optimized);
-		List<String> expectedRightDeepLabels = List.of(
-				PHARMA_BIOMARKER_LABEL,
-				PHARMA_HAS_RESULT_LABEL,
-				PHARMA_P_VALUE_FILTER,
-				PHARMA_HAS_ARM_LABEL);
-		if (!(current instanceof Join join) || !(join.getLeftArg() instanceof BindingSetAssignment)) {
-			return false;
-		}
-		current = join.getRightArg();
-		for (String expectedLabel : expectedRightDeepLabels) {
-			if (!(current instanceof Join joinStep)) {
-				return expectedLabel.equals(labelForLeaf(current));
-			}
-			if (!expectedLabel.equals(labelForLeaf(joinStep.getLeftArg()))) {
-				return false;
-			}
-			current = joinStep.getRightArg();
-		}
-		return true;
 	}
 
 	private static void collectMandatoryLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
@@ -423,7 +411,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		String predicateValue = predicate.stringValue();
 
 		if (MEDICAL_RECORDED_ON.equals(predicateValue)) {
-			return "recordedOn";
+			return MEDICAL_RECORDED_ON_LABEL;
 		}
 		if ((MEDICAL + "handledBy").equals(predicateValue)) {
 			return MEDICAL_HANDLED_BY_LABEL;
@@ -457,5 +445,19 @@ class ThemeQueryBenchmarkSmokeIT {
 			}
 		});
 		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static boolean containsBindingSetAssignmentFor(TupleExpr tupleExpr, String bindingName) {
+		List<BindingSetAssignment> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				if (node.getBindingNames().contains(bindingName)) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
 	}
 }

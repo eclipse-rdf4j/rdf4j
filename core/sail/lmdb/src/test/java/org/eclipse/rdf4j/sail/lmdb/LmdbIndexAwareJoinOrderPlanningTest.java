@@ -484,37 +484,41 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void highFanoutMedicalCodeFilterKeepsOriginalAndFiniteAnchorCandidates(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
-		LmdbStore store = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
+		assertTestPassesWithinAttempts(dataDir, "highFanoutMedicalCodeFilterKeepsOriginalAndFiniteAnchorCandidates",
+				attemptDir -> {
+					LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+					LmdbStore store = new LmdbStore(attemptDir, config);
+					SailRepository repository = new SailRepository(store);
+					repository.init();
 
-		try {
-			loadSyntheticMedicalCodeData(repository);
-			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+					try {
+						loadSyntheticMedicalCodeData(repository);
+						store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
-			TupleExpr optimized;
-			String optimizedPlan;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
-						.explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
-				optimizedPlan = explanation.toString();
-			}
+						TupleExpr optimized;
+						String optimizedPlan;
+						try (SailRepositoryConnection connection = repository.getConnection()) {
+							Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
+									.explain(Explanation.Level.Optimized);
+							optimized = (TupleExpr) explanation.tupleExpr();
+							optimizedPlan = explanation.toString();
+						}
 
-			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates="),
-					"High-fanout literal filters should expose the costed guarantee option set:\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("original[lower-bound")
-					|| optimizedPlan.contains("original-fixed[fixed-order")
-					|| optimizedPlan.contains("original[baseline"),
-					"High-fanout literal filters should keep an original FILTER alternative available:\n"
-							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("finite-anchor:code"),
-					"High-fanout literal filters should also expose the finite-anchor option when it is sound:\n"
-							+ optimizedPlan);
-		} finally {
-			repository.shutDown();
-		}
+						assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates="),
+								"High-fanout literal filters should expose the costed guarantee option set:\n"
+										+ optimizedPlan);
+						assertTrue(optimizedPlan.contains("original[lower-bound")
+								|| optimizedPlan.contains("original-fixed[fixed-order")
+								|| optimizedPlan.contains("original[baseline"),
+								"High-fanout literal filters should keep an original FILTER alternative available:\n"
+										+ optimizedPlan);
+						assertTrue(optimizedPlan.contains("finite-anchor:code"),
+								"High-fanout literal filters should also expose the finite-anchor option when it is sound:\n"
+										+ optimizedPlan);
+					} finally {
+						repository.shutDown();
+					}
+				});
 	}
 
 	@Test

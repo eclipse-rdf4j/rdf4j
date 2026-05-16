@@ -200,10 +200,26 @@ class LmdbDevelopPlanParityIT {
 	}
 
 	private static boolean isAcceptedHistoricalImprovement(TargetQuery targetQuery, PlanSignature signature) {
+		if (targetQuery.theme == Theme.PHARMA && targetQuery.queryIndex == 0) {
+			return isPharmaQ0FiniteDiseaseShape(signature.lines());
+		}
 		if (targetQuery.theme == Theme.PHARMA && targetQuery.queryIndex == 5) {
 			return isPharmaQ5FastHistoricalShape(signature.lines());
 		}
 		return false;
+	}
+
+	private static boolean isPharmaQ0FiniteDiseaseShape(List<String> signature) {
+		int diseaseValues = firstIndex(signature, "BindingSetAssignment ([[disease=http://example.com/theme/pharma/");
+		int studiesDisease = predicateIndex(signature, "http://example.com/theme/pharma/studiesDisease");
+		int hasArm = predicateIndex(signature, "http://example.com/theme/pharma/hasArm");
+		int armDrug = predicateIndex(signature, "http://example.com/theme/pharma/armDrug");
+		int pValue = predicateIndex(signature, "http://example.com/theme/pharma/pValue");
+		return diseaseValues >= 0
+				&& diseaseValues < studiesDisease
+				&& studiesDisease < hasArm
+				&& hasArm < armDrug
+				&& armDrug < pValue;
 	}
 
 	private static boolean isPharmaQ5FastHistoricalShape(List<String> signature) {

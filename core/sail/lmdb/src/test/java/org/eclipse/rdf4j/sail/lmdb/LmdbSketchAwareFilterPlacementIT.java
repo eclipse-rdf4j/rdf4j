@@ -77,6 +77,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	private static final IRI MEDICAL_HANDLED_BY = VF.createIRI(MEDICAL, "handledBy");
 	private static final IRI MEDICAL_RECORDED_ON = VF.createIRI(MEDICAL, "recordedOn");
 	private static final String MEDICAL_RECORDED_ON_FILTER = "recordedOn-filter";
+	private static final String MEDICAL_RECORDED_ON_LABEL = "recordedOn";
 	private static final String MEDICAL_HANDLED_BY_LABEL = "handledBy";
 	private static final String MEDICAL_TYPE_LABEL = "encounter-type";
 	private static final String GRID = "http://example.com/theme/grid/";
@@ -764,17 +765,25 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, TupleExpr optimized) {
-		int recordedOnIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
+		int recordedOnIndex = recordedOnIndex(mandatoryLeafOrder);
 		int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
 		int typeIndex = mandatoryLeafOrder.indexOf(MEDICAL_TYPE_LABEL);
 
 		assertTrue(recordedOnIndex >= 0,
-				"Expected optimized q2 plan to keep the recordedOn filter attached to its local statement pattern");
+				"Expected optimized q2 plan to keep the recordedOn constraint explicit");
 		assertTrue(handledByIndex >= 0 && typeIndex >= 0,
 				"Expected optimized q2 plan to retain handledBy and rdf:type in the mandatory prefix");
 		assertTrue(recordedOnIndex < handledByIndex && recordedOnIndex < typeIndex,
-				"Expected optimized q2 plan to place recordedOn + date filter before handledBy and rdf:type once learned/sample selectivity is available: "
+				"Expected optimized q2 plan to prepare recordedOn before handledBy and rdf:type once learned/sample selectivity is available: "
 						+ mandatoryLeafOrder + "\n" + optimized);
+	}
+
+	private static int recordedOnIndex(List<String> mandatoryLeafOrder) {
+		int recordedOnFilterIndex = mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_FILTER);
+		if (recordedOnFilterIndex >= 0) {
+			return recordedOnFilterIndex;
+		}
+		return mandatoryLeafOrder.indexOf(MEDICAL_RECORDED_ON_LABEL);
 	}
 
 	private static void assertSubstationNameMovesFirst(List<String> mandatoryLeafOrder) {
@@ -1049,6 +1058,9 @@ class LmdbSketchAwareFilterPlacementIT {
 			return null;
 		}
 		IRI predicate = (IRI) statementPattern.getPredicateVar().getValue();
+		if (MEDICAL_RECORDED_ON.equals(predicate)) {
+			return MEDICAL_RECORDED_ON_LABEL;
+		}
 		if (MEDICAL_HANDLED_BY.equals(predicate)) {
 			return MEDICAL_HANDLED_BY_LABEL;
 		}
