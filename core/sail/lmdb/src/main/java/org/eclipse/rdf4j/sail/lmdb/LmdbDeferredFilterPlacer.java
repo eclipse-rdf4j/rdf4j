@@ -380,6 +380,7 @@ final class LmdbDeferredFilterPlacer {
 				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
 						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
 				&& !prefixBindingNames.containsAll(conditionBindingNames)
+				&& assignmentBindingNames.containsAll(conditionBindingNames)
 				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
 				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
 				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
@@ -703,6 +704,10 @@ final class LmdbDeferredFilterPlacer {
 		if (window == null) {
 			return false;
 		}
+		Set<String> selectedBindingNames = selectedBindingNames(factors, window);
+		if (!selectedBindingNames.containsAll(conditionBindingNames(deferredFilter))) {
+			return false;
+		}
 		boolean bindingOnlySpan = isBindingOnlySpan(factors, window.startIndex, window.endIndex);
 		boolean containsExists = LmdbJoinPlanSupport.containsExists(deferredFilter.condition);
 		if (containsExists && !bindingAssignmentWindowBindsOnlyRequiredVars(factors, window, deferredFilter)) {
@@ -739,6 +744,14 @@ final class LmdbDeferredFilterPlacer {
 		}
 		factors.add(insertionIndex, groupedFactor);
 		return true;
+	}
+
+	private Set<String> selectedBindingNames(List<SegmentFactor> factors, BindingAssignmentWindow window) {
+		Set<String> bindingNames = new HashSet<>();
+		for (Integer selectedIndex : window.selectedIndexes) {
+			bindingNames.addAll(factors.get(selectedIndex.intValue()).bindingNames);
+		}
+		return bindingNames;
 	}
 
 	private boolean groupDeferredFilterOnBindingPrefix(List<SegmentFactor> factors,

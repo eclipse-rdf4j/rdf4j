@@ -78,6 +78,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -321,6 +322,29 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbSketchPipelineDoesNotSplitPrefixFilterOntoBindingAssignmentOnlyRoot() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("""
+				SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
+				  VALUES ?target { "DX-200" "DX-201" }
+				  { ?entity a <urn:test:Condition> ; <urn:test:code> ?code . }
+				  UNION
+				  { ?entity a <urn:test:Medication> ; <urn:test:code> ?code . }
+				  FILTER(?code = ?target || ?code = "DX-202")
+				}
+				""");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics())
+						.getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+
+		assertNoUnsafeSplitBindingAssignmentFilter(tupleExpr);
+	}
+
+	@Test
 	void lmdbSketchPipelineDoesNotUsePredicateNamesForObjectLiteralAnchors() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -432,6 +456,25 @@ class LmdbOptimizerPipelineTest {
 			}
 		});
 		return found[0];
+	}
+
+	private static void assertNoUnsafeSplitBindingAssignmentFilter(TupleExpr tupleExpr) {
+		List<String> unsafeFilters = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Filter node) {
+				if (node.getArg()instanceof BindingSetAssignment assignment) {
+					Set<String> conditionVars = VarNameCollector.process(node.getCondition());
+					if (!assignment.getBindingNames().containsAll(conditionVars)) {
+						unsafeFilters.add(node.toString());
+					}
+				}
+				super.meet(node);
+			}
+		});
+		assertTrue(unsafeFilters.isEmpty(), "Unsafe split binding-prefix filter(s):\n" + unsafeFilters
+				+ "\nOptimized query:\n" + tupleExpr);
 	}
 
 	private static boolean containsLeftJoin(QueryModelNode queryModelNode) {

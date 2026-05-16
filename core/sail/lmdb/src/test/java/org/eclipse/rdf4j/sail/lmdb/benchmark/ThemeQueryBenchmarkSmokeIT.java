@@ -120,9 +120,9 @@ class ThemeQueryBenchmarkSmokeIT {
 							+ "near-tie scalar work estimate while worsening final rows and intermediate surface\n"
 							+ initialPlan);
 
-			long expected = ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, 9);
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.MEDICAL_RECORDS, 9);
 			for (int i = 0; i < 5; i++) {
-				assertEquals(expected, benchmark.executeQuery());
+				assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
 			}
 			String plan = benchmark.explainOptimizedPlan();
 			assertTrue(plan.contains("finite-anchor:condCode[valid"),
@@ -202,12 +202,17 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	private static void assertBenchmarkQueryCount(ThemeQueryBenchmark benchmark, Theme theme, int queryIndex) {
-		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+		long expected = expectedBenchmarkResult(theme, queryIndex);
 		for (int repetition = 1; repetition <= QUERY_EXECUTION_REPETITIONS; repetition++) {
 			assertEquals(expected, benchmark.executeQuery(),
-					"Unexpected row count for " + theme + " query " + queryIndex + " on repetition " + repetition
-							+ " of " + QUERY_EXECUTION_REPETITIONS);
+					"Unexpected benchmark result for " + theme + " query " + queryIndex + " on repetition "
+							+ repetition + " of " + QUERY_EXECUTION_REPETITIONS);
 		}
+	}
+
+	private static long expectedBenchmarkResult(Theme theme, int queryIndex) {
+		return ThemeQueryCatalog.expectedCountBindingValueFor(theme, queryIndex)
+				.orElseGet(() -> ThemeQueryCatalog.expectedCountFor(theme, queryIndex));
 	}
 
 	private static List<Path> persistedSketchFiles(Path store) throws Exception {

@@ -5100,6 +5100,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Set<String> availableNames = new HashSet<>(prefixBindingNames);
 			availableNames.addAll(assignmentBindingNames);
 			if (prefixBindingNames.containsAll(conditionBindingNames)
+					|| !plannerBindingNames(join.getRightArg().getBindingNames()).containsAll(conditionBindingNames)
 					|| !availableNames.containsAll(conditionBindingNames)
 					|| Collections.disjoint(assignmentBindingNames, conditionBindingNames)
 					|| (!assignmentBindingNames.containsAll(conditionBindingNames)
