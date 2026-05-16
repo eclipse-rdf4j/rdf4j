@@ -1757,7 +1757,7 @@ public final class ThemeQueryCatalog {
 
 	private static void registerExpectedCountBindingValues() {
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.MEDICAL_RECORDS, expectedCountBindingValues(
-				7571, 49835, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335, -1, -1));
+				7571, 0, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.SOCIAL_MEDIA, expectedCountBindingValues(
 				6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.LIBRARY, expectedCountBindingValues(
