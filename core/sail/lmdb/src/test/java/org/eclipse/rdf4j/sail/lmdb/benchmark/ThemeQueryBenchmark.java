@@ -782,7 +782,7 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
-	private record QueryResultSummary(long rowCount, Long aggregateCount) {
+	private record QueryResultSummary(long rowCount, Long countBindingValue) {
 	}
 
 	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {

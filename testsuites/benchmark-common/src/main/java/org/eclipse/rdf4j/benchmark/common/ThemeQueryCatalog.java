@@ -1761,7 +1761,7 @@ public final class ThemeQueryCatalog {
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.SOCIAL_MEDIA, expectedCountBindingValues(
 				6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.LIBRARY, expectedCountBindingValues(
-				128853, 0, -1, 7958, 0, 217, -1, 77295, -1, 0, 4, -1, -1));
+				128853, 0, -1, 7958, 0, 217, -1, 77295, -1, 2, 4, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ENGINEERING, expectedCountBindingValues(
 				132672, 0, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.HIGHLY_CONNECTED, expectedCountBindingValues(
