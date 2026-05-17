@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -44,7 +45,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -810,11 +810,12 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		ExecutorService asyncExecutor = (ExecutorService) privateFieldValue(estimator, "asyncIncrementalExecutor");
 		asyncExecutor.shutdownNow();
 
-		assertThrows(RejectedExecutionException.class,
-				() -> estimator.addStatements(
-						List.of(st(VF.createIRI("urn:async:s"), predicate, VF.createIRI("urn:async:o")))));
+		assertDoesNotThrow(() -> estimator.addStatements(
+				List.of(st(VF.createIRI("urn:async:s"), predicate, VF.createIRI("urn:async:o")))));
 		assertEquals(0, privateFieldValue(estimator, "asyncIncrementalBatchCount"),
 				"Rejected async submission must not leave recovery waiting for a batch that was never scheduled");
+		AtomicBoolean rebuildRequired = (AtomicBoolean) privateFieldValue(estimator, "rebuildRequired");
+		assertTrue(rebuildRequired.get(), "Rejected async submission should degrade to a later rebuild");
 	}
 
 	@Test

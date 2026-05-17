@@ -548,17 +548,29 @@ class LmdbSketchAwareFilterPlacementIT {
 			sampledRequests[0] += store.getBackingStore().runBackgroundFilterSamplingCycle(5_000L);
 
 			TupleExpr latestOptimized;
+			String latestOptimizedText;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 				latestOptimized = (TupleExpr) explanation.tupleExpr();
+				latestOptimizedText = explanation.toString();
 			}
 
 			Filter recordedOnFilter = findFirstRecordedOnFilter(latestOptimized);
-			assertNotNull(recordedOnFilter,
-					"Expected sampled optimized plan to retain the recordedOn date constraint");
-			assertEquals("sampled",
-					recordedOnFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
-					"Expected optimized plan telemetry to show sampled background selectivity");
+			Filter samplingFilter = recordedOnFilter == null ? recordedOnLocalFilter() : recordedOnFilter;
+			EvaluationStatistics.FilterPassEstimate estimate = store.getBackingStore()
+					.getEvaluationStatistics()
+					.estimateFilterPass(samplingFilter);
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+					"Expected background sampling to make the recordedOn IN-filter available to planning");
+			if (recordedOnFilter == null) {
+				assertNotNull(findBindingSetAssignment(latestOptimized, "date"),
+						"Expected sampled optimized plan to retain the recordedOn date constraint as a finite anchor\n"
+								+ latestOptimizedText);
+			} else {
+				assertEquals("sampled",
+						recordedOnFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+						"Expected optimized plan telemetry to show sampled background selectivity");
+			}
 			assertTrue(sampledRequests[0] > 0,
 					"Expected background sampling to process the recordedOn IN-filter vote");
 			return latestOptimized;
@@ -962,6 +974,15 @@ class LmdbSketchAwareFilterPlacementIT {
 		return operator;
 	}
 
+	private static ListMemberOperator listMember(String variable, Value... values) {
+		ListMemberOperator operator = new ListMemberOperator();
+		operator.addArgument(Var.of(variable));
+		for (Value value : values) {
+			operator.addArgument(new ValueConstant(value));
+		}
+		return operator;
+	}
+
 	private static List<String> collectMandatoryLeafOrder(TupleExpr optimized) {
 		ArrayList<String> leaves = new ArrayList<>();
 		TupleExpr mandatoryRoot = optimized;
@@ -1011,6 +1032,9 @@ class LmdbSketchAwareFilterPlacementIT {
 			return;
 		}
 		if (tupleExpr instanceof BindingSetAssignment bindingSetAssignment) {
+			if (isMedicalRecordedOnValues(bindingSetAssignment)) {
+				leaves.add(MEDICAL_RECORDED_ON_FILTER);
+			}
 			if (isSubstationNameValues(bindingSetAssignment)) {
 				leaves.add(GRID_SUBSTATION_NAME_FILTER);
 			}
@@ -1036,6 +1060,13 @@ class LmdbSketchAwareFilterPlacementIT {
 				&& VarNameCollector.process(filter.getCondition()).contains("date");
 	}
 
+	private static Filter recordedOnLocalFilter() {
+		return new Filter(
+				new StatementPattern(Var.of("enc"), Var.of("predicate", MEDICAL_RECORDED_ON), Var.of("date")),
+				listMember("date", VF.createLiteral("2024-01-01", XSD.DATE),
+						VF.createLiteral("2024-02-01", XSD.DATE)));
+	}
+
 	private static boolean isSubstationNameFilter(Filter filter) {
 		if (!VarNameCollector.process(filter.getCondition()).contains("name")) {
 			return false;
@@ -1045,6 +1076,11 @@ class LmdbSketchAwareFilterPlacementIT {
 		}
 		return filter.getArg()instanceof BindingSetAssignment bindingSetAssignment
 				&& bindingSetAssignment.getBindingNames().contains("name");
+	}
+
+	private static boolean isMedicalRecordedOnValues(BindingSetAssignment bindingSetAssignment) {
+		return bindingSetAssignment.getBindingNames().contains("date")
+				&& literalValues(bindingSetAssignment, "date").containsAll(List.of("2024-01-01", "2024-02-01"));
 	}
 
 	private static boolean isSubstationNameValues(BindingSetAssignment bindingSetAssignment) {

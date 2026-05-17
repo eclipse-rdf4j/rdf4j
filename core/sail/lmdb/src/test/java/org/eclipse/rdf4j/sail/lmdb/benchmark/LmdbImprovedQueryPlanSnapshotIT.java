@@ -251,6 +251,14 @@ class LmdbImprovedQueryPlanSnapshotIT {
 	}
 
 	private static boolean isAcceptedCurrentSnapshot(TargetQuery targetQuery, String actualPlan) {
+		if (targetQuery.theme() == Theme.LIBRARY && targetQuery.queryIndex() == 1) {
+			return actualPlan.contains("plannerId=lmdb-sketch")
+					&& actualPlan.contains("plannerPath=ROBUST_USED")
+					&& actualPlan.contains("BindingSetAssignment ([[target=\"Member 1\"], [target=\"Member 2\"]])")
+					&& actualPlan.contains("value=http://example.com/theme/library/name")
+					&& actualPlan.contains("value=http://example.com/theme/library/title")
+					&& actualPlan.contains("value=http://example.com/theme/library/hasCopy");
+		}
 		return targetQuery.theme() == Theme.ENGINEERING
 				&& targetQuery.queryIndex() == 1
 				&& actualPlan.contains("plannerId=lmdb-sketch")

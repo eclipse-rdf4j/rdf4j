@@ -43,6 +43,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
@@ -2800,6 +2801,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					completeAsyncIncrementalBatch();
 				}
 			});
+		} catch (RejectedExecutionException e) {
+			if (queue != null) {
+				synchronized (incrementalBufferLock) {
+					queue.inFlightCount = 0;
+					dropExactIncrementalUpdatesLocked();
+					incrementalBufferLock.notifyAll();
+				}
+			} else {
+				synchronized (incrementalBufferLock) {
+					dropExactIncrementalUpdatesLocked();
+					incrementalBufferLock.notifyAll();
+				}
+			}
+			asyncIncrementalUpdateCount.addAndGet(-batch.updateCount);
+			completeAsyncIncrementalBatch();
+			return;
 		} catch (RuntimeException e) {
 			if (queue != null) {
 				synchronized (incrementalBufferLock) {

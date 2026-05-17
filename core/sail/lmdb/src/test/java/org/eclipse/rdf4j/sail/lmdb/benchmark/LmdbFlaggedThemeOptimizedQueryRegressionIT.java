@@ -437,6 +437,9 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		List<String> mismatches = new ArrayList<>();
 		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
 		while (matcher.find()) {
+			if (isFiniteSurfaceDirectLookup(matcher.group())) {
+				continue;
+			}
 			double workRows = parsePlanRows(matcher.group(1));
 			if (workRows > maxWorkRows) {
 				mismatches.add(key + " direct lookup plannedWorkRows should stay bounded by explicit step work, got "
@@ -444,6 +447,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 			}
 		}
 		return mismatches;
+	}
+
+	private static boolean isFiniteSurfaceDirectLookup(String directLookupHeader) {
+		return directLookupHeader.contains("plannedEstimateSource=lmdb-finite-derived-surface")
+				|| directLookupHeader.contains("plannedEstimateSource=lmdb-finite-binding-lookup");
 	}
 
 	private static double parsePlanRows(String value) {

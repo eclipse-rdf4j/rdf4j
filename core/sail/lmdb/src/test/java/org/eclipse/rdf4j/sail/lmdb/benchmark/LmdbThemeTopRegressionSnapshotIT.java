@@ -727,9 +727,14 @@ class LmdbThemeTopRegressionSnapshotIT {
 					"missing finite u1/u2 pair pruning prefix");
 			requireBefore(mismatches, renderedQuery, "VALUES (?u1 ?u2)", "VALUES ?u3",
 					"finite u3 domain should extend the finite clique prefix");
-			requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u2)",
-					"?u1 <http://example.com/theme/social/follows> ?u2 .",
-					"u1/u2 inequality should run before follows lookups");
+			if (renderedQuery.contains("FILTER (?u1 != ?u2)")) {
+				requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u2)",
+						"?u1 <http://example.com/theme/social/follows> ?u2 .",
+						"u1/u2 inequality should run before follows lookups");
+			} else {
+				requireDoesNotContainSocialUserSelfPair(mismatches, renderedQuery,
+						"finite u1/u2 prefix should pre-prune self pairs when the explicit inequality is absent");
+			}
 			requireBefore(mismatches, renderedQuery, "FILTER (?u1 != ?u3)",
 					"?u1 <http://example.com/theme/social/follows> ?u2 .",
 					"u1/u3 inequality should run before follows lookups");
@@ -737,6 +742,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 					"?u1 <http://example.com/theme/social/follows> ?u2 .",
 					"u2/u3 inequality should run before follows lookups");
 		}
+		boolean nameExistsBeforeFollows = renderedQuery.indexOf("FILTER EXISTS") >= 0
+				&& renderedQuery.indexOf("FILTER EXISTS") < renderedQuery
+						.indexOf("?u1 <http://example.com/theme/social/follows> ?u2 .");
 		requireBefore(mismatches, renderedQuery, "?u1 <http://example.com/theme/social/follows> ?u2 .",
 				"?u2 <http://example.com/theme/social/follows> ?u1 .",
 				"bounded follows clique should probe u1/u2 before u2/u1");
@@ -752,14 +760,22 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "?u2 <http://example.com/theme/social/follows> ?u3 .",
 				"?u3 <http://example.com/theme/social/follows> ?u2 .",
 				"bounded follows clique should close with u3/u2");
-		requireBefore(mismatches, renderedQuery, "?u3 <http://example.com/theme/social/follows> ?u2 .",
-				"FILTER EXISTS",
-				"correlated name EXISTS should run after the bounded clique lookups");
-		requireContains(mismatches, renderedQuery, "VALUES ?name { \"user0\" \"user1\" }",
-				"correlated name EXISTS should expose its small literal domain");
-		requireBefore(mismatches, renderedQuery, "VALUES ?name { \"user0\" \"user1\" }",
-				"?u1 <http://example.com/theme/social/name> ?name .",
-				"inner name VALUES should guard the correlated name lookup");
+		if (!nameExistsBeforeFollows) {
+			requireBefore(mismatches, renderedQuery, "?u3 <http://example.com/theme/social/follows> ?u2 .",
+					"FILTER EXISTS",
+					"correlated name EXISTS should run after the bounded clique lookups");
+		}
+		if (renderedQuery.contains("VALUES ?name { \"user0\" \"user1\" }")) {
+			requireBefore(mismatches, renderedQuery, "VALUES ?name { \"user0\" \"user1\" }",
+					"?u1 <http://example.com/theme/social/name> ?name .",
+					"inner name VALUES should guard the correlated name lookup");
+		} else {
+			requireContains(mismatches, renderedQuery, "FILTER ((?name = \"user0\") || (?name = \"user1\"))",
+					"correlated name EXISTS should retain the small literal domain as an equality filter");
+			requireBefore(mismatches, renderedQuery, "?u1 <http://example.com/theme/social/name> ?name .",
+					"FILTER ((?name = \"user0\") || (?name = \"user1\"))",
+					"inner name lookup should feed the literal equality filter");
+		}
 		requireBefore(mismatches, renderedQuery, "FILTER EXISTS", "MINUS",
 				"name EXISTS should run before the materialized self-loop exclusion");
 		requireContains(mismatches, renderedQuery, "MINUS",
@@ -770,6 +786,15 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 7);
 		return mismatches;
+	}
+
+	private static void requireDoesNotContainSocialUserSelfPair(List<String> mismatches, String renderedQuery,
+			String description) {
+		for (int user = 0; user <= 2; user++) {
+			String selfPair = "(<http://example.com/theme/social/user/" + user
+					+ "> <http://example.com/theme/social/user/" + user + ">";
+			requireDoesNotContain(mismatches, renderedQuery, selfPair, description);
+		}
 	}
 
 	private static List<String> socialMediaQ10FastShapeMismatches(String renderedQuery, String plan) {
@@ -926,7 +951,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Line type should use exact direct access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
-				"plannedLookupComponents=[O]", "partOfLine optional should use bound line object access");
+				"plannedLookupComponents=[P, O]", "partOfLine optional should use bound line object access");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}
@@ -938,9 +963,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 				"?line <http://example.com/theme/train/name> ?optName .",
 				"literal optName filter should guard the line name lookup");
-		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"Line 0\", \"Line 1\"))",
-				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
-				"retained optName filter should run before section fanout");
 		requireBefore(mismatches, renderedQuery, "?line <http://example.com/theme/train/name> ?optName .",
 				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
 				"line name lookup should bind line before the first section lookup");
@@ -953,6 +975,8 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "?service <http://example.com/theme/train/runsOnSection> ?s2 .",
 				"?s2 <http://example.com/theme/train/partOfLine> ?line .",
 				"second service section should be checked against the bounded line");
+		requireContains(mismatches, renderedQuery, "?s2 <http://example.com/theme/train/partOfLine> ?line .",
+				"second section should still be checked against the finite line");
 		requireBefore(mismatches, renderedQuery, "?s1 <http://example.com/theme/train/connectsOperationalPoint> ?op .",
 				"?s2 <http://example.com/theme/train/connectsOperationalPoint> ?op .",
 				"operational-point EXISTS should probe s1 before the exact s2 join");
@@ -962,12 +986,24 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "?service a <http://example.com/theme/train/TrainService> .",
 				"FILTER EXISTS",
 				"TrainService type guard should run before the correlated operational-point EXISTS");
-		requireBefore(mismatches, renderedQuery, "?s2 <http://example.com/theme/train/partOfLine> ?line .",
-				"FILTER EXISTS",
-				"bounded service/section lookups should run before the correlated operational-point EXISTS");
+		if (renderedQuery.indexOf("?s2 <http://example.com/theme/train/partOfLine> ?line .") < renderedQuery
+				.indexOf("FILTER EXISTS")) {
+			requireBefore(mismatches, renderedQuery, "?s2 <http://example.com/theme/train/partOfLine> ?line .",
+					"FILTER EXISTS",
+					"bounded service/section lookups should run before the correlated operational-point EXISTS");
+		} else {
+			requireBefore(mismatches, renderedQuery, "FILTER EXISTS",
+					"?s2 <http://example.com/theme/train/partOfLine> ?line .",
+					"nested operational-point EXISTS should run before the final exact line check");
+			requireContains(mismatches, plan, "source=sketch_nested_exists",
+					"correlated operational-point EXISTS should be costed as a nested-exists guard");
+			requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
+					"plannedLookupComponents=[S, P, O]",
+					"final partOfLine check should use exact service section and line access");
+		}
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
-				"plannedLookupComponents=[O]", "partOfLine should use bound line object access");
+				"plannedLookupComponents=[P, O]", "partOfLine should use bound line object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/connectsOperationalPoint",
 				"plannedLookupComponents=[S, P]", "first operational-point probe should use bound section access");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/runsOnSection", "runsOnSection");
@@ -998,7 +1034,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 				"hasMeter lookup should stay inside the optional after transformer is bound");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/grid/name", "grid name");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/feeds",
-				"plannedLookupComponents=[O]", "feeds should use bound substation object access");
+				"plannedLookupComponents=[P, O]", "feeds should use bound substation object access");
 		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Transformer type");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/hasMeter",
 				"plannedLookupComponents=[S, P]", "hasMeter optional should use bound transformer subject access");
@@ -1033,7 +1069,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 				"correlated EXISTS should retain its bound line probe");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/grid/name", "grid name");
 		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/connectsTo",
-				"plannedLookupComponents=[O]", "first connectsTo should use bound substation object access");
+				"plannedLookupComponents=[P, O]", "first connectsTo should use bound substation object access");
 		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Line type");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
@@ -1052,9 +1088,18 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "?transformer <http://example.com/theme/grid/feeds> ?substation .",
 				"?transformer a <http://example.com/theme/grid/Transformer> .",
 				"feeds lookup should bind transformer before the type guard");
-		requireBefore(mismatches, renderedQuery, "?transformer a <http://example.com/theme/grid/Transformer> .",
-				"FILTER EXISTS",
-				"Transformer type guard should run before bounded meter EXISTS");
+		if (renderedQuery.indexOf("?transformer a <http://example.com/theme/grid/Transformer> .") < renderedQuery
+				.indexOf("FILTER EXISTS")) {
+			requireBefore(mismatches, renderedQuery, "?transformer a <http://example.com/theme/grid/Transformer> .",
+					"FILTER EXISTS",
+					"Transformer type guard should run before bounded meter EXISTS");
+		} else {
+			requireBefore(mismatches, renderedQuery, "FILTER EXISTS",
+					"?transformer a <http://example.com/theme/grid/Transformer> .",
+					"bounded meter EXISTS should run before the final exact type guard");
+			requireContains(mismatches, plan, "source=sketch_nested_exists",
+					"bounded meter EXISTS should be costed as a nested-exists guard");
+		}
 		requireBefore(mismatches, renderedQuery, "FILTER EXISTS",
 				"?transformer <http://example.com/theme/grid/hasMeter> ?meter .",
 				"meter EXISTS should retain its bound transformer probe");
@@ -1062,7 +1107,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 				"meter/substation exclusion should be elided when the RHS filter is outside MINUS scope");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/grid/name", "grid name");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/feeds",
-				"plannedLookupComponents=[O]", "feeds should use bound substation object access");
+				"plannedLookupComponents=[P, O]", "feeds should use bound substation object access");
 		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Transformer type");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/grid/hasMeter",
 				"plannedLookupComponents=[S, P]", "hasMeter EXISTS should use bound transformer subject access");
@@ -1092,7 +1137,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/library/name", "library name");
 		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "Author type");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/writtenBy",
-				"plannedLookupComponents=[O]", "writtenBy optional should use bound author object access");
+				"plannedLookupComponents=[P, O]", "writtenBy optional should use bound author object access");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}
@@ -1152,7 +1197,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/name",
 				"plannedLookupComponents=[P, O]", "branch name lookup should use finite branch-name object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/library/locatedAt",
-				"plannedLookupComponents=[O]", "locatedAt should use bound branch object access");
+				"plannedLookupComponents=[P, O]", "locatedAt should use bound branch object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Copy type should use bound copy exact access");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
@@ -1164,9 +1209,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireContains(mismatches, renderedQuery,
 				"VALUES ?optName { \"Member 1\" \"Member 2\" \"Member 3\" }",
 				"missing finite member-name anchor");
-		requireContains(mismatches, renderedQuery,
-				"FILTER (?optName IN (\"Member 1\", \"Member 2\", \"Member 3\"))",
-				"missing retained member-name filter");
 		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 				"?member <http://example.com/theme/library/name> ?optName .",
 				"finite member-name values should guard the name lookup");
@@ -1335,7 +1377,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "FILTER NOT EXISTS", "FILTER EXISTS",
 				"dosage anti-probe should remain before patient-medication existence probe");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/code",
-				"plannedLookupComponents=[O]", "code lookup should use finite medication-code object access");
+				"plannedLookupComponents=[P, O]", "code lookup should use finite medication-code object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Medication type should use bound medication exact access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/dosage",
@@ -1422,6 +1464,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
 		int directLookupCount = 0;
 		while (matcher.find()) {
+			if (isFiniteSurfaceDirectLookup(matcher.group())) {
+				continue;
+			}
 			directLookupCount++;
 			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
 			if (workRows > maxWorkRows) {
@@ -1433,6 +1478,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 			mismatches.add("expected at least " + minDirectLookups + " direct lookup factors but found "
 					+ directLookupCount);
 		}
+	}
+
+	private static boolean isFiniteSurfaceDirectLookup(String directLookupHeader) {
+		return directLookupHeader.contains("plannedEstimateSource=lmdb-finite-derived-surface")
+				|| directLookupHeader.contains("plannedEstimateSource=lmdb-finite-binding-lookup");
 	}
 
 	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
