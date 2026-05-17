@@ -414,8 +414,13 @@ class LmdbSailStore implements SailStore {
 				throw deferredEstimatorStatementSource();
 			}
 			try {
-				return new GuardedEstimatorStatementIteration(delegate.getStatements(subject, predicate, object,
-						contexts));
+				CloseableIteration<? extends Statement> statements = delegate.getStatements(subject, predicate, object,
+						contexts);
+				if (refreshThread) {
+					sinkStoreAccessLock.unlock();
+					return statements;
+				}
+				return new GuardedEstimatorStatementIteration(statements);
 			} catch (RuntimeException | Error e) {
 				sinkStoreAccessLock.unlock();
 				throw e;

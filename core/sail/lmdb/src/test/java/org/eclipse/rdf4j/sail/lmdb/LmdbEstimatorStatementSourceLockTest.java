@@ -41,7 +41,7 @@ class LmdbEstimatorStatementSourceLockTest {
 	private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 
 	@Test
-	void guardedEstimatorStatementSourceKeepsSinkLockUntilIterationCloses(@TempDir File dataDir) throws Exception {
+	void nonRefreshEstimatorStatementSourceKeepsSinkLockUntilIterationCloses(@TempDir File dataDir) throws Exception {
 		LmdbSailStore backingStore = new LmdbSailStore(dataDir, new StoreProperties(), new LmdbStoreConfig("spoc"),
 				false);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
