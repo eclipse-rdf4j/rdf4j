@@ -259,6 +259,16 @@ class LmdbImprovedQueryPlanSnapshotIT {
 					&& actualPlan.contains("value=http://example.com/theme/library/title")
 					&& actualPlan.contains("value=http://example.com/theme/library/hasCopy");
 		}
+		if (targetQuery.theme() == Theme.MEDICAL_RECORDS && targetQuery.queryIndex() == 1) {
+			return actualPlan.contains("plannerId=lmdb-sketch")
+					&& actualPlan.contains("plannerPath=ROBUST_USED")
+					&& !actualPlan.contains("plannerPath=UNSUPPORTED_SHAPE")
+					&& actualPlan.contains("FilteredBindingSetAssignmentJoinIteration")
+					&& actualPlan.contains("BindingSetAssignment ([[target=\"DX-200\"], [target=\"DX-201\"]])")
+					&& actualPlan.contains("value=http://example.com/theme/medical/Condition")
+					&& actualPlan.contains("value=http://example.com/theme/medical/Medication")
+					&& actualPlan.contains("value=http://example.com/theme/medical/code");
+		}
 		return targetQuery.theme() == Theme.ENGINEERING
 				&& targetQuery.queryIndex() == 1
 				&& actualPlan.contains("plannerId=lmdb-sketch")

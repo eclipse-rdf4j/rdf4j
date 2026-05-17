@@ -440,10 +440,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 			if (isFiniteSurfaceDirectLookup(matcher.group())) {
 				continue;
 			}
-			double workRows = parsePlanRows(matcher.group(1));
+			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
 			if (workRows > maxWorkRows) {
-				mismatches.add(key + " direct lookup plannedWorkRows should stay bounded by explicit step work, got "
-						+ matcher.group(1) + "\n" + plan);
+				mismatches.add(
+						key + " direct lookup plannedAccessWorkRows should stay bounded by explicit step work, got "
+								+ workRows + "\n" + plan);
 			}
 		}
 		return mismatches;
@@ -452,6 +453,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 	private static boolean isFiniteSurfaceDirectLookup(String directLookupHeader) {
 		return directLookupHeader.contains("plannedEstimateSource=lmdb-finite-derived-surface")
 				|| directLookupHeader.contains("plannedEstimateSource=lmdb-finite-binding-lookup");
+	}
+
+	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
+		Matcher accessWorkRows = Pattern.compile("plannedAccessWorkRows=([^,)]*)").matcher(directLookupHeader);
+		return accessWorkRows.find() ? parsePlanRows(accessWorkRows.group(1)) : parsePlanRows(fallbackWorkRows);
 	}
 
 	private static double parsePlanRows(String value) {

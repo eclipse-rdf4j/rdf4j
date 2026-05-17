@@ -1420,6 +1420,19 @@ class LmdbThemeTopRegressionSnapshotIT {
 	}
 
 	private static List<String> medicalRecordsQ7FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> finiteAnchorMismatches = medicalRecordsQ7FiniteAnchorShapeMismatches(renderedQuery, plan);
+		if (finiteAnchorMismatches.isEmpty()) {
+			return finiteAnchorMismatches;
+		}
+		List<String> robustCodeFilterMismatches = medicalRecordsQ7RobustCodeFilterShapeMismatches(renderedQuery,
+				plan);
+		if (robustCodeFilterMismatches.isEmpty()) {
+			return robustCodeFilterMismatches;
+		}
+		return finiteAnchorMismatches;
+	}
+
+	private static List<String> medicalRecordsQ7FiniteAnchorShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
 		requireContains(mismatches, renderedQuery, "VALUES ?code { \"MED-1000\" \"MED-1001\" }",
 				"missing finite medication-code anchor");
@@ -1437,6 +1450,35 @@ class LmdbThemeTopRegressionSnapshotIT {
 				"plannedLookupComponents=[P, O]", "code lookup should use finite medication-code object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Medication type should use bound medication exact access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/dosage",
+				"plannedLookupComponents=[S, P]", "dosage anti-probe should use bound medication subject access");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/hasMedication",
+				"plannedLookupComponents=[P, O]",
+				"patient-medication existence probe should use bound medication object access");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 3);
+		return mismatches;
+	}
+
+	private static List<String> medicalRecordsQ7RobustCodeFilterShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "?med <http://example.com/theme/medical/code> ?code .",
+				"missing medication-code lookup");
+		requireContains(mismatches, renderedQuery,
+				"FILTER ((?code = \"MED-1000\") || (?code = \"MED-1001\"))",
+				"missing medication-code finite filter");
+		requireBefore(mismatches, renderedQuery, "?med a <http://example.com/theme/medical/Medication> .",
+				"FILTER NOT EXISTS", "Medication type guard should run before dosage anti-probe");
+		requireBefore(mismatches, renderedQuery, "FILTER NOT EXISTS", "FILTER EXISTS",
+				"dosage anti-probe should remain before patient-medication existence probe");
+		requireContains(mismatches, plan, "optimizer.guaranteeOptionCandidates=",
+				"missing finite-anchor costing comparison");
+		requireContains(mismatches, plan, "finite-anchor:code[valid",
+				"planner should still consider the finite medication-code anchor");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/code",
+				"plannedLookupComponents=[S, P]",
+				"code lookup should use bound medication subject access when robust costing wins");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[P, O]", "Medication type should stay a bounded predicate/object scan");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/dosage",
 				"plannedLookupComponents=[S, P]", "dosage anti-probe should use bound medication subject access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/medical/hasMedication",
