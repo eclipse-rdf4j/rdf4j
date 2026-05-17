@@ -142,6 +142,11 @@ rebuilds keeps startup predictable for large stores, but LMDB will only use the 
 stored metadata is current. If the metadata is stale and rebuilds are disabled, the store ignores the index until it
 is rebuilt by starting with automatic rebuilds enabled again.
 
+Predicate guarantees are stored in LMDB for persistence and also loaded into an in-memory copy when the store starts.
+Query planning reads the in-memory copy rather than relying on the operating system to keep the LMDB mmap pages hot.
+Every committed guarantee write updates both the persisted record and the in-memory copy together, so the planner does
+not observe a heap/disk mismatch during normal operation.
+
 Use `LmdbStoreConfig.setPredicateGuaranteeIndexEnabled(false)` to disable the feature completely. When disabled,
 LMDB neither records new predicate guarantees nor reads existing ones.
 

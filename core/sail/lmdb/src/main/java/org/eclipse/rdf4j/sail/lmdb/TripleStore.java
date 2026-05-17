@@ -80,6 +80,7 @@ import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -182,7 +183,12 @@ class TripleStore implements Closeable {
 	private final boolean predicateGuaranteeIndexEnabled;
 	private final boolean predicateGuaranteeIndexAutoRebuild;
 	private final Set<String> predicateGuaranteeExcludedPredicates;
-	private boolean predicateGuaranteeIndexReadable;
+	private volatile boolean predicateGuaranteeIndexReadable;
+	private final ReentrantReadWriteLock predicateObjectDomainCacheLock = new ReentrantReadWriteLock();
+	private Map<Long, RdfTermDomain> predicateObjectDomainCache = Map.of();
+	private final Map<Long, RdfTermDomain> pendingRdfTermDomainCacheWrites = new HashMap<>();
+	private final Set<Long> pendingRdfTermDomainCacheDeletes = new HashSet<>();
+	private boolean pendingRdfTermDomainCacheClear;
 
 	private TxnRecordCache recordCache = null;
 	private final Map<Long, PendingRdfTermDomain> pendingRdfTermDomains = new HashMap<>();
@@ -324,21 +330,25 @@ class TripleStore implements Closeable {
 			if (!predicateGuaranteeIndexEnabled) {
 				properties.setRdfTermDomainsVersion(PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled");
 			}
+			clearRdfTermDomainCache();
 			return;
 		}
 		String currentVersion = currentRdfTermDomainsVersion();
 		if (currentVersion.equals(properties.getRdfTermDomainsVersion())) {
-			predicateGuaranteeIndexReadable = true;
 			if (predicateGuaranteeIndexAutoRebuild) {
 				rebuildMarkedRdfTermDomains();
 			}
+			loadRdfTermDomainCache();
+			predicateGuaranteeIndexReadable = true;
 			return;
 		}
 		if (!predicateGuaranteeIndexAutoRebuild && properties.isLoaded()) {
+			clearRdfTermDomainCache();
 			return;
 		}
 		rebuildRdfTermDomains();
 		properties.setRdfTermDomainsVersion(currentVersion);
+		loadRdfTermDomainCache();
 		predicateGuaranteeIndexReadable = true;
 	}
 
@@ -350,12 +360,59 @@ class TripleStore implements Closeable {
 				+ Integer.toHexString(predicateGuaranteeExcludedPredicates.hashCode());
 	}
 
+	private void loadRdfTermDomainCache() throws IOException {
+		Map<Long, RdfTermDomain> loaded = readAllRdfTermDomains();
+		predicateObjectDomainCacheLock.writeLock().lock();
+		try {
+			predicateObjectDomainCache = loaded;
+		} finally {
+			predicateObjectDomainCacheLock.writeLock().unlock();
+		}
+	}
+
+	private Map<Long, RdfTermDomain> readAllRdfTermDomains() throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, predicateObjectDomainsDbi, pp));
+			long cursor = pp.get(0);
+			try {
+				Map<Long, RdfTermDomain> loaded = new HashMap<>();
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					ByteBuffer keyData = keyVal.mv_data();
+					if (keyData != null) {
+						loaded.put(Varint.readUnsigned(keyData, keyData.position()), readRdfTermDomain(dataVal));
+					}
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return Map.copyOf(loaded);
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
+	}
+
+	private void clearRdfTermDomainCache() {
+		predicateObjectDomainCacheLock.writeLock().lock();
+		try {
+			predicateObjectDomainCache = Map.of();
+		} finally {
+			predicateObjectDomainCacheLock.writeLock().unlock();
+		}
+	}
+
 	private void rebuildRdfTermDomains() throws IOException {
 		boolean committed = false;
 		startTransaction();
 		try {
 			E(mdb_drop(writeTxn, predicateObjectDomainsDbi, false));
 			E(mdb_drop(writeTxn, predicateObjectDomainDegradationsDbi, false));
+			stageRdfTermDomainCacheClear();
 			if (valueStore != null) {
 				Map<Long, PendingRdfTermDomain> guarantees = new HashMap<>();
 				for (boolean explicit : new boolean[] { true, false }) {
@@ -462,7 +519,7 @@ class TripleStore implements Closeable {
 		if (isPredicateGuaranteeExcluded(predicateId)) {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
-				deleteRdfTermDomain(keyVal);
+				deleteRdfTermDomain(predicateId, keyVal);
 				deleteRdfTermDomainDegradation(keyVal);
 			}
 			return;
@@ -486,10 +543,10 @@ class TripleStore implements Closeable {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
 			if (rebuilt == null) {
-				deleteRdfTermDomain(keyVal);
+				deleteRdfTermDomain(predicateId, keyVal);
 				deleteRdfTermDomainDegradation(keyVal);
 			} else {
-				writeRdfTermDomain(stack, keyVal, rebuilt.guarantee());
+				writeRdfTermDomain(stack, predicateId, keyVal, rebuilt.guarantee());
 				long candidateMask = degradationCandidateMask(rebuilt.guarantee(), rebuilt.observedMask());
 				if (candidateMask == 0L) {
 					deleteRdfTermDomainDegradation(keyVal);
@@ -563,6 +620,23 @@ class TripleStore implements Closeable {
 				|| isPredicateGuaranteeExcluded(predicateId)) {
 			return Optional.empty();
 		}
+		return getCachedRdfTermDomain(predicateId);
+	}
+
+	Optional<RdfTermDomain> getCachedRdfTermDomain(long predicateId) {
+		predicateObjectDomainCacheLock.readLock().lock();
+		try {
+			return Optional.ofNullable(predicateObjectDomainCache.get(predicateId));
+		} finally {
+			predicateObjectDomainCacheLock.readLock().unlock();
+		}
+	}
+
+	Optional<RdfTermDomain> getPersistedRdfTermDomain(long predicateId) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || !predicateGuaranteeIndexReadable
+				|| isPredicateGuaranteeExcluded(predicateId)) {
+			return Optional.empty();
+		}
 		return txnManager.doWith((stack, txn) -> {
 			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
 
@@ -617,7 +691,7 @@ class TripleStore implements Closeable {
 			}
 
 			if (writeGuarantee) {
-				writeRdfTermDomain(stack, keyVal, updated);
+				writeRdfTermDomain(stack, predicateId, keyVal, updated);
 			}
 			recordRdfTermDomainDegradation(stack, keyVal, candidateMask, pending.removedMask());
 		}
@@ -627,11 +701,11 @@ class TripleStore implements Closeable {
 			throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
-			writeRdfTermDomain(stack, keyVal, guarantee);
+			writeRdfTermDomain(stack, predicateId, keyVal, guarantee);
 		}
 	}
 
-	private void writeRdfTermDomain(MemoryStack stack, MDBVal keyVal, RdfTermDomain guarantee)
+	private void writeRdfTermDomain(MemoryStack stack, long predicateId, MDBVal keyVal, RdfTermDomain guarantee)
 			throws IOException {
 		MDBVal dataVal = MDBVal.malloc(stack);
 		ByteBuffer dataBuf = stack.malloc(PREDICATE_OBJECT_DOMAIN_BYTES);
@@ -640,6 +714,7 @@ class TripleStore implements Closeable {
 		dataBuf.flip();
 		dataVal.mv_data(dataBuf);
 		E(mdb_put(writeTxn, predicateObjectDomainsDbi, keyVal, dataVal, 0));
+		stageRdfTermDomainCacheWrite(predicateId, guarantee);
 	}
 
 	private RdfTermDomain readRdfTermDomain(MDBVal dataVal) {
@@ -653,11 +728,49 @@ class TripleStore implements Closeable {
 		return RdfTermDomain.fromMask(data.getLong(data.position() + Long.BYTES));
 	}
 
-	private void deleteRdfTermDomain(MDBVal keyVal) throws IOException {
+	private void deleteRdfTermDomain(long predicateId, MDBVal keyVal) throws IOException {
 		int rc = mdb_del(writeTxn, predicateObjectDomainsDbi, keyVal, null);
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
 			throw new IOException(mdb_strerror(rc));
 		}
+		stageRdfTermDomainCacheDelete(predicateId);
+	}
+
+	private void stageRdfTermDomainCacheWrite(long predicateId, RdfTermDomain guarantee) {
+		pendingRdfTermDomainCacheDeletes.remove(predicateId);
+		pendingRdfTermDomainCacheWrites.put(predicateId, guarantee);
+	}
+
+	private void stageRdfTermDomainCacheDelete(long predicateId) {
+		pendingRdfTermDomainCacheWrites.remove(predicateId);
+		pendingRdfTermDomainCacheDeletes.add(predicateId);
+	}
+
+	private void stageRdfTermDomainCacheClear() {
+		pendingRdfTermDomainCacheClear = true;
+		pendingRdfTermDomainCacheWrites.clear();
+		pendingRdfTermDomainCacheDeletes.clear();
+	}
+
+	private void applyPendingRdfTermDomainCacheUpdates() {
+		if (!pendingRdfTermDomainCacheClear && pendingRdfTermDomainCacheWrites.isEmpty()
+				&& pendingRdfTermDomainCacheDeletes.isEmpty()) {
+			return;
+		}
+		Map<Long, RdfTermDomain> updated = pendingRdfTermDomainCacheClear
+				? new HashMap<>()
+				: new HashMap<>(predicateObjectDomainCache);
+		for (long predicateId : pendingRdfTermDomainCacheDeletes) {
+			updated.remove(predicateId);
+		}
+		updated.putAll(pendingRdfTermDomainCacheWrites);
+		predicateObjectDomainCache = Map.copyOf(updated);
+	}
+
+	private void clearPendingRdfTermDomainCacheUpdates() {
+		pendingRdfTermDomainCacheClear = false;
+		pendingRdfTermDomainCacheWrites.clear();
+		pendingRdfTermDomainCacheDeletes.clear();
 	}
 
 	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask)
@@ -2287,6 +2400,7 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
+					predicateObjectDomainCacheLock.writeLock().lock();
 					try {
 						if (recordCache == null) {
 							flushPendingRdfTermDomains();
@@ -2315,6 +2429,7 @@ class TripleStore implements Closeable {
 								flushPendingRdfTermDomains();
 								// finally, commit write transaction
 								E(mdb_txn_commit(writeTxn));
+								applyPendingRdfTermDomainCacheUpdates();
 							} finally {
 								recordCache = null;
 								try {
@@ -2324,6 +2439,7 @@ class TripleStore implements Closeable {
 								}
 							}
 						} else {
+							applyPendingRdfTermDomainCacheUpdates();
 							// invalidate open read transaction so that they are not re-used
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
@@ -2333,6 +2449,8 @@ class TripleStore implements Closeable {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
 						throw e;
+					} finally {
+						predicateObjectDomainCacheLock.writeLock().unlock();
 					}
 				} else {
 					mdb_txn_abort(writeTxn);
@@ -2348,6 +2466,7 @@ class TripleStore implements Closeable {
 					}
 				}
 				pendingRdfTermDomains.clear();
+				clearPendingRdfTermDomainCacheUpdates();
 			}
 		}
 	}

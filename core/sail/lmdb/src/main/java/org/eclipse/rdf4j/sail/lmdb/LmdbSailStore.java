@@ -23,6 +23,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -480,6 +481,22 @@ class LmdbSailStore implements SailStore {
 
 	SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
 		return sketchBasedJoinEstimator;
+	}
+
+	Optional<RdfTermDomain> getCachedRdfTermDomain(IRI predicate) throws IOException {
+		long predicateId = valueStore.getId(predicate);
+		if (predicateId == LmdbValue.UNKNOWN_ID) {
+			return Optional.empty();
+		}
+		return tripleStore.getCachedRdfTermDomain(predicateId);
+	}
+
+	Optional<RdfTermDomain> getPersistedRdfTermDomain(IRI predicate) throws IOException {
+		long predicateId = valueStore.getId(predicate);
+		if (predicateId == LmdbValue.UNKNOWN_ID) {
+			return Optional.empty();
+		}
+		return tripleStore.getPersistedRdfTermDomain(predicateId);
 	}
 
 	private static SketchBasedJoinEstimator.Config sketchEstimatorConfig(LmdbStoreConfig config) {

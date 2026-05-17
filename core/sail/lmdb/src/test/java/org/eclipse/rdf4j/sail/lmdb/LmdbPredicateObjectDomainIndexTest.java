@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -119,6 +120,50 @@ class LmdbPredicateObjectDomainIndexTest {
 			RdfTermDomain guarantee = guarantee(reopened, predicate);
 			assertHas(guarantee, RdfTermDomain.Fact.NUMBER);
 			assertFalse(guarantee.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void predicateGuaranteesStayHeapResidentAndSynchronizedWithDisk(@TempDir File dataDir) throws Exception {
+		IRI predicate = VF.createIRI("http://example.com/value");
+		IRI canonicalSubject = VF.createIRI("http://example.com/s1");
+		IRI nonCanonicalSubject = VF.createIRI("http://example.com/s2");
+		Literal canonical = VF.createLiteral("7", XSD.INT);
+		Literal leadingZero = VF.createLiteral("007", XSD.INT);
+
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(canonicalSubject, predicate, canonical);
+			}
+			assertSynchronizedHeapAndDiskGuarantees(repository, predicate);
+			assertHas(cachedGuarantee(repository, predicate).orElseThrow(), RdfTermDomain.Fact.CANONICAL_INTEGER);
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = repository(dataDir);
+		try {
+			assertSynchronizedHeapAndDiskGuarantees(reopened, predicate);
+
+			try (RepositoryConnection connection = reopened.getConnection()) {
+				connection.add(nonCanonicalSubject, predicate, leadingZero);
+			}
+			assertSynchronizedHeapAndDiskGuarantees(reopened, predicate);
+			RdfTermDomain broadened = cachedGuarantee(reopened, predicate).orElseThrow();
+			assertHas(broadened, RdfTermDomain.Fact.NUMBER);
+			assertFalse(broadened.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+
+			Optional<RdfTermDomain> beforeRemoval = cachedGuarantee(reopened, predicate);
+			try (RepositoryConnection connection = reopened.getConnection()) {
+				connection.remove(nonCanonicalSubject, predicate, leadingZero);
+			}
+			assertSynchronizedHeapAndDiskGuarantees(reopened, predicate);
+			assertEquals(beforeRemoval, cachedGuarantee(reopened, predicate),
+					"Potentially restoring deletes should keep the degraded guarantee until rebuild");
+			assertNotEquals(RdfTermDomain.UNRESTRICTED, cachedGuarantee(reopened, predicate).orElseThrow());
 		} finally {
 			reopened.shutDown();
 		}
@@ -553,6 +598,26 @@ class LmdbPredicateObjectDomainIndexTest {
 		LmdbPredicateObjectDomainSource source = (LmdbPredicateObjectDomainSource) sail.getBackingStore()
 				.getEvaluationStatistics();
 		return source.getKnownRdfTermDomain(predicate);
+	}
+
+	private static Optional<RdfTermDomain> cachedGuarantee(SailRepository repository, IRI predicate) throws Exception {
+		return backingStore(repository).getCachedRdfTermDomain(predicate);
+	}
+
+	private static Optional<RdfTermDomain> persistedGuarantee(SailRepository repository, IRI predicate)
+			throws Exception {
+		return backingStore(repository).getPersistedRdfTermDomain(predicate);
+	}
+
+	private static void assertSynchronizedHeapAndDiskGuarantees(SailRepository repository, IRI predicate)
+			throws Exception {
+		assertEquals(persistedGuarantee(repository, predicate), cachedGuarantee(repository, predicate),
+				"Heap-resident predicate guarantee cache must match the persisted LMDB guarantee DB");
+	}
+
+	private static LmdbSailStore backingStore(SailRepository repository) {
+		LmdbStore sail = (LmdbStore) repository.getSail();
+		return sail.getBackingStore();
 	}
 
 	private static void makeLmdbOptimizerReady(SailRepository repository) throws InterruptedException {
