@@ -373,17 +373,22 @@ class TripleStore implements Closeable {
 							if (isPredicateGuaranteeExcluded(quad[PRED_IDX])) {
 								continue;
 							}
+							long predicateId = quad[PRED_IDX];
 							Value object = valueStore.getValue(quad[OBJ_IDX]);
-							guarantees.merge(quad[PRED_IDX],
-									PendingRdfTermDomain.of(RdfTermDomain.classify(object)),
-									PendingRdfTermDomain::combine);
+							long observedMask = RdfTermDomain.classifyMask(object);
+							PendingRdfTermDomain guarantee = guarantees.get(predicateId);
+							if (guarantee == null) {
+								guarantees.put(predicateId, PendingRdfTermDomain.of(observedMask));
+							} else {
+								guarantee.recordObserved(observedMask);
+							}
 						}
 					}
 				}
 				for (Map.Entry<Long, PendingRdfTermDomain> entry : guarantees.entrySet()) {
 					PendingRdfTermDomain guarantee = entry.getValue();
 					writeRdfTermDomain(entry.getKey(), guarantee.guarantee());
-					long candidateMask = guarantee.observedMask() & ~guarantee.guarantee().mask();
+					long candidateMask = degradationCandidateMask(guarantee.guarantee(), guarantee.observedMask());
 					if (candidateMask != 0L) {
 						try (MemoryStack stack = MemoryStack.stackPush()) {
 							writeRdfTermDomainDegradation(stack, predicateObjectDomainKey(stack,
@@ -462,17 +467,19 @@ class TripleStore implements Closeable {
 			}
 			return;
 		}
-		RdfTermDomain rebuilt = null;
-		long observedMask = 0L;
+		PendingRdfTermDomain rebuilt = null;
 		for (boolean explicit : new boolean[] { true, false }) {
 			try (RecordIterator triples = getTriples(txnManager.createTxn(writeTxn), -1, predicateId, -1, -1,
 					explicit)) {
 				long[] quad;
 				while ((quad = triples.next()) != null) {
 					Value object = valueStore.getValue(quad[OBJ_IDX]);
-					RdfTermDomain observed = RdfTermDomain.classify(object);
-					rebuilt = rebuilt == null ? observed : rebuilt.combine(observed);
-					observedMask |= observed.mask();
+					long observedMask = RdfTermDomain.classifyMask(object);
+					if (rebuilt == null) {
+						rebuilt = PendingRdfTermDomain.of(observedMask);
+					} else {
+						rebuilt.recordObserved(observedMask);
+					}
 				}
 			}
 		}
@@ -482,8 +489,8 @@ class TripleStore implements Closeable {
 				deleteRdfTermDomain(keyVal);
 				deleteRdfTermDomainDegradation(keyVal);
 			} else {
-				writeRdfTermDomain(stack, keyVal, rebuilt);
-				long candidateMask = observedMask & ~rebuilt.mask();
+				writeRdfTermDomain(stack, keyVal, rebuilt.guarantee());
+				long candidateMask = degradationCandidateMask(rebuilt.guarantee(), rebuilt.observedMask());
 				if (candidateMask == 0L) {
 					deleteRdfTermDomainDegradation(keyVal);
 				} else {
@@ -507,20 +514,24 @@ class TripleStore implements Closeable {
 		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
 			return;
 		}
-		RdfTermDomain observed = RdfTermDomain.classify(object);
-		if (recordCache != null) {
-			pendingRdfTermDomains.merge(predicateId, PendingRdfTermDomain.of(observed),
-					PendingRdfTermDomain::combine);
-			return;
+		long observedMask = RdfTermDomain.classifyMask(object);
+		PendingRdfTermDomain pending = pendingRdfTermDomains.get(predicateId);
+		if (pending == null) {
+			pendingRdfTermDomains.put(predicateId, PendingRdfTermDomain.of(observedMask));
+		} else {
+			pending.recordObserved(observedMask);
 		}
-		updateRdfTermDomain(predicateId, PendingRdfTermDomain.of(observed));
 	}
 
 	void recordPredicateObjectRemoval(long predicateId, Value object) throws IOException {
 		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
 			return;
 		}
-		RdfTermDomain removed = RdfTermDomain.classify(object);
+		long removedMask = RdfTermDomain.classifyMask(object);
+		PendingRdfTermDomain pending = pendingRdfTermDomains.get(predicateId);
+		if (pending != null) {
+			pending.recordRemoval(removedMask);
+		}
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
 			MDBVal existingVal = MDBVal.malloc(stack);
@@ -534,7 +545,7 @@ class TripleStore implements Closeable {
 
 			RdfTermDomainDegradation degradation = readRdfTermDomainDegradation(existingVal);
 			if (degradation.candidateMask() == 0L
-					|| (degradation.candidateMask() & ~removed.mask()) == 0L
+					|| (degradation.candidateMask() & ~removedMask) == 0L
 					|| degradation.rebuildRequested()) {
 				return;
 			}
@@ -591,12 +602,12 @@ class TripleStore implements Closeable {
 			MDBVal existingVal = MDBVal.malloc(stack);
 			int rc = mdb_get(writeTxn, predicateObjectDomainsDbi, keyVal, existingVal);
 			RdfTermDomain updated = pending.guarantee();
-			long candidateMask = pending.observedMask() & ~updated.mask();
+			long candidateMask = degradationCandidateMask(updated, pending.observedMask());
 			boolean writeGuarantee = true;
 			if (rc == MDB_SUCCESS) {
 				RdfTermDomain existing = readRdfTermDomain(existingVal);
 				updated = existing.combine(pending.guarantee());
-				candidateMask = (existing.mask() | pending.observedMask()) & ~updated.mask();
+				candidateMask = degradationCandidateMask(updated, existing.mask() | pending.observedMask());
 				writeGuarantee = !updated.equals(existing);
 				if (!writeGuarantee && candidateMask == 0L) {
 					return;
@@ -608,7 +619,7 @@ class TripleStore implements Closeable {
 			if (writeGuarantee) {
 				writeRdfTermDomain(stack, keyVal, updated);
 			}
-			recordRdfTermDomainDegradation(stack, keyVal, candidateMask);
+			recordRdfTermDomainDegradation(stack, keyVal, candidateMask, pending.removedMask());
 		}
 	}
 
@@ -651,6 +662,11 @@ class TripleStore implements Closeable {
 
 	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask)
 			throws IOException {
+		recordRdfTermDomainDegradation(stack, keyVal, candidateMask, 0L);
+	}
+
+	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask, long removedMask)
+			throws IOException {
 		if (candidateMask == 0L) {
 			return;
 		}
@@ -664,6 +680,9 @@ class TripleStore implements Closeable {
 			flags = existing.flags();
 		} else if (rc != MDB_NOTFOUND) {
 			throw new IOException(mdb_strerror(rc));
+		}
+		if ((mergedCandidateMask & ~removedMask) != 0L && (mergedCandidateMask & removedMask) != 0L) {
+			flags |= PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED;
 		}
 		writeRdfTermDomainDegradation(stack, keyVal, mergedCandidateMask, flags);
 	}
@@ -719,15 +738,49 @@ class TripleStore implements Closeable {
 		return predicate != null && predicateGuaranteeExcludedPredicates.contains(predicate.stringValue());
 	}
 
-	private record PendingRdfTermDomain(RdfTermDomain guarantee, long observedMask) {
+	private static long degradationCandidateMask(RdfTermDomain combined, long observedMask) {
+		long lostFacts = observedMask & ~combined.mask();
+		return lostFacts | combined.restoringDeleteCandidateMask();
+	}
 
-		static PendingRdfTermDomain of(RdfTermDomain guarantee) {
-			return new PendingRdfTermDomain(guarantee, guarantee.mask());
+	private static final class PendingRdfTermDomain {
+		private long guaranteeMask;
+		private long observedMask;
+		private long removedMask;
+
+		private PendingRdfTermDomain(long guaranteeMask, long observedMask, long removedMask) {
+			this.guaranteeMask = guaranteeMask;
+			this.observedMask = observedMask;
+			this.removedMask = removedMask;
 		}
 
-		PendingRdfTermDomain combine(PendingRdfTermDomain observed) {
-			return new PendingRdfTermDomain(guarantee.combine(observed.guarantee),
-					observedMask | observed.observedMask);
+		static PendingRdfTermDomain of(long guaranteeMask) {
+			return new PendingRdfTermDomain(guaranteeMask, guaranteeMask, 0L);
+		}
+
+		static PendingRdfTermDomain of(RdfTermDomain guarantee) {
+			return of(guarantee.mask());
+		}
+
+		RdfTermDomain guarantee() {
+			return RdfTermDomain.fromMask(guaranteeMask);
+		}
+
+		long observedMask() {
+			return observedMask;
+		}
+
+		long removedMask() {
+			return removedMask;
+		}
+
+		void recordObserved(long observedMask) {
+			guaranteeMask = RdfTermDomain.joinObservedMasks(guaranteeMask, observedMask);
+			this.observedMask |= observedMask;
+		}
+
+		void recordRemoval(long removedMask) {
+			this.removedMask |= removedMask;
 		}
 	}
 
@@ -1859,8 +1912,10 @@ class TripleStore implements Closeable {
 			int count, boolean explicit, IntConsumer addedIndexConsumer)
 			throws IOException {
 		for (int i = startIndex; i < count; i++) {
-			if (storeTriple(subj[i], pred[i], obj[i], context[i], explicit) && addedIndexConsumer != null) {
-				addedIndexConsumer.accept(i);
+			if (storeTriple(subj[i], pred[i], obj[i], context[i], explicit)) {
+				if (addedIndexConsumer != null) {
+					addedIndexConsumer.accept(i);
+				}
 			}
 		}
 	}

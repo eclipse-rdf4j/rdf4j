@@ -132,6 +132,18 @@ final class RdfTermDomain {
 		return mask;
 	}
 
+	long restoringDeleteCandidateMask() {
+		return multiAlternativeMask(KIND_MASK)
+				| multiAlternativeMask(LANGUAGE_MASK)
+				| multiAlternativeMask(TIMEZONE_MASK)
+				| multiAlternativeMask(XSD_DATATYPE_MASK);
+	}
+
+	private long multiAlternativeMask(long dimensionMask) {
+		long alternativeMask = mask & dimensionMask;
+		return Long.bitCount(alternativeMask) > 1 ? alternativeMask : 0L;
+	}
+
 	String fingerprint() {
 		return Long.toUnsignedString(mask) + ':' + (finiteValues == null ? 0 : finiteValues.hashCode());
 	}
@@ -270,14 +282,18 @@ final class RdfTermDomain {
 	}
 
 	static RdfTermDomain classify(Value value) {
+		return fromMask(classifyMask(value));
+	}
+
+	static long classifyMask(Value value) {
 		if (value instanceof IRI) {
-			return IRI;
+			return IRI.mask;
 		}
 		if (value instanceof BNode) {
-			return BNODE;
+			return BNODE.mask;
 		}
 		if (!(value instanceof Literal literal)) {
-			return UNRESTRICTED;
+			return UNRESTRICTED.mask;
 		}
 
 		long mask = Fact.LITERAL.mask();
@@ -300,7 +316,29 @@ final class RdfTermDomain {
 				mask = classifyCalendar(mask, literal.getLabel(), xsdDatatype);
 			}
 		}
-		return fromMask(mask);
+		return mask;
+	}
+
+	static long joinObservedMasks(long currentMask, long observedMask) {
+		if ((currentMask & UNKNOWN_MASK) != 0L) {
+			return observedMask;
+		}
+		if ((observedMask & UNKNOWN_MASK) != 0L) {
+			return currentMask;
+		}
+		if ((currentMask & EMPTY_MASK) != 0L) {
+			return observedMask;
+		}
+		if ((observedMask & EMPTY_MASK) != 0L) {
+			return currentMask;
+		}
+		if (currentMask == UNRESTRICTED.mask || observedMask == UNRESTRICTED.mask) {
+			return UNRESTRICTED.mask;
+		}
+
+		long possibleFacts = (currentMask | observedMask) & POSSIBLE_FACT_MASK;
+		long universalFacts = (currentMask & observedMask) & UNIVERSAL_FACT_MASK;
+		return possibleFacts | universalFacts;
 	}
 
 	static boolean isXsdNumericLiteral(Value value) {

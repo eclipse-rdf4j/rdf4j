@@ -35,6 +35,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +45,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -152,6 +157,8 @@ import org.slf4j.LoggerFactory;
  * <li>{@code incrementalQueueInitialLimit} (int)</li>
  * <li>{@code incrementalQueueIdleResetMillis} (long)</li>
  * <li>{@code incrementalQueueEstimatedStatementBytes} (long)</li>
+ * <li>{@code incrementalQueueBlockWindowUpdates} (int)</li>
+ * <li>{@code incrementalQueueBlockBudgetMillis} (long)</li>
  * </ul>
  *
  * <p>
@@ -1053,30 +1060,74 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private static final class StatementUpdateQueue {
-		private final ArrayList<StatementUpdate> updates;
+		private final ArrayList<StatementUpdateChunk> chunks;
 		private int limit;
 		private int inFlightCount;
+		private int updateCount;
 		private Future<?> future;
 
 		private StatementUpdateQueue(int limit) {
 			this.limit = limit;
-			this.updates = new ArrayList<>(Math.min(limit, INCREMENTAL_QUEUE_INITIAL_LIMIT));
+			this.chunks = new ArrayList<>(Math.min(limit, INCREMENTAL_QUEUE_INITIAL_LIMIT));
 		}
 
 		private boolean isReusable() {
 			return inFlightCount == 0 && (future == null || future.isDone());
 		}
+
+		private void add(StatementUpdateChunk chunk) {
+			chunks.add(chunk);
+			updateCount += chunk.size();
+		}
+
+		private void clear() {
+			chunks.clear();
+			updateCount = 0;
+		}
 	}
 
-	private record StatementUpdate(Statement statement, boolean isDelete) {
+	private record StatementUpdateChunk(List<? extends Statement> statements, int from, int to, boolean isDelete) {
+
+		private StatementUpdateChunk {
+			Objects.requireNonNull(statements, "statements");
+			if (from < 0 || to < from || to > statements.size()) {
+				throw new IllegalArgumentException("Invalid statement chunk range");
+			}
+		}
+
+		private int size() {
+			return to - from;
+		}
 	}
 
-	private record StatementUpdateBatch(StatementUpdateQueue queue, StatementUpdate[] updates) {
+	private record StatementUpdateBatch(StatementUpdateQueue queue, StatementUpdateChunk[] chunks, int updateCount) {
 	}
 
 	private record IngestEvent(boolean isDelete, int si, int pi, int oi, int ci, long thetaHs, long thetaHp,
 			long thetaHo, long thetaHc, long thetaSig, long spKey, long soKey, long scKey, long poKey, long pcKey,
 			long ocKey) {
+	}
+
+	private record TransformedStatementChunk(int index, IngestEvent[] events, int eventCount, int updateCount) {
+	}
+
+	private static final class PartitionWork {
+		private static final PartitionWork POISON = new PartitionWork(null, null, null);
+
+		private final TransformedStatementChunk chunk;
+		private final IngestPartition partition;
+		private final CompletableFuture<BatchUpdateAccumulator> result;
+
+		private PartitionWork(TransformedStatementChunk chunk, IngestPartition partition,
+				CompletableFuture<BatchUpdateAccumulator> result) {
+			this.chunk = chunk;
+			this.partition = partition;
+			this.result = result;
+		}
+
+		private boolean isPoison() {
+			return this == POISON;
+		}
 	}
 
 	private enum IngestPartition {
@@ -1089,7 +1140,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		OC
 	}
 
-	private static final IngestPartition[] INGEST_PARTITIONS = IngestPartition.values();
+	private static final IngestPartition[] INGEST_PARTITIONS_WITH_CONTEXT = {
+			IngestPartition.SINGLES,
+			IngestPartition.SP,
+			IngestPartition.SC,
+			IngestPartition.PO,
+			IngestPartition.PC,
+			IngestPartition.OC
+	};
+	private static final IngestPartition[] INGEST_PARTITIONS_WITHOUT_CONTEXT = {
+			IngestPartition.SINGLES,
+			IngestPartition.SP,
+			IngestPartition.PO
+	};
 
 	private static final class BatchUpdateAccumulator {
 		private static final long EMPTY_BUCKET = 0L;
@@ -1287,9 +1350,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long INCREMENTAL_QUEUE_IDLE_RESET_MILLIS = 10_000L;
 	private static final long INCREMENTAL_QUEUE_FULL_WAIT_MILLIS = 50L;
 	private static final long INCREMENTAL_QUEUE_ESTIMATED_STATEMENT_BYTES = 256L;
+	private static final int INCREMENTAL_TRANSFORM_QUEUE_CAPACITY = 1024;
+	private static final int INCREMENTAL_PARTITION_QUEUE_CAPACITY = 2;
 	private static final long MEMORY_MONITOR_ESTIMATED_OPERATION_BYTES = INCREMENTAL_QUEUE_ESTIMATED_STATEMENT_BYTES;
+	private static final int INCREMENTAL_QUEUE_BLOCK_WINDOW_UPDATES = 25_000;
+	private static final long INCREMENTAL_QUEUE_BLOCK_BUDGET_MILLIS = 10L;
 	private static final double INCREMENTAL_QUEUE_MIN_FREE_MEMORY_RATIO = 0.20d;
-	private static final int PARALLEL_INGEST_MIN_BATCH_SIZE = 4 * 1024;
 	private static final int PARALLEL_INGEST_MAX_BATCH_SIZE = INCREMENTAL_BATCH_SIZE;
 	private static final int REBUILD_BATCH_SIZE = PARALLEL_INGEST_MAX_BATCH_SIZE;
 	private final Object incrementalBufferLock = new Object();
@@ -1299,9 +1365,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final ScheduledExecutorService incrementalIdleMonitorExecutor;
 	private final ExecutorService ingestPartitionExecutor;
 	private final ScheduledFuture<?> incrementalIdleMonitor;
+	private final IngestPartition[] enabledIngestPartitions;
+	private final BlockingQueue<PartitionWork>[] ingestPartitionQueues;
+	private final Future<?>[] ingestPartitionWorkers;
 	private final int incrementalQueueInitialLimit;
 	private final long incrementalQueueIdleResetNanos;
 	private final long incrementalQueueEstimatedStatementBytes;
+	private final int incrementalQueueBlockWindowUpdates;
+	private final long incrementalQueueBlockBudgetNanos;
 	private final int memoryMonitorCheckInterval;
 	private final long memoryMonitorEstimatedOperationBytes;
 	private StatementUpdateQueue[] incrementalStatementQueues;
@@ -1309,6 +1380,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private int nextStatementQueueLimit;
 	private long lastIncrementalStatementNanos;
 	private int incrementalQueueMemoryCheckCountdown;
+	private int incrementalQueueBlockedUpdatesInWindow;
+	private long incrementalQueueBlockedNanosInWindow;
 	private boolean exactIncrementalUpdatesDropped;
 	private volatile int asyncIncrementalBatchCount;
 	private final AtomicLong asyncIncrementalUpdateCount = new AtomicLong();
@@ -1371,6 +1444,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int queueInitialLimit = cfg.incrementalQueueInitialLimit;
 		long queueIdleResetMillis = cfg.incrementalQueueIdleResetMillis;
 		long queueEstimatedStatementBytes = cfg.incrementalQueueEstimatedStatementBytes;
+		int queueBlockWindowUpdates = cfg.incrementalQueueBlockWindowUpdates;
+		long queueBlockBudgetMillis = cfg.incrementalQueueBlockBudgetMillis;
 		int memoryMonitorCheckInterval = cfg.memoryMonitorCheckInterval;
 		long memoryMonitorEstimatedOperationBytes = cfg.memoryMonitorEstimatedOperationBytes;
 
@@ -1401,6 +1476,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		queueIdleResetMillis = propLong("incrementalQueueIdleResetMillis", queueIdleResetMillis);
 		queueEstimatedStatementBytes = propLong("incrementalQueueEstimatedStatementBytes",
 				queueEstimatedStatementBytes);
+		queueBlockWindowUpdates = propInt("incrementalQueueBlockWindowUpdates", queueBlockWindowUpdates);
+		queueBlockBudgetMillis = propLong("incrementalQueueBlockBudgetMillis", queueBlockBudgetMillis);
 		memoryMonitorCheckInterval = propInt("memoryMonitorCheckInterval", memoryMonitorCheckInterval);
 		memoryMonitorEstimatedOperationBytes = propLong("memoryMonitorEstimatedOperationBytes",
 				memoryMonitorEstimatedOperationBytes);
@@ -1423,6 +1500,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		queueInitialLimit = Math.clamp(queueInitialLimit, 1, INCREMENTAL_QUEUE_MAX_LIMIT);
 		queueIdleResetMillis = Math.max(1L, queueIdleResetMillis);
 		queueEstimatedStatementBytes = Math.max(1L, queueEstimatedStatementBytes);
+		queueBlockWindowUpdates = Math.max(1, queueBlockWindowUpdates);
+		queueBlockBudgetMillis = Math.max(0L, queueBlockBudgetMillis);
 		memoryMonitorCheckInterval = Math.max(1, memoryMonitorCheckInterval);
 		memoryMonitorEstimatedOperationBytes = Math.max(1L, memoryMonitorEstimatedOperationBytes);
 
@@ -1451,6 +1530,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.incrementalQueueInitialLimit = queueInitialLimit;
 		this.incrementalQueueIdleResetNanos = TimeUnit.MILLISECONDS.toNanos(queueIdleResetMillis);
 		this.incrementalQueueEstimatedStatementBytes = queueEstimatedStatementBytes;
+		this.incrementalQueueBlockWindowUpdates = queueBlockWindowUpdates;
+		this.incrementalQueueBlockBudgetNanos = TimeUnit.MILLISECONDS.toNanos(queueBlockBudgetMillis);
 		this.memoryMonitorCheckInterval = memoryMonitorCheckInterval;
 		this.memoryMonitorEstimatedOperationBytes = memoryMonitorEstimatedOperationBytes;
 		this.churnSampler = new ChurnSampler();
@@ -1467,8 +1548,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		};
 		this.nextStatementQueueLimit = saturatedDoubleQueueLimit(incrementalQueueInitialLimit);
 		this.incrementalQueueMemoryCheckCountdown = memoryMonitorCheckInterval;
-		this.asyncIncrementalExecutor = Executors
-				.newSingleThreadExecutor(Thread.ofVirtual().name("RdfJoinEstimator-Ingest-", 0).factory());
+		int transformThreads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+		this.asyncIncrementalExecutor = new ThreadPoolExecutor(transformThreads, transformThreads, 0L,
+				TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(INCREMENTAL_TRANSFORM_QUEUE_CAPACITY),
+				daemonThreadFactory("RdfJoinEstimator-Transform-"));
 		this.incrementalIdleMonitorExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
 			Thread thread = new Thread(r, "RdfJoinEstimator-Ingest-Idle");
 			thread.setDaemon(true);
@@ -1483,8 +1566,62 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 			}
 		}, incrementalQueueIdleResetNanos, incrementalQueueIdleResetNanos, TimeUnit.NANOSECONDS);
-		this.ingestPartitionExecutor = Executors
-				.newThreadPerTaskExecutor(Thread.ofVirtual().name("RdfJoinEstimator-Partition-", 0).factory());
+		this.enabledIngestPartitions = contextPairSketchesEnabled
+				? INGEST_PARTITIONS_WITH_CONTEXT
+				: INGEST_PARTITIONS_WITHOUT_CONTEXT;
+		this.ingestPartitionQueues = createPartitionQueues(enabledIngestPartitions.length);
+		this.ingestPartitionExecutor = Executors.newFixedThreadPool(enabledIngestPartitions.length,
+				daemonThreadFactory("RdfJoinEstimator-Partition-"));
+		this.ingestPartitionWorkers = startIngestPartitionWorkers();
+	}
+
+	private static ThreadFactory daemonThreadFactory(String prefix) {
+		AtomicLong sequence = new AtomicLong();
+		return runnable -> {
+			Thread thread = new Thread(runnable, prefix + sequence.getAndIncrement());
+			thread.setDaemon(true);
+			return thread;
+		};
+	}
+
+	@SuppressWarnings("unchecked")
+	private BlockingQueue<PartitionWork>[] createPartitionQueues(int count) {
+		BlockingQueue<PartitionWork>[] queues = new BlockingQueue[count];
+		for (int i = 0; i < count; i++) {
+			queues[i] = new ArrayBlockingQueue<>(INCREMENTAL_PARTITION_QUEUE_CAPACITY);
+		}
+		return queues;
+	}
+
+	private Future<?>[] startIngestPartitionWorkers() {
+		Future<?>[] workers = new Future[enabledIngestPartitions.length];
+		for (int i = 0; i < enabledIngestPartitions.length; i++) {
+			BlockingQueue<PartitionWork> queue = ingestPartitionQueues[i];
+			workers[i] = ingestPartitionExecutor.submit(() -> runIngestPartitionWorker(queue));
+		}
+		return workers;
+	}
+
+	private void runIngestPartitionWorker(BlockingQueue<PartitionWork> queue) {
+		while (true) {
+			PartitionWork work;
+			try {
+				work = queue.take();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
+			}
+			if (work.isPoison()) {
+				return;
+			}
+			try {
+				TransformedStatementChunk chunk = work.chunk;
+				work.result.complete(buildBatchUpdates(chunk.events, chunk.eventCount, work.partition));
+			} catch (Throwable t) {
+				work.result.completeExceptionally(t);
+				recordAsyncIncrementalFailure(t);
+			}
+		}
 	}
 
 	@Override
@@ -1667,6 +1804,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private boolean hasRequiredActiveSketchGroups(State state) {
+		if (approxStoreSize.get() == 0L) {
+			return true;
+		}
 		byte slot = slotByte(slotOf(state));
 		return findReadinessSketchSentinels(state, slot) != null;
 	}
@@ -2045,7 +2185,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			Thread.currentThread().interrupt();
 			asyncIncrementalExecutor.shutdownNow();
 		}
-		ingestPartitionExecutor.shutdownNow();
+		stopIngestPartitionWorkers();
+		ingestPartitionExecutor.shutdown();
+		try {
+			while (!ingestPartitionExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+				logger.debug("Waiting for join estimator partition ingestion workers to terminate");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			ingestPartitionExecutor.shutdownNow();
+		}
+	}
+
+	private void stopIngestPartitionWorkers() {
+		for (BlockingQueue<PartitionWork> queue : ingestPartitionQueues) {
+			while (!queue.offer(PartitionWork.POISON)) {
+				queue.poll();
+			}
+		}
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -2240,7 +2397,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	public void addStatements(List<? extends Statement> statements) {
+		Objects.requireNonNull(statements);
+		if (statements.isEmpty()) {
+			return;
+		}
+		clearEstimateCacheIfPopulated();
+		if (!isReadyForIncrementalUpdates()) {
+			recordStoreSizeDelta(statements.size(), 0L);
+			return;
+		}
+
+		seenTriples = approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, statements.size(), 0L));
 		enqueueIncrementalStatements(statements, false);
+		dirty.set(true);
 	}
 
 	public void addStatement(Resource s, IRI p, Value o, Resource c) {
@@ -2281,7 +2450,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	public void deleteStatements(List<? extends Statement> statements) {
+		Objects.requireNonNull(statements);
+		if (statements.isEmpty()) {
+			return;
+		}
+		clearEstimateCacheIfPopulated();
+		if (!isReadyForIncrementalUpdates()) {
+			recordStoreSizeDelta(0L, statements.size());
+			return;
+		}
+
+		seenTriples = approxStoreSize.updateAndGet(v -> Math.max(0, v - statements.size()));
 		enqueueIncrementalStatements(statements, true);
+		dirty.set(true);
 	}
 
 	private static long applyStoreSizeDelta(long current, long additions, long deletions) {
@@ -2325,7 +2506,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				markIncrementalRebuildRequiredLocked();
 				return false;
 			}
-			if (shouldCheckIncrementalQueueMemoryLocked() && !hasMemoryForExactStatementQueuesLocked(1L)) {
+			if (shouldCheckIncrementalQueueMemoryLocked(1) && !hasMemoryForExactStatementQueuesLocked(1L)) {
 				dropExactIncrementalUpdatesLocked();
 				return false;
 			}
@@ -2342,13 +2523,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				markIncrementalRebuildRequiredLocked();
 				return;
 			}
-			if (shouldCheckIncrementalQueueMemoryLocked() && !hasMemoryForExactStatementQueuesLocked(1L)) {
+			if (shouldCheckIncrementalQueueMemoryLocked(1) && !hasMemoryForExactStatementQueuesLocked(1L)) {
 				dropExactIncrementalUpdatesLocked();
 				return;
 			}
 			StatementUpdateQueue active = activeStatementQueue();
-			active.updates.add(new StatementUpdate(statement, isDelete));
-			if (active.updates.size() >= active.limit) {
+			active.add(new StatementUpdateChunk(List.of(statement), 0, 1, isDelete));
+			if (active.updateCount >= active.limit) {
 				batch = rotateFullStatementQueueLocked();
 			}
 		}
@@ -2359,12 +2540,31 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void enqueueIncrementalStatements(List<? extends Statement> statements, boolean isDelete) {
 		Objects.requireNonNull(statements);
+		rethrowAsyncIncrementalFailure();
 		for (Statement statement : statements) {
-			if (isDelete) {
-				deleteStatement(statement);
-			} else {
-				addStatement(statement);
+			Objects.requireNonNull(statement);
+		}
+		StatementUpdateBatch batch = null;
+		synchronized (incrementalBufferLock) {
+			lastIncrementalStatementNanos = System.nanoTime();
+			if (exactIncrementalUpdatesDropped) {
+				markIncrementalRebuildRequiredLocked();
+				return;
 			}
+			int updateCount = statements.size();
+			if (shouldCheckIncrementalQueueMemoryLocked(updateCount)
+					&& !hasMemoryForExactStatementQueuesLocked(updateCount)) {
+				dropExactIncrementalUpdatesLocked();
+				return;
+			}
+			StatementUpdateQueue active = activeStatementQueue();
+			active.add(new StatementUpdateChunk(statements, 0, statements.size(), isDelete));
+			if (active.updateCount >= active.limit) {
+				batch = rotateFullStatementQueueLocked();
+			}
+		}
+		if (batch != null) {
+			submitIncrementalStatementBatch(batch);
 		}
 	}
 
@@ -2409,7 +2609,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					break;
 				}
 			}
-			applyStatementUpdateBatch(batch.updates, batch.updates.length);
+			applyStatementUpdateBatch(batch);
 			waitForAsyncIncrementalBatches();
 		}
 		waitForAsyncIncrementalBatches();
@@ -2427,7 +2627,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return;
 			}
 			StatementUpdateQueue active = activeStatementQueue();
-			if (!active.updates.isEmpty()) {
+			if (active.updateCount > 0) {
 				StatementUpdateQueue other = otherStatementQueue();
 				if (!other.isReusable()) {
 					return;
@@ -2436,7 +2636,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				activeStatementQueueIndex = otherStatementQueueIndex();
 				activeStatementQueue().limit = incrementalQueueInitialLimit;
 			}
-			if (activeStatementQueue().updates.isEmpty()) {
+			if (activeStatementQueue().updateCount == 0) {
 				resetIncrementalQueueGrowthLocked();
 			}
 			lastIncrementalStatementNanos = 0L;
@@ -2448,11 +2648,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private StatementUpdateBatch rotateFullStatementQueueLocked() {
 		StatementUpdateQueue other = otherStatementQueue();
-		if (!other.isReusable() && !waitForReusableStatementQueueLocked(other)) {
-			dropExactIncrementalUpdatesLocked();
-			return null;
-		}
 		int requestedLimit = nextStatementQueueLimit;
+		if (!other.isReusable()) {
+			return rotateBackloggedStatementQueueLocked(other);
+		}
 		long requestedRetainedUpdates = saturatingAdd(retainedStatementUpdatesLocked(), requestedLimit);
 		if (!hasMemoryForStatementUpdatesAfterGc(requestedRetainedUpdates)) {
 			dropExactIncrementalUpdatesLocked();
@@ -2466,9 +2665,41 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return batch;
 	}
 
-	private boolean waitForReusableStatementQueueLocked(StatementUpdateQueue queue) {
-		long remainingNanos = TimeUnit.MILLISECONDS.toNanos(INCREMENTAL_QUEUE_FULL_WAIT_MILLIS);
+	private StatementUpdateBatch rotateBackloggedStatementQueueLocked(StatementUpdateQueue other) {
+		StatementUpdateQueue active = activeStatementQueue();
+		int pressureLimit = Math.max(incrementalQueueInitialLimit, Math.min(active.limit, nextStatementQueueLimit));
+		long requestedRetainedUpdates = saturatingAdd(retainedStatementUpdatesLocked(), pressureLimit);
+		if (hasMemoryForStatementUpdatesAfterGc(requestedRetainedUpdates)) {
+			StatementUpdateBatch batch = drainActiveDetachedStatementQueueLocked();
+			active.limit = pressureLimit;
+			nextStatementQueueLimit = pressureLimit;
+			return batch;
+		}
+		if (!waitForReusableStatementQueueLocked(other, active.updateCount)) {
+			dropExactIncrementalUpdatesLocked();
+			return null;
+		}
+		requestedRetainedUpdates = saturatingAdd(retainedStatementUpdatesLocked(), pressureLimit);
+		if (!hasMemoryForStatementUpdatesAfterGc(requestedRetainedUpdates)) {
+			dropExactIncrementalUpdatesLocked();
+			return null;
+		}
+		StatementUpdateBatch batch = drainActiveStatementQueueLocked();
+		activeStatementQueueIndex = otherStatementQueueIndex();
+		StatementUpdateQueue nextActive = activeStatementQueue();
+		nextActive.limit = pressureLimit;
+		nextStatementQueueLimit = pressureLimit;
+		return batch;
+	}
+
+	private boolean waitForReusableStatementQueueLocked(StatementUpdateQueue queue, int blockedUpdates) {
+		long remainingNanos = incrementalQueueBlockBudgetRemainingNanosLocked();
+		if (remainingNanos <= 0L) {
+			return queue.isReusable();
+		}
+		remainingNanos = Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(INCREMENTAL_QUEUE_FULL_WAIT_MILLIS));
 		long deadlineNanos = System.nanoTime() + remainingNanos;
+		long startNanos = System.nanoTime();
 		while (!queue.isReusable() && remainingNanos > 0L) {
 			try {
 				TimeUnit.NANOSECONDS.timedWait(incrementalBufferLock, remainingNanos);
@@ -2479,34 +2710,73 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 			remainingNanos = deadlineNanos - System.nanoTime();
 		}
+		long blockedNanos = System.nanoTime() - startNanos;
+		if (blockedNanos > 0L) {
+			recordIncrementalQueueBlockedNanosLocked(blockedUpdates, blockedNanos);
+		}
 		return queue.isReusable();
+	}
+
+	private long incrementalQueueBlockBudgetRemainingNanosLocked() {
+		if (incrementalQueueBlockBudgetNanos == 0L) {
+			return 0L;
+		}
+		long spent = incrementalQueueBlockedNanosInWindow;
+		if (spent >= incrementalQueueBlockBudgetNanos) {
+			return 0L;
+		}
+		return incrementalQueueBlockBudgetNanos - spent;
+	}
+
+	private void recordIncrementalQueueBlockedNanosLocked(int blockedUpdates, long blockedNanos) {
+		incrementalQueueBlockedUpdatesInWindow += Math.max(1, blockedUpdates);
+		incrementalQueueBlockedNanosInWindow = saturatingAdd(incrementalQueueBlockedNanosInWindow, blockedNanos);
+		if (incrementalQueueBlockedUpdatesInWindow >= incrementalQueueBlockWindowUpdates) {
+			if (incrementalQueueBlockedNanosInWindow > incrementalQueueBlockBudgetNanos) {
+				dropExactIncrementalUpdatesLocked();
+			}
+			incrementalQueueBlockedUpdatesInWindow = 0;
+			incrementalQueueBlockedNanosInWindow = 0L;
+		}
 	}
 
 	private StatementUpdateBatch drainActiveStatementQueueLocked() {
 		StatementUpdateQueue active = activeStatementQueue();
-		if (active.updates.isEmpty()) {
+		if (active.updateCount == 0) {
 			return null;
 		}
-		StatementUpdate[] updates = active.updates.toArray(StatementUpdate[]::new);
-		active.updates.clear();
-		return new StatementUpdateBatch(active, updates);
+		StatementUpdateChunk[] chunks = active.chunks.toArray(StatementUpdateChunk[]::new);
+		int updateCount = active.updateCount;
+		active.clear();
+		return new StatementUpdateBatch(active, chunks, updateCount);
+	}
+
+	private StatementUpdateBatch drainActiveDetachedStatementQueueLocked() {
+		StatementUpdateQueue active = activeStatementQueue();
+		if (active.updateCount == 0) {
+			return null;
+		}
+		StatementUpdateChunk[] chunks = active.chunks.toArray(StatementUpdateChunk[]::new);
+		int updateCount = active.updateCount;
+		active.clear();
+		return new StatementUpdateBatch(null, chunks, updateCount);
 	}
 
 	private void submitIncrementalStatementBatch(StatementUpdateBatch batch) {
-		if (batch == null || batch.updates.length == 0) {
+		if (batch == null || batch.updateCount == 0) {
 			return;
 		}
 		incrementAsyncIncrementalBatchCount();
-		asyncIncrementalUpdateCount.addAndGet(batch.updates.length);
+		asyncIncrementalUpdateCount.addAndGet(batch.updateCount);
 		StatementUpdateQueue queue = batch.queue;
 		if (queue != null) {
 			synchronized (incrementalBufferLock) {
-				queue.inFlightCount = batch.updates.length;
+				queue.inFlightCount = batch.updateCount;
 			}
 		}
 		Future<?> future = asyncIncrementalExecutor.submit(() -> {
 			try {
-				applyStatementUpdateBatch(batch.updates, batch.updates.length);
+				applyStatementUpdateBatch(batch);
 			} catch (Throwable t) {
 				recordAsyncIncrementalFailure(t);
 			} finally {
@@ -2516,7 +2786,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 						incrementalBufferLock.notifyAll();
 					}
 				}
-				asyncIncrementalUpdateCount.addAndGet(-batch.updates.length);
+				asyncIncrementalUpdateCount.addAndGet(-batch.updateCount);
 				completeAsyncIncrementalBatch();
 			}
 		});
@@ -2528,42 +2798,47 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		rethrowAsyncIncrementalFailure();
 	}
 
-	private void applyStatementUpdateBatch(StatementUpdate[] updates, int updateCount) {
-		if (updateCount == 0) {
+	private void applyStatementUpdateBatch(StatementUpdateBatch batch) {
+		if (batch.updateCount == 0) {
 			return;
 		}
-		IngestEvent[] events = new IngestEvent[Math.min(updateCount, INCREMENTAL_BATCH_SIZE)];
+		IngestEvent[] events = new IngestEvent[Math.min(batch.updateCount, INCREMENTAL_BATCH_SIZE)];
 		int eventCount = 0;
-		for (int i = 0; i < updateCount; i++) {
-			StatementUpdate update = updates[i];
-			Statement statement = update.statement();
-			String s = str(statement.getSubject());
-			String p = str(statement.getPredicate());
-			String o = str(statement.getObject());
-			String c = str(statement.getContext());
-			if (update.isDelete()) {
-				churnSampler.recordDelete(s, p, o, c, samplingInterval());
-			} else {
-				churnSampler.recordAdd(s, p, o, c, samplingInterval());
-			}
-			IngestEvent event = toIngestEvent(s, p, o, c, update.isDelete());
-			if (event == null) {
-				continue;
-			}
-			events[eventCount++] = event;
-			if (eventCount == events.length) {
-				applyIncrementalBatch(events, eventCount);
-				events = new IngestEvent[Math.min(updateCount - i - 1, INCREMENTAL_BATCH_SIZE)];
-				eventCount = 0;
+		int remainingUpdates = batch.updateCount;
+		int chunkIndex = 0;
+		for (StatementUpdateChunk chunk : batch.chunks) {
+			for (int i = chunk.from; i < chunk.to; i++) {
+				Statement statement = chunk.statements.get(i);
+				String s = str(statement.getSubject());
+				String p = str(statement.getPredicate());
+				String o = str(statement.getObject());
+				String c = str(statement.getContext());
+				if (chunk.isDelete) {
+					churnSampler.recordDelete(s, p, o, c, samplingInterval());
+				} else {
+					churnSampler.recordAdd(s, p, o, c, samplingInterval());
+				}
+				IngestEvent event = toIngestEvent(s, p, o, c, chunk.isDelete);
+				remainingUpdates--;
+				if (event == null) {
+					continue;
+				}
+				events[eventCount++] = event;
+				if (eventCount == events.length) {
+					applyTransformedIncrementalChunk(new TransformedStatementChunk(chunkIndex++, events, eventCount,
+							eventCount));
+					events = new IngestEvent[Math.min(Math.max(remainingUpdates, 0), INCREMENTAL_BATCH_SIZE)];
+					eventCount = 0;
+				}
 			}
 		}
 		if (eventCount > 0) {
-			applyIncrementalBatch(events, eventCount);
+			applyTransformedIncrementalChunk(new TransformedStatementChunk(chunkIndex, events, eventCount, eventCount));
 		}
 	}
 
-	private boolean shouldCheckIncrementalQueueMemoryLocked() {
-		incrementalQueueMemoryCheckCountdown--;
+	private boolean shouldCheckIncrementalQueueMemoryLocked(int updateCount) {
+		incrementalQueueMemoryCheckCountdown -= Math.max(1, updateCount);
 		if (incrementalQueueMemoryCheckCountdown > 0) {
 			return false;
 		}
@@ -2578,7 +2853,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private long retainedStatementUpdatesLocked() {
 		long retainedUpdates = 0L;
 		for (StatementUpdateQueue queue : incrementalStatementQueues) {
-			retainedUpdates += queue.updates.size();
+			retainedUpdates += queue.updateCount;
 		}
 		return saturatingAdd(retainedUpdates, asyncIncrementalUpdateCount.get());
 	}
@@ -2620,7 +2895,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					"RdfJoinEstimator: Incremental exact update queue exceeded backlog or heap budget; marking sketches for rebuild");
 		}
 		for (StatementUpdateQueue queue : incrementalStatementQueues) {
-			queue.updates.clear();
+			queue.clear();
 		}
 		exactIncrementalUpdatesDropped = true;
 		markIncrementalRebuildRequiredLocked();
@@ -2645,7 +2920,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void resetIncrementalQueueGrowthLocked() {
 		for (StatementUpdateQueue queue : incrementalStatementQueues) {
-			if (queue.isReusable() && queue.updates.isEmpty()) {
+			if (queue.isReusable() && queue.updateCount == 0) {
 				queue.limit = incrementalQueueInitialLimit;
 			}
 		}
@@ -2707,7 +2982,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void rethrowAsyncIncrementalFailure() {
 		Throwable failure = asyncIncrementalFailure.get();
-		if(failure == null) return;;
+		if (failure == null) {
+			return;
+		}
 		switch (failure) {
 			case Error error -> throw error;
 			case RuntimeException runtimeException -> throw runtimeException;
@@ -2717,12 +2994,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		throw new RuntimeException("Asynchronous incremental join-estimator ingestion failed", failure);
 	}
 
+	private void applyTransformedIncrementalChunk(TransformedStatementChunk chunk) {
+		if (chunk.eventCount == 0) {
+			return;
+		}
+		BatchUpdateAccumulator[] updates = buildBatchUpdates(chunk);
+		applyIncrementalBatchUpdates(updates);
+	}
+
 	private void applyIncrementalBatch(IngestEvent[] batch, int batchSize) {
 		if (batchSize == 0) {
 			return;
 		}
 
 		BatchUpdateAccumulator[] updates = buildBatchUpdates(batch, batchSize);
+		applyIncrementalBatchUpdates(updates);
+	}
+
+	private void applyIncrementalBatchUpdates(BatchUpdateAccumulator[] updates) {
 		while (true) {
 			long epoch = rebuildEpoch.get();
 			if ((epoch & 1L) != 0L) {
@@ -2762,46 +3051,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void applyBatchUpdates(State state, BatchUpdateAccumulator[] batchUpdates) {
 		byte slot = slotByte(slotOf(state));
-		if (batchUpdates.length > 1) {
-			applyBatchUpdatesInParallel(state, slot, batchUpdates);
-			return;
-		}
 		for (BatchUpdateAccumulator updates : batchUpdates) {
 			updates.applyTo(this, state, slot);
 		}
 	}
 
 	@SuppressWarnings("unchecked")
-	private void applyBatchUpdatesInParallel(State state, byte slot, BatchUpdateAccumulator[] batchUpdates) {
-		Future<?>[] futures = new Future[batchUpdates.length];
-		int futureCount = 0;
-		try {
-			for (BatchUpdateAccumulator updates : batchUpdates) {
-				if (!updates.isEmpty()) {
-					futures[futureCount++] = ingestPartitionExecutor.submit(() -> updates.applyTo(this, state, slot));
-				}
-			}
-			for (int i = 0; i < futureCount; i++) {
-				futures[i].get();
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException("Interrupted while applying join-estimator batch", e);
-		} catch (ExecutionException e) {
-			throw new RuntimeException("Failed to apply join-estimator batch", e.getCause());
-		}
+	private BatchUpdateAccumulator[] buildBatchUpdates(IngestEvent[] batch, int batchSize) {
+		return buildBatchUpdates(new TransformedStatementChunk(0, batch, batchSize, batchSize));
 	}
 
 	@SuppressWarnings("unchecked")
-	private BatchUpdateAccumulator[] buildBatchUpdates(IngestEvent[] batch, int batchSize) {
-		if (batchSize < PARALLEL_INGEST_MIN_BATCH_SIZE || batchSize > PARALLEL_INGEST_MAX_BATCH_SIZE) {
-			return new BatchUpdateAccumulator[] { buildBatchUpdates(batch, batchSize, null) };
-		}
-		Future<BatchUpdateAccumulator>[] futures = new Future[INGEST_PARTITIONS.length];
+	private BatchUpdateAccumulator[] buildBatchUpdates(TransformedStatementChunk chunk) {
+		CompletableFuture<BatchUpdateAccumulator>[] futures = new CompletableFuture[enabledIngestPartitions.length];
 		try {
-			for (IngestPartition partition : INGEST_PARTITIONS) {
-				futures[partition.ordinal()] = ingestPartitionExecutor.submit(() -> buildBatchUpdates(batch, batchSize,
-						partition));
+			for (int i = 0; i < enabledIngestPartitions.length; i++) {
+				CompletableFuture<BatchUpdateAccumulator> future = new CompletableFuture<>();
+				futures[i] = future;
+				putPartitionWork(i, new PartitionWork(chunk, enabledIngestPartitions[i], future));
 			}
 			BatchUpdateAccumulator[] updates = new BatchUpdateAccumulator[futures.length];
 			for (int i = 0; i < futures.length; i++) {
@@ -2813,6 +3080,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			throw new RuntimeException("Interrupted while preparing join-estimator batch", e);
 		} catch (ExecutionException e) {
 			throw new RuntimeException("Failed to prepare join-estimator batch", e.getCause());
+		}
+	}
+
+	private void putPartitionWork(int partitionIndex, PartitionWork work) throws InterruptedException {
+		long startNanos = System.nanoTime();
+		ingestPartitionQueues[partitionIndex].put(work);
+		long blockedNanos = System.nanoTime() - startNanos;
+		if (blockedNanos > 0L) {
+			synchronized (incrementalBufferLock) {
+				recordIncrementalQueueBlockedNanosLocked(work.chunk.updateCount, blockedNanos);
+			}
 		}
 	}
 
@@ -2842,7 +3120,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private int expectedSingleBatchUpdates(int batchSize) {
 		long batchEstimate = (long) batchSize << 3;
 		long addressBound = ((long) maxBucketCount << 5) + 8L;
-		return (int) Math.min(Integer.MAX_VALUE, Math.clamp(addressBound, 64L, batchEstimate));
+		return (int) Math.min(Integer.MAX_VALUE, Math.min(addressBound, Math.max(64L, batchEstimate)));
 	}
 
 	private void applyGroupedUpdate(State state, byte slot, int keyPrefix, int x, int y, long firstValue,
@@ -9450,7 +9728,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		synchronized (incrementalBufferLock) {
 			if (incrementalStatementQueues != null) {
 				for (StatementUpdateQueue queue : incrementalStatementQueues) {
-					queue.updates.clear();
+					queue.clear();
 				}
 			}
 			exactIncrementalUpdatesDropped = false;
@@ -10192,7 +10470,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	int debugPendingIncrementalCount() {
 		synchronized (incrementalBufferLock) {
-			return activeStatementQueue().updates.size();
+			return activeStatementQueue().updateCount;
+		}
+	}
+
+	int debugPendingIncrementalChunkCount() {
+		synchronized (incrementalBufferLock) {
+			return activeStatementQueue().chunks.size();
 		}
 	}
 
@@ -10325,6 +10609,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		int incrementalQueueInitialLimit = INCREMENTAL_QUEUE_INITIAL_LIMIT;
 		long incrementalQueueIdleResetMillis = INCREMENTAL_QUEUE_IDLE_RESET_MILLIS;
 		long incrementalQueueEstimatedStatementBytes = INCREMENTAL_QUEUE_ESTIMATED_STATEMENT_BYTES;
+		int incrementalQueueBlockWindowUpdates = INCREMENTAL_QUEUE_BLOCK_WINDOW_UPDATES;
+		long incrementalQueueBlockBudgetMillis = INCREMENTAL_QUEUE_BLOCK_BUDGET_MILLIS;
 		int memoryMonitorCheckInterval = MEMORY_MONITOR_CHECK_INTERVAL;
 		long memoryMonitorEstimatedOperationBytes = MEMORY_MONITOR_ESTIMATED_OPERATION_BYTES;
 
@@ -10476,6 +10762,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (this.memoryMonitorEstimatedOperationBytes == MEMORY_MONITOR_ESTIMATED_OPERATION_BYTES) {
 				this.memoryMonitorEstimatedOperationBytes = this.incrementalQueueEstimatedStatementBytes;
 			}
+			return this;
+		}
+
+		public Config withIncrementalQueueBlockWindowUpdates(int updates) {
+			this.incrementalQueueBlockWindowUpdates = Math.max(1, updates);
+			return this;
+		}
+
+		public Config withIncrementalQueueBlockBudgetMillis(long millis) {
+			this.incrementalQueueBlockBudgetMillis = Math.max(0L, millis);
 			return this;
 		}
 

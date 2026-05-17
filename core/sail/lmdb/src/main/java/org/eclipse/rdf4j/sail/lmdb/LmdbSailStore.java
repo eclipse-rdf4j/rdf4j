@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -73,6 +74,7 @@ class LmdbSailStore implements SailStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+	private static final int EXACT_ESTIMATOR_ADD_CHUNK_SIZE = 1024;
 
 	private final TripleStore tripleStore;
 
@@ -206,20 +208,22 @@ class LmdbSailStore implements SailStore {
 		final long[] predicates;
 		final long[] objects;
 		final long[] contexts;
+		final Value[] objectValues;
 		final Statement[] statements;
 		final boolean explicit;
 		final int capacity;
-		Consumer<Statement> estimatorCallback;
+		Consumer<List<Statement>> estimatorBatchCallback;
 		int size;
 
-		BulkAddQuadsOperation(boolean explicit) {
+		BulkAddQuadsOperation(boolean explicit, boolean retainStatements) {
 			this.explicit = explicit;
 			this.capacity = bulkOperationSize;
 			this.subjects = new long[capacity];
 			this.predicates = new long[capacity];
 			this.objects = new long[capacity];
 			this.contexts = new long[capacity];
-			this.statements = new Statement[capacity];
+			this.objectValues = new Value[capacity];
+			this.statements = retainStatements ? new Statement[capacity] : null;
 		}
 
 		void add(long subject, long predicate, long object, long context) {
@@ -251,31 +255,40 @@ class LmdbSailStore implements SailStore {
 					unusedIds.remove(contexts[i]);
 				}
 			}
+			ArrayList<Statement> addedStatements = explicit && estimatorBatchCallback != null
+					? new ArrayList<>(size)
+					: null;
 			if (size < capacity) {
 				for (int i = 0; i < size; i++) {
 					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
 							explicit);
 					if (added) {
-						tripleStore.recordRdfTermDomain(predicates[i], statements[i].getObject());
-						if (explicit && estimatorCallback != null) {
-							estimatorCallback.accept(statements[i]);
+						tripleStore.recordRdfTermDomain(predicates[i], objectValues[i]);
+						if (addedStatements != null) {
+							addedStatements.add(statements[i]);
 						}
 					}
 				}
+				recordEstimatorAdditions(addedStatements);
 				return;
 			}
-			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
-					statementIndex -> {
-						try {
-							tripleStore.recordRdfTermDomain(predicates[statementIndex],
-									statements[statementIndex].getObject());
-						} catch (IOException e) {
-							throw new UncheckedIOException(e);
-						}
-						if (explicit && estimatorCallback != null) {
-							estimatorCallback.accept(statements[statementIndex]);
-						}
-					});
+			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit, statementIndex -> {
+				try {
+					tripleStore.recordRdfTermDomain(predicates[statementIndex], objectValues[statementIndex]);
+				} catch (IOException e) {
+					throw new UncheckedIOException(e);
+				}
+				if (addedStatements != null) {
+					addedStatements.add(statements[statementIndex]);
+				}
+			});
+			recordEstimatorAdditions(addedStatements);
+		}
+
+		private void recordEstimatorAdditions(List<Statement> addedStatements) {
+			if (addedStatements != null && !addedStatements.isEmpty()) {
+				estimatorBatchCallback.accept(addedStatements);
+			}
 		}
 	}
 
@@ -338,6 +351,7 @@ class LmdbSailStore implements SailStore {
 			if (sketchBasedJoinEstimator != null) {
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
+				boolean storeHasTriples = tripleStore.hasTriples(true) || tripleStore.hasTriples(false);
 				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
@@ -349,7 +363,7 @@ class LmdbSailStore implements SailStore {
 						valueStore, tripleStore, statementPatternCardinalitySource,
 						this::lockEstimatorExactJoinSurfaceProvider));
 				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
-				if (!snapshotExists) {
+				if (!snapshotExists && storeHasTriples) {
 					sketchBasedJoinEstimator.discardAndMarkForRebuild();
 				}
 				sketchBasedJoinEstimator.startBackgroundRefresh(3);
@@ -917,10 +931,13 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
+		private final boolean bufferEstimatorAdds;
+		private ArrayList<Statement> pendingEstimatorAdds;
 		private volatile boolean estimatorTouchedInTransaction;
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
 			this.explicit = explicit;
+			this.bufferEstimatorAdds = level != null && level.isCompatibleWith(IsolationLevels.READ_COMMITTED);
 		}
 
 		private void queueEstimatorAdd(Statement st) {
@@ -928,11 +945,28 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			try {
-				sketchBasedJoinEstimator.addStatement(st);
-				estimatorTouchedInTransaction = true;
-				estimatorTouchedSinceStoreTxnStart.set(true);
+				if (bufferEstimatorAdds) {
+					bufferEstimatorAdd(st);
+				} else {
+					submitEstimatorAdd(st);
+				}
 			} catch (RuntimeException e) {
 				recoverEstimatorAfterFailure("applying add", e);
+			}
+		}
+
+		private void queueEstimatorAdds(List<Statement> statements) {
+			if (!explicit || sketchBasedJoinEstimator == null || statements.isEmpty()) {
+				return;
+			}
+			try {
+				if (bufferEstimatorAdds) {
+					bufferEstimatorAdds(statements);
+				} else {
+					submitEstimatorAddChunk(statements);
+				}
+			} catch (RuntimeException e) {
+				recoverEstimatorAfterFailure("applying batched adds", e);
 			}
 		}
 
@@ -941,6 +975,7 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			try {
+				flushPendingEstimatorAdds();
 				sketchBasedJoinEstimator.deleteStatement(st);
 				estimatorTouchedInTransaction = true;
 				estimatorTouchedSinceStoreTxnStart.set(true);
@@ -949,7 +984,74 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void bufferEstimatorAdd(Statement statement) {
+			if (pendingEstimatorAdds == null) {
+				pendingEstimatorAdds = new ArrayList<>(EXACT_ESTIMATOR_ADD_CHUNK_SIZE);
+			}
+			pendingEstimatorAdds.add(statement);
+			if (pendingEstimatorAdds.size() == EXACT_ESTIMATOR_ADD_CHUNK_SIZE) {
+				flushFullEstimatorAddChunk();
+			}
+		}
+
+		private void bufferEstimatorAdds(List<Statement> statements) {
+			int offset = 0;
+			while (offset < statements.size()) {
+				if (pendingEstimatorAdds == null) {
+					pendingEstimatorAdds = new ArrayList<>(EXACT_ESTIMATOR_ADD_CHUNK_SIZE);
+				}
+				int remainingCapacity = EXACT_ESTIMATOR_ADD_CHUNK_SIZE - pendingEstimatorAdds.size();
+				int copyCount = Math.min(remainingCapacity, statements.size() - offset);
+				pendingEstimatorAdds.addAll(statements.subList(offset, offset + copyCount));
+				offset += copyCount;
+				if (pendingEstimatorAdds.size() == EXACT_ESTIMATOR_ADD_CHUNK_SIZE) {
+					flushFullEstimatorAddChunk();
+				}
+			}
+		}
+
+		private void flushFullEstimatorAddChunk() {
+			ArrayList<Statement> chunk = pendingEstimatorAdds;
+			pendingEstimatorAdds = null;
+			submitEstimatorAddChunk(chunk);
+		}
+
+		private void flushPendingEstimatorAdds() {
+			if (pendingEstimatorAdds == null || pendingEstimatorAdds.isEmpty()) {
+				pendingEstimatorAdds = null;
+				return;
+			}
+			ArrayList<Statement> chunk = pendingEstimatorAdds;
+			pendingEstimatorAdds = null;
+			submitEstimatorAddChunk(chunk);
+		}
+
+		private void flushPendingEstimatorAddsAfterCommit() {
+			try {
+				flushPendingEstimatorAdds();
+			} catch (RuntimeException e) {
+				recoverEstimatorAfterFailure("flushing buffered adds", e);
+			}
+		}
+
+		private void clearPendingEstimatorAdds() {
+			pendingEstimatorAdds = null;
+		}
+
+		private void submitEstimatorAdd(Statement statement) {
+			sketchBasedJoinEstimator.addStatement(statement);
+			estimatorTouchedInTransaction = true;
+			estimatorTouchedSinceStoreTxnStart.set(true);
+		}
+
+		private void submitEstimatorAddChunk(List<Statement> statements) {
+			sketchBasedJoinEstimator.addStatements(statements);
+			estimatorTouchedInTransaction = true;
+			estimatorTouchedSinceStoreTxnStart.set(true);
+		}
+
 		private void discardEstimatorUpdatesIfTouched() {
+			clearPendingEstimatorAdds();
 			if (estimatorTouchedInTransaction && estimatorTouchedSinceStoreTxnStart.getAndSet(false)
 					&& sketchBasedJoinEstimator != null) {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();
@@ -963,6 +1065,7 @@ class LmdbSailStore implements SailStore {
 			if (sketchBasedJoinEstimator != null) {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();
 			}
+			clearPendingEstimatorAdds();
 			estimatorTouchedInTransaction = false;
 			estimatorTouchedSinceStoreTxnStart.set(false);
 			logger.warn("Discarded join estimator state after failure while {}; store data remains authoritative",
@@ -970,8 +1073,16 @@ class LmdbSailStore implements SailStore {
 					e);
 		}
 
+		private void configureEstimatorAdd(AddQuadOperation operation) {
+			if (!explicit || sketchBasedJoinEstimator == null) {
+				return;
+			}
+			operation.estimatorCallback = this::queueEstimatorAdd;
+		}
+
 		@Override
 		public void close() {
+			clearPendingEstimatorAdds();
 			if (storeTxnStarted.get()) {
 				discardEstimatorUpdatesIfTouched();
 			}
@@ -1038,6 +1149,7 @@ class LmdbSailStore implements SailStore {
 						}
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
+						flushPendingEstimatorAddsAfterCommit();
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
 						estimatorTouchedInTransaction = false;
@@ -1127,12 +1239,10 @@ class LmdbSailStore implements SailStore {
 			try {
 				startTransaction(true);
 
-				HashMap<IRI, Long> predicateCache = new HashMap<>();
-				HashMap<Resource, Long> contextCache = new HashMap<>();
+				HashMap<Resource, Long> resourceCache = new HashMap<>();
 				Resource previousSubject = null;
 				long previousSubjectId = LmdbValue.UNKNOWN_ID;
-				BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit);
-				bulk.estimatorCallback = this::queueEstimatorAdd;
+				BulkAddQuadsOperation bulk = newBulkAddQuadsOperation(explicit);
 
 				for (Statement statement : approved) {
 					last = statement;
@@ -1148,45 +1258,41 @@ class LmdbSailStore implements SailStore {
 							if (previousSubject.equals(subj)) {
 								bulk.add(previousSubjectId, 0, 0, 0);
 							} else {
-								long subjectId = valueStore.storeValue(subj);
+								long subjectId = storeCachedResource(resourceCache, subj);
 								previousSubject = subj;
 								previousSubjectId = subjectId;
 								bulk.add(subjectId, 0, 0, 0);
 							}
 						}
 					} else {
-						long subjectId = valueStore.storeValue(subj);
+						long subjectId = storeCachedResource(resourceCache, subj);
 						previousSubject = subj;
 						previousSubjectId = subjectId;
 						bulk.add(subjectId, 0, 0, 0);
 					}
 
 					int batchIndex = bulk.size - 1;
-					bulk.statements[batchIndex] = valueStore.createStatement(subj, pred, obj, context);
-
-					Long predicateId = predicateCache.get(pred);
-					if (predicateId == null) {
-						predicateId = valueStore.storeValue(pred);
-						predicateCache.put(pred, predicateId);
+					bulk.objectValues[batchIndex] = obj;
+					if (bulk.statements != null) {
+						bulk.statements[batchIndex] = statement;
 					}
-					bulk.predicates[batchIndex] = predicateId;
 
-					bulk.objects[batchIndex] = valueStore.storeValue(obj);
+					bulk.predicates[batchIndex] = storeCachedResource(resourceCache, pred);
+
+					if (obj instanceof Resource) {
+						bulk.objects[batchIndex] = storeCachedResource(resourceCache, (Resource) obj);
+					} else {
+						bulk.objects[batchIndex] = valueStore.storeValue(obj);
+					}
 					if (context == null) {
 						bulk.contexts[batchIndex] = 0;
 					} else {
-						Long contextId = contextCache.get(context);
-						if (contextId == null) {
-							contextId = valueStore.storeValue(context);
-							contextCache.put(context, contextId);
-						}
-						bulk.contexts[batchIndex] = contextId;
+						bulk.contexts[batchIndex] = storeCachedResource(resourceCache, context);
 					}
 
 					if (bulk.isFull()) {
 						submitOperation(bulk);
-						bulk = new BulkAddQuadsOperation(explicit);
-						bulk.estimatorCallback = this::queueEstimatorAdd;
+						bulk = newBulkAddQuadsOperation(explicit);
 					}
 				}
 
@@ -1211,6 +1317,25 @@ class LmdbSailStore implements SailStore {
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
+		}
+
+		private long storeCachedResource(HashMap<Resource, Long> resourceCache, Resource resource) throws IOException {
+			Long cachedId = resourceCache.get(resource);
+			if (cachedId != null) {
+				return cachedId;
+			}
+			long id = valueStore.storeValue(resource);
+			resourceCache.put(resource, id);
+			return id;
+		}
+
+		private BulkAddQuadsOperation newBulkAddQuadsOperation(boolean explicit) {
+			boolean retainStatements = explicit && sketchBasedJoinEstimator != null;
+			BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit, retainStatements);
+			if (retainStatements) {
+				bulk.estimatorBatchCallback = this::queueEstimatorAdds;
+			}
+			return bulk;
 		}
 
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
@@ -1280,7 +1405,7 @@ class LmdbSailStore implements SailStore {
 					q.subj = subj;
 					q.pred = pred;
 					q.obj = obj;
-					q.estimatorCallback = this::queueEstimatorAdd;
+					configureEstimatorAdd(q);
 
 					if (multiThreadingActive) {
 						while (!opQueue.add(q)) {
@@ -1429,7 +1554,7 @@ class LmdbSailStore implements SailStore {
 				q.subj = subj;
 				q.pred = pred;
 				q.obj = obj;
-				q.estimatorCallback = this::queueEstimatorAdd;
+				configureEstimatorAdd(q);
 
 				submitOperation(q);
 			} catch (IOException e) {

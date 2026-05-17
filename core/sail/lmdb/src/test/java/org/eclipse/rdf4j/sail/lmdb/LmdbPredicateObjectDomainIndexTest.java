@@ -169,6 +169,50 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	@Test
+	void rebuildsBroadenedResourceGuaranteeOnRestartAfterPotentiallyRestoringDelete(@TempDir File dataDir) {
+		IRI predicate = VF.createIRI("http://example.com/resource");
+		IRI firstSubject = VF.createIRI("http://example.com/s1");
+		IRI secondSubject = VF.createIRI("http://example.com/s2");
+		IRI iriObject = VF.createIRI("http://example.com/object");
+		Resource bnodeObject = VF.createBNode("object");
+
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(firstSubject, predicate, iriObject);
+			}
+			RdfTermDomain iriGuarantee = guarantee(repository, predicate);
+			assertHas(iriGuarantee, RdfTermDomain.Fact.IRI);
+			assertFalse(iriGuarantee.has(RdfTermDomain.Fact.BNODE));
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(secondSubject, predicate, bnodeObject);
+			}
+			RdfTermDomain resourceGuarantee = guarantee(repository, predicate);
+			assertHas(resourceGuarantee, RdfTermDomain.Fact.IRI);
+			assertHas(resourceGuarantee, RdfTermDomain.Fact.BNODE);
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.remove(secondSubject, predicate, bnodeObject);
+			}
+			resourceGuarantee = guarantee(repository, predicate);
+			assertHas(resourceGuarantee, RdfTermDomain.Fact.IRI);
+			assertHas(resourceGuarantee, RdfTermDomain.Fact.BNODE);
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = repository(dataDir);
+		try {
+			RdfTermDomain restoredGuarantee = guarantee(reopened, predicate);
+			assertHas(restoredGuarantee, RdfTermDomain.Fact.IRI);
+			assertFalse(restoredGuarantee.has(RdfTermDomain.Fact.BNODE));
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
 	void keepsTrackingAfterRebuildStillLeavesDegradedObjects(@TempDir File dataDir) {
 		IRI predicate = VF.createIRI("http://example.com/value");
 		IRI canonicalSubject = VF.createIRI("http://example.com/s1");
