@@ -44,6 +44,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -794,6 +795,26 @@ class SketchBasedJoinEstimatorPersistenceTest {
 				() -> estimator.addStatement(st(VF.createIRI("urn:async:s"), predicate, VF.createIRI("urn:async:o"))),
 				"Incremental add should surface a previous async ingestion failure");
 		assertSame(failure, thrown);
+	}
+
+	@Test
+	void rejectedAsyncIncrementalBatchDoesNotLeaveOutstandingDrainCount(@TempDir Path tempDir) throws Exception {
+		IRI predicate = VF.createIRI("urn:async:p");
+		StubSketchStatementSource source = new StubSketchStatementSource();
+		source.add(st(VF.createIRI("urn:async:seed"), predicate, VF.createIRI("urn:async:seed-o")));
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(source,
+				smallConfig().withIncrementalQueueInitialLimit(1));
+		estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
+		estimator.rebuild();
+
+		ExecutorService asyncExecutor = (ExecutorService) privateFieldValue(estimator, "asyncIncrementalExecutor");
+		asyncExecutor.shutdownNow();
+
+		assertThrows(RejectedExecutionException.class,
+				() -> estimator.addStatements(
+						List.of(st(VF.createIRI("urn:async:s"), predicate, VF.createIRI("urn:async:o")))));
+		assertEquals(0, privateFieldValue(estimator, "asyncIncrementalBatchCount"),
+				"Rejected async submission must not leave recovery waiting for a batch that was never scheduled");
 	}
 
 	@Test

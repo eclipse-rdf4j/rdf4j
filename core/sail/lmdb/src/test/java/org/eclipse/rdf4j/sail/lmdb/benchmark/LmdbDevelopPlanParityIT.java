@@ -259,10 +259,26 @@ class LmdbDevelopPlanParityIT {
 	}
 
 	private static PlanSignature planSignature(String plan) {
-		List<String> signature = plan.lines()
-				.map(LmdbDevelopPlanParityIT::canonicalPlanLine)
-				.filter(line -> !line.isEmpty())
-				.collect(Collectors.toList());
+		List<String> signature = new ArrayList<>();
+		int statementComponentIndex = -1;
+		for (String line : plan.lines().toList()) {
+			String value = stripTreePrefix(line);
+			if (value.isEmpty()) {
+				continue;
+			}
+			String canonicalLine = canonicalPlanLine(value, statementComponentIndex);
+			if (!canonicalLine.isEmpty()) {
+				signature.add(canonicalLine);
+			}
+			if (value.startsWith("StatementPattern")) {
+				statementComponentIndex = 0;
+			} else if (statementComponentIndex >= 0 && isStatementComponentLine(value)) {
+				statementComponentIndex++;
+				if (statementComponentIndex > 2) {
+					statementComponentIndex = -1;
+				}
+			}
+		}
 		return new PlanSignature(normalizeAggregateHavingWrapper(normalizeAssociativeJoinNodes(signature)));
 	}
 
@@ -290,13 +306,12 @@ class LmdbDevelopPlanParityIT {
 		return normalized;
 	}
 
-	private static String canonicalPlanLine(String line) {
-		String value = stripTreePrefix(line);
-		if (value.isEmpty()) {
-			return "";
-		}
-		if (value.startsWith("s: Var") || value.startsWith("p: Var") || value.startsWith("o: Var")) {
+	private static String canonicalPlanLine(String value, int statementComponentIndex) {
+		if (isRoleVarLine(value)) {
 			return canonicalVarLine(value);
+		}
+		if (value.startsWith("LmdbValueVar") && statementComponentIndex >= 0) {
+			return canonicalLmdbValueVarLine(value, statementComponentIndex);
 		}
 		if (value.startsWith("BindingSetAssignment")) {
 			return stripTrailingMetadata(value);
@@ -331,6 +346,14 @@ class LmdbDevelopPlanParityIT {
 		return "";
 	}
 
+	private static boolean isStatementComponentLine(String value) {
+		return isRoleVarLine(value) || value.startsWith("LmdbValueVar");
+	}
+
+	private static boolean isRoleVarLine(String value) {
+		return value.matches("[spo]:\\s+Var.*");
+	}
+
 	private static String stripTreePrefix(String line) {
 		int start = 0;
 		while (start < line.length() && !Character.isLetterOrDigit(line.charAt(start))) {
@@ -351,8 +374,19 @@ class LmdbDevelopPlanParityIT {
 	}
 
 	private static String canonicalVarLine(String value) {
-		String role = value.substring(0, 3);
-		return role + " " + canonicalVar(value.substring(3).trim());
+		String role = value.substring(0, 2);
+		return role + "  " + canonicalVar(value.substring(2).trim());
+	}
+
+	private static String canonicalLmdbValueVarLine(String value, int statementComponentIndex) {
+		String role = switch (statementComponentIndex) {
+		case 0 -> "s:";
+		case 1 -> "p:";
+		case 2 -> "o:";
+		default -> throw new IllegalArgumentException(
+				"Unexpected statement component index " + statementComponentIndex);
+		};
+		return role + "  " + canonicalVar(value);
 	}
 
 	private static String canonicalVar(String value) {

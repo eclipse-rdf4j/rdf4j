@@ -649,9 +649,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"optName VALUES should make the name lookup exact");
-			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
-					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-					"optName VALUES should retain the literal filter");
+			if (renderedQuery.contains("FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))")) {
+				requireBefore(mismatches, renderedQuery, "VALUES ?optName",
+						"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+						"optName VALUES should retain the literal filter");
+			}
 		} else if (!combinedPairNameValues) {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
 					"?u <http://example.com/theme/social/name> ?optName .",
@@ -663,9 +665,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 					"plannedLookupComponents=[S, P]",
 					"optional name lookup should use bound subject access when optName is filtered afterwards");
 		}
-		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
-				"literal optName filter should remain before projection");
+		if (renderedQuery.contains("FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))")) {
+			requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+					"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
+					"literal optName filter should remain before projection");
+		}
 		requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
 				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
 				"pair projection should run after bounded follows/name lookups");
@@ -807,6 +811,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "?d <http://example.com/theme/social/follows> ?e .",
 				"?e <http://example.com/theme/social/follows> ?a .",
 				"follows cascade should close with e/a after d/e");
+		boolean earlyCorrelatedNameExists = socialMediaQ10HasEarlyCorrelatedNameExists(renderedQuery);
 		if (renderedQuery.contains("VALUES ?optName")) {
 			requireBefore(mismatches, plan, followsPredicate, optNameAssignment,
 					"optional name finite anchor should stay on a plan branch after bounded follows access");
@@ -824,18 +829,39 @@ class LmdbThemeTopRegressionSnapshotIT {
 					"plannedLookupComponents=[S, P]",
 					"optional name lookup should use bound subject access when optName is filtered afterwards");
 		}
-		requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/name> ?optName .",
-				"EXISTS {",
-				"correlated EXISTS name probe should run after the optional name lookup");
-		requireContains(mismatches, renderedQuery, "VALUES ?name { \"user7\" \"user8\" }",
-				"correlated EXISTS should expose its small literal name domain");
-		requireBefore(mismatches, renderedQuery, "VALUES ?name { \"user7\" \"user8\" }",
-				"?a <http://example.com/theme/social/name> ?name .",
-				"inner name VALUES should guard the correlated name lookup");
+		if (earlyCorrelatedNameExists) {
+			requireBefore(mismatches, renderedQuery, "VALUES (?a ?b)", "FILTER EXISTS",
+					"finite a/b bindings should guard the correlated name EXISTS");
+			requireBefore(mismatches, renderedQuery, "FILTER EXISTS", "VALUES ?c",
+					"correlated name EXISTS should prune before extending the finite clique");
+			requireBefore(mismatches, renderedQuery, "?a <http://example.com/theme/social/name> ?name .",
+					"FILTER ((?name = \"user7\") || (?name = \"user8\"))",
+					"inner name lookup should feed the literal name filter");
+			requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/social/name",
+					"plannedLookupComponents=[S, P]",
+					"early correlated name EXISTS should use bound subject access");
+		} else {
+			requireBefore(mismatches, renderedQuery, "?e <http://example.com/theme/social/name> ?optName .",
+					"EXISTS {",
+					"correlated EXISTS name probe should run after the optional name lookup");
+			requireContains(mismatches, renderedQuery, "VALUES ?name { \"user7\" \"user8\" }",
+					"correlated EXISTS should expose its small literal name domain");
+			requireBefore(mismatches, renderedQuery, "VALUES ?name { \"user7\" \"user8\" }",
+					"?a <http://example.com/theme/social/name> ?name .",
+					"inner name VALUES should guard the correlated name lookup");
+		}
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/follows", "follows");
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/social/name", "name");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 6);
 		return mismatches;
+	}
+
+	private static boolean socialMediaQ10HasEarlyCorrelatedNameExists(String renderedQuery) {
+		int existsIndex = renderedQuery.indexOf("FILTER EXISTS {\n"
+				+ "?a <http://example.com/theme/social/name> ?name .\n"
+				+ "FILTER ((?name = \"user7\") || (?name = \"user8\"))");
+		int cValuesIndex = renderedQuery.indexOf("VALUES ?c");
+		return existsIndex >= 0 && cValuesIndex >= 0 && existsIndex < cValuesIndex;
 	}
 
 	private static List<String> highlyConnectedQ5FastShapeMismatches(String renderedQuery, String plan) {

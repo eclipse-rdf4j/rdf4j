@@ -2782,22 +2782,36 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				queue.inFlightCount = batch.updateCount;
 			}
 		}
-		Future<?> future = asyncIncrementalExecutor.submit(() -> {
-			try {
-				applyStatementUpdateBatch(batch);
-			} catch (Throwable t) {
-				recordAsyncIncrementalFailure(t);
-			} finally {
-				if (queue != null) {
-					synchronized (incrementalBufferLock) {
-						queue.inFlightCount = 0;
-						incrementalBufferLock.notifyAll();
+		Future<?> future;
+		try {
+			future = asyncIncrementalExecutor.submit(() -> {
+				try {
+					applyStatementUpdateBatch(batch);
+				} catch (Throwable t) {
+					recordAsyncIncrementalFailure(t);
+				} finally {
+					if (queue != null) {
+						synchronized (incrementalBufferLock) {
+							queue.inFlightCount = 0;
+							incrementalBufferLock.notifyAll();
+						}
 					}
+					asyncIncrementalUpdateCount.addAndGet(-batch.updateCount);
+					completeAsyncIncrementalBatch();
 				}
-				asyncIncrementalUpdateCount.addAndGet(-batch.updateCount);
-				completeAsyncIncrementalBatch();
+			});
+		} catch (RuntimeException e) {
+			if (queue != null) {
+				synchronized (incrementalBufferLock) {
+					queue.inFlightCount = 0;
+					incrementalBufferLock.notifyAll();
+				}
 			}
-		});
+			asyncIncrementalUpdateCount.addAndGet(-batch.updateCount);
+			completeAsyncIncrementalBatch();
+			recordAsyncIncrementalFailure(e);
+			throw e;
+		}
 		if (queue != null) {
 			synchronized (incrementalBufferLock) {
 				queue.future = future;
