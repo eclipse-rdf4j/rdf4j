@@ -35,6 +35,9 @@ import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -51,6 +54,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -526,6 +530,68 @@ public class LmdbSailStoreTest {
 		} finally {
 			sail.shutDown();
 		}
+	}
+
+	@Test
+	void estimatorStatementScanDoesNotBlockWritesAfterSnapshotOpen() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		SketchBasedJoinEstimator estimator = sail.getBackingStore().getSketchBasedJoinEstimator();
+		SketchStatementSource statementSource = getEstimatorStatementSource(estimator);
+
+		CountDownLatch iterationOpened = new CountDownLatch(1);
+		CountDownLatch releaseIteration = new CountDownLatch(1);
+		AtomicReference<Throwable> scannerFailure = new AtomicReference<>();
+		Thread scanner = new Thread(() -> {
+			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null, null)) {
+				assertTrue("Expected estimator statement source to open a non-empty snapshot", statements.hasNext());
+				iterationOpened.countDown();
+				assertTrue("Timed out waiting to release estimator snapshot",
+						releaseIteration.await(5, TimeUnit.SECONDS));
+			} catch (Throwable t) {
+				scannerFailure.set(t);
+				iterationOpened.countDown();
+			}
+		}, SketchBasedJoinEstimator.REFRESH_THREAD_NAME);
+
+		CountDownLatch writerFinished = new CountDownLatch(1);
+		AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+		Thread writer = new Thread(() -> {
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.setNamespace("scan", "urn:scan");
+			} catch (Throwable t) {
+				writerFailure.set(t);
+			} finally {
+				writerFinished.countDown();
+			}
+		}, "lmdb-estimator-scan-writer");
+
+		try {
+			scanner.start();
+			assertTrue("Timed out opening estimator statement snapshot", iterationOpened.await(5, TimeUnit.SECONDS));
+			if (scannerFailure.get() != null) {
+				throw new AssertionError("Estimator scanner failed", scannerFailure.get());
+			}
+
+			writer.start();
+			assertTrue("Estimator read snapshot should not hold the LMDB sink lock after opening the scan",
+					writerFinished.await(1, TimeUnit.SECONDS));
+			if (writerFailure.get() != null) {
+				throw new AssertionError("Concurrent namespace write failed", writerFailure.get());
+			}
+		} finally {
+			releaseIteration.countDown();
+			scanner.join(5_000L);
+			writer.join(5_000L);
+		}
+		assertFalse("Estimator scanner thread should have finished", scanner.isAlive());
+		assertFalse("Concurrent writer thread should have finished", writer.isAlive());
+	}
+
+	private static SketchStatementSource getEstimatorStatementSource(SketchBasedJoinEstimator estimator)
+			throws Exception {
+		Field statementSourceField = SketchBasedJoinEstimator.class.getDeclaredField("statementSource");
+		statementSourceField.setAccessible(true);
+		return (SketchStatementSource) statementSourceField.get(estimator);
 	}
 
 	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {
