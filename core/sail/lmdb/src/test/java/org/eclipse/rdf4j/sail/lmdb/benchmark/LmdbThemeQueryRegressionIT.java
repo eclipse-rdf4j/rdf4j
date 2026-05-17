@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -1566,8 +1565,8 @@ class LmdbThemeQueryRegressionIT {
 						.orElseThrow(() -> new AssertionError("LIBRARY q9 finite-domain planning was rejected: "
 								+ attempt.getDiagnostics()));
 
-				Assertions.assertTrue(plan.getOrderedArgs().indexOf(authorNameBindings) >= 0
-						&& plan.getOrderedArgs().indexOf(nameLookup) >= 0
+				Assertions.assertTrue(plan.getOrderedArgs().contains(authorNameBindings)
+						&& plan.getOrderedArgs().contains(nameLookup)
 						&& plan.getOrderedArgs().indexOf(authorNameBindings) < plan.getOrderedArgs()
 								.indexOf(nameLookup)
 						&& plan.getOrderedArgs().indexOf(nameLookup) < plan.getOrderedArgs().indexOf(writtenBy),
@@ -2532,7 +2531,7 @@ class LmdbThemeQueryRegressionIT {
 		SailRepository repository = new SailRepository(store);
 		try {
 			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadBenchmarkData(repository);
+			loadBenchmarkData(repository, theme);
 			persistEstimatorAfterBulkLoad(repository, store);
 			primeLearnedFilterStats(repository, theme, indexes);
 			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
@@ -2548,7 +2547,7 @@ class LmdbThemeQueryRegressionIT {
 		LmdbStore store = new LmdbStore(themeDir.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		try {
-			loadBenchmarkData(repository);
+			loadBenchmarkData(repository, theme);
 		} finally {
 			repository.shutDown();
 		}
@@ -2606,7 +2605,7 @@ class LmdbThemeQueryRegressionIT {
 		QueryBindingSet marker4 = new QueryBindingSet();
 		marker4.addBinding("marker", PHARMA_BIOMARKER_4);
 		assignment.setBindingNames(Set.of("marker"));
-		assignment.setBindingSets(List.<BindingSet>of(marker3, marker4));
+		assignment.setBindingSets(List.of(marker3, marker4));
 		return assignment;
 	}
 
@@ -2758,13 +2757,11 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
-	private static void loadBenchmarkData(SailRepository repository) throws IOException {
+	private static void loadBenchmarkData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
+			connection.begin(IsolationLevels.READ_COMMITTED);
 			RDFInserter inserter = new RDFInserter(connection);
-			for (Theme themeDataset : Theme.values()) {
-				ThemeDataSetGenerator.generate(themeDataset, inserter);
-			}
+			ThemeDataSetGenerator.generate(theme, inserter);
 			connection.commit();
 		}
 	}
