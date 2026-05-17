@@ -380,7 +380,6 @@ final class LmdbDeferredFilterPlacer {
 				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
 						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
 				&& !prefixBindingNames.containsAll(conditionBindingNames)
-				&& assignmentBindingNames.containsAll(conditionBindingNames)
 				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
 				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
 				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);

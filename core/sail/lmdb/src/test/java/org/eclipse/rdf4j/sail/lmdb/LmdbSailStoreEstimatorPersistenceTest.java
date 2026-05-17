@@ -517,8 +517,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			estimator.stop();
 			estimator.setRebuildAllowedSupplier(() -> false);
 			assertFalse(estimatorMetadata(dataDir).isFile(), "New store should not start with an estimator snapshot");
-			assertTrue(estimator.isReadyNonBlocking(),
-					"Empty stores without an estimator snapshot should start with an empty exact-ready estimator");
+			assertFalse(estimator.isReadyNonBlocking(),
+					"Empty stores without an estimator snapshot should remain unready until exact additions arrive");
 
 			SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
 			try {

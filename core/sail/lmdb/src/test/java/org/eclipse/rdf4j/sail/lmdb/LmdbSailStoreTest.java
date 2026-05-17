@@ -484,7 +484,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void approveAllBulkFailureDiscardsNonIsolatedEstimatorUpdates() throws Exception {
+	void approveAllBulkFailureDoesNotMutateNonIsolatedEstimatorBeforeStoreSuccess() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		setBulkOperationSize(config, 2);
 		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config);
@@ -518,7 +518,7 @@ public class LmdbSailStoreTest {
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				assertThrows(SailException.class, () -> sink.approveAll(sampleStatements(2), Set.of()));
 
-				assertFalse("Expected rollback to discard estimator state after an eager non-isolated update",
+				assertTrue("Estimator should remain ready because bulk additions are recorded after store success",
 						estimator.isReady());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
