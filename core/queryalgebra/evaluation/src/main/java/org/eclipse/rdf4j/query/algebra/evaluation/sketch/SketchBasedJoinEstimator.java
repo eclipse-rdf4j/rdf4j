@@ -1697,7 +1697,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				&& positiveReadinessStillAvailable(cachedPositive, readyState)) {
 			return true;
 		}
-		if ((epoch & 1L) != 0L || rebuildRequiredNow || !sketchesLoadedNow) {
+		if ((epoch & 1L) != 0L) {
+			if (rebuildRequiredNow || !sketchesLoadedNow) {
+				return false;
+			}
+			synchronized (readyState) {
+				return hasRequiredActiveSketchGroups(readyState);
+			}
+		}
+		if (rebuildRequiredNow || !sketchesLoadedNow) {
 			return false;
 		}
 		synchronized (readyState) {
@@ -1805,7 +1813,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private boolean hasRequiredActiveSketchGroups(State state) {
 		if (approxStoreSize.get() == 0L) {
-			return true;
+			return false;
 		}
 		byte slot = slotByte(slotOf(state));
 		return findReadinessSketchSentinels(state, slot) != null;
@@ -2298,7 +2306,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					}
 
 				}
-				if (seen > 0) {
+				if (!stoppedEarly && seen > 0) {
 					if (rebuildBatchSize > 0) {
 						ingestRebuildBatch(tgt, rebuildBatch, rebuildBatchSize);
 					}

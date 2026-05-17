@@ -40,9 +40,10 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -2615,7 +2616,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");
-		Union unsupported = new Union(pattern("x", pA, "y"), pattern("x", pA, "z"));
+		Service unsupported = new Service(Var.of("serviceRef"), new SingletonSet(), "SERVICE <urn:svc> { ?x ?p ?y }",
+				Map.of(), null, false);
 
 		double rows = estimator.cardinality(List.of(a, unsupported));
 		assertEquals(-1.0d, rows, "Expected cardinality(List) to return -1 when any tuple expression is unsupported");
