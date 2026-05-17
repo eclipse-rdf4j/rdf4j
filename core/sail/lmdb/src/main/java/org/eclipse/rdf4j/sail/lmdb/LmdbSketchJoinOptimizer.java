@@ -5212,17 +5212,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return join;
 		}
 
-		private Set<String> visibleBindingNames(TupleExpr tupleExpr) {
-			Set<String> bindingNames = new HashSet<>(plannerBindingNames(tupleExpr.getBindingNames()));
-			for (StatementPattern pattern : LmdbJoinPlanSupport.collectPatternIdentities(tupleExpr)) {
-				bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
-			}
-			return bindingNames;
-		}
-
 		private boolean containsNotEquals(ValueExpr condition) {
 			boolean[] contains = { false };
-			condition.visit(new AbstractSimpleQueryModelVisitor<>() {
+			condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+
 				@Override
 				public void meet(Compare node) {
 					if (node.getOperator() == Compare.CompareOp.NE) {
@@ -5232,6 +5225,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			});
 			return contains[0];
+		}
+
+		private Set<String> visibleBindingNames(TupleExpr tupleExpr) {
+			Set<String> bindingNames = new HashSet<>(plannerBindingNames(tupleExpr.getBindingNames()));
+			for (StatementPattern pattern : LmdbJoinPlanSupport.collectPatternIdentities(tupleExpr)) {
+				bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
+			}
+			return bindingNames;
 		}
 
 		private Join createJoin(TupleExpr left, TupleExpr right) {

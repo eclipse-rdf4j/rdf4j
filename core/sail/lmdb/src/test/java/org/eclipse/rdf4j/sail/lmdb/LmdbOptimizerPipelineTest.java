@@ -466,7 +466,8 @@ class LmdbOptimizerPipelineTest {
 			public void meet(Filter node) {
 				if (node.getArg()instanceof BindingSetAssignment assignment) {
 					Set<String> conditionVars = VarNameCollector.process(node.getCondition());
-					if (!assignment.getBindingNames().containsAll(conditionVars)) {
+					if (!assignment.getBindingNames().containsAll(conditionVars)
+							&& !isJoinRightBindingPrefixFilter(node, assignment, conditionVars)) {
 						unsafeFilters.add(node.toString());
 					}
 				}
@@ -475,6 +476,19 @@ class LmdbOptimizerPipelineTest {
 		});
 		assertTrue(unsafeFilters.isEmpty(), "Unsafe split binding-prefix filter(s):\n" + unsafeFilters
 				+ "\nOptimized query:\n" + tupleExpr);
+	}
+
+	private static boolean isJoinRightBindingPrefixFilter(Filter filter, BindingSetAssignment assignment,
+			Set<String> conditionVars) {
+		QueryModelNode parent = filter.getParentNode();
+		if (!(parent instanceof Join join) || join.getRightArg() != filter) {
+			return false;
+		}
+		Set<String> availableVars = new HashSet<>(join.getLeftArg().getBindingNames());
+		availableVars.addAll(assignment.getBindingNames());
+		return availableVars.containsAll(conditionVars)
+				&& conditionVars.stream().anyMatch(assignment.getBindingNames()::contains)
+				&& conditionVars.stream().anyMatch(join.getLeftArg().getBindingNames()::contains);
 	}
 
 	private static boolean containsLeftJoin(QueryModelNode queryModelNode) {

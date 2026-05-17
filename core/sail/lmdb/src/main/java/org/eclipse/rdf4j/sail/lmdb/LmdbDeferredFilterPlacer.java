@@ -354,8 +354,13 @@ final class LmdbDeferredFilterPlacer {
 
 	private int smallestSuffixStartForRequiredVars(List<SegmentFactor> factors, Set<String> requiredVars,
 			Set<String> boundBeforeSegment) {
+		return smallestSuffixStartForRequiredVars(factors, factors.size() - 1, requiredVars, boundBeforeSegment);
+	}
+
+	private int smallestSuffixStartForRequiredVars(List<SegmentFactor> factors, int endIndex,
+			Set<String> requiredVars, Set<String> boundBeforeSegment) {
 		Set<String> availableNames = new HashSet<>(boundBeforeSegment);
-		for (int i = factors.size() - 1; i >= 0; i--) {
+		for (int i = Math.min(endIndex, factors.size() - 1); i >= 0; i--) {
 			availableNames.addAll(factors.get(i).bindingNames);
 			if (availableNames.containsAll(requiredVars)) {
 				return i;
@@ -382,6 +387,18 @@ final class LmdbDeferredFilterPlacer {
 				&& !prefixBindingNames.containsAll(conditionBindingNames)
 				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
 				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
+				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
+	}
+
+	private boolean canApplySplitBindingPrefixFilter(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
+			Set<String> assignmentBindingNames, Set<String> conditionBindingNames) {
+		return !conditionBindingNames.isEmpty()
+				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
+						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
+				&& !prefixBindingNames.containsAll(conditionBindingNames)
+				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
+				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
+				&& !assignmentBindingNames.containsAll(conditionBindingNames)
 				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
 	}
 
@@ -774,6 +791,16 @@ final class LmdbDeferredFilterPlacer {
 					factors.set(i, new SegmentFactor(filteredRoot, factor.containedPatterns, factor.firstFactorOrder,
 							factor.lastFactorOrder));
 					return true;
+				}
+				if (canApplySplitBindingPrefixFilter(deferredFilter, prefixBindingNames, assignmentBindingNames,
+						conditionBindingNames)) {
+					int startIndex = smallestSuffixStartForRequiredVars(factors, i, conditionBindingNames,
+							boundBeforeSegment);
+					if (startIndex >= 0) {
+						groupDeferredFiltersOnWindow(factors, List.of(deferredFilter), new int[] { startIndex, i },
+								"bindingPrefix");
+						return true;
+					}
 				}
 			}
 			addPrefixVisibleBindingNames(prefixBindingNames, factor);
