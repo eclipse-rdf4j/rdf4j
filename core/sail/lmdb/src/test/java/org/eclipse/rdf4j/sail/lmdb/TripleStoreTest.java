@@ -117,6 +117,25 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void testWildcardScanUsesSpocWhenConfigured() throws Exception {
+		File wildcardIndexDir = new File(dataDir, "wildcard-index-store");
+		wildcardIndexDir.mkdirs();
+		try (TripleStore wildcardIndexStore = new TripleStore(wildcardIndexDir,
+				new LmdbStoreConfig("posc,spoc"),
+				null)) {
+			wildcardIndexStore.startTransaction();
+			wildcardIndexStore.storeTriple(11, 22, 33, 44, true);
+			wildcardIndexStore.commit();
+
+			try (Txn txn = wildcardIndexStore.getTxnManager().createReadTxn();
+					RecordIterator records = wildcardIndexStore.getTriples(txn, -1, -1, -1, -1, true)) {
+				assertEquals("Wildcard scans should use SPOC for subject-local iteration", "spoc",
+						records.getIndexName());
+			}
+		}
+	}
+
+	@Test
 	public void testAlignedWriteFallbackRemovesSecondaryInferredRowsForPromotions() throws Exception {
 		File fallbackDir = new File(dataDir, "aligned-fallback-store");
 		fallbackDir.mkdirs();

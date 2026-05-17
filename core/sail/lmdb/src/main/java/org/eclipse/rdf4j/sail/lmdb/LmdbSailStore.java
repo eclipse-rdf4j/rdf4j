@@ -796,6 +796,7 @@ class LmdbSailStore implements SailStore {
 				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 			}
 		}
+		Resource knownSubject = currentResource(subj, subjID);
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
@@ -804,6 +805,7 @@ class LmdbSailStore implements SailStore {
 				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 			}
 		}
+		IRI knownPredicate = currentIRI(pred, predID);
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
@@ -813,19 +815,24 @@ class LmdbSailStore implements SailStore {
 				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 			}
 		}
+		Value knownObject = currentValue(obj, objID);
 
 		List<Long> contextIDList = new ArrayList<>(contexts.length);
+		List<Resource> knownContextList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
 			contextIDList.add(LmdbValue.UNKNOWN_ID);
+			knownContextList.add(null);
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
 					contextIDList.add(0L);
+					knownContextList.add(null);
 				} else if (!context.isTriple()) {
 					long contextID = valueStore.getId(context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
 						contextIDList.add(contextID);
+						knownContextList.add(currentResource(context, contextID));
 					}
 				}
 			}
@@ -837,9 +844,12 @@ class LmdbSailStore implements SailStore {
 			statementPattern.setStringMetricActual("optimizer.idFilterRuntime", idFilter.isEmpty() ? "none" : "active");
 		}
 
-		for (long contextID : contextIDList) {
+		for (int i = 0; i < contextIDList.size(); i++) {
+			long contextID = contextIDList.get(i);
 			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, idFilter);
-			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+			perContextIterList.add(new LmdbStatementIterator(records, valueStore,
+					subjID, knownSubject, predID, knownPredicate, objID, knownObject, contextID,
+					knownContextList.get(i)));
 		}
 
 		if (perContextIterList.size() == 1) {
@@ -847,6 +857,26 @@ class LmdbSailStore implements SailStore {
 		} else {
 			return new UnionIteration<>(perContextIterList);
 		}
+	}
+
+	private Resource currentResource(Resource value, long id) {
+		LmdbValue currentValue = currentValue(value, id);
+		return currentValue instanceof Resource ? (Resource) currentValue : null;
+	}
+
+	private IRI currentIRI(IRI value, long id) {
+		LmdbValue currentValue = currentValue(value, id);
+		return currentValue instanceof IRI ? (IRI) currentValue : null;
+	}
+
+	private LmdbValue currentValue(Value value, long id) {
+		if (value instanceof LmdbValue lmdbValue
+				&& id != LmdbValue.UNKNOWN_ID
+				&& lmdbValue.getInternalID() == id
+				&& valueStore.getRevision().equals(lmdbValue.getValueStoreRevision())) {
+			return lmdbValue;
+		}
+		return null;
 	}
 
 	long countStatementIterator(

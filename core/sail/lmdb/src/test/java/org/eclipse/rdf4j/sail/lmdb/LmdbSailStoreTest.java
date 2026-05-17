@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -236,6 +238,74 @@ public class LmdbSailStoreTest {
 				CloseableIteration<? extends Statement> iteration = dataset.getStatements(null, null, null)) {
 			assertTrue(iteration instanceof EmptyIteration);
 			assertFalse(iteration.hasNext());
+		}
+	}
+
+	@Test
+	void createStatementIteratorReusesCurrentLmdbValues() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:known:subject");
+		IRI predicate = valueFactory.createIRI("urn:known:predicate");
+		IRI object = valueFactory.createIRI("urn:known:object");
+		IRI context = valueFactory.createIRI("urn:known:context");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object, context);
+		}
+
+		LmdbSailStore backingStore = sail.getBackingStore();
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+				CloseableIteration<? extends Statement> iteration = dataset.getStatements(subject, predicate, object,
+						context)) {
+			assertTrue(iteration.hasNext());
+			Statement statement = iteration.next();
+			assertSame(subject, statement.getSubject());
+			assertSame(predicate, statement.getPredicate());
+			assertSame(object, statement.getObject());
+			assertSame(context, statement.getContext());
+			assertFalse(iteration.hasNext());
+		}
+	}
+
+	@Test
+	void createStatementIteratorDoesNotReuseForeignLmdbValues() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:foreign:subject");
+		IRI predicate = valueFactory.createIRI("urn:foreign:predicate");
+		IRI object = valueFactory.createIRI("urn:foreign:object");
+		IRI context = valueFactory.createIRI("urn:foreign:context");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object, context);
+		}
+
+		File foreignDir = new File(dataDir, "foreign-value-store");
+		LmdbStore foreignStore = new LmdbStore(foreignDir, new LmdbStoreConfig("spoc,posc"));
+		foreignStore.init();
+		try {
+			ValueFactory foreignValueFactory = foreignStore.getValueFactory();
+			IRI foreignSubject = foreignValueFactory.createIRI(subject.stringValue());
+			IRI foreignPredicate = foreignValueFactory.createIRI(predicate.stringValue());
+			IRI foreignObject = foreignValueFactory.createIRI(object.stringValue());
+			IRI foreignContext = foreignValueFactory.createIRI(context.stringValue());
+
+			LmdbSailStore backingStore = sail.getBackingStore();
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> iteration = dataset.getStatements(foreignSubject,
+							foreignPredicate, foreignObject, foreignContext)) {
+				assertTrue(iteration.hasNext());
+				Statement statement = iteration.next();
+				assertNotSame(foreignSubject, statement.getSubject());
+				assertNotSame(foreignPredicate, statement.getPredicate());
+				assertNotSame(foreignObject, statement.getObject());
+				assertNotSame(foreignContext, statement.getContext());
+				assertFalse(iteration.hasNext());
+			}
+		} finally {
+			foreignStore.shutDown();
+			LmdbTestUtil.deleteDir(foreignDir);
 		}
 	}
 

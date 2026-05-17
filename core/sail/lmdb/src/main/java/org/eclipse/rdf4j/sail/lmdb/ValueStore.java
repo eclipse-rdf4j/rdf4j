@@ -160,6 +160,9 @@ class ValueStore extends AbstractValueFactory {
 	private final LmdbValue[] valueCache;
 	private final long[] valueCacheId;
 	private final int valueCacheMask;
+	private final LmdbIRI[] predicateCache;
+	private final long[] predicateCacheId;
+	private final int predicateCacheMask;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -256,6 +259,9 @@ class ValueStore extends AbstractValueFactory {
 		valueCache = new LmdbValue[cacheSize];
 		valueCacheId = new long[cacheSize];
 		valueCacheMask = cacheSize - 1;
+		predicateCache = new LmdbIRI[cacheSize];
+		predicateCacheId = new long[cacheSize];
+		predicateCacheMask = cacheSize - 1;
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -614,6 +620,25 @@ class ValueStore extends AbstractValueFactory {
 		valueCache[idx] = value;
 	}
 
+	LmdbIRI cachedPredicate(long id) {
+		int idx = (int) (id & predicateCacheMask);
+		if (predicateCacheId[idx] != id) {
+			return null;
+		}
+
+		LmdbIRI value = predicateCache[idx];
+		if (value != null && value.getInternalID() == id) {
+			return value;
+		}
+		return null;
+	}
+
+	void cachePredicate(long id, LmdbIRI value) {
+		int idx = (int) (id & predicateCacheMask);
+		predicateCacheId[idx] = id;
+		predicateCache[idx] = value;
+	}
+
 	private static int nextPowerOfTwo(int n) {
 		if (n <= 1) {
 			return 1;
@@ -657,6 +682,27 @@ class ValueStore extends AbstractValueFactory {
 				}
 			}
 
+			return resultValue;
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+	}
+
+	LmdbIRI getLazyPredicate(long id) throws IOException {
+		long stamp = revisionLock.readLock();
+		try {
+			LmdbIRI resultValue = cachedPredicate(id);
+			if (resultValue != null) {
+				return resultValue;
+			}
+
+			LmdbValue cachedValue = cachedValue(id);
+			if (cachedValue instanceof LmdbIRI) {
+				resultValue = (LmdbIRI) cachedValue;
+			} else {
+				resultValue = new LmdbIRI(lazyRevision, id);
+			}
+			cachePredicate(id, resultValue);
 			return resultValue;
 		} finally {
 			revisionLock.unlockRead(stamp);
@@ -1496,6 +1542,8 @@ class ValueStore extends AbstractValueFactory {
 	protected void clearCaches() {
 		Arrays.fill(valueCache, null);
 		Arrays.fill(valueCacheId, 0);
+		Arrays.fill(predicateCache, null);
+		Arrays.fill(predicateCacheId, 0);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();

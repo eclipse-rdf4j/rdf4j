@@ -1703,6 +1703,14 @@ class TripleStore implements Closeable {
 	}
 
 	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
+		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			for (TripleIndex index : indexes) {
+				if (index.isSpoc()) {
+					return index;
+				}
+			}
+		}
+
 		int bestScore = -1;
 		TripleIndex bestIndex = null;
 
@@ -1711,6 +1719,9 @@ class TripleStore implements Closeable {
 			if (score > bestScore) {
 				bestScore = score;
 				bestIndex = index;
+				if (score == 4) {
+					return bestIndex;
+				}
 			}
 		}
 
@@ -2484,6 +2495,7 @@ class TripleStore implements Closeable {
 		private final char[] fieldSeq;
 		private final IndexKeyWriters.KeyWriter keyWriter;
 		private final IndexKeyWriters.MatcherFactory matcherFactory;
+		private final PatternScorer patternScorer;
 		private final StatementFieldValueAccessor[] fieldValueAccessors;
 		private final StatementFieldValueAccessor leadingFieldValueAccessor;
 		private final int dbiExplicit, dbiInferred;
@@ -2493,6 +2505,7 @@ class TripleStore implements Closeable {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 			this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
+			this.patternScorer = patternScorer(fieldSeq);
 			this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 			this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 			this.indexMap = getIndexes(this.fieldSeq);
@@ -2503,6 +2516,10 @@ class TripleStore implements Closeable {
 
 		public char[] getFieldSeq() {
 			return fieldSeq;
+		}
+
+		private boolean isSpoc() {
+			return fieldSeq[0] == 's' && fieldSeq[1] == 'p' && fieldSeq[2] == 'o' && fieldSeq[3] == 'c';
 		}
 
 		public int getDB(boolean explicit) {
@@ -2555,45 +2572,58 @@ class TripleStore implements Closeable {
 		 * that the index will perform a sequential scan.
 		 */
 		public int getPatternScore(long subj, long pred, long obj, long context) {
-			int score = 0;
+			return patternScorer.score(subj, pred, obj, context);
+		}
 
-			for (char field : fieldSeq) {
-				switch (field) {
-				case 's':
-					if (subj >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				case 'p':
-					if (pred >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				case 'o':
-					if (obj >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				case 'c':
-					if (context >= 0) {
-						score++;
-					} else {
-						return score;
-					}
-					break;
-				default:
-					throw new RuntimeException("invalid character '" + field + "' in field sequence: "
-							+ new String(fieldSeq));
-				}
+		@FunctionalInterface
+		private interface PatternScorer {
+			int score(long subj, long pred, long obj, long context);
+		}
+
+		private static PatternScorer patternScorer(String fieldSeq) {
+			return switch (fieldSeq) {
+			case "spoc" -> (subj, pred, obj, context) -> patternScore(subj, pred, obj, context);
+			case "spco" -> (subj, pred, obj, context) -> patternScore(subj, pred, context, obj);
+			case "sopc" -> (subj, pred, obj, context) -> patternScore(subj, obj, pred, context);
+			case "socp" -> (subj, pred, obj, context) -> patternScore(subj, obj, context, pred);
+			case "scpo" -> (subj, pred, obj, context) -> patternScore(subj, context, pred, obj);
+			case "scop" -> (subj, pred, obj, context) -> patternScore(subj, context, obj, pred);
+			case "psoc" -> (subj, pred, obj, context) -> patternScore(pred, subj, obj, context);
+			case "psco" -> (subj, pred, obj, context) -> patternScore(pred, subj, context, obj);
+			case "posc" -> (subj, pred, obj, context) -> patternScore(pred, obj, subj, context);
+			case "pocs" -> (subj, pred, obj, context) -> patternScore(pred, obj, context, subj);
+			case "pcso" -> (subj, pred, obj, context) -> patternScore(pred, context, subj, obj);
+			case "pcos" -> (subj, pred, obj, context) -> patternScore(pred, context, obj, subj);
+			case "ospc" -> (subj, pred, obj, context) -> patternScore(obj, subj, pred, context);
+			case "oscp" -> (subj, pred, obj, context) -> patternScore(obj, subj, context, pred);
+			case "opsc" -> (subj, pred, obj, context) -> patternScore(obj, pred, subj, context);
+			case "opcs" -> (subj, pred, obj, context) -> patternScore(obj, pred, context, subj);
+			case "ocsp" -> (subj, pred, obj, context) -> patternScore(obj, context, subj, pred);
+			case "ocps" -> (subj, pred, obj, context) -> patternScore(obj, context, pred, subj);
+			case "cspo" -> (subj, pred, obj, context) -> patternScore(context, subj, pred, obj);
+			case "csop" -> (subj, pred, obj, context) -> patternScore(context, subj, obj, pred);
+			case "cpso" -> (subj, pred, obj, context) -> patternScore(context, pred, subj, obj);
+			case "cpos" -> (subj, pred, obj, context) -> patternScore(context, pred, obj, subj);
+			case "cosp" -> (subj, pred, obj, context) -> patternScore(context, obj, subj, pred);
+			case "cops" -> (subj, pred, obj, context) -> patternScore(context, obj, pred, subj);
+			default -> throw new IllegalArgumentException("Unsupported field sequence: " + fieldSeq);
+			};
+		}
+
+		private static int patternScore(long first, long second, long third, long fourth) {
+			if (first < 0) {
+				return 0;
 			}
-
-			return score;
+			if (second < 0) {
+				return 1;
+			}
+			if (third < 0) {
+				return 2;
+			}
+			if (fourth < 0) {
+				return 3;
+			}
+			return 4;
 		}
 
 		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {

@@ -19,6 +19,8 @@ import java.io.File;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -56,6 +58,65 @@ class ValueStoreCacheTest {
 			assertSame(v1, v2);
 		} finally {
 			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void predicateLazyLookupIsCachedSeparately(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir);
+		store.init();
+		try {
+			ValueStore vs = (ValueStore) store.getValueFactory();
+			long id = vs.getId(vs.createIRI("urn:example:predicate"), true);
+
+			assertNull(vs.cachedPredicate(id));
+			LmdbIRI first = vs.getLazyPredicate(id);
+
+			assertNotNull(first);
+			assertSame(first, vs.cachedPredicate(id));
+			assertSame(first, vs.getLazyPredicate(id));
+		} finally {
+			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void predicateCacheIsClearedWithValueCaches(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir);
+		store.init();
+		try {
+			ValueStore vs = (ValueStore) store.getValueFactory();
+			long id = vs.getId(vs.createIRI("urn:example:predicate"), true);
+			LmdbIRI predicate = vs.getLazyPredicate(id);
+
+			assertSame(predicate, vs.cachedPredicate(id));
+			vs.clearCaches();
+			assertNull(vs.cachedPredicate(id));
+		} finally {
+			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void predicateCacheUsesFixedArrayCollisionBehavior(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1);
+		ValueStore valueStore = new ValueStore(dataDir, config);
+		try {
+			long firstId = 1L;
+			long secondId = 2L;
+			LmdbIRI first = new LmdbIRI(valueStore.getRevision(), firstId);
+			LmdbIRI second = new LmdbIRI(valueStore.getRevision(), secondId);
+
+			valueStore.cachePredicate(firstId, first);
+			valueStore.cachePredicate(secondId, second);
+
+			assertNull(valueStore.cachedPredicate(firstId));
+			assertSame(second, valueStore.cachedPredicate(secondId));
+		} finally {
+			valueStore.close();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
