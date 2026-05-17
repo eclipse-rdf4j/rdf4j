@@ -84,7 +84,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 							SailRepository repository = new SailRepository(store);
 							try {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-								loadBenchmarkData(repository);
+								loadBenchmarkData(repository, themes);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 								primeLearnedFilterStats(repository, themes);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
@@ -222,14 +222,14 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				.collect(Collectors.joining("-"));
 	}
 
-	private static void loadBenchmarkData(SailRepository repository) throws IOException {
+	private static void loadBenchmarkData(SailRepository repository, List<Theme> themes) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
-			for (Theme themeDataset : Theme.values()) {
+			for (Theme themeDataset : themes) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
+				connection.commit();
 			}
-			connection.commit();
 		}
 	}
 

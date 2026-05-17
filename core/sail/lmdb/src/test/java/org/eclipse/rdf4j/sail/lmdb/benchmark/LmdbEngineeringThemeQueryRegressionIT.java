@@ -107,7 +107,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@Test
 	void assemblyComponentCountsKeepsFastValuesFilterPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareAllThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme, 2);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -124,7 +124,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 
 	@Test
 	void assemblyNameTypePartOfSketchSurfaceUsesFiniteBranches(@TempDir Path dataDir) throws Exception {
-		Path themeDir = prepareAllThemeStore(dataDir, Theme.ENGINEERING, 2);
+		Path themeDir = prepareThemeStore(dataDir, Theme.ENGINEERING, 2);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -231,47 +231,11 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		return preparedStore.storeDirectory();
 	}
 
-	private static Path prepareAllThemeStore(Path dataDir, Theme queryTheme, int queryIndexToPrime) throws Exception {
-		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
-				.prepareThemeRegressionStore(
-						dataDir.resolve("ALL_THEMES"),
-						PERSISTENT_STORE_KEY_PREFIX + "/ALL_THEMES-q" + queryIndexToPrime,
-						storeDirectory -> {
-							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-							SailRepository repository = new SailRepository(store);
-							try {
-								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-								loadAllThemeData(repository);
-								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, queryTheme, queryIndexToPrime);
-								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-							} finally {
-								shutdownAndRelease(repository, store);
-							}
-						});
-		if (preparedStore.reused()) {
-			System.out.println("Reusing persistent all-theme store " + preparedStore.storeDirectory()
-					+ " for engineering regression. " + PERSISTENT_STORE_HINT);
-		}
-		return preparedStore.storeDirectory();
-	}
-
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
 			ThemeDataSetGenerator.generate(theme, inserter);
-			connection.commit();
-		}
-	}
-
-	private static void loadAllThemeData(SailRepository repository) throws IOException {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			RDFInserter inserter = new RDFInserter(connection);
-			for (Theme theme : Theme.values()) {
-				ThemeDataSetGenerator.generate(theme, inserter);
-			}
 			connection.commit();
 		}
 	}
