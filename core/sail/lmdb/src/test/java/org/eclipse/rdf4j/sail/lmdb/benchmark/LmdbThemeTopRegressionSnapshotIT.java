@@ -47,7 +47,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "top-regression-snapshot";
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
-			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+			"StatementPattern \\([^\\n]*plannedWorkRows=([^,)]*)[^\\n]*plannedIndexAccessMode=directLookup[^\\n]*");
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
@@ -424,6 +424,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 3) {
 			return engineeringQ3FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
+		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 7) {
+			return engineeringQ7FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
 		if (targetQuery.theme == Theme.MEDICAL_RECORDS && targetQuery.queryIndex == 7) {
 			return medicalRecordsQ7FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
@@ -604,6 +607,13 @@ class LmdbThemeTopRegressionSnapshotIT {
 			List<String> mismatches = engineeringQ9FastShapeMismatches(renderedQuery, plan);
 			assertTrue(mismatches.isEmpty(),
 					targetQuery.key() + " should keep the canonical fast measurement-requirement shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 7) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = engineeringQ7FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast requirement anti-join shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		} else if (targetQuery.theme == Theme.MEDICAL_RECORDS && targetQuery.queryIndex == 7) {
 			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
@@ -1270,16 +1280,25 @@ class LmdbThemeTopRegressionSnapshotIT {
 				"?requirement <http://example.com/theme/engineering/verifiedBy> ?test .",
 				"?requirement a <http://example.com/theme/engineering/Requirement> .",
 				"requirement type guard should run after requirement is bound");
-		requireBefore(mismatches, renderedQuery,
-				"?requirement a <http://example.com/theme/engineering/Requirement> .",
-				"OPTIONAL",
-				"requirement chain should finish before optional component-name fanout");
-		requireBefore(mismatches, renderedQuery, "OPTIONAL",
-				"FILTER ((?optName != \"\") && EXISTS",
-				"optional component name should remain before the correlated filter");
 		requireContains(mismatches, renderedQuery,
 				"?component <http://example.com/theme/engineering/name> ?optName .",
-				"optional component-name lookup should remain visible");
+				"component-name lookup should remain visible");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"?component <http://example.com/theme/engineering/name> ?optName .",
+				"requirement chain should finish before component-name fanout");
+		if (renderedQuery.contains("OPTIONAL")) {
+			requireBefore(mismatches, renderedQuery, "OPTIONAL",
+					"FILTER ((?optName != \"\") && EXISTS",
+					"optional component name should remain before the correlated filter");
+		} else {
+			requireBefore(mismatches, renderedQuery,
+					"?component <http://example.com/theme/engineering/name> ?optName .",
+					"FILTER (?optName != \"\")",
+					"component name should remain before the retained optName filter");
+			requireBefore(mismatches, renderedQuery, "FILTER (?optName != \"\")", "FILTER EXISTS",
+					"optName filter should remain before the correlated satisfies EXISTS");
+		}
 		requireContains(mismatches, renderedQuery,
 				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
 				"correlated satisfies EXISTS should remain visible");
@@ -1289,10 +1308,48 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/measuredValue",
 				"plannedLookupComponents=[P]", "measuredValue should stay a bounded predicate scan");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/name",
-				"plannedLookupComponents=[P]", "optional component name should stay predicate-local");
+				"plannedLookupComponents=[P]", "component name should stay predicate-local");
 		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/satisfies",
 				"plannedIndexAccessMode=directLookup", "correlated satisfies EXISTS should be direct");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
+	private static List<String> engineeringQ7FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery, "VALUES ?name { \"REQ-1000\" \"REQ-1001\" }",
+				"missing finite requirement-name anchor");
+		requireBefore(mismatches, renderedQuery, "VALUES ?name",
+				"?requirement <http://example.com/theme/engineering/name> ?name .",
+				"finite requirement-name values should guard the name lookup");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/name> ?name .",
+				"FILTER NOT EXISTS",
+				"verifiedBy anti-join should run after the finite requirement lookup");
+		requireContains(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/verifiedBy> ?test .",
+				"verifiedBy anti-join should remain visible");
+		requireContains(mismatches, renderedQuery,
+				"?test <http://example.com/theme/engineering/verifiedBy> ?measurement .",
+				"measurement anti-join should remain visible");
+		requireBefore(mismatches, renderedQuery, "FILTER NOT EXISTS",
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"anti-join should be allowed to prune before the exact Requirement type guard");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement a <http://example.com/theme/engineering/Requirement> .",
+				"FILTER EXISTS",
+				"Requirement type guard should run before the satisfies EXISTS");
+		requireContains(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"satisfies EXISTS should remain visible");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/name",
+				"plannedLookupComponents=[P, O]", "requirement name should use predicate/object lookup");
+		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"plannedLookupComponents=[S, P, O]", "Requirement type should use exact direct access");
+		requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/engineering/satisfies",
+				"plannedIndexAccessMode=directLookup", "correlated satisfies EXISTS should be direct");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/verifiedBy", "verifiedBy");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 4);
 		return mismatches;
 	}
 
@@ -1464,10 +1521,10 @@ class LmdbThemeTopRegressionSnapshotIT {
 		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
 		int directLookupCount = 0;
 		while (matcher.find()) {
+			directLookupCount++;
 			if (isFiniteSurfaceDirectLookup(matcher.group())) {
 				continue;
 			}
-			directLookupCount++;
 			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
 			if (workRows > maxWorkRows) {
 				mismatches.add("direct lookup plannedAccessWorkRows should be <= " + maxWorkRows + " but got "

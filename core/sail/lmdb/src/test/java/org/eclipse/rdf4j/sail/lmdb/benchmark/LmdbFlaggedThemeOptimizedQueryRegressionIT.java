@@ -46,7 +46,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
-			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+			"StatementPattern \\([^\\n]*plannedWorkRows=([^,)]*)[^\\n]*plannedIndexAccessMode=directLookup[^\\n]*");
 	private static final List<Expectation> EXPECTATIONS = List.of(
 			expectation(Theme.ENGINEERING, 10),
 			expectation(Theme.HIGHLY_CONNECTED, 5),
