@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -278,7 +279,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	}
 
 	private static Function<BindingSet, BindingSet> buildRetainFunction(Filter filter, QueryEvaluationContext context) {
-		final Set<String> bindingNames = filter.getBindingNames();
+		final Set<String> bindingNames = new LinkedHashSet<>(filter.getBindingNames());
+		bindingNames.addAll(VarNameCollector.process(filter.getCondition()));
 		@SuppressWarnings("unchecked")
 		final Predicate<BindingSet>[] hasBinding = new Predicate[bindingNames.size()];
 		@SuppressWarnings("unchecked")

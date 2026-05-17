@@ -43,6 +43,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -106,6 +108,28 @@ class FilterIteratorTelemetryTest {
 		}
 
 		assertThat(conditionBindings.get()).isSameAs(row);
+	}
+
+	@Test
+	void filterOverAssignmentRetainsIncomingConditionBindings() {
+		Value matched = SimpleValueFactory.getInstance().createLiteral("match");
+		Value other = SimpleValueFactory.getInstance().createLiteral("other");
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("right"));
+		assignment.setBindingSets(List.of(singleBindingSet("right", matched), singleBindingSet("right", other)));
+		Filter filter = new Filter(assignment, new Compare(Var.of("left"), Var.of("right"), CompareOp.EQ));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, new QueryEvaluationContext.Minimal(null));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("left", matched);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(input)) {
+			assertThat(iteration.hasNext()).isTrue();
+			BindingSet result = iteration.next();
+			assertThat(result.getValue("left")).isEqualTo(matched);
+			assertThat(result.getValue("right")).isEqualTo(matched);
+			assertThat(iteration.hasNext()).isFalse();
+		}
 	}
 
 	@Test
