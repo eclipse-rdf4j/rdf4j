@@ -18,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -88,8 +87,7 @@ class LmdbThemeFastestRunSnapshotIT {
 		repository = new SailRepository(store);
 		try {
 			repository.init();
-			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "PHARMA:0 benchmark lifecycle", 60,
-					TimeUnit.SECONDS);
+			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "PHARMA:0 benchmark lifecycle");
 			OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
 			assertCanonicalFiniteAnchorFastPath(query0.plan(), "PHARMA:0 benchmark lifecycle");
 			OptimizerSnapshot telemetryQuery0 = explain(repository, Theme.PHARMA, 0, Explanation.Level.Telemetry);

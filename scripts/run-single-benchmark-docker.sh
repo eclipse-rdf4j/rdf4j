@@ -18,11 +18,15 @@ Environment:
   RDF4J_JMH_DOCKER_PLATFORM Optional docker platform override (for example linux/amd64)
   RDF4J_JMH_DOCKER_M2_REPO  Maven local repo inside the container (default: /workspace/.m2_repo_linux_j26)
   RDF4J_JMH_DOCKER_CONTAINER_NAME Optional reusable container name override
+  RDF4J_THEME_BENCHMARK_STORE_DIRECTORY Host path for reusable ThemeQueryBenchmark LMDB data
+  RDF4J_THEME_BENCHMARK_REUSE_CONFIRMED Set true after confirming disk/data compatibility
+  RDF4J_THEME_BENCHMARK_STORE_COMPATIBILITY_KEY Optional external store invalidation key
 USAGE
 }
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+FLAMEGRAPH_CONVERTER="${REPO_ROOT}/scripts/jfr-collapsed-to-svg.py"
 DOCKER_IMAGE="${RDF4J_JMH_DOCKER_IMAGE:-maven:3.9.14-sapmachine-26}"
 DOCKER_PLATFORM="${RDF4J_JMH_DOCKER_PLATFORM:-}"
 DOCKER_WORKDIR="/workspace"
@@ -46,6 +50,11 @@ benchmark_param_types=()
 benchmark_param_allowed_values=()
 benchmark_param_assigned_values=()
 normalized_flexible_param_tokens=()
+theme_store_directory_host="${RDF4J_THEME_BENCHMARK_STORE_DIRECTORY:-}"
+theme_store_directory_container=""
+theme_store_reuse_confirmed="${RDF4J_THEME_BENCHMARK_REUSE_CONFIRMED:-false}"
+theme_store_compatibility_key="${RDF4J_THEME_BENCHMARK_STORE_COMPATIBILITY_KEY:-}"
+docker_extra_mounts=()
 
 trim_whitespace() {
         local value="$1"
@@ -63,6 +72,36 @@ strip_token_delimiters() {
                 value="${value%,}"
         done
         printf '%s' "${value}"
+}
+
+repo_absolute_path() {
+        local path="$1"
+
+        if [[ "${path}" == /* ]]; then
+                printf '%s\n' "${path}"
+        else
+                printf '%s/%s\n' "${REPO_ROOT}" "${path}"
+        fi
+}
+
+host_path_inside_repo() {
+        local path="$1"
+
+        [[ "${path}" == "${REPO_ROOT}" || "${path}" == "${REPO_ROOT}/"* ]]
+}
+
+container_path_for_theme_store() {
+        local host_path="$1"
+
+        if host_path_inside_repo "${host_path}"; then
+                if [[ "${host_path}" == "${REPO_ROOT}" ]]; then
+                        printf '%s\n' "${DOCKER_WORKDIR}"
+                else
+                        printf '%s/%s\n' "${DOCKER_WORKDIR}" "${host_path#${REPO_ROOT}/}"
+                fi
+        else
+                printf '%s\n' "/benchmark-cache/theme-query-store"
+        fi
 }
 
 resolve_benchmark_class_source() {
@@ -456,6 +495,18 @@ while [[ $# -gt 0 ]]; do
                 passthrough_args+=("$1" "$2")
                 shift 2
                 ;;
+        --theme-store-directory)
+                theme_store_directory_host="$2"
+                shift 2
+                ;;
+        --theme-store-reuse-confirmed)
+                theme_store_reuse_confirmed=true
+                shift
+                ;;
+        --theme-store-compatibility-key)
+                theme_store_compatibility_key="$2"
+                shift 2
+                ;;
         --enable-jfr|--enable-jfr-cpu-times)
                 passthrough_args+=("$1")
                 shift
@@ -488,9 +539,100 @@ if [[ ${#flexible_param_tokens[@]} -gt 0 ]]; then
         append_flexible_benchmark_params
 fi
 
+if [[ -n "${theme_store_directory_host}" ]]; then
+        theme_store_directory_host="$(repo_absolute_path "${theme_store_directory_host}")"
+        theme_store_directory_container="$(container_path_for_theme_store "${theme_store_directory_host}")"
+        passthrough_args+=(--theme-store-directory "${theme_store_directory_container}")
+        if ! host_path_inside_repo "${theme_store_directory_host}"; then
+                docker_extra_mounts+=("-v" "${theme_store_directory_host}:${theme_store_directory_container}")
+        fi
+fi
+if [[ "${theme_store_reuse_confirmed}" == "true" ]]; then
+        passthrough_args+=(--theme-store-reuse-confirmed)
+fi
+if [[ -n "${theme_store_compatibility_key}" ]]; then
+        passthrough_args+=(--theme-store-compatibility-key "${theme_store_compatibility_key}")
+fi
+
 print_command() {
         printf '%q ' "$@"
         printf '\n'
+}
+
+find_jfrconv() {
+        if command -v jfrconv >/dev/null 2>&1; then
+                command -v jfrconv
+                return 0
+        fi
+        if [[ -x /opt/homebrew/bin/jfrconv ]]; then
+                printf '%s\n' /opt/homebrew/bin/jfrconv
+                return 0
+        fi
+        if [[ -x /opt/homebrew/Cellar/async-profiler/4.4/bin/jfrconv ]]; then
+                printf '%s\n' /opt/homebrew/Cellar/async-profiler/4.4/bin/jfrconv
+                return 0
+        fi
+        if [[ -x /opt/homebrew/Cellar/async-profiler/4.3/bin/jfrconv ]]; then
+                printf '%s\n' /opt/homebrew/Cellar/async-profiler/4.3/bin/jfrconv
+                return 0
+        fi
+        return 1
+}
+
+host_path_for_container_path() {
+        local path="$1"
+
+        if [[ "${path}" == "${DOCKER_WORKDIR}/"* ]]; then
+                printf '%s/%s\n' "${REPO_ROOT}" "${path#${DOCKER_WORKDIR}/}"
+        else
+                printf '%s\n' "${path}"
+        fi
+}
+
+extract_jfr_path() {
+        local log_path="$1"
+
+        sed -n 's/^.*Recording will be written to \(.*\)\.$/\1/p' "${log_path}" | tail -1
+}
+
+write_flamegraph() {
+        local jfr_path="$1"
+        local jfrconv_bin collapsed_path svg_path width profile_label
+
+        if [[ ! -f "${jfr_path}" ]]; then
+                echo "Warning: JFR file not found for flame graph conversion: ${jfr_path}" >&2
+                return 1
+        fi
+        if [[ ! -x "${FLAMEGRAPH_CONVERTER}" ]]; then
+                echo "Warning: Flame graph converter not found or not executable: ${FLAMEGRAPH_CONVERTER}" >&2
+                return 1
+        fi
+        if ! jfrconv_bin="$(find_jfrconv)"; then
+                echo "Warning: jfrconv not found; install async-profiler to create JFR flame graphs." >&2
+                return 1
+        fi
+
+        collapsed_path="${jfr_path%.jfr}.cpu-time.collapsed"
+        svg_path="${jfr_path%.jfr}.cpu-time.svg"
+        width="${RDF4J_JFR_FLAMEGRAPH_WIDTH:-8000}"
+        profile_label="CPU-time"
+
+        if ! "${jfrconv_bin}" --cpu-time --output collapsed "${jfr_path}" "${collapsed_path}" \
+                || ! python3 "${FLAMEGRAPH_CONVERTER}" "${collapsed_path}" "${svg_path}" --width "${width}" \
+                        --title "JFR CPU-time flame graph: $(basename "${jfr_path}")"; then
+                echo "Warning: no CPU-time samples found; falling back to regular JFR execution samples." >&2
+                collapsed_path="${jfr_path%.jfr}.cpu.collapsed"
+                svg_path="${jfr_path%.jfr}.cpu.svg"
+                profile_label="CPU execution-sample"
+                "${jfrconv_bin}" --cpu --output collapsed "${jfr_path}" "${collapsed_path}"
+                python3 "${FLAMEGRAPH_CONVERTER}" "${collapsed_path}" "${svg_path}" --width "${width}" \
+                        --title "JFR CPU flame graph: $(basename "${jfr_path}")"
+        fi
+
+        echo
+        echo "JFR ${profile_label} collapsed stacks: ${collapsed_path}"
+        echo "JFR ${profile_label} SVG flame graph: ${svg_path}"
+        echo "Reminder: inspect the SVG flame graph before leaving this benchmark loop."
 }
 
 sanitize_container_name_component() {
@@ -515,7 +657,7 @@ compute_container_name() {
         fi
 
         repo_component="$(sanitize_container_name_component "$(basename "${REPO_ROOT}")")"
-        hash_input="${REPO_ROOT}|${DOCKER_IMAGE}|${DOCKER_PLATFORM}|$(id -u)|${CONTAINER_M2_REPO}"
+        hash_input="${REPO_ROOT}|${DOCKER_IMAGE}|${DOCKER_PLATFORM}|$(id -u)|${CONTAINER_M2_REPO}|${theme_store_directory_host}|${theme_store_directory_container}"
         if command -v shasum >/dev/null 2>&1; then
                 hash_value="$(printf '%s' "${hash_input}" | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
         elif command -v sha256sum >/dev/null 2>&1; then
@@ -550,6 +692,7 @@ fi
 docker_create_cmd+=(
         --name "${container_name}"
         -v "${REPO_ROOT}:${DOCKER_WORKDIR}"
+        "${docker_extra_mounts[@]}"
         -w "${DOCKER_WORKDIR}"
         -e "MAVEN_OPTS=-Dmaven.repo.local=${CONTAINER_M2_REPO} -Duser.home=${INNER_HOME}"
         -e "HOME=${INNER_HOME}"
@@ -580,6 +723,10 @@ if ${dry_run}; then
         exit 0
 fi
 
+if [[ -n "${theme_store_directory_host}" ]] && ! host_path_inside_repo "${theme_store_directory_host}"; then
+        mkdir -p "${theme_store_directory_host}"
+fi
+
 if ! container_exists "${container_name}"; then
         print_command "${docker_create_cmd[@]}"
         "${docker_create_cmd[@]}" >/dev/null
@@ -591,4 +738,24 @@ if ! container_running "${container_name}"; then
 fi
 
 print_command "${docker_exec_cmd[@]}"
-"${docker_exec_cmd[@]}"
+run_log="$(mktemp "${TMPDIR:-/tmp}/rdf4j-docker-benchmark.XXXXXX")"
+set +e
+"${docker_exec_cmd[@]}" 2>&1 | tee "${run_log}"
+cmd_status=${PIPESTATUS[0]}
+set -e
+
+jfr_path="$(extract_jfr_path "${run_log}")"
+if [[ -n "${jfr_path}" ]]; then
+        host_jfr_path="$(host_path_for_container_path "${jfr_path}")"
+        if [[ ${cmd_status} -eq 0 ]]; then
+                if ! write_flamegraph "${host_jfr_path}"; then
+                        echo "Warning: automatic SVG flame graph creation failed." >&2
+                        echo "Reminder: inspect the JFR manually before leaving this benchmark loop: ${host_jfr_path}" >&2
+                fi
+        else
+                echo "JFR recording path reported before failure: ${host_jfr_path}" >&2
+                echo "Reminder: inspect the JFR if it was written before the failed benchmark exited." >&2
+        fi
+fi
+
+exit "${cmd_status}"

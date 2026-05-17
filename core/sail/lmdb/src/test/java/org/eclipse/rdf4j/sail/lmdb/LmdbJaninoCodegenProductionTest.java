@@ -144,6 +144,52 @@ class LmdbJaninoCodegenProductionTest {
 	}
 
 	@Test
+	void planShapeExplainDoesNotFragmentIdenticalGeneratedProjectionCache() throws Exception {
+		System.setProperty(EXPLAIN_PROPERTY, "true");
+		LmdbGeneratedRecordIteratorFactory.clearRecentExplains();
+		Value accepted = Values.iri("urn:cache-stable");
+		LmdbIdPredicatePlan firstShape = LmdbIdPredicatePlan
+				.forCondition(new SameTerm(new Var("o"), new ValueConstant(accepted)), Map.of("o", 2),
+						value -> accepted.equals(value) ? 2_222_222L : LmdbValue.UNKNOWN_ID)
+				.withCodegenShapeKey("lmdb-plan-shape:first:sp(_,_,v0,_)");
+		LmdbIdPredicatePlan secondShape = LmdbIdPredicatePlan
+				.forCondition(new SameTerm(new Var("o"), new ValueConstant(accepted)), Map.of("o", 2),
+						value -> accepted.equals(value) ? 2_222_222L : LmdbValue.UNKNOWN_ID)
+				.withCodegenShapeKey("lmdb-plan-shape:second:sp(_,_,v0,_)");
+		long[] binding = { LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID };
+
+		RecordIterator first = (RecordIterator) filteredProjectionFactoryMethod().invoke(null,
+				iterator(new long[] { 1L, 2L, 2_222_222L, 0L }), binding, 0, 1, 2, -1, firstShape, new long[3]);
+		assertThat(first.next()).containsExactly(1L, 2L, 2_222_222L);
+		assertThat(first.next()).isNull();
+
+		RecordIterator second = (RecordIterator) filteredProjectionFactoryMethod().invoke(null,
+				iterator(new long[] { 3L, 4L, 2_222_222L, 0L }), binding, 0, 1, 2, -1, secondShape, new long[3]);
+		assertThat(second.next()).containsExactly(3L, 4L, 2_222_222L);
+		assertThat(second.next()).isNull();
+
+		assertThat(LmdbGeneratedRecordIteratorFactory.getLastExplain().toString())
+				.contains("lmdb-plan-shape:second:", "cacheHit=true");
+	}
+
+	@Test
+	void smallGeneratedProjectionUsesInlineBindingReset() throws Exception {
+		System.setProperty(EXPLAIN_PROPERTY, "true");
+		long[] binding = { 11L, LmdbValue.UNKNOWN_ID, 33L, 44L };
+
+		RecordIterator generated = (RecordIterator) projectionFactoryMethod().invoke(null,
+				iterator(new long[] { 1L, 2L, 3L, 0L }, new long[] { 4L, 5L, 6L, 0L }), binding, -1, 1, -1, -1,
+				new long[4]);
+
+		assertThat(generated).isNotNull();
+		assertThat(generated.next()).containsExactly(11L, 2L, 33L, 44L);
+		assertThat(generated.next()).containsExactly(11L, 5L, 33L, 44L);
+		assertThat(generated.next()).isNull();
+		assertThat(LmdbGeneratedRecordIteratorFactory.getLastExplain().toString())
+				.contains("bindingResetMode='inline'");
+	}
+
+	@Test
 	void generatedIntegerPrefilterPassesUnknownInlineRowsToColdEvaluation() throws Exception {
 		System.setProperty(EXPLAIN_PROPERTY, "true");
 		LmdbIdPredicatePlan predicate = LmdbIdPredicatePlan.forCondition(
@@ -201,7 +247,10 @@ class LmdbJaninoCodegenProductionTest {
 
 			LmdbCodegenExplain explain = LmdbGeneratedRecordIteratorFactory.getLastExplain();
 			assertThat(explain).isNotNull();
-			assertThat(explain.toString()).contains("filtered-projection:2:", "cacheHit=", "fallbackReason=");
+			assertThat(explain.toString()).contains("filtered-projection:2:",
+					"lmdb-plan-shape:filtered-statement-pattern:",
+					"cacheHit=", "fallbackReason=");
+			assertThat(explain.toString()).doesNotContain("urn:accepted", "urn:accepted-other-predicate");
 		} finally {
 			repository.shutDown();
 		}
@@ -290,7 +339,52 @@ class LmdbJaninoCodegenProductionTest {
 
 			LmdbCodegenExplain explain = LmdbGeneratedRecordIteratorFactory.getLastExplain();
 			assertThat(explain).isNotNull();
-			assertThat(explain.toString()).contains("filtered-projection", "exact-id");
+			assertThat(explain.toString()).contains("filtered-projection", "lmdb-plan-shape:bgp-filtered-pattern:",
+					"exact-id");
+			assertThat(explain.toString()).doesNotContain("MED-1005");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void filteredBGPExplainIncludesPlanDerivedDescriptor(@TempDir Path tempDir) throws Exception {
+		System.setProperty(EXPLAIN_PROPERTY, "true");
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI hasMedication = Values.iri("urn:hasMedication");
+		IRI code = Values.iri("urn:code");
+		IRI included = Values.iri("urn:included");
+		IRI medication = Values.iri("urn:medication");
+		try {
+			try (RepositoryConnection conn = repository.getConnection()) {
+				conn.add(included, hasMedication, medication);
+				conn.add(medication, code, Values.literal("MED-1005"));
+			}
+
+			String query = """
+					SELECT ?patient WHERE {
+					  ?patient <urn:hasMedication> ?medication .
+					  ?medication <urn:code> ?code .
+					  FILTER (?code = "MED-1005")
+					}
+					""";
+			try (RepositoryConnection conn = repository.getConnection();
+					TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				assertThat(Iterations.asList(result))
+						.extracting(row -> row.getValue("patient"))
+						.containsExactly(included);
+			}
+
+			LmdbCodegenExplain explain = LmdbGeneratedRecordIteratorFactory.getLastExplain();
+			assertThat(explain).isNotNull();
+			assertThat(explain.toString())
+					.contains("shapeOperators=", "shapePatterns=", "shapePredicates=", "shapeStatementPatterns=",
+							"shapeFilters=", "shapeMaxPatternSlots=");
+			assertThat(explain.toString()).doesNotContain("MED-1005", "hasMedication", "urn:code");
 		} finally {
 			repository.shutDown();
 		}

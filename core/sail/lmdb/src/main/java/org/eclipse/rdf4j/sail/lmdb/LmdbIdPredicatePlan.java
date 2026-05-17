@@ -50,11 +50,25 @@ public final class LmdbIdPredicatePlan {
 	private final boolean supported;
 	private final String fallbackReason;
 	private final IdPredicate predicate;
+	private final String codegenShapeKey;
+	private final LmdbPlanDerivedCodegenShape.Descriptor codegenShapeDescriptor;
 
 	private LmdbIdPredicatePlan(boolean supported, String fallbackReason, IdPredicate predicate) {
+		this(supported, fallbackReason, predicate, "", null);
+	}
+
+	private LmdbIdPredicatePlan(boolean supported, String fallbackReason, IdPredicate predicate,
+			String codegenShapeKey) {
+		this(supported, fallbackReason, predicate, codegenShapeKey, null);
+	}
+
+	private LmdbIdPredicatePlan(boolean supported, String fallbackReason, IdPredicate predicate,
+			String codegenShapeKey, LmdbPlanDerivedCodegenShape.Descriptor codegenShapeDescriptor) {
 		this.supported = supported;
 		this.fallbackReason = fallbackReason;
 		this.predicate = predicate;
+		this.codegenShapeKey = codegenShapeKey;
+		this.codegenShapeDescriptor = codegenShapeDescriptor;
 	}
 
 	public static LmdbIdPredicatePlan forCondition(ValueExpr condition, Map<String, Integer> slots,
@@ -85,6 +99,20 @@ public final class LmdbIdPredicatePlan {
 		return fallbackReason;
 	}
 
+	public LmdbIdPredicatePlan withCodegenShapeKey(String codegenShapeKey) {
+		if (codegenShapeKey == null || codegenShapeKey.isEmpty() || codegenShapeKey.equals(this.codegenShapeKey)) {
+			return this;
+		}
+		return new LmdbIdPredicatePlan(supported, fallbackReason, predicate, codegenShapeKey, null);
+	}
+
+	public LmdbIdPredicatePlan withCodegenShapeDescriptor(LmdbPlanDerivedCodegenShape.Descriptor descriptor) {
+		if (descriptor == null) {
+			return this;
+		}
+		return new LmdbIdPredicatePlan(supported, fallbackReason, predicate, descriptor.key(), descriptor);
+	}
+
 	public boolean supportsTotalGeneratedTest() {
 		if (predicate instanceof ExactIdPredicate || predicate instanceof ExactIdSetPredicate) {
 			return true;
@@ -101,22 +129,55 @@ public final class LmdbIdPredicatePlan {
 	}
 
 	public String generatedTemplateKey() {
+		return generatedKey(true);
+	}
+
+	public String generatedCompileKey() {
+		return generatedKey(false);
+	}
+
+	LmdbPlanDerivedCodegenShape.Descriptor generatedShapeDescriptor() {
+		return codegenShapeDescriptor;
+	}
+
+	private String generatedKey(boolean includeShapeKey) {
+		String prefix = includeShapeKey && !codegenShapeKey.isEmpty() ? codegenShapeKey + '|' : "";
 		if (predicate instanceof ExactIdPredicate exact) {
-			return (exact.match ? "exact-id:" : "exact-id-ne:") + exact.slot + ':' + exact.id;
+			return prefix + (exact.match ? "exact-id:" : "exact-id-ne:") + exact.slot + ':' + exact.id;
 		}
 		if (predicate instanceof ExactIdSetPredicate set) {
-			return "exact-id-set:" + set.slot + ':' + Arrays.toString(set.ids);
+			return prefix + "exact-id-set:" + set.slot + ':' + Arrays.toString(set.ids);
 		}
 		if (predicate instanceof EmbeddedBooleanEqualityPredicate bool) {
-			return "embedded-boolean:" + bool.slot + ':' + bool.expected;
+			return prefix + "embedded-boolean:" + bool.slot + ':' + bool.expected;
 		}
 		if (predicate instanceof EmbeddedIntegerComparePredicate integer) {
-			return "embedded-integer:" + integer.slot + ':' + integer.operator + ':' + integer.rhs;
+			return prefix + "embedded-integer:" + integer.slot + ':' + integer.operator + ':' + integer.rhs;
 		}
 		if (predicate instanceof AndPredicate and) {
-			return "and:(" + and.left.generatedTemplateKey() + "):(" + and.right.generatedTemplateKey() + ')';
+			return prefix + "and:(" + and.left.generatedKey(false) + "):(" + and.right.generatedKey(false) + ')';
 		}
-		return "unsupported";
+		return prefix + "unsupported";
+	}
+
+	public int exactIdSetSlot() {
+		if (predicate instanceof ExactIdPredicate exact && exact.match) {
+			return exact.slot;
+		}
+		if (predicate instanceof ExactIdSetPredicate set) {
+			return set.slot;
+		}
+		return -1;
+	}
+
+	public long[] exactIdSetIds() {
+		if (predicate instanceof ExactIdPredicate exact && exact.match) {
+			return new long[] { exact.id };
+		}
+		if (predicate instanceof ExactIdSetPredicate set) {
+			return set.ids.clone();
+		}
+		return null;
 	}
 
 	public void appendGeneratedTest(StringBuilder source, String rowVariable) {

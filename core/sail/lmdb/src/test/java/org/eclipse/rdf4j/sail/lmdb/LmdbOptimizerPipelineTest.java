@@ -56,8 +56,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -82,10 +80,10 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbOptimizerPipelineTest {
 
 	@Test
-	void automaticLmdbStoreUsesDefaultEvaluationStrategyFactoryUntilSketchesAreReady() {
+	void automaticLmdbStoreUsesLmdbEvaluationStrategyFactoryBeforeSketchesAreReady() {
 		LmdbStore store = new LmdbStore();
 
-		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 	}
 
 	@Test
@@ -109,7 +107,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lowHeapAutomaticStoreUsesDefaultFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
+	void lowHeapAutomaticStoreUsesLmdbFactoryWithoutSketchEstimator(@TempDir File dataDir) throws Exception {
 		ProcessResult result = runLowHeapProbe(dataDir);
 
 		assertEquals(0, result.exitCode, result.output);
@@ -123,7 +121,7 @@ class LmdbOptimizerPipelineTest {
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			assertInstanceOf(LmdbEvaluationStrategy.class, createEvaluationStrategy(factory));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -357,8 +355,8 @@ class LmdbOptimizerPipelineTest {
 				if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
 					throw new AssertionError("Low heap should not allocate the sketch estimator");
 				}
-				if (!(store.getEvaluationStrategyFactory() instanceof DefaultEvaluationStrategyFactory)) {
-					throw new AssertionError("Low heap should keep the default evaluation strategy factory");
+				if (!(store.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+					throw new AssertionError("Low heap should keep the LMDB evaluation strategy factory");
 				}
 
 				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();

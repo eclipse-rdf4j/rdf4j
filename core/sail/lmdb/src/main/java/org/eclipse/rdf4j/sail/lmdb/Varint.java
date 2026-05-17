@@ -14,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
+import org.lwjgl.system.MemoryUtil;
 
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
@@ -324,6 +325,41 @@ public final class Varint {
 			throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
 
 		}
+	}
+
+	public static long readUnsigned(long address) throws IllegalArgumentException {
+		final int a0 = MemoryUtil.memGetByte(address) & 0xFF;
+
+		if (a0 <= 240) {
+			return a0;
+		}
+
+		final int extra = VARINT_EXTRA_BYTES[a0];
+		switch (extra) {
+		case 1:
+			return 240L + ((long) (a0 - 241) << 8) + (MemoryUtil.memGetByte(address + 1) & 0xFF);
+		case 2:
+			return 2288L + ((long) (MemoryUtil.memGetByte(address + 1) & 0xFF) << 8)
+					+ (MemoryUtil.memGetByte(address + 2) & 0xFF);
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+			long value = 0;
+			for (int i = 1; i <= extra; i++) {
+				value = (value << 8) | (MemoryUtil.memGetByte(address + i) & 0xFFL);
+			}
+			return value;
+		default:
+			throw new IllegalArgumentException("Bytes is higher than 8: " + extra);
+		}
+	}
+
+	public static int calcLengthUnsignedAt(long address) {
+		int a0 = MemoryUtil.memGetByte(address) & 0xFF;
+		return 1 + VARINT_EXTRA_BYTES[a0];
 	}
 
 	public static void skipUnsigned(ByteBuffer bb) throws IllegalArgumentException {

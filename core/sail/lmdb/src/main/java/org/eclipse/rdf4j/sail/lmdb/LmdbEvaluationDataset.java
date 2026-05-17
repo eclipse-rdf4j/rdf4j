@@ -49,6 +49,18 @@ public interface LmdbEvaluationDataset {
 		}
 	}
 
+	@InternalUseOnly
+	@FunctionalInterface
+	interface RawQuadConsumer {
+		boolean accept(long subj, long pred, long obj, long context) throws QueryEvaluationException;
+	}
+
+	@InternalUseOnly
+	@FunctionalInterface
+	interface RawIdPairConsumer {
+		boolean accept(long first, long second) throws QueryEvaluationException;
+	}
+
 	/**
 	 * Create a {@link RecordIterator} for the supplied {@link StatementPattern}, taking into account any existing
 	 * bindings.
@@ -253,10 +265,31 @@ public interface LmdbEvaluationDataset {
 		return null;
 	}
 
+	@InternalUseOnly
+	default long scanIndex(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, long[] quadReuse, RawQuadConsumer consumer) throws QueryEvaluationException {
+		return -1;
+	}
+
+	@InternalUseOnly
+	default long scanIndexComponents(String indexFieldSequence, long subj, long pred, long obj, long context,
+			int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, RawIdPairConsumer consumer)
+			throws QueryEvaluationException {
+		return -1;
+	}
+
 	/**
 	 * @return the {@link ValueStore} backing this dataset.
 	 */
 	ValueStore getValueStore();
+
+	/**
+	 * @return the stable LMDB data revision backing this dataset, or {@code -1} when unavailable.
+	 */
+	@InternalUseOnly
+	default long getDataRevision() {
+		return -1;
+	}
 
 	/**
 	 * @return the isolation level associated with this dataset.

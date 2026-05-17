@@ -219,6 +219,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return evalStrat;
 	}
 
+	protected TripleSource createTripleSource(ValueFactory vf, SailDataset rdfDataset) {
+		return new SailDatasetTripleSource(vf, rdfDataset);
+	}
+
 	@Override
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
@@ -243,7 +247,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
 			rdfDataset = branch.dataset(getIsolationLevel());
 
-			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
+			TripleSource tripleSource = createTripleSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 			if (trackResultSize) {
 				strategy.setTrackResultSize(trackResultSize);

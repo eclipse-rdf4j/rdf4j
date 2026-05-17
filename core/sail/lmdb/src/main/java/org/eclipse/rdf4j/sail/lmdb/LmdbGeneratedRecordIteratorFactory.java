@@ -36,12 +36,16 @@ final class LmdbGeneratedRecordIteratorFactory {
 
 	private static final ConcurrentHashMap<String, CompiledProjection> PROJECTION_CACHE = new ConcurrentHashMap<>();
 
+	private static final ConcurrentHashMap<String, CompiledBatchExistsMatcher> BATCH_EXISTS_CACHE = new ConcurrentHashMap<>();
+
 	private static final AtomicReference<LmdbCodegenExplain> LAST_EXPLAIN = new AtomicReference<>();
 
 	private static final ThreadLocal<ArrayDeque<LmdbCodegenExplain>> RECENT_EXPLAINS = ThreadLocal
 			.withInitial(ArrayDeque::new);
 
 	private static final int MAX_RECENT_EXPLAINS = 16;
+
+	private static final int INLINE_BINDING_RESET_LIMIT = 8;
 
 	private LmdbGeneratedRecordIteratorFactory() {
 	}
@@ -61,7 +65,9 @@ final class LmdbGeneratedRecordIteratorFactory {
 	private static RecordIterator tryCreateProjectionIterator(RecordIterator base, long[] binding, int subjIndex,
 			int predIndex, int objIndex, int ctxIndex, LmdbIdPredicatePlan predicatePlan, long[] bindingReuse) {
 		ProjectionShape shape = new ProjectionShape(binding == null ? -1 : binding.length, subjIndex, predIndex,
-				objIndex, ctxIndex, predicatePlan == null ? "" : predicatePlan.generatedTemplateKey());
+				objIndex, ctxIndex, predicatePlan == null ? "" : predicatePlan.generatedTemplateKey(),
+				predicatePlan == null ? "" : predicatePlan.generatedCompileKey(),
+				predicatePlan == null ? null : predicatePlan.generatedShapeDescriptor());
 		if (!LmdbCodegenSettings.projectionEnabled()) {
 			record(LmdbCodegenExplain.fallback(shape.templateKey(), "projection-disabled"));
 			return null;
@@ -84,7 +90,8 @@ final class LmdbGeneratedRecordIteratorFactory {
 			long[] scratch = prepareScratch(binding, bindingReuse);
 			record(LmdbCodegenExplain.compiled(shape.templateKey(), compiled.compiled.className,
 					compiled.compiled.sourceLength, compiled.compiled.bytecodeSize, compiled.compiled.branchCount,
-					compiled.compiled.compileNanos, compiled.cacheHit));
+					compiled.compiled.compileNanos, compiled.cacheHit, compiled.compiled.bindingResetMode,
+					shape.descriptor));
 			return compiled.compiled.newIterator(base, binding, scratch);
 		} catch (ReflectiveOperationException | CompileException | IOException | RuntimeException e) {
 			record(LmdbCodegenExplain.fallback(shape.templateKey(), fallbackReason(e)));
@@ -105,6 +112,25 @@ final class LmdbGeneratedRecordIteratorFactory {
 		LAST_EXPLAIN.set(null);
 	}
 
+	static LmdbGeneratedBatchExistsMatcher tryCreateBatchExistsMatcher(
+			LmdbPlanDerivedCodegenShape.Descriptor descriptor) {
+		String templateKey = "batch-exists:" + descriptor.key();
+		if (!LmdbCodegenSettings.projectionEnabled()) {
+			record(LmdbCodegenExplain.fallback(templateKey, "codegen-disabled"));
+			return null;
+		}
+		try {
+			BatchExistsCompilationResult compiled = compileOrGetBatchExistsMatcher(descriptor);
+			record(LmdbCodegenExplain.compiled(templateKey, compiled.compiled.className,
+					compiled.compiled.sourceLength, compiled.compiled.bytecodeSize, compiled.compiled.branchCount,
+					compiled.compiled.compileNanos, compiled.cacheHit, "", descriptor));
+			return compiled.compiled.newMatcher();
+		} catch (ReflectiveOperationException | CompileException | IOException | RuntimeException e) {
+			record(LmdbCodegenExplain.fallback(templateKey, fallbackReason(e)));
+			return null;
+		}
+	}
+
 	private static long[] prepareScratch(long[] binding, long[] bindingReuse) {
 		if (bindingReuse != null && bindingReuse.length >= binding.length) {
 			System.arraycopy(binding, 0, bindingReuse, 0, binding.length);
@@ -115,7 +141,7 @@ final class LmdbGeneratedRecordIteratorFactory {
 
 	private static CompilationResult compileOrGet(ProjectionShape shape, LmdbIdPredicatePlan predicatePlan)
 			throws ReflectiveOperationException, CompileException, IOException {
-		String key = shape.templateKey();
+		String key = shape.compileKey();
 		CompiledProjection cached = PROJECTION_CACHE.get(key);
 		if (cached != null) {
 			return new CompilationResult(cached, true);
@@ -131,9 +157,28 @@ final class LmdbGeneratedRecordIteratorFactory {
 		}
 	}
 
+	private static BatchExistsCompilationResult compileOrGetBatchExistsMatcher(
+			LmdbPlanDerivedCodegenShape.Descriptor descriptor)
+			throws ReflectiveOperationException, CompileException, IOException {
+		String key = "batch-exists:" + descriptor.key();
+		CompiledBatchExistsMatcher cached = BATCH_EXISTS_CACHE.get(key);
+		if (cached != null) {
+			return new BatchExistsCompilationResult(cached, true);
+		}
+		synchronized (BATCH_EXISTS_CACHE) {
+			cached = BATCH_EXISTS_CACHE.get(key);
+			if (cached != null) {
+				return new BatchExistsCompilationResult(cached, true);
+			}
+			CompiledBatchExistsMatcher compiled = compileBatchExistsMatcher(key);
+			BATCH_EXISTS_CACHE.put(key, compiled);
+			return new BatchExistsCompilationResult(compiled, false);
+		}
+	}
+
 	private static CompiledProjection compileProjection(ProjectionShape shape, LmdbIdPredicatePlan predicatePlan)
 			throws ReflectiveOperationException, CompileException, IOException {
-		String simpleName = "GeneratedProjection" + Integer.toUnsignedString(shape.templateKey().hashCode(), 16);
+		String simpleName = "GeneratedProjection" + Integer.toUnsignedString(shape.compileKey().hashCode(), 16);
 		String className = GENERATED_PACKAGE + "." + simpleName;
 		String source = projectionSource(simpleName, shape, predicatePlan);
 
@@ -145,7 +190,41 @@ final class LmdbGeneratedRecordIteratorFactory {
 
 		Class<?> clazz = compiler.getClassLoader().loadClass(className);
 		return new CompiledProjection(clazz, className, source.length(), bytecodeSize(compiler.getBytecodes()),
-				countBranches(source), compileNanos);
+				countBranches(source), compileNanos, shape.bindingResetMode());
+	}
+
+	private static CompiledBatchExistsMatcher compileBatchExistsMatcher(String key)
+			throws ReflectiveOperationException, CompileException, IOException {
+		String simpleName = "GeneratedBatchExists" + Integer.toUnsignedString(key.hashCode(), 16);
+		String className = GENERATED_PACKAGE + "." + simpleName;
+		String source = batchExistsSource(simpleName);
+
+		SimpleCompiler compiler = new SimpleCompiler();
+		compiler.setParentClassLoader(LmdbGeneratedRecordIteratorFactory.class.getClassLoader());
+		long started = System.nanoTime();
+		compiler.cook(source);
+		long compileNanos = System.nanoTime() - started;
+
+		Class<?> clazz = compiler.getClassLoader().loadClass(className);
+		return new CompiledBatchExistsMatcher(clazz, className, source.length(),
+				bytecodeSize(compiler.getBytecodes()), countBranches(source), compileNanos);
+	}
+
+	private static String batchExistsSource(String simpleName) {
+		StringBuilder source = new StringBuilder(1_024);
+		source.append("package ").append(GENERATED_PACKAGE).append(";\n");
+		source.append("public final class ")
+				.append(simpleName)
+				.append(" implements org.eclipse.rdf4j.sail.lmdb.LmdbGeneratedBatchExistsMatcher {\n");
+		source.append("  public final void match(long[] ids, int[] rowIndexes, ");
+		source.append("org.eclipse.rdf4j.sail.lmdb.LmdbIdMembership membership, ");
+		source.append("boolean[] result, int size) {\n");
+		source.append("    for (int i = 0; i < size; i++) {\n");
+		source.append("      result[rowIndexes[i]] = membership.contains(ids[i]);\n");
+		source.append("    }\n");
+		source.append("  }\n");
+		source.append("}\n");
+		return source.toString();
 	}
 
 	private static String projectionSource(String simpleName, ProjectionShape shape,
@@ -168,7 +247,7 @@ final class LmdbGeneratedRecordIteratorFactory {
 		source.append("  public final long[] next() {\n");
 		source.append("    long[] quad;\n");
 		source.append("    while ((quad = this.base.next()) != null) {\n");
-		source.append("      java.lang.System.arraycopy(this.binding, 0, this.scratch, 0, this.binding.length);\n");
+		appendBindingReset(source, shape);
 		appendSlot(source, shape.subjIndex, TripleStore.SUBJ_IDX);
 		appendSlot(source, shape.predIndex, TripleStore.PRED_IDX);
 		appendSlot(source, shape.objIndex, TripleStore.OBJ_IDX);
@@ -197,6 +276,22 @@ final class LmdbGeneratedRecordIteratorFactory {
 		source.append("  }\n");
 		source.append("}\n");
 		return source.toString();
+	}
+
+	private static void appendBindingReset(StringBuilder source, ProjectionShape shape) {
+		if (!shape.usesInlineBindingReset()) {
+			source.append("      java.lang.System.arraycopy(this.binding, 0, this.scratch, 0, this.binding.length);\n");
+			return;
+		}
+		for (int slot = 0; slot < shape.bindingLength; slot++) {
+			if (!shape.projectsSlot(slot)) {
+				source.append("      this.scratch[")
+						.append(slot)
+						.append("] = this.binding[")
+						.append(slot)
+						.append("];\n");
+			}
+		}
 	}
 
 	private static void appendSlot(StringBuilder source, int slot, int quadIndex) {
@@ -283,15 +378,19 @@ final class LmdbGeneratedRecordIteratorFactory {
 		private final int objIndex;
 		private final int ctxIndex;
 		private final String predicateKey;
+		private final String predicateCompileKey;
+		private final LmdbPlanDerivedCodegenShape.Descriptor descriptor;
 
 		private ProjectionShape(int bindingLength, int subjIndex, int predIndex, int objIndex, int ctxIndex,
-				String predicateKey) {
+				String predicateKey, String predicateCompileKey, LmdbPlanDerivedCodegenShape.Descriptor descriptor) {
 			this.bindingLength = bindingLength;
 			this.subjIndex = subjIndex;
 			this.predIndex = predIndex;
 			this.objIndex = objIndex;
 			this.ctxIndex = ctxIndex;
 			this.predicateKey = predicateKey;
+			this.predicateCompileKey = predicateCompileKey;
+			this.descriptor = descriptor;
 		}
 
 		private boolean hasValidIndexes() {
@@ -325,6 +424,27 @@ final class LmdbGeneratedRecordIteratorFactory {
 			return prefix + ':' + bindingLength + ':' + subjIndex + ':' + predIndex + ':' + objIndex + ':' + ctxIndex
 					+ ':' + predicateKey;
 		}
+
+		private String compileKey() {
+			String prefix = predicateCompileKey.isEmpty() ? "projection" : "filtered-projection";
+			return prefix + ':' + bindingLength + ':' + subjIndex + ':' + predIndex + ':' + objIndex + ':' + ctxIndex
+					+ ':' + predicateCompileKey;
+		}
+
+		private boolean usesInlineBindingReset() {
+			return bindingLength <= INLINE_BINDING_RESET_LIMIT;
+		}
+
+		private boolean projectsSlot(int slot) {
+			return slot == subjIndex || slot == predIndex || slot == objIndex || slot == ctxIndex;
+		}
+
+		private String bindingResetMode() {
+			if (usesInlineBindingReset()) {
+				return "inline";
+			}
+			return "arraycopy";
+		}
 	}
 
 	private static final class CompiledProjection {
@@ -335,15 +455,17 @@ final class LmdbGeneratedRecordIteratorFactory {
 		private final int bytecodeSize;
 		private final int branchCount;
 		private final long compileNanos;
+		private final String bindingResetMode;
 
 		private CompiledProjection(Class<?> clazz, String className, int sourceLength, int bytecodeSize,
-				int branchCount, long compileNanos) {
+				int branchCount, long compileNanos, String bindingResetMode) {
 			this.clazz = clazz;
 			this.className = className;
 			this.sourceLength = sourceLength;
 			this.bytecodeSize = bytecodeSize;
 			this.branchCount = branchCount;
 			this.compileNanos = compileNanos;
+			this.bindingResetMode = bindingResetMode;
 		}
 
 		private RecordIterator newIterator(RecordIterator base, long[] binding, long[] scratch)
@@ -353,12 +475,48 @@ final class LmdbGeneratedRecordIteratorFactory {
 		}
 	}
 
+	private static final class CompiledBatchExistsMatcher {
+
+		private final Class<?> clazz;
+		private final String className;
+		private final int sourceLength;
+		private final int bytecodeSize;
+		private final int branchCount;
+		private final long compileNanos;
+
+		private CompiledBatchExistsMatcher(Class<?> clazz, String className, int sourceLength, int bytecodeSize,
+				int branchCount, long compileNanos) {
+			this.clazz = clazz;
+			this.className = className;
+			this.sourceLength = sourceLength;
+			this.bytecodeSize = bytecodeSize;
+			this.branchCount = branchCount;
+			this.compileNanos = compileNanos;
+		}
+
+		private LmdbGeneratedBatchExistsMatcher newMatcher() throws ReflectiveOperationException {
+			Constructor<?> constructor = clazz.getConstructor();
+			return (LmdbGeneratedBatchExistsMatcher) constructor.newInstance();
+		}
+	}
+
 	private static final class CompilationResult {
 
 		private final CompiledProjection compiled;
 		private final boolean cacheHit;
 
 		private CompilationResult(CompiledProjection compiled, boolean cacheHit) {
+			this.compiled = compiled;
+			this.cacheHit = cacheHit;
+		}
+	}
+
+	private static final class BatchExistsCompilationResult {
+
+		private final CompiledBatchExistsMatcher compiled;
+		private final boolean cacheHit;
+
+		private BatchExistsCompilationResult(CompiledBatchExistsMatcher compiled, boolean cacheHit) {
 			this.compiled = compiled;
 			this.cacheHit = cacheHit;
 		}

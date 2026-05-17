@@ -19,6 +19,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.lmdb.join.LmdbIdJoinIterator;
 
 /**
  * LMDB-aware union dataset that exposes ID-level access when both sides provide it, with a conservative fallback.
@@ -162,6 +164,29 @@ final class LmdbUnionSailDataset implements SailDataset, LmdbEvaluationDataset {
 	}
 
 	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,
+			RecordIterator iteratorReuse, LmdbIdPredicatePlan predicatePlan)
+			throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		boolean d1 = dataset1 instanceof LmdbEvaluationDataset;
+		boolean d2 = dataset2 instanceof LmdbEvaluationDataset;
+		if (d1 && d2) {
+			RecordIterator r1 = ((LmdbEvaluationDataset) dataset1).getRecordIterator(binding, subjIndex, predIndex,
+					objIndex, ctxIndex, patternIds, keyBuffers, bindingReuse, quadReuse, iteratorReuse,
+					predicatePlan);
+			RecordIterator r2 = ((LmdbEvaluationDataset) dataset2).getRecordIterator(binding, subjIndex, predIndex,
+					objIndex, ctxIndex, patternIds, keyBuffers, bindingReuse, quadReuse, null, predicatePlan);
+			return chain(r1, r2);
+		}
+		LmdbDelegatingSailDataset a = new LmdbDelegatingSailDataset(dataset1, valueStore);
+		LmdbDelegatingSailDataset b = new LmdbDelegatingSailDataset(dataset2, valueStore);
+		return chain(a.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+				bindingReuse, quadReuse, iteratorReuse, predicatePlan),
+				b.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+						bindingReuse, quadReuse, null, predicatePlan));
+	}
+
+	@Override
 	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order)
 			throws org.eclipse.rdf4j.query.QueryEvaluationException {
@@ -200,6 +225,30 @@ final class LmdbUnionSailDataset implements SailDataset, LmdbEvaluationDataset {
 	}
 
 	@Override
+	public IsolationLevel getIsolationLevel() {
+		if (dataset1 instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) dataset1).getIsolationLevel();
+		}
+		if (dataset2 instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) dataset2).getIsolationLevel();
+		}
+		return LmdbEvaluationDataset.super.getIsolationLevel();
+	}
+
+	@Override
+	public long getDataRevision() {
+		if (!(dataset1 instanceof LmdbEvaluationDataset) || !(dataset2 instanceof LmdbEvaluationDataset)) {
+			return LmdbEvaluationDataset.super.getDataRevision();
+		}
+		long revision1 = ((LmdbEvaluationDataset) dataset1).getDataRevision();
+		long revision2 = ((LmdbEvaluationDataset) dataset2).getDataRevision();
+		if (revision1 < 0 || revision2 < 0) {
+			return LmdbEvaluationDataset.super.getDataRevision();
+		}
+		return 31L * revision1 + revision2;
+	}
+
+	@Override
 	public List<String> getIndexFieldSequences() {
 		if (dataset1 instanceof LmdbEvaluationDataset && dataset2 instanceof LmdbEvaluationDataset) {
 			LinkedHashSet<String> common = new LinkedHashSet<>(((LmdbEvaluationDataset) dataset1)
@@ -230,7 +279,53 @@ final class LmdbUnionSailDataset implements SailDataset, LmdbEvaluationDataset {
 		return null;
 	}
 
+	@Override
+	public long scanIndex(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, long[] quadReuse, RawQuadConsumer consumer)
+			throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		if (dataset1 instanceof LmdbEvaluationDataset && dataset2 instanceof LmdbEvaluationDataset) {
+			long left = ((LmdbEvaluationDataset) dataset1).scanIndex(indexFieldSequence, subj, pred, obj, context,
+					keyBuffers, quadReuse, consumer);
+			if (left < 0) {
+				return -1;
+			}
+			long right = ((LmdbEvaluationDataset) dataset2).scanIndex(indexFieldSequence, subj, pred, obj, context,
+					keyBuffers, quadReuse, consumer);
+			if (right < 0) {
+				return -1;
+			}
+			return left + right;
+		}
+		return -1;
+	}
+
+	@Override
+	public long scanIndexComponents(String indexFieldSequence, long subj, long pred, long obj, long context,
+			int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, RawIdPairConsumer consumer)
+			throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		if (dataset1 instanceof LmdbEvaluationDataset && dataset2 instanceof LmdbEvaluationDataset) {
+			long left = ((LmdbEvaluationDataset) dataset1).scanIndexComponents(indexFieldSequence, subj, pred, obj,
+					context, firstComponent, secondComponent, keyBuffers, consumer);
+			if (left < 0) {
+				return -1;
+			}
+			long right = ((LmdbEvaluationDataset) dataset2).scanIndexComponents(indexFieldSequence, subj, pred, obj,
+					context, firstComponent, secondComponent, keyBuffers, consumer);
+			if (right < 0) {
+				return -1;
+			}
+			return left + right;
+		}
+		return -1;
+	}
+
 	private RecordIterator chain(RecordIterator left, RecordIterator right) {
+		if (left == null) {
+			return right == null ? LmdbIdJoinIterator.emptyRecordIterator() : right;
+		}
+		if (right == null) {
+			return left;
+		}
 		return new RecordIterator() {
 			boolean leftDone = false;
 

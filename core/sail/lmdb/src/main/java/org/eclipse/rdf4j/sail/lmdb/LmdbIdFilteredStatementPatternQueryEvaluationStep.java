@@ -44,6 +44,7 @@ final class LmdbIdFilteredStatementPatternQueryEvaluationStep implements QueryEv
 	private final StatementPattern pattern;
 	private final QueryEvaluationContext context;
 	private final QueryEvaluationStep fallbackStep;
+	private final LmdbPlanDerivedCodegenShape.Descriptor codegenShapeDescriptor;
 
 	LmdbIdFilteredStatementPatternQueryEvaluationStep(LmdbEvaluationStrategy strategy, Filter filter,
 			StatementPattern pattern,
@@ -53,6 +54,7 @@ final class LmdbIdFilteredStatementPatternQueryEvaluationStep implements QueryEv
 		this.pattern = pattern;
 		this.context = context;
 		this.fallbackStep = fallbackStep;
+		this.codegenShapeDescriptor = LmdbPlanDerivedCodegenShape.describe("filtered-statement-pattern", filter);
 	}
 
 	@Override
@@ -80,7 +82,8 @@ final class LmdbIdFilteredStatementPatternQueryEvaluationStep implements QueryEv
 		}
 
 		LmdbIdPredicatePlan predicatePlan = LmdbIdPredicatePlan.forCondition(filter.getCondition(), resolved.slots,
-				value -> resolveExistingId(valueStore, value));
+				value -> resolveExistingId(valueStore, value))
+				.withCodegenShapeDescriptor(codegenShapeDescriptor);
 		if (!predicatePlan.supported() || !predicatePlan.supportsGeneratedRejectionTest()) {
 			return fallbackStep.evaluate(bindings);
 		}

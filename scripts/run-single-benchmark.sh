@@ -7,18 +7,26 @@ Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodNa
 
 Options:
   --clean                           Force a clean rebuild before packaging
+  --skip-build                      Reuse an existing benchmark jar without packaging
   --dry-run                         Print the Maven and JMH commands without executing them
   --warmup-iterations <number>      Number of warmup iterations (default: 1)
   --measurement-iterations <number> Number of measurement iterations (default: 3)
-  --forks <number>                  Number of forks (default: 1)
+  --forks <number>                  Number of forks (default: 0)
   --param <name=value>              Append a benchmark parameter override (can be repeated)
   --jvm-arg <value>                 Append a JVM argument (can be repeated)
   --jmh-arg <value>                 Append a raw JMH argument (can be repeated)
+  --theme-store-directory <path>    Store ThemeQueryBenchmark LMDB data outside target
+  --theme-store-reuse-confirmed     Confirm external theme store disk/data compatibility
+  --theme-store-compatibility-key <key>
+                                    Compatibility key for invalidating the external theme store
   --enable-jfr                      Enable JFR profiling with fixed iteration and timing settings
   --enable-jfr-cpu-times            Include Java 25 CPU time JFR options (requires --enable-jfr)
   --jfr-output <path>               Override the destination file for the JFR recording
   --enable-jmh-jfr                  Enable JMH's Java Flight Recorder profiler
   --jmh-jfr-output-dir <path>       Override the destination directory for JMH JFR recordings
+                                    Theme benchmark sketch wait defaults to 300s.
+                                    Theme query plan printing is disabled by default; pass
+                                    --jvm-arg -Drdf4j.benchmark.profiling=false to print plans.
   --                                Treat the remaining arguments as raw JMH arguments
 USAGE
 }
@@ -30,10 +38,11 @@ module=""
 benchmark_class=""
 benchmark_method=""
 clean_build=false
+skip_build=false
 dry_run=false
 warmup_iterations=1
 measurement_iterations=3
-forks=1
+forks=0
 benchmark_params=()
 jmh_extra_args=()
 jvm_args=()
@@ -50,11 +59,43 @@ forks_overridden=false
 jfr_notice=""
 jmh_jfr_notice=""
 mvn_threads="${RDF4J_BENCHMARK_MVN_THREADS:-2C}"
+default_sketch_wait_arg="-Drdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds=300"
+default_benchmark_profiling_arg="-Drdf4j.benchmark.profiling=true"
+theme_store_directory="${RDF4J_THEME_BENCHMARK_STORE_DIRECTORY:-}"
+theme_store_reuse_confirmed="${RDF4J_THEME_BENCHMARK_REUSE_CONFIRMED:-false}"
+theme_store_compatibility_key="${RDF4J_THEME_BENCHMARK_STORE_COMPATIBILITY_KEY:-}"
+
+has_jvm_property() {
+        local property_name="$1"
+        local arg
+
+        for arg in "${jvm_args[@]}" "${profiling_jvm_args[@]}"; do
+                if [[ "${arg}" == "-D${property_name}="* ]]; then
+                        return 0
+                fi
+        done
+
+        return 1
+}
+
+repo_absolute_path() {
+        local path="$1"
+
+        if [[ "${path}" == /* ]]; then
+                printf '%s\n' "${path}"
+        else
+                printf '%s/%s\n' "${REPO_ROOT}" "${path}"
+        fi
+}
 
 while [[ $# -gt 0 ]]; do
         case "$1" in
         --clean)
                 clean_build=true
+                shift
+                ;;
+        --skip-build)
+                skip_build=true
                 shift
                 ;;
         --module|-m)
@@ -94,6 +135,18 @@ while [[ $# -gt 0 ]]; do
                 ;;
         --jmh-arg)
                 jmh_extra_args+=("$2")
+                shift 2
+                ;;
+        --theme-store-directory)
+                theme_store_directory="$2"
+                shift 2
+                ;;
+        --theme-store-reuse-confirmed)
+                theme_store_reuse_confirmed=true
+                shift
+                ;;
+        --theme-store-compatibility-key)
+                theme_store_compatibility_key="$2"
                 shift 2
                 ;;
         --enable-jfr)
@@ -142,6 +195,11 @@ done
 if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
         echo "Error: --module, --class, and --method are required." >&2
         usage >&2
+        exit 1
+fi
+
+if ${clean_build} && ${skip_build}; then
+        echo "Error: --clean and --skip-build cannot be combined." >&2
         exit 1
 fi
 
@@ -284,19 +342,43 @@ mvn_cmd_parallel+=("${mvn_common_args[@]}" "${mvn_goals[@]}")
 mvn_cmd_single_threaded=(mvn "${mvn_common_args[@]}" "${mvn_goals[@]}")
 
 benchmark_pattern="${benchmark_class}.${benchmark_method}"
+if ! has_jvm_property "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds"; then
+        jvm_args+=("${default_sketch_wait_arg}")
+fi
+if ! has_jvm_property "rdf4j.benchmark.profiling"; then
+        jvm_args+=("${default_benchmark_profiling_arg}")
+fi
+if [[ -n "${theme_store_directory}" ]] \
+        && ! has_jvm_property "rdf4j.lmdb.themeQueryBenchmark.storeDirectory"; then
+        jvm_args+=("-Drdf4j.lmdb.themeQueryBenchmark.storeDirectory=$(repo_absolute_path "${theme_store_directory}")")
+fi
+if [[ "${theme_store_reuse_confirmed}" == "true" ]] \
+        && ! has_jvm_property "rdf4j.lmdb.themeQueryBenchmark.reuseStoreConfirmed"; then
+        jvm_args+=("-Drdf4j.lmdb.themeQueryBenchmark.reuseStoreConfirmed=true")
+fi
+if [[ -n "${theme_store_compatibility_key}" ]] \
+        && ! has_jvm_property "rdf4j.lmdb.themeQueryBenchmark.storeCompatibilityKey"; then
+        jvm_args+=("-Drdf4j.lmdb.themeQueryBenchmark.storeCompatibilityKey=${theme_store_compatibility_key}")
+fi
+
 jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")
+launcher_jvm_args=()
 if [[ -n "${measurement_time}" ]]; then
         jmh_args+=(-r "${measurement_time}")
 fi
 for param in "${benchmark_params[@]}"; do
         jmh_args+=(-p "${param}")
 done
-for arg in "${jvm_args[@]}"; do
-        jmh_args+=("-jvmArgsAppend" "${arg}")
-done
-for arg in "${profiling_jvm_args[@]}"; do
-        jmh_args+=("-jvmArgsAppend" "${arg}")
-done
+if [[ "${forks}" == "0" ]]; then
+        launcher_jvm_args+=("${jvm_args[@]}" "${profiling_jvm_args[@]}")
+else
+        for arg in "${jvm_args[@]}"; do
+                jmh_args+=("-jvmArgsAppend" "${arg}")
+        done
+        for arg in "${profiling_jvm_args[@]}"; do
+                jmh_args+=("-jvmArgsAppend" "${arg}")
+        done
+fi
 for arg in "${jmh_extra_args[@]}"; do
         jmh_args+=("${arg}")
 done
@@ -359,21 +441,27 @@ if ${dry_run}; then
                 echo "${jmh_jfr_notice}"
         fi
         jar_path="$(find_benchmark_jar "${module_dir}" false)"
-        print_command "${mvn_cmd_parallel[@]}"
-        echo "# On failure, reruns single-threaded:"
-        print_command "${mvn_cmd_single_threaded[@]}"
-        java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
+        if ${skip_build}; then
+                echo "# Build skipped; reusing existing benchmark jar."
+        else
+                print_command "${mvn_cmd_parallel[@]}"
+                echo "# On failure, reruns single-threaded:"
+                print_command "${mvn_cmd_single_threaded[@]}"
+        fi
+        java_cmd=(java "${launcher_jvm_args[@]}" -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
         print_command "${java_cmd[@]}"
         exit 0
 fi
 
-(
-        cd "${REPO_ROOT}"
-        if ! "${mvn_cmd_parallel[@]}"; then
-                echo "Parallel install failed. Retrying single-threaded install..." >&2
-                "${mvn_cmd_single_threaded[@]}"
-        fi
-)
+if ! ${skip_build}; then
+        (
+                cd "${REPO_ROOT}"
+                if ! "${mvn_cmd_parallel[@]}"; then
+                        echo "Parallel install failed. Retrying single-threaded install..." >&2
+                        "${mvn_cmd_single_threaded[@]}"
+                fi
+        )
+fi
 
 if ${enable_jfr_cpu_times}; then
         require_linux_java25_for_cpu_time_jfr
@@ -384,7 +472,7 @@ if ${enable_jfr_cpu_times}; then
 fi
 
 jar_path="$(find_benchmark_jar "${module_dir}" true)"
-java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
+java_cmd=(java "${launcher_jvm_args[@]}" -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
 
 if ${enable_jfr}; then
         echo "${jfr_notice}"

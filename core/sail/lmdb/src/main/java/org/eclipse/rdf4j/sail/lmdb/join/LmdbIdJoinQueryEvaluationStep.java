@@ -13,15 +13,19 @@ package org.eclipse.rdf4j.sail.lmdb.join;
 import static org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -34,19 +38,21 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.IdBindingInfo;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDatasetContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.TripleStore;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * Query evaluation step that wires up the LMDB ID join iterator.
  */
-public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
+public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep, LmdbIdBatchQueryEvaluationStep {
 
 	private final StatementPattern leftPattern;
 	private final StatementPattern rightPattern;
@@ -56,7 +62,10 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final Set<String> sharedVariables;
 	private final LmdbDatasetContext datasetContext;
 	private final QueryEvaluationStep fallbackStep;
+	private final IdBindingInfo bindingInfo;
 	private final boolean fallbackImmediately;
+	private final Join joinNode;
+	private final String constantMembershipVariable;
 	private final Map<StatementPattern, KeyRangeBuffers> patternBuffers = new HashMap<>();
 
 	public LmdbIdJoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
@@ -77,6 +86,10 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		this.rightInfo = LmdbIdJoinIterator.PatternInfo.create(rightPattern);
 		this.sharedVariables = computeSharedVariables(leftInfo, rightInfo);
 		this.fallbackStep = fallbackStep;
+		this.bindingInfo = IdBindingInfo.combine(IdBindingInfo.fromFirstPattern(leftInfo, context), rightInfo,
+				context);
+		this.joinNode = join;
+		this.constantMembershipVariable = constantMembershipVariable();
 
 		boolean allowCreate = this.datasetContext.getLmdbDataset()
 				.map(LmdbEvaluationDataset::hasTransactionChanges)
@@ -101,6 +114,10 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public boolean shouldUseFallbackImmediately() {
 		return fallbackImmediately;
+	}
+
+	public boolean canUseConstantMembershipJoin() {
+		return constantMembershipVariable != null;
 	}
 
 	public void applyAlgorithmTag(Join join) {
@@ -188,12 +205,16 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			final RecordIterator[] leftReuseHolder = new RecordIterator[1];
+			if (constantMembershipVariable != null) {
+				CloseableIteration<BindingSet> membershipJoin = evaluateConstantMembershipJoin(bindings, dataset,
+						dataset.getValueStore());
+				if (membershipJoin != null) {
+					return membershipJoin;
+				}
+			}
 
 			if (!"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.experimentalTwoPatternArrayJoin", "true"))) {
 				ValueStore valueStore = dataset.getValueStore();
-				IdBindingInfo bindingInfo = IdBindingInfo.combine(
-						IdBindingInfo.fromFirstPattern(leftInfo, context), rightInfo, context);
-
 				int subjIdx = indexFor(rightPattern.getSubjectVar(), bindingInfo);
 				int predIdx = indexFor(rightPattern.getPredicateVar(), bindingInfo);
 				int objIdx = indexFor(rightPattern.getObjectVar(), bindingInfo);
@@ -263,6 +284,432 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
+	private CloseableIteration<BindingSet> evaluateConstantMembershipJoin(BindingSet bindings,
+			LmdbEvaluationDataset dataset, ValueStore valueStore) throws QueryEvaluationException {
+		if (bindings != null && bindings.hasBinding(constantMembershipVariable)) {
+			return null;
+		}
+		int membershipSlot = bindingInfo.getIndex(constantMembershipVariable);
+		if (membershipSlot < 0) {
+			return null;
+		}
+		long[] initialBinding = createInitialBinding(bindingInfo, bindings, valueStore);
+		if (initialBinding == null) {
+			return new EmptyIteration<>();
+		}
+
+		MembershipSet membership = buildConstantMembershipSet(dataset);
+		if (membership == null) {
+			return null;
+		}
+		RecordIterator left = new InitialPatternBatchIterator(dataset, Collections.singletonList(initialBinding),
+				indexFor(leftPattern.getSubjectVar(), bindingInfo),
+				indexFor(leftPattern.getPredicateVar(), bindingInfo),
+				indexFor(leftPattern.getObjectVar(), bindingInfo),
+				indexFor(leftPattern.getContextVar(), bindingInfo), resolvePatternIds(leftPattern, valueStore),
+				keyBuffersFor(leftPattern));
+		RecordIterator filtered = new ConstantMembershipJoinIterator(left, membership.ids, membershipSlot,
+				membership.rowsScanned);
+		joinNode.setStringMetricActual("lmdbIdConstantMembershipJoinActual", "true");
+		joinNode.setLongMetricActual("lmdbIdConstantMembershipSetSizeActual", membership.ids.size());
+		joinNode.setLongMetricActual("lmdbIdConstantMembershipRowsActual", membership.rowsScanned);
+		return new LmdbIdFinalBindingSetIteration(filtered, bindingInfo, context, bindings, valueStore,
+				Collections.emptyMap(), joinNode);
+	}
+
+	private MembershipSet buildConstantMembershipSet(LmdbEvaluationDataset dataset) throws QueryEvaluationException {
+		RecordIterator right = dataset.getRecordIterator(rightPattern, EmptyBindingSet.getInstance(),
+				keyBuffersFor(rightPattern), null);
+		if (right == null || right == LmdbIdJoinIterator.emptyRecordIterator()) {
+			return new MembershipSet(new LmdbLongHashSet(), 0);
+		}
+		LmdbLongHashSet ids = new LmdbLongHashSet();
+		long rows = 0;
+		try {
+			long[] row;
+			while ((row = right.next()) != null) {
+				rows++;
+				long id = rightInfo.getId(row, constantMembershipVariable);
+				if (id != UNKNOWN_ID) {
+					ids.add(id);
+				}
+			}
+		} finally {
+			right.close();
+		}
+		return new MembershipSet(ids, rows);
+	}
+
+	private String constantMembershipVariable() {
+		if (rightInfo.getVariableNames().size() != 1) {
+			return null;
+		}
+		String variable = rightInfo.getVariableNames().iterator().next();
+		if (!leftInfo.getVariableNames().contains(variable)) {
+			return null;
+		}
+		if (bindingInfo.getIndex(variable) < 0 || rightInfo.getRecordIndex(variable) < 0) {
+			return null;
+		}
+		if (!rightHasConstantComponent()) {
+			return null;
+		}
+		return variable;
+	}
+
+	private boolean rightHasConstantComponent() {
+		return hasConstantValue(rightPattern.getSubjectVar())
+				|| hasConstantValue(rightPattern.getPredicateVar())
+				|| hasConstantValue(rightPattern.getObjectVar())
+				|| hasConstantValue(rightPattern.getContextVar());
+	}
+
+	private static boolean hasConstantValue(Var var) {
+		return var != null && var.hasValue();
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluateBatch(List<BindingSet> bindings) throws QueryEvaluationException {
+		return evaluateBatch(LmdbIdBatchQueryEvaluationStep.Batch.unsorted(bindings));
+	}
+
+	@Override
+	public CloseableIteration<BindingSet> evaluateBatch(LmdbIdBatchQueryEvaluationStep.Batch batch)
+			throws QueryEvaluationException {
+		List<BindingSet> bindings = batch.bindings();
+		if (bindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		if (fallbackStep != null && LmdbEvaluationStrategy.hasActiveConnectionChanges()) {
+			return evaluateBatchScalar(bindings);
+		}
+		if (fallbackImmediately && fallbackStep != null) {
+			return evaluateBatchScalar(bindings);
+		}
+		try {
+			LmdbEvaluationDataset dataset = resolveDataset();
+			if (!dataset.hasTransactionChanges()) {
+				dataset.refreshSnapshot();
+			}
+			if (fallbackStep != null && dataset.hasTransactionChanges()) {
+				return evaluateBatchScalar(bindings);
+			}
+			ValueStore valueStore = dataset.getValueStore();
+			IdBindingInfo outputInfo = bindingInfo.withAdditionalVariables(inputBindingNames(bindings), context);
+			long[] rightPatternIds = resolvePatternIds(rightPattern, valueStore);
+			int rightSubjIdx = indexFor(rightPattern.getSubjectVar(), bindingInfo);
+			int rightPredIdx = indexFor(rightPattern.getPredicateVar(), bindingInfo);
+			int rightObjIdx = indexFor(rightPattern.getObjectVar(), bindingInfo);
+			int rightCtxIdx = indexFor(rightPattern.getContextVar(), bindingInfo);
+			if (!LmdbIdBatchJoinIterator.enabled()
+					|| !LmdbIdBatchJoinIterator.canBatch(rightSubjIdx, rightPredIdx, rightObjIdx, rightCtxIdx,
+							rightPatternIds, null)) {
+				return evaluateBatchScalar(bindings);
+			}
+
+			List<long[]> initialBindings = new ArrayList<>(bindings.size());
+			for (BindingSet binding : bindings) {
+				long[] initialBinding = createInitialBinding(outputInfo, binding, valueStore);
+				if (initialBinding != null) {
+					initialBindings.add(initialBinding);
+				}
+			}
+			if (initialBindings.isEmpty()) {
+				return new EmptyIteration<>();
+			}
+
+			int preSortedProbeSlot = prepareRightProbeOrder(initialBindings, batch.metadata(), rightSubjIdx,
+					rightPredIdx,
+					rightObjIdx, rightCtxIdx, rightPatternIds);
+			long[] leftPatternIds = resolvePatternIds(leftPattern, valueStore);
+			RecordIterator left = new InitialPatternBatchIterator(dataset, initialBindings,
+					indexFor(leftPattern.getSubjectVar(), bindingInfo),
+					indexFor(leftPattern.getPredicateVar(), bindingInfo),
+					indexFor(leftPattern.getObjectVar(), bindingInfo),
+					indexFor(leftPattern.getContextVar(), bindingInfo), leftPatternIds, keyBuffersFor(leftPattern));
+			RecordIterator joined = new LmdbIdBatchJoinIterator(left, dataset, rightSubjIdx, rightPredIdx, rightObjIdx,
+					rightCtxIdx, rightPatternIds, keyBuffersFor(rightPattern), null, preSortedProbeSlot);
+			return new LmdbIdFinalBindingSetIteration(joined, outputInfo, context, EmptyBindingSet.getInstance(),
+					valueStore, Collections.emptyMap());
+		} catch (QueryEvaluationException e) {
+			throw e;
+		}
+	}
+
+	private static Set<String> inputBindingNames(List<BindingSet> bindings) {
+		Set<String> names = new HashSet<>();
+		for (BindingSet binding : bindings) {
+			names.addAll(binding.getBindingNames());
+		}
+		return names;
+	}
+
+	private int prepareRightProbeOrder(List<long[]> initialBindings,
+			LmdbIdBatchQueryEvaluationStep.BatchMetadata metadata, int subjIndex, int predIndex, int objIndex,
+			int ctxIndex, long[] patternIds) {
+		int probeSlot = singleProbeBindingIndex(subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+		if (probeSlot < 0 || !allBindingsHaveSlot(initialBindings, probeSlot)) {
+			return -1;
+		}
+		String sortedByVariable = metadata.sortedByVariable();
+		int sortedSlot = sortedByVariable == null ? -1 : bindingInfo.getIndex(sortedByVariable);
+		if (sortedSlot != probeSlot) {
+			initialBindings.sort((left, right) -> Long.compare(left[probeSlot], right[probeSlot]));
+		}
+		return probeSlot;
+	}
+
+	private static int singleProbeBindingIndex(int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds) {
+		int slot = -1;
+		slot = singleProbeBindingIndex(slot, subjIndex, patternIds[TripleStore.SUBJ_IDX]);
+		slot = singleProbeBindingIndex(slot, predIndex, patternIds[TripleStore.PRED_IDX]);
+		slot = singleProbeBindingIndex(slot, objIndex, patternIds[TripleStore.OBJ_IDX]);
+		return singleProbeBindingIndex(slot, ctxIndex, patternIds[TripleStore.CONTEXT_IDX]);
+	}
+
+	private static int singleProbeBindingIndex(int current, int bindingIndex, long patternId) {
+		if (current == -2) {
+			return current;
+		}
+		if (patternId != UNKNOWN_ID || bindingIndex < 0) {
+			return current;
+		}
+		if (current != -1 && current != bindingIndex) {
+			return -2;
+		}
+		return bindingIndex;
+	}
+
+	private static boolean allBindingsHaveSlot(List<long[]> initialBindings, int slot) {
+		for (long[] binding : initialBindings) {
+			if (slot >= binding.length || binding[slot] == UNKNOWN_ID) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public Set<String> batchResultBindingNames() {
+		return bindingInfo.getVariableNames();
+	}
+
+	@Override
+	public String preferredBatchSortVariable(Set<String> sharedVariables) {
+		long[] rightPatternIds = constantPatternIds(rightPattern);
+		int rightSubjIdx = indexFor(rightPattern.getSubjectVar(), bindingInfo);
+		int rightPredIdx = indexFor(rightPattern.getPredicateVar(), bindingInfo);
+		int rightObjIdx = indexFor(rightPattern.getObjectVar(), bindingInfo);
+		int rightCtxIdx = indexFor(rightPattern.getContextVar(), bindingInfo);
+		int probeSlot = singleProbeBindingIndex(rightSubjIdx, rightPredIdx, rightObjIdx, rightCtxIdx, rightPatternIds);
+		if (probeSlot < 0) {
+			return null;
+		}
+		return variableForSlot(bindingInfo, sharedVariables, probeSlot);
+	}
+
+	@Override
+	public boolean batchResultIncludesAllInputBindings() {
+		return true;
+	}
+
+	private static String variableForSlot(IdBindingInfo info, Set<String> sharedVariables, int slot) {
+		for (String variable : sharedVariables) {
+			if (info.getIndex(variable) == slot) {
+				return variable;
+			}
+		}
+		return null;
+	}
+
+	private CloseableIteration<BindingSet> evaluateBatchScalar(List<BindingSet> bindings) {
+		return new ScalarBatchIteration(bindings);
+	}
+
+	private final class ScalarBatchIteration extends LookAheadIteration<BindingSet> {
+		private final List<BindingSet> bindings;
+		private int index;
+		private CloseableIteration<BindingSet> current;
+
+		private ScalarBatchIteration(List<BindingSet> bindings) {
+			this.bindings = bindings;
+		}
+
+		@Override
+		protected BindingSet getNextElement() throws QueryEvaluationException {
+			while (true) {
+				if (current != null) {
+					if (current.hasNext()) {
+						return current.next();
+					}
+					current.close();
+					current = null;
+				}
+				if (index >= bindings.size()) {
+					return null;
+				}
+				current = evaluate(bindings.get(index++));
+			}
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			if (current != null) {
+				current.close();
+			}
+		}
+	}
+
+	private static final class InitialPatternBatchIterator implements RecordIterator {
+		private final LmdbEvaluationDataset dataset;
+		private final List<long[]> initialBindings;
+		private final int subjIndex;
+		private final int predIndex;
+		private final int objIndex;
+		private final int ctxIndex;
+		private final long[] patternIds;
+		private final KeyRangeBuffers keyBuffers;
+		private int index;
+		private long[] bindingScratch;
+		private long[] quadScratch;
+		private RecordIterator current;
+		private RecordIterator reusable;
+
+		private InitialPatternBatchIterator(LmdbEvaluationDataset dataset, List<long[]> initialBindings, int subjIndex,
+				int predIndex, int objIndex, int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers) {
+			this.dataset = dataset;
+			this.initialBindings = initialBindings;
+			this.subjIndex = subjIndex;
+			this.predIndex = predIndex;
+			this.objIndex = objIndex;
+			this.ctxIndex = ctxIndex;
+			this.patternIds = patternIds;
+			this.keyBuffers = keyBuffers;
+		}
+
+		@Override
+		public long[] next() throws QueryEvaluationException {
+			while (true) {
+				if (current != null) {
+					long[] row = current.next();
+					if (row != null) {
+						return row;
+					}
+					RecordIterator completed = current;
+					current = null;
+					reusable = completed;
+					completed.close();
+				}
+				if (index >= initialBindings.size()) {
+					return null;
+				}
+				long[] initialBinding = initialBindings.get(index++);
+				if (bindingScratch == null || bindingScratch.length < initialBinding.length) {
+					bindingScratch = new long[initialBinding.length];
+				}
+				if (quadScratch == null) {
+					quadScratch = new long[4];
+				}
+				current = dataset.getRecordIterator(initialBinding, subjIndex, predIndex, objIndex, ctxIndex,
+						patternIds, keyBuffers, bindingScratch, quadScratch, reusable);
+				if (current == null || current == LmdbIdJoinIterator.emptyRecordIterator()) {
+					current = null;
+					reusable = null;
+				}
+			}
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			if (current != null) {
+				current.close();
+				current = null;
+			}
+			if (reusable != null) {
+				reusable.close();
+				reusable = null;
+			}
+		}
+	}
+
+	private static final class MembershipSet {
+		final LmdbLongHashSet ids;
+		final long rowsScanned;
+
+		MembershipSet(LmdbLongHashSet ids, long rowsScanned) {
+			this.ids = ids;
+			this.rowsScanned = rowsScanned;
+		}
+	}
+
+	private static final class ConstantMembershipJoinIterator implements RecordIterator, LmdbIdJoinMetricReporter {
+		private final RecordIterator left;
+		private final LmdbLongHashSet membership;
+		private final int membershipSlot;
+		private final long membershipRowsScanned;
+		private long leftRowsProbed;
+		private long rowsMatched;
+		private long rowsFiltered;
+
+		private ConstantMembershipJoinIterator(RecordIterator left, LmdbLongHashSet membership, int membershipSlot,
+				long membershipRowsScanned) {
+			this.left = left;
+			this.membership = membership;
+			this.membershipSlot = membershipSlot;
+			this.membershipRowsScanned = membershipRowsScanned;
+		}
+
+		@Override
+		public long[] next() throws QueryEvaluationException {
+			long[] row;
+			while ((row = left.next()) != null) {
+				leftRowsProbed++;
+				long id = membershipSlot < row.length ? row[membershipSlot] : UNKNOWN_ID;
+				if (id != UNKNOWN_ID && membership.contains(id)) {
+					rowsMatched++;
+					return row;
+				}
+				rowsFiltered++;
+			}
+			return null;
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			left.close();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			long scanned = left.getSourceRowsScannedActual();
+			if (scanned < 0) {
+				scanned = leftRowsProbed;
+			}
+			return scanned + membershipRowsScanned;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return rowsMatched;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return rowsFiltered;
+		}
+
+		@Override
+		public long getLeftRowsProbedActual() {
+			return leftRowsProbed;
+		}
+
+		@Override
+		public long getRightRowsScannedActual() {
+			return membershipRowsScanned;
+		}
+	}
+
 	private LmdbEvaluationDataset resolveDataset() {
 		// Honor the delegated SailDataset provided via the evaluation context first.
 		// This preserves transaction-local visibility (e.g., SNAPSHOT/SERIALIZABLE overlays).
@@ -280,6 +727,19 @@ public class LmdbIdJoinQueryEvaluationStep implements QueryEvaluationStep {
 			return -1;
 		}
 		return info.getIndex(var.getName());
+	}
+
+	private static long[] constantPatternIds(StatementPattern pattern) {
+		long[] ids = new long[4];
+		ids[TripleStore.SUBJ_IDX] = constantMarker(pattern.getSubjectVar());
+		ids[TripleStore.PRED_IDX] = constantMarker(pattern.getPredicateVar());
+		ids[TripleStore.OBJ_IDX] = constantMarker(pattern.getObjectVar());
+		ids[TripleStore.CONTEXT_IDX] = constantMarker(pattern.getContextVar());
+		return ids;
+	}
+
+	private static long constantMarker(Var var) {
+		return var != null && var.hasValue() ? Long.MIN_VALUE : UNKNOWN_ID;
 	}
 
 	private static long[] resolvePatternIds(StatementPattern pattern, ValueStore valueStore)

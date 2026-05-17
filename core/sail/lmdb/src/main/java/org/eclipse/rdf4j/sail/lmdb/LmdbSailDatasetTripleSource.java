@@ -41,6 +41,10 @@ public class LmdbSailDatasetTripleSource extends SailDatasetTripleSource impleme
 		this.dataset = dataset;
 	}
 
+	LmdbEvaluationDataset getEvaluationDataset() {
+		return dataset instanceof LmdbEvaluationDataset ? (LmdbEvaluationDataset) dataset : null;
+	}
+
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, LmdbEvaluationDataset.KeyRangeBuffers keyBuffers, long[] bindingReuse, long[] quadReuse,

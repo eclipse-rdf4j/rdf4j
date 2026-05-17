@@ -16,6 +16,7 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset.KeyRangeBuffers;
+import org.eclipse.rdf4j.sail.lmdb.LmdbGeneratedBatchJoinMerger;
 import org.eclipse.rdf4j.sail.lmdb.LmdbIdPredicatePlan;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore;
@@ -40,17 +41,26 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	private final KeyRangeBuffers keyBuffers;
 	private final LmdbIdPredicatePlan predicatePlan;
 	private final int batchSize;
+	private final int preSortedProbeSlot;
+	private final int outputSortedByBindingSlot;
+	private final int singleProbeComponent;
 
 	private long[] leftBatch;
 	private int[] rowOrder;
+	private int[] rowOrderScratch;
+	private int[] radixCounts;
+	private int[] radixOffsets;
 	private long[] probeKeys;
+	private long[] singleProbeKeys;
 	private long[] probeBinding;
 	private long[] rightScratch;
 	private long[] quadScratch;
 	private long[] rightRowSnapshot;
 	private long[] previousRightRowSnapshot;
 	private long[] seenRightRows;
+	private LmdbLongHashSet seenRightSingleSlotIds;
 	private long[] outputScratch;
+	private LmdbGeneratedBatchJoinMerger generatedMerger;
 	private RecordIterator currentRight;
 	private int bindingWidth;
 	private int rowCount;
@@ -60,16 +70,26 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	private int seenRightRowCount;
 	private boolean batchReady;
 	private boolean leftExhausted;
+	private int rightDedupeSlot = -2;
 	private int rightRowsScannedInBatch;
 	private long maxRightRowsScannedPerBatchActual;
 	private long leftRowsProbedActual;
 	private long rightRowsScannedActual;
 	private long cursorProbesActual;
 	private long batchesLoadedActual;
+	private long rowsSortedActual;
+	private long singleKeyRowsSortedActual;
+	private long seenRightPatternLinearChecksActual;
 
 	LmdbIdBatchJoinIterator(RecordIterator left, LmdbEvaluationDataset dataset, int subjIndex, int predIndex,
 			int objIndex, int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers,
 			LmdbIdPredicatePlan predicatePlan) {
+		this(left, dataset, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers, predicatePlan, -1);
+	}
+
+	LmdbIdBatchJoinIterator(RecordIterator left, LmdbEvaluationDataset dataset, int subjIndex, int predIndex,
+			int objIndex, int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers,
+			LmdbIdPredicatePlan predicatePlan, int preSortedProbeSlot) {
 		this.left = left;
 		this.dataset = dataset;
 		this.subjIndex = subjIndex;
@@ -80,6 +100,9 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		this.keyBuffers = keyBuffers;
 		this.predicatePlan = predicatePlan;
 		this.batchSize = configuredBatchSize();
+		this.preSortedProbeSlot = preSortedProbeSlot;
+		this.outputSortedByBindingSlot = singleProbeBindingIndex(subjIndex, predIndex, objIndex, ctxIndex, patternIds);
+		this.singleProbeComponent = singleProbeComponent(subjIndex, predIndex, objIndex, ctxIndex, patternIds);
 	}
 
 	static int configuredBatchSize() {
@@ -172,6 +195,11 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		if (rightRowSnapshot == null || rightRowSnapshot.length < bindingWidth) {
 			rightRowSnapshot = new long[bindingWidth];
 		}
+		if (generatedMerger != null) {
+			generatedMerger.copyRightPattern(rightRowSnapshot, right, bindingWidth);
+			groupRowCursor = groupStart;
+			return;
+		}
 		Arrays.fill(rightRowSnapshot, 0, bindingWidth, LmdbValue.UNKNOWN_ID);
 		copyRightPatternSlot(rightRowSnapshot, right, subjIndex);
 		copyRightPatternSlot(rightRowSnapshot, right, predIndex);
@@ -219,11 +247,19 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 				bindingWidth = leftRow.length;
 				leftBatch = new long[batchSize * bindingWidth];
 				rowOrder = new int[batchSize];
+				rowOrderScratch = new int[batchSize];
+				radixCounts = new int[LmdbIdBatchProbeKeySorter.RADIX_BUCKETS];
+				radixOffsets = new int[LmdbIdBatchProbeKeySorter.RADIX_BUCKETS];
 				probeKeys = new long[batchSize * 4];
+				if (singleProbeComponent >= 0) {
+					singleProbeKeys = new long[batchSize];
+				}
 				probeBinding = new long[bindingWidth];
 				rightScratch = new long[bindingWidth];
 				outputScratch = new long[bindingWidth];
 				quadScratch = new long[4];
+				generatedMerger = LmdbGeneratedBatchJoinMergerFactory.tryCreate(bindingWidth, subjIndex, predIndex,
+						objIndex, ctxIndex);
 			}
 			System.arraycopy(leftRow, 0, leftBatch, rowCount * bindingWidth, bindingWidth);
 			writeProbeKey(rowCount);
@@ -235,7 +271,7 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 			return false;
 		}
 		batchesLoadedActual++;
-		sortRows(0, rowCount - 1);
+		sortRows(rowCount);
 		batchReady = true;
 		groupStart = 0;
 		groupEnd = 0;
@@ -250,6 +286,9 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		probeKeys[keyOffset + TripleStore.OBJ_IDX] = queryId(patternIds[TripleStore.OBJ_IDX], objIndex, offset);
 		probeKeys[keyOffset + TripleStore.CONTEXT_IDX] = queryId(patternIds[TripleStore.CONTEXT_IDX], ctxIndex,
 				offset);
+		if (singleProbeComponent >= 0) {
+			singleProbeKeys[row] = probeKeys[keyOffset + singleProbeComponent];
+		}
 	}
 
 	private long queryId(long constantId, int bindingIndex, int leftOffset) {
@@ -269,16 +308,40 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		setProbeBinding(predIndex, patternIds[TripleStore.PRED_IDX], probeKeys[keyOffset + TripleStore.PRED_IDX]);
 		setProbeBinding(objIndex, patternIds[TripleStore.OBJ_IDX], probeKeys[keyOffset + TripleStore.OBJ_IDX]);
 		setProbeBinding(ctxIndex, patternIds[TripleStore.CONTEXT_IDX], probeKeys[keyOffset + TripleStore.CONTEXT_IDX]);
-		long[] stableProbeBinding = Arrays.copyOf(probeBinding, bindingWidth);
-		currentRight = dataset.getRecordIterator(stableProbeBinding, subjIndex, predIndex, objIndex, ctxIndex,
-				patternIds, keyBuffers, rightScratch, quadScratch, null, predicatePlan);
+		currentRight = dataset.getRecordIterator(probeBinding, subjIndex, predIndex, objIndex, ctxIndex, patternIds,
+				keyBuffers, rightScratch, quadScratch, null, predicatePlan);
 		previousRightRowSnapshot = null;
 		seenRightRowCount = 0;
+		rightDedupeSlot = singleVaryingRightPatternSlot(keyOffset);
+		if (rightDedupeSlot != -2 && seenRightSingleSlotIds != null) {
+			seenRightSingleSlotIds.clear();
+		}
 		rightRowsScannedInBatch = 0;
 		cursorProbesActual++;
 		if (currentRight == null) {
 			currentRight = LmdbIdJoinIterator.EMPTY_RECORD_ITERATOR;
 		}
+	}
+
+	private int singleVaryingRightPatternSlot(int keyOffset) {
+		int slot = -1;
+		slot = singleVaryingRightPatternSlot(slot, TripleStore.SUBJ_IDX, subjIndex, keyOffset);
+		slot = singleVaryingRightPatternSlot(slot, TripleStore.PRED_IDX, predIndex, keyOffset);
+		slot = singleVaryingRightPatternSlot(slot, TripleStore.OBJ_IDX, objIndex, keyOffset);
+		return singleVaryingRightPatternSlot(slot, TripleStore.CONTEXT_IDX, ctxIndex, keyOffset);
+	}
+
+	private int singleVaryingRightPatternSlot(int current, int component, int bindingIndex, int keyOffset) {
+		if (current == -2 || bindingIndex < 0 || patternIds[component] != LmdbValue.UNKNOWN_ID) {
+			return current;
+		}
+		if (probeKeys[keyOffset + component] != LmdbValue.UNKNOWN_ID) {
+			return current;
+		}
+		if (current != -1) {
+			return -2;
+		}
+		return bindingIndex;
 	}
 
 	private void recordRightRowScannedInBatch() {
@@ -297,6 +360,9 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 
 	private boolean mergeRightIntoLeft(int row, long[] right) {
 		int leftOffset = row * bindingWidth;
+		if (generatedMerger != null) {
+			return generatedMerger.merge(leftBatch, leftOffset, right, outputScratch, bindingWidth);
+		}
 		System.arraycopy(leftBatch, leftOffset, outputScratch, 0, bindingWidth);
 		for (int i = 0; i < bindingWidth; i++) {
 			long rightId = right[i];
@@ -316,6 +382,9 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		if (previous == null || previous.length < bindingWidth) {
 			return false;
 		}
+		if (generatedMerger != null) {
+			return generatedMerger.sameRightPattern(previous, right, bindingWidth);
+		}
 		return sameRightPatternSlot(previous, right, subjIndex)
 				&& sameRightPatternSlot(previous, right, predIndex)
 				&& sameRightPatternSlot(previous, right, objIndex)
@@ -323,10 +392,17 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	}
 
 	private boolean seenRightPatternRow(long[] right) {
+		if (rightDedupeSlot != -2) {
+			if (rightDedupeSlot == -1) {
+				return seenRightRowCount > 0;
+			}
+			return seenRightSingleSlotIds != null && seenRightSingleSlotIds.contains(right[rightDedupeSlot]);
+		}
 		if (seenRightRows == null || seenRightRowCount == 0) {
 			return false;
 		}
 		for (int row = 0; row < seenRightRowCount; row++) {
+			seenRightPatternLinearChecksActual++;
 			int offset = row * bindingWidth;
 			if (sameRightPatternSlot(seenRightRows, offset, right, subjIndex)
 					&& sameRightPatternSlot(seenRightRows, offset, right, predIndex)
@@ -339,6 +415,16 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	}
 
 	private void rememberSeenRightPatternRow(long[] right) {
+		if (rightDedupeSlot != -2) {
+			if (rightDedupeSlot >= 0) {
+				if (seenRightSingleSlotIds == null) {
+					seenRightSingleSlotIds = new LmdbLongHashSet(batchSize);
+				}
+				seenRightSingleSlotIds.add(right[rightDedupeSlot]);
+			}
+			seenRightRowCount++;
+			return;
+		}
 		if (seenRightRows == null || seenRightRows.length < batchSize * bindingWidth) {
 			seenRightRows = new long[batchSize * bindingWidth];
 		}
@@ -346,17 +432,25 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 			seenRightRowCount = 0;
 		}
 		int offset = seenRightRowCount * bindingWidth;
-		Arrays.fill(seenRightRows, offset, offset + bindingWidth, LmdbValue.UNKNOWN_ID);
-		copyRightPatternSlot(seenRightRows, offset, right, subjIndex);
-		copyRightPatternSlot(seenRightRows, offset, right, predIndex);
-		copyRightPatternSlot(seenRightRows, offset, right, objIndex);
-		copyRightPatternSlot(seenRightRows, offset, right, ctxIndex);
+		if (generatedMerger != null) {
+			generatedMerger.copyRightPattern(seenRightRows, right, offset, bindingWidth);
+		} else {
+			Arrays.fill(seenRightRows, offset, offset + bindingWidth, LmdbValue.UNKNOWN_ID);
+			copyRightPatternSlot(seenRightRows, offset, right, subjIndex);
+			copyRightPatternSlot(seenRightRows, offset, right, predIndex);
+			copyRightPatternSlot(seenRightRows, offset, right, objIndex);
+			copyRightPatternSlot(seenRightRows, offset, right, ctxIndex);
+		}
 		seenRightRowCount++;
 	}
 
 	private void rememberPreviousRightPatternRow(long[] right) {
 		if (previousRightRowSnapshot == null || previousRightRowSnapshot.length < bindingWidth) {
 			previousRightRowSnapshot = new long[bindingWidth];
+		}
+		if (generatedMerger != null) {
+			generatedMerger.copyRightPattern(previousRightRowSnapshot, right, bindingWidth);
+			return;
 		}
 		Arrays.fill(previousRightRowSnapshot, 0, bindingWidth, LmdbValue.UNKNOWN_ID);
 		copyRightPatternSlot(previousRightRowSnapshot, right, subjIndex);
@@ -380,6 +474,9 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 	}
 
 	private int compareKeys(int leftRow, int rightRow) {
+		if (singleProbeComponent >= 0) {
+			return Long.compare(singleProbeKeys[leftRow], singleProbeKeys[rightRow]);
+		}
 		int leftOffset = leftRow * 4;
 		int rightOffset = rightRow * 4;
 		for (int i = 0; i < 4; i++) {
@@ -391,31 +488,115 @@ final class LmdbIdBatchJoinIterator implements RecordIterator, LmdbIdJoinMetricR
 		return 0;
 	}
 
-	private void sortRows(int lo, int hi) {
-		int i = lo;
-		int j = hi;
-		int pivot = rowOrder[(lo + hi) >>> 1];
-		while (i <= j) {
-			while (compareKeys(rowOrder[i], pivot) < 0) {
-				i++;
-			}
-			while (compareKeys(rowOrder[j], pivot) > 0) {
-				j--;
-			}
-			if (i <= j) {
-				int tmp = rowOrder[i];
-				rowOrder[i] = rowOrder[j];
-				rowOrder[j] = tmp;
-				i++;
-				j--;
-			}
+	private void sortRows(int length) {
+		if (probeKeySortCoveredByPreSortedSlot()) {
+			return;
 		}
-		if (lo < j) {
-			sortRows(lo, j);
+		if (singleProbeComponent >= 0) {
+			singleKeyRowsSortedActual += length;
+			LmdbIdBatchProbeKeySorter.lsdRadixSortByKey(rowOrder, singleProbeKeys, length, rowOrderScratch,
+					radixCounts, radixOffsets);
+			return;
 		}
-		if (i < hi) {
-			sortRows(i, hi);
+		rowsSortedActual += length;
+		LmdbIdBatchProbeKeySorter.lsdRadixSort(rowOrder, probeKeys, length, rowOrderScratch, radixCounts,
+				radixOffsets);
+	}
+
+	private boolean probeKeySortCoveredByPreSortedSlot() {
+		if (preSortedProbeSlot < 0) {
+			return false;
 		}
+		boolean foundSortedSlot = false;
+		for (int component = 0; component < 4; component++) {
+			if (patternIds[component] != LmdbValue.UNKNOWN_ID) {
+				continue;
+			}
+			int bindingIndex = bindingIndex(component);
+			if (bindingIndex < 0) {
+				continue;
+			}
+			if (bindingIndex != preSortedProbeSlot || foundSortedSlot) {
+				return false;
+			}
+			foundSortedSlot = true;
+		}
+		return foundSortedSlot;
+	}
+
+	private int bindingIndex(int component) {
+		switch (component) {
+		case TripleStore.SUBJ_IDX:
+			return subjIndex;
+		case TripleStore.PRED_IDX:
+			return predIndex;
+		case TripleStore.OBJ_IDX:
+			return objIndex;
+		default:
+			return ctxIndex;
+		}
+	}
+
+	private static int singleProbeBindingIndex(int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds) {
+		int slot = -1;
+		slot = singleProbeBindingIndex(slot, subjIndex, patternIds[TripleStore.SUBJ_IDX]);
+		slot = singleProbeBindingIndex(slot, predIndex, patternIds[TripleStore.PRED_IDX]);
+		slot = singleProbeBindingIndex(slot, objIndex, patternIds[TripleStore.OBJ_IDX]);
+		return singleProbeBindingIndex(slot, ctxIndex, patternIds[TripleStore.CONTEXT_IDX]);
+	}
+
+	private static int singleProbeBindingIndex(int current, int bindingIndex, long patternId) {
+		if (current == -2) {
+			return current;
+		}
+		if (patternId != LmdbValue.UNKNOWN_ID || bindingIndex < 0) {
+			return current;
+		}
+		if (current != -1 && current != bindingIndex) {
+			return -2;
+		}
+		return bindingIndex;
+	}
+
+	private static int singleProbeComponent(int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds) {
+		int component = -1;
+		component = singleProbeComponent(component, TripleStore.SUBJ_IDX, subjIndex, patternIds[TripleStore.SUBJ_IDX]);
+		component = singleProbeComponent(component, TripleStore.PRED_IDX, predIndex, patternIds[TripleStore.PRED_IDX]);
+		component = singleProbeComponent(component, TripleStore.OBJ_IDX, objIndex, patternIds[TripleStore.OBJ_IDX]);
+		return singleProbeComponent(component, TripleStore.CONTEXT_IDX, ctxIndex,
+				patternIds[TripleStore.CONTEXT_IDX]);
+	}
+
+	private static int singleProbeComponent(int current, int component, int bindingIndex, long patternId) {
+		if (current == -2) {
+			return current;
+		}
+		if (patternId != LmdbValue.UNKNOWN_ID || bindingIndex < 0) {
+			return current;
+		}
+		if (current != -1) {
+			return -2;
+		}
+		return component;
+	}
+
+	long getRowsSortedActual() {
+		return rowsSortedActual;
+	}
+
+	long getSingleKeyRowsSortedActual() {
+		return singleKeyRowsSortedActual;
+	}
+
+	long getSeenRightPatternLinearChecksActual() {
+		return seenRightPatternLinearChecksActual;
+	}
+
+	@Override
+	public int getSortedByBindingSlot() {
+		return outputSortedByBindingSlot >= 0 ? outputSortedByBindingSlot : -1;
 	}
 
 	@Override

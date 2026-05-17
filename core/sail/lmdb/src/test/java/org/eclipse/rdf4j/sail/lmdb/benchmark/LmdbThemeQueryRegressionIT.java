@@ -18,7 +18,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -1316,7 +1315,7 @@ class LmdbThemeQueryRegressionIT {
 			SailRepository repository = new SailRepository(store);
 			try {
 				repository.init();
-				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q2", 60, TimeUnit.SECONDS);
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q2");
 				JoinOrderPlanner planner = joinOrderPlanner(store);
 				StatementPattern targetType = pharmaTargetTypePattern();
 				StatementPattern inPathway = pharmaInPathwayPattern();
@@ -1360,7 +1359,7 @@ class LmdbThemeQueryRegressionIT {
 			SailRepository repository = new SailRepository(store);
 			try {
 				repository.init();
-				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q10", 60, TimeUnit.SECONDS);
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q10");
 				JoinOrderPlanner planner = joinOrderPlanner(store);
 				BindingSetAssignment markerBindings = pharmaMarkerBindings();
 				StatementPattern drugType = pharmaDrugTypePattern();
@@ -1424,7 +1423,7 @@ class LmdbThemeQueryRegressionIT {
 			SailRepository repository = new SailRepository(store);
 			try {
 				repository.init();
-				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "library-q9", 60, TimeUnit.SECONDS);
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "library-q9");
 				JoinOrderPlanner planner = joinOrderPlanner(store);
 				BindingSetAssignment targetBindings = libraryTargetBindings();
 				StatementPattern nameLookup = libraryAuthorNamePattern();
@@ -2192,8 +2191,7 @@ class LmdbThemeQueryRegressionIT {
 		try {
 			loadData(repository, theme);
 			repository.init();
-			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark regression setup", 60,
-					TimeUnit.SECONDS);
+			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark regression setup");
 			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 		} finally {
 			shutdownAndRelease(repository, store);

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationDataset;
+import org.eclipse.rdf4j.sail.lmdb.LmdbGeneratedBatchJoinMerger;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleStore;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
@@ -30,6 +31,59 @@ import org.junit.jupiter.api.Test;
  * Tests for the vectorized LMDB ID batch join iterator.
  */
 class LmdbIdBatchJoinIteratorTest {
+
+	@Test
+	void generatedBatchJoinMergerChecksOnlyRightPatternSlots() {
+		LmdbGeneratedBatchJoinMerger merger = LmdbGeneratedBatchJoinMergerFactory.tryCreate(6, 1, -1, 4, -1);
+		assertThat(merger).isNotNull();
+
+		long[] leftBatch = {
+				10,
+				20,
+				30,
+				40,
+				LmdbValue.UNKNOWN_ID,
+				60
+		};
+		long[] right = {
+				LmdbValue.UNKNOWN_ID,
+				20,
+				999,
+				999,
+				50,
+				999
+		};
+		long[] output = new long[6];
+
+		assertThat(merger.merge(leftBatch, 0, right, output, output.length)).isTrue();
+		assertThat(output).containsExactly(10, 20, 30, 40, 50, 60);
+
+		right[1] = 21;
+		assertThat(merger.merge(leftBatch, 0, right, output, output.length)).isFalse();
+	}
+
+	@Test
+	void generatedBatchJoinMergerHandlesRightPatternSnapshots() {
+		LmdbGeneratedBatchJoinMerger merger = LmdbGeneratedBatchJoinMergerFactory.tryCreate(6, 1, -1, 4, -1);
+		assertThat(merger).isNotNull();
+
+		long[] snapshot = new long[6];
+		long[] right = {
+				999,
+				20,
+				999,
+				999,
+				50,
+				999
+		};
+
+		merger.copyRightPattern(snapshot, right, snapshot.length);
+		assertThat(snapshot)
+				.containsExactly(LmdbValue.UNKNOWN_ID, 20, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 50,
+						LmdbValue.UNKNOWN_ID);
+		assertThat(merger.sameRightPattern(snapshot, new long[] { 1, 20, 2, 3, 50, 4 }, snapshot.length)).isTrue();
+		assertThat(merger.sameRightPattern(snapshot, new long[] { 1, 21, 2, 3, 50, 4 }, snapshot.length)).isFalse();
+	}
 
 	@Test
 	void sharedProbeEmitsEachLeftRowOnce() {
@@ -162,6 +216,186 @@ class LmdbIdBatchJoinIteratorTest {
 		}
 	}
 
+	@Test
+	void usesPrimitiveDedupeWhenOnlyOneRightPatternSlotCanVary() {
+		String previousBatchSize = System.getProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+		System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, "16");
+		RecordIterator rightRows = new ArrayIterator(List.of(
+				new long[] { LmdbValue.UNKNOWN_ID, 100, 200 },
+				new long[] { LmdbValue.UNKNOWN_ID, 100, 200 },
+				new long[] { LmdbValue.UNKNOWN_ID, 100, 201 },
+				new long[] { LmdbValue.UNKNOWN_ID, 100, 201 }));
+		RecordingDataset dataset = new RecordingDataset(rightRows);
+		long[] patternIds = new long[] {
+				LmdbValue.UNKNOWN_ID,
+				10,
+				LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID
+		};
+
+		try (LmdbIdBatchJoinIterator iterator = new LmdbIdBatchJoinIterator(new ArrayIterator(leftRows(1, 100)),
+				dataset, 1, -1, 2, -1, patternIds, null, null)) {
+			List<Long> values = new ArrayList<>();
+			long[] row;
+			while ((row = iterator.next()) != null) {
+				values.add(row[2]);
+			}
+
+			assertThat(values).containsExactly(200L, 201L);
+			assertThat(iterator.getSeenRightPatternLinearChecksActual()).isZero();
+		} finally {
+			if (previousBatchSize == null) {
+				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+			} else {
+				System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, previousBatchSize);
+			}
+		}
+	}
+
+	@Test
+	void sortsAndDeduplicatesDifferentProbeKeys() {
+		String previousBatchSize = System.getProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+		System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, "128");
+		MultiGroupDataset dataset = new MultiGroupDataset();
+		long[] patternIds = new long[] {
+				LmdbValue.UNKNOWN_ID,
+				10,
+				LmdbValue.UNKNOWN_ID,
+				LmdbValue.UNKNOWN_ID
+		};
+		List<long[]> leftRows = new ArrayList<>();
+		long[] groups = { 300, 100, 200, 100, 300 };
+		for (int i = 0; i < 100; i++) {
+			leftRows.add(new long[] { i + 1, groups[i % groups.length], LmdbValue.UNKNOWN_ID });
+		}
+
+		try (LmdbIdBatchJoinIterator iterator = new LmdbIdBatchJoinIterator(new ArrayIterator(leftRows), dataset, 1,
+				-1, 2, -1, patternIds, null, null)) {
+			List<String> rows = new ArrayList<>();
+			long[] row;
+			while ((row = iterator.next()) != null) {
+				rows.add(row[0] + ":" + row[1] + ":" + row[2]);
+			}
+
+			assertThat(rows).hasSize(100);
+			assertThat(rows).contains("1:300:1300", "2:100:1100", "3:200:1200", "4:100:1100", "5:300:1300");
+			assertThat(dataset.probeKeys).containsExactly(100L, 200L, 300L);
+		} finally {
+			if (previousBatchSize == null) {
+				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+			} else {
+				System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, previousBatchSize);
+			}
+		}
+	}
+
+	@Test
+	void usesSingleKeySortWhenExactlyOneProbeSlotVaries() {
+		String previousBatchSize = System.getProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+		System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, "128");
+		MultiGroupDataset dataset = new MultiGroupDataset();
+		long[] patternIds = new long[] {
+				LmdbValue.UNKNOWN_ID,
+				10,
+				999,
+				LmdbValue.UNKNOWN_ID
+		};
+		List<long[]> leftRows = new ArrayList<>();
+		long[] groups = { 300, 100, 200, 100, 300 };
+		for (int i = 0; i < 100; i++) {
+			leftRows.add(new long[] { i + 1, groups[i % groups.length], LmdbValue.UNKNOWN_ID });
+		}
+
+		try (LmdbIdBatchJoinIterator iterator = new LmdbIdBatchJoinIterator(new ArrayIterator(leftRows), dataset, 1,
+				-1, -1, -1, patternIds, null, null)) {
+			int count = 0;
+			while (iterator.next() != null) {
+				count++;
+			}
+
+			assertThat(count).isEqualTo(100);
+			assertThat(iterator.getSingleKeyRowsSortedActual()).isEqualTo(100);
+			assertThat(iterator.getRowsSortedActual()).isZero();
+			assertThat(dataset.probeKeys).containsExactly(100L, 200L, 300L);
+		} finally {
+			if (previousBatchSize == null) {
+				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+			} else {
+				System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, previousBatchSize);
+			}
+		}
+	}
+
+	@Test
+	void skipsRadixSortWhenIncomingBatchIsAlreadySortedByProbeSlot() {
+		String previousBatchSize = System.getProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+		System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, "128");
+		MultiGroupDataset dataset = new MultiGroupDataset();
+		long[] patternIds = new long[] {
+				LmdbValue.UNKNOWN_ID,
+				10,
+				999,
+				LmdbValue.UNKNOWN_ID
+		};
+		List<long[]> leftRows = new ArrayList<>();
+		for (int i = 0; i < 100; i++) {
+			long group = i < 40 ? 100 : i < 70 ? 200 : 300;
+			leftRows.add(new long[] { i + 1, group, LmdbValue.UNKNOWN_ID });
+		}
+
+		try (LmdbIdBatchJoinIterator iterator = new LmdbIdBatchJoinIterator(new ArrayIterator(leftRows), dataset, 1,
+				-1, -1, -1, patternIds, null, null, 1)) {
+			int count = 0;
+			while (iterator.next() != null) {
+				count++;
+			}
+
+			assertThat(count).isEqualTo(100);
+			assertThat(iterator.getRowsSortedActual()).isZero();
+			assertThat(dataset.probeKeys).containsExactly(100L, 200L, 300L);
+		} finally {
+			if (previousBatchSize == null) {
+				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+			} else {
+				System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, previousBatchSize);
+			}
+		}
+	}
+
+	@Test
+	void reportsSingleProbeOutputSortedSlotForDownstreamBatchStages() {
+		String previousBatchSize = System.getProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+		System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, "128");
+		MultiGroupDataset dataset = new MultiGroupDataset();
+		long[] patternIds = new long[] {
+				LmdbValue.UNKNOWN_ID,
+				10,
+				999,
+				LmdbValue.UNKNOWN_ID
+		};
+		List<long[]> leftRows = new ArrayList<>();
+		for (int i = 0; i < 100; i++) {
+			long group = i < 40 ? 100 : i < 70 ? 200 : 300;
+			leftRows.add(new long[] { i + 1, group, LmdbValue.UNKNOWN_ID });
+		}
+
+		try (LmdbIdBatchJoinIterator iterator = new LmdbIdBatchJoinIterator(new ArrayIterator(leftRows), dataset, 1,
+				-1, -1, -1, patternIds, null, null, 1)) {
+			while (iterator.next() != null) {
+				// drain the iterator so the output ordering contract is exercised
+			}
+
+			assertThat(iterator.getSortedByBindingSlot()).isEqualTo(1);
+			assertThat(dataset.probeKeys).containsExactly(100L, 200L, 300L);
+		} finally {
+			if (previousBatchSize == null) {
+				System.clearProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY);
+			} else {
+				System.setProperty(LmdbIdBatchJoinIterator.BATCH_SIZE_PROPERTY, previousBatchSize);
+			}
+		}
+	}
+
 	private static List<long[]> leftRows(int rows, long groupId) {
 		List<long[]> values = new ArrayList<>();
 		for (int i = 1; i <= rows; i++) {
@@ -182,6 +416,7 @@ class LmdbIdBatchJoinIteratorTest {
 
 		private int probeCount;
 		private final long[] rightRow;
+		private final RecordIterator rightRows;
 
 		private RecordingDataset() {
 			this(new long[] { LmdbValue.UNKNOWN_ID, 100, 200 });
@@ -189,6 +424,12 @@ class LmdbIdBatchJoinIteratorTest {
 
 		private RecordingDataset(long[] rightRow) {
 			this.rightRow = rightRow;
+			this.rightRows = null;
+		}
+
+		private RecordingDataset(RecordIterator rightRows) {
+			this.rightRow = null;
+			this.rightRows = rightRows;
 		}
 
 		@Override
@@ -203,6 +444,9 @@ class LmdbIdBatchJoinIteratorTest {
 			probeCount++;
 			assertThat(binding[subjIndex]).isEqualTo(100);
 			assertThat(patternIds[TripleStore.PRED_IDX]).isEqualTo(10);
+			if (rightRows != null) {
+				return rightRows;
+			}
 			return new ArrayIterator(List.of(rightRow));
 		}
 
@@ -235,6 +479,29 @@ class LmdbIdBatchJoinIteratorTest {
 				rightRows.add(new long[] { LmdbValue.UNKNOWN_ID, 100, 200 + i });
 			}
 			return new ArrayIterator(rightRows);
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return null;
+		}
+	}
+
+	private static final class MultiGroupDataset implements LmdbEvaluationDataset {
+		private final List<Long> probeKeys = new ArrayList<>();
+
+		@Override
+		public RecordIterator getRecordIterator(StatementPattern pattern, BindingSet bindings)
+				throws QueryEvaluationException {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
+				int ctxIndex, long[] patternIds) {
+			long probeKey = binding[subjIndex];
+			probeKeys.add(probeKey);
+			return new ArrayIterator(List.of(new long[] { LmdbValue.UNKNOWN_ID, probeKey, probeKey + 1000 }));
 		}
 
 		@Override

@@ -152,28 +152,28 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds) throws QueryEvaluationException {
 		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, null,
-				null, null);
+				null, null, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, KeyRangeBuffers keyBuffers) throws QueryEvaluationException {
 		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
-				null, null, null);
+				null, null, null, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse) throws QueryEvaluationException {
 		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse,
-				null, null);
+				null, null, null);
 	}
 
 	@Override
 	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
 			long[] patternIds, long[] reuse, long[] quadReuse) throws QueryEvaluationException {
 		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, null, reuse,
-				quadReuse, null);
+				quadReuse, null, null);
 	}
 
 	@Override
@@ -181,7 +181,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse)
 			throws QueryEvaluationException {
 		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
-				reuse, quadReuse, null);
+				reuse, quadReuse, null, null);
 	}
 
 	@Override
@@ -189,12 +189,20 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse, RecordIterator iteratorReuse)
 			throws QueryEvaluationException {
 		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
-				reuse, quadReuse, iteratorReuse);
+				reuse, quadReuse, iteratorReuse, null);
+	}
+
+	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
+			RecordIterator iteratorReuse, LmdbIdPredicatePlan predicatePlan) throws QueryEvaluationException {
+		return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+				reuse, quadReuse, iteratorReuse, predicatePlan);
 	}
 
 	private RecordIterator getRecordIteratorInternal(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
-			RecordIterator iteratorReuse)
+			RecordIterator iteratorReuse, LmdbIdPredicatePlan predicatePlan)
 			throws QueryEvaluationException {
 		// Prefer an ID-level path only for pure overlays. When wrapping a real LMDB dataset, use the value-level
 		// TripleSource path below so snapshot and transaction overlay visibility cannot be bypassed.
@@ -206,7 +214,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 					.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers, reuse,
 							quadReuse, iteratorReuse);
 			if (viaIds != null) {
-				return viaIds;
+				return filterIfNeeded(viaIds, predicatePlan);
 			}
 		}
 
@@ -262,7 +270,8 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 
 							long[] merged = mergeBinding(binding, subjId, predId, objId, ctxId, subjIndex, predIndex,
 									objIndex, ctxIndex);
-							if (merged != null) {
+							if (merged != null && (predicatePlan == null
+									|| predicatePlan.test(merged) != LmdbIdPredicatePlan.Result.FALSE)) {
 								return merged;
 							}
 						} catch (QueryEvaluationException e) {
@@ -294,6 +303,29 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 		}
 	}
 
+	private static RecordIterator filterIfNeeded(RecordIterator input, LmdbIdPredicatePlan predicatePlan) {
+		if (predicatePlan == null) {
+			return input;
+		}
+		return new RecordIterator() {
+			@Override
+			public long[] next() throws QueryEvaluationException {
+				long[] row;
+				while ((row = input.next()) != null) {
+					if (predicatePlan.test(row) != LmdbIdPredicatePlan.Result.FALSE) {
+						return row;
+					}
+				}
+				return null;
+			}
+
+			@Override
+			public void close() {
+				input.close();
+			}
+		};
+	}
+
 	@Override
 	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
@@ -322,7 +354,7 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 			long[] quadReuse) throws QueryEvaluationException {
 		if (order == null) {
 			return getRecordIteratorInternal(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
-					bindingReuse, quadReuse, null);
+					bindingReuse, quadReuse, null, null);
 		}
 		return LmdbEvaluationDataset.super.getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex,
 				patternIds, order, keyBuffers, bindingReuse, quadReuse);
@@ -357,6 +389,11 @@ final class LmdbOverlayEvaluationDataset implements LmdbEvaluationDataset {
 	@Override
 	public IsolationLevel getIsolationLevel() {
 		return delegate != null ? delegate.getIsolationLevel() : LmdbEvaluationDataset.super.getIsolationLevel();
+	}
+
+	@Override
+	public long getDataRevision() {
+		return delegate != null ? delegate.getDataRevision() : LmdbEvaluationDataset.super.getDataRevision();
 	}
 
 	@Override

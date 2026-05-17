@@ -37,6 +37,14 @@ public interface RecordIterator extends Closeable {
 		return "";
 	}
 
+	/**
+	 * Returns the binding slot whose IDs are emitted in non-decreasing order, or {@code -1} when no single-slot
+	 * ordering is known.
+	 */
+	default int getSortedByBindingSlot() {
+		return -1;
+	}
+
 	default long getSourceRowsScannedActual() {
 		return -1;
 	}

@@ -26,10 +26,13 @@ final class LmdbCodegenExplain {
 	private final int branchCount;
 	private final long compileNanos;
 	private final boolean cacheHit;
+	private final String bindingResetMode;
 	private final String fallbackReason;
+	private final LmdbPlanDerivedCodegenShape.Descriptor shapeDescriptor;
 
 	private LmdbCodegenExplain(String templateKey, String className, int sourceLength, int bytecodeSize,
-			int branchCount, long compileNanos, boolean cacheHit, String fallbackReason) {
+			int branchCount, long compileNanos, boolean cacheHit, String bindingResetMode, String fallbackReason,
+			LmdbPlanDerivedCodegenShape.Descriptor shapeDescriptor) {
 		this.templateKey = templateKey;
 		this.className = className;
 		this.sourceLength = sourceLength;
@@ -37,17 +40,32 @@ final class LmdbCodegenExplain {
 		this.branchCount = branchCount;
 		this.compileNanos = compileNanos;
 		this.cacheHit = cacheHit;
+		this.bindingResetMode = bindingResetMode;
 		this.fallbackReason = fallbackReason;
+		this.shapeDescriptor = shapeDescriptor;
 	}
 
 	static LmdbCodegenExplain compiled(String templateKey, String className, int sourceLength, int bytecodeSize,
 			int branchCount, long compileNanos, boolean cacheHit) {
 		return new LmdbCodegenExplain(templateKey, className, sourceLength, bytecodeSize, branchCount, compileNanos,
-				cacheHit, "");
+				cacheHit, "", "", null);
+	}
+
+	static LmdbCodegenExplain compiled(String templateKey, String className, int sourceLength, int bytecodeSize,
+			int branchCount, long compileNanos, boolean cacheHit, String bindingResetMode) {
+		return new LmdbCodegenExplain(templateKey, className, sourceLength, bytecodeSize, branchCount, compileNanos,
+				cacheHit, bindingResetMode, "", null);
+	}
+
+	static LmdbCodegenExplain compiled(String templateKey, String className, int sourceLength, int bytecodeSize,
+			int branchCount, long compileNanos, boolean cacheHit, String bindingResetMode,
+			LmdbPlanDerivedCodegenShape.Descriptor shapeDescriptor) {
+		return new LmdbCodegenExplain(templateKey, className, sourceLength, bytecodeSize, branchCount, compileNanos,
+				cacheHit, bindingResetMode, "", shapeDescriptor);
 	}
 
 	static LmdbCodegenExplain fallback(String templateKey, String fallbackReason) {
-		return new LmdbCodegenExplain(templateKey, "", 0, 0, 0, 0, false, fallbackReason);
+		return new LmdbCodegenExplain(templateKey, "", 0, 0, 0, 0, false, "", fallbackReason, null);
 	}
 
 	boolean isFilteredProjection() {
@@ -68,7 +86,24 @@ final class LmdbCodegenExplain {
 				", branchCount=" + branchCount +
 				", compileNanos=" + compileNanos +
 				", cacheHit=" + cacheHit +
+				", bindingResetMode='" + bindingResetMode + '\'' +
 				", fallbackReason='" + fallbackReason + '\'' +
+				descriptorSummary() +
 				'}';
+	}
+
+	private String descriptorSummary() {
+		if (shapeDescriptor == null) {
+			return "";
+		}
+		return ", shapeOperators=" + shapeDescriptor.operatorCodes() +
+				", shapePatterns=" + shapeDescriptor.patternCodes() +
+				", shapePredicates=" + shapeDescriptor.predicateCodes() +
+				", shapeStatementPatterns=" + shapeDescriptor.statementPatternCount() +
+				", shapeFilters=" + shapeDescriptor.filterCount() +
+				", shapeExists=" + shapeDescriptor.existsCount() +
+				", shapeGroups=" + shapeDescriptor.groupCount() +
+				", shapeDistinctCounts=" + shapeDescriptor.distinctCountCount() +
+				", shapeMaxPatternSlots=" + shapeDescriptor.maxStatementPatternVariableSlots();
 	}
 }

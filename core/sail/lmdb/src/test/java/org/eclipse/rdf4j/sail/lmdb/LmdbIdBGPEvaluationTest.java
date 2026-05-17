@@ -21,14 +21,17 @@ import java.util.Locale;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -36,15 +39,18 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Index;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -312,6 +318,524 @@ public class LmdbIdBGPEvaluationTest {
 
 			assertThat(recordingDataset.arrayApiCallCount()).isEqualTo(callsAfterFirstProbe);
 		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void repeatedSinglePatternExistsProbeUsesCachedIdResult(@TempDir java.nio.file.Path tempDir)
+			throws IOException {
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI alice = vf.createIRI(NS, "single-exists-alice");
+		IRI likes = vf.createIRI(NS, "single-exists-likes");
+		IRI pizza = vf.createIRI(NS, "single-exists-pizza");
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			conn.add(alice, likes, pizza);
+		}
+
+		StatementPattern pattern = new StatementPattern(new Var("person"), new Var("p", likes), new Var("item"));
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
+
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), recordingDataset, lmdbDataset.getValueStore());
+
+			assertThat(lmdbDataset.hasTransactionChanges()).isFalse();
+			assertThat(LmdbEvaluationStrategy.hasActiveConnectionChanges()).isFalse();
+			assertThat(LmdbEvaluationStrategy.idJoinsAllowedForIsolation(lmdbDataset.getIsolationLevel())).isTrue();
+			long aliceId = lmdbDataset.getValueStore().getId(alice);
+			long likesId = lmdbDataset.getValueStore().getId(likes);
+			assertThat(aliceId).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			assertThat(likesId).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			String index = lmdbDataset.selectBestIndex(aliceId, likesId, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID);
+			assertThat(index).isNotNull();
+			RecordIterator direct = recordingDataset.getRecordIterator(index, aliceId, likesId, LmdbValue.UNKNOWN_ID,
+					LmdbValue.UNKNOWN_ID, KeyRangeBuffers.acquire(), new long[4], null);
+			try {
+				assertThat(direct.next()).isNotNull();
+			} finally {
+				direct.close();
+			}
+
+			LmdbIdStatementPatternExistsQueryValueEvaluationStep step = new LmdbIdStatementPatternExistsQueryValueEvaluationStep(
+					pattern, (LmdbDatasetContext) ctx,
+					ignored -> QueryEvaluationStep.EMPTY_ITERATION);
+			MapBindingSet bindings = new MapBindingSet(1);
+			bindings.addBinding("person", alice);
+
+			assertThat(step.evaluate(bindings)).isEqualTo(BooleanLiteral.TRUE);
+			int callsAfterFirstProbe = recordingDataset.rawApiCallCount();
+
+			assertThat(step.evaluate(bindings)).isEqualTo(BooleanLiteral.TRUE);
+
+			assertThat(recordingDataset.rawApiCallCount()).isEqualTo(callsAfterFirstProbe);
+		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void batchSinglePatternExistsReusesIndexSelectionForStableShape(@TempDir java.nio.file.Path tempDir)
+			throws IOException {
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI hasCondition = vf.createIRI(NS, "batchExistsHasCondition");
+		IRI condition = vf.createIRI(NS, "batchExistsCondition");
+
+		List<IRI> encounters = new ArrayList<>();
+		try (RepositoryConnection conn = repository.getConnection()) {
+			for (int i = 0; i < 1100; i++) {
+				IRI encounter = vf.createIRI(NS, "batchExistsEncounter" + i);
+				encounters.add(encounter);
+				conn.add(encounter, hasCondition, condition);
+			}
+		}
+
+		StatementPattern pattern = new StatementPattern(new Var("enc"), new Var("p", hasCondition), new Var("cond"));
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), recordingDataset, lmdbDataset.getValueStore());
+
+			LmdbIdStatementPatternExistsQueryValueEvaluationStep step = new LmdbIdStatementPatternExistsQueryValueEvaluationStep(
+					pattern, (LmdbDatasetContext) ctx,
+					ignored -> QueryEvaluationStep.EMPTY_ITERATION);
+
+			List<BindingSet> bindings = new ArrayList<>(encounters.size());
+			for (IRI encounter : encounters) {
+				MapBindingSet binding = new MapBindingSet(1);
+				binding.addBinding("enc", encounter);
+				bindings.add(binding);
+			}
+
+			boolean[] exists = step.evaluateBatch(bindings, null);
+
+			for (int i = 0; i < encounters.size(); i++) {
+				assertThat(exists[i]).as("encounter %s", i).isTrue();
+			}
+			assertThat(recordingDataset.rawApiCallCount())
+					.as("batch exists should build one predicate membership set instead of probing once per row")
+					.isEqualTo(1);
+			assertThat(recordingDataset.selectBestIndexCallCount())
+					.as("batch exists should select an index once per stable bound mask, not once per row")
+					.isLessThanOrEqualTo(1);
+		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void batchSinglePatternExistsSortsProbeKeysButKeepsResultOrder(@TempDir java.nio.file.Path tempDir)
+			throws IOException {
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI hasCondition = vf.createIRI(NS, "batchExistsSortedHasCondition");
+		IRI condition = vf.createIRI(NS, "batchExistsSortedCondition");
+
+		List<IRI> encounters = new ArrayList<>();
+		try (RepositoryConnection conn = repository.getConnection()) {
+			for (int i = 0; i < 16; i++) {
+				IRI encounter = vf.createIRI(NS, "batchExistsSortedEncounter" + i);
+				encounters.add(encounter);
+				conn.add(encounter, hasCondition, condition);
+			}
+		}
+
+		StatementPattern pattern = new StatementPattern(new Var("enc"), new Var("p", hasCondition), new Var("cond"));
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), recordingDataset, lmdbDataset.getValueStore());
+
+			LmdbIdStatementPatternExistsQueryValueEvaluationStep step = new LmdbIdStatementPatternExistsQueryValueEvaluationStep(
+					pattern, (LmdbDatasetContext) ctx,
+					ignored -> QueryEvaluationStep.EMPTY_ITERATION);
+
+			List<BindingSet> bindings = new ArrayList<>(encounters.size());
+			for (int i = encounters.size() - 1; i >= 0; i--) {
+				MapBindingSet binding = new MapBindingSet(1);
+				binding.addBinding("enc", encounters.get(i));
+				bindings.add(binding);
+			}
+
+			boolean[] exists = step.evaluateBatch(bindings, null);
+
+			for (int i = 0; i < bindings.size(); i++) {
+				assertThat(exists[i]).as("result order %s", i).isTrue();
+			}
+			assertThat(recordingDataset.rawSubjects()).isSorted();
+		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void batchSinglePatternExistsUsesPlanDerivedGeneratedMembershipMatcher(
+			@TempDir java.nio.file.Path tempDir) throws IOException {
+		System.setProperty("org.eclipse.rdf4j.sail.lmdb.codegen.explain", "true");
+		LmdbGeneratedRecordIteratorFactory.clearRecentExplains();
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI hasCondition = vf.createIRI(NS, "batchExistsGeneratedHasCondition");
+		IRI condition = vf.createIRI(NS, "batchExistsGeneratedCondition");
+
+		List<IRI> encounters = new ArrayList<>();
+		try (RepositoryConnection conn = repository.getConnection()) {
+			for (int i = 0; i < 16; i++) {
+				IRI encounter = vf.createIRI(NS, "batchExistsGeneratedEncounter" + i);
+				encounters.add(encounter);
+				conn.add(encounter, hasCondition, condition);
+			}
+		}
+
+		StatementPattern pattern = new StatementPattern(new Var("enc"), new Var("p", hasCondition), new Var("cond"));
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), lmdbDataset, lmdbDataset.getValueStore());
+
+			LmdbIdStatementPatternExistsQueryValueEvaluationStep step = new LmdbIdStatementPatternExistsQueryValueEvaluationStep(
+					pattern, (LmdbDatasetContext) ctx,
+					ignored -> QueryEvaluationStep.EMPTY_ITERATION);
+
+			List<BindingSet> bindings = new ArrayList<>(encounters.size());
+			for (IRI encounter : encounters) {
+				MapBindingSet binding = new MapBindingSet(1);
+				binding.addBinding("enc", encounter);
+				bindings.add(binding);
+			}
+
+			boolean[] exists = step.evaluateBatch(bindings, null);
+
+			assertThat(exists).containsOnly(true);
+			assertThat(LmdbGeneratedRecordIteratorFactory.getRecentExplains().toString())
+					.contains("batch-exists", "shapeOperators=", "shapePatterns=", "cacheHit=");
+		} finally {
+			System.clearProperty("org.eclipse.rdf4j.sail.lmdb.codegen.explain");
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void batchSinglePatternExistsDedupesRepeatedProbeKeys(@TempDir java.nio.file.Path tempDir)
+			throws IOException {
+		LmdbStore store = new LmdbStore(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI hasCondition = vf.createIRI(NS, "batchExistsDedupeHasCondition");
+		IRI condition = vf.createIRI(NS, "batchExistsDedupeCondition");
+		IRI encounter = vf.createIRI(NS, "batchExistsDedupeEncounter");
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			conn.add(encounter, hasCondition, condition);
+		}
+
+		StatementPattern pattern = new StatementPattern(new Var("enc"), new Var("p", hasCondition), new Var("cond"));
+
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			RecordingDataset recordingDataset = new RecordingDataset(lmdbDataset);
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), recordingDataset, lmdbDataset.getValueStore());
+
+			LmdbIdStatementPatternExistsQueryValueEvaluationStep step = new LmdbIdStatementPatternExistsQueryValueEvaluationStep(
+					pattern, (LmdbDatasetContext) ctx,
+					ignored -> QueryEvaluationStep.EMPTY_ITERATION);
+
+			List<BindingSet> bindings = new ArrayList<>(1100);
+			for (int i = 0; i < 1100; i++) {
+				MapBindingSet binding = new MapBindingSet(1);
+				binding.addBinding("enc", encounter);
+				bindings.add(binding);
+			}
+
+			boolean[] exists = step.evaluateBatch(bindings, null);
+
+			for (int i = 0; i < bindings.size(); i++) {
+				assertThat(exists[i]).as("duplicate row %s", i).isTrue();
+			}
+			assertThat(recordingDataset.rawApiCallCount())
+					.as("batch exists should probe each deduped key once")
+					.isEqualTo(1);
+		} finally {
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void batchBgpExistsBuildsOneMembershipSetPerComplementGroup(@TempDir java.nio.file.Path tempDir)
+			throws IOException {
+		System.setProperty("org.eclipse.rdf4j.sail.lmdb.codegen.explain", "true");
+		LmdbGeneratedRecordIteratorFactory.clearRecentExplains();
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI hasCondition = vf.createIRI(NS, "batchBgpExistsHasCondition");
+		IRI condition = vf.createIRI(NS, "batchBgpExistsCondition");
+
+		List<IRI> encounters = new ArrayList<>();
+		try (RepositoryConnection conn = repository.getConnection()) {
+			for (int i = 0; i < 1100; i++) {
+				IRI encounter = vf.createIRI(NS, "batchBgpExistsEncounter" + i);
+				encounters.add(encounter);
+				conn.add(encounter, hasCondition, condition);
+			}
+		}
+
+		StatementPattern pattern = new StatementPattern(new Var("enc"), new Var("p", hasCondition), new Var("cond"));
+		Filter filter = new Filter(pattern, new ValueConstant(BooleanLiteral.TRUE));
+		filter.setRuntimeTelemetryEnabled(true);
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), lmdbDataset, lmdbDataset.getValueStore());
+			LmdbIdBGPQueryEvaluationStep existsStep = new LmdbIdBGPQueryEvaluationStep(pattern, List.of(pattern), ctx,
+					null);
+			assertThat(existsStep.idBindingNames()).contains("enc");
+
+			List<BindingSet> sourceRows = new ArrayList<>(encounters.size());
+			for (IRI encounter : encounters) {
+				LmdbValue lmdbEncounter = lmdbDataset.getValueStore().getLmdbValue(encounter);
+				long encounterId = lmdbDataset.getValueStore().getId(lmdbEncounter);
+				assertThat(encounterId).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+				assertThat(lmdbEncounter.getInternalID()).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+				MapBindingSet binding = new MapBindingSet(1);
+				binding.addBinding("enc", lmdbEncounter);
+				sourceRows.add(binding);
+			}
+			QueryEvaluationStep source = ignored -> new CloseableIteratorIteration<>(sourceRows.iterator());
+			LmdbIdBatchExistsFilterQueryEvaluationStep step = new LmdbIdBatchExistsFilterQueryEvaluationStep(filter,
+					source, null, existsStep);
+
+			try (CloseableIteration<BindingSet> iter = step.evaluate(EmptyBindingSet.getInstance())) {
+				List<BindingSet> rows = org.eclipse.rdf4j.common.iteration.Iterations.asList(iter);
+				assertThat(rows).hasSize(sourceRows.size());
+			}
+
+			int batchSize = Integer.getInteger("org.eclipse.rdf4j.sail.lmdb.idjoin.batch.size", 1024);
+			long expectedMembershipSets = (sourceRows.size() + batchSize - 1L) / batchSize;
+			assertThat(filter.getLongMetricActual("lmdbIdBGPExistsMembershipLookupsActual"))
+					.as("BGP EXISTS should use one membership set per batch complement group, not once per source row")
+					.isEqualTo(expectedMembershipSets);
+			assertThat(filter.getLongMetricActual("lmdbIdBGPExistsMembershipBuildsActual"))
+					.as("BGP EXISTS should build one real membership set and reuse it from the delegate cache")
+					.isEqualTo(1);
+			assertThat(filter.getLongMetricActual("lmdbIdBGPExistsMembershipCacheHitsActual"))
+					.as("later batches should be membership-cache hits")
+					.isEqualTo(expectedMembershipSets - 1);
+			assertThat(LmdbGeneratedRecordIteratorFactory.getRecentExplains().toString())
+					.contains("batch-exists", "shapeOperators=", "shapePatterns=", "cacheHit=");
+		} finally {
+			System.clearProperty("org.eclipse.rdf4j.sail.lmdb.codegen.explain");
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void batchBgpExistsFallsBackToDirectProbesWhenMembershipIsOversized(@TempDir java.nio.file.Path tempDir)
+			throws IOException {
+		String previousMaxRows = System.getProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows");
+		System.setProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows", "4");
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI hasCondition = vf.createIRI(NS, "batchBgpExistsOversizedHasCondition");
+		IRI condition = vf.createIRI(NS, "batchBgpExistsOversizedCondition");
+
+		List<IRI> encounters = new ArrayList<>();
+		try (RepositoryConnection conn = repository.getConnection()) {
+			for (int i = 0; i < 16; i++) {
+				IRI encounter = vf.createIRI(NS, "batchBgpExistsOversizedEncounter" + i);
+				encounters.add(encounter);
+				conn.add(encounter, hasCondition, condition);
+			}
+		}
+
+		StatementPattern pattern = new StatementPattern(new Var("enc"), new Var("p", hasCondition), new Var("cond"));
+		Filter filter = new Filter(pattern, new ValueConstant(BooleanLiteral.TRUE));
+		filter.setRuntimeTelemetryEnabled(true);
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), lmdbDataset, lmdbDataset.getValueStore());
+			LmdbIdBGPQueryEvaluationStep existsStep = new LmdbIdBGPQueryEvaluationStep(pattern, List.of(pattern), ctx,
+					null);
+
+			List<BindingSet> sourceRows = new ArrayList<>(8);
+			for (int i = 0; i < 8; i++) {
+				LmdbValue lmdbEncounter = lmdbDataset.getValueStore().getLmdbValue(encounters.get(i));
+				assertThat(lmdbDataset.getValueStore().getId(lmdbEncounter)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+				assertThat(lmdbEncounter.getInternalID()).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+				MapBindingSet binding = new MapBindingSet(1);
+				binding.addBinding("enc", lmdbEncounter);
+				sourceRows.add(binding);
+			}
+			QueryEvaluationStep source = ignored -> new CloseableIteratorIteration<>(sourceRows.iterator());
+			LmdbIdBatchExistsFilterQueryEvaluationStep step = new LmdbIdBatchExistsFilterQueryEvaluationStep(filter,
+					source, null, existsStep);
+
+			try (CloseableIteration<BindingSet> iter = step.evaluate(EmptyBindingSet.getInstance())) {
+				List<BindingSet> rows = org.eclipse.rdf4j.common.iteration.Iterations.asList(iter);
+				assertThat(rows).hasSize(sourceRows.size());
+			}
+
+			assertThat(filter.getLongMetricActual("lmdbIdBGPExistsMembershipOversizedActual"))
+					.as("oversized membership candidates should be capped and recorded")
+					.isEqualTo(1);
+			assertThat(filter.getLongMetricActual("lmdbIdBGPExistsDirectProbesActual"))
+					.as("oversized membership should fall back to direct ID EXISTS probes")
+					.isEqualTo(sourceRows.size());
+			assertThat(filter.getLongMetricActual("lmdbIdBGPExistsMembershipBuildsActual"))
+					.as("oversized candidates must not be counted as completed membership builds")
+					.isZero();
+		} finally {
+			if (previousMaxRows == null) {
+				System.clearProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows");
+			} else {
+				System.setProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows", previousMaxRows);
+			}
+			dataset.close();
+			branch.close();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void rawExistsDistinctCountFallsBackWhenMembershipIsOversized(@TempDir java.nio.file.Path tempDir)
+			throws IOException {
+		String previousMaxRows = System.getProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows");
+		System.setProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows", "4");
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI encounterType = vf.createIRI(NS, "rawExistsOversizedEncounterType");
+		IRI hasCondition = vf.createIRI(NS, "rawExistsOversizedHasCondition");
+		IRI condition = vf.createIRI(NS, "rawExistsOversizedCondition");
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			for (int i = 0; i < 16; i++) {
+				IRI encounter = vf.createIRI(NS, "rawExistsOversizedEncounter" + i);
+				conn.add(encounter, org.eclipse.rdf4j.model.vocabulary.RDF.TYPE, encounterType);
+				conn.add(encounter, hasCondition, condition);
+			}
+		}
+
+		StatementPattern sourcePattern = new StatementPattern(new Var("enc"),
+				new Var("type", org.eclipse.rdf4j.model.vocabulary.RDF.TYPE), new Var("encounterType", encounterType));
+		StatementPattern existsPattern = new StatementPattern(new Var("enc"), new Var("p", hasCondition),
+				new Var("cond"));
+		Group group = new Group(sourcePattern);
+		group.setRuntimeTelemetryEnabled(true);
+		SailSource branch = store.getBackingStore().getExplicitSailSource();
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+
+		try {
+			LmdbEvaluationDataset lmdbDataset = (LmdbEvaluationDataset) dataset;
+			SailDatasetTripleSource tripleSource = new SailDatasetTripleSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext ctx = new LmdbQueryEvaluationContext(null, tripleSource.getValueFactory(),
+					tripleSource.getComparator(), lmdbDataset, lmdbDataset.getValueStore());
+			LmdbIdBGPQueryEvaluationStep source = new LmdbIdBGPQueryEvaluationStep(sourcePattern,
+					List.of(sourcePattern), ctx, null);
+			QueryEvaluationStep fallback = ignored -> {
+				MapBindingSet result = new MapBindingSet(1);
+				result.addBinding("count", vf.createLiteral(42));
+				return new SingletonIteration<>(result);
+			};
+			LmdbIdRawExistsDistinctCountQueryEvaluationStep step = new LmdbIdRawExistsDistinctCountQueryEvaluationStep(
+					group, "count", "enc", source, existsPattern, (LmdbDatasetContext) ctx, fallback, ctx, vf);
+
+			try (CloseableIteration<BindingSet> iter = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(iter.hasNext()).isTrue();
+				assertThat(iter.next().getValue("count").stringValue()).isEqualTo("42");
+				assertThat(iter.hasNext()).isFalse();
+			}
+			assertThat(group.getStringMetricActual("lmdbIdExistsRawSemiJoinActual"))
+					.as("oversized raw EXISTS membership should not use the raw semi-join")
+					.isNull();
+		} finally {
+			if (previousMaxRows == null) {
+				System.clearProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows");
+			} else {
+				System.setProperty("org.eclipse.rdf4j.sail.lmdb.exists.membership.maxRows", previousMaxRows);
+			}
 			dataset.close();
 			branch.close();
 			repository.shutDown();
@@ -678,6 +1202,56 @@ public class LmdbIdBGPEvaluationTest {
 	}
 
 	@Test
+	public void countDistinctOverIdBgpUsesIdCountStep(@TempDir java.nio.file.Path tempDir) throws Exception {
+		LmdbStore store = LmdbTestUtil.newStoreWithLmdbEvaluationStrategy(tempDir.toFile());
+		store.setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI alice = vf.createIRI(NS, "countDistinctAlice");
+		IRI bob = vf.createIRI(NS, "countDistinctBob");
+		IRI carol = vf.createIRI(NS, "countDistinctCarol");
+		IRI knows = vf.createIRI(NS, "countDistinctKnows");
+		IRI likes = vf.createIRI(NS, "countDistinctLikes");
+		IRI pizza = vf.createIRI(NS, "countDistinctPizza");
+		IRI pasta = vf.createIRI(NS, "countDistinctPasta");
+
+		try (RepositoryConnection conn = repository.getConnection()) {
+			conn.add(alice, knows, carol);
+			conn.add(bob, knows, carol);
+			conn.add(alice, likes, pizza);
+			conn.add(alice, likes, pasta);
+			conn.add(bob, likes, pizza);
+		}
+
+		try {
+			String query = """
+					SELECT (COUNT(DISTINCT ?person) AS ?count) WHERE {
+					  ?person <http://example.com/countDistinctKnows> ?friend .
+					  ?person <http://example.com/countDistinctLikes> ?item .
+					}
+					""";
+			try (RepositoryConnection conn = repository.getConnection();
+					TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+				List<BindingSet> rows = org.eclipse.rdf4j.common.iteration.Iterations.asList(result);
+				assertThat(rows).hasSize(1);
+				assertThat(rows.get(0).getValue("count").stringValue()).isEqualTo("2");
+			}
+
+			String executedPlan;
+			try (RepositoryConnection conn = repository.getConnection()) {
+				executedPlan = conn.prepareTupleQuery(QueryLanguage.SPARQL, query)
+						.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Executed)
+						.toString();
+			}
+			assertThat(executedPlan).contains("lmdbIdAggregateAlgorithm=LmdbIdDistinctCount");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	public void recordsChosenIndexesForPatterns(@TempDir java.nio.file.Path tempDir) throws IOException {
 		LmdbStore store = new LmdbStore(tempDir.toFile());
 		SailRepository repository = new SailRepository(store);
@@ -806,6 +1380,22 @@ public class LmdbIdBGPEvaluationTest {
 					bindingReuse, quadReuse, iteratorReuse, predicatePlan);
 		}
 
+		@Override
+		public RecordIterator getRecordIterator(String indexFieldSequence, long subj, long pred, long obj, long context,
+				KeyRangeBuffers keyBuffers, long[] quadReuse, RecordIterator iteratorReuse)
+				throws QueryEvaluationException {
+			rawApiCallCount++;
+			rawSubjects.add(subj);
+			return delegate.getRecordIterator(indexFieldSequence, subj, pred, obj, context, keyBuffers, quadReuse,
+					iteratorReuse);
+		}
+
+		@Override
+		public String selectBestIndex(long subj, long pred, long obj, long context) {
+			selectBestIndexCallCount++;
+			return delegate.selectBestIndex(subj, pred, obj, context);
+		}
+
 		boolean wasLegacyApiUsed() {
 			return legacyApiUsed;
 		}
@@ -816,6 +1406,18 @@ public class LmdbIdBGPEvaluationTest {
 
 		int arrayApiCallCount() {
 			return arrayApiCallCount;
+		}
+
+		int rawApiCallCount() {
+			return rawApiCallCount;
+		}
+
+		int selectBestIndexCallCount() {
+			return selectBestIndexCallCount;
+		}
+
+		List<Long> rawSubjects() {
+			return rawSubjects;
 		}
 
 		String describeArrayCalls() {
@@ -850,6 +1452,16 @@ public class LmdbIdBGPEvaluationTest {
 		}
 
 		@Override
+		public IsolationLevel getIsolationLevel() {
+			return delegate.getIsolationLevel();
+		}
+
+		@Override
+		public void refreshSnapshot() throws QueryEvaluationException {
+			delegate.refreshSnapshot();
+		}
+
+		@Override
 		public boolean hasTransactionChanges() {
 			return delegate.hasTransactionChanges();
 		}
@@ -857,6 +1469,9 @@ public class LmdbIdBGPEvaluationTest {
 		private boolean legacyApiUsed;
 		private boolean arrayApiUsed;
 		private int arrayApiCallCount;
+		private int rawApiCallCount;
+		private int selectBestIndexCallCount;
+		private final List<Long> rawSubjects = new ArrayList<>();
 		private final StringBuilder arrayCallSummary = new StringBuilder();
 	}
 }

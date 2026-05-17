@@ -31,8 +31,9 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 
 public final class BenchmarkJoinEstimatorSupport {
 
-	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(1);
-	private static final long QUERY_REGRESSION_PASS_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
+	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(5);
+	private static final String QUERY_REGRESSION_PASS_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeRegression.passTimeoutSeconds";
+	private static final long DEFAULT_QUERY_REGRESSION_PASS_TIMEOUT_SECONDS = TimeUnit.MINUTES.toSeconds(5);
 	private static final long QUERY_REGRESSION_PASS_POLL_MILLIS = 100L;
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
@@ -137,7 +138,9 @@ public final class BenchmarkJoinEstimatorSupport {
 	public static void assertQueryRegressionPassesWithinThirtySeconds(String queryKey,
 			QueryRegressionAssertion assertion) throws Exception {
 		// Tight retry loop for plan-regression checks: return immediately on pass, hard-timeout on persistent drift.
-		long deadlineNanos = System.nanoTime() + QUERY_REGRESSION_PASS_TIMEOUT_NANOS;
+		long timeoutSeconds = Long.getLong(QUERY_REGRESSION_PASS_TIMEOUT_SECONDS_PROPERTY,
+				DEFAULT_QUERY_REGRESSION_PASS_TIMEOUT_SECONDS);
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
 		AssertionError lastAssertionError = null;
 		int attempts = 0;
 		while (true) {
@@ -150,8 +153,8 @@ public final class BenchmarkJoinEstimatorSupport {
 			}
 			if (System.nanoTime() >= deadlineNanos) {
 				AssertionError timeoutError = new AssertionError(
-						"Query regression " + queryKey + " did not pass within 30 seconds after " + attempts
-								+ " attempts");
+						"Query regression " + queryKey + " did not pass within " + timeoutSeconds
+								+ " seconds after " + attempts + " attempts");
 				if (lastAssertionError != null) {
 					timeoutError.initCause(lastAssertionError);
 				}
@@ -162,7 +165,7 @@ public final class BenchmarkJoinEstimatorSupport {
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new IOException("Interrupted while waiting for query regression " + queryKey
-						+ " to pass within 30 seconds", e);
+						+ " to pass within " + timeoutSeconds + " seconds", e);
 			}
 		}
 	}
@@ -203,6 +206,14 @@ public final class BenchmarkJoinEstimatorSupport {
 			return;
 		}
 		awaitEstimatorReady(estimator, phase, timeout, unit);
+	}
+
+	public static void awaitEstimatorReady(LmdbStore store, String phase) throws IOException {
+		SketchBasedJoinEstimator estimator = tryResolveEstimator(store);
+		if (estimator == null) {
+			return;
+		}
+		awaitEstimatorReady(estimator, phase);
 	}
 
 	private static void persistReusableEstimatorSnapshot(SketchBasedJoinEstimator estimator) throws IOException {

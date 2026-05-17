@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -70,27 +71,19 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
 	private static final String STORE_NAME = "lmdb";
 	private static final String TARGET_DIRECTORY_ROOT = "core/sail/lmdb/";
-	private static final File STORE_DIRECTORY;
-
-	static {
-		File target = new File("target", "lmdb-theme-query-benchmark");
-		if (target.getAbsolutePath().toLowerCase().contains(TARGET_DIRECTORY_ROOT)) {
-			STORE_DIRECTORY = target;
-		} else {
-			// In case the benchmark is run from an IDE with a different working directory, we want to ensure the store
-			// directory is still in the target directory of the project.
-			STORE_DIRECTORY = new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-benchmark");
-		}
-	}
+	private static final String STORE_DIRECTORY_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.storeDirectory";
+	private static final String REUSE_STORE_CONFIRMED_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.reuseStoreConfirmed";
+	private static final String STORE_COMPATIBILITY_KEY_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.storeCompatibilityKey";
+	private static final String DEFAULT_STORE_COMPATIBILITY_KEY = "theme-query-benchmark-v1";
 
 	private static final String TRIPLES_DATA_FILE = "triples/data.mdb";
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
@@ -98,11 +91,13 @@ public class ThemeQueryBenchmark {
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
+	private static final String STORE_COMPATIBILITY_KEY_FILE_PROPERTY = "store.compatibility.key";
+	private static final String STORE_REUSE_CONFIRMED_FILE_PROPERTY = "store.reuse.confirmed";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String CODEGEN_EXPLAIN_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.codegen.explain";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
-	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
+	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 300L;
 
 	@Param({
 			"0",
@@ -129,7 +124,7 @@ public class ThemeQueryBenchmark {
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
-			"PHARMA"
+			// "PHARMA"
 	})
 	public String themeName;
 
@@ -156,6 +151,7 @@ public class ThemeQueryBenchmark {
 	public void setup() throws IOException {
 		theme = Theme.valueOf(themeName);
 		File storeDirectory = storeDirectory();
+		requireExternalStoreReuseConfirmation();
 		System.out.println(storeDirectory.getAbsolutePath());
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
 		clearCodegenExplain();
@@ -316,6 +312,14 @@ public class ThemeQueryBenchmark {
 			if (!storeConfig.getTripleIndexes().equals(tripleIndexes)) {
 				return missingExpectedDbFileSizes();
 			}
+			if (externalStoreDirectoryEnabled()) {
+				String compatibilityKey = properties.getProperty(STORE_COMPATIBILITY_KEY_FILE_PROPERTY);
+				if (!storeCompatibilityKey().equals(compatibilityKey)) {
+					throw new IllegalStateException(
+							"External LMDB benchmark store compatibility key mismatch: expected "
+									+ storeCompatibilityKey() + " but found " + compatibilityKey);
+				}
+			}
 			return new DbFileSizes(
 					parseSizeProperty(properties, TRIPLES_DATA_SIZE_PROPERTY),
 					parseSizeProperty(properties, VALUES_DATA_SIZE_PROPERTY));
@@ -334,6 +338,11 @@ public class ThemeQueryBenchmark {
 		properties.setProperty(TRIPLES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.triplesDataSizeBytes));
 		properties.setProperty(VALUES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.valuesDataSizeBytes));
 		properties.setProperty(TRIPLE_INDEXES_PROPERTY, storeConfig.getTripleIndexes());
+		if (externalStoreDirectoryEnabled()) {
+			properties.setProperty(STORE_REUSE_CONFIRMED_FILE_PROPERTY,
+					Boolean.toString(Boolean.getBoolean(REUSE_STORE_CONFIRMED_PROPERTY)));
+			properties.setProperty(STORE_COMPATIBILITY_KEY_FILE_PROPERTY, storeCompatibilityKey());
+		}
 		try (var outputStream = new FileOutputStream(expectedDbFileSizeFile())) {
 			properties.store(outputStream, "Expected LMDB data file sizes for ThemeQueryBenchmark");
 		}
@@ -376,11 +385,15 @@ public class ThemeQueryBenchmark {
 	private void loadData() throws IOException {
 		StopWatch started = StopWatch.createStarted();
 		try (var connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
 			var inserter = new RDFInserter(connection);
-			System.out.println("Loading theme dataset: " + theme);
-			ThemeDataSetGenerator.generate(theme, inserter);
-			connection.commit();
+//			System.out.println("Loading theme dataset: " + theme);
+//			ThemeDataSetGenerator.generate(theme, inserter);
+			for (var themeDataset : Theme.values()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				System.out.println("Loading theme dataset: " + themeDataset);
+				ThemeDataSetGenerator.generate(themeDataset, inserter);
+				connection.commit();
+			}
 		}
 		started.stop();
 
@@ -388,7 +401,51 @@ public class ThemeQueryBenchmark {
 	}
 
 	private File storeDirectory() {
-		return new File(STORE_DIRECTORY, theme.name().toLowerCase(Locale.ROOT));
+//		return new File(STORE_DIRECTORY, theme.name().toLowerCase());
+		return new File(storeDirectoryRoot(), "complete");
+	}
+
+	private static File storeDirectoryRoot() {
+		String configuredStoreDirectory = System.getProperty(STORE_DIRECTORY_PROPERTY);
+		if (configuredStoreDirectory != null && !configuredStoreDirectory.isBlank()) {
+			return new File(configuredStoreDirectory);
+		}
+
+		File target = new File("target", "lmdb-theme-query-benchmark");
+		if (target.getAbsolutePath().toLowerCase(Locale.ROOT).contains(TARGET_DIRECTORY_ROOT)) {
+			return target;
+		}
+		// In case the benchmark is run from an IDE with a different working directory, keep the default store
+		// directory inside the lmdb module target directory.
+		return new File(TARGET_DIRECTORY_ROOT + "target", "lmdb-theme-query-benchmark");
+	}
+
+	private static boolean externalStoreDirectoryEnabled() {
+		String configuredStoreDirectory = System.getProperty(STORE_DIRECTORY_PROPERTY);
+		return configuredStoreDirectory != null && !configuredStoreDirectory.isBlank();
+	}
+
+	private static void requireExternalStoreReuseConfirmation() {
+		if (!externalStoreDirectoryEnabled()) {
+			return;
+		}
+		if (!Boolean.getBoolean(REUSE_STORE_CONFIRMED_PROPERTY)) {
+			throw new IllegalStateException("External LMDB benchmark store reuse requires confirming that no code "
+					+ "changes affect the LMDB disk format or loaded benchmark data. Set -D"
+					+ REUSE_STORE_CONFIRMED_PROPERTY + "=true after checking the current code changes.");
+		}
+	}
+
+	private static String storeCompatibilityKey() {
+		return System.getProperty(STORE_COMPATIBILITY_KEY_PROPERTY, DEFAULT_STORE_COMPATIBILITY_KEY);
+	}
+
+	private static void restoreSystemProperty(String propertyName, String propertyValue) {
+		if (propertyValue == null) {
+			System.clearProperty(propertyName);
+		} else {
+			System.setProperty(propertyName, propertyValue);
+		}
 	}
 
 	private void captureQueryPlanSnapshot() throws IOException {
@@ -566,6 +623,44 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	public void externalStoreReuseRequiresExplicitCompatibilityConfirmation() throws IOException {
+		String source = Files.readString(new File(
+				"src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/ThemeQueryBenchmark.java").toPath(),
+				StandardCharsets.UTF_8);
+		String implementationSource = source.substring(0, source.indexOf("\n\t@Test"));
+
+		assertTrue(implementationSource.contains("rdf4j.lmdb.themeQueryBenchmark.storeDirectory"),
+				"theme benchmark must support an external store directory");
+		assertTrue(implementationSource.contains("rdf4j.lmdb.themeQueryBenchmark.reuseStoreConfirmed"),
+				"external store reuse must require explicit compatibility confirmation");
+		assertTrue(implementationSource.contains("rdf4j.lmdb.themeQueryBenchmark.storeCompatibilityKey"),
+				"external store reuse must expose a compatibility key so callers can invalidate stale stores");
+		assertTrue(implementationSource.contains("External LMDB benchmark store reuse requires confirming"),
+				"external store reuse must fail fast until disk format and loaded data compatibility is confirmed");
+	}
+
+	@Test
+	public void externalStoreReuseConfirmationGuardRejectsUnconfirmedStoreDirectory() {
+		String previousStoreDirectory = System.getProperty(STORE_DIRECTORY_PROPERTY);
+		String previousReuseConfirmed = System.getProperty(REUSE_STORE_CONFIRMED_PROPERTY);
+		try {
+			System.setProperty(STORE_DIRECTORY_PROPERTY, "/tmp/rdf4j-lmdb-theme-query-benchmark");
+			System.clearProperty(REUSE_STORE_CONFIRMED_PROPERTY);
+
+			var exception = assertThrows(IllegalStateException.class,
+					ThemeQueryBenchmark::requireExternalStoreReuseConfirmation);
+			assertTrue(exception.getMessage().contains(REUSE_STORE_CONFIRMED_PROPERTY),
+					"guard error must tell benchmark users which confirmation flag to set");
+
+			System.setProperty(REUSE_STORE_CONFIRMED_PROPERTY, "true");
+			requireExternalStoreReuseConfirmation();
+		} finally {
+			restoreSystemProperty(STORE_DIRECTORY_PROPERTY, previousStoreDirectory);
+			restoreSystemProperty(REUSE_STORE_CONFIRMED_PROPERTY, previousReuseConfirmed);
+		}
+	}
+
+	@Test
 	public void benchmarkQuery() throws IOException {
 		themeName = "LIBRARY";
 		z_queryIndex = 7;
@@ -736,7 +831,7 @@ public class ThemeQueryBenchmark {
 	@Test
 	@Disabled
 	public void executeQueryReturnsExpectedCountForPharmaQueryTenAfterFreshGeneration() throws IOException {
-		FileUtils.deleteDirectory(STORE_DIRECTORY);
+		FileUtils.deleteDirectory(storeDirectoryRoot());
 		themeName = "PHARMA";
 		z_queryIndex = 10;
 		setup();

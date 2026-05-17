@@ -88,6 +88,23 @@ public final class IdBindingInfo implements IdAccessor {
 		return m == null ? 0 : m;
 	}
 
+	public IdBindingInfo withAdditionalVariables(Set<String> variableNames, QueryEvaluationContext ctx) {
+		LinkedHashMap<String, Integer> map = new LinkedHashMap<>(indexByVar);
+		Map<String, Integer> masks = new java.util.HashMap<>(positionsMaskByVar);
+		boolean changed = false;
+		for (String variableName : variableNames) {
+			if (!map.containsKey(variableName)) {
+				map.put(variableName, map.size());
+				masks.put(variableName, 0);
+				changed = true;
+			}
+		}
+		if (!changed) {
+			return this;
+		}
+		return new IdBindingInfo(map, masks, ctx);
+	}
+
 	@Override
 	public int getRecordIndex(String varName) {
 		return getIndex(varName);

@@ -400,7 +400,6 @@ public class LmdbRecordIterator implements RecordIterator {
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 				}
 			}
-
 			while (lastResult == MDB_SUCCESS) {
 				sourceRowsScannedActual++;
 				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
@@ -434,11 +433,23 @@ public class LmdbRecordIterator implements RecordIterator {
 		}
 
 		if (matcherForEvaluation != null) {
-			return !matcherForEvaluation.matches(keyData.mv_data());
+			ByteBuffer key = keyData.mv_data();
+			int position = key.position();
+			try {
+				return !matcherForEvaluation.matches(key);
+			} finally {
+				key.position(position);
+			}
 		} else if (matchValues) {
 			matcherForEvaluation = index.createMatcher(subj, pred, obj, context);
 			groupMatcher = matcherForEvaluation;
-			return !matcherForEvaluation.matches(keyData.mv_data());
+			ByteBuffer key = keyData.mv_data();
+			int position = key.position();
+			try {
+				return !matcherForEvaluation.matches(key);
+			} finally {
+				key.position(position);
+			}
 		} else {
 			return false;
 		}

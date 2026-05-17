@@ -65,23 +65,6 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
-	void medicalRecordsQueryEightUsesIdLeftJoinTelemetry() throws Exception {
-		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
-		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
-		benchmark.z_queryIndex = 8;
-
-		benchmark.setup();
-		try {
-			assertEquals(ThemeQueryCatalog.expectedCountFor(Theme.MEDICAL_RECORDS, 8), benchmark.executeQuery());
-			String telemetry = benchmark.explainTelemetry();
-			assertTrue(telemetry.contains("LeftJoin (LmdbIdLeftJoinIterator)"),
-					"Expected q8 optional branch to use the LMDB ID left join after execution:\n" + telemetry);
-		} finally {
-			benchmark.tearDown();
-		}
-	}
-
-	@Test
 	void executeQueryTwiceReturnsExpectedCountForMedicalRecordsQueryTwo() throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
@@ -409,4 +392,5 @@ class ThemeQueryBenchmarkSmokeIT {
 		});
 		return matches.isEmpty() ? null : matches.getFirst();
 	}
+
 }

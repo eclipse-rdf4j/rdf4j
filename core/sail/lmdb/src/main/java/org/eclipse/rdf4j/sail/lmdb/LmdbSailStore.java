@@ -856,6 +856,10 @@ class LmdbSailStore implements SailStore {
 				statementPatternCardinalitySource);
 	}
 
+	ValueStore getValueStore() {
+		return valueStore;
+	}
+
 	@Override
 	public SailSource getExplicitSailSource() {
 		return new LmdbSailSource(true);
@@ -2183,15 +2187,11 @@ class LmdbSailStore implements SailStore {
 				if (generated != null) {
 					return generated;
 				}
-				if (predicatePlan != null) {
-					raw.close();
-					return null;
-				}
-
 				BindingProjectingIterator result = projectingReuse != null ? projectingReuse
 						: new BindingProjectingIterator();
 				RecordIterator reusableBase = raw instanceof LmdbRecordIterator ? raw : null;
-				result.configure(raw, reusableBase, binding, subjIndex, predIndex, objIndex, ctxIndex, reuse);
+				result.configure(raw, reusableBase, binding, subjIndex, predIndex, objIndex, ctxIndex, reuse,
+						predicatePlan);
 				return result;
 			} catch (IOException e) {
 				throw new QueryEvaluationException("Unable to create LMDB record iterator", e);
@@ -2348,6 +2348,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public long getDataRevision() {
+			return tripleStore.getDataRevision();
+		}
+
+		@Override
 		public String selectBestIndex(long subj, long pred, long obj, long context) {
 			TripleStore.TripleIndex index = tripleStore.getBestIndex(subj, pred, obj, context);
 			return index == null ? null : new String(index.getFieldSeq());
@@ -2380,6 +2385,36 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		@Override
+		public long scanIndex(String indexFieldSequence, long subj, long pred, long obj, long context,
+				KeyRangeBuffers keyBuffers, long[] quadReuse, RawQuadConsumer consumer)
+				throws QueryEvaluationException {
+			try {
+				boolean useKeyBuffers = hasBoundComponent(subj, pred, obj, context);
+				ByteBuffer minKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.maxKey() : null;
+				return tripleStore.scanTriplesUsingIndex(txn, indexFieldSequence, subj, pred, obj, context, explicit,
+						minKeyBuf, maxKeyBuf, quadReuse, consumer);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to scan LMDB index", e);
+			}
+		}
+
+		@Override
+		public long scanIndexComponents(String indexFieldSequence, long subj, long pred, long obj, long context,
+				int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, RawIdPairConsumer consumer)
+				throws QueryEvaluationException {
+			try {
+				boolean useKeyBuffers = hasBoundComponent(subj, pred, obj, context);
+				ByteBuffer minKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.minKey() : null;
+				ByteBuffer maxKeyBuf = useKeyBuffers && keyBuffers != null ? keyBuffers.maxKey() : null;
+				return tripleStore.scanTriplesUsingIndexComponents(txn, indexFieldSequence, subj, pred, obj, context,
+						explicit, firstComponent, secondComponent, minKeyBuf, maxKeyBuf, consumer);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to scan selected LMDB index components", e);
+			}
+		}
+
 		private boolean hasBoundComponent(long subj, long pred, long obj, long context) {
 			return subj > 0 || pred > 0 || obj > 0 || context >= 0;
 		}
@@ -2391,7 +2426,8 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void refreshSnapshot() throws QueryEvaluationException {
-			if (isolationLevel == IsolationLevels.SNAPSHOT || isolationLevel == IsolationLevels.SERIALIZABLE) {
+			if (isolationLevel == IsolationLevels.READ_COMMITTED || isolationLevel == IsolationLevels.SNAPSHOT
+					|| isolationLevel == IsolationLevels.SERIALIZABLE) {
 				try {
 					txn.reset();
 				} catch (IOException e) {
@@ -2790,11 +2826,18 @@ final class BindingProjectingIterator implements RecordIterator {
 	private int predIndex;
 	private int objIndex;
 	private int ctxIndex;
+	private LmdbIdPredicatePlan predicatePlan;
 	private long[] scratch;
 
 	void configure(RecordIterator base, RecordIterator reusableBase, long[] binding, int subjIndex,
 			int predIndex, int objIndex,
 			int ctxIndex, long[] bindingReuse) {
+		configure(base, reusableBase, binding, subjIndex, predIndex, objIndex, ctxIndex, bindingReuse, null);
+	}
+
+	void configure(RecordIterator base, RecordIterator reusableBase, long[] binding, int subjIndex,
+			int predIndex, int objIndex,
+			int ctxIndex, long[] bindingReuse, LmdbIdPredicatePlan predicatePlan) {
 		this.base = base;
 		this.reusableBase = reusableBase;
 		this.binding = binding;
@@ -2802,6 +2845,7 @@ final class BindingProjectingIterator implements RecordIterator {
 		this.predIndex = predIndex;
 		this.objIndex = objIndex;
 		this.ctxIndex = ctxIndex;
+		this.predicatePlan = predicatePlan;
 		int bindingLength = binding.length;
 		if (bindingReuse != null && bindingReuse.length >= bindingLength) {
 			System.arraycopy(binding, 0, bindingReuse, 0, bindingLength);
@@ -2863,7 +2907,8 @@ final class BindingProjectingIterator implements RecordIterator {
 						scratch[ctxIndex] = (baseVal != LmdbValue.UNKNOWN_ID) ? baseVal : v;
 					}
 				}
-				if (!conflict) {
+				if (!conflict && (predicatePlan == null
+						|| predicatePlan.test(scratch) != LmdbIdPredicatePlan.Result.FALSE)) {
 					return scratch;
 				}
 			}

@@ -119,6 +119,20 @@ final class LmdbDelegatingSailDataset implements SailDataset, LmdbEvaluationData
 	}
 
 	@Override
+	public RecordIterator getRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex, int ctxIndex,
+			long[] patternIds, KeyRangeBuffers keyBuffers, long[] reuse, long[] quadReuse,
+			RecordIterator iteratorReuse, LmdbIdPredicatePlan predicatePlan) throws QueryEvaluationException {
+		if (delegate instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) delegate).getRecordIterator(binding, subjIndex, predIndex, objIndex,
+					ctxIndex, patternIds, keyBuffers, reuse, quadReuse, iteratorReuse, predicatePlan);
+		}
+		LmdbOverlayEvaluationDataset helper = new LmdbOverlayEvaluationDataset(
+				new LmdbSailDatasetTripleSource(valueStore, delegate), valueStore);
+		return helper.getRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, keyBuffers,
+				reuse, quadReuse, iteratorReuse, predicatePlan);
+	}
+
+	@Override
 	public RecordIterator getOrderedRecordIterator(long[] binding, int subjIndex, int predIndex, int objIndex,
 			int ctxIndex, long[] patternIds, StatementOrder order) throws QueryEvaluationException {
 		return getOrderedRecordIterator(binding, subjIndex, predIndex, objIndex, ctxIndex, patternIds, order, null,
@@ -150,6 +164,14 @@ final class LmdbDelegatingSailDataset implements SailDataset, LmdbEvaluationData
 	}
 
 	@Override
+	public long getDataRevision() {
+		if (delegate instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) delegate).getDataRevision();
+		}
+		return LmdbEvaluationDataset.super.getDataRevision();
+	}
+
+	@Override
 	public List<String> getIndexFieldSequences() {
 		if (delegate instanceof LmdbEvaluationDataset) {
 			return ((LmdbEvaluationDataset) delegate).getIndexFieldSequences();
@@ -166,5 +188,26 @@ final class LmdbDelegatingSailDataset implements SailDataset, LmdbEvaluationData
 					keyBuffers, quadReuse, iteratorReuse);
 		}
 		return null;
+	}
+
+	@Override
+	public long scanIndex(String indexFieldSequence, long subj, long pred, long obj, long context,
+			KeyRangeBuffers keyBuffers, long[] quadReuse, RawQuadConsumer consumer) throws QueryEvaluationException {
+		if (delegate instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) delegate).scanIndex(indexFieldSequence, subj, pred, obj, context,
+					keyBuffers, quadReuse, consumer);
+		}
+		return -1;
+	}
+
+	@Override
+	public long scanIndexComponents(String indexFieldSequence, long subj, long pred, long obj, long context,
+			int firstComponent, int secondComponent, KeyRangeBuffers keyBuffers, RawIdPairConsumer consumer)
+			throws QueryEvaluationException {
+		if (delegate instanceof LmdbEvaluationDataset) {
+			return ((LmdbEvaluationDataset) delegate).scanIndexComponents(indexFieldSequence, subj, pred, obj, context,
+					firstComponent, secondComponent, keyBuffers, consumer);
+		}
+		return -1;
 	}
 }
