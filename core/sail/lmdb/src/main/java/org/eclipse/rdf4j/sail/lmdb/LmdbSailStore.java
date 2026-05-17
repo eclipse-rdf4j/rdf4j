@@ -414,9 +414,11 @@ class LmdbSailStore implements SailStore {
 				throw deferredEstimatorStatementSource();
 			}
 			try {
-				return delegate.getStatements(subject, predicate, object, contexts);
-			} finally {
+				return new GuardedEstimatorStatementIteration(delegate.getStatements(subject, predicate, object,
+						contexts));
+			} catch (RuntimeException | Error e) {
 				sinkStoreAccessLock.unlock();
+				throw e;
 			}
 		}
 
@@ -428,6 +430,48 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public ValueFactory getValueFactory() {
 			return delegate.getValueFactory();
+		}
+	}
+
+	private final class GuardedEstimatorStatementIteration implements CloseableIteration<Statement> {
+
+		private final CloseableIteration<? extends Statement> delegate;
+		private boolean closed;
+
+		private GuardedEstimatorStatementIteration(CloseableIteration<? extends Statement> delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean hasNext() {
+			boolean hasNext = delegate.hasNext();
+			if (!hasNext) {
+				close();
+			}
+			return hasNext;
+		}
+
+		@Override
+		public Statement next() {
+			return delegate.next();
+		}
+
+		@Override
+		public void remove() {
+			delegate.remove();
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			try {
+				delegate.close();
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
 		}
 	}
 
