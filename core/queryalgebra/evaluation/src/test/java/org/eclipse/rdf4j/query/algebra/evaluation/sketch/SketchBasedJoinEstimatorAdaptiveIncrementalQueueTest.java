@@ -290,6 +290,35 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 	}
 
 	@Test
+	void incrementalWorkersStartLazilyAndTimeOutAfterIdle() throws Exception {
+		withProperty("incrementalQueueInitialLimit", "4",
+				() -> withProperty("incrementalWorkerKeepAliveMillis", "25", () -> {
+					int partitionThreadsBefore = threadCount("RdfJoinEstimator-Partition-");
+					int transformThreadsBefore = threadCount("RdfJoinEstimator-Transform-");
+					SketchBasedJoinEstimator estimator = newEstimator();
+					try {
+						assertEquals(partitionThreadsBefore, threadCount("RdfJoinEstimator-Partition-"),
+								"Estimator construction should not start partition workers before there is work");
+						IRI predicate = VF.createIRI("urn:adaptive:lazy-workers:p");
+						for (int i = 0; i < 4; i++) {
+							estimator.addStatement(statement("urn:adaptive:lazy-workers:" + i, predicate,
+									"urn:adaptive:lazy-workers:o:" + i));
+						}
+						estimator.debugFlushPendingIncremental();
+						assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+								predicate.stringValue()) > 0.0,
+								"Lazy workers should still publish incremental updates");
+						assertTrue(awaitThreadCount("RdfJoinEstimator-Partition-", partitionThreadsBefore, 2,
+								TimeUnit.SECONDS), "Partition workers should retire after the keep-alive timeout");
+						assertTrue(awaitThreadCount("RdfJoinEstimator-Transform-", transformThreadsBefore, 2,
+								TimeUnit.SECONDS), "Transform workers should retire after the keep-alive timeout");
+					} finally {
+						estimator.close();
+					}
+				}));
+	}
+
+	@Test
 	void idleMonitorFlushesPartialQueueAndResetsGrowth() throws Exception {
 		withProperty("incrementalQueueInitialLimit", "4",
 				() -> withProperty("incrementalQueueIdleResetMillis", "25", () -> {
@@ -334,6 +363,28 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 			Thread.sleep(10);
 		}
 		return estimator.debugPendingIncrementalCount() == expected;
+	}
+
+	private static boolean awaitThreadCount(String prefix, int expected, long timeout, TimeUnit unit)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		while (System.nanoTime() < deadline) {
+			if (threadCount(prefix) == expected) {
+				return true;
+			}
+			Thread.sleep(10);
+		}
+		return threadCount(prefix) == expected;
+	}
+
+	private static int threadCount(String prefix) {
+		int count = 0;
+		for (Thread thread : Thread.getAllStackTraces().keySet()) {
+			if (thread.isAlive() && thread.getName().startsWith(prefix)) {
+				count++;
+			}
+		}
+		return count;
 	}
 
 	private static int activeIncrementalQueueLimit(SketchBasedJoinEstimator estimator) throws Exception {

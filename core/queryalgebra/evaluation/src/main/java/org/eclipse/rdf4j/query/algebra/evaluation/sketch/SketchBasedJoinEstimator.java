@@ -160,6 +160,7 @@ import org.slf4j.LoggerFactory;
  * <li>{@code incrementalQueueEstimatedStatementBytes} (long)</li>
  * <li>{@code incrementalQueueBlockWindowUpdates} (int)</li>
  * <li>{@code incrementalQueueBlockBudgetMillis} (long)</li>
+ * <li>{@code incrementalWorkerKeepAliveMillis} (long)</li>
  * </ul>
  *
  * <p>
@@ -1356,6 +1357,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final long MEMORY_MONITOR_ESTIMATED_OPERATION_BYTES = INCREMENTAL_QUEUE_ESTIMATED_STATEMENT_BYTES;
 	private static final int INCREMENTAL_QUEUE_BLOCK_WINDOW_UPDATES = 25_000;
 	private static final long INCREMENTAL_QUEUE_BLOCK_BUDGET_MILLIS = 10L;
+	private static final long INCREMENTAL_WORKER_KEEP_ALIVE_MILLIS = 30_000L;
 	private static final double INCREMENTAL_QUEUE_MIN_FREE_MEMORY_RATIO = 0.20d;
 	private static final int PARALLEL_INGEST_MAX_BATCH_SIZE = INCREMENTAL_BATCH_SIZE;
 	private static final int REBUILD_BATCH_SIZE = PARALLEL_INGEST_MAX_BATCH_SIZE;
@@ -1368,9 +1370,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final ScheduledFuture<?> incrementalIdleMonitor;
 	private final IngestPartition[] enabledIngestPartitions;
 	private final BlockingQueue<PartitionWork>[] ingestPartitionQueues;
-	private final Future<?>[] ingestPartitionWorkers;
+	private final AtomicBoolean[] ingestPartitionDrainScheduled;
 	private final int incrementalQueueInitialLimit;
 	private final long incrementalQueueIdleResetNanos;
+	private final long incrementalWorkerKeepAliveMillis;
 	private final long incrementalQueueEstimatedStatementBytes;
 	private final int incrementalQueueBlockWindowUpdates;
 	private final long incrementalQueueBlockBudgetNanos;
@@ -1447,6 +1450,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		long queueEstimatedStatementBytes = cfg.incrementalQueueEstimatedStatementBytes;
 		int queueBlockWindowUpdates = cfg.incrementalQueueBlockWindowUpdates;
 		long queueBlockBudgetMillis = cfg.incrementalQueueBlockBudgetMillis;
+		long workerKeepAliveMillis = cfg.incrementalWorkerKeepAliveMillis;
 		int memoryMonitorCheckInterval = cfg.memoryMonitorCheckInterval;
 		long memoryMonitorEstimatedOperationBytes = cfg.memoryMonitorEstimatedOperationBytes;
 
@@ -1479,6 +1483,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				queueEstimatedStatementBytes);
 		queueBlockWindowUpdates = propInt("incrementalQueueBlockWindowUpdates", queueBlockWindowUpdates);
 		queueBlockBudgetMillis = propLong("incrementalQueueBlockBudgetMillis", queueBlockBudgetMillis);
+		workerKeepAliveMillis = propLong("incrementalWorkerKeepAliveMillis", workerKeepAliveMillis);
 		memoryMonitorCheckInterval = propInt("memoryMonitorCheckInterval", memoryMonitorCheckInterval);
 		memoryMonitorEstimatedOperationBytes = propLong("memoryMonitorEstimatedOperationBytes",
 				memoryMonitorEstimatedOperationBytes);
@@ -1503,6 +1508,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		queueEstimatedStatementBytes = Math.max(1L, queueEstimatedStatementBytes);
 		queueBlockWindowUpdates = Math.max(1, queueBlockWindowUpdates);
 		queueBlockBudgetMillis = Math.max(0L, queueBlockBudgetMillis);
+		workerKeepAliveMillis = Math.max(1L, workerKeepAliveMillis);
 		memoryMonitorCheckInterval = Math.max(1, memoryMonitorCheckInterval);
 		memoryMonitorEstimatedOperationBytes = Math.max(1L, memoryMonitorEstimatedOperationBytes);
 
@@ -1530,6 +1536,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.zeroIntersectionSampleSize = zeroIntersectionSampleSize;
 		this.incrementalQueueInitialLimit = queueInitialLimit;
 		this.incrementalQueueIdleResetNanos = TimeUnit.MILLISECONDS.toNanos(queueIdleResetMillis);
+		this.incrementalWorkerKeepAliveMillis = workerKeepAliveMillis;
 		this.incrementalQueueEstimatedStatementBytes = queueEstimatedStatementBytes;
 		this.incrementalQueueBlockWindowUpdates = queueBlockWindowUpdates;
 		this.incrementalQueueBlockBudgetNanos = TimeUnit.MILLISECONDS.toNanos(queueBlockBudgetMillis);
@@ -1550,9 +1557,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.nextStatementQueueLimit = saturatedDoubleQueueLimit(incrementalQueueInitialLimit);
 		this.incrementalQueueMemoryCheckCountdown = memoryMonitorCheckInterval;
 		int transformThreads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
-		this.asyncIncrementalExecutor = new ThreadPoolExecutor(transformThreads, transformThreads, 0L,
-				TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(INCREMENTAL_TRANSFORM_QUEUE_CAPACITY),
+		ThreadPoolExecutor transformExecutor = new ThreadPoolExecutor(transformThreads, transformThreads,
+				incrementalWorkerKeepAliveMillis, TimeUnit.MILLISECONDS,
+				new ArrayBlockingQueue<>(INCREMENTAL_TRANSFORM_QUEUE_CAPACITY),
 				daemonThreadFactory("RdfJoinEstimator-Transform-"));
+		transformExecutor.allowCoreThreadTimeOut(true);
+		this.asyncIncrementalExecutor = transformExecutor;
 		this.incrementalIdleMonitorExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
 			Thread thread = new Thread(r, "RdfJoinEstimator-Ingest-Idle");
 			thread.setDaemon(true);
@@ -1571,9 +1581,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				? INGEST_PARTITIONS_WITH_CONTEXT
 				: INGEST_PARTITIONS_WITHOUT_CONTEXT;
 		this.ingestPartitionQueues = createPartitionQueues(enabledIngestPartitions.length);
-		this.ingestPartitionExecutor = Executors.newFixedThreadPool(enabledIngestPartitions.length,
+		this.ingestPartitionDrainScheduled = createPartitionDrainFlags(enabledIngestPartitions.length);
+		ThreadPoolExecutor partitionExecutor = new ThreadPoolExecutor(enabledIngestPartitions.length,
+				enabledIngestPartitions.length, incrementalWorkerKeepAliveMillis, TimeUnit.MILLISECONDS,
+				new ArrayBlockingQueue<>(enabledIngestPartitions.length),
 				daemonThreadFactory("RdfJoinEstimator-Partition-"));
-		this.ingestPartitionWorkers = startIngestPartitionWorkers();
+		partitionExecutor.allowCoreThreadTimeOut(true);
+		this.ingestPartitionExecutor = partitionExecutor;
 	}
 
 	private static ThreadFactory daemonThreadFactory(String prefix) {
@@ -1594,33 +1608,60 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return queues;
 	}
 
-	private Future<?>[] startIngestPartitionWorkers() {
-		Future<?>[] workers = new Future[enabledIngestPartitions.length];
-		for (int i = 0; i < enabledIngestPartitions.length; i++) {
-			BlockingQueue<PartitionWork> queue = ingestPartitionQueues[i];
-			workers[i] = ingestPartitionExecutor.submit(() -> runIngestPartitionWorker(queue));
+	private AtomicBoolean[] createPartitionDrainFlags(int count) {
+		AtomicBoolean[] scheduled = new AtomicBoolean[count];
+		for (int i = 0; i < count; i++) {
+			scheduled[i] = new AtomicBoolean();
 		}
-		return workers;
+		return scheduled;
 	}
 
-	private void runIngestPartitionWorker(BlockingQueue<PartitionWork> queue) {
-		while (true) {
+	private void schedulePartitionDrain(int partitionIndex) {
+		AtomicBoolean scheduled = ingestPartitionDrainScheduled[partitionIndex];
+		if (!scheduled.compareAndSet(false, true)) {
+			return;
+		}
+		try {
+			ingestPartitionExecutor.execute(() -> drainIngestPartitionQueue(partitionIndex));
+		} catch (RejectedExecutionException e) {
+			scheduled.set(false);
+			throw e;
+		}
+	}
+
+	private void drainIngestPartitionQueue(int partitionIndex) {
+		BlockingQueue<PartitionWork> queue = ingestPartitionQueues[partitionIndex];
+		try {
+			while (true) {
+				PartitionWork work = queue.poll();
+				if (work == null) {
+					return;
+				}
+				completePartitionWork(work);
+			}
+		} finally {
+			ingestPartitionDrainScheduled[partitionIndex].set(false);
+			if (!queue.isEmpty()) {
+				schedulePartitionDrain(partitionIndex);
+			}
+		}
+	}
+
+	private void completePartitionWork(PartitionWork work) {
+		try {
+			TransformedStatementChunk chunk = work.chunk;
+			work.result.complete(buildBatchUpdates(chunk.events, chunk.eventCount, work.partition));
+		} catch (Throwable t) {
+			work.result.completeExceptionally(t);
+			recordAsyncIncrementalFailure(t);
+		}
+	}
+
+	private void failPendingPartitionWork(Throwable failure) {
+		for (BlockingQueue<PartitionWork> queue : ingestPartitionQueues) {
 			PartitionWork work;
-			try {
-				work = queue.take();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				return;
-			}
-			if (work.isPoison()) {
-				return;
-			}
-			try {
-				TransformedStatementChunk chunk = work.chunk;
-				work.result.complete(buildBatchUpdates(chunk.events, chunk.eventCount, work.partition));
-			} catch (Throwable t) {
-				work.result.completeExceptionally(t);
-				recordAsyncIncrementalFailure(t);
+			while ((work = queue.poll()) != null) {
+				work.result.completeExceptionally(failure);
 			}
 		}
 	}
@@ -2194,7 +2235,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			Thread.currentThread().interrupt();
 			asyncIncrementalExecutor.shutdownNow();
 		}
-		stopIngestPartitionWorkers();
 		ingestPartitionExecutor.shutdown();
 		try {
 			while (!ingestPartitionExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
@@ -2202,15 +2242,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			ingestPartitionExecutor.shutdownNow();
+			failPendingPartitionWork(e);
 		}
-	}
-
-	private void stopIngestPartitionWorkers() {
-		for (BlockingQueue<PartitionWork> queue : ingestPartitionQueues) {
-			while (!queue.offer(PartitionWork.POISON)) {
-				queue.poll();
-			}
+		List<Runnable> skipped = ingestPartitionExecutor.shutdownNow();
+		if (!skipped.isEmpty()) {
+			failPendingPartitionWork(new RejectedExecutionException("Partition ingestion executor stopped"));
 		}
 	}
 
@@ -3124,7 +3160,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void putPartitionWork(int partitionIndex, PartitionWork work) throws InterruptedException {
 		long startNanos = System.nanoTime();
-		ingestPartitionQueues[partitionIndex].put(work);
+		BlockingQueue<PartitionWork> queue = ingestPartitionQueues[partitionIndex];
+		schedulePartitionDrain(partitionIndex);
+		queue.put(work);
+		schedulePartitionDrain(partitionIndex);
 		long blockedNanos = System.nanoTime() - startNanos;
 		if (blockedNanos > 0L) {
 			synchronized (incrementalBufferLock) {
@@ -10650,6 +10689,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		long incrementalQueueEstimatedStatementBytes = INCREMENTAL_QUEUE_ESTIMATED_STATEMENT_BYTES;
 		int incrementalQueueBlockWindowUpdates = INCREMENTAL_QUEUE_BLOCK_WINDOW_UPDATES;
 		long incrementalQueueBlockBudgetMillis = INCREMENTAL_QUEUE_BLOCK_BUDGET_MILLIS;
+		long incrementalWorkerKeepAliveMillis = INCREMENTAL_WORKER_KEEP_ALIVE_MILLIS;
 		int memoryMonitorCheckInterval = MEMORY_MONITOR_CHECK_INTERVAL;
 		long memoryMonitorEstimatedOperationBytes = MEMORY_MONITOR_ESTIMATED_OPERATION_BYTES;
 
@@ -10811,6 +10851,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		public Config withIncrementalQueueBlockBudgetMillis(long millis) {
 			this.incrementalQueueBlockBudgetMillis = Math.max(0L, millis);
+			return this;
+		}
+
+		public Config withIncrementalWorkerKeepAliveMillis(long millis) {
+			this.incrementalWorkerKeepAliveMillis = Math.max(1L, millis);
 			return this;
 		}
 

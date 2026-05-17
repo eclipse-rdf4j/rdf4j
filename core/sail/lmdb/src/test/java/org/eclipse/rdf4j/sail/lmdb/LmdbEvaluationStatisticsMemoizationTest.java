@@ -80,6 +80,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
@@ -160,6 +161,36 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertTrue(statistics.supportsJoinEstimation(),
 				"Ready base sketches should remain usable even when the robust synopsis is unavailable");
 		verify(estimator).isReadyNonBlocking();
+	}
+
+	@Test
+	void predicateObjectDomainsAreMemoizedWithinOptimizationScope() throws Exception {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+
+		ValueStore valueStore = mock(ValueStore.class);
+		ValueStoreRevision revision = mock(ValueStoreRevision.class);
+		when(valueStore.getRevision()).thenReturn(revision);
+		when(revision.getRevisionId()).thenReturn(1L);
+
+		TripleStore tripleStore = mock(TripleStore.class);
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:test:memoized-domain");
+		when(valueStore.getId(predicate)).thenReturn(42L);
+		when(tripleStore.getKnownRdfTermDomain(42L)).thenReturn(Optional.of(RdfTermDomain.LITERAL));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+
+		try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
+			assertEquals(Optional.of(RdfTermDomain.LITERAL), statistics.getKnownRdfTermDomain(predicate));
+			assertEquals(Optional.of(RdfTermDomain.LITERAL), statistics.getKnownRdfTermDomain(predicate));
+		}
+
+		verify(valueStore, times(1)).getId(predicate);
+		verify(tripleStore, times(1)).getKnownRdfTermDomain(42L);
+
+		assertEquals(Optional.of(RdfTermDomain.LITERAL), statistics.getKnownRdfTermDomain(predicate));
+		verify(valueStore, times(2)).getId(predicate);
+		verify(tripleStore, times(2)).getKnownRdfTermDomain(42L);
 	}
 
 	@Test

@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -146,6 +147,61 @@ class LmdbSketchJoinOptimizerTest {
 		assertEquals(studiesDisease, orderedArgs.get(1));
 		assertEquals(5, orderedArgs.size());
 		assertTrue(orderedArgs.containsAll(List.of(boundDisease, studiesDisease, trialType, hasArm, armDrug)));
+	}
+
+	@Test
+	void guaranteeAnalysisReusesPredicateDomainsPerSegment() {
+		BindingSetAssignment targets = values("target", "Alice", "Bob");
+		StatementPattern name = statementPattern("person", "name", "name");
+		StatementPattern related = statementPattern("person", "related", "other");
+		DeferredFilter filter = new DeferredFilter(and(equal("name", "target"), equal("name", "target")),
+				Set.of("name", "target"), Set.of("name", "target"), JoinOrderPlanner.FILTER_COST_CHEAP, 0, name,
+				Set.of(name), null);
+		CountingGuaranteePlanningStatistics statistics = new CountingGuaranteePlanningStatistics();
+
+		GuaranteePlanOptionProvider.analyze(List.of(targets, name, related), List.of(filter), statistics);
+
+		assertEquals(1, statistics.knownDomainLookups(VF.createIRI("urn:name")),
+				"Guarantee option analysis should reuse predicate-domain results within one segment");
+	}
+
+	@Test
+	void guaranteeOptionPlanningReusesFixedCandidateCosting() {
+		BindingSetAssignment targets = values("target", "Alice", "Bob");
+		StatementPattern name = statementPattern("person", "name", "name");
+		StatementPattern related = statementPattern("person", "related", "other");
+		QueryRoot root = new QueryRoot(new Filter(new Join(targets, new Join(name, related)),
+				equal("name", "target")));
+		CountingGuaranteePlanningStatistics statistics = new CountingGuaranteePlanningStatistics();
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertEquals(1, statistics.fixedOrderEstimates,
+				"Fixed guarantee candidates should be costed once and reused during fallback planning");
+	}
+
+	@Test
+	void materializedFiniteAnchorRowsStayLazyDuringGuaranteeAnalysis() {
+		BindingSetAssignment targets = values("target", "Alice", "Bob");
+		StatementPattern name = statementPattern("person", "name", "name");
+		DeferredFilter filter = new DeferredFilter(equal("name", "target"), Set.of("name", "target"),
+				JoinOrderPlanner.FILTER_COST_CHEAP, 0, name, Set.of(name), null);
+		CountingGuaranteePlanningStatistics statistics = new CountingGuaranteePlanningStatistics();
+
+		GuaranteePlanOptionProvider.Analysis analysis = GuaranteePlanOptionProvider.analyze(List.of(targets, name),
+				List.of(filter), statistics);
+
+		BindingSetAssignment materializedAnchor = analysis.finiteAnchorOptions()
+				.getFirst()
+				.factors()
+				.stream()
+				.filter(BindingSetAssignment.class::isInstance)
+				.map(BindingSetAssignment.class::cast)
+				.filter(assignment -> assignment.getBindingNames().containsAll(Set.of("name", "target")))
+				.findFirst()
+				.orElseThrow();
+		assertFalse(materializedAnchor.getBindingSets() instanceof List,
+				"Candidate analysis should not preallocate materialized finite-anchor rows");
 	}
 
 	@Test
@@ -632,6 +688,10 @@ class LmdbSketchJoinOptimizerTest {
 		return new Compare(new Var(leftName), new Var(rightName), Compare.CompareOp.NE);
 	}
 
+	private static Compare equal(String leftName, String rightName) {
+		return new Compare(new Var(leftName), new Var(rightName), Compare.CompareOp.EQ);
+	}
+
 	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
 		List<TupleExpr> args = new ArrayList<>();
 		collectJoinArgs(tupleExpr, args);
@@ -791,6 +851,53 @@ class LmdbSketchJoinOptimizerTest {
 		Join join = assertInstanceOf(Join.class, joinRoot);
 		assertTrue(assertInstanceOf(VariableScopeChange.class, join.getLeftArg()).isVariableScopeChange());
 		assertTrue(containsBindingSetAssignment(join.getRightArg(), "target"));
+	}
+
+	private static final class CountingGuaranteePlanningStatistics extends EvaluationStatistics
+			implements JoinOrderPlanner, JoinFactorCostModel, LmdbPredicateObjectDomainSource {
+
+		private final Map<IRI, Integer> knownDomainLookups = new java.util.LinkedHashMap<>();
+		private int planningAttempts;
+		private int fixedOrderEstimates;
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> planJoinOrder(List<TupleExpr> args, Set<String> initiallyBoundVars,
+				Algorithm algorithm) {
+			planningAttempts++;
+			return Optional.of(new JoinOrderPlan(new ArrayList<>(args), 10.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<JoinOrderPlan> estimateJoinOrder(List<TupleExpr> orderedArgs, Set<String> initiallyBoundVars,
+				Algorithm algorithm, List<FilterConstraint> deferredFilters) {
+			fixedOrderEstimates++;
+			return Optional.of(new JoinOrderPlan(new ArrayList<>(orderedArgs), 10_000.0d, 10_000.0d));
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return Optional.empty();
+		}
+
+		@Override
+		public RdfTermDomain getRdfTermDomain(IRI predicate) {
+			return getKnownRdfTermDomain(predicate).orElse(RdfTermDomain.UNRESTRICTED);
+		}
+
+		@Override
+		public Optional<RdfTermDomain> getKnownRdfTermDomain(IRI predicate) {
+			knownDomainLookups.merge(predicate, 1, Integer::sum);
+			return Optional.of(RdfTermDomain.LITERAL);
+		}
+
+		private int knownDomainLookups(IRI predicate) {
+			return knownDomainLookups.getOrDefault(predicate, 0);
+		}
 	}
 
 	private static final class PlanningStatistics extends EvaluationStatistics implements JoinOrderPlanner,

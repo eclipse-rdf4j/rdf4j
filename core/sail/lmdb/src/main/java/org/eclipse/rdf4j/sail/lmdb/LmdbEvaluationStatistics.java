@@ -168,6 +168,14 @@ class LmdbEvaluationStatistics
 		if (predicate == null) {
 			return Optional.empty();
 		}
+		OptimizationCostScope costScope = optimizationCostScope.get();
+		if (costScope != null) {
+			return costScope.predicateObjectDomainCache.computeIfAbsent(predicate, this::readKnownRdfTermDomain);
+		}
+		return readKnownRdfTermDomain(predicate);
+	}
+
+	private Optional<RdfTermDomain> readKnownRdfTermDomain(IRI predicate) {
 		try {
 			long predicateId = valueStore.getId(predicate);
 			if (predicateId == LmdbValue.UNKNOWN_ID) {
@@ -2500,6 +2508,7 @@ class LmdbEvaluationStatistics
 		private final Map<TupleExpr, Object> factorFingerprintCache = new IdentityHashMap<>();
 		private final Map<FiniteDerivedSurfaceCacheKey, Optional<FiniteDerivedSurfaceEstimate>> finiteDerivedSurfaceCache = new HashMap<>();
 		private final Map<FiniteBranchRowsCacheKey, Double> finiteBranchRowsCache = new HashMap<>();
+		private final Map<IRI, Optional<RdfTermDomain>> predicateObjectDomainCache = new HashMap<>();
 		private long finiteDerivedSurfaceCacheHits;
 		private long finiteDerivedSurfaceCacheMisses;
 		private long finiteBranchRowsCacheHits;

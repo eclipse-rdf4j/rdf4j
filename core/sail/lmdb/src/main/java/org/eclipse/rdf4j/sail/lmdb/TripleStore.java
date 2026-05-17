@@ -80,7 +80,6 @@ import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -184,8 +183,7 @@ class TripleStore implements Closeable {
 	private final boolean predicateGuaranteeIndexAutoRebuild;
 	private final Set<String> predicateGuaranteeExcludedPredicates;
 	private volatile boolean predicateGuaranteeIndexReadable;
-	private final ReentrantReadWriteLock predicateObjectDomainCacheLock = new ReentrantReadWriteLock();
-	private Map<Long, RdfTermDomain> predicateObjectDomainCache = Map.of();
+	private volatile Map<Long, RdfTermDomain> predicateObjectDomainCache = Map.of();
 	private final Map<Long, RdfTermDomain> pendingRdfTermDomainCacheWrites = new HashMap<>();
 	private final Set<Long> pendingRdfTermDomainCacheDeletes = new HashSet<>();
 	private boolean pendingRdfTermDomainCacheClear;
@@ -361,13 +359,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void loadRdfTermDomainCache() throws IOException {
-		Map<Long, RdfTermDomain> loaded = readAllRdfTermDomains();
-		predicateObjectDomainCacheLock.writeLock().lock();
-		try {
-			predicateObjectDomainCache = loaded;
-		} finally {
-			predicateObjectDomainCacheLock.writeLock().unlock();
-		}
+		predicateObjectDomainCache = readAllRdfTermDomains();
 	}
 
 	private Map<Long, RdfTermDomain> readAllRdfTermDomains() throws IOException {
@@ -398,12 +390,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void clearRdfTermDomainCache() {
-		predicateObjectDomainCacheLock.writeLock().lock();
-		try {
-			predicateObjectDomainCache = Map.of();
-		} finally {
-			predicateObjectDomainCacheLock.writeLock().unlock();
-		}
+		predicateObjectDomainCache = Map.of();
 	}
 
 	private void rebuildRdfTermDomains() throws IOException {
@@ -624,12 +611,7 @@ class TripleStore implements Closeable {
 	}
 
 	Optional<RdfTermDomain> getCachedRdfTermDomain(long predicateId) {
-		predicateObjectDomainCacheLock.readLock().lock();
-		try {
-			return Optional.ofNullable(predicateObjectDomainCache.get(predicateId));
-		} finally {
-			predicateObjectDomainCacheLock.readLock().unlock();
-		}
+		return Optional.ofNullable(predicateObjectDomainCache.get(predicateId));
 	}
 
 	Optional<RdfTermDomain> getPersistedRdfTermDomain(long predicateId) throws IOException {
@@ -2411,7 +2393,6 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (commit) {
-					predicateObjectDomainCacheLock.writeLock().lock();
 					try {
 						if (recordCache == null) {
 							flushPendingRdfTermDomains();
@@ -2460,8 +2441,6 @@ class TripleStore implements Closeable {
 						// abort transaction if exception occurred while committing
 						mdb_txn_abort(writeTxn);
 						throw e;
-					} finally {
-						predicateObjectDomainCacheLock.writeLock().unlock();
 					}
 				} else {
 					mdb_txn_abort(writeTxn);
