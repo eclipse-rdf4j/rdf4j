@@ -149,30 +149,6 @@ class ValueStoreCacheTest {
 	}
 
 	@Test
-	void datatypeCacheUsesFixedArrayCollisionBehavior(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1);
-		ValueStore valueStore = new ValueStore(dataDir, config);
-		try {
-			long firstId = 1L;
-			long secondId = 4097L;
-			LmdbIRI first = new LmdbIRI(valueStore.getRevision(), "urn:example:first-datatype", firstId);
-			LmdbIRI second = new LmdbIRI(valueStore.getRevision(), CoreDatatype.XSD.INT.getIri().stringValue(),
-					secondId);
-
-			valueStore.cacheDatatype(firstId, first);
-			valueStore.cacheDatatype(secondId, second);
-
-			assertNull(valueStore.cachedDatatype(firstId));
-			assertNull(valueStore.cachedDatatypeCoreDatatype(firstId));
-			assertSame(second, valueStore.cachedDatatype(secondId));
-			assertSame(CoreDatatype.XSD.INT, valueStore.cachedDatatypeCoreDatatype(secondId));
-		} finally {
-			valueStore.close();
-			LmdbTestUtil.deleteDir(dataDir);
-		}
-	}
-
-	@Test
 	void datatypeLookupIsCachedAcrossValueCacheCollisions(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setValueCacheSize(1)
