@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.rules.TemporaryFolder;
 
@@ -45,6 +46,7 @@ import org.junit.rules.TemporaryFolder;
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
+	private static LmdbStore store;
 	private static File dataDir;
 
 	public static TemporaryFolder tempDir = new TemporaryFolder();
@@ -124,7 +126,8 @@ public class QueryBenchmarkTest {
 			dataDir = tempDir.newFolder();
 
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-			repository = new SailRepository(new LmdbStore(dataDir, config));
+			store = new LmdbStore(dataDir, config);
+			repository = new SailRepository(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -139,6 +142,12 @@ public class QueryBenchmarkTest {
 			cleanupStore();
 			throw e;
 		}
+	}
+
+	@BeforeEach
+	public void awaitOptimizerPipeline() {
+		LmdbPlannerAwait.awaitSketchesReady(store, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
+		LmdbPlannerAwait.awaitLmdbOptimizerPipeline(store, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
 	}
 
 	private static InputStream getResourceAsStream(String name) {
@@ -167,6 +176,7 @@ public class QueryBenchmarkTest {
 			}
 			tempDir = null;
 			dataDir = null;
+			store = null;
 			repository = null;
 			statementList = null;
 		}
