@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -68,8 +67,6 @@ public class SpinParserTest {
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("testData")
-	// FIXME RDF1.2
-	@Disabled("Needs to be fixed")
 	public void testSpinParser(String testName, URL testURL) throws IOException, RDF4JException {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
