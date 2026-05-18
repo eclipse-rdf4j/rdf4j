@@ -21,11 +21,13 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPlannerAwait;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 
@@ -33,7 +35,6 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(1);
 	private static final long QUERY_REGRESSION_PASS_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
-	private static final long QUERY_REGRESSION_PASS_POLL_MILLIS = 100L;
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
@@ -136,35 +137,8 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	public static void assertQueryRegressionPassesWithinThirtySeconds(String queryKey,
 			QueryRegressionAssertion assertion) throws Exception {
-		// Tight retry loop for plan-regression checks: return immediately on pass, hard-timeout on persistent drift.
-		long deadlineNanos = System.nanoTime() + QUERY_REGRESSION_PASS_TIMEOUT_NANOS;
-		AssertionError lastAssertionError = null;
-		int attempts = 0;
-		while (true) {
-			attempts++;
-			try {
-				assertion.assertPasses();
-				return;
-			} catch (AssertionError assertionError) {
-				lastAssertionError = assertionError;
-			}
-			if (System.nanoTime() >= deadlineNanos) {
-				AssertionError timeoutError = new AssertionError(
-						"Query regression " + queryKey + " did not pass within 30 seconds after " + attempts
-								+ " attempts");
-				if (lastAssertionError != null) {
-					timeoutError.initCause(lastAssertionError);
-				}
-				throw timeoutError;
-			}
-			try {
-				Thread.sleep(QUERY_REGRESSION_PASS_POLL_MILLIS);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while waiting for query regression " + queryKey
-						+ " to pass within 30 seconds", e);
-			}
-		}
+		LmdbPlannerAwait.awaitPlannerAssertion("query regression " + queryKey,
+				Duration.ofNanos(QUERY_REGRESSION_PASS_TIMEOUT_NANOS), assertion::assertPasses);
 	}
 
 	public static boolean isPersistentThemeRegressionStoreEnabled() {

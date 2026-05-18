@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -120,7 +120,7 @@ class LmdbExactJoinSurfaceIdScanTest {
 	private static SketchBasedJoinEstimator rebuildAndGetEstimator(LmdbStore store) throws InterruptedException {
 		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 		estimator.rebuild();
-		assertTrue(store.awaitSketchesReady(30, TimeUnit.SECONDS), "Expected sketches to be ready after rebuild");
+		LmdbPlannerAwait.awaitSketchesReady(store, Duration.ofSeconds(30));
 		return estimator;
 	}
 

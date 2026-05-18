@@ -18,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -626,8 +625,8 @@ class LmdbPredicateObjectDomainIndexTest {
 				.getSketchBasedJoinEstimator();
 		estimator.stop();
 		estimator.rebuild();
-		assertTrue(estimator.isReadyNonBlocking());
-		assertTrue(sail.awaitSketchesReady(1, TimeUnit.SECONDS));
+		LmdbPlannerAwait.awaitEstimatorReady(estimator);
+		LmdbPlannerAwait.awaitSketchesReady(sail);
 	}
 
 	private static OptimizerSnapshot explainOptimized(SailRepository repository, String query) {

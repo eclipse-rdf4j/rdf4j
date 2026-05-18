@@ -77,6 +77,7 @@
 		<junit.version>6.0.2</junit.version>
 		<mockito.version>5.21.0</mockito.version>
 		<mockserver.version>5.15.0</mockserver.version>
+		<awaitility.version>4.3.0</awaitility.version>
 		<assertj.version>3.27.7</assertj.version>
 		<hamcrest.version>3.0</hamcrest.version>
 		<topbraid.shacl.version>1.4.4</topbraid.shacl.version>
@@ -777,6 +778,11 @@
 						<artifactId>commons-logging</artifactId>
 					</exclusion>
 				</exclusions>
+			</dependency>
+			<dependency>
+				<groupId>org.awaitility</groupId>
+				<artifactId>awaitility</artifactId>
+				<version>${awaitility.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.assertj</groupId>

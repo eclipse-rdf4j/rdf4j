@@ -16,12 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -87,14 +86,11 @@ class LmdbSketchAwareFilterPlacementIT {
 	private static final String GRID_SUBSTATION_NAME_FILTER = "substation-name-filter";
 	private static final String GRID_FEEDS_LABEL = "grid-feeds";
 	private static final String GRID_TRANSFORMER_TYPE_LABEL = "transformer-type";
-	private static final int CRITERIA_RETRY_ATTEMPTS = 10;
-	private static final int TEST_RERUN_ATTEMPTS = 10;
-	private static final long RETRY_PAUSE_MILLIS = TimeUnit.SECONDS.toMillis(1L);
 
 	@Test
 	void optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady(@TempDir File dataDir)
 			throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady", attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 					SailRepository repository = new SailRepository(store);
@@ -151,7 +147,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady", attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 					SailRepository repository = new SailRepository(store);
@@ -192,7 +188,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void learnedTemplateStatsApplyWhenExactFilterKeyMisses(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir, "learnedTemplateStatsApplyWhenExactFilterKeyMisses",
+		runPlannerTest(dataDir, "learnedTemplateStatsApplyWhenExactFilterKeyMisses",
 				attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 					SailRepository repository = new SailRepository(store);
@@ -231,7 +227,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void bindingWindowFilterKeepsIncomingValuesBindings(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir, "bindingWindowFilterKeepsIncomingValuesBindings", attemptDir -> {
+		runPlannerTest(dataDir, "bindingWindowFilterKeepsIncomingValuesBindings", attemptDir -> {
 			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 			SailRepository repository = new SailRepository(store);
 			repository.init();
@@ -263,7 +259,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats", attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 					SailRepository repository = new SailRepository(store);
@@ -305,7 +301,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void nonLocalEqualityFilterReceivesHeuristicPassRatio(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir, "nonLocalEqualityFilterReceivesHeuristicPassRatio",
+		runPlannerTest(dataDir, "nonLocalEqualityFilterReceivesHeuristicPassRatio",
 				attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 					SailRepository repository = new SailRepository(store);
@@ -339,7 +335,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow", attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 					SailRepository repository = new SailRepository(store);
@@ -369,7 +365,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void deferredFilterUnlockAddsWorkAndShrinksRows(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir, "deferredFilterUnlockAddsWorkAndShrinksRows", attemptDir -> {
+		runPlannerTest(dataDir, "deferredFilterUnlockAddsWorkAndShrinksRows", attemptDir -> {
 			LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
 			SailRepository repository = new SailRepository(store);
 			repository.init();
@@ -423,7 +419,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	@Test
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady(
 			@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady",
 				attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
@@ -477,7 +473,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	@Test
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset(
 			@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset",
 				attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
@@ -512,7 +508,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	@Test
 	void backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled(
 			@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled",
 				attemptDir -> {
 					LmdbStoreConfig config = new LmdbStoreConfig()
@@ -580,7 +576,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	@Test
 	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset(
 			@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir,
+		runPlannerTest(dataDir,
 				"optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset",
 				attemptDir -> {
 					LmdbStore store = new LmdbStore(attemptDir, new LmdbStoreConfig());
@@ -617,7 +613,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void deferredFilterPlacementPreservesAcceptedFactorOrder() throws Exception {
-		assertTestPassesWithinAttempts("deferredFilterPlacementPreservesAcceptedFactorOrder", () -> {
+		runPlannerTest("deferredFilterPlacementPreservesAcceptedFactorOrder", () -> {
 			StatementPattern forward = new StatementPattern(Var.of("anchor"),
 					Var.of("edge", VF.createIRI("urn:edge")), Var.of("right"));
 			StatementPattern reverse = new StatementPattern(Var.of("left"),
@@ -636,7 +632,7 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	@Test
 	void deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter() throws Exception {
-		assertTestPassesWithinAttempts("deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter", () -> {
+		runPlannerTest("deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter", () -> {
 			BindingSetAssignment left = bindingAssignment("left", VF.createLiteral("P1D", XSD.DAYTIMEDURATION));
 			BindingSetAssignment right = bindingAssignment("right", VF.createLiteral("P1D", XSD.DURATION));
 			Compare condition = new Compare(Var.of("left"), Var.of("right"), Compare.CompareOp.EQ);
@@ -660,96 +656,23 @@ class LmdbSketchAwareFilterPlacementIT {
 		});
 	}
 
-	private static void assertTestPassesWithinAttempts(File dataDir, String testName, TestAttempt testAttempt)
+	private static void runPlannerTest(File dataDir, String testName, TestAttempt testAttempt)
 			throws Exception {
-		Throwable lastFailure = null;
-		for (int attempt = 1; attempt <= TEST_RERUN_ATTEMPTS; attempt++) {
-			File attemptDir = new File(dataDir, "attempt-" + attempt);
-			Files.createDirectories(attemptDir.toPath());
-			try {
-				testAttempt.run(attemptDir);
-				return;
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw e;
-			} catch (AssertionError | RuntimeException e) {
-				lastFailure = e;
-			} catch (Exception e) {
-				lastFailure = e;
-			}
-		}
-		failAfterRetries("Test \"" + testName + "\" did not pass within " + TEST_RERUN_ATTEMPTS
-				+ " full attempts", lastFailure);
+		testAttempt.run(dataDir);
 	}
 
-	private static void assertTestPassesWithinAttempts(String testName, TestBody testBody) throws Exception {
-		Throwable lastFailure = null;
-		for (int attempt = 1; attempt <= TEST_RERUN_ATTEMPTS; attempt++) {
-			try {
-				testBody.run();
-				return;
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw e;
-			} catch (AssertionError | RuntimeException e) {
-				lastFailure = e;
-			} catch (Exception e) {
-				lastFailure = e;
-			}
-		}
-		failAfterRetries("Test \"" + testName + "\" did not pass within " + TEST_RERUN_ATTEMPTS
-				+ " full attempts", lastFailure);
+	private static void runPlannerTest(String testName, TestBody testBody) throws Exception {
+		testBody.run();
 	}
 
 	private static void assertCriteriaEventually(String criteria, CriteriaAssertion assertion) throws Exception {
-		awaitCriteria(criteria, () -> {
-			assertion.assertPasses();
-			return null;
-		});
+		LmdbPlannerAwait.awaitPlannerAssertion(criteria, assertion::assertPasses);
 	}
 
 	private static <T> T awaitCriteria(String criteria, CriteriaProbe<T> probe) throws Exception {
-		Throwable lastFailure = null;
-		for (int attempt = 1; attempt <= CRITERIA_RETRY_ATTEMPTS; attempt++) {
-			try {
-				return probe.probe();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw e;
-			} catch (AssertionError | RuntimeException e) {
-				lastFailure = e;
-			} catch (Exception e) {
-				lastFailure = e;
-			}
-			if (attempt < CRITERIA_RETRY_ATTEMPTS) {
-				pauseBeforeRetry();
-			}
-		}
-		return failAfterRetries("Criteria \"" + criteria + "\" did not pass within "
-				+ CRITERIA_RETRY_ATTEMPTS + " attempts", lastFailure);
-	}
-
-	private static void pauseBeforeRetry() throws InterruptedException {
-		Thread.sleep(RETRY_PAUSE_MILLIS);
-	}
-
-	private static <T> T failAfterRetries(String message, Throwable failure) throws Exception {
-		if (failure instanceof AssertionError assertionError) {
-			AssertionError error = new AssertionError(message);
-			error.addSuppressed(assertionError);
-			throw error;
-		}
-		if (failure instanceof RuntimeException runtimeException) {
-			throw new RuntimeException(message, runtimeException);
-		}
-		if (failure instanceof Exception exception) {
-			throw new Exception(message, exception);
-		}
-		AssertionError error = new AssertionError(message);
-		if (failure != null) {
-			error.addSuppressed(failure);
-		}
-		throw error;
+		AtomicReference<T> result = new AtomicReference<>();
+		LmdbPlannerAwait.awaitPlannerAssertion(criteria, () -> result.set(probe.probe()));
+		return result.get();
 	}
 
 	@FunctionalInterface

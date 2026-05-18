@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -28,10 +27,10 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -96,14 +95,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.api.extension.TestExecutionExceptionHandler;
 
-@ExtendWith(LmdbEvaluationStatisticsMemoizationTest.RetryingTestExecutionExceptionHandler.class)
 class LmdbEvaluationStatisticsMemoizationTest {
-	private static final int TEST_RERUN_ATTEMPTS = 10;
-	private static final long RETRY_PAUSE_MILLIS = TimeUnit.SECONDS.toMillis(1L);
 
 	private final List<Path> temporaryDirectories = new ArrayList<>();
 
@@ -139,10 +132,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertTrue(statistics.supportsJoinEstimation(), "Expected second probe to use cached readiness");
 		verify(estimator, times(1)).isReadyNonBlocking();
 
-		Thread.sleep(300);
-
-		assertFalse(statistics.supportsJoinEstimation(), "Expected readiness cache invalidation after cache window");
-		verify(estimator, times(2)).isReadyNonBlocking();
+		LmdbPlannerAwait.awaitPlannerAssertion("supportsJoinEstimation cache expires", Duration.ofSeconds(2), () -> {
+			assertFalse(statistics.supportsJoinEstimation(),
+					"Expected readiness cache invalidation after cache window");
+			verify(estimator, times(2)).isReadyNonBlocking();
+		});
 	}
 
 	@Test
@@ -1777,19 +1771,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)
 			throws InterruptedException {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
-		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
-				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
-			Thread.sleep(1000);
-		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
-			Thread.sleep(10 * 1000);
-		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
-			Thread.sleep(60 * 1000);
-		}
-		assertInstanceOf(LmdbEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
-				"Expected ready sketches to select the LMDB optimizer pipeline");
+		LmdbPlannerAwait.awaitSketchesReady(sail, Duration.ofSeconds(60));
+		LmdbPlannerAwait.awaitLmdbOptimizerPipeline(sail, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
 	}
 
 	private static void assertOptimizedTupleNodeAnnotated(String plan, String nodeName) {
@@ -2062,60 +2045,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		Field field = LmdbStatementPatternCardinalitySource.class.getDeclaredField("SHARED_CARDINALITY_CACHE");
 		field.setAccessible(true);
 		return (Map<?, ?>) field.get(null);
-	}
-
-	private static void failAfterRetries(String message, Throwable failure) throws Exception {
-		if (failure instanceof AssertionError assertionError) {
-			AssertionError error = new AssertionError(message);
-			error.addSuppressed(assertionError);
-			throw error;
-		}
-		if (failure instanceof RuntimeException runtimeException) {
-			throw new RuntimeException(message, runtimeException);
-		}
-		if (failure instanceof Exception exception) {
-			throw exception;
-		}
-		throw new AssertionError(message);
-	}
-
-	static final class RetryingTestExecutionExceptionHandler implements TestExecutionExceptionHandler {
-		@Override
-		public void handleTestExecutionException(ExtensionContext context, Throwable throwable) throws Throwable {
-			Throwable lastFailure = throwable;
-			for (int attempt = 2; attempt <= TEST_RERUN_ATTEMPTS; attempt++) {
-				cleanupAfterFailedAttempt(context);
-				try {
-					Thread.sleep(RETRY_PAUSE_MILLIS);
-					reinvokeTestMethod(context);
-					return;
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					throw e;
-				} catch (InvocationTargetException e) {
-					lastFailure = e.getCause() == null ? e : e.getCause();
-				} catch (AssertionError | RuntimeException e) {
-					lastFailure = e;
-				} catch (Exception e) {
-					lastFailure = e;
-				}
-			}
-			failAfterRetries("Test \"" + context.getRequiredTestMethod().getName()
-					+ "\" did not pass within " + TEST_RERUN_ATTEMPTS + " full attempts", lastFailure);
-		}
-
-		private static void reinvokeTestMethod(ExtensionContext context) throws Exception {
-			Method testMethod = context.getRequiredTestMethod();
-			testMethod.setAccessible(true);
-			testMethod.invoke(context.getRequiredTestInstance());
-		}
-
-		private static void cleanupAfterFailedAttempt(ExtensionContext context) {
-			Object testInstance = context.getRequiredTestInstance();
-			if (testInstance instanceof LmdbEvaluationStatisticsMemoizationTest test) {
-				test.deleteTemporaryDirectories();
-			}
-		}
 	}
 
 }

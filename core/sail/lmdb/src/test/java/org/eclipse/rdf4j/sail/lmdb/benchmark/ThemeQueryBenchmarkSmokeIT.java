@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPlannerAwait;
 import org.junit.jupiter.api.Test;
 
 class ThemeQueryBenchmarkSmokeIT {
@@ -239,8 +240,9 @@ class ThemeQueryBenchmarkSmokeIT {
 
 		benchmark.setup();
 		try {
-			assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
-					"Theme benchmark setup should wait for LMDB sketches before plan assertions");
+			LmdbPlannerAwait.awaitPlannerAssertion("medical query two benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
 			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
@@ -266,8 +268,9 @@ class ThemeQueryBenchmarkSmokeIT {
 
 		benchmark.setup();
 		try {
-			assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
-					"Theme benchmark setup should wait for LMDB sketches before plan assertions");
+			LmdbPlannerAwait.awaitPlannerAssertion("pharma query five benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
 			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
 			int biomarkerIndex = mandatoryLeafOrder.indexOf(PHARMA_BIOMARKER_LABEL);

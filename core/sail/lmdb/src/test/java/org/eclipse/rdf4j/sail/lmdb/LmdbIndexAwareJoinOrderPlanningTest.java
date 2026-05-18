@@ -17,12 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -65,9 +63,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbIndexAwareJoinOrderPlanningTest {
-
-	private static final int TEST_RERUN_ATTEMPTS = 10;
-	private static final long RETRY_PAUSE_MILLIS = TimeUnit.SECONDS.toMillis(1L);
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI RDF_TYPE = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -484,41 +479,38 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void highFanoutMedicalCodeFilterKeepsOriginalAndFiniteAnchorCandidates(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir, "highFanoutMedicalCodeFilterKeepsOriginalAndFiniteAnchorCandidates",
-				attemptDir -> {
-					LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
-					LmdbStore store = new LmdbStore(attemptDir, config);
-					SailRepository repository = new SailRepository(store);
-					repository.init();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
 
-					try {
-						loadSyntheticMedicalCodeData(repository);
-						store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+		try {
+			loadSyntheticMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
-						TupleExpr optimized;
-						String optimizedPlan;
-						try (SailRepositoryConnection connection = repository.getConnection()) {
-							Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
-									.explain(Explanation.Level.Optimized);
-							optimized = (TupleExpr) explanation.tupleExpr();
-							optimizedPlan = explanation.toString();
-						}
+			LmdbPlannerAwait.awaitPlannerAssertion("high-fanout medical code guarantee options", () -> {
+				String optimizedPlan;
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					Explanation explanation = connection.prepareTupleQuery(medicalCodeFilterQuery())
+							.explain(Explanation.Level.Optimized);
+					optimizedPlan = explanation.toString();
+				}
 
-						assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates="),
-								"High-fanout literal filters should expose the costed guarantee option set:\n"
-										+ optimizedPlan);
-						assertTrue(optimizedPlan.contains("original[lower-bound")
-								|| optimizedPlan.contains("original-fixed[fixed-order")
-								|| optimizedPlan.contains("original[baseline"),
-								"High-fanout literal filters should keep an original FILTER alternative available:\n"
-										+ optimizedPlan);
-						assertTrue(optimizedPlan.contains("finite-anchor:code"),
-								"High-fanout literal filters should also expose the finite-anchor option when it is sound:\n"
-										+ optimizedPlan);
-					} finally {
-						repository.shutDown();
-					}
-				});
+				assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates="),
+						"High-fanout literal filters should expose the costed guarantee option set:\n"
+								+ optimizedPlan);
+				assertTrue(optimizedPlan.contains("original[lower-bound")
+						|| optimizedPlan.contains("original-fixed[fixed-order")
+						|| optimizedPlan.contains("original[baseline"),
+						"High-fanout literal filters should keep an original FILTER alternative available:\n"
+								+ optimizedPlan);
+				assertTrue(optimizedPlan.contains("finite-anchor:code"),
+						"High-fanout literal filters should also expose the finite-anchor option when it is sound:\n"
+								+ optimizedPlan);
+			});
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test
@@ -551,16 +543,16 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	@Test
 	void selectedFiniteAnchorShowsGuaranteeDiagnostics(@TempDir File dataDir) throws Exception {
-		assertTestPassesWithinAttempts(dataDir, "selectedFiniteAnchorShowsGuaranteeDiagnostics", attemptDir -> {
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
-			LmdbStore store = new LmdbStore(attemptDir, config);
-			SailRepository repository = new SailRepository(store);
-			repository.init();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
 
-			try {
-				loadSelectiveMedicalCodeData(repository);
-				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+		try {
+			loadSelectiveMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
+			LmdbPlannerAwait.awaitPlannerAssertion("selected finite anchor guarantee diagnostics", () -> {
 				TupleExpr optimized;
 				String optimizedPlan;
 				try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -587,10 +579,10 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				assertTrue(optimizedPlan.contains("finite-anchor:code"),
 						"Plan should identify the finite-anchor option that produced the VALUES clause:\n"
 								+ optimizedPlan);
-			} finally {
-				repository.shutDown();
-			}
-		});
+			});
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test
@@ -1568,48 +1560,4 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		return matches.stream().findFirst();
 	}
 
-	private static void assertTestPassesWithinAttempts(File dataDir, String testName, TestAttempt testAttempt)
-			throws Exception {
-		Throwable lastFailure = null;
-		for (int attempt = 1; attempt <= TEST_RERUN_ATTEMPTS; attempt++) {
-			File attemptDir = new File(dataDir, "attempt-" + attempt);
-			Files.createDirectories(attemptDir.toPath());
-			try {
-				testAttempt.run(attemptDir);
-				return;
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw e;
-			} catch (AssertionError | RuntimeException e) {
-				lastFailure = e;
-			} catch (Exception e) {
-				lastFailure = e;
-			}
-			if (attempt < TEST_RERUN_ATTEMPTS) {
-				Thread.sleep(RETRY_PAUSE_MILLIS);
-			}
-		}
-		failAfterRetries("Test \"" + testName + "\" did not pass within " + TEST_RERUN_ATTEMPTS
-				+ " full attempts", lastFailure);
-	}
-
-	private static void failAfterRetries(String message, Throwable failure) throws Exception {
-		if (failure instanceof AssertionError assertionError) {
-			AssertionError error = new AssertionError(message);
-			error.addSuppressed(assertionError);
-			throw error;
-		}
-		if (failure instanceof RuntimeException runtimeException) {
-			throw new RuntimeException(message, runtimeException);
-		}
-		if (failure instanceof Exception exception) {
-			throw exception;
-		}
-		throw new AssertionError(message);
-	}
-
-	@FunctionalInterface
-	private interface TestAttempt {
-		void run(File attemptDir) throws Exception;
-	}
 }

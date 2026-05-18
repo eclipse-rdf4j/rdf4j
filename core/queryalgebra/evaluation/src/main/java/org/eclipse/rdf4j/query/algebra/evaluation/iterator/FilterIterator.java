@@ -280,7 +280,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	private static Function<BindingSet, BindingSet> buildRetainFunction(Filter filter, QueryEvaluationContext context) {
 		final Set<String> bindingNames = new LinkedHashSet<>(filter.getBindingNames());
-		bindingNames.addAll(VarNameCollector.process(filter.getCondition()));
+		if (!filter.isVariableScopeChange()) {
+			bindingNames.addAll(VarNameCollector.process(filter.getCondition()));
+		}
 		@SuppressWarnings("unchecked")
 		final Predicate<BindingSet>[] hasBinding = new Predicate[bindingNames.size()];
 		@SuppressWarnings("unchecked")

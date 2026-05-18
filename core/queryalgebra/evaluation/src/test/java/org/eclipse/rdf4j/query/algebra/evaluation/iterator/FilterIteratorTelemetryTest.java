@@ -133,6 +133,26 @@ class FilterIteratorTelemetryTest {
 	}
 
 	@Test
+	void variableScopeChangeFilterDoesNotRetainIncomingConditionOnlyBindings() {
+		Value matched = SimpleValueFactory.getInstance().createLiteral("match");
+		Value forbidden = SimpleValueFactory.getInstance().createLiteral("forbidden");
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("person"));
+		assignment.setBindingSets(List.of(singleBindingSet("person", matched)));
+		Filter filter = new Filter(assignment, new Compare(Var.of("outer"), new ValueConstant(forbidden),
+				CompareOp.NE));
+		filter.setVariableScopeChange(true);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, new QueryEvaluationContext.Minimal(null));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("outer", matched);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(input)) {
+			assertThat(iteration.hasNext()).isFalse();
+		}
+	}
+
+	@Test
 	void fusedAssignmentCompareUsesStrategyQueryMode() throws Exception {
 		Value year = SimpleValueFactory.getInstance().createLiteral("2007", XSD.GYEAR);
 		Value dateTime = SimpleValueFactory.getInstance().createLiteral("2009-01-01T20:20:20Z", XSD.DATETIME);

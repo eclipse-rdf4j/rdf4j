@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -63,7 +62,7 @@ class LmdbValueIdFilterOptimizationTest {
 				connection.add(VF.createIRI("http://example.com/s/bnode"), MIXED_OBJECT, bnodeObject);
 				connection.commit();
 				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-				assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
+				LmdbPlannerAwait.awaitSketchesReady(store);
 				ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 				String idTypes = "idTypes: iri=" + ValueIds.getIdType(valueStore.getId(iriObject))
 						+ ", literal=" + ValueIds.getIdType(valueStore.getId(literalObject))
@@ -115,7 +114,7 @@ class LmdbValueIdFilterOptimizationTest {
 				connection.add(VF.createIRI("http://example.com/s/driver"), IRI_OBJECT, iriObject);
 				connection.commit();
 				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-				assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
+				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = String.join("\n",
 						"SELECT ?o WHERE {",
@@ -167,7 +166,7 @@ class LmdbValueIdFilterOptimizationTest {
 				connection.add(VF.createIRI("http://example.com/s/iri"), MIXED_OBJECT, iriObject);
 				connection.commit();
 				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-				assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
+				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				String query = String.join("\n",
 						"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",

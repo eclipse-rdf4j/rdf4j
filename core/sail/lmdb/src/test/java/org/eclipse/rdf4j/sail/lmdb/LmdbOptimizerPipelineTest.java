@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -111,9 +112,9 @@ class LmdbOptimizerPipelineTest {
 			estimator.stop();
 			estimator.rebuild();
 
-			assertTrue(estimator.isReadyNonBlocking());
-			assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
-			assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+			LmdbPlannerAwait.awaitSketchesReady(store);
+			LmdbPlannerAwait.awaitLmdbOptimizerPipeline(store, Duration.ofSeconds(10));
 		} finally {
 			store.shutDown();
 		}
@@ -141,8 +142,9 @@ class LmdbOptimizerPipelineTest {
 			estimator.stop();
 			estimator.rebuild();
 
-			assertTrue(estimator.isReadyNonBlocking());
-			assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory));
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+			LmdbPlannerAwait.awaitPlannerAssertion("long-lived connection chooses LMDB factory",
+					() -> assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory)));
 		} finally {
 			store.shutDown();
 		}
@@ -160,8 +162,10 @@ class LmdbOptimizerPipelineTest {
 			estimator.stop();
 			estimator.rebuild();
 
-			assertTrue(estimator.isReadyNonBlocking());
-			assertSame(customPipeline, store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null));
+			LmdbPlannerAwait.awaitEstimatorReady(estimator);
+			LmdbPlannerAwait.awaitPlannerAssertion("automatic factory preserves configured pipeline",
+					() -> assertSame(customPipeline,
+							store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null)));
 		} finally {
 			store.shutDown();
 		}
