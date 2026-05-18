@@ -115,11 +115,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			long internalID) {
 		assert label != null;
 		this.label = label;
-		assert datatype != null;
-		assert coreDatatype != null;
-		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri() == datatype;
-		this.datatype = datatype;
-		this.coreDatatype = coreDatatype;
+		setDatatype(datatype, coreDatatype);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -155,6 +151,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			this.language = lmdbLiteral.language;
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
+			this.initialized = true;
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
 		}
@@ -183,6 +180,14 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public void setDatatype(IRI datatype) {
 		this.datatype = datatype;
 		coreDatatype = null;
+	}
+
+	public void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
+		assert datatype != null;
+		assert coreDatatype != null;
+		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri().equals(datatype);
+		this.datatype = datatype;
+		this.coreDatatype = coreDatatype;
 	}
 
 	public void setDatatype(CoreDatatype coreDatatype) {

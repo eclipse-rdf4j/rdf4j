@@ -163,6 +163,10 @@ class ValueStore extends AbstractValueFactory {
 	private final LmdbIRI[] predicateCache;
 	private final long[] predicateCacheId;
 	private final int predicateCacheMask;
+	private final LmdbIRI[] datatypeCache;
+	private final long[] datatypeCacheId;
+	private final CoreDatatype[] datatypeCoreDatatypeCache;
+	private final int datatypeCacheMask;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -262,6 +266,10 @@ class ValueStore extends AbstractValueFactory {
 		predicateCache = new LmdbIRI[cacheSize];
 		predicateCacheId = new long[cacheSize];
 		predicateCacheMask = cacheSize - 1;
+		datatypeCache = new LmdbIRI[4096];
+		datatypeCacheId = new long[4096];
+		datatypeCoreDatatypeCache = new CoreDatatype[4096];
+		datatypeCacheMask = 4096 - 1;
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -637,6 +645,35 @@ class ValueStore extends AbstractValueFactory {
 		int idx = (int) (id & predicateCacheMask);
 		predicateCacheId[idx] = id;
 		predicateCache[idx] = value;
+	}
+
+	LmdbIRI cachedDatatype(long id) {
+		int idx = (int) (id & datatypeCacheMask);
+		if (datatypeCacheId[idx] != id) {
+			return null;
+		}
+
+		LmdbIRI value = datatypeCache[idx];
+		if (value != null && value.getInternalID() == id) {
+			return value;
+		}
+		return null;
+	}
+
+	CoreDatatype cachedDatatypeCoreDatatype(long id) {
+		int idx = (int) (id & datatypeCacheMask);
+		if (datatypeCacheId[idx] != id) {
+			return null;
+		}
+
+		return datatypeCoreDatatypeCache[idx];
+	}
+
+	void cacheDatatype(long id, LmdbIRI value) {
+		int idx = (int) (id & datatypeCacheMask);
+		datatypeCache[idx] = value;
+		datatypeCoreDatatypeCache[idx] = CoreDatatype.from(value);
+		datatypeCacheId[idx] = id;
 	}
 
 	private static int nextPowerOfTwo(int n) {
@@ -1544,6 +1581,9 @@ class ValueStore extends AbstractValueFactory {
 		Arrays.fill(valueCacheId, 0);
 		Arrays.fill(predicateCache, null);
 		Arrays.fill(predicateCacheId, 0);
+		Arrays.fill(datatypeCache, null);
+		Arrays.fill(datatypeCacheId, 0);
+		Arrays.fill(datatypeCoreDatatypeCache, null);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
@@ -1964,9 +2004,14 @@ class ValueStore extends AbstractValueFactory {
 		// Get datatype
 		long datatypeID = Varint.readUnsignedHeap(bb);
 		IRI datatype = null;
+		CoreDatatype coreDatatype = null;
 		// literal without a datatype
 		if (datatypeID > 0) {
-			datatype = (IRI) getValue(datatypeID);
+			datatype = getDatatype(datatypeID);
+			coreDatatype = cachedDatatypeCoreDatatype(datatypeID);
+			if (datatype != null && coreDatatype == null) {
+				coreDatatype = CoreDatatype.from(datatype);
+			}
 		}
 
 		// Get language tag
@@ -1984,7 +2029,7 @@ class ValueStore extends AbstractValueFactory {
 			if (lang != null) {
 				return new LmdbLiteral(revision, label, lang, id);
 			} else if (datatype != null) {
-				return new LmdbLiteral(revision, label, datatype, id);
+				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
 			} else {
 				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
 			}
@@ -1994,12 +2039,23 @@ class ValueStore extends AbstractValueFactory {
 				value.setLanguage(lang);
 				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
 			} else if (datatype != null) {
-				value.setDatatype(datatype);
+				value.setDatatype(datatype, coreDatatype);
 			} else {
 				value.setDatatype(CoreDatatype.XSD.STRING);
 			}
 			return value;
 		}
+	}
+
+	private LmdbIRI getDatatype(long datatypeID) throws IOException {
+		LmdbIRI datatype = cachedDatatype(datatypeID);
+		if (datatype == null) {
+			datatype = (LmdbIRI) getValue(datatypeID);
+			if (datatype != null) {
+				cacheDatatype(datatypeID, datatype);
+			}
+		}
+		return datatype;
 	}
 
 	private String data2namespace(byte[] data) {

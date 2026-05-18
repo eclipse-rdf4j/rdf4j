@@ -46,7 +46,7 @@ public interface LmdbValue extends Value {
 	/**
 	 * Sets this value's data from an initialized value.
 	 * <p>
-	 * This must be only called within a synchronized block in the init() method of the uninitialized value.
+	 * This must be called while holding the monitor of the uninitialized value.
 	 *
 	 * @param initializedValue the initialized value to copy data from
 	 */

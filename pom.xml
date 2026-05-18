@@ -73,6 +73,7 @@
 		<elasticsearch.version>9.2.4</elasticsearch.version>
 		<spring.version>7.0.3</spring.version>
 		<guava.version>32.1.3-jre</guava.version>
+		<fastutil.version>8.5.18</fastutil.version>
 		<jmhVersion>1.37</jmhVersion>
 		<junit.version>6.0.2</junit.version>
 		<mockito.version>5.21.0</mockito.version>
@@ -707,6 +708,11 @@
 				<groupId>com.google.guava</groupId>
 				<artifactId>guava-testlib</artifactId>
 				<version>${guava.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>it.unimi.dsi</groupId>
+				<artifactId>fastutil</artifactId>
+				<version>${fastutil.version}</version>
 			</dependency>
 			<!-- Logging: SLF4J and logback -->
 			<dependency>
