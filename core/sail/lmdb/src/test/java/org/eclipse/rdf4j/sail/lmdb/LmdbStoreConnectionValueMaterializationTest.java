@@ -147,21 +147,30 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	@Test
-	void materializesOneDefaultBatchAtATimeAfterFirstResult(@TempDir File dataDir) {
+	void rampsBufferedMaterializationBatchSizeAfterFirstResult(@TempDir File dataDir) {
 		List<String> materialized = new ArrayList<>();
 		List<BindingSet> rows = new ArrayList<>();
+		int[] expectedBatchSizes = {
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 2,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 4,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 8,
+				LmdbValueMaterializingIteration.INITIAL_BATCH_SIZE * 16,
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE,
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE
+		};
 
 		BindingSet firstRow = row("value", value("first", 0, materialized));
 		rows.add(firstRow);
 
-		for (int i = LmdbValueMaterializingIteration.DEFAULT_BATCH_SIZE; i > 0; i--) {
-			rows.add(row("value", value("buffered-" + i, i, materialized)));
+		int bufferedRows = 0;
+		for (int batchSize : expectedBatchSizes) {
+			for (int i = batchSize; i > 0; i--) {
+				int rowId = bufferedRows + i;
+				rows.add(row("value", value("buffered-" + rowId, rowId, materialized)));
+			}
+			bufferedRows += batchSize;
 		}
-
-		RecordingLmdbValue beyondBatch = value("beyond", LmdbValueMaterializingIteration.DEFAULT_BATCH_SIZE + 1,
-				materialized);
-		BindingSet beyondBatchRow = row("value", beyondBatch);
-		rows.add(beyondBatchRow);
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(rows);
@@ -174,20 +183,19 @@ class LmdbStoreConnectionValueMaterializationTest {
 			assertSame(firstRow, result.next());
 			assertEquals(List.of("first"), materialized);
 
-			assertSame(rows.get(1), result.next());
-			assertEquals(LmdbValueMaterializingIteration.DEFAULT_BATCH_SIZE + 1, materialized.size());
-			assertEquals("buffered-1", materialized.get(1));
-			assertEquals("buffered-" + LmdbValueMaterializingIteration.DEFAULT_BATCH_SIZE,
-					materialized.get(LmdbValueMaterializingIteration.DEFAULT_BATCH_SIZE));
-			assertEquals(0, beyondBatch.initCount);
+			int nextRowIndex = 1;
+			int expectedMaterializedRows = 1;
+			for (int expectedBatchSize : expectedBatchSizes) {
+				assertSame(rows.get(nextRowIndex), result.next());
+				expectedMaterializedRows += expectedBatchSize;
+				assertEquals(expectedMaterializedRows, materialized.size());
 
-			for (int i = 2; i <= LmdbValueMaterializingIteration.DEFAULT_BATCH_SIZE; i++) {
-				assertSame(rows.get(i), result.next());
+				for (int i = 1; i < expectedBatchSize; i++) {
+					assertSame(rows.get(nextRowIndex + i), result.next());
+				}
+				nextRowIndex += expectedBatchSize;
 			}
 
-			assertEquals(0, beyondBatch.initCount);
-			assertSame(beyondBatchRow, result.next());
-			assertEquals(1, beyondBatch.initCount);
 			assertFalse(result.hasNext());
 		} finally {
 			store.shutDown();

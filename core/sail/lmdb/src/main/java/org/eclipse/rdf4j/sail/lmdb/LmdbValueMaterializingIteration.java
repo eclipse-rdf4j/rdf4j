@@ -29,10 +29,12 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
 final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet> {
 
-	static final int DEFAULT_BATCH_SIZE = 1024;
+	static final int INITIAL_BATCH_SIZE = 128;
+	static final int DEFAULT_MAX_BATCH_SIZE = 4096;
 
 	private final CloseableIteration<? extends BindingSet> source;
-	private final BindingSet[] buffer;
+	private BindingSet[] buffer;
+	private final int maxBatchSize;
 	private final ArrayList<LmdbValue> values;
 	private final Long2ObjectOpenHashMap<LmdbValue> valuesById;
 	private ArrayList<DeferredValue> deferredValues;
@@ -41,17 +43,20 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private int bufferIndex;
 	private int bufferSize;
+	private int nextBufferCapacity;
 	private boolean firstReturned;
 
-	LmdbValueMaterializingIteration(CloseableIteration<? extends BindingSet> source, int batchSize) {
-		if (batchSize <= 0) {
-			throw new IllegalArgumentException("batchSize must be positive");
+	LmdbValueMaterializingIteration(CloseableIteration<? extends BindingSet> source, int maxBatchSize) {
+		if (maxBatchSize <= 0) {
+			throw new IllegalArgumentException("maxBatchSize must be positive");
 		}
 
 		this.source = source;
-		buffer = new BindingSet[batchSize];
-		values = new ArrayList<>(batchSize);
-		valuesById = new Long2ObjectOpenHashMap<>(batchSize);
+		this.maxBatchSize = maxBatchSize;
+		nextBufferCapacity = Math.min(INITIAL_BATCH_SIZE, maxBatchSize);
+		buffer = new BindingSet[nextBufferCapacity];
+		values = new ArrayList<>(nextBufferCapacity);
+		valuesById = new Long2ObjectOpenHashMap<>(nextBufferCapacity);
 	}
 
 	@Override
@@ -105,6 +110,9 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private void fillBuffer() {
 		bufferIndex = 0;
 		bufferSize = 0;
+		if (buffer.length != nextBufferCapacity) {
+			buffer = new BindingSet[nextBufferCapacity];
+		}
 
 		while (bufferSize < buffer.length && source.hasNext()) {
 			buffer[bufferSize] = source.next();
@@ -115,6 +123,9 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			close();
 		} else {
 			materializeBufferedValues();
+			if (bufferSize == buffer.length && nextBufferCapacity < maxBatchSize) {
+				nextBufferCapacity = Math.min(maxBatchSize, nextBufferCapacity << 1);
+			}
 		}
 	}
 

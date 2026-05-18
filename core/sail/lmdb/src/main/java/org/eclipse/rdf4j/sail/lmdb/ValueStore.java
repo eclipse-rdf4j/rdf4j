@@ -186,6 +186,7 @@ class ValueStore extends AbstractValueFactory {
 	private final ReadWriteLock txnLock = new ReentrantReadWriteLock();
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
+	private final Set<Long> seededDatatypeIds = ConcurrentHashMap.newKeySet();
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
@@ -266,10 +267,10 @@ class ValueStore extends AbstractValueFactory {
 		predicateCache = new LmdbIRI[cacheSize];
 		predicateCacheId = new long[cacheSize];
 		predicateCacheMask = cacheSize - 1;
-		datatypeCache = new LmdbIRI[4096];
-		datatypeCacheId = new long[4096];
-		datatypeCoreDatatypeCache = new CoreDatatype[4096];
-		datatypeCacheMask = 4096 - 1;
+		datatypeCache = new LmdbIRI[1024];
+		datatypeCacheId = new long[1024];
+		datatypeCoreDatatypeCache = new CoreDatatype[1024];
+		datatypeCacheMask = 1024 - 1;
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -311,7 +312,30 @@ class ValueStore extends AbstractValueFactory {
 		});
 
 		startTransaction(true);
+		seedCoreDatatypes();
 		commit();
+	}
+
+	private void seedCoreDatatypes() throws IOException {
+		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
+			seedCoreDatatype(datatype);
+		}
+		seedCoreDatatype(CoreDatatype.RDF.LANGSTRING);
+	}
+
+	private void seedCoreDatatype(CoreDatatype datatype) throws IOException {
+		IRI datatypeIri = datatype.getIri();
+		long id = getId(datatypeIri, true);
+		if (id == LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+
+		LmdbIRI value = getLmdbURI(datatypeIri);
+		value.setInternalID(id, revision);
+		cacheValue(id, value);
+		cacheDatatype(id, value);
+		commonVocabulary.put(datatypeIri, id);
+		seededDatatypeIds.add(id);
 	}
 
 	private void openHashFileQuietly() {
@@ -648,7 +672,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	LmdbIRI cachedDatatype(long id) {
-		int idx = (int) (id & datatypeCacheMask);
+		int idx = datatypeCacheIndex(id);
 		if (datatypeCacheId[idx] != id) {
 			return null;
 		}
@@ -661,7 +685,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	CoreDatatype cachedDatatypeCoreDatatype(long id) {
-		int idx = (int) (id & datatypeCacheMask);
+		int idx = datatypeCacheIndex(id);
 		if (datatypeCacheId[idx] != id) {
 			return null;
 		}
@@ -670,10 +694,14 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	void cacheDatatype(long id, LmdbIRI value) {
-		int idx = (int) (id & datatypeCacheMask);
+		int idx = datatypeCacheIndex(id);
 		datatypeCache[idx] = value;
 		datatypeCoreDatatypeCache[idx] = CoreDatatype.from(value);
 		datatypeCacheId[idx] = id;
+	}
+
+	private int datatypeCacheIndex(long id) {
+		return (int) (ValueIds.getValue(id) & datatypeCacheMask);
 	}
 
 	private static int nextPowerOfTwo(int n) {
@@ -1262,6 +1290,9 @@ class ValueStore extends AbstractValueFactory {
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
 					for (Long id : finalIds) {
+						if (seededDatatypeIds.contains(id)) {
+							continue;
+						}
 						revIdBb.position(revLength).limit(revIdBb.capacity());
 						revIdVal.mv_data(id2data(revIdBb, id).flip());
 						// check if id has internal references and therefore cannot be deleted
@@ -1307,6 +1338,9 @@ class ValueStore extends AbstractValueFactory {
 		long valuesCursor = 0;
 		try {
 			for (Long id : ids) {
+				if (seededDatatypeIds.contains(id)) {
+					continue;
+				}
 				// resizeMap(writeTxn, 10L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
 
 				idVal.mv_data(id2data(idBb.clear(), id).flip());
@@ -1572,8 +1606,12 @@ class ValueStore extends AbstractValueFactory {
 		ValueStoreHashFile.deleteIfPresent(dir);
 
 		clearCaches();
+		seededDatatypeIds.clear();
 		open();
 		setNewRevision();
+		startTransaction(true);
+		seedCoreDatatypes();
+		commit();
 	}
 
 	protected void clearCaches() {

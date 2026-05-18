@@ -134,7 +134,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			BindingSet bindings, boolean includeInferred) throws SailException {
 		return new LmdbValueMaterializingIteration(
 				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred),
-				LmdbValueMaterializingIteration.DEFAULT_BATCH_SIZE);
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE);
 	}
 
 	@Override
