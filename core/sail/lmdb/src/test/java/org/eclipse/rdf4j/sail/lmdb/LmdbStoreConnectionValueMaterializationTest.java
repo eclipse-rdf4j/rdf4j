@@ -110,6 +110,41 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	@Test
+	void keepsUnknownIdsOutOfBufferedIdSort(@TempDir File dataDir) {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue unknown = value("unknown", LmdbValue.UNKNOWN_ID, materialized);
+		RecordingLmdbValue id10 = value("id10", 10, materialized);
+		RecordingLmdbValue id20 = value("id20", 20, materialized);
+
+		BindingSet firstRow = row("value", first);
+		BindingSet secondRow = row("value", id20);
+		BindingSet thirdRow = row("value", unknown);
+		BindingSet fourthRow = row("value", id10);
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(firstRow, secondRow, thirdRow, fourthRow));
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try (SailConnection connection = store.getConnection();
+				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
+						EmptyBindingSet.getInstance(), false)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+
+			assertSame(secondRow, result.next());
+			assertEquals(List.of("first", "id10", "id20", "unknown"), materialized);
+
+			assertSame(thirdRow, result.next());
+			assertSame(fourthRow, result.next());
+			assertFalse(result.hasNext());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void copiesCachedValueForDuplicateIdsInImmutableBufferedRows(@TempDir File dataDir) {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 0, materialized);
