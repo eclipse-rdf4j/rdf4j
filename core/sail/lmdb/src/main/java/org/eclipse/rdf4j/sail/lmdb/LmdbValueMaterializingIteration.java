@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
-import java.util.IdentityHashMap;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
@@ -24,35 +23,57 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 
 final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet> {
 
 	static final int INITIAL_BATCH_SIZE = 128;
 	static final int DEFAULT_MAX_BATCH_SIZE = 4096;
 
+	private static final int INITIAL_COLLECTION_SIZE = 8;
+
+	/**
+	 * Avoid allocating hash tables for very small batches. Linear scans are cheap at this size, and this also keeps
+	 * tiny / one-row iterations allocation-light.
+	 */
+	private static final int SMALL_DEDUP_LIMIT = 16;
+
 	private final CloseableIteration<? extends BindingSet> source;
-	private BindingSet[] buffer;
 	private final int maxBatchSize;
+
+	private BindingSet[] buffer;
+
 	private LmdbValue[] values;
 	private long[] valueIds;
 	private int[] valueOrder;
+
 	private int[] scratchValueOrder;
 	private long[] scratchValueIds;
-	private final Long2ObjectOpenHashMap<LmdbValue> valuesById;
+
+	private Long2ObjectOpenHashMap<LmdbValue> valuesById;
+
 	private LmdbValue[] unknownIdValues;
-	private DeferredValue[] deferredValues;
-	private IdentityHashMap<LmdbValue, Boolean> identityValues;
-	private IdentityHashMap<LmdbValue, Boolean> deferredIdentityValues;
-	private final int[] radixCounts = new int[256];
-	private final int[] radixOffsets = new int[256];
+	private ReferenceOpenHashSet<LmdbValue> identityValues;
+
+	private LmdbValue[] deferredValues;
+	private LmdbValue[] deferredInitializedValues;
+	private ReferenceOpenHashSet<LmdbValue> deferredIdentityValues;
+
+	private int[] radixCounts;
+	private int[] radixOffsets;
 
 	private int bufferIndex;
 	private int bufferSize;
 	private int nextBufferCapacity;
+
 	private int valueCount;
 	private int unknownIdValueCount;
 	private int deferredValueCount;
+
 	private boolean firstReturned;
+
+	private boolean valueIdsInAscendingOrder = true;
+	private long lastValueId;
 
 	LmdbValueMaterializingIteration(CloseableIteration<? extends BindingSet> source, int maxBatchSize) {
 		if (maxBatchSize <= 0) {
@@ -62,11 +83,6 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		this.source = source;
 		this.maxBatchSize = maxBatchSize;
 		nextBufferCapacity = Math.min(INITIAL_BATCH_SIZE, maxBatchSize);
-		buffer = new BindingSet[nextBufferCapacity];
-		values = new LmdbValue[nextBufferCapacity];
-		valueIds = new long[nextBufferCapacity];
-		valueOrder = new int[nextBufferCapacity];
-		valuesById = new Long2ObjectOpenHashMap<>(nextBufferCapacity);
 	}
 
 	@Override
@@ -120,9 +136,8 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private void fillBuffer() {
 		bufferIndex = 0;
 		bufferSize = 0;
-		if (buffer.length != nextBufferCapacity) {
-			buffer = new BindingSet[nextBufferCapacity];
-		}
+
+		ensureBufferCapacity(nextBufferCapacity);
 
 		while (bufferSize < buffer.length && source.hasNext()) {
 			buffer[bufferSize] = source.next();
@@ -131,110 +146,233 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 		if (bufferSize == 0) {
 			close();
-		} else {
-			materializeBufferedValues();
-			if (bufferSize == buffer.length && nextBufferCapacity < maxBatchSize) {
-				nextBufferCapacity = Math.min(maxBatchSize, nextBufferCapacity << 1);
-			}
+			return;
+		}
+
+		materializeBufferedValues();
+
+		if (bufferSize == buffer.length && nextBufferCapacity < maxBatchSize) {
+			nextBufferCapacity = Math.min(maxBatchSize, nextBufferCapacity << 1);
 		}
 	}
 
 	private void materializeBufferedValues() {
-		clearCollectedValues();
-		clearDeduplicationState();
+		try {
+			for (int i = 0; i < bufferSize; i++) {
+				addValues(buffer[i]);
+			}
 
-		for (int i = 0; i < bufferSize; i++) {
-			addValues(buffer[i]);
+			initKnownIdValues();
+			initUnknownIdValues();
+			copyDeferredValues();
+		} finally {
+			clearCollectedValues();
+			clearDeduplicationState();
+		}
+	}
+
+	private void initKnownIdValues() {
+		if (valueCount == 0) {
+			return;
 		}
 
-		if (valueCount > 0) {
-			ensureValueScratchCapacity(valueCount);
+		if (valueCount == 1 || valueIdsInAscendingOrder) {
 			for (int i = 0; i < valueCount; i++) {
-				valueOrder[i] = i;
+				values[i].init();
 			}
-			LeadingFieldSorters.lsdRadixSort(valueOrder, valueIds, valueCount, scratchValueOrder, scratchValueIds,
-					radixCounts, radixOffsets);
-			for (int i = 0; i < valueCount; i++) {
-				values[valueOrder[i]].init();
-			}
+			return;
 		}
-		if (unknownIdValues != null) {
-			for (int i = 0; i < unknownIdValueCount; i++) {
-				unknownIdValues[i].init();
-			}
+
+		ensureValueScratchCapacity(valueCount);
+		ensureRadixScratch();
+
+		for (int i = 0; i < valueCount; i++) {
+			valueOrder[i] = i;
 		}
+
+		LeadingFieldSorters.lsdRadixSort(valueOrder, valueIds, valueCount, scratchValueOrder, scratchValueIds,
+				radixCounts, radixOffsets);
+
+		for (int i = 0; i < valueCount; i++) {
+			values[valueOrder[i]].init();
+		}
+	}
+
+	private void initUnknownIdValues() {
+		for (int i = 0; i < unknownIdValueCount; i++) {
+			unknownIdValues[i].init();
+		}
+	}
+
+	private void copyDeferredValues() {
 		for (int i = 0; i < deferredValueCount; i++) {
-			deferredValues[i].copyInitializedValue();
-		}
+			LmdbValue value = deferredValues[i];
+			LmdbValue initializedValue = deferredInitializedValues[i];
 
-		clearCollectedValues();
-		clearDeduplicationState();
+			synchronized (value) {
+				value.setFromInitializedValue(initializedValue);
+			}
+		}
 	}
 
 	private void materialize(BindingSet bindingSet) {
-		bindingSet.forEach(binding -> {
+		for (Binding binding : bindingSet) {
 			Value value = binding.getValue();
-			if (value instanceof LmdbValue) {
-				((LmdbValue) value).init();
+			if (value instanceof LmdbValue lmdbValue) {
+				lmdbValue.init();
 			}
-		});
+		}
 	}
 
 	private void addValues(BindingSet bindingSet) {
-		if (bindingSet instanceof MutableBindingSet mutableBindingSet) {
-			bindingSet.forEach(binding -> addValue(binding, mutableBindingSet));
-		} else {
-			bindingSet.forEach(binding -> addValue(binding, null));
+		MutableBindingSet mutableBindingSet = bindingSet instanceof MutableBindingSet
+				? (MutableBindingSet) bindingSet
+				: null;
+
+		for (Binding binding : bindingSet) {
+			addValue(binding, mutableBindingSet);
 		}
 	}
 
 	private void addValue(Binding binding, MutableBindingSet mutableBindingSet) {
 		Value value = binding.getValue();
-		if (value instanceof LmdbValue lmdbValue) {
-			long internalId = lmdbValue.getInternalID();
-			if (internalId == LmdbValue.UNKNOWN_ID) {
-				addIdentityValue(lmdbValue);
-				return;
-			}
+		if (!(value instanceof LmdbValue lmdbValue)) {
+			return;
+		}
 
+		long internalId = lmdbValue.getInternalID();
+		if (internalId == LmdbValue.UNKNOWN_ID) {
+			addIdentityValue(lmdbValue);
+			return;
+		}
+
+		LmdbValue cachedValue = addKnownIdValue(lmdbValue, internalId);
+		if (cachedValue == null || cachedValue == lmdbValue) {
+			return;
+		}
+
+		if (mutableBindingSet != null) {
+			mutableBindingSet.setBinding(binding.getName(), cachedValue);
+		} else {
+			addDeferredValue(lmdbValue, cachedValue);
+		}
+	}
+
+	private LmdbValue addKnownIdValue(LmdbValue lmdbValue, long internalId) {
+		if (valuesById != null) {
 			LmdbValue cachedValue = valuesById.get(internalId);
 			if (cachedValue == null) {
 				valuesById.put(internalId, lmdbValue);
 				addMaterializationValue(lmdbValue, internalId);
-			} else if (cachedValue == lmdbValue) {
-				return;
-			} else if (mutableBindingSet != null) {
-				mutableBindingSet.setBinding(binding.getName(), cachedValue);
-			} else {
-				addDeferredValue(lmdbValue, cachedValue);
+			}
+			return cachedValue;
+		}
+
+		for (int i = 0; i < valueCount; i++) {
+			if (valueIds[i] == internalId) {
+				return values[i];
 			}
 		}
+
+		addMaterializationValue(lmdbValue, internalId);
+
+		if (valueCount > SMALL_DEDUP_LIMIT) {
+			buildValuesById();
+		}
+
+		return null;
+	}
+
+	private void buildValuesById() {
+		Long2ObjectOpenHashMap<LmdbValue> map = new Long2ObjectOpenHashMap<>(
+				Math.max(INITIAL_COLLECTION_SIZE, valueCount));
+
+		for (int i = 0; i < valueCount; i++) {
+			map.put(valueIds[i], values[i]);
+		}
+
+		valuesById = map;
 	}
 
 	private void addIdentityValue(LmdbValue lmdbValue) {
-		if (identityValues == null) {
-			identityValues = new IdentityHashMap<>();
+		if (identityValues != null) {
+			if (identityValues.add(lmdbValue)) {
+				addUnknownIdValue(lmdbValue);
+			}
+			return;
 		}
-		if (!identityValues.containsKey(lmdbValue)) {
-			identityValues.put(lmdbValue, Boolean.TRUE);
-			addUnknownIdValue(lmdbValue);
+
+		for (int i = 0; i < unknownIdValueCount; i++) {
+			if (unknownIdValues[i] == lmdbValue) {
+				return;
+			}
+		}
+
+		addUnknownIdValue(lmdbValue);
+
+		if (unknownIdValueCount > SMALL_DEDUP_LIMIT) {
+			buildIdentityValues();
 		}
 	}
 
+	private void buildIdentityValues() {
+		ReferenceOpenHashSet<LmdbValue> set = new ReferenceOpenHashSet<>(
+				Math.max(INITIAL_COLLECTION_SIZE, unknownIdValueCount));
+
+		for (int i = 0; i < unknownIdValueCount; i++) {
+			set.add(unknownIdValues[i]);
+		}
+
+		identityValues = set;
+	}
+
 	private void addDeferredValue(LmdbValue lmdbValue, LmdbValue initializedValue) {
-		if (deferredIdentityValues == null) {
-			deferredIdentityValues = new IdentityHashMap<>();
+		if (deferredIdentityValues != null) {
+			if (deferredIdentityValues.add(lmdbValue)) {
+				addDeferredValueUnchecked(lmdbValue, initializedValue);
+			}
+			return;
 		}
-		if (!deferredIdentityValues.containsKey(lmdbValue)) {
-			deferredIdentityValues.put(lmdbValue, Boolean.TRUE);
-			ensureDeferredValueCapacity(deferredValueCount + 1);
-			deferredValues[deferredValueCount] = new DeferredValue(lmdbValue, initializedValue);
-			deferredValueCount++;
+
+		for (int i = 0; i < deferredValueCount; i++) {
+			if (deferredValues[i] == lmdbValue) {
+				return;
+			}
 		}
+
+		addDeferredValueUnchecked(lmdbValue, initializedValue);
+
+		if (deferredValueCount > SMALL_DEDUP_LIMIT) {
+			buildDeferredIdentityValues();
+		}
+	}
+
+	private void buildDeferredIdentityValues() {
+		ReferenceOpenHashSet<LmdbValue> set = new ReferenceOpenHashSet<>(
+				Math.max(INITIAL_COLLECTION_SIZE, deferredValueCount));
+
+		for (int i = 0; i < deferredValueCount; i++) {
+			set.add(deferredValues[i]);
+		}
+
+		deferredIdentityValues = set;
+	}
+
+	private void addDeferredValueUnchecked(LmdbValue lmdbValue, LmdbValue initializedValue) {
+		ensureDeferredValueCapacity(deferredValueCount + 1);
+		deferredValues[deferredValueCount] = lmdbValue;
+		deferredInitializedValues[deferredValueCount] = initializedValue;
+		deferredValueCount++;
 	}
 
 	private void addMaterializationValue(LmdbValue lmdbValue, long internalId) {
 		ensureValueCapacity(valueCount + 1);
+
+		if (valueCount > 0 && internalId < lastValueId) {
+			valueIdsInAscendingOrder = false;
+		}
+		lastValueId = internalId;
+
 		values[valueCount] = lmdbValue;
 		valueIds[valueCount] = internalId;
 		valueCount++;
@@ -246,8 +384,21 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		unknownIdValueCount++;
 	}
 
+	private void ensureBufferCapacity(int capacity) {
+		if (buffer == null || buffer.length != capacity) {
+			buffer = new BindingSet[capacity];
+		}
+	}
+
 	private void ensureValueCapacity(int capacity) {
-		if (values.length < capacity) {
+		if (values == null) {
+			int initialCapacity = Math.max(capacity,
+					Math.max(INITIAL_COLLECTION_SIZE, Math.min(bufferSize, INITIAL_BATCH_SIZE)));
+
+			values = new LmdbValue[initialCapacity];
+			valueIds = new long[initialCapacity];
+			valueOrder = new int[initialCapacity];
+		} else if (values.length < capacity) {
 			int newCapacity = expandedCapacity(values.length, capacity);
 			values = Arrays.copyOf(values, newCapacity);
 			valueIds = Arrays.copyOf(valueIds, newCapacity);
@@ -256,17 +407,26 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private void ensureValueScratchCapacity(int capacity) {
-		if (scratchValueOrder == null || scratchValueOrder.length < capacity) {
-			int currentCapacity = scratchValueOrder == null ? 0 : scratchValueOrder.length;
-			int newCapacity = expandedCapacity(currentCapacity, capacity);
-			scratchValueOrder = new int[newCapacity];
-			scratchValueIds = new long[newCapacity];
+		if (scratchValueOrder == null) {
+			scratchValueOrder = new int[capacity];
+			scratchValueIds = new long[capacity];
+		} else if (scratchValueOrder.length < capacity) {
+			int newCapacity = expandedCapacity(scratchValueOrder.length, capacity);
+			scratchValueOrder = Arrays.copyOf(scratchValueOrder, newCapacity);
+			scratchValueIds = Arrays.copyOf(scratchValueIds, newCapacity);
+		}
+	}
+
+	private void ensureRadixScratch() {
+		if (radixCounts == null) {
+			radixCounts = new int[256];
+			radixOffsets = new int[256];
 		}
 	}
 
 	private void ensureUnknownIdValueCapacity(int capacity) {
 		if (unknownIdValues == null) {
-			unknownIdValues = new LmdbValue[Math.max(8, capacity)];
+			unknownIdValues = new LmdbValue[Math.max(INITIAL_COLLECTION_SIZE, capacity)];
 		} else if (unknownIdValues.length < capacity) {
 			unknownIdValues = Arrays.copyOf(unknownIdValues, expandedCapacity(unknownIdValues.length, capacity));
 		}
@@ -274,9 +434,13 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private void ensureDeferredValueCapacity(int capacity) {
 		if (deferredValues == null) {
-			deferredValues = new DeferredValue[Math.max(8, capacity)];
+			int initialCapacity = Math.max(INITIAL_COLLECTION_SIZE, capacity);
+			deferredValues = new LmdbValue[initialCapacity];
+			deferredInitializedValues = new LmdbValue[initialCapacity];
 		} else if (deferredValues.length < capacity) {
-			deferredValues = Arrays.copyOf(deferredValues, expandedCapacity(deferredValues.length, capacity));
+			int newCapacity = expandedCapacity(deferredValues.length, capacity);
+			deferredValues = Arrays.copyOf(deferredValues, newCapacity);
+			deferredInitializedValues = Arrays.copyOf(deferredInitializedValues, newCapacity);
 		}
 	}
 
@@ -286,9 +450,13 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private void clearBuffer() {
-		Arrays.fill(buffer, 0, bufferSize, null);
+		if (buffer != null && bufferSize > 0) {
+			Arrays.fill(buffer, 0, bufferSize, null);
+		}
+
 		bufferIndex = 0;
 		bufferSize = 0;
+
 		clearCollectedValues();
 		clearDeduplicationState();
 	}
@@ -298,32 +466,33 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			Arrays.fill(values, 0, valueCount, null);
 			valueCount = 0;
 		}
-		if (unknownIdValues != null) {
+
+		if (unknownIdValueCount > 0) {
 			Arrays.fill(unknownIdValues, 0, unknownIdValueCount, null);
 			unknownIdValueCount = 0;
 		}
-		if (deferredValues != null) {
+
+		if (deferredValueCount > 0) {
 			Arrays.fill(deferredValues, 0, deferredValueCount, null);
+			Arrays.fill(deferredInitializedValues, 0, deferredValueCount, null);
+			deferredValueCount = 0;
 		}
-		deferredValueCount = 0;
+
+		valueIdsInAscendingOrder = true;
+		lastValueId = 0;
 	}
 
 	private void clearDeduplicationState() {
 		if (identityValues != null) {
 			identityValues.clear();
 		}
+
 		if (deferredIdentityValues != null) {
 			deferredIdentityValues.clear();
 		}
-		valuesById.clear();
-	}
 
-	private record DeferredValue(LmdbValue value, LmdbValue initializedValue) {
-
-		private void copyInitializedValue() {
-			synchronized (value) {
-				value.setFromInitializedValue(initializedValue);
-			}
+		if (valuesById != null) {
+			valuesById.clear();
 		}
 	}
 }

@@ -103,6 +103,11 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void executeQueryVerifiesExpectedCountBindingForTrainQueryFive() throws Exception {
+		assertThemeQueryCount(Theme.TRAIN, 5);
+	}
+
+	@Test
 	void medicalRecordsQueryNineBenchmarkLifecycleRejectsConditionCodeAnchor() throws Exception {
 		deleteBenchmarkStore();
 

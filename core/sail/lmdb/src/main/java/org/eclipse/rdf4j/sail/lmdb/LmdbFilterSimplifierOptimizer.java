@@ -779,7 +779,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			}
 			Literal literal = (Literal) value;
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
-			if (datatype != guaranteedDatatype || !XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
+			if (datatype != guaranteedDatatype
+					|| datatype == CoreDatatype.XSD.TIME
+					|| !XMLDatatypeUtil.isValidValue(literal.getLabel(), datatype)) {
 				return false;
 			}
 			RdfTermDomain literalGuarantee = RdfTermDomain.classify(literal);

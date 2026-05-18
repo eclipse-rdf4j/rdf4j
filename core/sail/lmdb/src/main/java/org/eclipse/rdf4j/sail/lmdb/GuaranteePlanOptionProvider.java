@@ -1161,6 +1161,9 @@ final class GuaranteePlanOptionProvider {
 				datatype)) {
 			return false;
 		}
+		if (datatype == CoreDatatype.XSD.TIME) {
+			return false;
+		}
 		if (guarantee.singleXsdDatatype() != datatype) {
 			return false;
 		}
