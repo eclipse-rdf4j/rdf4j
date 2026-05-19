@@ -106,6 +106,11 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	@Override
+	public boolean isInitialized() {
+		return initialized;
+	}
+
+	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;

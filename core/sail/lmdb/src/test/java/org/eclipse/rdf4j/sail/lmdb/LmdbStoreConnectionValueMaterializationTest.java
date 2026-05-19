@@ -29,11 +29,14 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbStoreConnectionValueMaterializationTest {
+
+	private static final ValueStoreRevision DEFAULT_REVISION = new ValueStoreRevision.Default(null);
 
 	@Test
 	void materializesBufferedRowsInInternalIdOrderAfterFirstResult(@TempDir File dataDir) {
@@ -107,6 +110,73 @@ class LmdbStoreConnectionValueMaterializationTest {
 
 		assertEquals(1, canonical.initCount);
 		assertEquals(0, duplicate.initCount);
+	}
+
+	@Test
+	void keepsDuplicateIdsFromDifferentRevisionsSeparateInMutableBufferedRows(@TempDir File dataDir) {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue firstRevisionValue = value("first-revision", 10, revision(1), materialized);
+		RecordingLmdbValue secondRevisionValue = value("second-revision", 10, revision(2), materialized);
+
+		BindingSet firstRow = row("value", first);
+		QueryBindingSet firstRevisionRow = row("value", firstRevisionValue);
+		QueryBindingSet secondRevisionRow = row("value", secondRevisionValue);
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(firstRow, firstRevisionRow, secondRevisionRow));
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try (SailConnection connection = store.getConnection();
+				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
+						EmptyBindingSet.getInstance(), false)) {
+			assertSame(firstRow, result.next());
+
+			assertSame(firstRevisionRow, result.next());
+			assertSame(firstRevisionValue, firstRevisionRow.getValue("value"));
+
+			assertSame(secondRevisionRow, result.next());
+			assertSame(secondRevisionValue, secondRevisionRow.getValue("value"));
+			assertFalse(result.hasNext());
+		} finally {
+			store.shutDown();
+		}
+
+		assertEquals(List.of("first", "first-revision", "second-revision"), materialized);
+	}
+
+	@Test
+	void skipsAlreadyInitializedValuesWhenDeduplicatingMutableBufferedRows(@TempDir File dataDir) {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		ValueStoreRevision revision = revision(1);
+		LmdbIRI firstInitialized = new LmdbIRI(revision, "urn:first", 10);
+		LmdbIRI secondInitialized = new LmdbIRI(revision, "urn:second", 10);
+
+		BindingSet firstRow = row("value", first);
+		QueryBindingSet firstInitializedRow = row("value", firstInitialized);
+		QueryBindingSet secondInitializedRow = row("value", secondInitialized);
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(firstRow, firstInitializedRow, secondInitializedRow));
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try (SailConnection connection = store.getConnection();
+				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
+						EmptyBindingSet.getInstance(), false)) {
+			assertSame(firstRow, result.next());
+
+			assertSame(firstInitializedRow, result.next());
+			assertSame(firstInitialized, firstInitializedRow.getValue("value"));
+
+			assertSame(secondInitializedRow, result.next());
+			assertSame(secondInitialized, secondInitializedRow.getValue("value"));
+			assertFalse(result.hasNext());
+		} finally {
+			store.shutDown();
+		}
 	}
 
 	@Test
@@ -238,7 +308,16 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	private static RecordingLmdbValue value(String name, long id, List<String> materialized) {
-		return new RecordingLmdbValue(name, id, materialized);
+		return value(name, id, DEFAULT_REVISION, materialized);
+	}
+
+	private static RecordingLmdbValue value(String name, long id, ValueStoreRevision revision,
+			List<String> materialized) {
+		return new RecordingLmdbValue(name, id, revision, materialized);
+	}
+
+	private static ValueStoreRevision revision(long revisionId) {
+		return new ValueStoreRevision.Default(null);
 	}
 
 	private static QueryBindingSet row(String bindingName, LmdbValue value) {
@@ -265,14 +344,17 @@ class LmdbStoreConnectionValueMaterializationTest {
 
 		private final String name;
 		private final long id;
+		private final ValueStoreRevision revision;
 		private final List<String> materialized;
+		private boolean initialized;
 		private int initCount;
 		private int copyCount;
 		private LmdbValue copiedFrom;
 
-		private RecordingLmdbValue(String name, long id, List<String> materialized) {
+		private RecordingLmdbValue(String name, long id, ValueStoreRevision revision, List<String> materialized) {
 			this.name = name;
 			this.id = id;
+			this.revision = revision;
 			this.materialized = materialized;
 		}
 
@@ -289,12 +371,18 @@ class LmdbStoreConnectionValueMaterializationTest {
 		@Override
 		public void init() {
 			initCount++;
+			initialized = true;
 			materialized.add(name);
 		}
 
 		@Override
+		public boolean isInitialized() {
+			return initialized;
+		}
+
+		@Override
 		public ValueStoreRevision getValueStoreRevision() {
-			return null;
+			return revision;
 		}
 
 		@Override

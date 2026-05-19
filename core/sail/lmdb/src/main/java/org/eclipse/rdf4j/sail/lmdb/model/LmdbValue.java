@@ -36,6 +36,15 @@ public interface LmdbValue extends Value {
 	void init();
 
 	/**
+	 * Checks whether this value already carries its RDF term data.
+	 *
+	 * @return {@code true} when calling {@link #init()} is not needed
+	 */
+	default boolean isInitialized() {
+		return false;
+	}
+
+	/**
 	 * Gets the revision of the value store that created this value. The value's internal ID is only valid when it's
 	 * value store revision is equal to the value store's current revision.
 	 *

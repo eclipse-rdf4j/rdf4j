@@ -161,6 +161,11 @@ public class LmdbIRI implements LmdbResource, IRI {
 	}
 
 	@Override
+	public boolean isInitialized() {
+		return initialized || iriString != null;
+	}
+
+	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
