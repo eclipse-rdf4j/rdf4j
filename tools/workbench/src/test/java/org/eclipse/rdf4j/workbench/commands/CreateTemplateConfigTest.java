@@ -244,6 +244,32 @@ class CreateTemplateConfigTest {
 				"org/eclipse/rdf4j/repository/config")).contains("memory", "native", "sparql");
 	}
 
+	@Test
+	void baseSailTemplatesExposeSlowQueryLoggerFields() throws Exception {
+		for (String templateType : List.of(
+				"lmdb",
+				"memory",
+				"memory-customrule",
+				"memory-lucene",
+				"memory-rdfs",
+				"memory-rdfs-dt",
+				"memory-rdfs-legacy",
+				"memory-rdfs-lucene",
+				"memory-shacl",
+				"native",
+				"native-customrule",
+				"native-lucene",
+				"native-rdfs",
+				"native-rdfs-dt",
+				"native-rdfs-lucene",
+				"native-shacl")) {
+			CreateTemplateConfig template = CreateTemplateConfig.load(templateType);
+			assertThat(field(template, "Slow query log threshold (seconds)")).isNotNull();
+			assertThat(field(template, "Slow query first-result threshold (seconds)")).isNotNull();
+			assertThat(field(template, "Slow query log file")).isNotNull();
+		}
+	}
+
 	private static CreateTemplateConfig parse(String type, String templateText) {
 		return (CreateTemplateConfig) invoke("parse", new Class<?>[] { String.class, String.class }, type,
 				templateText);
