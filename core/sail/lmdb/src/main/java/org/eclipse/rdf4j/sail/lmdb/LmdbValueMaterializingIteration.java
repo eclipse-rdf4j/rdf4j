@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
 import java.util.NoSuchElementException;
-import java.util.Objects;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -23,6 +22,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+
 final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet> {
 
 	static final int INITIAL_BATCH_SIZE = 128;
@@ -30,7 +32,6 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private static final int INITIAL_COLLECTION_SIZE = 8;
 	private static final int SMALL_DEDUP_LIMIT = 16;
-	private static final int INSERTION_SORT_LIMIT = 64;
 	private static final int NO_INDEX = -1;
 
 	private final CloseableIteration<? extends BindingSet> source;
@@ -41,21 +42,30 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private LmdbValue[] values;
 	private long[] valueIds;
 	private ValueStoreRevision[] valueRevisions;
+	private ValueStoreRevision collectedValueRevision;
+	private boolean collectedMultipleValueRevisions;
 
 	private int[] valueOrder;
 	private int[] scratchValueOrder;
 	private long[] scratchValueIds;
 
-	private ValueIndexMap valueIndexesById;
+	private Long2IntOpenHashMap valueIndexesById;
+	private ValueStoreRevision valueIndexesRevision;
 	private boolean usingValueIndexesById;
+	private ValueStoreRevision[] scopedValueIndexRevisions;
+	private Long2IntOpenHashMap[] scopedValueIndexMaps;
+	private int scopedValueIndexCount;
+	private boolean usingScopedValueIndexes;
+	private ValueStoreRevision lastScopedValueIndexRevision;
+	private Long2IntOpenHashMap lastScopedValueIndexMap;
 
 	private LmdbValue[] unknownIdValues;
-	private IdentityValueSet identityValues;
+	private ReferenceOpenHashSet<LmdbValue> identityValues;
 	private boolean usingIdentityValues;
 
 	private LmdbValue[] deferredValues;
 	private int[] deferredInitializedIndexes;
-	private IdentityValueSet deferredIdentityValues;
+	private ReferenceOpenHashSet<LmdbValue> deferredIdentityValues;
 	private boolean usingDeferredIdentityValues;
 
 	private int[] radixCounts;
@@ -70,9 +80,6 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private int deferredValueCount;
 
 	private boolean firstReturned;
-	private boolean valueIdsInAscendingOrder = true;
-	private boolean haveLastValueId;
-	private long lastValueId;
 
 	LmdbValueMaterializingIteration(CloseableIteration<? extends BindingSet> source, int maxBatchSize) {
 		if (maxBatchSize <= 0) {
@@ -175,26 +182,20 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			return;
 		}
 
-		if (valueCount == 1 || valueIdsInAscendingOrder) {
-			for (int i = 0; i < valueCount; i++) {
-				values[i].init();
-			}
+		if (valueCount == 1) {
+			values[0].init();
 			return;
 		}
 
 		ensureValueOrderCapacity(valueCount);
+		ensureRadixSortScratchCapacity(valueCount);
 
 		for (int i = 0; i < valueCount; i++) {
 			valueOrder[i] = i;
 		}
 
-		if (valueCount <= INSERTION_SORT_LIMIT) {
-			insertionSortValueOrder(valueOrder, valueIds, valueCount);
-		} else {
-			ensureRadixSortScratchCapacity(valueCount);
-			LeadingFieldSorters.lsdRadixSort(valueOrder, valueIds, valueCount, scratchValueOrder, scratchValueIds,
-					radixCounts, radixOffsets);
-		}
+		LeadingFieldSorters.lsdRadixSort(valueOrder, valueIds, valueCount, scratchValueOrder, scratchValueIds,
+				radixCounts, radixOffsets);
 
 		for (int i = 0; i < valueCount; i++) {
 			values[valueOrder[i]].init();
@@ -221,10 +222,8 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private void materialize(BindingSet bindingSet) {
 		for (Binding binding : bindingSet) {
 			Value value = binding.getValue();
-			if (value instanceof LmdbValue lmdbValue) {
-				if (!lmdbValue.isInitialized()) {
-					lmdbValue.init();
-				}
+			if (value instanceof LmdbValue lmdbValue && !lmdbValue.isInitialized()) {
+				lmdbValue.init();
 			}
 		}
 	}
@@ -233,7 +232,6 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		MutableBindingSet mutableBindingSet = bindingSet instanceof MutableBindingSet
 				? (MutableBindingSet) bindingSet
 				: null;
-
 		for (Binding binding : bindingSet) {
 			addValue(binding, mutableBindingSet);
 		}
@@ -265,15 +263,29 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private int addKnownIdValue(LmdbValue lmdbValue, long internalId, ValueStoreRevision revision) {
+		if (!canUseInternalId(revision)) {
+			addIdentityValue(lmdbValue);
+			return NO_INDEX;
+		}
+
+		if (usingScopedValueIndexes) {
+			return addKnownIdValueScoped(lmdbValue, internalId, revision);
+		}
+
 		if (usingValueIndexesById) {
-			int cachedIndex = valueIndexesById.get(internalId, revision);
-			if (cachedIndex != NO_INDEX) {
-				return cachedIndex;
+			if (sameRevision(valueIndexesRevision, revision)) {
+				int cachedIndex = valueIndexesById.get(internalId);
+				if (cachedIndex != NO_INDEX) {
+					return cachedIndex;
+				}
+
+				int newIndex = addMaterializationValue(lmdbValue, internalId, revision);
+				valueIndexesById.put(internalId, newIndex);
+				return NO_INDEX;
 			}
 
-			int newIndex = addMaterializationValue(lmdbValue, internalId, revision);
-			valueIndexesById.put(internalId, revision, newIndex);
-			return NO_INDEX;
+			buildScopedValueIndexes();
+			return addKnownIdValueScoped(lmdbValue, internalId, revision);
 		}
 
 		for (int i = 0; i < valueCount; i++) {
@@ -285,25 +297,86 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		addMaterializationValue(lmdbValue, internalId, revision);
 
 		if (valueCount > SMALL_DEDUP_LIMIT) {
-			buildValueIndexesById();
+			if (!collectedMultipleValueRevisions) {
+				buildValueIndexesById(collectedValueRevision);
+			} else {
+				buildScopedValueIndexes();
+			}
 		}
 
 		return NO_INDEX;
 	}
 
-	private void buildValueIndexesById() {
+	private int addKnownIdValueScoped(LmdbValue lmdbValue, long internalId, ValueStoreRevision revision) {
+		Long2IntOpenHashMap indexesById = scopedValueIndexMap(revision);
+		int cachedIndex = indexesById.get(internalId);
+		if (cachedIndex != NO_INDEX) {
+			return cachedIndex;
+		}
+
+		int newIndex = addMaterializationValue(lmdbValue, internalId, revision);
+		indexesById.put(internalId, newIndex);
+		return NO_INDEX;
+	}
+
+	private void buildValueIndexesById(ValueStoreRevision revision) {
 		if (valueIndexesById == null) {
-			valueIndexesById = new ValueIndexMap(valueCount);
+			valueIndexesById = new Long2IntOpenHashMap(Math.max(INITIAL_COLLECTION_SIZE, valueCount));
+			valueIndexesById.defaultReturnValue(NO_INDEX);
 		} else {
 			valueIndexesById.clear();
-			valueIndexesById.ensureCapacity(valueCount);
 		}
 
 		for (int i = 0; i < valueCount; i++) {
-			valueIndexesById.put(valueIds[i], valueRevisions[i], i);
+			valueIndexesById.put(valueIds[i], i);
 		}
 
+		valueIndexesRevision = revision;
 		usingValueIndexesById = true;
+	}
+
+	private void buildScopedValueIndexes() {
+		if (valueIndexesById != null) {
+			valueIndexesById.clear();
+		}
+		valueIndexesRevision = null;
+		usingValueIndexesById = false;
+		clearScopedValueIndexes();
+
+		for (int i = 0; i < valueCount; i++) {
+			scopedValueIndexMap(valueRevisions[i]).put(valueIds[i], i);
+		}
+
+		usingScopedValueIndexes = true;
+	}
+
+	private Long2IntOpenHashMap scopedValueIndexMap(ValueStoreRevision revision) {
+		if (lastScopedValueIndexMap != null && sameRevision(lastScopedValueIndexRevision, revision)) {
+			return lastScopedValueIndexMap;
+		}
+		for (int i = 0; i < scopedValueIndexCount; i++) {
+			if (sameRevision(scopedValueIndexRevisions[i], revision)) {
+				lastScopedValueIndexRevision = scopedValueIndexRevisions[i];
+				lastScopedValueIndexMap = scopedValueIndexMaps[i];
+				return lastScopedValueIndexMap;
+			}
+		}
+
+		ensureScopedValueIndexCapacity(scopedValueIndexCount + 1);
+		Long2IntOpenHashMap map = scopedValueIndexMaps[scopedValueIndexCount];
+		if (map == null) {
+			map = new Long2IntOpenHashMap(INITIAL_COLLECTION_SIZE);
+			map.defaultReturnValue(NO_INDEX);
+			scopedValueIndexMaps[scopedValueIndexCount] = map;
+		} else {
+			map.clear();
+		}
+
+		scopedValueIndexRevisions[scopedValueIndexCount] = revision;
+		scopedValueIndexCount++;
+		lastScopedValueIndexRevision = revision;
+		lastScopedValueIndexMap = map;
+		return map;
 	}
 
 	private void addIdentityValue(LmdbValue lmdbValue) {
@@ -329,10 +402,9 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private void buildIdentityValues() {
 		if (identityValues == null) {
-			identityValues = new IdentityValueSet(unknownIdValueCount);
+			identityValues = new ReferenceOpenHashSet<>(Math.max(INITIAL_COLLECTION_SIZE, unknownIdValueCount));
 		} else {
 			identityValues.clear();
-			identityValues.ensureCapacity(unknownIdValueCount);
 		}
 
 		for (int i = 0; i < unknownIdValueCount; i++) {
@@ -365,10 +437,9 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private void buildDeferredIdentityValues() {
 		if (deferredIdentityValues == null) {
-			deferredIdentityValues = new IdentityValueSet(deferredValueCount);
+			deferredIdentityValues = new ReferenceOpenHashSet<>(Math.max(INITIAL_COLLECTION_SIZE, deferredValueCount));
 		} else {
 			deferredIdentityValues.clear();
-			deferredIdentityValues.ensureCapacity(deferredValueCount);
 		}
 
 		for (int i = 0; i < deferredValueCount; i++) {
@@ -388,11 +459,11 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private int addMaterializationValue(LmdbValue lmdbValue, long internalId, ValueStoreRevision revision) {
 		ensureValueCapacity(valueCount + 1);
 
-		if (haveLastValueId && internalId < lastValueId) {
-			valueIdsInAscendingOrder = false;
+		if (valueCount == 0) {
+			collectedValueRevision = revision;
+		} else if (!collectedMultipleValueRevisions && !sameRevision(collectedValueRevision, revision)) {
+			collectedMultipleValueRevisions = true;
 		}
-		lastValueId = internalId;
-		haveLastValueId = true;
 
 		int index = valueCount;
 		values[index] = lmdbValue;
@@ -435,6 +506,18 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			valueOrder = new int[capacity];
 		} else if (valueOrder.length < capacity) {
 			valueOrder = Arrays.copyOf(valueOrder, expandedCapacity(valueOrder.length, capacity));
+		}
+	}
+
+	private void ensureScopedValueIndexCapacity(int capacity) {
+		if (scopedValueIndexRevisions == null) {
+			int initialCapacity = Math.max(2, capacity);
+			scopedValueIndexRevisions = new ValueStoreRevision[initialCapacity];
+			scopedValueIndexMaps = new Long2IntOpenHashMap[initialCapacity];
+		} else if (scopedValueIndexRevisions.length < capacity) {
+			int newCapacity = expandedCapacity(scopedValueIndexRevisions.length, capacity);
+			scopedValueIndexRevisions = Arrays.copyOf(scopedValueIndexRevisions, newCapacity);
+			scopedValueIndexMaps = Arrays.copyOf(scopedValueIndexMaps, newCapacity);
 		}
 	}
 
@@ -515,297 +598,45 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 			deferredValueCount = 0;
 		}
 
-		valueIdsInAscendingOrder = true;
-		haveLastValueId = false;
-		lastValueId = 0;
+		collectedValueRevision = null;
+		collectedMultipleValueRevisions = false;
 	}
 
 	private void clearDeduplicationState() {
-		if (valueIndexesById != null) {
+		if (usingValueIndexesById) {
 			valueIndexesById.clear();
 			usingValueIndexesById = false;
 		}
+		valueIndexesRevision = null;
+		clearScopedValueIndexes();
 
-		if (identityValues != null) {
+		if (usingIdentityValues) {
 			identityValues.clear();
 			usingIdentityValues = false;
 		}
 
-		if (deferredIdentityValues != null) {
+		if (usingDeferredIdentityValues) {
 			deferredIdentityValues.clear();
 			usingDeferredIdentityValues = false;
 		}
 	}
 
-	private static void insertionSortValueOrder(int[] order, long[] ids, int length) {
-		for (int i = 1; i < length; i++) {
-			int valueIndex = order[i];
-			long valueId = ids[valueIndex];
-			int j = i - 1;
-
-			while (j >= 0 && ids[order[j]] > valueId) {
-				order[j + 1] = order[j];
-				j--;
-			}
-
-			order[j + 1] = valueIndex;
+	private void clearScopedValueIndexes() {
+		for (int i = 0; i < scopedValueIndexCount; i++) {
+			scopedValueIndexMaps[i].clear();
+			scopedValueIndexRevisions[i] = null;
 		}
-	}
-
-	private static int hashCapacityForExpected(int expectedSize) {
-		int needed = Math.max(2, expectedSize + (expectedSize / 3) + 1);
-		int capacity = 1;
-
-		while (capacity < needed && capacity > 0) {
-			capacity <<= 1;
-		}
-
-		return capacity > 0 ? capacity : 1 << 30;
-	}
-
-	private static int maxFill(int capacity) {
-		return capacity - (capacity >>> 2);
-	}
-
-	private static int mix(long value) {
-		value ^= value >>> 33;
-		value *= 0xff51afd7ed558ccdL;
-		value ^= value >>> 33;
-		value *= 0xc4ceb9fe1a85ec53L;
-		value ^= value >>> 33;
-		return (int) value;
-	}
-
-	private static int mix(int value) {
-		value ^= value >>> 16;
-		value *= 0x7feb352d;
-		value ^= value >>> 15;
-		value *= 0x846ca68b;
-		value ^= value >>> 16;
-		return value;
+		scopedValueIndexCount = 0;
+		usingScopedValueIndexes = false;
+		lastScopedValueIndexRevision = null;
+		lastScopedValueIndexMap = null;
 	}
 
 	private static boolean sameRevision(ValueStoreRevision left, ValueStoreRevision right) {
-		return left == right || Objects.equals(left, right);
+		return left == right || left != null && left.equals(right);
 	}
 
-	private static int mixKey(long id, ValueStoreRevision revision) {
-		return mix(id) ^ mix(revision == null ? 0 : revision.hashCode());
-	}
-
-	private static final class ValueIndexMap {
-
-		private long[] keys;
-		private ValueStoreRevision[] revisions;
-		private int[] indexes;
-		private int[] usedSlots;
-		private boolean[] used;
-		private int mask;
-		private int maxFill;
-		private int size;
-		private int usedSlotCount;
-
-		private ValueIndexMap(int expectedSize) {
-			allocate(hashCapacityForExpected(expectedSize));
-		}
-
-		private int get(long key, ValueStoreRevision revision) {
-			int slot = mixKey(key, revision) & mask;
-
-			while (true) {
-				if (!used[slot]) {
-					return NO_INDEX;
-				}
-
-				if (keys[slot] == key && sameRevision(revisions[slot], revision)) {
-					return indexes[slot];
-				}
-
-				slot = (slot + 1) & mask;
-			}
-		}
-
-		private void put(long key, ValueStoreRevision revision, int index) {
-			if (size + 1 > maxFill) {
-				rehash(keys.length << 1);
-			}
-
-			int slot = mixKey(key, revision) & mask;
-
-			while (used[slot]) {
-				slot = (slot + 1) & mask;
-			}
-
-			used[slot] = true;
-			keys[slot] = key;
-			revisions[slot] = revision;
-			indexes[slot] = index;
-			usedSlots[usedSlotCount] = slot;
-			usedSlotCount++;
-			size++;
-		}
-
-		private void ensureCapacity(int expectedSize) {
-			if (expectedSize > maxFill) {
-				rehash(hashCapacityForExpected(expectedSize));
-			}
-		}
-
-		private void clear() {
-			if (size == 0) {
-				return;
-			}
-
-			for (int i = 0; i < usedSlotCount; i++) {
-				int slot = usedSlots[i];
-				used[slot] = false;
-				revisions[slot] = null;
-			}
-
-			usedSlotCount = 0;
-			size = 0;
-		}
-
-		private void allocate(int capacity) {
-			keys = new long[capacity];
-			revisions = new ValueStoreRevision[capacity];
-			indexes = new int[capacity];
-			used = new boolean[capacity];
-			maxFill = maxFill(capacity);
-			usedSlots = new int[maxFill + 1];
-			mask = capacity - 1;
-		}
-
-		private void rehash(int requestedCapacity) {
-			int newCapacity = Math.max(hashCapacityForExpected(size + 1), requestedCapacity);
-
-			long[] oldKeys = keys;
-			ValueStoreRevision[] oldRevisions = revisions;
-			int[] oldIndexes = indexes;
-			int[] oldUsedSlots = usedSlots;
-			int oldUsedSlotCount = usedSlotCount;
-
-			allocate(newCapacity);
-
-			size = 0;
-			usedSlotCount = 0;
-
-			for (int i = 0; i < oldUsedSlotCount; i++) {
-				int oldSlot = oldUsedSlots[i];
-				insertRehashed(oldKeys[oldSlot], oldRevisions[oldSlot], oldIndexes[oldSlot]);
-			}
-		}
-
-		private void insertRehashed(long key, ValueStoreRevision revision, int index) {
-			int slot = mixKey(key, revision) & mask;
-
-			while (used[slot]) {
-				slot = (slot + 1) & mask;
-			}
-
-			used[slot] = true;
-			keys[slot] = key;
-			revisions[slot] = revision;
-			indexes[slot] = index;
-			usedSlots[usedSlotCount] = slot;
-			usedSlotCount++;
-			size++;
-		}
-	}
-
-	private static final class IdentityValueSet {
-
-		private LmdbValue[] table;
-		private int[] usedSlots;
-		private int mask;
-		private int maxFill;
-		private int size;
-		private int usedSlotCount;
-
-		private IdentityValueSet(int expectedSize) {
-			allocate(hashCapacityForExpected(expectedSize));
-		}
-
-		private boolean add(LmdbValue value) {
-			if (size + 1 > maxFill) {
-				rehash(table.length << 1);
-			}
-
-			int slot = mix(System.identityHashCode(value)) & mask;
-
-			while (true) {
-				LmdbValue currentValue = table[slot];
-
-				if (currentValue == null) {
-					table[slot] = value;
-					usedSlots[usedSlotCount] = slot;
-					usedSlotCount++;
-					size++;
-					return true;
-				}
-
-				if (currentValue == value) {
-					return false;
-				}
-
-				slot = (slot + 1) & mask;
-			}
-		}
-
-		private void ensureCapacity(int expectedSize) {
-			if (expectedSize > maxFill) {
-				rehash(hashCapacityForExpected(expectedSize));
-			}
-		}
-
-		private void clear() {
-			if (size == 0) {
-				return;
-			}
-
-			for (int i = 0; i < usedSlotCount; i++) {
-				table[usedSlots[i]] = null;
-			}
-
-			usedSlotCount = 0;
-			size = 0;
-		}
-
-		private void allocate(int capacity) {
-			table = new LmdbValue[capacity];
-			maxFill = maxFill(capacity);
-			usedSlots = new int[maxFill + 1];
-			mask = capacity - 1;
-		}
-
-		private void rehash(int requestedCapacity) {
-			int newCapacity = Math.max(hashCapacityForExpected(size + 1), requestedCapacity);
-
-			LmdbValue[] oldTable = table;
-			int[] oldUsedSlots = usedSlots;
-			int oldUsedSlotCount = usedSlotCount;
-
-			allocate(newCapacity);
-
-			size = 0;
-			usedSlotCount = 0;
-
-			for (int i = 0; i < oldUsedSlotCount; i++) {
-				insertRehashed(oldTable[oldUsedSlots[i]]);
-			}
-		}
-
-		private void insertRehashed(LmdbValue value) {
-			int slot = mix(System.identityHashCode(value)) & mask;
-
-			while (table[slot] != null) {
-				slot = (slot + 1) & mask;
-			}
-
-			table[slot] = value;
-			usedSlots[usedSlotCount] = slot;
-			usedSlotCount++;
-			size++;
-		}
+	private static boolean canUseInternalId(ValueStoreRevision revision) {
+		return revision != null && revision.getValueStore() != null;
 	}
 }

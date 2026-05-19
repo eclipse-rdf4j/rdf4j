@@ -16,11 +16,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 
-final class LmdbEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
+final class LmdbEvaluationStrategyFactory extends DefaultEvaluationStrategyFactory {
 
 	LmdbEvaluationStrategyFactory(FederatedServiceResolver resolver) {
 		super(resolver);
@@ -29,13 +31,13 @@ final class LmdbEvaluationStrategyFactory extends StrictEvaluationStrategyFactor
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, dataset,
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, dataset,
 				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), evaluationStatistics,
 				isTrackResultSize());
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()
 				.orElseGet(() -> new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics));
 		strategy.setOptimizerPipeline(pipeline);
-		strategy.setCollectionFactory(collectionFactorySupplier);
+		strategy.setCollectionFactory(getCollectionFactorySupplier());
 		return strategy;
 	}
 }

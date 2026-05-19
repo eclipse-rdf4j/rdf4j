@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.Mockito.mock;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -36,7 +37,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbStoreConnectionValueMaterializationTest {
 
-	private static final ValueStoreRevision DEFAULT_REVISION = new ValueStoreRevision.Default(null);
+	private static final ValueStore DEFAULT_VALUE_STORE = mock(ValueStore.class);
+	private static final ValueStoreRevision DEFAULT_REVISION = new ValueStoreRevision.Default(DEFAULT_VALUE_STORE);
 
 	@Test
 	void materializesBufferedRowsInInternalIdOrderAfterFirstResult(@TempDir File dataDir) {
@@ -144,6 +146,40 @@ class LmdbStoreConnectionValueMaterializationTest {
 		}
 
 		assertEquals(List.of("first", "first-revision", "second-revision"), materialized);
+	}
+
+	@Test
+	void keepsKnownIdsWithNullRevisionsSeparateInMutableBufferedRows(@TempDir File dataDir) {
+		List<String> materialized = new ArrayList<>();
+		RecordingLmdbValue first = value("first", 0, materialized);
+		RecordingLmdbValue firstNullRevisionValue = value("first-null-revision", 10, null, materialized);
+		RecordingLmdbValue secondNullRevisionValue = value("second-null-revision", 10, null, materialized);
+
+		BindingSet firstRow = row("value", first);
+		QueryBindingSet firstNullRevisionRow = row("value", firstNullRevisionValue);
+		QueryBindingSet secondNullRevisionRow = row("value", secondNullRevisionValue);
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(firstRow, firstNullRevisionRow, secondNullRevisionRow));
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.init();
+		try (SailConnection connection = store.getConnection();
+				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
+						EmptyBindingSet.getInstance(), false)) {
+			assertSame(firstRow, result.next());
+
+			assertSame(firstNullRevisionRow, result.next());
+			assertSame(firstNullRevisionValue, firstNullRevisionRow.getValue("value"));
+
+			assertSame(secondNullRevisionRow, result.next());
+			assertSame(secondNullRevisionValue, secondNullRevisionRow.getValue("value"));
+			assertFalse(result.hasNext());
+		} finally {
+			store.shutDown();
+		}
+
+		assertEquals(List.of("first", "first-null-revision", "second-null-revision"), materialized);
 	}
 
 	@Test
@@ -317,7 +353,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	private static ValueStoreRevision revision(long revisionId) {
-		return new ValueStoreRevision.Default(null);
+		return new ValueStoreRevision.Default(mock(ValueStore.class));
 	}
 
 	private static QueryBindingSet row(String bindingName, LmdbValue value) {

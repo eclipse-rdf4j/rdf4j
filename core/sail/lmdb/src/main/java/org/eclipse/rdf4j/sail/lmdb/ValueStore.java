@@ -605,8 +605,9 @@ class ValueStore extends AbstractValueFactory {
 			keyData.mv_data(id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
-				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-				valueData.mv_data().get(valueBytes);
+				ByteBuffer data = valueData.mv_data();
+				byte[] valueBytes = new byte[data.remaining()];
+				data.get(valueBytes);
 				return valueBytes;
 			}
 			return null;
