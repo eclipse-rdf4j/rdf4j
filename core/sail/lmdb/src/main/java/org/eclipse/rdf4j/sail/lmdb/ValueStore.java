@@ -16,6 +16,10 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.MemoryUtil.memGetAddress;
+import static org.lwjgl.system.MemoryUtil.memGetByte;
+import static org.lwjgl.system.MemoryUtil.memUTF8;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
@@ -129,6 +133,8 @@ class ValueStore extends AbstractValueFactory {
 	private static final int MAX_KEY_SIZE = 16;
 
 	private static final int STRING_DECODE_SCRATCH_BYTES = 4096;
+
+	private static final int BATCH_CURSOR_SEQUENTIAL_SCAN_LIMIT = 16;
 
 	private static final ThreadLocal<byte[]> STRING_DECODE_SCRATCH = ThreadLocal
 			.withInitial(() -> new byte[STRING_DECODE_SCRATCH_BYTES]);
@@ -855,23 +861,16 @@ class ValueStore extends AbstractValueFactory {
 			int[] order, int count) {
 		try {
 			readTransaction(env, (stack, txn) -> {
-				MDBVal keyData = MDBVal.calloc(stack);
-				MDBVal valueData = MDBVal.calloc(stack);
-				ByteBuffer keyBuffer = idBuffer(stack);
-				LmdbValue.Resolver resolver = (id, value) -> {
-					try {
-						return resolveValueInTxn(expectedRevision, resolvedRevision, id, value, txn, keyData, valueData,
-								keyBuffer);
-					} catch (IOException e) {
-						throw new SailException(e);
+				BatchValueResolver resolver = new BatchValueResolver(expectedRevision, resolvedRevision, stack, txn);
+				try {
+					for (int i = 0; i < count; i++) {
+						LmdbValue value = values[order[i]];
+						if (!value.isInitialized()) {
+							value.init(resolver);
+						}
 					}
-				};
-
-				for (int i = 0; i < count; i++) {
-					LmdbValue value = values[order[i]];
-					if (!value.isInitialized()) {
-						value.init(resolver);
-					}
+				} finally {
+					resolver.closeCursor();
 				}
 				return null;
 			});
@@ -881,7 +880,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private boolean resolveValueInTxn(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision, long id,
-			LmdbValue value, long txn, MDBVal keyData, MDBVal valueData, ByteBuffer keyBuffer) throws IOException {
+			LmdbValue value, BatchValueResolver resolver) throws IOException {
 		// unpack inlined values if possible
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = Values.unpackLiteral(id, this);
@@ -902,13 +901,14 @@ class ValueStore extends AbstractValueFactory {
 			return true;
 		}
 
-		keyBuffer.clear();
-		keyData.mv_data(id2data(keyBuffer, id).flip());
-		if (mdb_get(txn, dbi, keyData, valueData) != MDB_SUCCESS) {
+		if (!resolver.positionAtOrAfter(id)) {
+			return false;
+		}
+		if (!resolver.currentKeyMatchesTarget()) {
 			return false;
 		}
 
-		data2value(id, valueData.mv_data(), value);
+		data2value(id, resolver.valueDataAddress(), resolver.valueDataLength(), value);
 		if (resolvedRevision != null) {
 			value.setInternalID(id, resolvedRevision);
 		}
@@ -919,6 +919,151 @@ class ValueStore extends AbstractValueFactory {
 	private boolean cachedValueMatchesRevision(LmdbValue cached, ValueStoreRevision expectedRevision) {
 		ValueStoreRevision cachedRevision = cached.getValueStoreRevision();
 		return cachedRevision != null && cachedRevision.equals(expectedRevision);
+	}
+
+	void onBatchResolveCursorOpened() {
+	}
+
+	void onBatchResolveCursorSeek() {
+	}
+
+	void onBatchResolveCursorNext() {
+	}
+
+	void onBatchResolveKeyBufferWrapped() {
+	}
+
+	void onBatchResolveValueBufferWrapped() {
+	}
+
+	void onBatchResolveDataBufferSliced() {
+	}
+
+	private final class BatchValueResolver implements LmdbValue.Resolver {
+
+		private final ValueStoreRevision expectedRevision;
+		private final ValueStoreRevision resolvedRevision;
+		private final MemoryStack stack;
+		private final long txn;
+		private final MDBVal keyData;
+		private final MDBVal valueData;
+		private final ByteBuffer keyBuffer;
+		private long cursor;
+		private boolean cursorPositioned;
+		private ByteBuffer targetKey;
+		private long targetKeyAddress;
+		private int targetKeyLength;
+		private long currentKeyAddress;
+		private int currentKeyLength;
+		private long valueDataAddress;
+		private int valueDataLength;
+
+		private BatchValueResolver(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision,
+				MemoryStack stack, long txn) {
+			this.expectedRevision = expectedRevision;
+			this.resolvedRevision = resolvedRevision;
+			this.stack = stack;
+			this.txn = txn;
+			keyData = MDBVal.calloc(stack);
+			valueData = MDBVal.calloc(stack);
+			keyBuffer = idBuffer(stack);
+		}
+
+		@Override
+		public boolean resolve(long id, LmdbValue value) {
+			try {
+				return resolveValueInTxn(expectedRevision, resolvedRevision, id, value, this);
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
+		}
+
+		private boolean positionAtOrAfter(long id) throws IOException {
+			ensureCursor();
+			keyBuffer.clear();
+			targetKey = id2data(keyBuffer, id).flip();
+			targetKeyAddress = memAddress(targetKey);
+			targetKeyLength = targetKey.remaining();
+
+			if (!cursorPositioned) {
+				return seek();
+			}
+
+			for (int i = 0; i < BATCH_CURSOR_SEQUENTIAL_SCAN_LIMIT; i++) {
+				int comparison = compareCurrentKeyToTarget();
+				if (comparison >= 0) {
+					return true;
+				}
+				onBatchResolveCursorNext();
+				int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+				if (rc != MDB_SUCCESS) {
+					cursorPositioned = false;
+					return false;
+				}
+				updateCursorData();
+			}
+
+			return seek();
+		}
+
+		private void ensureCursor() throws IOException {
+			if (cursor == 0) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+				onBatchResolveCursorOpened();
+			}
+		}
+
+		private boolean seek() throws IOException {
+			keyData.mv_data(targetKey);
+			onBatchResolveCursorSeek();
+			int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+			cursorPositioned = rc == MDB_SUCCESS;
+			if (cursorPositioned) {
+				updateCursorData();
+			}
+			return cursorPositioned;
+		}
+
+		private void updateCursorData() {
+			long keyDataAddress = keyData.address();
+			currentKeyAddress = memGetAddress(keyDataAddress + MDBVal.MV_DATA);
+			currentKeyLength = Math.toIntExact(keyData.mv_size());
+			long valueDataAddress = valueData.address();
+			this.valueDataAddress = memGetAddress(valueDataAddress + MDBVal.MV_DATA);
+			valueDataLength = Math.toIntExact(valueData.mv_size());
+		}
+
+		private boolean currentKeyMatchesTarget() {
+			return compareCurrentKeyToTarget() == 0;
+		}
+
+		private int compareCurrentKeyToTarget() {
+			int length = Math.min(currentKeyLength, targetKeyLength);
+			for (int i = 0; i < length; i++) {
+				int result = (memGetByte(currentKeyAddress + i) & 0xff) - (memGetByte(targetKeyAddress + i) & 0xff);
+				if (result != 0) {
+					return result;
+				}
+			}
+			return currentKeyLength - targetKeyLength;
+		}
+
+		private long valueDataAddress() {
+			return valueDataAddress;
+		}
+
+		private int valueDataLength() {
+			return valueDataLength;
+		}
+
+		private void closeCursor() {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+				cursor = 0;
+			}
+		}
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
@@ -2095,6 +2240,16 @@ class ValueStore extends AbstractValueFactory {
 		};
 	}
 
+	private LmdbValue data2value(long id, long dataAddress, int dataLength, LmdbValue value) throws IOException {
+		byte type = memGetByte(dataAddress);
+		return switch (type) {
+		case URI_VALUE -> data2uri(id, dataAddress, dataLength, (LmdbIRI) value);
+		case BNODE_VALUE -> data2bnode(id, dataAddress, dataLength, (LmdbBNode) value);
+		case LITERAL_VALUE -> data2literal(id, dataAddress, dataLength, (LmdbLiteral) value);
+		default -> throw new IllegalArgumentException("Invalid type " + type + " for value with id " + id);
+		};
+	}
+
 	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
@@ -2129,6 +2284,22 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private LmdbIRI data2uri(long id, long dataAddress, int dataLength, LmdbIRI value) throws IOException {
+		int position = 1;
+		long nsID = readUnsignedFromMemory(dataAddress, position);
+		position += varintLengthFromMemory(dataAddress, position);
+		String namespace = getNamespace(nsID);
+		String localName = stringFromMemory(dataAddress, position, dataLength - position);
+
+		if (value == null) {
+			return new LmdbIRI(revision, namespace, localName, id);
+		} else {
+			value.setNamespaceAndIri(namespace, localName);
+//			value.setIRIString(namespace + localName);
+			return value;
+		}
+	}
+
 	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		if (value == null) {
@@ -2143,6 +2314,16 @@ class ValueStore extends AbstractValueFactory {
 		ByteBuffer bb = data.slice();
 		bb.get();
 		String nodeID = stringFromBuffer(bb, bb.position(), bb.remaining());
+		if (value == null) {
+			return new LmdbBNode(revision, nodeID, id);
+		} else {
+			value.setID(nodeID);
+			return value;
+		}
+	}
+
+	private LmdbBNode data2bnode(long id, long dataAddress, int dataLength, LmdbBNode value) {
+		String nodeID = stringFromMemory(dataAddress, 1, dataLength - 1);
 		if (value == null) {
 			return new LmdbBNode(revision, nodeID, id);
 		} else {
@@ -2178,6 +2359,56 @@ class ValueStore extends AbstractValueFactory {
 		// Get label
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
 				StandardCharsets.UTF_8);
+
+		if (value == null) {
+			if (lang != null) {
+				return new LmdbLiteral(revision, label, lang, id);
+			} else if (datatype != null) {
+				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
+			} else {
+				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
+			}
+		} else {
+			value.setLabel(label);
+			if (lang != null) {
+				value.setLanguage(lang);
+				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+			} else if (datatype != null) {
+				value.setDatatype(datatype, coreDatatype);
+			} else {
+				value.setDatatype(CoreDatatype.XSD.STRING);
+			}
+			return value;
+		}
+	}
+
+	private LmdbLiteral data2literal(long id, long dataAddress, int dataLength, LmdbLiteral value) throws IOException {
+		int position = 1;
+		long datatypeID = readUnsignedFromMemory(dataAddress, position);
+		position += varintLengthFromMemory(dataAddress, position);
+		IRI datatype = null;
+		CoreDatatype coreDatatype = null;
+		// literal without a datatype
+		if (datatypeID > 0) {
+			datatype = getDatatype(datatypeID);
+			coreDatatype = cachedDatatypeCoreDatatype(datatypeID);
+			if (datatype != null && coreDatatype == null) {
+				coreDatatype = CoreDatatype.from(datatype);
+			}
+		}
+
+		// Get language tag
+		String lang = null;
+		int langLength = memGetByte(dataAddress + position) & 0xFF;
+		position++;
+		int langPosition = position;
+		if (langLength > 0) {
+			lang = stringFromMemory(dataAddress, langPosition, langLength);
+		}
+
+		// Get label
+		int labelPosition = langPosition + langLength;
+		String label = stringFromMemory(dataAddress, labelPosition, dataLength - labelPosition);
 
 		if (value == null) {
 			if (lang != null) {
@@ -2264,6 +2495,39 @@ class ValueStore extends AbstractValueFactory {
 		copy.position(position);
 		copy.get(bytes, 0, length);
 		return new String(bytes, 0, length, StandardCharsets.UTF_8);
+	}
+
+	private String stringFromMemory(long address, int position, int length) {
+		if (length == 0) {
+			return "";
+		}
+		return memUTF8(address + position, length);
+	}
+
+	private int varintLengthFromMemory(long address, int position) {
+		return Varint.firstToLength(memGetByte(address + position));
+	}
+
+	private long readUnsignedFromMemory(long address, int position) {
+		int a0 = memGetByte(address + position) & 0xFF;
+
+		if (a0 <= 240) {
+			return a0;
+		} else if (a0 <= 248) {
+			int a1 = memGetByte(address + position + 1) & 0xFF;
+			return 240 + 256L * (a0 - 241) + a1;
+		} else if (a0 == 249) {
+			int a1 = memGetByte(address + position + 1) & 0xFF;
+			int a2 = memGetByte(address + position + 2) & 0xFF;
+			return 2288 + 256L * a1 + a2;
+		} else {
+			int bytes = a0 - 250 + 3;
+			long result = 0;
+			for (int i = 0; i < bytes; i++) {
+				result = (result << 8) | (memGetByte(address + position + 1 + i) & 0xFFL);
+			}
+			return result;
+		}
 	}
 
 	private LmdbIRI getDatatype(long datatypeID) throws IOException {

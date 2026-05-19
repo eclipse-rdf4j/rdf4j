@@ -174,6 +174,95 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void batchResolveValuesUsesCursorWalkForSortedExternalIds() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "cursor-values"),
+				new LmdbStoreConfig());
+		try {
+			LmdbBNode first = countingValueStore.createBNode("cursor-first");
+			LmdbBNode second = countingValueStore.createBNode("cursor-second");
+			LmdbBNode third = countingValueStore.createBNode("cursor-third");
+			countingValueStore.startTransaction(true);
+			long firstId = countingValueStore.storeValue(first);
+			long secondId = countingValueStore.storeValue(second);
+			long thirdId = countingValueStore.storeValue(third);
+			countingValueStore.commit();
+
+			LmdbValue lazyFirst = countingValueStore.getLazyValue(firstId);
+			LmdbValue lazySecond = countingValueStore.getLazyValue(secondId);
+			LmdbValue lazyThird = countingValueStore.getLazyValue(thirdId);
+			assertFalse(isInitialized(lazyFirst));
+			assertFalse(isInitialized(lazySecond));
+			assertFalse(isInitialized(lazyThird));
+
+			LmdbValue[] lazyValues = { lazyThird, lazyFirst, lazySecond };
+			int[] sortedOrder = { 1, 2, 0 };
+
+			countingValueStore.readTransactionCount = 0;
+			countingValueStore.batchCursorOpenCount = 0;
+			countingValueStore.batchCursorSeekCount = 0;
+			countingValueStore.batchCursorNextCount = 0;
+			lazyFirst.getValueStoreRevision().resolveValues(lazyValues, sortedOrder, lazyValues.length);
+
+			assertTrue(isInitialized(lazyFirst));
+			assertTrue(isInitialized(lazySecond));
+			assertTrue(isInitialized(lazyThird));
+			assertEquals("batch resolve should still use one read transaction", 1,
+					countingValueStore.readTransactionCount);
+			assertEquals("sorted batch should open one cursor", 1, countingValueStore.batchCursorOpenCount);
+			assertEquals("dense sorted IDs should seek once, then walk", 1, countingValueStore.batchCursorSeekCount);
+			assertEquals("dense sorted IDs should walk the cursor for remaining values", 2,
+					countingValueStore.batchCursorNextCount);
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void batchResolveValuesAvoidsByteBufferWrappersForCursorData() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "pointer-values"),
+				new LmdbStoreConfig().setInlineLiterals(false));
+		try {
+			LmdbIRI iri = countingValueStore.createIRI("urn:batch:", "pointer-iri");
+			LmdbBNode bnode = countingValueStore.createBNode("pointer-bnode");
+			LmdbLiteral literal = countingValueStore.createLiteral("pointer-label-" + "x".repeat(512), "en");
+
+			countingValueStore.startTransaction(true);
+			long iriId = countingValueStore.storeValue(iri);
+			long bnodeId = countingValueStore.storeValue(bnode);
+			long literalId = countingValueStore.storeValue(literal);
+			countingValueStore.commit();
+
+			LmdbValue lazyIri = countingValueStore.getLazyValue(iriId);
+			LmdbValue lazyBNode = countingValueStore.getLazyValue(bnodeId);
+			LmdbValue lazyLiteral = countingValueStore.getLazyValue(literalId);
+			assertFalse(isInitialized(lazyIri));
+			assertFalse(isInitialized(lazyBNode));
+			assertFalse(isInitialized(lazyLiteral));
+
+			LmdbValue[] lazyValues = { lazyLiteral, lazyIri, lazyBNode };
+			long[] ids = { literalId, iriId, bnodeId };
+			int[] sortedOrder = sortedOrder(ids);
+
+			countingValueStore.batchKeyBufferWrapCount = 0;
+			countingValueStore.batchValueBufferWrapCount = 0;
+			countingValueStore.batchDataBufferSliceCount = 0;
+			lazyIri.getValueStoreRevision().resolveValues(lazyValues, sortedOrder, lazyValues.length);
+
+			assertEquals(iri, lazyIri);
+			assertEquals(bnode, lazyBNode);
+			assertEquals(literal, lazyLiteral);
+			assertEquals("batch cursor key comparisons should not allocate ByteBuffer wrappers", 0,
+					countingValueStore.batchKeyBufferWrapCount);
+			assertEquals("batch value decode should not allocate MDBVal ByteBuffer wrappers", 0,
+					countingValueStore.batchValueBufferWrapCount);
+			assertEquals("batch value decode should not slice ByteBuffers", 0,
+					countingValueStore.batchDataBufferSliceCount);
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
 	public void batchResolveLazyValuesUnwrapsRevisionAfterResolve() throws Exception {
 		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "unwrap-values"),
 				new LmdbStoreConfig());
@@ -641,6 +730,12 @@ public class ValueStoreTest {
 	private static final class CountingValueStore extends ValueStore {
 
 		private int readTransactionCount;
+		private int batchCursorOpenCount;
+		private int batchCursorSeekCount;
+		private int batchCursorNextCount;
+		private int batchKeyBufferWrapCount;
+		private int batchValueBufferWrapCount;
+		private int batchDataBufferSliceCount;
 
 		private CountingValueStore(File dir, LmdbStoreConfig config) throws IOException {
 			super(dir, config);
@@ -651,6 +746,51 @@ public class ValueStoreTest {
 			readTransactionCount++;
 			return super.readTransaction(env, transaction);
 		}
+
+		void onBatchResolveCursorOpened() {
+			batchCursorOpenCount++;
+		}
+
+		void onBatchResolveCursorSeek() {
+			batchCursorSeekCount++;
+		}
+
+		void onBatchResolveCursorNext() {
+			batchCursorNextCount++;
+		}
+
+		@Override
+		void onBatchResolveKeyBufferWrapped() {
+			batchKeyBufferWrapCount++;
+		}
+
+		@Override
+		void onBatchResolveValueBufferWrapped() {
+			batchValueBufferWrapCount++;
+		}
+
+		@Override
+		void onBatchResolveDataBufferSliced() {
+			batchDataBufferSliceCount++;
+		}
+	}
+
+	private int[] sortedOrder(long[] ids) {
+		int[] order = new int[ids.length];
+		for (int i = 0; i < ids.length; i++) {
+			order[i] = i;
+		}
+		for (int i = 1; i < order.length; i++) {
+			int index = order[i];
+			long id = ids[index];
+			int j = i - 1;
+			while (j >= 0 && ids[order[j]] > id) {
+				order[j + 1] = order[j];
+				j--;
+			}
+			order[j + 1] = index;
+		}
+		return order;
 	}
 
 	private void reopenValueStore(LmdbStoreConfig config) throws Exception {
