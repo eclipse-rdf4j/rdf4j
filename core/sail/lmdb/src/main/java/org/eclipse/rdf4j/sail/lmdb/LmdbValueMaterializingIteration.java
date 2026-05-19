@@ -197,6 +197,11 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		LeadingFieldSorters.lsdRadixSort(valueOrder, valueIds, valueCount, scratchValueOrder, scratchValueIds,
 				radixCounts, radixOffsets);
 
+		if (!collectedMultipleValueRevisions && collectedValueRevision != null) {
+			collectedValueRevision.resolveValues(values, valueOrder, valueCount);
+			return;
+		}
+
 		for (int i = 0; i < valueCount; i++) {
 			values[valueOrder[i]].init();
 		}

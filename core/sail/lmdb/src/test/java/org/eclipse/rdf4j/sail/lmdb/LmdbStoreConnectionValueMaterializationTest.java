@@ -17,8 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 
 import java.io.File;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -38,7 +40,7 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbStoreConnectionValueMaterializationTest {
 
 	private static final ValueStore DEFAULT_VALUE_STORE = mock(ValueStore.class);
-	private static final ValueStoreRevision DEFAULT_REVISION = new ValueStoreRevision.Default(DEFAULT_VALUE_STORE);
+	private static final ValueStoreRevision DEFAULT_REVISION = new InitOnResolveRevision(1, DEFAULT_VALUE_STORE);
 
 	@Test
 	void materializesBufferedRowsInInternalIdOrderAfterFirstResult(@TempDir File dataDir) {
@@ -75,6 +77,36 @@ class LmdbStoreConnectionValueMaterializationTest {
 		}
 
 		assertEquals(1, shared10.initCount);
+	}
+
+	@Test
+	void usesRevisionBatchResolverForSingleRevisionKnownIds() {
+		List<String> materialized = new ArrayList<>();
+		RecordingRevision revision = new RecordingRevision(1);
+		RecordingLmdbValue first = value("first", 0, revision, materialized);
+		RecordingLmdbValue id30 = value("id30", 30, revision, materialized);
+		RecordingLmdbValue id10 = value("id10", 10, revision, materialized);
+		RecordingLmdbValue id20 = value("id20", 20, revision, materialized);
+
+		BindingSet firstRow = row("value", first);
+		BindingSet secondRow = row("value", id30);
+		BindingSet thirdRow = row("value", id10);
+		BindingSet fourthRow = row("value", id20);
+
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, secondRow, thirdRow, fourthRow), 16)) {
+			assertSame(firstRow, result.next());
+			assertEquals(List.of("first"), materialized);
+
+			assertSame(secondRow, result.next());
+			assertEquals(List.of("first", "id10", "id20", "id30"), materialized);
+			assertSame(thirdRow, result.next());
+			assertSame(fourthRow, result.next());
+			assertFalse(result.hasNext());
+		}
+
+		assertEquals(1, revision.resolveValuesCount);
+		assertEquals(List.of(10L, 20L, 30L), revision.resolvedIds);
 	}
 
 	@Test
@@ -353,7 +385,106 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	private static ValueStoreRevision revision(long revisionId) {
-		return new ValueStoreRevision.Default(mock(ValueStore.class));
+		return new InitOnResolveRevision(revisionId, mock(ValueStore.class));
+	}
+
+	private static CloseableIteration<BindingSet> bindingSets(BindingSet... rows) {
+		return new CloseableIteration<>() {
+			private int index;
+			private boolean closed;
+
+			@Override
+			public boolean hasNext() {
+				return !closed && index < rows.length;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				return rows[index++];
+			}
+
+			@Override
+			public void close() {
+				closed = true;
+			}
+		};
+	}
+
+	private static final class RecordingRevision extends ValueStoreRevision.Base {
+
+		private final long revisionId;
+		private final ValueStore valueStore = mock(ValueStore.class);
+		private final List<Long> resolvedIds = new ArrayList<>();
+		private int resolveValuesCount;
+
+		private RecordingRevision(long revisionId) {
+			this.revisionId = revisionId;
+		}
+
+		@Override
+		public long getRevisionId() {
+			return revisionId;
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return valueStore;
+		}
+
+		@Override
+		public boolean resolveValue(long id, LmdbValue value) {
+			value.init();
+			return true;
+		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			resolveValuesCount++;
+			for (int i = 0; i < count; i++) {
+				LmdbValue value = values[order[i]];
+				resolvedIds.add(value.getInternalID());
+				value.init();
+			}
+		}
+	}
+
+	private static final class InitOnResolveRevision extends ValueStoreRevision.Base implements Serializable {
+
+		private static final long serialVersionUID = 1L;
+
+		private final long revisionId;
+		private final transient ValueStore valueStore;
+
+		private InitOnResolveRevision(long revisionId, ValueStore valueStore) {
+			this.revisionId = revisionId;
+			this.valueStore = valueStore;
+		}
+
+		@Override
+		public long getRevisionId() {
+			return revisionId;
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return valueStore;
+		}
+
+		@Override
+		public boolean resolveValue(long id, LmdbValue value) {
+			value.init();
+			return true;
+		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			for (int i = 0; i < count; i++) {
+				values[order[i]].init();
+			}
+		}
 	}
 
 	private static QueryBindingSet row(String bindingName, LmdbValue value) {

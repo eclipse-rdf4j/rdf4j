@@ -128,6 +128,11 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private static final int MAX_KEY_SIZE = 16;
 
+	private static final int STRING_DECODE_SCRATCH_BYTES = 4096;
+
+	private static final ThreadLocal<byte[]> STRING_DECODE_SCRATCH = ThreadLocal
+			.withInitial(() -> new byte[STRING_DECODE_SCRATCH_BYTES]);
+
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
 
 	static {
@@ -828,7 +833,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 		// Try to get from cache
 		LmdbValue cached = cachedValue(id);
-		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
+		if (cached != null && cachedValueMatchesRevision(cached, getRevision())) {
 			value.setFromInitializedValue(cached);
 			return true;
 		}
@@ -844,6 +849,76 @@ class ValueStore extends AbstractValueFactory {
 			throw new SailException(e);
 		}
 		return false;
+	}
+
+	void resolveValues(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision, LmdbValue[] values,
+			int[] order, int count) {
+		try {
+			readTransaction(env, (stack, txn) -> {
+				MDBVal keyData = MDBVal.calloc(stack);
+				MDBVal valueData = MDBVal.calloc(stack);
+				ByteBuffer keyBuffer = idBuffer(stack);
+				LmdbValue.Resolver resolver = (id, value) -> {
+					try {
+						return resolveValueInTxn(expectedRevision, resolvedRevision, id, value, txn, keyData, valueData,
+								keyBuffer);
+					} catch (IOException e) {
+						throw new SailException(e);
+					}
+				};
+
+				for (int i = 0; i < count; i++) {
+					LmdbValue value = values[order[i]];
+					if (!value.isInitialized()) {
+						value.init(resolver);
+					}
+				}
+				return null;
+			});
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
+	}
+
+	private boolean resolveValueInTxn(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision, long id,
+			LmdbValue value, long txn, MDBVal keyData, MDBVal valueData, ByteBuffer keyBuffer) throws IOException {
+		// unpack inlined values if possible
+		if (ValueIds.isInlined(id)) {
+			Literal unpacked = Values.unpackLiteral(id, this);
+			((LmdbLiteral) value).setLabel(unpacked.getLabel());
+			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
+			if (resolvedRevision != null) {
+				value.setInternalID(id, resolvedRevision);
+			}
+			return true;
+		}
+
+		LmdbValue cached = cachedValue(id);
+		if (cached != null && cachedValueMatchesRevision(cached, expectedRevision)) {
+			value.setFromInitializedValue(cached);
+			if (resolvedRevision != null) {
+				value.setInternalID(id, resolvedRevision);
+			}
+			return true;
+		}
+
+		keyBuffer.clear();
+		keyData.mv_data(id2data(keyBuffer, id).flip());
+		if (mdb_get(txn, dbi, keyData, valueData) != MDB_SUCCESS) {
+			return false;
+		}
+
+		data2value(id, valueData.mv_data(), value);
+		if (resolvedRevision != null) {
+			value.setInternalID(id, resolvedRevision);
+		}
+		cacheValue(id, value);
+		return true;
+	}
+
+	private boolean cachedValueMatchesRevision(LmdbValue cached, ValueStoreRevision expectedRevision) {
+		ValueStoreRevision cachedRevision = cached.getValueStoreRevision();
+		return cachedRevision != null && cachedRevision.equals(expectedRevision);
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
@@ -2009,6 +2084,17 @@ class ValueStore extends AbstractValueFactory {
 		};
 	}
 
+	private LmdbValue data2value(long id, ByteBuffer data, LmdbValue value) throws IOException {
+		ByteBuffer bb = data.slice();
+		byte type = bb.get(0);
+		return switch (type) {
+		case URI_VALUE -> data2uri(id, bb, (LmdbIRI) value);
+		case BNODE_VALUE -> data2bnode(id, bb, (LmdbBNode) value);
+		case LITERAL_VALUE -> data2literal(id, bb, (LmdbLiteral) value);
+		default -> throw new IllegalArgumentException("Invalid type " + type + " for value with id " + id);
+		};
+	}
+
 	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
@@ -2026,8 +2112,37 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private LmdbIRI data2uri(long id, ByteBuffer data, LmdbIRI value) throws IOException {
+		ByteBuffer bb = data.slice();
+		// skip type marker
+		bb.get();
+		long nsID = Varint.readUnsigned(bb);
+		String namespace = getNamespace(nsID);
+		String localName = stringFromBuffer(bb, bb.position(), bb.remaining());
+
+		if (value == null) {
+			return new LmdbIRI(revision, namespace, localName, id);
+		} else {
+			value.setNamespaceAndIri(namespace, localName);
+//			value.setIRIString(namespace + localName);
+			return value;
+		}
+	}
+
 	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
+		if (value == null) {
+			return new LmdbBNode(revision, nodeID, id);
+		} else {
+			value.setID(nodeID);
+			return value;
+		}
+	}
+
+	private LmdbBNode data2bnode(long id, ByteBuffer data, LmdbBNode value) {
+		ByteBuffer bb = data.slice();
+		bb.get();
+		String nodeID = stringFromBuffer(bb, bb.position(), bb.remaining());
 		if (value == null) {
 			return new LmdbBNode(revision, nodeID, id);
 		} else {
@@ -2084,6 +2199,71 @@ class ValueStore extends AbstractValueFactory {
 			}
 			return value;
 		}
+	}
+
+	private LmdbLiteral data2literal(long id, ByteBuffer data, LmdbLiteral value) throws IOException {
+		ByteBuffer bb = data.slice();
+		// skip type marker
+		bb.get();
+		// Get datatype
+		long datatypeID = Varint.readUnsigned(bb);
+		IRI datatype = null;
+		CoreDatatype coreDatatype = null;
+		// literal without a datatype
+		if (datatypeID > 0) {
+			datatype = getDatatype(datatypeID);
+			coreDatatype = cachedDatatypeCoreDatatype(datatypeID);
+			if (datatype != null && coreDatatype == null) {
+				coreDatatype = CoreDatatype.from(datatype);
+			}
+		}
+
+		// Get language tag
+		String lang = null;
+		int langLength = bb.get() & 0xFF;
+		int langPosition = bb.position();
+		if (langLength > 0) {
+			lang = stringFromBuffer(bb, langPosition, langLength);
+		}
+
+		// Get label
+		int labelPosition = langPosition + langLength;
+		String label = stringFromBuffer(bb, labelPosition, bb.limit() - labelPosition);
+
+		if (value == null) {
+			if (lang != null) {
+				return new LmdbLiteral(revision, label, lang, id);
+			} else if (datatype != null) {
+				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
+			} else {
+				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
+			}
+		} else {
+			value.setLabel(label);
+			if (lang != null) {
+				value.setLanguage(lang);
+				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+			} else if (datatype != null) {
+				value.setDatatype(datatype, coreDatatype);
+			} else {
+				value.setDatatype(CoreDatatype.XSD.STRING);
+			}
+			return value;
+		}
+	}
+
+	private String stringFromBuffer(ByteBuffer data, int position, int length) {
+		if (length == 0) {
+			return "";
+		}
+		if (data.hasArray()) {
+			return new String(data.array(), data.arrayOffset() + position, length, StandardCharsets.UTF_8);
+		}
+		byte[] bytes = length <= STRING_DECODE_SCRATCH_BYTES ? STRING_DECODE_SCRATCH.get() : new byte[length];
+		ByteBuffer copy = data.duplicate();
+		copy.position(position);
+		copy.get(bytes, 0, length);
+		return new String(bytes, 0, length, StandardCharsets.UTF_8);
 	}
 
 	private LmdbIRI getDatatype(long datatypeID) throws IOException {

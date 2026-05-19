@@ -106,6 +106,18 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	@Override
+	public void init(Resolver resolver) {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					resolver.resolve(internalID, this);
+				}
+				initialized = true;
+			}
+		}
+	}
+
+	@Override
 	public boolean isInitialized() {
 		return initialized;
 	}

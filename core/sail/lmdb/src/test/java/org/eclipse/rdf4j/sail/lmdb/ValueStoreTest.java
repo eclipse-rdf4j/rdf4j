@@ -23,11 +23,13 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -36,6 +38,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -47,6 +50,8 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -127,6 +132,77 @@ public class ValueStoreTest {
 
 		assertFalse("small literals should not be inlined when disabled", ValueIds.isInlined(id));
 		assertEquals(literal, valueStore.getValue(id));
+	}
+
+	@Test
+	public void batchResolveValuesUsesSingleReadTransaction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "counting-values"),
+				new LmdbStoreConfig());
+		try {
+			LmdbBNode first = countingValueStore.createBNode("batch-first");
+			LmdbBNode second = countingValueStore.createBNode("batch-second");
+			countingValueStore.startTransaction(true);
+			long firstId = countingValueStore.storeValue(first);
+			long secondId = countingValueStore.storeValue(second);
+			countingValueStore.commit();
+
+			LmdbValue lazyFirst = countingValueStore.getLazyValue(firstId);
+			LmdbValue lazySecond = countingValueStore.getLazyValue(secondId);
+			assertFalse(isInitialized(lazyFirst));
+			assertFalse(isInitialized(lazySecond));
+
+			QueryBindingSet firstRow = row("value", Values.literal("already-initialized"));
+			QueryBindingSet secondRow = row("value", lazySecond);
+			QueryBindingSet thirdRow = row("value", lazyFirst);
+
+			countingValueStore.readTransactionCount = 0;
+			try (LmdbValueMaterializingIteration iteration = new LmdbValueMaterializingIteration(
+					bindingSets(firstRow, secondRow, thirdRow), 16)) {
+				assertSame(firstRow, iteration.next());
+				assertSame(secondRow, iteration.next());
+				assertSame(thirdRow, iteration.next());
+				assertFalse(iteration.hasNext());
+			}
+
+			assertTrue(isInitialized(lazyFirst));
+			assertTrue(isInitialized(lazySecond));
+			assertEquals("buffered same-revision values should share one read transaction", 1,
+					countingValueStore.readTransactionCount);
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void batchResolveLazyValuesUnwrapsRevisionAfterResolve() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "unwrap-values"),
+				new LmdbStoreConfig());
+		try {
+			LmdbBNode first = countingValueStore.createBNode("unwrap-first");
+			LmdbBNode second = countingValueStore.createBNode("unwrap-second");
+			countingValueStore.startTransaction(true);
+			long firstId = countingValueStore.storeValue(first);
+			long secondId = countingValueStore.storeValue(second);
+			countingValueStore.commit();
+
+			LmdbValue lazyFirst = countingValueStore.getLazyValue(firstId);
+			LmdbValue lazySecond = countingValueStore.getLazyValue(secondId);
+			ValueStoreRevision lazyRevision = lazyFirst.getValueStoreRevision();
+			assertSame(lazyRevision, lazySecond.getValueStoreRevision());
+			assertFalse(countingValueStore.getRevision() == lazyRevision);
+
+			Method resolveValues = lazyRevision.getClass()
+					.getMethod("resolveValues", LmdbValue[].class, int[].class, int.class);
+			LmdbValue[] lazyValues = { lazyFirst, lazySecond };
+			resolveValues.invoke(lazyRevision, new Object[] { lazyValues, new int[] { 0, 1 }, lazyValues.length });
+
+			assertTrue(isInitialized(lazyFirst));
+			assertTrue(isInitialized(lazySecond));
+			assertSame(countingValueStore.getRevision(), lazyFirst.getValueStoreRevision());
+			assertSame(countingValueStore.getRevision(), lazySecond.getValueStoreRevision());
+		} finally {
+			countingValueStore.close();
+		}
 	}
 
 	@Test
@@ -529,6 +605,52 @@ public class ValueStoreTest {
 		valueStore.commit();
 		reopenValueStore(config);
 		return id;
+	}
+
+	private QueryBindingSet row(String bindingName, Value value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding(bindingName, value);
+		return row;
+	}
+
+	private CloseableIteration<BindingSet> bindingSets(BindingSet... rows) {
+		return new CloseableIteration<>() {
+			private int index;
+			private boolean closed;
+
+			@Override
+			public boolean hasNext() {
+				return !closed && index < rows.length;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				return rows[index++];
+			}
+
+			@Override
+			public void close() {
+				closed = true;
+			}
+		};
+	}
+
+	private static final class CountingValueStore extends ValueStore {
+
+		private int readTransactionCount;
+
+		private CountingValueStore(File dir, LmdbStoreConfig config) throws IOException {
+			super(dir, config);
+		}
+
+		@Override
+		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
+			readTransactionCount++;
+			return super.readTransaction(env, transaction);
+		}
 	}
 
 	private void reopenValueStore(LmdbStoreConfig config) throws Exception {
