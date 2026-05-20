@@ -713,7 +713,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return findOrAdd(keyPrefix, keyHash, x, y);
 		}
 
-
 		private int findOrAdd(int keyPrefix, int keyHash, int x, int y) {
 			if ((size + 1) * 10 >= buckets.length * 7) {
 				rehash(buckets.length << 1);

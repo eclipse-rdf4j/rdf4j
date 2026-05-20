@@ -1585,8 +1585,8 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			int capacity = pendingApproveSubjects == null
-					? Math.min(bulkOperationSize*4, INITIAL_PENDING_APPROVE_CAPACITY)
-					: Math.min(bulkOperationSize*4, Math.max(minCapacity, pendingApproveSubjects.length << 1));
+					? Math.min(bulkOperationSize * 4, INITIAL_PENDING_APPROVE_CAPACITY)
+					: Math.min(bulkOperationSize * 4, Math.max(minCapacity, pendingApproveSubjects.length << 1));
 			capacity = Math.max(1, capacity);
 			if (pendingApproveSubjects == null) {
 				pendingApproveSubjects = new Resource[capacity];
