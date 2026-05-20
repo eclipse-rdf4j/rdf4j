@@ -921,6 +921,51 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	@Test
+	void forceFlushSketchEstimatorRebuildsDeferredLargeBulkAdds(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var p = vf.createIRI("urn:force-flush:p");
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 4096; i++) {
+			statements.add(vf.createStatement(vf.createIRI("urn:force-flush:s:" + i), p,
+					vf.createIRI("urn:force-flush:o:" + i)));
+		}
+
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc").setBulkOperationSize(256));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			backingStore.enableMultiThreading = false;
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.discardAndMarkForRebuild();
+			assertFalse(estimator.isReadyNonBlocking());
+
+			SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
+			try {
+				sink.approveAll(statements, Set.of());
+				sink.flush();
+			} finally {
+				sink.close();
+			}
+
+			assertFalse(estimator.isReadyNonBlocking(),
+					"Large bulk additions should be deferred while the estimator is not ready");
+			assertEquals(0, pendingIncrementalStatementQueueSize(estimator),
+					"Deferred large chunks should require a store-backed rebuild rather than queued exact updates");
+
+			assertTrue(store.forceFlushSketchEstimator());
+			assertTrue(estimator.isReadyNonBlocking());
+			AtomicLong approxStoreSize = (AtomicLong) objectField(estimator, "approxStoreSize");
+			assertEquals(statements.size(), approxStoreSize.get(),
+					"Force flushing should rebuild from committed LMDB statements");
+			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()) > 1000.0d,
+					"Force flushing should rebuild sketches from committed LMDB statements");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void readCommittedBulkChunkRetainsExactEstimatorUpdatesFromFirstChunk(@TempDir File dataDir) throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var p = vf.createIRI("urn:chunked-bulk:p");

@@ -471,6 +471,16 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return estimator != null && estimator.awaitReady(timeout, unit);
 	}
 
+	/**
+	 * Forces committed LMDB state through to the sketch-based join estimator.
+	 *
+	 * @return {@code true} when the estimator is enabled and ready after the forced flush
+	 */
+	public boolean forceFlushSketchEstimator() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore != null && backingStore.forceFlushSketchEstimator();
+	}
+
 	private boolean shouldUseSketchBasedJoinEstimator() {
 		return shouldUseSketchBasedJoinEstimator(Runtime.getRuntime().maxMemory());
 	}

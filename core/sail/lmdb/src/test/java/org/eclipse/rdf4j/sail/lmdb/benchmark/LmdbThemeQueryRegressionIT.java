@@ -2190,7 +2190,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	void medicalPatientsBenchmarkHarnessStoreRejectsConditionCodeAnchorAfterWarmups(@TempDir Path dataDir)
+	void medicalPatientsBenchmarkHarnessStoreSelectsConditionCodeAnchorAfterWarmups(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareFreshBenchmarkHarnessStore(dataDir, theme);
@@ -2212,9 +2212,14 @@ class LmdbThemeQueryRegressionIT {
 				assertContains(plan, "finite-anchor:condCode[valid",
 						"Medical q9 benchmark harness store should still explain the finite-anchor candidate\n"
 								+ plan);
-				assertDoesNotContain(plan, "selected=finite-anchor:condCode",
-						"Medical q9 should not select the condition-code finite anchor after JMH-style warmup "
-								+ "feedback\n" + plan);
+				assertContains(plan, "selected=finite-anchor:condCode",
+						"Medical q9 should select the condition-code finite anchor once JMH-style warmup feedback "
+								+ "makes it cheaper than the original plan on full work and output surface\n"
+								+ plan);
+				assertContains(plan, "plannedEstimateSource=learned_filter",
+						"Medical q9 warmups should feed learned filter evidence into the plan that makes the "
+								+ "condition-code anchor worthwhile\n"
+								+ plan);
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -2566,6 +2571,13 @@ class LmdbThemeQueryRegressionIT {
 		SailRepository repository = new SailRepository(store);
 		try {
 			loadData(repository, theme);
+		} finally {
+			repository.shutDown();
+		}
+
+		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		repository = new SailRepository(store);
+		try {
 			repository.init();
 			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark regression setup", 60,
 					TimeUnit.SECONDS);

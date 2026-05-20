@@ -176,6 +176,9 @@ public final class BenchmarkJoinEstimatorSupport {
 		if (estimator == null) {
 			return;
 		}
+		if (store.forceFlushSketchEstimator()) {
+			return;
+		}
 		awaitEstimatorReady(estimator, phase, timeout, unit);
 	}
 

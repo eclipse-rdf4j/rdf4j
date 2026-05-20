@@ -1910,6 +1910,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
+	/**
+	 * Synchronously flush queued incremental work, rebuilding sketches when exact updates were deferred.
+	 *
+	 * @return {@code true} when sketches are ready after the forced flush
+	 */
+	public boolean forceFlush() {
+		flushPendingIncremental();
+		if (rebuildRequired.get()) {
+			rebuild();
+		} else if (!sketchesLoaded && persistenceEnabled && hasSnapshotAvailable(persistenceFile)) {
+			tryLoadFromDisk();
+		}
+		if (!isReadyNonBlocking()) {
+			rebuild();
+		}
+		flushPendingIncremental();
+		notifyReadyWaiters();
+		return isReadyNonBlocking();
+	}
+
 	private boolean isReadyForAwait() {
 		if (requiresResidentSketchesForAwait()) {
 			return isReadyNonBlocking();

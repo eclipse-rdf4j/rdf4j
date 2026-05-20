@@ -492,6 +492,27 @@ class LmdbSailStore implements SailStore {
 		return sketchBasedJoinEstimator;
 	}
 
+	boolean forceFlushSketchEstimator() {
+		SketchBasedJoinEstimator estimator = sketchBasedJoinEstimator;
+		if (estimator == null) {
+			return false;
+		}
+
+		sinkStoreAccessLock.lock();
+		try {
+			if (storeTxnStarted.get()) {
+				return false;
+			}
+			boolean ready = estimator.forceFlush();
+			if (ready) {
+				scheduleEstimatorPersist();
+			}
+			return ready;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
 	Optional<RdfTermDomain> getCachedRdfTermDomain(IRI predicate) throws IOException {
 		long predicateId = valueStore.getId(predicate);
 		if (predicateId == LmdbValue.UNKNOWN_ID) {
