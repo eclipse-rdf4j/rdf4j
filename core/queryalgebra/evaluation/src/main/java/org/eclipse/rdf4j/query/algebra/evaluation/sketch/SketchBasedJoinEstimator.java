@@ -1296,6 +1296,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private void applyTo(SketchBasedJoinEstimator estimator, State state, byte slot) {
+			sortEntriesByResidentAddress();
 			long[][] allOverflowValues = overflowValues;
 			for (int i = 0; i < size; i++) {
 				estimator.applyGroupedUpdate(state, slot, keyPrefixes[i], xs[i], ys[i],
@@ -1307,6 +1308,136 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		private boolean isEmpty() {
 			return size == 0;
+		}
+
+		private void sortEntriesByResidentAddress() {
+			if (size < 64) {
+				return;
+			}
+			sortEntriesByResidentAddress(0, size - 1);
+		}
+
+		private void sortEntriesByResidentAddress(int left, int right) {
+			while (right - left > 16) {
+				int pivotIndex = (left + right) >>> 1;
+				int pivotStoredKeyPrefix = residentKeyPrefix(keyPrefixes[pivotIndex]);
+				int pivotX = xs[pivotIndex];
+				int pivotY = ys[pivotIndex];
+				int pivotKeyPrefix = keyPrefixes[pivotIndex];
+				int i = left;
+				int j = right;
+				while (i <= j) {
+					while (compareEntryToResidentAddress(i, pivotStoredKeyPrefix, pivotX, pivotY, pivotKeyPrefix) < 0) {
+						i++;
+					}
+					while (compareEntryToResidentAddress(j, pivotStoredKeyPrefix, pivotX, pivotY, pivotKeyPrefix) > 0) {
+						j--;
+					}
+					if (i <= j) {
+						swapEntries(i, j);
+						i++;
+						j--;
+					}
+				}
+				if (j - left < right - i) {
+					if (left < j) {
+						sortEntriesByResidentAddress(left, j);
+					}
+					left = i;
+				} else {
+					if (i < right) {
+						sortEntriesByResidentAddress(i, right);
+					}
+					right = j;
+				}
+			}
+			insertionSortEntriesByResidentAddress(left, right);
+		}
+
+		private void insertionSortEntriesByResidentAddress(int left, int right) {
+			for (int i = left + 1; i <= right; i++) {
+				int j = i;
+				while (j > left && compareEntriesByResidentAddress(j, j - 1) < 0) {
+					swapEntries(j, j - 1);
+					j--;
+				}
+			}
+		}
+
+		private int compareEntriesByResidentAddress(int left, int right) {
+			int leftResidentKeyPrefix = residentKeyPrefix(keyPrefixes[left]);
+			int rightResidentKeyPrefix = residentKeyPrefix(keyPrefixes[right]);
+			if (leftResidentKeyPrefix != rightResidentKeyPrefix) {
+				return leftResidentKeyPrefix < rightResidentKeyPrefix ? -1 : 1;
+			}
+			int leftX = xs[left];
+			int rightX = xs[right];
+			if (leftX != rightX) {
+				return leftX < rightX ? -1 : 1;
+			}
+			int leftY = ys[left];
+			int rightY = ys[right];
+			if (leftY != rightY) {
+				return leftY < rightY ? -1 : 1;
+			}
+			return compareKeyPrefix(keyPrefixes[left], keyPrefixes[right]);
+		}
+
+		private int compareEntryToResidentAddress(int index, int storedKeyPrefix, int x, int y, int keyPrefix) {
+			int indexResidentKeyPrefix = residentKeyPrefix(keyPrefixes[index]);
+			if (indexResidentKeyPrefix != storedKeyPrefix) {
+				return indexResidentKeyPrefix < storedKeyPrefix ? -1 : 1;
+			}
+			int indexX = xs[index];
+			if (indexX != x) {
+				return indexX < x ? -1 : 1;
+			}
+			int indexY = ys[index];
+			if (indexY != y) {
+				return indexY < y ? -1 : 1;
+			}
+			return compareKeyPrefix(keyPrefixes[index], keyPrefix);
+		}
+
+		private static int residentKeyPrefix(int keyPrefix) {
+			return ((byte) keyPrefix) == REC_GLOBAL_COMPONENT ? keyPrefix & ~DELETE_KEY_PREFIX_MASK : keyPrefix;
+		}
+
+		private static int compareKeyPrefix(int left, int right) {
+			if (left == right) {
+				return 0;
+			}
+			return left < right ? -1 : 1;
+		}
+
+		private void swapEntries(int left, int right) {
+			if (left == right) {
+				return;
+			}
+			int tmpInt = keyPrefixes[left];
+			keyPrefixes[left] = keyPrefixes[right];
+			keyPrefixes[right] = tmpInt;
+			tmpInt = keyHashes[left];
+			keyHashes[left] = keyHashes[right];
+			keyHashes[right] = tmpInt;
+			tmpInt = xs[left];
+			xs[left] = xs[right];
+			xs[right] = tmpInt;
+			tmpInt = ys[left];
+			ys[left] = ys[right];
+			ys[right] = tmpInt;
+			long tmpLong = firstValues[left];
+			firstValues[left] = firstValues[right];
+			firstValues[right] = tmpLong;
+			tmpInt = valueCounts[left];
+			valueCounts[left] = valueCounts[right];
+			valueCounts[right] = tmpInt;
+			long[][] allOverflowValues = overflowValues;
+			if (allOverflowValues != null) {
+				long[] tmpValues = allOverflowValues[left];
+				allOverflowValues[left] = allOverflowValues[right];
+				allOverflowValues[right] = tmpValues;
+			}
 		}
 	}
 
@@ -4190,6 +4321,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		void put(long key, ArrayOfDoublesUpdatableSketch value) {
+			if (size > 0) {
+				long lastKey = keys[size - 1];
+				if (key > lastKey) {
+					if (value == null) {
+						return;
+					}
+					append(key, value);
+					return;
+				}
+				if (key == lastKey) {
+					if (value == null) {
+						removeAt(size - 1);
+					} else {
+						values[size - 1] = value;
+					}
+					return;
+				}
+			}
 			int index = Arrays.binarySearch(keys, 0, size, key);
 			if (index >= 0) {
 				if (value == null) {
@@ -4210,6 +4359,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 			keys[insertionPoint] = key;
 			values[insertionPoint] = value;
+			size++;
+		}
+
+		private void append(long key, ArrayOfDoublesUpdatableSketch value) {
+			ensureCapacity(size + 1);
+			keys[size] = key;
+			values[size] = value;
 			size++;
 		}
 

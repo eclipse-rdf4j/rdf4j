@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
@@ -369,12 +370,15 @@ public class LmdbSailStoreTest {
 		SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
 
 		doAnswer(invocation -> {
-			Value value = invocation.getArgument(0);
-			if (failingPredicate.equals(value)) {
-				throw new IOException("expected predicate failure");
+			Value[] values = invocation.getArgument(0);
+			int count = invocation.getArgument(2);
+			for (int i = 0; i < count; i++) {
+				if (failingPredicate.equals(values[i])) {
+					throw new IOException("expected predicate failure");
+				}
 			}
 			return invocation.callRealMethod();
-		}).when(valueStoreSpy).storeValue(any(Value.class));
+		}).when(valueStoreSpy).storeValues(any(Value[].class), any(long[].class), anyInt());
 
 		valueStoreField.set(backingStore, valueStoreSpy);
 		try {
@@ -418,6 +422,78 @@ public class LmdbSailStoreTest {
 			verify(tripleStoreSpy, atMost(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+	}
+
+	@Test
+	void approveAllBulkStoresStatementValuesThroughSingleBatch() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+
+		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+		valueStoreField.setAccessible(true);
+		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
+		ValueStore valueStoreSpy = spy(originalValueStore);
+
+		IRI subject = F.createIRI("urn:batch-id:subject");
+		IRI predicate = F.createIRI("urn:batch-id:predicate");
+		IRI resourceObject = F.createIRI("urn:batch-id:object");
+		IRI context = F.createIRI("urn:batch-id:context");
+		Set<Statement> statements = new LinkedHashSet<>();
+		statements.add(F.createStatement(subject, predicate, F.createLiteral("batch-id-literal-1"), context));
+		statements.add(F.createStatement(subject, predicate, resourceObject, context));
+		statements.add(F.createStatement(subject, predicate, F.createLiteral("batch-id-literal-2"), context));
+
+		valueStoreField.set(backingStore, valueStoreSpy);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			clearInvocations(valueStoreSpy);
+			sink.approveAll(statements, Set.of());
+			sink.flush();
+
+			assertEquals("bulk approve should enter the value store batch API once", 1,
+					invocationCount(valueStoreSpy, "storeValues"));
+			assertEquals("bulk approve should not store each value independently", 0,
+					invocationCount(valueStoreSpy, "storeValue"));
+			assertEquals("subject, predicate, two literals, resource object and context should be deduplicated", 6,
+					onlyInvocationIntArgument(valueStoreSpy, "storeValues", 2));
+		} finally {
+			valueStoreField.set(backingStore, originalValueStore);
+		}
+	}
+
+	@Test
+	void approveBuffersSingleStatementCallsThroughBatchValueStore() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+
+		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+		valueStoreField.setAccessible(true);
+		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
+		ValueStore valueStoreSpy = spy(originalValueStore);
+
+		IRI subject = F.createIRI("urn:single-batch-id:subject");
+		IRI predicate = F.createIRI("urn:single-batch-id:predicate");
+		IRI resourceObject = F.createIRI("urn:single-batch-id:object");
+		IRI context = F.createIRI("urn:single-batch-id:context");
+
+		valueStoreField.set(backingStore, valueStoreSpy);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			clearInvocations(valueStoreSpy);
+			sink.approve(subject, predicate, F.createLiteral("single-batch-id-literal-1"), context);
+			sink.approve(subject, predicate, resourceObject, context);
+			sink.approve(subject, predicate, F.createLiteral("single-batch-id-literal-2"), context);
+			sink.flush();
+
+			assertEquals("single approve calls should enter the value store batch API once", 1,
+					invocationCount(valueStoreSpy, "storeValues"));
+			assertEquals("single approve calls should not store each value independently", 0,
+					invocationCount(valueStoreSpy, "storeValue"));
+			assertEquals("subject, predicate, two literals, resource object and context should be deduplicated", 6,
+					onlyInvocationIntArgument(valueStoreSpy, "storeValues", 2));
+		} finally {
+			valueStoreField.set(backingStore, originalValueStore);
 		}
 	}
 
@@ -613,6 +689,22 @@ public class LmdbSailStoreTest {
 					F.createIRI("urn:bulk:context:" + (i % 2))));
 		}
 		return statements;
+	}
+
+	private static long invocationCount(Object mock, String methodName) {
+		return mockingDetails(mock).getInvocations()
+				.stream()
+				.filter(invocation -> methodName.equals(invocation.getMethod().getName()))
+				.count();
+	}
+
+	private static int onlyInvocationIntArgument(Object mock, String methodName, int argumentIndex) {
+		return mockingDetails(mock).getInvocations()
+				.stream()
+				.filter(invocation -> methodName.equals(invocation.getMethod().getName()))
+				.map(invocation -> (Integer) invocation.getArgument(argumentIndex))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected invocation of " + methodName));
 	}
 
 	@AfterEach

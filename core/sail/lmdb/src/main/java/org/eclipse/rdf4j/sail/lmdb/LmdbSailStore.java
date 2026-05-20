@@ -19,6 +19,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -990,6 +991,11 @@ class LmdbSailStore implements SailStore {
 		private final boolean explicit;
 		private final boolean bufferEstimatorAdds;
 		private ArrayList<Statement> pendingEstimatorAdds;
+		private Resource[] pendingApproveSubjects;
+		private IRI[] pendingApprovePredicates;
+		private Value[] pendingApproveObjects;
+		private Resource[] pendingApproveContexts;
+		private int pendingApproveCount;
 		private volatile boolean estimatorTouchedInTransaction;
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
@@ -1095,6 +1101,17 @@ class LmdbSailStore implements SailStore {
 			pendingEstimatorAdds = null;
 		}
 
+		private void clearPendingApproves() {
+			int count = pendingApproveCount;
+			if (count > 0) {
+				Arrays.fill(pendingApproveSubjects, 0, count, null);
+				Arrays.fill(pendingApprovePredicates, 0, count, null);
+				Arrays.fill(pendingApproveObjects, 0, count, null);
+				Arrays.fill(pendingApproveContexts, 0, count, null);
+				pendingApproveCount = 0;
+			}
+		}
+
 		private void submitEstimatorAdd(Statement statement) {
 			sketchBasedJoinEstimator.addStatement(statement);
 			estimatorTouchedInTransaction = true;
@@ -1108,6 +1125,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void discardEstimatorUpdatesIfTouched() {
+			clearPendingApproves();
 			clearPendingEstimatorAdds();
 			if (estimatorTouchedInTransaction && estimatorTouchedSinceStoreTxnStart.getAndSet(false)
 					&& sketchBasedJoinEstimator != null) {
@@ -1139,6 +1157,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
+			clearPendingApproves();
 			clearPendingEstimatorAdds();
 			if (storeTxnStarted.get()) {
 				discardEstimatorUpdatesIfTouched();
@@ -1175,8 +1194,13 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
-			boolean activeTxn = storeTxnStarted.get();
+			boolean activeTxn = false;
 			try {
+				if (pendingApproveCount > 0 && !storeTxnStarted.get()) {
+					startTransaction(true);
+				}
+				activeTxn = storeTxnStarted.get();
+				flushPendingApproves();
 				if (multiThreadingActive) {
 					while (!opQueue.add(COMMIT_TRANSACTION)) {
 						if (tripleStoreException != null) {
@@ -1286,7 +1310,112 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+			if (bulkOperationSize > 0) {
+				approveBuffered(subj, pred, obj, ctx);
+				return;
+			}
 			addStatement(subj, pred, obj, explicit, ctx);
+		}
+
+		private void approveBuffered(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
+			sinkStoreAccessLock.lock();
+			try {
+				startTransaction(true);
+				bufferApprove(subj, pred, obj, context);
+			} catch (IOException e) {
+				rollback();
+				discardEstimatorUpdatesIfTouched();
+				throw new SailException(e);
+			} catch (RuntimeException e) {
+				rollback();
+				discardEstimatorUpdatesIfTouched();
+				logger.error("Encountered an unexpected problem while trying to add a statement", e);
+				throw e;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+
+		private void bufferApprove(Resource subj, IRI pred, Value obj, Resource context) throws IOException {
+			ensurePendingApproveCapacity();
+			int index = pendingApproveCount;
+			pendingApproveSubjects[index] = subj;
+			pendingApprovePredicates[index] = pred;
+			pendingApproveObjects[index] = obj;
+			pendingApproveContexts[index] = context;
+			pendingApproveCount++;
+			if (pendingApproveCount == pendingApproveSubjects.length) {
+				flushPendingApproves();
+			}
+		}
+
+		private void ensurePendingApproveCapacity() {
+			if (pendingApproveSubjects != null) {
+				return;
+			}
+			int capacity = Math.max(1, bulkOperationSize);
+			pendingApproveSubjects = new Resource[capacity];
+			pendingApprovePredicates = new IRI[capacity];
+			pendingApproveObjects = new Value[capacity];
+			pendingApproveContexts = new Resource[capacity];
+		}
+
+		private void flushPendingApproves() throws IOException {
+			int statementCount = pendingApproveCount;
+			if (statementCount == 0) {
+				return;
+			}
+			try {
+				flushPendingApproves(statementCount);
+			} finally {
+				clearPendingApproves();
+			}
+		}
+
+		private void flushPendingApproves(int statementCount) throws IOException {
+			int[] subjects = new int[statementCount];
+			int[] predicates = new int[statementCount];
+			int[] objects = new int[statementCount];
+			int[] contexts = new int[statementCount];
+			Value[] values = new Value[Math.max(1, 4 * statementCount)];
+			HashMap<Value, Integer> valueIndexes = new HashMap<>(Math.max(1, 4 * statementCount));
+
+			int valueCount = 0;
+			for (int i = 0; i < statementCount; i++) {
+				subjects[i] = addBatchValue(valueIndexes, values, pendingApproveSubjects[i]);
+				predicates[i] = addBatchValue(valueIndexes, values, pendingApprovePredicates[i]);
+				objects[i] = addBatchValue(valueIndexes, values, pendingApproveObjects[i]);
+				Resource context = pendingApproveContexts[i];
+				contexts[i] = context == null ? -1 : addBatchValue(valueIndexes, values, context);
+				valueCount = valueIndexes.size();
+			}
+
+			long[] valueIds = new long[valueCount];
+			valueStore.storeValues(values, valueIds, valueCount);
+
+			BulkAddQuadsOperation bulk = newBulkAddQuadsOperation(explicit);
+			for (int i = 0; i < statementCount; i++) {
+				Resource subject = pendingApproveSubjects[i];
+				IRI predicate = pendingApprovePredicates[i];
+				Value object = pendingApproveObjects[i];
+				Resource context = pendingApproveContexts[i];
+				int contextIndex = contexts[i];
+				bulk.add(valueIds[subjects[i]], valueIds[predicates[i]], valueIds[objects[i]],
+						contextIndex < 0 ? 0 : valueIds[contextIndex]);
+				int batchIndex = bulk.size - 1;
+				bulk.objectValues[batchIndex] = object;
+				if (bulk.statements != null) {
+					bulk.statements[batchIndex] = valueStore.createStatement(subject, predicate, object, context);
+				}
+				if (bulk.isFull()) {
+					submitOperation(bulk);
+					bulk = newBulkAddQuadsOperation(explicit);
+				}
+			}
+
+			if (!bulk.isEmpty()) {
+				submitOperation(bulk);
+			}
 		}
 
 		private void approveAllBulk(Set<Statement> approved, Set<Resource> approvedContexts) {
@@ -1295,12 +1424,19 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTransaction(true);
+				flushPendingApproves();
 
-				HashMap<Resource, Long> resourceCache = new HashMap<>();
-				Resource previousSubject = null;
-				long previousSubjectId = LmdbValue.UNKNOWN_ID;
-				BulkAddQuadsOperation bulk = newBulkAddQuadsOperation(explicit);
+				int statementCount = approved.size();
+				Statement[] statements = new Statement[statementCount];
+				int[] subjects = new int[statementCount];
+				int[] predicates = new int[statementCount];
+				int[] objects = new int[statementCount];
+				int[] contexts = new int[statementCount];
+				Value[] values = new Value[Math.max(1, 4 * statementCount)];
+				HashMap<Value, Integer> valueIndexes = new HashMap<>(Math.max(1, 4 * statementCount));
 
+				int valueCount = 0;
+				int statementIndex = 0;
 				for (Statement statement : approved) {
 					last = statement;
 					Resource subj = statement.getSubject();
@@ -1308,45 +1444,34 @@ class LmdbSailStore implements SailStore {
 					Value obj = statement.getObject();
 					Resource context = statement.getContext();
 
-					if (previousSubject != null) {
-						if (subj == previousSubject) {
-							bulk.add(previousSubjectId, 0, 0, 0);
-						} else {
-							if (previousSubject.equals(subj)) {
-								bulk.add(previousSubjectId, 0, 0, 0);
-							} else {
-								long subjectId = storeCachedResource(resourceCache, subj);
-								previousSubject = subj;
-								previousSubjectId = subjectId;
-								bulk.add(subjectId, 0, 0, 0);
-							}
-						}
+					statements[statementIndex] = statement;
+					subjects[statementIndex] = addBatchValue(valueIndexes, values, subj);
+					predicates[statementIndex] = addBatchValue(valueIndexes, values, pred);
+					objects[statementIndex] = addBatchValue(valueIndexes, values, obj);
+					if (context == null) {
+						contexts[statementIndex] = -1;
 					} else {
-						long subjectId = storeCachedResource(resourceCache, subj);
-						previousSubject = subj;
-						previousSubjectId = subjectId;
-						bulk.add(subjectId, 0, 0, 0);
+						contexts[statementIndex] = addBatchValue(valueIndexes, values, context);
 					}
+					valueCount = valueIndexes.size();
+					statementIndex++;
+				}
 
+				long[] valueIds = new long[valueCount];
+				valueStore.storeValues(values, valueIds, valueCount);
+
+				BulkAddQuadsOperation bulk = newBulkAddQuadsOperation(explicit);
+				for (int i = 0; i < statementCount; i++) {
+					last = statements[i];
+					Value obj = last.getObject();
+					int contextIndex = contexts[i];
+					bulk.add(valueIds[subjects[i]], valueIds[predicates[i]], valueIds[objects[i]],
+							contextIndex < 0 ? 0 : valueIds[contextIndex]);
 					int batchIndex = bulk.size - 1;
 					bulk.objectValues[batchIndex] = obj;
 					if (bulk.statements != null) {
-						bulk.statements[batchIndex] = statement;
+						bulk.statements[batchIndex] = last;
 					}
-
-					bulk.predicates[batchIndex] = storeCachedResource(resourceCache, pred);
-
-					if (obj instanceof Resource) {
-						bulk.objects[batchIndex] = storeCachedResource(resourceCache, (Resource) obj);
-					} else {
-						bulk.objects[batchIndex] = valueStore.storeValue(obj);
-					}
-					if (context == null) {
-						bulk.contexts[batchIndex] = 0;
-					} else {
-						bulk.contexts[batchIndex] = storeCachedResource(resourceCache, context);
-					}
-
 					if (bulk.isFull()) {
 						submitOperation(bulk);
 						bulk = newBulkAddQuadsOperation(explicit);
@@ -1376,14 +1501,15 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private long storeCachedResource(HashMap<Resource, Long> resourceCache, Resource resource) throws IOException {
-			Long cachedId = resourceCache.get(resource);
-			if (cachedId != null) {
-				return cachedId;
+		private int addBatchValue(HashMap<Value, Integer> valueIndexes, Value[] values, Value value) {
+			Integer index = valueIndexes.get(value);
+			if (index != null) {
+				return index;
 			}
-			long id = valueStore.storeValue(resource);
-			resourceCache.put(resource, id);
-			return id;
+			int nextIndex = valueIndexes.size();
+			valueIndexes.put(value, nextIndex);
+			values[nextIndex] = value;
+			return nextIndex;
 		}
 
 		private BulkAddQuadsOperation newBulkAddQuadsOperation(boolean explicit) {
@@ -1690,6 +1816,7 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTransaction(false);
+				flushPendingApproves();
 				final long subjID;
 				if (subj != null) {
 					subjID = valueStore.getId(subj);

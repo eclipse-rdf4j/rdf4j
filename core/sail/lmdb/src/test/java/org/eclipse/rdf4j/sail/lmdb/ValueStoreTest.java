@@ -295,6 +295,135 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void storeValuesStoresMultipleValuesWithSingleReadTransaction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "store-values"),
+				new LmdbStoreConfig());
+		try {
+			Value[] values = {
+					countingValueStore.createBNode("batch-store-first"),
+					countingValueStore.createBNode("batch-store-second"),
+					countingValueStore.createBNode("batch-store-third")
+			};
+			long[] ids = new long[values.length];
+
+			countingValueStore.startTransaction(true);
+			boolean committed = false;
+			try {
+				countingValueStore.readTransactionCount = 0;
+				invokeStoreValues(countingValueStore, values, ids, values.length);
+				assertEquals("multiple missing values should share one transaction wrapper", 1,
+						countingValueStore.readTransactionCount);
+				countingValueStore.commit();
+				committed = true;
+			} finally {
+				if (!committed) {
+					countingValueStore.rollback();
+				}
+			}
+
+			for (int i = 0; i < values.length; i++) {
+				assertNotEquals(LmdbValue.UNKNOWN_ID, ids[i]);
+				assertEquals(values[i], countingValueStore.getValue(ids[i]));
+			}
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void storeValuesProcessesUnresolvedValuesInSortedKeyOrder() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "store-values-sorted"),
+				new LmdbStoreConfig());
+		try {
+			Value[] values = {
+					countingValueStore.createBNode("batch-store-z"),
+					countingValueStore.createBNode("batch-store-a"),
+					countingValueStore.createBNode("batch-store-m")
+			};
+			long[] ids = new long[values.length];
+
+			countingValueStore.startTransaction(true);
+			boolean committed = false;
+			try {
+				invokeStoreValues(countingValueStore, values, ids, values.length);
+				countingValueStore.commit();
+				committed = true;
+			} finally {
+				if (!committed) {
+					countingValueStore.rollback();
+				}
+			}
+
+			Assert.assertArrayEquals("new unresolved values should be assigned IDs in encoded-key order",
+					new int[] { 1, 2, 0 }, sortedOrder(ids));
+			for (int i = 0; i < values.length; i++) {
+				assertEquals(values[i], countingValueStore.getValue(ids[i]));
+			}
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void storeValuesUsesCacheAndInlineLiteralsWithoutReadTransaction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "store-values-fast-paths"),
+				new LmdbStoreConfig());
+		try {
+			LmdbBNode cachedValue = countingValueStore.createBNode("cached-store-value");
+			countingValueStore.startTransaction(true);
+			long cachedId = countingValueStore.storeValue(cachedValue);
+			countingValueStore.commit();
+
+			Value[] values = { cachedValue, Values.literal(7) };
+			long[] ids = new long[values.length];
+
+			countingValueStore.startTransaction(true);
+			boolean committed = false;
+			try {
+				countingValueStore.readTransactionCount = 0;
+				invokeStoreValues(countingValueStore, values, ids, values.length);
+				assertEquals(cachedId, ids[0]);
+				assertTrue(ValueIds.isInlined(ids[1]));
+				assertEquals("cache hits and inline literals should not enter the LMDB lookup path", 0,
+						countingValueStore.readTransactionCount);
+				countingValueStore.commit();
+				committed = true;
+			} finally {
+				if (!committed) {
+					countingValueStore.rollback();
+				}
+			}
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void storeValuesWithoutActiveTransactionStoresLargeValuesInOneWriteTransaction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "store-values-auto-write"),
+				new LmdbStoreConfig().setInlineLiterals(false));
+		try {
+			Value[] values = {
+					countingValueStore.createLiteral("batch-auto-write-" + "a".repeat(1024)),
+					countingValueStore.createLiteral("batch-auto-write-" + "b".repeat(1024))
+			};
+			long[] ids = new long[values.length];
+
+			countingValueStore.writeTransactionCount = 0;
+			invokeStoreValues(countingValueStore, values, ids, values.length);
+
+			assertEquals("batch store without an active transaction should use one write transaction", 1,
+					countingValueStore.writeTransactionCount);
+			for (int i = 0; i < values.length; i++) {
+				assertNotEquals(LmdbValue.UNKNOWN_ID, ids[i]);
+				assertEquals(values[i], countingValueStore.getValue(ids[i]));
+			}
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
 	public void testGcValues() throws Exception {
 		Value[] values = new Value[] {
 				RDF.TYPE, RDFS.CLASS,
@@ -736,6 +865,7 @@ public class ValueStoreTest {
 		private int batchKeyBufferWrapCount;
 		private int batchValueBufferWrapCount;
 		private int batchDataBufferSliceCount;
+		private int writeTransactionCount;
 
 		private CountingValueStore(File dir, LmdbStoreConfig config) throws IOException {
 			super(dir, config);
@@ -745,6 +875,12 @@ public class ValueStoreTest {
 		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
 			readTransactionCount++;
 			return super.readTransaction(env, transaction);
+		}
+
+		@Override
+		<T> T writeTransaction(LmdbUtil.Transaction<T> transaction) throws IOException {
+			writeTransactionCount++;
+			return super.writeTransaction(transaction);
 		}
 
 		void onBatchResolveCursorOpened() {
@@ -773,6 +909,18 @@ public class ValueStoreTest {
 		void onBatchResolveDataBufferSliced() {
 			batchDataBufferSliceCount++;
 		}
+	}
+
+	private void invokeStoreValues(ValueStore store, Value[] values, long[] ids, int count) throws Exception {
+		Method method;
+		try {
+			method = ValueStore.class.getDeclaredMethod("storeValues", Value[].class, long[].class, int.class);
+		} catch (NoSuchMethodException e) {
+			Assert.fail("Expected ValueStore.storeValues(Value[], long[], int) batch API");
+			return;
+		}
+		method.setAccessible(true);
+		method.invoke(store, new Object[] { values, ids, count });
 	}
 
 	private int[] sortedOrder(long[] ids) {
