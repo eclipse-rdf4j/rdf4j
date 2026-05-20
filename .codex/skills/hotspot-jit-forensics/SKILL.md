@@ -40,7 +40,7 @@ For a running process:
 .codex/skills/hotspot-jit-forensics/scripts/jit-run-log.sh \
   --directives c2-directives.json5 \
   --logfile jit.xml \
-  -- java -XX:+UnlockDiagnosticVMOptions -jar app.jar
+  -- java -jar app.jar
 ```
 
 Artifacts produced:
@@ -75,6 +75,14 @@ Prefer **Compiler Directives** with a focused match.
 
 ### 4) If assembly doesn’t print, fix hsdis
 HotSpot only prints assembly with the **hsdis** plugin installed.
+
+On macOS, do not copy a Linux-built hsdis into the host JDK. Use the Docker runtime instead:
+```bash
+.codex/skills/hotspot-jit-forensics/scripts/hsdis-docker.sh build
+.codex/skills/hotspot-jit-forensics/scripts/hsdis-docker.sh run -- \
+  java -XX:+UnlockDiagnosticVMOptions -XX:+PrintAssembly -version
+```
+Then run the same classpath/command in the container when the target does not require host-only native libraries.
 
 ### 5) Read “why not inlined?” and “why not compiled?”
 Check `jit.xml` (or JITWatch) for inline failures and compilation bailouts.
@@ -121,6 +129,18 @@ Run a `java` command with directive-based C2 logging.
 Usage: jit-run-log.sh --directives <file> --logfile <file> -- java <args...>
 ```
 
+### `hsdis-docker.sh`
+Build and cache a Linux hsdis-enabled JDK image, then run Java inside it.
+
+```
+Usage:
+  hsdis-docker.sh build [options]
+  hsdis-docker.sh run [options] -- java <args...>
+```
+
+Defaults target this workspace's current JDK level (`eclipse-temurin:26-jdk-noble`, OpenJDK `jdk-26+35`).
+Override with `--runtime-image`, `--jdk-ref`, `--platform`, or `--cache-dir`.
+
 ---
 
 ## Deliverables checklist
@@ -142,5 +162,6 @@ Usage: jit-run-log.sh --directives <file> --logfile <file> -- java <args...>
 - https://docs.oracle.com/en/java/javase/12/vm/compiler-control1.html
 - https://docs.oracle.com/en/java/javase/12/vm/writing-directives.html
 - https://docs.oracle.com/en/java/javase/11/troubleshoot/diagnostic-tools.html
+- https://github.com/openjdk/jdk/blob/master/src/utils/hsdis/README.md
 - https://openjdk.org/projects/code-tools/jol/
 - https://openjdk.org/jeps/520

@@ -58,8 +58,13 @@ if [[ "$1" != "java" ]]; then
   exit 1
 fi
 
-exec "$@" \
+java_bin="$1"
+shift
+
+exec "$java_bin" \
+  -XX:+UnlockDiagnosticVMOptions \
   -XX:+CompilerDirectivesPrint \
   -XX:CompilerDirectivesFile="$directives" \
   -XX:+LogCompilation \
-  -XX:LogFile="$logfile"
+  -XX:LogFile="$logfile" \
+  "$@"

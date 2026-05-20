@@ -31,7 +31,7 @@ final class LmdbEvaluationStrategyFactory extends DefaultEvaluationStrategyFacto
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, dataset,
+		LmdbEvaluationStrategy strategy = new LmdbEvaluationStrategy(tripleSource, dataset,
 				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), evaluationStatistics,
 				isTrackResultSize());
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()
