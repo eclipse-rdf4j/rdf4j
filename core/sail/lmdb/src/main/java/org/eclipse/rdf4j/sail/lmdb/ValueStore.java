@@ -102,6 +102,9 @@ import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
@@ -136,6 +139,8 @@ class ValueStore extends AbstractValueFactory {
 
 	private static final int BATCH_CURSOR_SEQUENTIAL_SCAN_LIMIT = 16;
 
+	private static final long UNKNOWN_REF_COUNT = Long.MIN_VALUE;
+
 	private static final ThreadLocal<byte[]> STRING_DECODE_SCRATCH = ThreadLocal
 			.withInitial(() -> new byte[STRING_DECODE_SCRATCH_BYTES]);
 
@@ -148,6 +153,12 @@ class ValueStore extends AbstractValueFactory {
 		} catch (ReflectiveOperationException e) {
 			throw new ExceptionInInitializerError(e);
 		}
+	}
+
+	private static Long2LongOpenHashMap newRefCountsTxCache() {
+		Long2LongOpenHashMap cache = new Long2LongOpenHashMap();
+		cache.defaultReturnValue(UNKNOWN_REF_COUNT);
+		return cache;
 	}
 
 	/**
@@ -195,7 +206,7 @@ class ValueStore extends AbstractValueFactory {
 	 * This lock is required to block transactions while auto-growing the map size.
 	 */
 	private final ReadWriteLock txnLock = new ReentrantReadWriteLock();
-	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
+	private final Long2LongOpenHashMap refCountsTxCache = newRefCountsTxCache();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
 	private final Set<Long> seededDatatypeIds = ConcurrentHashMap.newKeySet();
 	/**
@@ -561,6 +572,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	int getStoredHash(long id) {
+		if (!valueHashCacheEnabled) {
+			return 0;
+		}
 		Integer pendingHash;
 		synchronized (pendingHashUpdates) {
 			pendingHash = pendingHashUpdates.get(id);
@@ -580,7 +594,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	void storeHash(long id, int hash) {
-		if (id == LmdbValue.UNKNOWN_ID) {
+		if (!valueHashCacheEnabled || id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
 		if (writeTxn != 0) {
@@ -598,7 +612,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	void clearStoredHash(long id) {
-		if (id == LmdbValue.UNKNOWN_ID) {
+		if (!valueHashCacheEnabled || id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
 		if (writeTxn != 0) {
@@ -1118,53 +1132,52 @@ class ValueStore extends AbstractValueFactory {
 		// literals have a datatype id and URIs have a namespace id
 		if (data[0] == LITERAL_VALUE || data[0] == URI_VALUE) {
 			// skip type marker
-			long id = Varint.readUnsigned(ByteBuffer.wrap(data, 1, data.length - 1));
-			refCountsTxCache.compute(id, (k, v) -> {
-				if (v == null) {
-					try {
-						stack.push();
-						MDBVal idVal = MDBVal.calloc(stack);
-						MDBVal dataVal = MDBVal.calloc(stack);
-						idVal.mv_data(idBuffer(stack).put(data, 1, Varint.calcLengthUnsigned(id)).flip());
-						long newCount = 1;
-						if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-							// update count
-							newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
-						}
-						return newCount;
-					} finally {
-						stack.pop();
-					}
-				} else {
-					return v + 1;
-				}
-			});
-		}
-	}
-
-	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) {
-		return refCountsTxCache.compute(id, (k, v) -> {
-			if (v == null) {
+			long id = Varint.readUnsigned(data, 1);
+			long count = refCountsTxCache.get(id);
+			if (count == UNKNOWN_REF_COUNT) {
 				try {
 					stack.push();
 					MDBVal idVal = MDBVal.calloc(stack);
 					MDBVal dataVal = MDBVal.calloc(stack);
-					ByteBuffer idBb = idBuffer(stack).put(ID_KEY);
-					Varint.writeUnsigned(idBb, id);
-					idVal.mv_data(idBb.flip());
-					long newCount = 0;
+					idVal.mv_data(idBuffer(stack).put(data, 1, Varint.calcLengthUnsigned(id)).flip());
+					count = 1;
 					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
 						// update count
-						newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
+						count = Varint.readUnsigned(dataVal.mv_data()) + 1;
 					}
-					return newCount;
 				} finally {
 					stack.pop();
 				}
 			} else {
-				return v - 1;
+				count++;
 			}
-		}) == 0;
+			refCountsTxCache.put(id, count);
+		}
+	}
+
+	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) {
+		long count = refCountsTxCache.get(id);
+		if (count == UNKNOWN_REF_COUNT) {
+			try {
+				stack.push();
+				MDBVal idVal = MDBVal.calloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer idBb = idBuffer(stack).put(ID_KEY);
+				Varint.writeUnsigned(idBb, id);
+				idVal.mv_data(idBb.flip());
+				count = 0;
+				if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
+					// update count
+					count = Varint.readUnsigned(dataVal.mv_data()) - 1;
+				}
+			} finally {
+				stack.pop();
+			}
+		} else {
+			count--;
+		}
+		refCountsTxCache.put(id, count);
+		return count == 0;
 	}
 
 	private void updateRefCounts(MemoryStack stack, long writeTxn) throws IOException {
@@ -1174,11 +1187,11 @@ class ValueStore extends AbstractValueFactory {
 			ByteBuffer idBb = idBuffer(stack);
 			ByteBuffer countBb = stack.malloc(Long.BYTES + 1);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			for (Map.Entry<Long, Long> entry : refCountsTxCache.entrySet()) {
-				long count = entry.getValue();
+			for (Long2LongMap.Entry entry : refCountsTxCache.long2LongEntrySet()) {
+				long count = entry.getLongValue();
 				idBb.clear();
 				idBb.put(ID_KEY);
-				Varint.writeUnsigned(idBb, entry.getKey());
+				Varint.writeUnsigned(idBb, entry.getLongKey());
 				idVal.mv_data(idBb.flip());
 				if (count <= 0) {
 					// delete count entry
@@ -1227,7 +1240,6 @@ class ValueStore extends AbstractValueFactory {
 			} else {
 				MDBVal idVal = MDBVal.calloc(stack);
 
-				ByteBuffer dataBb = ByteBuffer.wrap(data);
 				long dataHash = hash(data);
 				int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
 				ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
@@ -1243,7 +1255,7 @@ class ValueStore extends AbstractValueFactory {
 				// ID of first value is directly stored with hash as key
 				if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
 					idVal.mv_data(dataVal.mv_data());
-					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
+					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && bufferEquals(dataVal.mv_data(), data)) {
 						return data2id(idVal.mv_data());
 					}
 				} else {
@@ -1293,7 +1305,7 @@ class ValueStore extends AbstractValueFactory {
 							hashIdBb.position(hashLength);
 							idVal.mv_data(hashIdBb);
 							if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
-									&& dataVal.mv_data().compareTo(dataBb) == 0) {
+									&& bufferEquals(dataVal.mv_data(), data)) {
 								// id was found if stored value is equal to requested value
 								return data2id(hashIdBb);
 							}
@@ -1468,8 +1480,6 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		private long findLargeId(byte[] data) throws IOException {
-			ByteBuffer dataBb = ByteBuffer.wrap(data);
-
 			long dataHash = hash(data);
 			hashBuffer.clear();
 			hashBuffer.put(HASH_KEY);
@@ -1480,10 +1490,9 @@ class ValueStore extends AbstractValueFactory {
 
 			if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
 				idVal.mv_data(dataVal.mv_data());
-				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
+				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && bufferEquals(dataVal.mv_data(), data)) {
 					return data2id(idVal.mv_data());
 				}
-				dataBb.rewind();
 			} else {
 				return storeFirstLargeId(data);
 			}
@@ -1507,10 +1516,9 @@ class ValueStore extends AbstractValueFactory {
 						hashIdBb.position(hashLength);
 						idVal.mv_data(hashIdBb);
 						if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
-								&& dataVal.mv_data().compareTo(dataBb) == 0) {
+								&& bufferEquals(dataVal.mv_data(), data)) {
 							return data2id(hashIdBb);
 						}
-						dataBb.rewind();
 					} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
 				}
 			} finally {
@@ -1605,6 +1613,19 @@ class ValueStore extends AbstractValueFactory {
 			result = (array1.get(startIdx1 + i) & 0xff) - (array2.get(startIdx2 + i) & 0xff);
 		}
 		return result;
+	}
+
+	private boolean bufferEquals(ByteBuffer buffer, byte[] data) {
+		if (buffer.remaining() != data.length) {
+			return false;
+		}
+		int position = buffer.position();
+		for (int i = 0; i < data.length; i++) {
+			if (buffer.get(position + i) != data[i]) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -1720,7 +1741,7 @@ class ValueStore extends AbstractValueFactory {
 		byte[][] unresolvedData = null;
 		int[] unresolvedIndexes = null;
 		int unresolvedCount = 0;
-		boolean[] shouldCache = new boolean[count];
+		boolean[] cacheAfterLookup = new boolean[count];
 		boolean[] ownValues = new boolean[count];
 
 		long stamp = revisionLock.readLock();
@@ -1733,7 +1754,9 @@ class ValueStore extends AbstractValueFactory {
 				long id = getKnownOrInlineId(value, isOwnValue);
 				ids[i] = id;
 				if (id != LmdbValue.UNKNOWN_ID) {
-					shouldCache[i] = true;
+					if (isOwnValue) {
+						((LmdbValue) value).setInternalID(id, revision);
+					}
 					continue;
 				}
 
@@ -1749,7 +1772,7 @@ class ValueStore extends AbstractValueFactory {
 					unresolvedData[unresolvedCount] = data;
 					unresolvedIndexes[unresolvedCount] = i;
 					unresolvedCount++;
-					shouldCache[i] = true;
+					cacheAfterLookup[i] = true;
 				}
 			}
 
@@ -1758,7 +1781,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			for (int i = 0; i < count; i++) {
-				if (shouldCache[i] && ids[i] != LmdbValue.UNKNOWN_ID) {
+				if (cacheAfterLookup[i] && ids[i] != LmdbValue.UNKNOWN_ID) {
 					cacheStoredId(values[i], ids[i], ownValues[i]);
 				}
 			}
@@ -1844,15 +1867,16 @@ class ValueStore extends AbstractValueFactory {
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
 					for (Long id : finalIds) {
+						long idValue = id;
 						if (seededDatatypeIds.contains(id)) {
 							continue;
 						}
 						revIdBb.position(revLength).limit(revIdBb.capacity());
-						revIdVal.mv_data(id2data(revIdBb, id).flip());
+						revIdVal.mv_data(id2data(revIdBb, idValue).flip());
 						// check if id has internal references and therefore cannot be deleted
 						idVal.mv_data(revIdBb.slice().position(revLength));
-						Long refCount = refCountsTxCache.get(id);
-						if (refCount == null) {
+						long refCount = refCountsTxCache.get(idValue);
+						if (refCount == UNKNOWN_REF_COUNT) {
 							if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
 								continue;
 							}
@@ -1892,16 +1916,18 @@ class ValueStore extends AbstractValueFactory {
 		long valuesCursor = 0;
 		try {
 			for (Long id : ids) {
+				long idValue = id;
 				if (seededDatatypeIds.contains(id)) {
 					continue;
 				}
 				// resizeMap(writeTxn, 10L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
 
-				idVal.mv_data(id2data(idBb.clear(), id).flip());
+				idVal.mv_data(id2data(idBb.clear(), idValue).flip());
 				// id must not have a reference count or reference count must be zero and id must have an associated
 				// value
-				Long refCount = refCountsTxCache.get(id);
-				if (((refCount != null && refCount <= 0) || mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
+				long refCount = refCountsTxCache.get(idValue);
+				if (((refCount != UNKNOWN_REF_COUNT && refCount <= 0)
+						|| mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
 						mdb_get(txn, dbi, idVal, dataVal) == 0) {
 					ByteBuffer dataBuffer = dataVal.mv_data();
 
@@ -2235,6 +2261,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void storeHashIfAbsent(long id, Value value) {
+		if (!valueHashCacheEnabled) {
+			return;
+		}
 		if (getStoredHash(id) == 0) {
 			storeHash(id, value.hashCode());
 		}
@@ -2484,7 +2513,7 @@ class ValueStore extends AbstractValueFactory {
 		int nsIDLength = Varint.calcLengthUnsigned(nsID);
 		byte[] uriData = new byte[1 + nsIDLength + localNameData.length];
 		uriData[0] = URI_VALUE;
-		Varint.writeUnsigned(ByteBuffer.wrap(uriData, 1, nsIDLength), nsID);
+		Varint.writeUnsigned(uriData, 1, nsID);
 		ByteArrayUtil.put(localNameData, uriData, 1 + nsIDLength);
 
 		return uriData;
@@ -2541,14 +2570,15 @@ class ValueStore extends AbstractValueFactory {
 		// Combine parts in a single byte array
 		int datatypeIDLength = Varint.calcLengthUnsigned(datatypeID);
 		byte[] literalData = new byte[2 + datatypeIDLength + langDataLength + labelData.length];
-		ByteBuffer bb = ByteBuffer.wrap(literalData);
-		bb.put(LITERAL_VALUE);
-		Varint.writeUnsigned(bb, datatypeID);
-		bb.put((byte) langDataLength);
+		int offset = 0;
+		literalData[offset++] = LITERAL_VALUE;
+		offset = Varint.writeUnsigned(literalData, offset, datatypeID);
+		literalData[offset++] = (byte) langDataLength;
 		if (langData != null) {
-			bb.put(langData);
+			ByteArrayUtil.put(langData, literalData, offset);
+			offset += langDataLength;
 		}
-		bb.put(labelData);
+		ByteArrayUtil.put(labelData, literalData, offset);
 
 		return literalData;
 	}

@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
@@ -399,6 +400,44 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void storeValuesDoesNotRewriteValueIdCacheForKnownAndInlineIds() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "store-values-cache-hits"),
+				new LmdbStoreConfig());
+		try {
+			LmdbIRI cachedKey = countingValueStore.createIRI("http://example.com/cached-store-value");
+			countingValueStore.startTransaction(true);
+			long cachedId = countingValueStore.storeValue(cachedKey);
+			countingValueStore.commit();
+
+			CountingValueIdCache cache = new CountingValueIdCache(32);
+			cache.put(cachedKey, cachedId);
+			cache.resetPutCount();
+			setValueIdCache(countingValueStore, cache);
+
+			Value[] values = { Values.iri("http://example.com/cached-store-value"), Values.literal(7) };
+			long[] ids = new long[values.length];
+
+			countingValueStore.startTransaction(true);
+			boolean committed = false;
+			try {
+				invokeStoreValues(countingValueStore, values, ids, values.length);
+				countingValueStore.commit();
+				committed = true;
+			} finally {
+				if (!committed) {
+					countingValueStore.rollback();
+				}
+			}
+
+			assertEquals(cachedId, ids[0]);
+			assertTrue(ValueIds.isInlined(ids[1]));
+			assertEquals("known cache hits and inline literals already have stable IDs", 0, cache.putCount);
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
 	public void storeValuesWithoutActiveTransactionStoresLargeValuesInOneWriteTransaction() throws Exception {
 		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "store-values-auto-write"),
 				new LmdbStoreConfig().setInlineLiterals(false));
@@ -689,6 +728,18 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void testDisabledHashCacheDoesNotTrackPendingHashUpdates() throws Exception {
+		Literal literal = Values.literal("hash-cache-disabled");
+		valueStore.startTransaction(true);
+		valueStore.storeValue(literal);
+
+		Map<?, ?> pendingHashUpdates = getField(valueStore, "pendingHashUpdates", Map.class);
+		assertTrue("disabled value hash cache should not track pending hash writes", pendingHashUpdates.isEmpty());
+
+		valueStore.commit();
+	}
+
+	@Test
 	public void testRecycledIdsClearCachedHash() throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(hashCacheEnabledConfig());
@@ -911,6 +962,25 @@ public class ValueStoreTest {
 		}
 	}
 
+	private static final class CountingValueIdCache extends ConcurrentCache<LmdbValue, Long> {
+
+		private int putCount;
+
+		private CountingValueIdCache(int capacity) {
+			super(capacity);
+		}
+
+		@Override
+		public Long put(LmdbValue key, Long value) {
+			putCount++;
+			return super.put(key, value);
+		}
+
+		private void resetPutCount() {
+			putCount = 0;
+		}
+	}
+
 	private void invokeStoreValues(ValueStore store, Value[] values, long[] ids, int count) throws Exception {
 		Method method;
 		try {
@@ -962,6 +1032,12 @@ public class ValueStoreTest {
 		Field field = target.getClass().getDeclaredField(fieldName);
 		field.setAccessible(true);
 		return field.getLong(target);
+	}
+
+	private void setValueIdCache(ValueStore store, ConcurrentCache<LmdbValue, Long> cache) throws Exception {
+		Field field = ValueStore.class.getDeclaredField("valueIDCache");
+		field.setAccessible(true);
+		field.set(store, cache);
 	}
 
 	private void invokeCloseInactiveReadTransactions(ValueStore store) throws Exception {

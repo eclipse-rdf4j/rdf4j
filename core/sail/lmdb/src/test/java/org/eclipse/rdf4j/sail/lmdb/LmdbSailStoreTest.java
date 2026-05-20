@@ -38,6 +38,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 
@@ -463,6 +464,192 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	void readCommittedApproveAllBulkStartsAsyncTripleStorePath() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-read-committed-async"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				sink.approveAll(sampleStatements(5), Set.of());
+
+				assertTrue("READ_COMMITTED bulk approve should keep the async triple-store path active until flush",
+						booleanField(backingStore, "multiThreadingActive"));
+				sink.flush();
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void readCommittedApproveAllBulkPipelinesValueBatchesToAsyncWriter() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-read-committed-pipeline"), config);
+		sail.init();
+
+		CountDownLatch writerEntered = new CountDownLatch(1);
+		AtomicInteger storeValueBatches = new AtomicInteger();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+			valueStoreField.setAccessible(true);
+			ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
+			ValueStore valueStoreSpy = spy(originalValueStore);
+
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			doAnswer(invocation -> {
+				if (storeValueBatches.incrementAndGet() == 2) {
+					assertTrue("async writer should start before the second value batch completes",
+							writerEntered.await(5, TimeUnit.SECONDS));
+				}
+				return invocation.callRealMethod();
+			}).when(valueStoreSpy).storeValues(any(Value[].class), any(long[].class), anyInt());
+
+			doAnswer(invocation -> {
+				writerEntered.countDown();
+				return invocation.callRealMethod();
+			}).when(tripleStoreSpy)
+					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+
+			valueStoreField.set(backingStore, valueStoreSpy);
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				sink.approveAll(sampleStatements(4), Set.of());
+				sink.flush();
+
+				assertEquals("READ_COMMITTED approveAll should resolve values per submitted bulk chunk", 2,
+						storeValueBatches.get());
+			} finally {
+				valueStoreField.set(backingStore, originalValueStore);
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void readCommittedFlushWaitsForAsyncWriterWithoutBusySpin() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-read-committed-blocking-flush"), config);
+		sail.init();
+
+		CountDownLatch writerEntered = new CountDownLatch(1);
+		CountDownLatch releaseWriter = new CountDownLatch(1);
+		AtomicReference<Throwable> flushFailure = new AtomicReference<>();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			doAnswer(invocation -> {
+				writerEntered.countDown();
+				assertTrue("async writer should be released by the test",
+						releaseWriter.await(5, TimeUnit.SECONDS));
+				return invocation.callRealMethod();
+			}).when(tripleStoreSpy)
+					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				sink.approveAll(sampleStatements(2), Set.of());
+				assertTrue("async writer should enter the aligned bulk store",
+						writerEntered.await(5, TimeUnit.SECONDS));
+
+				Thread flushThread = new Thread(() -> {
+					try {
+						sink.flush();
+					} catch (Throwable t) {
+						flushFailure.set(t);
+					}
+				}, "lmdb-flush-wait-test");
+				flushThread.start();
+
+				try {
+					assertTrue("flush should block instead of busy-spinning while the async writer is still running",
+							reachesWaitState(flushThread, 5_000L));
+				} finally {
+					releaseWriter.countDown();
+					flushThread.join(5_000L);
+				}
+
+				assertFalse("flush thread should finish after the async writer is released", flushThread.isAlive());
+				if (flushFailure.get() != null) {
+					throw new AssertionError("flush failed", flushFailure.get());
+				}
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			releaseWriter.countDown();
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void asyncWriterWaitsForCommitOperationWithoutBusySpin() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-read-committed-blocking-queue"), config);
+		sail.init();
+
+		CountDownLatch bulkWriteFinished = new CountDownLatch(1);
+		AtomicReference<Thread> asyncWriterThread = new AtomicReference<>();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+
+			doAnswer(invocation -> {
+				asyncWriterThread.set(Thread.currentThread());
+				try {
+					return invocation.callRealMethod();
+				} finally {
+					bulkWriteFinished.countDown();
+				}
+			}).when(tripleStoreSpy)
+					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				sink.approveAll(sampleStatements(2), Set.of());
+				assertTrue("async writer should finish the bulk write before flush queues commit",
+						bulkWriteFinished.await(5, TimeUnit.SECONDS));
+
+				Thread writer = asyncWriterThread.get();
+				assertTrue("async writer thread should have been captured", writer != null);
+				assertTrue("async writer should block instead of busy-spinning while waiting for commit",
+						reachesWaitState(writer, 5_000L));
+
+				sink.flush();
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
 	void approveBuffersSingleStatementCallsThroughBatchValueStore() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
@@ -557,6 +744,74 @@ public class LmdbSailStoreTest {
 				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void readCommittedBulkKeepsEstimatorAddsInConfiguredBatch() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 2048);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "read-committed-estimator-bulk"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+
+			Field estimatorField = LmdbSailStore.class.getDeclaredField("sketchBasedJoinEstimator");
+			estimatorField.setAccessible(true);
+			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
+			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
+			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
+
+			estimatorField.set(backingStore, estimatorSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				clearInvocations(estimatorSpy);
+				sink.approveAll(sampleStatements(2048), Set.of());
+				sink.flush();
+
+				verify(estimatorSpy, times(1)).addStatements(any());
+				verify(estimatorSpy, never()).addStatement(any());
+			} finally {
+				estimatorField.set(backingStore, originalEstimator);
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void largeReadCommittedBulkDefersExactEstimatorAddsForFreshStore() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		setBulkOperationSize(config, 8192);
+		LmdbStore sail = new LmdbStore(new File(dataDir, "read-committed-large-estimator-defer"), config);
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			backingStore.enableMultiThreading = false;
+
+			Field estimatorField = LmdbSailStore.class.getDeclaredField("sketchBasedJoinEstimator");
+			estimatorField.setAccessible(true);
+			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
+			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
+			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
+			doAnswer(invocation -> null).when(estimatorSpy).recordStoreSizeDelta(anyLong(), anyLong());
+
+			estimatorField.set(backingStore, estimatorSpy);
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				clearInvocations(estimatorSpy);
+				sink.approveAll(sampleStatements(8192), Set.of());
+				sink.flush();
+
+				verify(estimatorSpy, never()).addStatements(any());
+				verify(estimatorSpy, never()).addStatement(any());
+				verify(estimatorSpy, times(1)).recordStoreSizeDelta(8192L, 0L);
+			} finally {
+				estimatorField.set(backingStore, originalEstimator);
 			}
 		} finally {
 			sail.shutDown();
@@ -705,6 +960,27 @@ public class LmdbSailStoreTest {
 				.map(invocation -> (Integer) invocation.getArgument(argumentIndex))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("Expected invocation of " + methodName));
+	}
+
+	private static boolean booleanField(Object target, String fieldName) throws Exception {
+		Field field = target.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return field.getBoolean(target);
+	}
+
+	private static boolean reachesWaitState(Thread thread, long timeoutMillis) {
+		long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+		while (System.nanoTime() < deadline) {
+			Thread.State state = thread.getState();
+			if (state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING) {
+				return true;
+			}
+			if (!thread.isAlive()) {
+				return false;
+			}
+			Thread.onSpinWait();
+		}
+		return false;
 	}
 
 	@AfterEach

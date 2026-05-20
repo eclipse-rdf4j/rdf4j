@@ -106,6 +106,10 @@ import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+
 /**
  * LMDB-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four long
  * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement's
@@ -184,12 +188,12 @@ class TripleStore implements Closeable {
 	private final Set<String> predicateGuaranteeExcludedPredicates;
 	private volatile boolean predicateGuaranteeIndexReadable;
 	private volatile Map<Long, RdfTermDomain> predicateObjectDomainCache = Map.of();
-	private final Map<Long, RdfTermDomain> pendingRdfTermDomainCacheWrites = new HashMap<>();
-	private final Set<Long> pendingRdfTermDomainCacheDeletes = new HashSet<>();
+	private final Long2ObjectOpenHashMap<RdfTermDomain> pendingRdfTermDomainCacheWrites = new Long2ObjectOpenHashMap<>();
+	private final LongOpenHashSet pendingRdfTermDomainCacheDeletes = new LongOpenHashSet();
 	private boolean pendingRdfTermDomainCacheClear;
 
 	private TxnRecordCache recordCache = null;
-	private final Map<Long, PendingRdfTermDomain> pendingRdfTermDomains = new HashMap<>();
+	private final Long2ObjectOpenHashMap<PendingRdfTermDomain> pendingRdfTermDomains = new Long2ObjectOpenHashMap<>();
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this(dir, new StoreProperties(dir), config, valueStore);
@@ -638,11 +642,12 @@ class TripleStore implements Closeable {
 		if (pendingRdfTermDomains.isEmpty()) {
 			return;
 		}
-		for (Map.Entry<Long, PendingRdfTermDomain> entry : pendingRdfTermDomains.entrySet()) {
-			if (isPredicateGuaranteeExcluded(entry.getKey())) {
+		for (Long2ObjectMap.Entry<PendingRdfTermDomain> entry : pendingRdfTermDomains.long2ObjectEntrySet()) {
+			long predicateId = entry.getLongKey();
+			if (isPredicateGuaranteeExcluded(predicateId)) {
 				continue;
 			}
-			updateRdfTermDomain(entry.getKey(), entry.getValue());
+			updateRdfTermDomain(predicateId, entry.getValue());
 		}
 		pendingRdfTermDomains.clear();
 	}
@@ -745,7 +750,9 @@ class TripleStore implements Closeable {
 		for (long predicateId : pendingRdfTermDomainCacheDeletes) {
 			updated.remove(predicateId);
 		}
-		updated.putAll(pendingRdfTermDomainCacheWrites);
+		for (Long2ObjectMap.Entry<RdfTermDomain> entry : pendingRdfTermDomainCacheWrites.long2ObjectEntrySet()) {
+			updated.put(entry.getLongKey(), entry.getValue());
+		}
 		predicateObjectDomainCache = Map.copyOf(updated);
 	}
 

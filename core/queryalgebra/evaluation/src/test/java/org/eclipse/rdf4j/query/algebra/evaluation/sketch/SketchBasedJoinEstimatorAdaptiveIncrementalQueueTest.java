@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -187,15 +188,13 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 	void blockingBudgetUsesConfigAndSystemProperties() throws Exception {
 		SketchBasedJoinEstimator defaults = newEstimator();
 		assertEquals(25_000, privateFieldValue(defaults, "incrementalQueueBlockWindowUpdates"));
-		assertEquals(TimeUnit.MILLISECONDS.toNanos(10L),
-				privateFieldValue(defaults, "incrementalQueueBlockBudgetNanos"));
+		assertEquals(10L, privateFieldValue(defaults, "incrementalQueueBlockBudgetMillis"));
 
 		withProperty("incrementalQueueBlockWindowUpdates", "7",
 				() -> withProperty("incrementalQueueBlockBudgetMillis", "3", () -> {
 					SketchBasedJoinEstimator estimator = newEstimator();
 					assertEquals(7, privateFieldValue(estimator, "incrementalQueueBlockWindowUpdates"));
-					assertEquals(TimeUnit.MILLISECONDS.toNanos(3L),
-							privateFieldValue(estimator, "incrementalQueueBlockBudgetNanos"));
+					assertEquals(3L, privateFieldValue(estimator, "incrementalQueueBlockBudgetMillis"));
 				}));
 	}
 
@@ -287,6 +286,23 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 				"CPU-bound chunk ingest should use bounded long-lived workers instead of per-task virtual threads");
 		assertFalse(source.contains("new StatementUpdate(statement"),
 				"Bulk exact ingest should not allocate one StatementUpdate wrapper per retained statement");
+	}
+
+	@Test
+	void incrementalTransformIngestUsesSingleWorkerToAvoidStateLockContention() throws Exception {
+		SketchBasedJoinEstimator estimator = newEstimator();
+		try {
+			Object executor = privateFieldValue(estimator, "asyncIncrementalExecutor");
+			assertTrue(executor instanceof ThreadPoolExecutor,
+					"Incremental transform ingest should use a bounded worker pool");
+			ThreadPoolExecutor transformExecutor = (ThreadPoolExecutor) executor;
+			assertEquals(1, transformExecutor.getCorePoolSize(),
+					"Incremental transform ingest should avoid parallel workers contending on the state lock");
+			assertEquals(1, transformExecutor.getMaximumPoolSize(),
+					"Incremental transform ingest should avoid parallel workers contending on the state lock");
+		} finally {
+			estimator.close();
+		}
 	}
 
 	@Test

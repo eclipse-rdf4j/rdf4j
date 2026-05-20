@@ -427,7 +427,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final double churnReaddThreshold;
 	private final double churnRemovalRatioThreshold;
 	private final boolean roundJoinEstimates;
-	private final long estimateCacheTtlNanos;
+	private final long estimateCacheTtlMillis;
 	private final int zeroIntersectionExactDistinctLimit;
 	private final double zeroIntersectionSkewRatio;
 	private final long zeroIntersectionRowBudget;
@@ -1297,6 +1297,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		private void applyTo(SketchBasedJoinEstimator estimator, State state, byte slot) {
 			sortEntriesByResidentAddress();
+			estimator.reserveResidentSketchCapacity(state, keyPrefixes, xs, ys, size);
 			long[][] allOverflowValues = overflowValues;
 			for (int i = 0; i < size; i++) {
 				estimator.applyGroupedUpdate(state, slot, keyPrefixes[i], xs[i], ys[i],
@@ -1503,20 +1504,20 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final BlockingQueue<PartitionWork>[] ingestPartitionQueues;
 	private final AtomicBoolean[] ingestPartitionDrainScheduled;
 	private final int incrementalQueueInitialLimit;
-	private final long incrementalQueueIdleResetNanos;
+	private final long incrementalQueueIdleResetMillis;
 	private final long incrementalWorkerKeepAliveMillis;
 	private final long incrementalQueueEstimatedStatementBytes;
 	private final int incrementalQueueBlockWindowUpdates;
-	private final long incrementalQueueBlockBudgetNanos;
+	private final long incrementalQueueBlockBudgetMillis;
 	private final int memoryMonitorCheckInterval;
 	private final long memoryMonitorEstimatedOperationBytes;
 	private StatementUpdateQueue[] incrementalStatementQueues;
 	private int activeStatementQueueIndex;
 	private int nextStatementQueueLimit;
-	private long lastIncrementalStatementNanos;
+	private long lastIncrementalStatementMillis;
 	private int incrementalQueueMemoryCheckCountdown;
 	private int incrementalQueueBlockedUpdatesInWindow;
-	private long incrementalQueueBlockedNanosInWindow;
+	private long incrementalQueueBlockedMillisInWindow;
 	private boolean exactIncrementalUpdatesDropped;
 	private volatile int asyncIncrementalBatchCount;
 	private final AtomicLong asyncIncrementalUpdateCount = new AtomicLong();
@@ -1660,17 +1661,17 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		this.churnReaddThreshold = churnReaddTh;
 		this.churnRemovalRatioThreshold = churnRemovalTh;
 		this.roundJoinEstimates = roundEst;
-		this.estimateCacheTtlNanos = TimeUnit.SECONDS.toNanos(estimateCacheSeconds);
+		this.estimateCacheTtlMillis = TimeUnit.SECONDS.toMillis(estimateCacheSeconds);
 		this.zeroIntersectionExactDistinctLimit = zeroIntersectionExactLimit;
 		this.zeroIntersectionSkewRatio = zeroIntersectionSkew;
 		this.zeroIntersectionRowBudget = zeroIntersectionBudget;
 		this.zeroIntersectionSampleSize = zeroIntersectionSampleSize;
 		this.incrementalQueueInitialLimit = queueInitialLimit;
-		this.incrementalQueueIdleResetNanos = TimeUnit.MILLISECONDS.toNanos(queueIdleResetMillis);
+		this.incrementalQueueIdleResetMillis = queueIdleResetMillis;
 		this.incrementalWorkerKeepAliveMillis = workerKeepAliveMillis;
 		this.incrementalQueueEstimatedStatementBytes = queueEstimatedStatementBytes;
 		this.incrementalQueueBlockWindowUpdates = queueBlockWindowUpdates;
-		this.incrementalQueueBlockBudgetNanos = TimeUnit.MILLISECONDS.toNanos(queueBlockBudgetMillis);
+		this.incrementalQueueBlockBudgetMillis = queueBlockBudgetMillis;
 		this.memoryMonitorCheckInterval = memoryMonitorCheckInterval;
 		this.memoryMonitorEstimatedOperationBytes = memoryMonitorEstimatedOperationBytes;
 		this.churnSampler = new ChurnSampler();
@@ -1687,8 +1688,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		};
 		this.nextStatementQueueLimit = saturatedDoubleQueueLimit(incrementalQueueInitialLimit);
 		this.incrementalQueueMemoryCheckCountdown = memoryMonitorCheckInterval;
-		int transformThreads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
-		ThreadPoolExecutor transformExecutor = new ThreadPoolExecutor(transformThreads, transformThreads,
+		ThreadPoolExecutor transformExecutor = new ThreadPoolExecutor(1, 1,
 				incrementalWorkerKeepAliveMillis, TimeUnit.MILLISECONDS,
 				new ArrayBlockingQueue<>(INCREMENTAL_TRANSFORM_QUEUE_CAPACITY),
 				daemonThreadFactory("RdfJoinEstimator-Transform-"));
@@ -1707,7 +1707,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					logger.warn("Join estimator incremental idle monitor failed", t);
 				}
 			}
-		}, incrementalQueueIdleResetNanos, incrementalQueueIdleResetNanos, TimeUnit.NANOSECONDS);
+		}, incrementalQueueIdleResetMillis, incrementalQueueIdleResetMillis, TimeUnit.MILLISECONDS);
 		this.enabledIngestPartitions = contextPairSketchesEnabled
 				? INGEST_PARTITIONS_WITH_CONTEXT
 				: INGEST_PARTITIONS_WITHOUT_CONTEXT;
@@ -1892,20 +1892,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	public boolean awaitReady(long timeout, TimeUnit unit) throws InterruptedException {
 		Objects.requireNonNull(unit, "unit");
-		long remainingNanos = unit.toNanos(timeout);
-		long deadlineNanos = System.nanoTime() + remainingNanos;
+		long remainingMillis = toPositiveMillis(timeout, unit);
+		long deadlineMillis = saturatingAdd(System.currentTimeMillis(), remainingMillis);
 		synchronized (readyMonitor) {
 			while (!isReadyForAwait()) {
 				flushPendingIncrementalForAwait();
 				if (isReadyForAwait()) {
 					return true;
 				}
-				if (remainingNanos <= 0L) {
+				if (remainingMillis <= 0L) {
 					return false;
 				}
-				TimeUnit.NANOSECONDS.timedWait(readyMonitor,
-						Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(100L)));
-				remainingNanos = deadlineNanos - System.nanoTime();
+				readyMonitor.wait(Math.min(remainingMillis, 100L));
+				remainingMillis = deadlineMillis - System.currentTimeMillis();
 			}
 			return true;
 		}
@@ -2410,7 +2409,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		rebuildEpoch.incrementAndGet(); // mark rebuild in progress (odd epoch)
 		long seen = 0L;
 		long startMillis = System.currentTimeMillis();
-		long startNanos = System.nanoTime();
 		long lastLoggedRebuildMillion = -1L;
 		boolean stoppedEarly = false;
 		String targetBuffer = rebuildIntoA ? "bufA" : "bufB";
@@ -2434,7 +2432,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					if (rebuildMemoryCheckCountdown <= 0) {
 						rebuildMemoryCheckCountdown = memoryMonitorCheckInterval;
 						if (!hasMemoryForMonitoredOperations(rebuildBatch.length)) {
-							return stopRebuildUnderMemoryPressure(tgt, targetBuffer, targetSlot, seen, startNanos);
+							return stopRebuildUnderMemoryPressure(tgt, targetBuffer, targetSlot, seen, startMillis);
 						}
 					}
 					IngestEvent event = toIngestEvent(str(st.getSubject()), str(st.getPredicate()),
@@ -2488,7 +2486,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 
 			if (stoppedEarly) {
-				return stopRebuildEarly(tgt, targetBuffer, targetSlot, seen, startNanos,
+				return stopRebuildEarly(tgt, targetBuffer, targetSlot, seen, startMillis,
 						keepRebuildRequiredOnEarlyStop);
 			}
 
@@ -2519,7 +2517,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			logger.info(
 					"RdfJoinEstimator: Rebuilding sketches finished: targetBuffer={}, targetSlot={}, previousCurrentSlot={}, scannedTriples={}, stoppedEarly={}, elapsedMillis={}",
 					targetBuffer, targetSlot, previousCurrentSlot, seen, stoppedEarly,
-					TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
+					elapsedMillisSince(startMillis));
 			return seen;
 		} finally {
 			if ((rebuildEpoch.get() & 1L) != 0L) {
@@ -2529,7 +2527,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 	}
 
-	private long stopRebuildEarly(State target, String targetBuffer, byte targetSlot, long seen, long startNanos,
+	private long stopRebuildEarly(State target, String targetBuffer, byte targetSlot, long seen, long startMillis,
 			boolean keepRebuildRequired) {
 		synchronized (target) {
 			target.clear();
@@ -2539,19 +2537,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		logger.debug(
 				"RdfJoinEstimator: Rebuilding sketches deferred: targetBuffer={}, targetSlot={}, scannedTriples={}, elapsedMillis={}",
-				targetBuffer, targetSlot, seen, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
+				targetBuffer, targetSlot, seen, elapsedMillisSince(startMillis));
 		return seen;
 	}
 
 	private long stopRebuildUnderMemoryPressure(State target, String targetBuffer, byte targetSlot, long seen,
-			long startNanos) {
+			long startMillis) {
 		synchronized (target) {
 			target.clear();
 		}
 		markRebuildRequired();
 		logger.info(
 				"RdfJoinEstimator: Rebuilding sketches stopped by memory monitor: targetBuffer={}, targetSlot={}, scannedTriples={}, elapsedMillis={}",
-				targetBuffer, targetSlot, seen, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos));
+				targetBuffer, targetSlot, seen, elapsedMillisSince(startMillis));
 		return seen;
 	}
 
@@ -2694,7 +2692,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		rethrowAsyncIncrementalFailure();
 		StatementUpdateBatch batch = null;
 		synchronized (incrementalBufferLock) {
-			lastIncrementalStatementNanos = System.nanoTime();
+			lastIncrementalStatementMillis = System.currentTimeMillis();
 			if (exactIncrementalUpdatesDropped) {
 				markIncrementalRebuildRequiredLocked();
 				return;
@@ -2722,7 +2720,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		StatementUpdateBatch batch = null;
 		synchronized (incrementalBufferLock) {
-			lastIncrementalStatementNanos = System.nanoTime();
+			lastIncrementalStatementMillis = System.currentTimeMillis();
 			if (exactIncrementalUpdatesDropped) {
 				markIncrementalRebuildRequiredLocked();
 				return;
@@ -2798,8 +2796,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		StatementUpdateBatch batch = null;
 		synchronized (incrementalBufferLock) {
-			long lastInsert = lastIncrementalStatementNanos;
-			if (lastInsert == 0L || System.nanoTime() - lastInsert < incrementalQueueIdleResetNanos) {
+			long lastInsert = lastIncrementalStatementMillis;
+			if (lastInsert == 0L || System.currentTimeMillis() - lastInsert < incrementalQueueIdleResetMillis) {
 				return;
 			}
 			StatementUpdateQueue active = activeStatementQueue();
@@ -2815,7 +2813,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (activeStatementQueue().updateCount == 0) {
 				resetIncrementalQueueGrowthLocked();
 			}
-			lastIncrementalStatementNanos = 0L;
+			lastIncrementalStatementMillis = 0L;
 		}
 		if (batch != null) {
 			submitIncrementalStatementBatch(batch);
@@ -2869,50 +2867,50 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private boolean waitForReusableStatementQueueLocked(StatementUpdateQueue queue, int blockedUpdates) {
-		long remainingNanos = incrementalQueueBlockBudgetRemainingNanosLocked();
-		if (remainingNanos <= 0L) {
+		long remainingMillis = incrementalQueueBlockBudgetRemainingMillisLocked();
+		if (remainingMillis <= 0L) {
 			return queue.isReusable();
 		}
-		remainingNanos = Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(INCREMENTAL_QUEUE_FULL_WAIT_MILLIS));
-		long deadlineNanos = System.nanoTime() + remainingNanos;
-		long startNanos = System.nanoTime();
-		while (!queue.isReusable() && remainingNanos > 0L) {
+		remainingMillis = Math.min(remainingMillis, INCREMENTAL_QUEUE_FULL_WAIT_MILLIS);
+		long startMillis = System.currentTimeMillis();
+		long deadlineMillis = saturatingAdd(startMillis, remainingMillis);
+		while (!queue.isReusable() && remainingMillis > 0L) {
 			try {
-				TimeUnit.NANOSECONDS.timedWait(incrementalBufferLock, remainingNanos);
+				incrementalBufferLock.wait(remainingMillis);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				recordAsyncIncrementalFailure(e);
 				throw new RuntimeException("Interrupted while waiting for incremental join-estimator queue", e);
 			}
-			remainingNanos = deadlineNanos - System.nanoTime();
+			remainingMillis = deadlineMillis - System.currentTimeMillis();
 		}
-		long blockedNanos = System.nanoTime() - startNanos;
-		if (blockedNanos > 0L) {
-			recordIncrementalQueueBlockedNanosLocked(blockedUpdates, blockedNanos);
+		long blockedMillis = elapsedMillisSince(startMillis);
+		if (blockedMillis > 0L) {
+			recordIncrementalQueueBlockedMillisLocked(blockedUpdates, blockedMillis);
 		}
 		return queue.isReusable();
 	}
 
-	private long incrementalQueueBlockBudgetRemainingNanosLocked() {
-		if (incrementalQueueBlockBudgetNanos == 0L) {
+	private long incrementalQueueBlockBudgetRemainingMillisLocked() {
+		if (incrementalQueueBlockBudgetMillis == 0L) {
 			return 0L;
 		}
-		long spent = incrementalQueueBlockedNanosInWindow;
-		if (spent >= incrementalQueueBlockBudgetNanos) {
+		long spent = incrementalQueueBlockedMillisInWindow;
+		if (spent >= incrementalQueueBlockBudgetMillis) {
 			return 0L;
 		}
-		return incrementalQueueBlockBudgetNanos - spent;
+		return incrementalQueueBlockBudgetMillis - spent;
 	}
 
-	private void recordIncrementalQueueBlockedNanosLocked(int blockedUpdates, long blockedNanos) {
+	private void recordIncrementalQueueBlockedMillisLocked(int blockedUpdates, long blockedMillis) {
 		incrementalQueueBlockedUpdatesInWindow += Math.max(1, blockedUpdates);
-		incrementalQueueBlockedNanosInWindow = saturatingAdd(incrementalQueueBlockedNanosInWindow, blockedNanos);
+		incrementalQueueBlockedMillisInWindow = saturatingAdd(incrementalQueueBlockedMillisInWindow, blockedMillis);
 		if (incrementalQueueBlockedUpdatesInWindow >= incrementalQueueBlockWindowUpdates) {
-			if (incrementalQueueBlockedNanosInWindow > incrementalQueueBlockBudgetNanos) {
+			if (incrementalQueueBlockedMillisInWindow > incrementalQueueBlockBudgetMillis) {
 				dropExactIncrementalUpdatesLocked();
 			}
 			incrementalQueueBlockedUpdatesInWindow = 0;
-			incrementalQueueBlockedNanosInWindow = 0L;
+			incrementalQueueBlockedMillisInWindow = 0L;
 		}
 	}
 
@@ -3290,15 +3288,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private void putPartitionWork(int partitionIndex, PartitionWork work) throws InterruptedException {
-		long startNanos = System.nanoTime();
+		long startMillis = System.currentTimeMillis();
 		BlockingQueue<PartitionWork> queue = ingestPartitionQueues[partitionIndex];
 		schedulePartitionDrain(partitionIndex);
 		queue.put(work);
 		schedulePartitionDrain(partitionIndex);
-		long blockedNanos = System.nanoTime() - startNanos;
-		if (blockedNanos > 0L) {
+		long blockedMillis = elapsedMillisSince(startMillis);
+		if (blockedMillis > 0L) {
 			synchronized (incrementalBufferLock) {
-				recordIncrementalQueueBlockedNanosLocked(work.chunk.updateCount, blockedNanos);
+				recordIncrementalQueueBlockedMillisLocked(work.chunk.updateCount, blockedMillis);
 			}
 		}
 	}
@@ -3356,6 +3354,35 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			tupleUpdateRaw(sketch, overflowValues[i - 1], delta);
 		}
 		markDirtyAndTouchResidentSketch(slot, entryId);
+	}
+
+	private void reserveResidentSketchCapacity(State state, int[] keyPrefixes, int[] xs, int[] ys, int count) {
+		for (int i = 0; i < count;) {
+			int keyPrefix = keyPrefixes[i];
+			byte recType = (byte) keyPrefix;
+			if (!isSparsePairRecordType(recType)) {
+				i++;
+				continue;
+			}
+			int from = i++;
+			while (i < count && keyPrefixes[i] == keyPrefix) {
+				i++;
+			}
+			PairBuild build = residentPairBuild(state, keyPrefix);
+			if (build != null) {
+				build.sparseArray(recType).reserveMissing(build, xs, ys, from, i);
+			}
+		}
+	}
+
+	private static boolean isSparsePairRecordType(byte recType) {
+		return recType == REC_PAIR_TRIPLE || recType == REC_PAIR_COMP1 || recType == REC_PAIR_COMP2;
+	}
+
+	private static PairBuild residentPairBuild(State state, int keyPrefix) {
+		boolean isDelete = ((keyPrefix >>> 8) & 1) != 0;
+		Pair pair = PAIR_VALUES[(keyPrefix >>> 16) & 0xff];
+		return isDelete ? state.delPairs.get(pair) : state.pairs.get(pair);
 	}
 
 	private void accumulateIngestEvent(BatchUpdateAccumulator updates, IngestEvent event, IngestPartition partition) {
@@ -3528,7 +3555,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public JoinEstimate estimate(Component joinVar, String s, String p, String o, String c) {
 		flushPendingIncremental();
 		State snap = current;
-		if (estimateCacheTtlNanos <= 0L) {
+		if (estimateCacheTtlMillis <= 0L) {
 			synchronized (snap) {
 				PatternStats st = statsOf(snap, joinVar, s, p, o, c);
 				ArrayOfDoublesSketch bindings = st.sketch == null ? EMPTY : st.sketch;
@@ -3559,7 +3586,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		public JoinEstimate join(Component newJoinVar, String s, String p, String o, String c) {
-			if (estimateCacheTtlNanos <= 0L) {
+			if (estimateCacheTtlMillis <= 0L) {
 				synchronized (snap) {
 					return joinWithPatternStats(statsOf(snap, newJoinVar, s, p, o, c));
 				}
@@ -3654,14 +3681,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	}
 
-	private record EstimateCacheEntry(PatternStats patternStats, long expiresAtNanos) {
-		private EstimateCacheEntry(PatternStats patternStats, long expiresAtNanos) {
+	private record EstimateCacheEntry(PatternStats patternStats, long expiresAtMillis) {
+		private EstimateCacheEntry(PatternStats patternStats, long expiresAtMillis) {
 			this.patternStats = Objects.requireNonNull(patternStats, "patternStats");
-			this.expiresAtNanos = expiresAtNanos;
+			this.expiresAtMillis = expiresAtMillis;
 		}
 
-		private boolean isAlive(long nowNanos) {
-			return nowNanos - expiresAtNanos < 0L;
+		private boolean isAlive(long nowMillis) {
+			return nowMillis - expiresAtMillis < 0L;
 		}
 	}
 
@@ -3748,16 +3775,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private PatternStats patternStats(State snap, Component joinVar, String s, String p, String o, String c) {
-		if (estimateCacheTtlNanos <= 0L) {
+		if (estimateCacheTtlMillis <= 0L) {
 			synchronized (snap) {
 				return statsOf(snap, joinVar, s, p, o, c);
 			}
 		}
 
-		long nowNanos = System.nanoTime();
+		long nowMillis = System.currentTimeMillis();
 		EstimateCacheKey key = new EstimateCacheKey(joinVar, s, p, o, c);
 		EstimateCacheEntry cached = estimateCache.get(key);
-		if (cached != null && cached.isAlive(nowNanos)) {
+		if (cached != null && cached.isAlive(nowMillis)) {
 			return cached.patternStats;
 		}
 
@@ -3765,8 +3792,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		synchronized (snap) {
 			frozenStats = freezePatternStats(statsOf(snap, joinVar, s, p, o, c));
 		}
-		estimateCache.put(key, new EstimateCacheEntry(frozenStats, saturatingAdd(nowNanos, estimateCacheTtlNanos)));
-		trimEstimateCache(nowNanos);
+		estimateCache.put(key, new EstimateCacheEntry(frozenStats, saturatingAdd(nowMillis, estimateCacheTtlMillis)));
+		trimEstimateCache(nowMillis);
 		return frozenStats;
 	}
 
@@ -3783,12 +3810,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return new PatternStats(patternStats.sketch.compact(), patternStats.card);
 	}
 
-	private void trimEstimateCache(long nowNanos) {
+	private void trimEstimateCache(long nowMillis) {
 		if (estimateCache.size() <= MAX_ESTIMATE_CACHE_ENTRIES) {
 			return;
 		}
 		for (Map.Entry<EstimateCacheKey, EstimateCacheEntry> entry : estimateCache.entrySet()) {
-			if (!entry.getValue().isAlive(nowNanos)) {
+			if (!entry.getValue().isAlive(nowMillis)) {
 				estimateCache.remove(entry.getKey(), entry.getValue());
 			}
 		}
@@ -4308,8 +4335,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private static final long[] EMPTY_KEYS = {};
 		private static final ArrayOfDoublesUpdatableSketch[] EMPTY_VALUES = {};
 
-		long[] keys = EMPTY_KEYS;
-		ArrayOfDoublesUpdatableSketch[] values = EMPTY_VALUES;
+		private long[] keys = EMPTY_KEYS;
+		private ArrayOfDoublesUpdatableSketch[] values = EMPTY_VALUES;
 		int size;
 
 		SparseSketchArray() {
@@ -4354,8 +4381,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			int insertionPoint = ~index;
 			ensureCapacity(size + 1);
 			if (insertionPoint < size) {
-				System.arraycopy(keys, insertionPoint, keys, insertionPoint + 1, size - insertionPoint);
-				System.arraycopy(values, insertionPoint, values, insertionPoint + 1, size - insertionPoint);
+				shiftKeysRight(keys, insertionPoint, size);
+				shiftValuesRight(values, insertionPoint, size);
 			}
 			keys[insertionPoint] = key;
 			values[insertionPoint] = value;
@@ -4384,30 +4411,96 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 
+		private void reserveMissing(PairBuild pairBuild, int[] xs, int[] ys, int from, int to) {
+			int existingIndex = 0;
+			int currentSize = size;
+			long[] existingKeys = keys;
+			int missing = 0;
+			for (int i = from; i < to; i++) {
+				long key = pairBuild.packedKey(xs[i], ys[i]);
+				while (existingIndex < currentSize && existingKeys[existingIndex] < key) {
+					existingIndex++;
+				}
+				if (existingIndex >= currentSize || existingKeys[existingIndex] != key) {
+					missing++;
+				}
+			}
+			if (missing > 0) {
+				ensureCapacity(currentSize + missing);
+			}
+		}
+
 		private void ensureCapacity(int minimumCapacity) {
-			if (keys.length >= minimumCapacity) {
+			int currentCapacity = keys.length;
+			if (currentCapacity >= minimumCapacity) {
 				return;
 			}
-			int newCapacity = idealCapacity(minimumCapacity);
-			keys = Arrays.copyOf(keys, newCapacity);
-			values = Arrays.copyOf(values, newCapacity);
+			int newCapacity = idealCapacity(minimumCapacity, currentCapacity);
+			long[] grownKeys = new long[newCapacity];
+			ArrayOfDoublesUpdatableSketch[] grownValues = new ArrayOfDoublesUpdatableSketch[newCapacity];
+			copyKeys(keys, grownKeys, size);
+			copyValues(values, grownValues, size);
+			keys = grownKeys;
+			values = grownValues;
 		}
 
 		private void removeAt(int index) {
-			int moved = size - index - 1;
-			if (moved > 0) {
-				System.arraycopy(keys, index + 1, keys, index, moved);
-				System.arraycopy(values, index + 1, values, index, moved);
+			int lastIndex = size - 1;
+			if (index < lastIndex) {
+				shiftKeysLeft(keys, index, lastIndex);
+				shiftValuesLeft(values, index, lastIndex);
 			}
 			size--;
 			values[size] = null;
 		}
 
-		private static int idealCapacity(int minimumCapacity) {
-			if (minimumCapacity <= 4) {
-				return 4;
+		private static void copyKeys(long[] source, long[] target, int length) {
+			for (int i = 0; i < length; i++) {
+				target[i] = source[i];
 			}
-			return Integer.highestOneBit(minimumCapacity - 1) << 1;
+		}
+
+		private static void copyValues(ArrayOfDoublesUpdatableSketch[] source, ArrayOfDoublesUpdatableSketch[] target,
+				int length) {
+			for (int i = 0; i < length; i++) {
+				target[i] = source[i];
+			}
+		}
+
+		private static void shiftKeysRight(long[] array, int from, int to) {
+			for (int i = to; i > from; i--) {
+				array[i] = array[i - 1];
+			}
+		}
+
+		private static void shiftValuesRight(ArrayOfDoublesUpdatableSketch[] array, int from, int to) {
+			for (int i = to; i > from; i--) {
+				array[i] = array[i - 1];
+			}
+		}
+
+		private static void shiftKeysLeft(long[] array, int from, int to) {
+			for (int i = from; i < to; i++) {
+				array[i] = array[i + 1];
+			}
+		}
+
+		private static void shiftValuesLeft(ArrayOfDoublesUpdatableSketch[] array, int from, int to) {
+			for (int i = from; i < to; i++) {
+				array[i] = array[i + 1];
+			}
+		}
+
+		private static int idealCapacity(int minimumCapacity, int currentCapacity) {
+			int capacity = currentCapacity == 0 ? 1024 : currentCapacity;
+			while (capacity < minimumCapacity) {
+				int nextCapacity = capacity < (1 << 20) ? capacity << 1 : capacity + (capacity >>> 1);
+				if (nextCapacity <= capacity) {
+					return minimumCapacity;
+				}
+				capacity = nextCapacity;
+			}
+			return capacity;
 		}
 	}
 
@@ -9966,7 +10059,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 			}
 			exactIncrementalUpdatesDropped = false;
-			lastIncrementalStatementNanos = 0L;
+			lastIncrementalStatementMillis = 0L;
 			resetIncrementalQueueGrowthLocked();
 		}
 		waitForAsyncIncrementalBatchesIgnoringFailures();
@@ -10164,6 +10257,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 		return true;
+	}
+
+	private static long toPositiveMillis(long duration, TimeUnit unit) {
+		if (duration <= 0L) {
+			return 0L;
+		}
+		long millis = unit.toMillis(duration);
+		return millis > 0L ? millis : 1L;
+	}
+
+	private static long elapsedMillisSince(long startMillis) {
+		return Math.max(0L, System.currentTimeMillis() - startMillis);
 	}
 
 	private static long saturatingAdd(long left, long right) {
