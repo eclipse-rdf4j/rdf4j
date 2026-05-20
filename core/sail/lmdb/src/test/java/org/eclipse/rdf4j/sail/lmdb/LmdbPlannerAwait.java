@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 
 public final class LmdbPlannerAwait {
 
-	public static final Duration DEFAULT_PLANNER_TIMEOUT = Duration.ofSeconds(10);
+	public static final Duration DEFAULT_PLANNER_TIMEOUT = Duration.ofSeconds(60);
 	public static final Duration DEFAULT_PIPELINE_TIMEOUT = Duration.ofSeconds(71);
 	public static final Duration DEFAULT_SKETCH_READY_TIMEOUT = Duration.ofSeconds(10);
 

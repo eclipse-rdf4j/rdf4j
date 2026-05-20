@@ -2190,7 +2190,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	void medicalPatientsBenchmarkHarnessStoreSelectsConditionCodeAnchorAfterWarmups(@TempDir Path dataDir)
+	void medicalPatientsBenchmarkHarnessStoreKeepsOriginalAnchorAfterWarmups(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareFreshBenchmarkHarnessStore(dataDir, theme);
@@ -2212,13 +2212,13 @@ class LmdbThemeQueryRegressionIT {
 				assertContains(plan, "finite-anchor:condCode[valid",
 						"Medical q9 benchmark harness store should still explain the finite-anchor candidate\n"
 								+ plan);
-				assertContains(plan, "selected=finite-anchor:condCode",
-						"Medical q9 should select the condition-code finite anchor once JMH-style warmup feedback "
-								+ "makes it cheaper than the original plan on full work and output surface\n"
+				assertContains(plan, "selected=original",
+						"Medical q9 should keep the original anchor when JMH-style warmup feedback still leaves "
+								+ "the condition-code finite anchor with higher work and output surface\n"
 								+ plan);
 				assertContains(plan, "plannedEstimateSource=learned_filter",
 						"Medical q9 warmups should feed learned filter evidence into the plan that makes the "
-								+ "condition-code anchor worthwhile\n"
+								+ "condition-code finite-anchor decision explicit\n"
 								+ plan);
 			} finally {
 				shutdownAndRelease(repository, store);

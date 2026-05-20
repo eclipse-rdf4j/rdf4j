@@ -144,7 +144,7 @@ class LmdbOptimizerPipelineTest {
 
 			LmdbPlannerAwait.awaitEstimatorReady(estimator);
 			LmdbPlannerAwait.awaitPlannerAssertion("long-lived connection chooses LMDB factory",
-					() -> assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory)));
+					() -> assertInstanceOf(LmdbEvaluationStrategy.class, createEvaluationStrategy(factory)));
 		} finally {
 			store.shutDown();
 		}

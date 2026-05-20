@@ -91,6 +91,7 @@ class LmdbSailStore implements SailStore {
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
 	private static final int EXACT_ESTIMATOR_ADD_CHUNK_SIZE = 4096;
 	private static final int EXACT_ESTIMATOR_ADD_DEFER_THRESHOLD = 4096;
+	private static final int INITIAL_PENDING_APPROVE_CAPACITY = 32;
 	private static final boolean LMDB_STORE_PATH_EVENTS_ENABLED = Boolean.getBoolean("rdf4j.benchmark.profiling")
 			|| Boolean.getBoolean("rdf4j.lmdb.jfr");
 	private static final EventType LMDB_STORE_PATH_EVENT_TYPE = EventType.getEventType(LmdbStorePathEvent.class);
@@ -1567,27 +1568,37 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void bufferApprove(Resource subj, IRI pred, Value obj, Resource context) throws IOException {
-			ensurePendingApproveCapacity();
+			ensurePendingApproveCapacity(pendingApproveCount + 1);
 			int index = pendingApproveCount;
 			pendingApproveSubjects[index] = subj;
 			pendingApprovePredicates[index] = pred;
 			pendingApproveObjects[index] = obj;
 			pendingApproveContexts[index] = context;
 			pendingApproveCount++;
-			if (pendingApproveCount == pendingApproveSubjects.length) {
+			if (pendingApproveCount == bulkOperationSize) {
 				flushPendingApproves();
 			}
 		}
 
-		private void ensurePendingApproveCapacity() {
-			if (pendingApproveSubjects != null) {
+		private void ensurePendingApproveCapacity(int minCapacity) {
+			if (pendingApproveSubjects != null && minCapacity <= pendingApproveSubjects.length) {
 				return;
 			}
-			int capacity = Math.max(1, bulkOperationSize);
-			pendingApproveSubjects = new Resource[capacity];
-			pendingApprovePredicates = new IRI[capacity];
-			pendingApproveObjects = new Value[capacity];
-			pendingApproveContexts = new Resource[capacity];
+			int capacity = pendingApproveSubjects == null
+					? Math.min(bulkOperationSize*4, INITIAL_PENDING_APPROVE_CAPACITY)
+					: Math.min(bulkOperationSize*4, Math.max(minCapacity, pendingApproveSubjects.length << 1));
+			capacity = Math.max(1, capacity);
+			if (pendingApproveSubjects == null) {
+				pendingApproveSubjects = new Resource[capacity];
+				pendingApprovePredicates = new IRI[capacity];
+				pendingApproveObjects = new Value[capacity];
+				pendingApproveContexts = new Resource[capacity];
+			} else {
+				pendingApproveSubjects = Arrays.copyOf(pendingApproveSubjects, capacity);
+				pendingApprovePredicates = Arrays.copyOf(pendingApprovePredicates, capacity);
+				pendingApproveObjects = Arrays.copyOf(pendingApproveObjects, capacity);
+				pendingApproveContexts = Arrays.copyOf(pendingApproveContexts, capacity);
+			}
 		}
 
 		private void flushPendingApproves() throws IOException {

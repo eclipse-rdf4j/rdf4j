@@ -59,16 +59,16 @@ public final class BenchmarkJoinEstimatorSupport {
 
 	public static void prepareEstimatorForBulkLoad(SailRepository repository, LmdbStore store) throws IOException {
 		repository.init();
-		SketchBasedJoinEstimator estimator = resolveEstimator(store);
-		estimator.stop();
-		estimator.discardAndMarkForRebuild();
+		resolveEstimator(store);
 	}
 
 	public static void persistEstimatorAfterBulkLoad(SailRepository repository, LmdbStore store) throws IOException {
 		repository.init();
 		SketchBasedJoinEstimator estimator = resolveEstimator(store);
-		estimator.rebuild();
-		awaitEstimatorReady(estimator, "bulk-load rebuild");
+		if (!store.forceFlushSketchEstimator()) {
+			estimator.rebuild();
+			awaitEstimatorReady(estimator, "bulk-load rebuild");
+		}
 		persistReusableEstimatorSnapshot(estimator);
 	}
 

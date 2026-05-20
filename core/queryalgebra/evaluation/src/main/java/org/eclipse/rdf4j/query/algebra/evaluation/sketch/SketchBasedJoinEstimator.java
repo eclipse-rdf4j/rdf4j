@@ -664,6 +664,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private void clear() {
+			int previousSize = size;
+			if (previousSize > 0) {
+				clearEntryMetadata(0, previousSize);
+			}
 			size = 0;
 			Arrays.fill(buckets, EMPTY_BUCKET);
 			dirtyHeadA = -1;
@@ -709,36 +713,27 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return findOrAdd(keyPrefix, keyHash, x, y);
 		}
 
+
 		private int findOrAdd(int keyPrefix, int keyHash, int x, int y) {
 			if ((size + 1) * 10 >= buckets.length * 7) {
 				rehash(buckets.length << 1);
 			}
 			int slot = keyHash & bucketMask;
+
 			while (true) {
 				long bucket = buckets[slot];
 				if (bucket == EMPTY_BUCKET) {
+
 					int entryId = size++;
 					ensureEntryCapacity(size);
 					buckets[slot] = encodeBucket(keyHash, entryId);
-					flags[entryId] = 0;
 					keyPrefixes[entryId] = keyPrefix;
 					xs[entryId] = x;
 					ys[entryId] = y;
-					persistedFileKindsA[entryId] = NO_FILE_KIND;
-					persistedOffsetsA[entryId] = 0L;
-					persistedLengthsA[entryId] = 0;
-					persistedGenerationsA[entryId] = 0L;
-					persistedFileKindsB[entryId] = NO_FILE_KIND;
-					persistedOffsetsB[entryId] = 0L;
-					persistedLengthsB[entryId] = 0;
-					persistedGenerationsB[entryId] = 0L;
-					dirtyPrevA[entryId] = -1;
-					dirtyNextA[entryId] = -1;
-					dirtyPrevB[entryId] = -1;
-					dirtyNextB[entryId] = -1;
 					return entryId;
 				}
 				if (bucketHash(bucket) == keyHash) {
+
 					int entryId = bucketEntryId(bucket);
 					if (keyPrefixes[entryId] == keyPrefix && xs[entryId] == x && ys[entryId] == y) {
 						return entryId;
@@ -746,6 +741,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				}
 				slot = (slot + 1) & bucketMask;
 			}
+
+		}
+
+		private void clearEntryMetadata(int fromIndex, int toIndex) {
+			Arrays.fill(flags, fromIndex, toIndex, (byte) 0);
+			Arrays.fill(persistedFileKindsA, fromIndex, toIndex, NO_FILE_KIND);
+			Arrays.fill(persistedOffsetsA, fromIndex, toIndex, 0L);
+			Arrays.fill(persistedLengthsA, fromIndex, toIndex, 0);
+			Arrays.fill(persistedGenerationsA, fromIndex, toIndex, 0L);
+			Arrays.fill(persistedFileKindsB, fromIndex, toIndex, NO_FILE_KIND);
+			Arrays.fill(persistedOffsetsB, fromIndex, toIndex, 0L);
+			Arrays.fill(persistedLengthsB, fromIndex, toIndex, 0);
+			Arrays.fill(persistedGenerationsB, fromIndex, toIndex, 0L);
+			Arrays.fill(dirtyPrevA, fromIndex, toIndex, -1);
+			Arrays.fill(dirtyNextA, fromIndex, toIndex, -1);
+			Arrays.fill(dirtyPrevB, fromIndex, toIndex, -1);
+			Arrays.fill(dirtyNextB, fromIndex, toIndex, -1);
 		}
 
 		private static long encodeBucket(int keyHash, int entryId) {
