@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -764,6 +765,60 @@ class LmdbSailStore implements SailStore {
 
 		for (long contextID : contextIDList) {
 			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+		}
+
+		if (perContextIterList.size() == 1) {
+			return perContextIterList.getFirst();
+		} else {
+			return new UnionIteration<>(perContextIterList);
+		}
+	}
+
+	CloseableIteration<? extends Statement> createStatementIteratorByObjectValuePrefix(
+			Txn txn, Resource subj, IRI pred, long valuePrefix, boolean explicit, Resource... contexts)
+			throws IOException {
+		if (!explicit && !mayHaveInferred) {
+			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+		}
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			}
+		}
+
+		long predID = valueStore.getId(pred);
+		if (predID == LmdbValue.UNKNOWN_ID) {
+			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+		}
+
+		List<Long> contextIDList = new ArrayList<>(contexts.length);
+		if (contexts.length == 0) {
+			contextIDList.add(LmdbValue.UNKNOWN_ID);
+		} else {
+			for (Resource context : contexts) {
+				if (context == null) {
+					contextIDList.add(0L);
+				} else if (!context.isTriple()) {
+					long contextID = valueStore.getId(context);
+
+					if (contextID != LmdbValue.UNKNOWN_ID) {
+						contextIDList.add(contextID);
+					}
+				}
+			}
+		}
+
+		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
+
+		for (long contextID : contextIDList) {
+			RecordIterator records = tripleStore.getTriplesByObjectValuePrefix(txn, predID, valuePrefix, explicit);
+			if (subjID != LmdbValue.UNKNOWN_ID || contextID != LmdbValue.UNKNOWN_ID) {
+				records = new FilteringRecordIterator(records, subjID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID,
+						contextID);
+			}
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
 
@@ -1564,7 +1619,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private final class LmdbSailDataset implements SailDataset {
+	private final class LmdbSailDataset implements SailDataset, LmdbValueAwareStatementSource {
 
 		private final boolean explicit;
 		private final Txn txn;
@@ -1619,6 +1674,25 @@ class LmdbSailStore implements SailStore {
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
 				}
+			}
+		}
+
+		@Override
+		public long getObjectValuePrefix(Literal literal) throws SailException {
+			try {
+				return valueStore.getNormalizedNumericLiteralPrefix(literal);
+			} catch (IOException e) {
+				throw new SailException("Unable to get object value prefix", e);
+			}
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatementsByObjectValuePrefix(Resource subj, IRI pred,
+				long valuePrefix, Resource... contexts) throws SailException {
+			try {
+				return createStatementIteratorByObjectValuePrefix(txn, subj, pred, valuePrefix, explicit, contexts);
+			} catch (IOException e) {
+				throw new SailException("Unable to get statements by object value prefix", e);
 			}
 		}
 

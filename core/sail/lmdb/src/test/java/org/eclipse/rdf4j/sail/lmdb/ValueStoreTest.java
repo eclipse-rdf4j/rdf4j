@@ -110,6 +110,128 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void numericLiteralVariantsShareNormalizedPrefixButKeepExactTermIds() throws Exception {
+		Literal canonicalInteger = Values.literal("1", XSD.INTEGER);
+		Literal lexicalInteger = Values.literal("001", XSD.INTEGER);
+		Literal decimal = Values.literal("1.0", XSD.DECIMAL);
+
+		valueStore.startTransaction(true);
+		long canonicalId = valueStore.storeValue(canonicalInteger);
+		long lexicalId = valueStore.storeValue(lexicalInteger);
+		long decimalId = valueStore.storeValue(decimal);
+		valueStore.commit();
+
+		assertNotEquals("numeric variants must keep distinct exact term IDs", canonicalId, lexicalId);
+		assertNotEquals("cross-datatype variants must keep distinct exact term IDs", canonicalId, decimalId);
+		assertEquals("canonical literal must resolve from its full variant ID", canonicalInteger,
+				valueStore.getValue(canonicalId));
+		assertEquals("lexical variant must resolve from its full variant ID", lexicalInteger,
+				valueStore.getValue(lexicalId));
+		assertEquals("decimal variant must resolve from its full variant ID", decimal, valueStore.getValue(decimalId));
+
+		long normalizedPrefix = valueStore.getNormalizedNumericLiteralPrefix(canonicalInteger);
+		assertEquals("all numeric variants with the same value must share a normalized prefix", normalizedPrefix,
+				valueStore.getNormalizedNumericLiteralPrefix(lexicalInteger));
+		assertEquals("integer and decimal numeric equality must share a normalized prefix", normalizedPrefix,
+				valueStore.getNormalizedNumericLiteralPrefix(decimal));
+		assertEquals("variant zero is reserved for normalized lookup", 0, ValueIds.getNumericLiteralVariant(
+				valueStore.getNormalizedNumericLiteralId(canonicalInteger)));
+		assertTrue("stored variants must not use suffix zero", ValueIds.getNumericLiteralVariant(canonicalId) > 0);
+		assertTrue("stored variants must not use suffix zero", ValueIds.getNumericLiteralVariant(lexicalId) > 0);
+		assertTrue("stored variants must not use suffix zero", ValueIds.getNumericLiteralVariant(decimalId) > 0);
+	}
+
+	@Test
+	public void largeDecimalVariantsUseStoredNormalizedPrefix() throws Exception {
+		Literal first = Values.literal("0001.34958220193849582000", XSD.DECIMAL);
+		Literal second = Values.literal("1.34958220193849582", XSD.DECIMAL);
+
+		valueStore.startTransaction(true);
+		long firstId = valueStore.storeValue(first);
+		long secondId = valueStore.storeValue(second);
+		valueStore.commit();
+
+		assertNotEquals("lexical variants of a large decimal must keep exact term IDs", firstId, secondId);
+		assertEquals(first, valueStore.getValue(firstId));
+		assertEquals(second, valueStore.getValue(secondId));
+		assertEquals("large decimals must still share a normalized lookup prefix",
+				valueStore.getNormalizedNumericLiteralPrefix(first),
+				valueStore.getNormalizedNumericLiteralPrefix(second));
+		assertTrue("large decimals must use the stored normalized prefix path",
+				NumericLiteralIds.isStoredPrefix(valueStore.getNormalizedNumericLiteralPrefix(first)));
+		assertEquals("stored numeric value lookup must use the reserved suffix", 0,
+				ValueIds.getNumericLiteralVariant(valueStore.getNormalizedNumericLiteralId(first)));
+		assertTrue("first stored large-decimal variant must not use suffix zero",
+				ValueIds.getNumericLiteralVariant(firstId) > 0);
+		assertTrue("second stored large-decimal variant must not use suffix zero",
+				ValueIds.getNumericLiteralVariant(secondId) > 0);
+	}
+
+	@Test
+	public void numericLiteralVariantExhaustionFallsBackToExactStoredIds() throws Exception {
+		IRI[] datatypes = {
+				XSD.INTEGER,
+				XSD.LONG,
+				XSD.INT,
+				XSD.SHORT,
+				XSD.BYTE,
+				XSD.NON_NEGATIVE_INTEGER,
+				XSD.POSITIVE_INTEGER,
+				XSD.UNSIGNED_LONG,
+				XSD.UNSIGNED_INT,
+				XSD.UNSIGNED_SHORT,
+				XSD.UNSIGNED_BYTE
+		};
+		List<Literal> variants = new LinkedList<>();
+		for (IRI datatype : datatypes) {
+			for (int zeroes = 0; variants.size() <= ValueIds.NUMERIC_LITERAL_MAX_VARIANT && zeroes <= 10; zeroes++) {
+				String label = "0".repeat(zeroes) + "1";
+				variants.add(Values.literal(label, datatype));
+				if (variants.size() <= ValueIds.NUMERIC_LITERAL_MAX_VARIANT) {
+					variants.add(Values.literal("+" + label, datatype));
+				}
+			}
+		}
+		for (int leadingZeroes = 0; variants.size() <= ValueIds.NUMERIC_LITERAL_MAX_VARIANT
+				&& leadingZeroes <= 4; leadingZeroes++) {
+			for (int trailingZeroes = 1; variants.size() <= ValueIds.NUMERIC_LITERAL_MAX_VARIANT
+					&& trailingZeroes <= 4; trailingZeroes++) {
+				String label = "0".repeat(leadingZeroes) + "1." + "0".repeat(trailingZeroes);
+				variants.add(Values.literal(label, XSD.DECIMAL));
+				if (variants.size() <= ValueIds.NUMERIC_LITERAL_MAX_VARIANT) {
+					variants.add(Values.literal("+" + label, XSD.DECIMAL));
+				}
+			}
+		}
+		long[] ids = new long[variants.size()];
+
+		valueStore.startTransaction(true);
+		for (int i = 0; i < variants.size(); i++) {
+			ids[i] = valueStore.storeValue(variants.get(i));
+		}
+		valueStore.commit();
+
+		assertEquals("test fixture must cover all numeric suffixes plus one fallback",
+				ValueIds.NUMERIC_LITERAL_MAX_VARIANT + 1, variants.size());
+		for (int i = 0; i < ValueIds.NUMERIC_LITERAL_MAX_VARIANT; i++) {
+			assertTrue("first 255 variants should use numeric literal IDs", ValueIds.isNumericLiteral(ids[i]));
+			assertEquals("numeric variant suffix should be allocated monotonically", i + 1,
+					ValueIds.getNumericLiteralVariant(ids[i]));
+			assertEquals("numeric variant must resolve to its original literal", variants.get(i),
+					valueStore.getValue(ids[i]));
+		}
+
+		long fallbackId = ids[ValueIds.NUMERIC_LITERAL_MAX_VARIANT];
+		assertFalse("variant overflow should fall back instead of corrupting the numeric ID space",
+				ValueIds.isNumericLiteral(fallbackId));
+		assertEquals("fallback exact ID must resolve to its original literal",
+				variants.get(ValueIds.NUMERIC_LITERAL_MAX_VARIANT), valueStore.getValue(fallbackId));
+		assertEquals("fallback literal must still have the same normalized lookup prefix",
+				valueStore.getNormalizedNumericLiteralPrefix(variants.get(0)),
+				valueStore.getNormalizedNumericLiteralPrefix(variants.get(ValueIds.NUMERIC_LITERAL_MAX_VARIANT)));
+	}
+
+	@Test
 	public void testGcValues() throws Exception {
 		Value[] values = new Value[] {
 				RDF.TYPE, RDFS.CLASS,

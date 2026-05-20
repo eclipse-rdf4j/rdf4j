@@ -90,12 +90,29 @@ class LmdbRecordIterator implements RecordIterator {
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, subj, pred, obj, context, explicit, txnRef, true);
+	}
+
+	LmdbRecordIterator(TripleIndex index, long minSubj, long minPred, long minObj, long minContext, long maxSubj,
+			long maxPred, long maxObj, long maxContext, long originalSubj, long originalPred, long originalObj,
+			long originalContext, boolean explicit, Txn txnRef) throws IOException {
+		this(index, true, minSubj, minPred, minObj, minContext, originalSubj, originalPred, originalObj,
+				originalContext, explicit, txnRef, false);
+		this.maxKeyBuf.clear();
+		index.getMaxKey(maxKeyBuf, maxSubj, maxPred, maxObj, maxContext);
+		maxKeyBuf.flip();
+		this.maxKey.mv_data(maxKeyBuf);
+	}
+
+	private LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, long originalSubj, long originalPred, long originalObj, long originalContext,
+			boolean explicit, Txn txnRef, boolean matchValues) throws IOException {
 		this.subj = subj;
 		this.pred = pred;
 		this.obj = obj;
 		this.context = context;
-		this.originalQuad = new long[] { subj, pred, obj, context };
-		this.quad = new long[] { subj, pred, obj, context };
+		this.originalQuad = new long[] { originalSubj, originalPred, originalObj, originalContext };
+		this.quad = new long[] { originalSubj, originalPred, originalObj, originalContext };
 		this.pool = Pool.get();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
@@ -115,7 +132,7 @@ class LmdbRecordIterator implements RecordIterator {
 			this.maxKey = null;
 		}
 
-		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+		this.matchValues = matchValues && (subj > 0 || pred > 0 || obj > 0 || context >= 0);
 
 		this.dbi = index.getDB(explicit);
 		this.txnRef = txnRef;

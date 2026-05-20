@@ -63,7 +63,7 @@ public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
+	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
 
 	@Param({ "256" })

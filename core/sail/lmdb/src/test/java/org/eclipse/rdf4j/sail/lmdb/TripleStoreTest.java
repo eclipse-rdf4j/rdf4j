@@ -117,6 +117,32 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void testObjectValuePrefixRangeFindsAllNumericVariants() throws Exception {
+		long predicate = 22;
+		long valuePrefix = 10_000;
+		long firstVariant = ValueIds.createNumericLiteralId(valuePrefix, 1);
+		long secondVariant = ValueIds.createNumericLiteralId(valuePrefix, 2);
+		long otherValue = ValueIds.createNumericLiteralId(valuePrefix + 1, 1);
+
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, predicate, firstVariant, 0, true);
+		tripleStore.storeTriple(2, predicate, secondVariant, 0, true);
+		tripleStore.storeTriple(3, predicate, otherValue, 0, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator records = tripleStore.getTriplesByObjectValuePrefix(txn, predicate, valuePrefix, true)) {
+			Set<Long> subjects = new HashSet<>();
+			long[] record;
+			while ((record = records.next()) != null) {
+				subjects.add(record[TripleStore.SUBJ_IDX]);
+			}
+			assertEquals("value-prefix range should return every variant for one numeric value", Set.of(1L, 2L),
+					subjects);
+		}
+	}
+
+	@Test
 	public void testAlignedWriteFallbackRemovesSecondaryInferredRowsForPromotions() throws Exception {
 		File fallbackDir = new File(dataDir, "aligned-fallback-store");
 		fallbackDir.mkdirs();

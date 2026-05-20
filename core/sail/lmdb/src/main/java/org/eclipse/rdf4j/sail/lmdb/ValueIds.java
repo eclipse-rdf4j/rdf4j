@@ -55,6 +55,11 @@ public class ValueIds {
 	public static final int T_UNSIGNEDINT = 33;
 	public static final int T_UNSIGNEDSHORT = 34;
 	public static final int T_UNSIGNEDBYTE = 35;
+	public static final int T_NUMERIC_LITERAL = 36;
+
+	static final int NUMERIC_LITERAL_VARIANT_BITS = 8;
+	static final int NUMERIC_LITERAL_VARIANT_MASK = (1 << NUMERIC_LITERAL_VARIANT_BITS) - 1;
+	static final int NUMERIC_LITERAL_MAX_VARIANT = NUMERIC_LITERAL_VARIANT_MASK;
 
 	/**
 	 * Returns the type section of the given id.
@@ -88,6 +93,28 @@ public class ValueIds {
 	 */
 	public static long createId(int idType, long value) {
 		return value << 7 | (long) idType << 1;
+	}
+
+	static long createNumericLiteralId(long valuePrefix, int variant) {
+		if (valuePrefix < 0 || valuePrefix > (Long.MAX_VALUE >>> (7 + NUMERIC_LITERAL_VARIANT_BITS))) {
+			throw new IllegalArgumentException("Invalid numeric literal value prefix: " + valuePrefix);
+		}
+		if (variant < 0 || variant > NUMERIC_LITERAL_MAX_VARIANT) {
+			throw new IllegalArgumentException("Invalid numeric literal variant: " + variant);
+		}
+		return createId(T_NUMERIC_LITERAL, (valuePrefix << NUMERIC_LITERAL_VARIANT_BITS) | variant);
+	}
+
+	static long getNumericLiteralValuePrefix(long id) {
+		return getValue(id) >>> NUMERIC_LITERAL_VARIANT_BITS;
+	}
+
+	static int getNumericLiteralVariant(long id) {
+		return (int) (getValue(id) & NUMERIC_LITERAL_VARIANT_MASK);
+	}
+
+	static boolean isNumericLiteral(long id) {
+		return getIdType(id) == T_NUMERIC_LITERAL;
 	}
 
 	/**

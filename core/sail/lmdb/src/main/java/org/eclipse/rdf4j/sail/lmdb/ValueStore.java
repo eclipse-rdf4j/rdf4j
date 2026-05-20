@@ -55,6 +55,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -81,6 +82,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -122,6 +124,8 @@ class ValueStore extends AbstractValueFactory {
 	private static final byte HASH_KEY = 6;
 
 	private static final byte HASHID_KEY = 7;
+
+	private static final byte NUMERIC_VARIANT_KEY = 8;
 
 	/***
 	 * Maximum size of keys before hashing is used (size of two long values)
@@ -643,6 +647,7 @@ class ValueStore extends AbstractValueFactory {
 					break;
 				case ValueIds.T_DOUBLE:
 				case ValueIds.T_LITERAL:
+				case ValueIds.T_NUMERIC_LITERAL:
 					resultValue = new LmdbLiteral(lazyRevision, id);
 					break;
 				case ValueIds.T_BNODE:
@@ -677,19 +682,26 @@ class ValueStore extends AbstractValueFactory {
 			LmdbValue resultValue = cachedValue(id);
 
 			if (resultValue == null) {
-				// unpack inlined values if possible
-				if (ValueIds.isInlined(id)) {
+				if (ValueIds.isNumericLiteral(id)) {
+					byte[] data = getData(id);
+					if (data != null) {
+						resultValue = data2value(id, data, null);
+						cacheValue(id, resultValue);
+					}
+				} else if (ValueIds.isInlined(id)) {
 					Literal unpacked = Values.unpackLiteral(id, this);
 					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
 				}
 
 				// Value not in cache, fetch it from file
-				byte[] data = getData(id);
+				if (resultValue == null) {
+					byte[] data = getData(id);
 
-				if (data != null) {
-					resultValue = data2value(id, data, null);
-					// Store value in cache
-					cacheValue(id, resultValue);
+					if (data != null) {
+						resultValue = data2value(id, data, null);
+						// Store value in cache
+						cacheValue(id, resultValue);
+					}
 				}
 			}
 
@@ -708,7 +720,9 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
 		// unpack inlined values if possible
-		if (ValueIds.isInlined(id)) {
+		if (ValueIds.isNumericLiteral(id)) {
+			// Numeric literal variant IDs are value-aware, but the visible RDF term still lives in the value store.
+		} else if (ValueIds.isInlined(id)) {
 			Literal unpacked = Values.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
 			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
@@ -1101,7 +1115,10 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			long id = LmdbValue.UNKNOWN_ID;
-			if (inlineLiterals && value instanceof Literal) {
+			if (value instanceof Literal && NumericLiteralIds.isSupported((Literal) value)) {
+				id = getNumericLiteralId((Literal) value, create);
+			}
+			if (id == LmdbValue.UNKNOWN_ID && inlineLiterals && value instanceof Literal) {
 				// inline value into id if possible
 				try {
 					long packedId = Values.packLiteral((Literal) value);
@@ -1155,6 +1172,100 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		return LmdbValue.UNKNOWN_ID;
+	}
+
+	long getNormalizedNumericLiteralId(Literal literal) throws IOException {
+		long prefix = getNormalizedNumericLiteralPrefix(literal);
+		if (prefix < 0) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		return ValueIds.createNumericLiteralId(prefix, 0);
+	}
+
+	long getNormalizedNumericLiteralPrefix(Literal literal) throws IOException {
+		return getNormalizedNumericLiteralPrefix(literal, false);
+	}
+
+	private long getNormalizedNumericLiteralPrefix(Literal literal, boolean create) throws IOException {
+		BigDecimal normalized = NumericLiteralIds.normalizedValue(literal);
+		if (normalized == null) {
+			return -1L;
+		}
+		Long directPrefix = NumericLiteralIds.directPrefix(normalized);
+		if (directPrefix != null) {
+			return directPrefix;
+		}
+		byte[] normalizedData = literal2data(normalized.toPlainString(), Optional.empty(), XSD.DECIMAL, create);
+		if (normalizedData == null) {
+			return -1L;
+		}
+		long normalizedId = findId(normalizedData, create);
+		return normalizedId == LmdbValue.UNKNOWN_ID ? -1L : NumericLiteralIds.storedPrefix(normalizedId);
+	}
+
+	private long getNumericLiteralId(Literal literal, boolean create) throws IOException {
+		byte[] data = literal2data(literal, create);
+		if (data == null) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		long existingId = findId(data, false);
+		if (existingId != LmdbValue.UNKNOWN_ID) {
+			return existingId;
+		}
+		if (!create) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+
+		long prefix = getNormalizedNumericLiteralPrefix(literal, true);
+		if (prefix < 0 || data.length > MAX_KEY_SIZE) {
+			return findId(data, true);
+		}
+
+		return createNumericLiteralVariant(data, prefix);
+	}
+
+	private long createNumericLiteralVariant(byte[] data, long prefix) throws IOException {
+		return writeTransaction((stack, writeTxn) -> {
+			MDBVal dataVal = MDBVal.calloc(stack);
+			dataVal.mv_data(stack.bytes(data));
+			MDBVal idVal = MDBVal.calloc(stack);
+			if (mdb_get(writeTxn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+				return data2id(idVal.mv_data());
+			}
+
+			int variant = nextNumericLiteralVariant(stack, writeTxn, prefix);
+			if (variant < 1) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			long id = ValueIds.createNumericLiteralId(prefix, variant);
+			idVal.mv_data(id2data(idBuffer(stack), id).flip());
+			resizeMap(writeTxn, 2L * data.length + 2L * (2L + Long.BYTES));
+			E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
+			E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
+			incrementRefCount(stack, writeTxn, data);
+			return id;
+		});
+	}
+
+	private int nextNumericLiteralVariant(MemoryStack stack, long writeTxn, long prefix) throws IOException {
+		ByteBuffer keyBuffer = stack.malloc(1 + Long.BYTES + 2);
+		keyBuffer.put(NUMERIC_VARIANT_KEY);
+		Varint.writeUnsigned(keyBuffer, prefix);
+		keyBuffer.flip();
+		MDBVal keyVal = MDBVal.calloc(stack);
+		keyVal.mv_data(keyBuffer);
+		MDBVal valueVal = MDBVal.calloc(stack);
+		int current = 0;
+		if (mdb_get(writeTxn, dbi, keyVal, valueVal) == MDB_SUCCESS && valueVal.mv_data().hasRemaining()) {
+			current = valueVal.mv_data().get() & 0xFF;
+		}
+		if (current >= ValueIds.NUMERIC_LITERAL_MAX_VARIANT) {
+			return -1;
+		}
+		int next = current + 1;
+		valueVal.mv_data(stack.bytes((byte) next));
+		E(mdb_put(writeTxn, dbi, keyVal, valueVal, 0));
+		return next;
 	}
 
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {

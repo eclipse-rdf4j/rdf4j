@@ -46,6 +46,10 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 		this.dataset = dataset;
 	}
 
+	public SailDataset getDataset() {
+		return dataset;
+	}
+
 	@Override
 	public String toString() {
 		return dataset.toString();

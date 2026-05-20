@@ -693,6 +693,28 @@ class TripleStore implements Closeable {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
 	}
 
+	RecordIterator getTriplesByObjectValuePrefix(Txn txn, long pred, long valuePrefix, boolean explicit)
+			throws IOException {
+		TripleIndex index = getPredicateObjectIndex();
+		long lowerObject = ValueIds.createNumericLiteralId(valuePrefix, 1);
+		long upperObject = ValueIds.createNumericLiteralId(valuePrefix, ValueIds.NUMERIC_LITERAL_MAX_VARIANT);
+		return new LmdbRecordIterator(index,
+				-1, pred, lowerObject, -1,
+				-1, pred, upperObject, -1,
+				-1, pred, -1, -1,
+				explicit, txn);
+	}
+
+	private TripleIndex getPredicateObjectIndex() {
+		for (TripleIndex index : indexes) {
+			char[] fields = index.getFieldSeq();
+			if (fields.length >= 2 && fields[0] == 'p' && fields[1] == 'o') {
+				return index;
+			}
+		}
+		throw new IllegalStateException("A predicate-object index is required for numeric literal value-prefix scans");
+	}
+
 	/**
 	 * Computes start key for a bucket by linear interpolation between a lower and an upper bound.
 	 *
