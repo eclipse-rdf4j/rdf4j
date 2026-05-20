@@ -225,7 +225,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	public enum Pair {
 		SP(Component.S, Component.P, Component.O, Component.C),
-//		SO(Component.S, Component.O, Component.P, Component.C),
+		// SO(Component.S, Component.O, Component.P, Component.C),
 		SC(Component.S, Component.C, Component.P, Component.O),
 		PO(Component.P, Component.O, Component.S, Component.C),
 		PC(Component.P, Component.C, Component.S, Component.O),
@@ -1113,19 +1113,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private record TransformedStatementChunk(int index, IngestEvent[] events, int eventCount, int updateCount) {
 	}
 
-	private static final class PartitionWork {
+	private record PartitionWork(TransformedStatementChunk chunk, IngestPartition partition,
+			CompletableFuture<BatchUpdateAccumulator> result) {
+
 		private static final PartitionWork POISON = new PartitionWork(null, null, null);
-
-		private final TransformedStatementChunk chunk;
-		private final IngestPartition partition;
-		private final CompletableFuture<BatchUpdateAccumulator> result;
-
-		private PartitionWork(TransformedStatementChunk chunk, IngestPartition partition,
-				CompletableFuture<BatchUpdateAccumulator> result) {
-			this.chunk = chunk;
-			this.partition = partition;
-			this.result = result;
-		}
 
 		private boolean isPoison() {
 			return this == POISON;
@@ -1511,7 +1502,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private final long incrementalQueueBlockBudgetMillis;
 	private final int memoryMonitorCheckInterval;
 	private final long memoryMonitorEstimatedOperationBytes;
-	private StatementUpdateQueue[] incrementalStatementQueues;
+	private final StatementUpdateQueue[] incrementalStatementQueues;
 	private int activeStatementQueueIndex;
 	private int nextStatementQueueLimit;
 	private long lastIncrementalStatementMillis;
@@ -3689,14 +3680,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof EstimateCacheKey that)) {
+			if (!(other instanceof EstimateCacheKey(Component var, String s1, String p1, String o1, String c1))) {
 				return false;
 			}
-			return joinVar == that.joinVar
-					&& Objects.equals(s, that.s)
-					&& Objects.equals(p, that.p)
-					&& Objects.equals(o, that.o)
-					&& Objects.equals(c, that.c);
+			return joinVar == var
+					&& Objects.equals(s, s1)
+					&& Objects.equals(p, p1)
+					&& Objects.equals(o, o1)
+					&& Objects.equals(c, c1);
 		}
 
 	}
@@ -4402,7 +4393,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			ensureCapacity(size + 1);
 			if (insertionPoint < size) {
 				shiftKeysRight(keys, insertionPoint, size);
-				shiftValuesRight(values, insertionPoint, size);
+				shiftValuesRightObjects(values, insertionPoint, size);
 			}
 			keys[insertionPoint] = key;
 			values[insertionPoint] = value;
@@ -4475,28 +4466,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private static void copyKeys(long[] source, long[] target, int length) {
-			for (int i = 0; i < length; i++) {
-				target[i] = source[i];
+			if (length >= 0) {
+				System.arraycopy(source, 0, target, 0, length);
 			}
 		}
 
 		private static void copyValues(ArrayOfDoublesUpdatableSketch[] source, ArrayOfDoublesUpdatableSketch[] target,
 				int length) {
-			for (int i = 0; i < length; i++) {
-				target[i] = source[i];
+			if (length >= 0) {
+				System.arraycopy(source, 0, target, 0, length);
 			}
 		}
 
 		private static void shiftKeysRight(long[] array, int from, int to) {
-			for (int i = to; i > from; i--) {
-				array[i] = array[i - 1];
-			}
+			System.arraycopy(array, from, array, from + 1, to - from);
 		}
 
-		private static void shiftValuesRight(ArrayOfDoublesUpdatableSketch[] array, int from, int to) {
-			for (int i = to; i > from; i--) {
-				array[i] = array[i - 1];
-			}
+		private static void shiftValuesRightObjects(ArrayOfDoublesUpdatableSketch[] array, int from, int to) {
+			System.arraycopy(array, from, array, from + 1, to - from);
 		}
 
 		private static void shiftKeysLeft(long[] array, int from, int to) {
@@ -7046,7 +7033,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private TuplePlanEstimate computeTupleExprPlan(TupleExpr tupleExpr, OptimizationScopeState scope,
-			long initiallyBoundVarMask) {
+	                                               long initiallyBoundVarMask) {
 		if (tupleExpr == null) {
 			return null;
 		}
