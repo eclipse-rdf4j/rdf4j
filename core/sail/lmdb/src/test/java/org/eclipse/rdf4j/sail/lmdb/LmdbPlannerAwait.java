@@ -27,7 +27,7 @@ public final class LmdbPlannerAwait {
 
 	public static final Duration DEFAULT_PLANNER_TIMEOUT = Duration.ofSeconds(60);
 	public static final Duration DEFAULT_PIPELINE_TIMEOUT = Duration.ofSeconds(71);
-	public static final Duration DEFAULT_SKETCH_READY_TIMEOUT = Duration.ofSeconds(10);
+	public static final Duration DEFAULT_SKETCH_READY_TIMEOUT = Duration.ofSeconds(60);
 
 	private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
 	private static final Duration SKETCH_READY_POLL_TIMEOUT = Duration.ofMillis(100);
