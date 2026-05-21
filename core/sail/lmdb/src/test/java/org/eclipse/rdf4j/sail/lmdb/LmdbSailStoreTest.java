@@ -707,13 +707,13 @@ public class LmdbSailStoreTest {
 				IRI object = F.createIRI("urn:default-buffer:object");
 
 				clearInvocations(valueStoreSpy);
-				for (int i = 0; i < 257; i++) {
+				for (int i = 0; i < 31; i++) {
 					sink.approve(subject, predicate, object, null);
 				}
 
 				Field pendingCountField = sink.getClass().getDeclaredField("pendingApproveCount");
 				pendingCountField.setAccessible(true);
-				assertEquals("default bulk ingest should not flush after the old 256-statement chunk", 257,
+				assertEquals("default bulk ingest should not flush after the 32-statement chunk", 31,
 						pendingCountField.getInt(sink));
 				assertEquals("small buffered approve batches should stay in-memory until flush", 0,
 						invocationCount(valueStoreSpy, "storeValues"));
