@@ -31,6 +31,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MonitorInfo;
 import java.lang.management.ThreadInfo;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -987,8 +988,135 @@ class SketchBasedJoinEstimatorPersistenceTest {
 		assertTrue(recordTypes.contains((byte) 6), "global component sketches should be visible");
 	}
 
+	@Test
+	void sparseSketchArrayGetKeepsSortedLookupSemanticsWithHintedJumps() throws Exception {
+		Class<?> sparseType = Arrays.stream(SketchBasedJoinEstimator.class.getDeclaredClasses())
+				.filter(type -> type.getSimpleName().equals("SparseSketchArray"))
+				.findFirst()
+				.orElseThrow();
+		Constructor<?> constructor = sparseType.getDeclaredConstructor();
+		constructor.setAccessible(true);
+		Object sparse = constructor.newInstance();
+
+		Method put = sparseType.getDeclaredMethod("put", long.class, ArrayOfDoublesUpdatableSketch.class);
+		put.setAccessible(true);
+		Method get = sparseType.getDeclaredMethod("get", long.class);
+		get.setAccessible(true);
+
+		ArrayOfDoublesUpdatableSketch[] sketches = new ArrayOfDoublesUpdatableSketch[512];
+		for (int i = 0; i < sketches.length; i++) {
+			sketches[i] = TupleSketchOps.newSketch(16);
+			put.invoke(sparse, keyAt(i), sketches[i]);
+		}
+
+		int[] probes = {
+				0, 1, 2, 11, 12, 256, 257, 500, 501, 9, 10, 511, 64, 63, 62
+		};
+		for (int index : probes) {
+			assertSame(sketches[index], get.invoke(sparse, keyAt(index)),
+					"Expected exact sorted lookup for index " + index);
+		}
+
+		assertNull(get.invoke(sparse, keyAt(12) - 1L), "Missing key below a known key should not resolve");
+		assertNull(get.invoke(sparse, keyAt(256) + 1L), "Missing key above a known key should not resolve");
+		assertNull(get.invoke(sparse, keyAt(511) + 4096L), "Missing key after the tail should not resolve");
+
+		put.invoke(sparse, keyAt(257), null);
+		assertNull(get.invoke(sparse, keyAt(257)), "Removed key should no longer resolve");
+		assertSame(sketches[258], get.invoke(sparse, keyAt(258)),
+				"Lookup after a removed key should still resolve the shifted value");
+	}
+
+	@Test
+	void batchAccumulatorSortsEntriesByResidentAddress() throws Exception {
+		Class<?> accumulatorType = Arrays.stream(SketchBasedJoinEstimator.class.getDeclaredClasses())
+				.filter(type -> type.getSimpleName().equals("BatchUpdateAccumulator"))
+				.findFirst()
+				.orElseThrow();
+		Constructor<?> constructor = accumulatorType.getDeclaredConstructor(int.class);
+		constructor.setAccessible(true);
+		Object accumulator = constructor.newInstance(192);
+
+		Method add = accumulatorType.getDeclaredMethod("add", int.class, int.class, int.class, long.class);
+		add.setAccessible(true);
+		Method sort = accumulatorType.getDeclaredMethod("sortEntriesByResidentAddress");
+		sort.setAccessible(true);
+
+		int[] prefixes = {
+				testKeyPrefix(6, false, 0, 0),
+				testKeyPrefix(6, true, 0, 0),
+				testKeyPrefix(1, false, 1, 0),
+				testKeyPrefix(2, false, 2, 1),
+				testKeyPrefix(3, false, 0, 0),
+				testKeyPrefix(4, false, 1, 0),
+				testKeyPrefix(5, false, 2, 0)
+		};
+
+		List<ResidentSortEntry> expected = new ArrayList<>();
+		for (int i = 191; i >= 0; i--) {
+			int keyPrefix = prefixes[(i * 37) % prefixes.length];
+			int x = (i * 29) & 0x3ff;
+			int y = (i * 17 + 5) & 0x1ff;
+			long value = 10_000L + i;
+			add.invoke(accumulator, keyPrefix, x, y, value);
+			expected.add(new ResidentSortEntry(keyPrefix, x, y, value));
+		}
+		expected.sort(SketchBasedJoinEstimatorPersistenceTest::compareResidentSortEntry);
+
+		sort.invoke(accumulator);
+
+		int actualSize = (int) privateFieldValue(accumulator, "size");
+		assertEquals(expected.size(), actualSize);
+		int[] keyPrefixes = (int[]) privateFieldValue(accumulator, "keyPrefixes");
+		int[] xs = (int[]) privateFieldValue(accumulator, "xs");
+		int[] ys = (int[]) privateFieldValue(accumulator, "ys");
+		long[] firstValues = (long[]) privateFieldValue(accumulator, "firstValues");
+		for (int i = 0; i < actualSize; i++) {
+			ResidentSortEntry entry = expected.get(i);
+			assertEquals(entry.keyPrefix(), keyPrefixes[i], "key prefix at sorted index " + i);
+			assertEquals(entry.x(), xs[i], "x at sorted index " + i);
+			assertEquals(entry.y(), ys[i], "y at sorted index " + i);
+			assertEquals(entry.value(), firstValues[i], "value carried with sorted entry " + i);
+		}
+	}
+
 	private static void flushIncrementalBuffer(SketchBasedJoinEstimator estimator) {
 		estimator.debugFlushPendingIncremental();
+	}
+
+	private static long keyAt(int index) {
+		return 17L + ((long) index * 3L);
+	}
+
+	private record ResidentSortEntry(int keyPrefix, int x, int y, long value) {
+	}
+
+	private static int testKeyPrefix(int recType, boolean isDelete, int axisA, int axisB) {
+		int prefix = recType & 0xff;
+		prefix |= (isDelete ? 1 : 0) << 8;
+		prefix |= (axisA & 0xff) << 16;
+		prefix |= (axisB & 0xff) << 24;
+		return prefix;
+	}
+
+	private static int compareResidentSortEntry(ResidentSortEntry left, ResidentSortEntry right) {
+		int result = Integer.compare(testResidentKeyPrefix(left.keyPrefix()), testResidentKeyPrefix(right.keyPrefix()));
+		if (result != 0) {
+			return result;
+		}
+		result = Integer.compare(left.x(), right.x());
+		if (result != 0) {
+			return result;
+		}
+		result = Integer.compare(left.y(), right.y());
+		if (result != 0) {
+			return result;
+		}
+		return Integer.compare(left.keyPrefix(), right.keyPrefix());
+	}
+
+	private static int testResidentKeyPrefix(int keyPrefix) {
+		return ((byte) keyPrefix) == 6 ? keyPrefix & ~(1 << 8) : keyPrefix;
 	}
 
 	@Test

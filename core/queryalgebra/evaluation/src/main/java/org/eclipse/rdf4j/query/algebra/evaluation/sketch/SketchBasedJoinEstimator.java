@@ -108,6 +108,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+
 /**
  * ArrayOfDoublesSketch‑based selectivity and join‑size estimator for RDF4J.
  *
@@ -597,12 +599,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final class CacheDirectory {
 		private static final byte FLAG_DIRTY_A = 1;
 		private static final byte FLAG_DIRTY_B = 1 << 1;
-		private static final long EMPTY_BUCKET = 0L;
+		private static final int NO_ENTRY = -1;
 		private static final int NO_FILE_KIND = -1;
 
 		private int size;
-		private long[] buckets;
-		private int bucketMask;
+		private int[] mapKeyPrefixes;
+		private Long2IntOpenHashMap[] mapsByPrefix;
+		private int mapCount;
+		private int cachedMapKeyPrefix;
+		private Long2IntOpenHashMap cachedMap;
 
 		private byte[] flags;
 		private int[] keyPrefixes;
@@ -628,7 +633,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private int dirtyTailB;
 
 		private CacheDirectory() {
-			initBuckets(256);
+			mapKeyPrefixes = new int[16];
+			mapsByPrefix = new Long2IntOpenHashMap[16];
 			flags = new byte[256];
 			keyPrefixes = new int[256];
 			xs = new int[256];
@@ -658,18 +664,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			refreshEstimatedHeapBytes();
 		}
 
-		private void initBuckets(int capacity) {
-			buckets = new long[capacity];
-			bucketMask = capacity - 1;
-		}
-
 		private void clear() {
 			int previousSize = size;
 			if (previousSize > 0) {
 				clearEntryMetadata(0, previousSize);
 			}
 			size = 0;
-			Arrays.fill(buckets, EMPTY_BUCKET);
+			for (int i = 0; i < mapCount; i++) {
+				mapsByPrefix[i].clear();
+			}
 			dirtyHeadA = -1;
 			dirtyTailA = -1;
 			dirtyHeadB = -1;
@@ -686,21 +689,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		private int find(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y) {
 			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
-			int keyHash = mixAddressHash(keyPrefix, x, y);
-			int slot = keyHash & bucketMask;
-			while (true) {
-				long bucket = buckets[slot];
-				if (bucket == EMPTY_BUCKET) {
-					return -1;
-				}
-				if (bucketHash(bucket) == keyHash) {
-					int entryId = bucketEntryId(bucket);
-					if (keyPrefixes[entryId] == keyPrefix && xs[entryId] == x && ys[entryId] == y) {
-						return entryId;
-					}
-				}
-				slot = (slot + 1) & bucketMask;
-			}
+			Long2IntOpenHashMap entries = mapForPrefix(keyPrefix, false);
+			return entries == null ? NO_ENTRY : entries.get(packXY(x, y));
 		}
 
 		private int findOrAdd(SketchAddress address) {
@@ -709,38 +699,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 		private int findOrAdd(byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y) {
 			int keyPrefix = packKeyPrefix(recType, isDelete, axisA, axisB);
-			int keyHash = mixAddressHash(keyPrefix, x, y);
-			return findOrAdd(keyPrefix, keyHash, x, y);
+			return findOrAdd(keyPrefix, x, y);
 		}
 
-		private int findOrAdd(int keyPrefix, int keyHash, int x, int y) {
-			if ((size + 1) * 10 >= buckets.length * 7) {
-				rehash(buckets.length << 1);
-			}
-			int slot = keyHash & bucketMask;
-
-			while (true) {
-				long bucket = buckets[slot];
-				if (bucket == EMPTY_BUCKET) {
-
-					int entryId = size++;
-					ensureEntryCapacity(size);
-					buckets[slot] = encodeBucket(keyHash, entryId);
-					keyPrefixes[entryId] = keyPrefix;
-					xs[entryId] = x;
-					ys[entryId] = y;
-					return entryId;
-				}
-				if (bucketHash(bucket) == keyHash) {
-
-					int entryId = bucketEntryId(bucket);
-					if (keyPrefixes[entryId] == keyPrefix && xs[entryId] == x && ys[entryId] == y) {
-						return entryId;
-					}
-				}
-				slot = (slot + 1) & bucketMask;
+		private int findOrAdd(int keyPrefix, int x, int y) {
+			Long2IntOpenHashMap entries = mapForPrefix(keyPrefix, true);
+			long xy = packXY(x, y);
+			int entryId = entries.get(xy);
+			if (entryId != NO_ENTRY) {
+				return entryId;
 			}
 
+			entryId = size++;
+			ensureEntryCapacity(size);
+			entries.put(xy, entryId);
+			keyPrefixes[entryId] = keyPrefix;
+			xs[entryId] = x;
+			ys[entryId] = y;
+			return entryId;
 		}
 
 		private void clearEntryMetadata(int fromIndex, int toIndex) {
@@ -759,16 +735,48 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			Arrays.fill(dirtyNextB, fromIndex, toIndex, -1);
 		}
 
-		private static long encodeBucket(int keyHash, int entryId) {
-			return (((long) keyHash) << 32) | ((entryId + 1L) & 0xffffffffL);
+		private Long2IntOpenHashMap mapForPrefix(int keyPrefix, boolean create) {
+			Long2IntOpenHashMap map = cachedMap;
+			if (map != null && cachedMapKeyPrefix == keyPrefix) {
+				return map;
+			}
+			for (int i = 0; i < mapCount; i++) {
+				if (mapKeyPrefixes[i] == keyPrefix) {
+					map = mapsByPrefix[i];
+					cachedMapKeyPrefix = keyPrefix;
+					cachedMap = map;
+					return map;
+				}
+			}
+			if (!create) {
+				return null;
+			}
+			ensureMapCapacity(mapCount + 1);
+			map = new Long2IntOpenHashMap(16);
+			map.defaultReturnValue(NO_ENTRY);
+			mapKeyPrefixes[mapCount] = keyPrefix;
+			mapsByPrefix[mapCount] = map;
+			mapCount++;
+			cachedMapKeyPrefix = keyPrefix;
+			cachedMap = map;
+			return map;
 		}
 
-		private static int bucketHash(long bucket) {
-			return (int) (bucket >>> 32);
+		private void ensureMapCapacity(int minCapacity) {
+			int current = mapsByPrefix.length;
+			if (minCapacity <= current) {
+				return;
+			}
+			int next = current;
+			while (next < minCapacity) {
+				next <<= 1;
+			}
+			mapKeyPrefixes = Arrays.copyOf(mapKeyPrefixes, next);
+			mapsByPrefix = Arrays.copyOf(mapsByPrefix, next);
 		}
 
-		private static int bucketEntryId(long bucket) {
-			return (int) (bucket & 0xffffffffL) - 1;
+		private static long packXY(int x, int y) {
+			return (((long) x) << 32) | (y & 0xffffffffL);
 		}
 
 		private void ensureEntryCapacity(int minCapacity) {
@@ -803,22 +811,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			Arrays.fill(dirtyPrevB, previousLength, next, -1);
 			dirtyNextB = Arrays.copyOf(dirtyNextB, next);
 			Arrays.fill(dirtyNextB, previousLength, next, -1);
-			refreshEstimatedHeapBytes();
-		}
-
-		private void rehash(int newCapacity) {
-			long[] oldBuckets = buckets;
-			initBuckets(newCapacity);
-			for (long bucket : oldBuckets) {
-				if (bucket == EMPTY_BUCKET) {
-					continue;
-				}
-				int newSlot = bucketHash(bucket) & bucketMask;
-				while (buckets[newSlot] != EMPTY_BUCKET) {
-					newSlot = (newSlot + 1) & bucketMask;
-				}
-				buckets[newSlot] = bucket;
-			}
 			refreshEstimatedHeapBytes();
 		}
 
@@ -1160,6 +1152,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private static final class BatchUpdateAccumulator {
 		private static final long EMPTY_BUCKET = 0L;
+		private static final int RESIDENT_ADDRESS_SORT_THRESHOLD = 64;
+		private static final int RESIDENT_ADDRESS_LSD_RADIX_THRESHOLD = 96;
+		private static final int RESIDENT_ADDRESS_SORT_FIELDS = 4;
+		private static final int RADIX_BUCKETS = 256;
 
 		private int size;
 		private long[] buckets;
@@ -1172,6 +1168,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		private long[] firstValues;
 		private long[][] overflowValues;
 		private int[] valueCounts;
+		private int[] residentAddressOrder;
+		private int[] residentAddressScratchOrder;
+		private int[] residentAddressScratchKeyPrefixes;
+		private int[] residentAddressScratchKeyHashes;
+		private int[] residentAddressScratchXs;
+		private int[] residentAddressScratchYs;
+		private long[] residentAddressScratchFirstValues;
+		private int[] residentAddressScratchValueCounts;
+		private long[][] residentAddressScratchOverflowValues;
+		private int[] residentAddressRadixCounts;
+		private int[] residentAddressRadixOffsets;
+		private int[] residentAddressDifferingBits;
 
 		private BatchUpdateAccumulator(int expectedUpdates) {
 			int bucketCapacity = 256;
@@ -1314,47 +1322,149 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		private void sortEntriesByResidentAddress() {
-			if (size < 64) {
+			int currentSize = size;
+			if (currentSize < RESIDENT_ADDRESS_SORT_THRESHOLD || isSortedByResidentAddress(currentSize)) {
 				return;
 			}
-			sortEntriesByResidentAddress(0, size - 1);
+			if (currentSize <= RESIDENT_ADDRESS_LSD_RADIX_THRESHOLD) {
+				insertionSortEntriesByResidentAddress(0, currentSize - 1);
+				return;
+			}
+			sortEntriesByResidentAddressRadix(currentSize);
 		}
 
-		private void sortEntriesByResidentAddress(int left, int right) {
-			while (right - left > 16) {
-				int pivotIndex = (left + right) >>> 1;
-				int pivotStoredKeyPrefix = residentKeyPrefix(keyPrefixes[pivotIndex]);
-				int pivotX = xs[pivotIndex];
-				int pivotY = ys[pivotIndex];
-				int pivotKeyPrefix = keyPrefixes[pivotIndex];
-				int i = left;
-				int j = right;
-				while (i <= j) {
-					while (compareEntryToResidentAddress(i, pivotStoredKeyPrefix, pivotX, pivotY, pivotKeyPrefix) < 0) {
-						i++;
-					}
-					while (compareEntryToResidentAddress(j, pivotStoredKeyPrefix, pivotX, pivotY, pivotKeyPrefix) > 0) {
-						j--;
-					}
-					if (i <= j) {
-						swapEntries(i, j);
-						i++;
-						j--;
-					}
-				}
-				if (j - left < right - i) {
-					if (left < j) {
-						sortEntriesByResidentAddress(left, j);
-					}
-					left = i;
-				} else {
-					if (i < right) {
-						sortEntriesByResidentAddress(i, right);
-					}
-					right = j;
+		private boolean isSortedByResidentAddress(int currentSize) {
+			for (int i = 1; i < currentSize; i++) {
+				if (compareEntriesByResidentAddress(i - 1, i) > 0) {
+					return false;
 				}
 			}
-			insertionSortEntriesByResidentAddress(left, right);
+			return true;
+		}
+
+		private void sortEntriesByResidentAddressRadix(int currentSize) {
+			ensureResidentAddressSortScratchCapacity(currentSize);
+			int[] order = residentAddressOrder;
+			for (int i = 0; i < currentSize; i++) {
+				order[i] = i;
+			}
+			int[] differingBits = residentAddressDifferingBits;
+			Arrays.fill(differingBits, 0, RESIDENT_ADDRESS_SORT_FIELDS, 0);
+			for (int field = 0; field < RESIDENT_ADDRESS_SORT_FIELDS; field++) {
+				int firstValue = residentAddressSortValue(0, field);
+				int bits = 0;
+				for (int i = 1; i < currentSize; i++) {
+					bits |= firstValue ^ residentAddressSortValue(i, field);
+				}
+				differingBits[field] = bits;
+			}
+
+			int[] source = order;
+			int[] target = residentAddressScratchOrder;
+			boolean sorted = false;
+			for (int field = 0; field < RESIDENT_ADDRESS_SORT_FIELDS; field++) {
+				int bits = differingBits[field];
+				for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
+					if (((bits >>> shift) & 0xFF) == 0) {
+						continue;
+					}
+					radixSortResidentAddressPass(source, target, currentSize, field, shift);
+					int[] swap = source;
+					source = target;
+					target = swap;
+					sorted = true;
+				}
+			}
+			if (!sorted) {
+				return;
+			}
+			if (source != order) {
+				System.arraycopy(source, 0, order, 0, currentSize);
+				source = order;
+			}
+			applyResidentAddressOrder(source, currentSize);
+		}
+
+		private void radixSortResidentAddressPass(int[] source, int[] target, int currentSize, int field, int shift) {
+			int[] counts = residentAddressRadixCounts;
+			int[] offsets = residentAddressRadixOffsets;
+			Arrays.fill(counts, 0);
+			for (int i = 0; i < currentSize; i++) {
+				counts[radixBucket(residentAddressSortValue(source[i], field), shift)]++;
+			}
+			int offset = 0;
+			for (int bucket = 0; bucket < RADIX_BUCKETS; bucket++) {
+				offsets[bucket] = offset;
+				offset += counts[bucket];
+			}
+			for (int i = 0; i < currentSize; i++) {
+				int entryId = source[i];
+				int bucket = radixBucket(residentAddressSortValue(entryId, field), shift);
+				target[offsets[bucket]++] = entryId;
+			}
+		}
+
+		private int residentAddressSortValue(int entryId, int field) {
+			return switch (field) {
+			case 0 -> keyPrefixes[entryId];
+			case 1 -> ys[entryId];
+			case 2 -> xs[entryId];
+			case 3 -> residentKeyPrefix(keyPrefixes[entryId]);
+			default -> throw new IllegalArgumentException("Unknown resident address sort field: " + field);
+			};
+		}
+
+		private static int radixBucket(int value, int shift) {
+			return ((value ^ Integer.MIN_VALUE) >>> shift) & 0xFF;
+		}
+
+		private void applyResidentAddressOrder(int[] order, int currentSize) {
+			long[][] allOverflowValues = overflowValues;
+			for (int i = 0; i < currentSize; i++) {
+				int source = order[i];
+				residentAddressScratchKeyPrefixes[i] = keyPrefixes[source];
+				residentAddressScratchKeyHashes[i] = keyHashes[source];
+				residentAddressScratchXs[i] = xs[source];
+				residentAddressScratchYs[i] = ys[source];
+				residentAddressScratchFirstValues[i] = firstValues[source];
+				residentAddressScratchValueCounts[i] = valueCounts[source];
+				if (allOverflowValues != null) {
+					residentAddressScratchOverflowValues[i] = allOverflowValues[source];
+				}
+			}
+			System.arraycopy(residentAddressScratchKeyPrefixes, 0, keyPrefixes, 0, currentSize);
+			System.arraycopy(residentAddressScratchKeyHashes, 0, keyHashes, 0, currentSize);
+			System.arraycopy(residentAddressScratchXs, 0, xs, 0, currentSize);
+			System.arraycopy(residentAddressScratchYs, 0, ys, 0, currentSize);
+			System.arraycopy(residentAddressScratchFirstValues, 0, firstValues, 0, currentSize);
+			System.arraycopy(residentAddressScratchValueCounts, 0, valueCounts, 0, currentSize);
+			if (allOverflowValues != null) {
+				System.arraycopy(residentAddressScratchOverflowValues, 0, allOverflowValues, 0, currentSize);
+				Arrays.fill(residentAddressScratchOverflowValues, 0, currentSize, null);
+			}
+		}
+
+		private void ensureResidentAddressSortScratchCapacity(int minCapacity) {
+			if (residentAddressOrder == null || residentAddressOrder.length < minCapacity) {
+				residentAddressOrder = new int[minCapacity];
+				residentAddressScratchOrder = new int[minCapacity];
+				residentAddressScratchKeyPrefixes = new int[minCapacity];
+				residentAddressScratchKeyHashes = new int[minCapacity];
+				residentAddressScratchXs = new int[minCapacity];
+				residentAddressScratchYs = new int[minCapacity];
+				residentAddressScratchFirstValues = new long[minCapacity];
+				residentAddressScratchValueCounts = new int[minCapacity];
+			}
+			if (overflowValues != null
+					&& (residentAddressScratchOverflowValues == null
+							|| residentAddressScratchOverflowValues.length < minCapacity)) {
+				residentAddressScratchOverflowValues = new long[minCapacity][];
+			}
+			if (residentAddressRadixCounts == null) {
+				residentAddressRadixCounts = new int[RADIX_BUCKETS];
+				residentAddressRadixOffsets = new int[RADIX_BUCKETS];
+				residentAddressDifferingBits = new int[RESIDENT_ADDRESS_SORT_FIELDS];
+			}
 		}
 
 		private void insertionSortEntriesByResidentAddress(int left, int right) {
@@ -1384,22 +1494,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				return leftY < rightY ? -1 : 1;
 			}
 			return compareKeyPrefix(keyPrefixes[left], keyPrefixes[right]);
-		}
-
-		private int compareEntryToResidentAddress(int index, int storedKeyPrefix, int x, int y, int keyPrefix) {
-			int indexResidentKeyPrefix = residentKeyPrefix(keyPrefixes[index]);
-			if (indexResidentKeyPrefix != storedKeyPrefix) {
-				return indexResidentKeyPrefix < storedKeyPrefix ? -1 : 1;
-			}
-			int indexX = xs[index];
-			if (indexX != x) {
-				return indexX < x ? -1 : 1;
-			}
-			int indexY = ys[index];
-			if (indexY != y) {
-				return indexY < y ? -1 : 1;
-			}
-			return compareKeyPrefix(keyPrefixes[index], keyPrefix);
 		}
 
 		private static int residentKeyPrefix(int keyPrefix) {
@@ -3362,10 +3456,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		byte axisA = (byte) (keyPrefix >>> 16);
 		byte axisB = (byte) (keyPrefix >>> 24);
 		int storedKeyPrefix = recType == REC_GLOBAL_COMPONENT ? keyPrefix & ~DELETE_KEY_PREFIX_MASK : keyPrefix;
-		int storedKeyHash = mixAddressHash(storedKeyPrefix, x, y);
 		int entryId;
 		synchronized (sketchCacheLock) {
-			entryId = cacheDirectory.findOrAdd(storedKeyPrefix, storedKeyHash, x, y);
+			entryId = cacheDirectory.findOrAdd(storedKeyPrefix, x, y);
 		}
 		boolean useDeleteSketch = recType != REC_GLOBAL_COMPONENT && isDelete;
 		double delta = recType == REC_GLOBAL_COMPONENT ? signedDelta(isDelete) : 1.0d;
@@ -4356,17 +4449,123 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final class SparseSketchArray {
 		private static final long[] EMPTY_KEYS = {};
 		private static final ArrayOfDoublesUpdatableSketch[] EMPTY_VALUES = {};
+		private static final int HINTED_SEARCH_LINEAR_SCAN = 16;
+		private static final int HINTED_SEARCH_MAX_GALLOPS = 5;
 
 		private long[] keys = EMPTY_KEYS;
 		private ArrayOfDoublesUpdatableSketch[] values = EMPTY_VALUES;
 		int size;
+		private int prevIndex;
 
 		SparseSketchArray() {
 		}
 
 		ArrayOfDoublesUpdatableSketch get(long key) {
-			int index = Arrays.binarySearch(keys, 0, size, key);
-			return index >= 0 ? values[index] : null;
+			if (size == 0) {
+				return null;
+			}
+
+			int index = hintedLowerBound(key);
+			prevIndex = index;
+			if (index < size && keys[index] == key) {
+				return values[index];
+			}
+			return null;
+		}
+
+		private int hintedLowerBound(long key) {
+			int currentSize = size;
+			int hint = prevIndex;
+			if (hint < 0) {
+				hint = 0;
+			} else if (hint > currentSize) {
+				hint = currentSize;
+			}
+
+			if (hint < currentSize) {
+				long hintKey = keys[hint];
+				if (hintKey >= key) {
+					if (hint == 0 || keys[hint - 1] < key) {
+						return hint;
+					}
+				} else {
+					return lowerBoundRight(key, hint, currentSize);
+				}
+			} else if (keys[currentSize - 1] < key) {
+				return currentSize;
+			}
+
+			return lowerBoundLeft(key, hint);
+		}
+
+		private int lowerBoundRight(long key, int hint, int currentSize) {
+			int position = hint + 1;
+			int end = Math.min(currentSize, position + HINTED_SEARCH_LINEAR_SCAN);
+			while (position < end && keys[position] < key) {
+				position++;
+			}
+			if (position == currentSize) {
+				return currentSize;
+			}
+			if (position < end) {
+				return position;
+			}
+
+			int lower = position;
+			int step = HINTED_SEARCH_LINEAR_SCAN;
+			int upper = Math.min(currentSize, lower + step);
+			int gallops = 0;
+			while (upper < currentSize && keys[upper - 1] < key) {
+				lower = upper;
+				gallops++;
+				if (gallops >= HINTED_SEARCH_MAX_GALLOPS) {
+					return lowerBound(key, lower, currentSize);
+				}
+				step <<= 1;
+				upper = Math.min(currentSize, lower + step);
+			}
+			return lowerBound(key, lower, upper);
+		}
+
+		private int lowerBoundLeft(long key, int hint) {
+			int position = hint;
+			int scanned = 0;
+			while (position > 0 && scanned < HINTED_SEARCH_LINEAR_SCAN && keys[position - 1] >= key) {
+				position--;
+				scanned++;
+			}
+			if (position == 0 || keys[position - 1] < key) {
+				return position;
+			}
+
+			int upper = position;
+			int step = HINTED_SEARCH_LINEAR_SCAN;
+			int lower = Math.max(0, upper - step);
+			int gallops = 0;
+			while (lower > 0 && keys[lower - 1] >= key) {
+				upper = lower;
+				gallops++;
+				if (gallops >= HINTED_SEARCH_MAX_GALLOPS) {
+					return lowerBound(key, 0, upper);
+				}
+				step <<= 1;
+				lower = Math.max(0, upper - step);
+			}
+			return lowerBound(key, lower, upper);
+		}
+
+		private int lowerBound(long key, int from, int to) {
+			int lower = from;
+			int upper = to;
+			while (lower < upper) {
+				int middle = lower + ((upper - lower) >>> 1);
+				if (keys[middle] < key) {
+					lower = middle + 1;
+				} else {
+					upper = middle;
+				}
+			}
+			return lower;
 		}
 
 		void put(long key, ArrayOfDoublesUpdatableSketch value) {
@@ -10506,9 +10705,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (sketch == null) {
 			return;
 		}
-		int keyHash = mixAddressHash(keyPrefix, x, y);
 		synchronized (sketchCacheLock) {
-			int entryId = cacheDirectory.findOrAdd(keyPrefix, keyHash, x, y);
+			int entryId = cacheDirectory.findOrAdd(keyPrefix, x, y);
 			cacheDirectory.markDirty(entryId, slot);
 		}
 	}
