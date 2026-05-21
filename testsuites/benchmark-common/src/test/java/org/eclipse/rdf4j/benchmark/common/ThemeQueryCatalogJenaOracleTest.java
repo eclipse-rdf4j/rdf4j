@@ -49,6 +49,7 @@ import org.junit.jupiter.api.TestFactory;
 class ThemeQueryCatalogJenaOracleTest {
 
 	private static final int FIRST_DISABLED_QUERY_INDEX = 11;
+	private static final int SPARSE_FIRST_DISABLED_QUERY_INDEX = 2;
 
 	@TestFactory
 	Stream<DynamicTest> themeQueriesMatchJenaCountsAndCountBindings() {
@@ -62,7 +63,7 @@ class ThemeQueryCatalogJenaOracleTest {
 		try {
 			List<String> mismatches = new ArrayList<>();
 			List<BenchmarkQuery> queries = ThemeQueryCatalog.benchmarkQueriesFor(theme);
-			for (int index : queryIndexesFor(queries)) {
+			for (int index : queryIndexesFor(theme, queries)) {
 				BenchmarkQuery query = queries.get(index);
 				String label = label(theme, index, query);
 				System.out.println("Jena oracle: " + label);
@@ -130,8 +131,8 @@ class ThemeQueryCatalogJenaOracleTest {
 		return filter == null || filter.isBlank() || theme.name().equals(filter);
 	}
 
-	private static int[] queryIndexesFor(List<BenchmarkQuery> queries) {
-		int enabledQueryCount = Math.min(FIRST_DISABLED_QUERY_INDEX, queries.size());
+	private static int[] queryIndexesFor(Theme theme, List<BenchmarkQuery> queries) {
+		int enabledQueryCount = Math.min(firstDisabledQueryIndex(theme), queries.size());
 		String filter = System.getProperty("rdf4j.jenaOracle.query");
 		if (filter == null || filter.isBlank()) {
 			return IntStream.range(0, enabledQueryCount).toArray();
@@ -140,8 +141,15 @@ class ThemeQueryCatalogJenaOracleTest {
 				.map(String::trim)
 				.filter(value -> !value.isEmpty())
 				.mapToInt(Integer::parseInt)
-				.filter(index -> index >= 0 && index < enabledQueryCount)
+				.filter(index -> index >= 0 && index < queries.size())
 				.toArray();
+	}
+
+	private static int firstDisabledQueryIndex(Theme theme) {
+		if (theme == Theme.SPARSE) {
+			return SPARSE_FIRST_DISABLED_QUERY_INDEX;
+		}
+		return FIRST_DISABLED_QUERY_INDEX;
 	}
 
 	private static Dataset jenaDatasetFor(Theme theme) {

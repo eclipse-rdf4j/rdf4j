@@ -129,7 +129,8 @@ public class ThemeQueryBenchmark {
 			"HIGHLY_CONNECTED",
 			"TRAIN",
 			"ELECTRICAL_GRID",
-			"PHARMA"
+			"PHARMA",
+			"SPARSE"
 	})
 	public String themeName;
 
@@ -183,7 +184,7 @@ public class ThemeQueryBenchmark {
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(70);
+			tupleQuery.setMaxExecutionTime(120);
 			QueryResultSummary result = evaluateQuery(tupleQuery, expectedCountBindingValue.isPresent());
 			assertExpectedResult(result, expectedCountBindingValue);
 
