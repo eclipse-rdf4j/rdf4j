@@ -56,6 +56,9 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String SPARSE_ITEM_OFFERED_LABEL = "sparse-itemOffered";
 	private static final String SPARSE_MEMBER_OF_LABEL = "sparse-memberOf";
 	private static final String SPARSE_POSITION_FILTER = "sparse-position-filter";
+	private static final String SPARSE_Q9_EVENT_BRIDGE_LABEL = "sparse-q9-event-bridge";
+	private static final String SPARSE_Q9_EVENT_POSITION_LABEL = "sparse-q9-event-position";
+	private static final String SPARSE_Q9_EVENT_POSITION_VALUES_LABEL = "sparse-q9-event-position-values";
 	private static final int QUERY_EXECUTION_REPETITIONS = 5;
 
 	@Test
@@ -366,6 +369,64 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
+	@Test
+	void sparseQ9BenchmarkLifecycleAnchorsEventPositionThroughPageBridgeAfterPriorSparseTrials() throws Exception {
+		deleteBenchmarkStore();
+		runSparseBenchmarkTrial(7, 1);
+		runSparseBenchmarkTrial(8, 1);
+
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.SPARSE.name();
+		benchmark.z_queryIndex = 9;
+		benchmark.sketchEstimatorEnabled = true;
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("sparse q9 benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			String plan = benchmark.explainOptimizedPlan();
+			assertTrue(plan.contains("finite-anchor:eventPosition[valid"),
+					"Expected SPARSE q9 lifecycle plan to expose the event-position finite-anchor candidate\n"
+							+ plan);
+			assertTrue(plan.contains("optimizer.optionalRhsAnchoring=selected=anchored")
+					&& plan.contains("leftAssuredSharedBindings=page"),
+					"SPARSE q9 should plan the OPTIONAL RHS with ?page as an anchored left binding\n" + plan);
+			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			List<String> optionalLeafOrder = collectSparseQ9EventOptionalLeafOrder(optimized);
+			int eventBridgeIndex = optionalLeafOrder.indexOf(SPARSE_Q9_EVENT_BRIDGE_LABEL);
+			int eventPositionIndex = optionalLeafOrder.indexOf(SPARSE_Q9_EVENT_POSITION_LABEL);
+			int eventPositionValuesIndex = optionalLeafOrder.indexOf(SPARSE_Q9_EVENT_POSITION_VALUES_LABEL);
+			assertTrue(eventBridgeIndex >= 0 && eventPositionIndex >= 0 && eventPositionValuesIndex >= 0
+					&& eventBridgeIndex < eventPositionIndex
+					&& eventPositionIndex < eventPositionValuesIndex,
+					"SPARSE q9 should bridge from the left-bound page/event lookup before applying "
+							+ "the finite eventPosition anchor; order=" + optionalLeafOrder + "\n" + plan);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	private static void runSparseBenchmarkTrial(int queryIndex, int repetitions) throws Exception {
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.SPARSE.name();
+		benchmark.z_queryIndex = queryIndex;
+		benchmark.sketchEstimatorEnabled = true;
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("sparse q" + queryIndex + " benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, queryIndex);
+			for (int i = 0; i < repetitions; i++) {
+				assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
+			}
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
 	private static void assertRecordedOnMovesFirst(List<String> mandatoryLeafOrder, TupleExpr optimized,
 			double passRatio, double baseRows, double filteredRows) {
 		int recordedOnIndex = recordedOnIndex(mandatoryLeafOrder);
@@ -395,6 +456,26 @@ class ThemeQueryBenchmarkSmokeIT {
 		TupleExpr mandatoryRoot = mandatoryRoot(optimized);
 		collectMandatoryLeafOrder(mandatoryRoot, leaves);
 		return leaves;
+	}
+
+	private static List<String> collectSparseQ9EventOptionalLeafOrder(TupleExpr optimized) {
+		List<String> selected = new ArrayList<>();
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				if (selected.isEmpty()) {
+					List<String> leaves = new ArrayList<>();
+					collectSparseQ9EventOptionalLeafOrder(node.getRightArg(), leaves);
+					if (leaves.contains(SPARSE_Q9_EVENT_BRIDGE_LABEL)
+							&& leaves.contains(SPARSE_Q9_EVENT_POSITION_LABEL)
+							&& leaves.contains(SPARSE_Q9_EVENT_POSITION_VALUES_LABEL)) {
+						selected.addAll(leaves);
+					}
+				}
+				super.meet(node);
+			}
+		});
+		return selected;
 	}
 
 	private static TupleExpr mandatoryRoot(TupleExpr optimized) {
@@ -442,6 +523,35 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
+	private static void collectSparseQ9EventOptionalLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
+		if (tupleExpr instanceof Join join) {
+			collectSparseQ9EventOptionalLeafOrder(join.getLeftArg(), leaves);
+			collectSparseQ9EventOptionalLeafOrder(join.getRightArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			collectSparseQ9EventOptionalLeafOrder(filter.getArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			if (isSparseQ9EventBridge(statementPattern)) {
+				leaves.add(SPARSE_Q9_EVENT_BRIDGE_LABEL);
+			} else if (isSparseQ9EventPosition(statementPattern)) {
+				leaves.add(SPARSE_Q9_EVENT_POSITION_LABEL);
+			}
+			return;
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			if (assignment.getBindingNames().contains("eventPosition")) {
+				leaves.add(SPARSE_Q9_EVENT_POSITION_VALUES_LABEL);
+			}
+			return;
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+			collectSparseQ9EventOptionalLeafOrder(unaryTupleOperator.getArg(), leaves);
+		}
+	}
+
 	private static String labelForLeaf(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof Filter filter && isPharmaPValueFilter(filter)) {
 			return PHARMA_P_VALUE_FILTER;
@@ -477,6 +587,28 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 		return (SCHEMA + "position").equals(statementPattern.getPredicateVar().getValue().stringValue())
 				&& VarNameCollector.process(filter.getCondition()).contains("personPosition");
+	}
+
+	private static boolean isSparseQ9EventBridge(StatementPattern statementPattern) {
+		return hasPredicate(statementPattern, SCHEMA + "event")
+				&& statementPattern.getSubjectVar() != null
+				&& "page".equals(statementPattern.getSubjectVar().getName())
+				&& statementPattern.getObjectVar() != null
+				&& "event".equals(statementPattern.getObjectVar().getName());
+	}
+
+	private static boolean isSparseQ9EventPosition(StatementPattern statementPattern) {
+		return hasPredicate(statementPattern, SCHEMA + "position")
+				&& statementPattern.getSubjectVar() != null
+				&& "event".equals(statementPattern.getSubjectVar().getName())
+				&& statementPattern.getObjectVar() != null
+				&& "eventPosition".equals(statementPattern.getObjectVar().getName());
+	}
+
+	private static boolean hasPredicate(StatementPattern statementPattern, String predicate) {
+		return statementPattern.getPredicateVar() != null
+				&& statementPattern.getPredicateVar().hasValue()
+				&& predicate.equals(statementPattern.getPredicateVar().getValue().stringValue());
 	}
 
 	private static Filter findRecordedOnFilter(TupleExpr optimized) {
@@ -558,4 +690,11 @@ class ThemeQueryBenchmarkSmokeIT {
 		});
 		return !matches.isEmpty();
 	}
+
+	private static void assertBefore(String value, String first, String second, String message) {
+		int firstIndex = value.indexOf(first);
+		int secondIndex = value.indexOf(second);
+		assertTrue(firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex, message);
+	}
+
 }

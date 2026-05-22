@@ -751,8 +751,21 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean containsUnsupportedOptionalAnchoringArg(TupleExpr tupleExpr) {
-			if (tupleExpr instanceof Extension
-					|| tupleExpr instanceof Group
+			if (tupleExpr instanceof Extension extension) {
+				if (TupleExprs.isVariableScopeChange(extension)) {
+					return true;
+				}
+				Set<String> inputNames = plannerBindingNames(extension.getArg().getBindingNames());
+				for (ExtensionElem elem : extension.getElements()) {
+					if (elem.getName() == null
+							|| inputNames.contains(elem.getName())
+							|| LmdbJoinPlanSupport.containsExists(elem.getExpr())) {
+						return true;
+					}
+				}
+				return containsUnsupportedOptionalAnchoringArg(extension.getArg());
+			}
+			if (tupleExpr instanceof Group
 					|| tupleExpr instanceof Projection
 					|| tupleExpr instanceof LeftJoin
 					|| tupleExpr instanceof Union
@@ -4798,6 +4811,26 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				ordered.add(anchor);
 				bound.addAll(plannerBindingNames(anchor.getBindingNames()));
 			}
+
+			int connectedPatternCount = 0;
+			if (!boundBeforeSegment.isEmpty() && !bound.contains(generatedAnchorBinding)
+					&& canReachFiniteAnchorBinding(patternBindings, 0, bound, generatedAnchorBinding, -1)) {
+				while (!bound.contains(generatedAnchorBinding)) {
+					int selectedIndex = selectFiniteAnchorBridgePattern(patternBindings, connectedPatternCount, bound,
+							generatedAnchorBinding);
+					if (selectedIndex < 0) {
+						return Optional.empty();
+					}
+					TupleExpr selected = patterns.get(selectedIndex);
+					Set<String> selectedBindings = patternBindings.get(selectedIndex);
+					movePatternToConnectedPrefix(patterns, connectedPatternCount, selectedIndex);
+					moveSetToConnectedPrefix(patternBindings, connectedPatternCount, selectedIndex);
+					ordered.add(selected);
+					bound.addAll(selectedBindings);
+					connectedPatternCount++;
+				}
+			}
+
 			for (TupleExpr anchor : generatedAnchors) {
 				ordered.add(anchor);
 				Set<String> anchorNames = plannerBindingNames(anchor.getBindingNames());
@@ -4805,7 +4838,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				bound.addAll(anchorNames);
 			}
 
-			int connectedPatternCount = 0;
 			while (connectedPatternCount < patterns.size()) {
 				int selectedIndex = selectFiniteAnchorConnectedPattern(patterns, patternBindings, connectedPatternCount,
 						bound,
@@ -4822,6 +4854,65 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				connectedPatternCount++;
 			}
 			return ordered.size() == optionFactors.size() ? Optional.of(ordered) : Optional.empty();
+		}
+
+		private int selectFiniteAnchorBridgePattern(List<Set<String>> patternBindings, int firstCandidateIndex,
+				Set<String> bound, String generatedAnchorBinding) {
+			int selectedIndex = -1;
+			int selectedScore = Integer.MIN_VALUE;
+			for (int i = firstCandidateIndex; i < patternBindings.size(); i++) {
+				Set<String> tupleBindings = patternBindings.get(i);
+				if (tupleBindings.isEmpty() || Collections.disjoint(bound, tupleBindings)
+						|| bound.containsAll(tupleBindings)) {
+					continue;
+				}
+				Set<String> candidateBound = new HashSet<>(bound);
+				candidateBound.addAll(tupleBindings);
+				if (!canReachFiniteAnchorBinding(patternBindings, firstCandidateIndex, candidateBound,
+						generatedAnchorBinding, i)) {
+					continue;
+				}
+				int score = downstreamBindingReuseScoreFromBindings(patternBindings, firstCandidateIndex, i,
+						tupleBindings, bound);
+				if (tupleBindings.contains(generatedAnchorBinding)) {
+					score += 20_000;
+				} else {
+					score += 10_000;
+				}
+				if (selectedIndex < 0 || score > selectedScore) {
+					selectedIndex = i;
+					selectedScore = score;
+				}
+			}
+			return selectedIndex;
+		}
+
+		private boolean canReachFiniteAnchorBinding(List<Set<String>> patternBindings, int firstCandidateIndex,
+				Set<String> bound, String generatedAnchorBinding, int skipIndex) {
+			if (bound.contains(generatedAnchorBinding)) {
+				return true;
+			}
+			Set<String> reached = new HashSet<>(bound);
+			boolean changed;
+			do {
+				changed = false;
+				for (int i = firstCandidateIndex; i < patternBindings.size(); i++) {
+					if (i == skipIndex) {
+						continue;
+					}
+					Set<String> tupleBindings = patternBindings.get(i);
+					if (tupleBindings.isEmpty() || Collections.disjoint(reached, tupleBindings)) {
+						continue;
+					}
+					if (reached.addAll(tupleBindings)) {
+						if (reached.contains(generatedAnchorBinding)) {
+							return true;
+						}
+						changed = true;
+					}
+				}
+			} while (changed);
+			return false;
 		}
 
 		private int selectFiniteAnchorConnectedPattern(List<TupleExpr> patterns,

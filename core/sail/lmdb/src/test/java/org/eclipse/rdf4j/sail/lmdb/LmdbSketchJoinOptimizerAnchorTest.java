@@ -87,7 +87,7 @@ class LmdbSketchJoinOptimizerAnchorTest {
 	void skipsOptionalRightAnchoringForScopeChangingRightSide() {
 		StatementPattern left = statementPattern("person", "type", "type");
 		StatementPattern rightPattern = statementPattern("person", "name", "name");
-		Extension extension = new Extension(rightPattern, new ExtensionElem(new Var("name"), "label"));
+		Extension extension = new Extension(rightPattern, new ExtensionElem(new Var("name"), "person"));
 		Service service = new Service(Var.of("serviceRef", VF.createIRI("urn:service")),
 				statementPattern("person", "remoteName", "remoteName"),
 				"SERVICE <urn:service> { ?person <urn:remoteName> ?remoteName }", null, null, false);
