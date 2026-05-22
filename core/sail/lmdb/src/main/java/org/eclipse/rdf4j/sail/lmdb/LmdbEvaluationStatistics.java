@@ -525,6 +525,17 @@ class LmdbEvaluationStatistics
 			boolean needsNestedPrefixCost = isFiniteNonNegative(prefixRowsBeforeStep) && prefixRowsBeforeStep > 1.0d;
 			if (!hasAccessMetrics(step) || needsNestedPrefixCost
 					|| (hasFiniteValuesForStep && !hasFiniteDerivedSurfaceSource(step))) {
+				traceEstimate("plan-step-request", tupleExpr, null,
+						"step=" + i
+								+ ", boundBefore="
+								+ LmdbJoinPlanSupport.describeBindingNames(step.getBoundVarsBefore())
+								+ ", prefixRowsBefore=" + estimateTraceRows(prefixRowsBeforeStep)
+								+ ", factorRows=" + estimateTraceRows(step.getFactorOutputRows())
+								+ ", prefixRows=" + estimateTraceRows(step.getPrefixOutputRows())
+								+ ", work=" + estimateTraceRows(step.getStepWorkRows())
+								+ ", finiteValues=" + LmdbJoinPlanSupport.describeBindingNames(
+										finiteValuesForStep.keySet())
+								+ ", needsNested=" + needsNestedPrefixCost);
 				Optional<FactorCostEstimate> factorCostEstimate = estimateEnrichedFactorCost(tupleExpr, step,
 						finiteValuesForStep, hasFiniteValuesForStep, prefixFactors, prefixRowsBeforeStep,
 						needsNestedPrefixCost);
@@ -554,6 +565,14 @@ class LmdbEvaluationStatistics
 							factorOutputRows,
 							prefixOutputRows, stepWorkRows, stringMetrics, doubleMetrics,
 							step.getAppliedFilterIndexes());
+					traceEstimate("plan-step-refined", tupleExpr, null,
+							"step=" + i
+									+ ", factorRows=" + estimateTraceRows(factorOutputRows)
+									+ ", prefixRows=" + estimateTraceRows(prefixOutputRows)
+									+ ", work=" + estimateTraceRows(stepWorkRows)
+									+ ", " + estimateTraceEstimate(refinedEstimate));
+				} else {
+					traceEstimate("plan-step-refined-empty", tupleExpr, null, "step=" + i);
 				}
 			}
 			if (enrichedSteps != null) {
@@ -857,10 +876,14 @@ class LmdbEvaluationStatistics
 			JoinFactorCostModel.CostContext context) {
 		double outerPrefixRows = context.getOuterPrefixRows();
 		if (!isFiniteNonNegative(outerPrefixRows) || outerPrefixRows <= 1.0d) {
+			traceEstimate("nested-cost-skip", factor, context,
+					"reason=outer-prefix rows=" + estimateTraceRows(outerPrefixRows));
 			return estimate;
 		}
 		double workRows = estimate.getWorkRows();
 		if (!isFiniteNonNegative(workRows)) {
+			traceEstimate("nested-cost-skip", factor, context,
+					"reason=base-work rows=" + estimateTraceRows(workRows));
 			return estimate;
 		}
 		double perInvocationWorkRows = workRows;
@@ -901,6 +924,13 @@ class LmdbEvaluationStatistics
 			nestedWorkRows = nestedOutputRows;
 		}
 		if (!isFiniteNonNegative(nestedWorkRows) || nestedWorkRows <= workRows) {
+			traceEstimate("nested-cost-keep-base", factor, context,
+					"baseWork=" + estimateTraceRows(workRows)
+							+ ", nestedWork=" + estimateTraceRows(nestedWorkRows)
+							+ ", nestedOutput=" + estimateTraceRows(nestedOutputRows)
+							+ ", repeatedInvocations=" + estimateTraceRows(repeatedInvocations)
+							+ ", distinctLookup=" + estimateTraceRows(distinctLookupBindings)
+							+ ", lookupDomainOutput=" + estimateTraceRows(lookupDomainOutputRows));
 			return estimate;
 		}
 		Map<String, Double> doubleMetrics = estimate.getDoubleMetrics();
@@ -916,10 +946,19 @@ class LmdbEvaluationStatistics
 				doubleMetrics.put("plannedDistinctLookupBindings", distinctLookupBindings);
 			}
 		}
-		return new FactorCostEstimate(nestedWorkRows, nestedOutputRows, estimate.getStringMetrics(),
+		FactorCostEstimate nestedEstimate = new FactorCostEstimate(nestedWorkRows, nestedOutputRows,
+				estimate.getStringMetrics(),
 				doubleMetrics, estimate.hasPhysicalAccessPath(), estimate.isDirectLookup(),
 				estimate.getLookupComponentMask(), estimate.getMissingLookupComponentMask(),
 				estimate.getAccessRowsBeforeFilter(), true);
+		traceEstimate("nested-cost-accept", factor, context,
+				estimateTraceEstimate(nestedEstimate)
+						+ ", baseWork=" + estimateTraceRows(workRows)
+						+ ", perInvocationWork=" + estimateTraceRows(perInvocationWorkRows)
+						+ ", repeatedInvocations=" + estimateTraceRows(repeatedInvocations)
+						+ ", distinctLookup=" + estimateTraceRows(distinctLookupBindings)
+						+ ", lookupDomainOutput=" + estimateTraceRows(lookupDomainOutputRows));
+		return nestedEstimate;
 	}
 
 	private double lookupDomainRepeatedWorkRows(double lookupDomainOutputRows, double repeatedInvocations) {
