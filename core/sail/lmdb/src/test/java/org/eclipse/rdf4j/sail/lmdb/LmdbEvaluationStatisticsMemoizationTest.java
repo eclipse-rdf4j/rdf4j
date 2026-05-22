@@ -822,6 +822,75 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void boundLookupCostUsesPrefixSurfaceProductWhenPrefixHasDuplicates() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(subjectBit | predicateBit);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI department = vf.createIRI("urn:test:department");
+		IRI makesOffer = vf.createIRI("urn:test:makesOffer");
+		IRI memberOf = vf.createIRI("urn:test:memberOf");
+		IRI employee = vf.createIRI("urn:test:employee");
+		StatementPattern orgDepartment = new StatementPattern(
+				Var.of("org"),
+				Var.of("p1", department),
+				Var.of("department"));
+		StatementPattern departmentOffer = new StatementPattern(
+				Var.of("department"),
+				Var.of("p2", makesOffer),
+				Var.of("offer"));
+		StatementPattern personOrg = new StatementPattern(
+				Var.of("person"),
+				Var.of("p3", memberOf),
+				Var.of("org"));
+		StatementPattern orgEmployee = new StatementPattern(
+				Var.of("org"),
+				Var.of("p4", employee),
+				Var.of("employee"));
+		List<TupleExpr> prefixFactors = List.of(orgDepartment, departmentOffer, personOrg);
+
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(orgEmployee);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(subjectBit | predicateBit);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.estimateAccessRows(anyInt())).thenReturn(5.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(any(), any(Set.class))).thenReturn(5.0d);
+		when(estimator.accessShapeForJoinOrdering(any(), any(Set.class))).thenReturn(accessShape);
+		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, "org")).thenReturn(300.0d);
+		when(estimator.estimateExactJoinSurfaceRows(prefixFactors, "org")).thenReturn(-1.0d);
+		when(estimator.estimateJoinSurfaceRows(prefixFactors, "org")).thenReturn(300.0d);
+		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(12_000.0d);
+		when(estimator.estimateExactJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(-1.0d);
+		when(estimator.estimateJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(12_000.0d);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(
+				Set.of("department", "offer", "org", "person"), 1_200.0d, Double.NaN, true, true, Map.of(),
+				prefixFactors);
+
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(orgEmployee, context)
+				.orElseThrow();
+
+		assertEquals(48_000.0d, estimate.getOutputRows(), 0.0d);
+		assertEquals(48_000.0d, estimate.getWorkRows(), 0.0d);
+		assertEquals(40.0d, estimate.getAccessRowsBeforeFilter(), 0.0d);
+		assertEquals("lmdb-bound-join-product",
+				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		assertEquals(1_200.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(300.0d, estimate.getDoubleMetrics().get("plannedDistinctLookupBindings"), 0.0d);
+	}
+
+	@Test
 	void cheapFactorCostSkipsFiniteDerivedSurfaceEstimation() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
 		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);

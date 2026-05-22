@@ -806,6 +806,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (!isFiniteNonNegative(leftRows) || !isFiniteNonNegative(rightRows)) {
 			return null;
 		}
+		BoundLookupEstimate productEstimate = boundJoinProductEstimate(left, right, leftRows);
+		if (productEstimate != null) {
+			return productEstimate;
+		}
 		Set<String> leftNames = plannerBindingNames(left.getBindingNames());
 		Set<String> rightNames = plannerBindingNames(right.getBindingNames());
 		if (!isBoundLookupSubtree(right, leftNames, rightNames) || boundLookupRowsAlreadyRepeated(right)) {
@@ -820,6 +824,18 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 				? leftRows * Math.max(1.0d, rightWorkRows)
 				: rows;
 		return new BoundLookupEstimate(rows, workRows);
+	}
+
+	private BoundLookupEstimate boundJoinProductEstimate(TupleExpr left, TupleExpr right, double leftRows) {
+		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = lmdbStatistics
+					.estimateBoundJoinProduct(left, right, leftRows);
+			if (estimate != null) {
+				stampBoundJoinProductEstimate(right, estimate);
+				return new BoundLookupEstimate(estimate.productRows(), estimate.productRows());
+			}
+		}
+		return null;
 	}
 
 	private boolean boundLookupRowsAlreadyRepeated(TupleExpr tupleExpr) {
@@ -874,6 +890,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			return finiteDerivedRows;
 		}
 		double rightRows = nodeRows(rightArg);
+		double boundJoinProductRows = boundJoinProductRows(node, leftRows);
+		if (isFiniteNonNegative(boundJoinProductRows)) {
+			rightRows = largerFiniteRowCount(rightRows, boundJoinProductRows);
+		}
 		double bridgeProductRows = optionalBridgeProductRows(node, leftRows);
 		if (isFiniteNonNegative(bridgeProductRows)) {
 			rightRows = largerFiniteRowCount(rightRows, bridgeProductRows);
@@ -905,6 +925,31 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		return Double.NaN;
 	}
 
+	private double boundJoinProductRows(LeftJoin node, double leftRows) {
+		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate = lmdbStatistics
+					.estimateBoundJoinProduct(node.getLeftArg(), node.getRightArg(), leftRows);
+			if (estimate != null) {
+				stampBoundJoinProductEstimate(node, estimate);
+				stampBoundJoinProductEstimate(node.getRightArg(), estimate);
+				return estimate.productRows();
+			}
+		}
+		return Double.NaN;
+	}
+
+	private void stampBoundJoinProductEstimate(QueryModelNode node,
+			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate) {
+		node.setDoubleMetricPlanned("plannedBoundJoinProductRows", estimate.productRows());
+		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixRows", estimate.prefixRows());
+		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixSurfaceRows", estimate.prefixSurfaceRows());
+		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixRightSurfaceRows",
+				estimate.prefixRightSurfaceRows());
+		if (estimate.joinVarName() != null) {
+			node.setStringMetricPlanned("plannedBoundJoinProductJoinVar", estimate.joinVarName());
+		}
+	}
+
 	private void stampOptionalBridgeProductEstimate(LeftJoin node,
 			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate) {
 		TupleExpr rightArg = node.getRightArg();
@@ -920,8 +965,12 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixSurfaceRows", estimate.prefixSurfaceRows());
 		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixBridgeSurfaceRows",
 				estimate.prefixBridgeSurfaceRows());
+		node.setDoubleMetricPlanned("plannedOptionalBridgeContinuationRows", estimate.continuationRows());
 		node.setDoubleMetricPlanned("plannedOptionalBridgeRightRows", estimate.bridgeRightRows());
 		node.setDoubleMetricPlanned("plannedOptionalBridgeAccessRows", estimate.bridgeRows());
+		if (estimate.source() != null) {
+			node.setStringMetricPlanned("plannedOptionalBridgeSource", estimate.source());
+		}
 		if (estimate.joinVarName() != null) {
 			node.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
 		}

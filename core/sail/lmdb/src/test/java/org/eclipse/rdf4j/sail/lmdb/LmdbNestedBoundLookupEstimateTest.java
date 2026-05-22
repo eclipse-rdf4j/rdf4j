@@ -44,6 +44,8 @@ class LmdbNestedBoundLookupEstimateTest {
 	private static final IRI EMPLOYEE = VF.createIRI("urn:test:sparse:employee");
 	private static final IRI DEPARTMENT = VF.createIRI("urn:test:sparse:department");
 	private static final IRI MAKES_OFFER = VF.createIRI("urn:test:sparse:makesOffer");
+	private static final IRI TYPE = VF.createIRI("urn:test:sparse:type");
+	private static final IRI PERSON = VF.createIRI("urn:test:sparse:Person");
 	private static final IRI EVENT = VF.createIRI("urn:test:sparse:event");
 	private static final IRI POSITION = VF.createIRI("urn:test:sparse:position");
 	private static final int ORG_COUNT = 3;
@@ -270,6 +272,55 @@ class LmdbNestedBoundLookupEstimateTest {
 		}
 	}
 
+	@Test
+	void functionalTypeLookupPreservesDuplicatedPrefixRowsForFollowingOptional(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadTypedDuplicateOuterBindingBgpFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = String.join("\n",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  ?org <urn:test:sparse:department> ?department .",
+						"  ?department <urn:test:sparse:makesOffer> ?offer .",
+						"  ?person <urn:test:sparse:memberOf> ?org .",
+						"  ?person <urn:test:sparse:type> <urn:test:sparse:Person> .",
+						"  OPTIONAL {",
+						"    ?org <urn:test:sparse:employee> ?employee .",
+						"  }",
+						"}");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(result.hasNext(), "Expected count result");
+					assertEquals(EXPECTED_MAIN_BGP_ROWS * EMPLOYEES_PER_ORG,
+							((Literal) result.next().getValue("count")).longValue());
+				}
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				StatementPattern typePattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), TYPE,
+						"_const_person");
+				StatementPattern employeePattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), EMPLOYEE,
+						"employee");
+				assertNotNull(typePattern, explanation::toString);
+				assertNotNull(employeePattern, explanation::toString);
+				assertTrue(typePattern.getResultSizeActual() > 0, explanation::toString);
+				assertTrue(
+						employeePattern.getDoubleMetricPlanned(
+								"plannedRepeatedInvocations") >= EXPECTED_MAIN_BGP_ROWS,
+						"Following OPTIONAL lookup must be charged for the duplicate-preserving typed prefix rows: "
+								+ explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static void loadDuplicateOuterBindingFanout(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -306,6 +357,35 @@ class LmdbNestedBoundLookupEstimateTest {
 				for (int personIndex = 0; personIndex < PERSONS_PER_ORG; personIndex++) {
 					connection.add(VF.createIRI("urn:test:sparse:person:" + orgIndex + ":" + personIndex),
 							MEMBER_OF, org);
+				}
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadTypedDuplicateOuterBindingBgpFanout(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int orgIndex = 0; orgIndex < ORG_COUNT; orgIndex++) {
+				Resource org = VF.createIRI("urn:test:sparse:org:" + orgIndex);
+				for (int departmentIndex = 0; departmentIndex < DEPARTMENTS_PER_ORG; departmentIndex++) {
+					Resource department = VF.createIRI(
+							"urn:test:sparse:department:" + orgIndex + ":" + departmentIndex);
+					connection.add(org, DEPARTMENT, department);
+					for (int offerIndex = 0; offerIndex < OFFERS_PER_DEPARTMENT; offerIndex++) {
+						connection.add(department, MAKES_OFFER,
+								VF.createIRI("urn:test:sparse:offer:" + orgIndex + ":" + departmentIndex + ":"
+										+ offerIndex));
+					}
+				}
+				for (int personIndex = 0; personIndex < PERSONS_PER_ORG; personIndex++) {
+					Resource person = VF.createIRI("urn:test:sparse:person:" + orgIndex + ":" + personIndex);
+					connection.add(person, MEMBER_OF, org);
+					connection.add(person, TYPE, PERSON);
+				}
+				for (int employeeIndex = 0; employeeIndex < EMPLOYEES_PER_ORG; employeeIndex++) {
+					connection.add(org, EMPLOYEE,
+							VF.createIRI("urn:test:sparse:employee:" + orgIndex + ":" + employeeIndex));
 				}
 			}
 			connection.commit();
@@ -376,7 +456,9 @@ class LmdbNestedBoundLookupEstimateTest {
 			@Override
 			public void meet(StatementPattern node) {
 				if (predicate.equals(node.getPredicateVar().getValue())
-						&& objectName.equals(node.getObjectVar().getName())) {
+						&& (objectName.equals(node.getObjectVar().getName())
+								|| objectName.equals("_const_person")
+										&& PERSON.equals(node.getObjectVar().getValue()))) {
 					matches.add(node);
 				}
 			}
