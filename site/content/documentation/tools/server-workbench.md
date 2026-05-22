@@ -17,6 +17,65 @@ RDF4J Server and RDF4J Workbench requires the following software:
 
 We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) (version 9.0) or [Jetty](https://jetty.org) (version 9.4)
 
+## Running with Docker
+
+The quickest way to get RDF4J Server and Workbench running locally is to use the Docker environment included in the `docker/` directory of the source distribution. It builds the project, packages it into a Docker image, and starts it via Docker Compose.
+
+All commands below are run from that directory:
+
+```sh
+cd docker
+```
+
+### Quick start
+
+```sh
+./run.sh
+```
+
+This script builds the Maven project, assembles the SDK, builds the Docker image, and starts the container. Once ready it prints:
+
+```
+Workbench is available at http://localhost:8080/rdf4j-workbench
+```
+
+### Choosing the application server
+
+By default Apache Tomcat is used. To use Jetty instead, set `APP_SERVER` before running:
+
+```sh
+APP_SERVER=jetty ./run.sh
+```
+
+### Access
+
+| Application     | URL                                   |
+|-----------------|---------------------------------------|
+| RDF4J Server    | http://localhost:8080/rdf4j-server    |
+| RDF4J Workbench | http://localhost:8080/rdf4j-workbench |
+
+### Useful Docker Compose commands
+
+Follow logs in real time:
+
+```sh
+docker compose logs -f
+```
+
+Stop the container (data volumes are preserved):
+
+```sh
+docker compose stop
+```
+
+### Stopping and cleaning up
+
+To stop the container and remove the image and all volumes:
+
+```sh
+./shutdown.sh
+```
+
 ## Deploying Server and Workbench
 
 RDF4J Server is a database management application: it provides HTTP access to RDF4J repositories, exposing them as SPARQL endpoints. RDF4J Server is meant to be accessed by other applications. Apart from some functionality to view the server’s log messages, it doesn’t provide any user oriented functionality. Instead, the user oriented functionality is part of RDF4J Workbench. The Workbench provides a web interface for querying, updating and exploring the repositories of an RDF4J Server.
