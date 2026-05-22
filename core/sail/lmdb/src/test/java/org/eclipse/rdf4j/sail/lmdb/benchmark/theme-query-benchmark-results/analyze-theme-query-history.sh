@@ -15,7 +15,7 @@ DATED_FILE_RE = re.compile(r"results-(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md$")
 SUMMARY_ROW_RE = re.compile(
     r"^ThemeQueryBenchmark\.executeQuery\s+([A-Z_]+)\s+(\d+)\s+avgt\s+(?:\d+\s+)?([0-9.]+)"
 )
-PARAM_RE = re.compile(r"^# Parameters: \(themeName = ([A-Z_]+), z_queryIndex = (\d+)\)$", re.MULTILINE)
+PARAM_RE = re.compile(r"^# Parameters: \(.*themeName = ([A-Z_]+), z_queryIndex = (\d+)\)$", re.MULTILINE)
 QUERY_MARKER_RE = re.compile(r"^.*### (Optimized|Telemetry) Query ###\s*$", re.MULTILINE)
 SPARQL_START_RE = re.compile(r"^(SELECT|ASK|CONSTRUCT|DESCRIBE)\b")
 SCORE_LINE_RE = re.compile(r"^(?:Iteration\s+\d+:\s+)?[0-9.]+(?:\s+±\s+[0-9.]+)?\s+ms/op$")

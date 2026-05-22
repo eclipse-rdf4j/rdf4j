@@ -74,6 +74,8 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static final IRI GRID_ALIAS = VF.createIRI("http://example.com/theme/grid/alias");
 	private static final IRI SOCIAL_FOLLOWS = VF.createIRI("http://example.com/theme/social/follows");
 	private static final IRI SOCIAL_NAME = VF.createIRI("http://example.com/theme/social/name");
+	private static final IRI CONNECTED_NODE = VF.createIRI("http://example.com/theme/connected/Node");
+	private static final IRI CONNECTED_WEIGHT = VF.createIRI("http://example.com/theme/connected/weight");
 	private static final IRI MED_CODE = VF.createIRI("http://example.com/theme/medical/code");
 	private static final IRI MED_MEDICATION = VF.createIRI("http://example.com/theme/medical/Medication");
 	private static final IRI LIB_NAME = VF.createIRI("http://example.com/theme/library/name");
@@ -198,6 +200,63 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 						optimizedPlan);
 				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES + "="),
 						optimizedPlan);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void outOfScopeHashJoinRightScanDoesNotRetainBoundLookupEstimate(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticConnectedWeightData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = """
+						PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+						PREFIX conn: <http://example.com/theme/connected/>
+						SELECT ?node WHERE {
+						  VALUES ?w { "1"^^xsd:int "2"^^xsd:int "3"^^xsd:int "4"^^xsd:int }
+						  ?node conn:weight ?w .
+						  ?node a conn:Node .
+						}
+						""";
+				TupleExpr optimized = (TupleExpr) connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				int expectedTypeRows = countResults(connection, """
+						PREFIX conn: <http://example.com/theme/connected/>
+						SELECT ?node WHERE { ?node a conn:Node . }
+						""");
+				List<StatementPattern> patterns = new ArrayList<>();
+				collectStatementPatterns(optimized, patterns);
+				StatementPattern typeGuard = patterns.stream()
+						.filter(pattern -> RDF_TYPE.equals(pattern.getPredicateVar().getValue())
+								&& CONNECTED_NODE.equals(pattern.getObjectVar().getValue()))
+						.findFirst()
+						.orElseThrow(() -> new AssertionError("Expected connected node type guard in plan:\n"
+								+ optimized));
+
+				assertFalse("directLookup"
+						.equals(typeGuard.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE)),
+						"Projection-wrapped hash join right side should not retain candidate bound lookup metrics: "
+								+ describePlanMetrics(typeGuard) + "\nparent=" + typeGuard.getParentNode()
+								+ "\nplan:\n" + optimized);
+				assertTrue(typeGuard.getResultSizeEstimate() >= expectedTypeRows,
+						"Unbound type scan cardinality should cover the physical scan rows: "
+								+ describePlanMetrics(typeGuard) + "\nexpectedRows=" + expectedTypeRows
+								+ "\nplan:\n" + optimized);
+				assertTrue(
+						typeGuard.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS) >= expectedTypeRows,
+						"Unbound type scan access rows should cover the physical scan rows: "
+								+ describePlanMetrics(typeGuard) + "\nexpectedRows=" + expectedTypeRows
+								+ "\nplan:\n" + optimized);
 			}
 		} finally {
 			repository.shutDown();
@@ -927,6 +986,18 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		}
 	}
 
+	private static void loadSyntheticConnectedWeightData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 160; i++) {
+				Resource node = VF.createIRI("urn:test:connected:node:" + i);
+				connection.add(node, RDF_TYPE, CONNECTED_NODE);
+				connection.add(node, CONNECTED_WEIGHT, VF.createLiteral((i % 4) + 1));
+			}
+			connection.commit();
+		}
+	}
+
 	private static void loadSelectiveMedicalCodeData(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -1439,6 +1510,20 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			}
 			return count;
 		}
+	}
+
+	private static String describePlanMetrics(StatementPattern node) {
+		return "{source=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)
+				+ ", accessMode=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE)
+				+ ", index=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME)
+				+ ", lookup=" + node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS)
+				+ ", accessRows=" + node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS)
+				+ ", workRows=" + node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS)
+				+ ", accessWorkRows="
+				+ node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS)
+				+ ", repeatedInvocations=" + node.getDoubleMetricPlanned("plannedRepeatedInvocations")
+				+ ", distinctLookupBindings=" + node.getDoubleMetricPlanned("plannedDistinctLookupBindings")
+				+ "}";
 	}
 
 	private static int countOccurrences(String value, String needle) {

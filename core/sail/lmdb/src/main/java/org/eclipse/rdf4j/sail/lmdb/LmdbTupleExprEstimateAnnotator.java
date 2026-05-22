@@ -121,6 +121,9 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	@Override
 	public void meet(StatementPattern node) {
 		annotateRdfTermDomain(node);
+		if (stampFinalAccessPathEstimate(node)) {
+			return;
+		}
 		stampLeaf(node, sourceForExistingPlan(node, GENERIC_STATISTICS));
 	}
 
@@ -229,6 +232,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 
 		double childRows = nodeRows(node.getArg());
 		double rows = estimateFilterRows(node, childRows, passEstimate);
+		rows = largerFiniteRowCount(rows, repeatedSubtreeRows(node.getArg()));
 		double workRows = passThroughWork(node.getArg(), childRows, true);
 		stampEstimate(node, rows, workRows, filterSelectivitySource(passEstimate, true));
 	}
@@ -280,6 +284,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	public void meet(Join node) {
 		node.getLeftArg().visit(this);
 		node.getRightArg().visit(this);
+		stampRepeatedSubtreeSurface(node.getRightArg());
 		BoundLookupEstimate boundLookupEstimate = boundLookupEstimate(node.getLeftArg(), node.getRightArg());
 		if (boundLookupEstimate != null) {
 			stampEstimate(node.getRightArg(), boundLookupEstimate.rows(), boundLookupEstimate.workRows(),
@@ -288,6 +293,14 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		double rows = boundLookupEstimate == null ? nodeRows(node) : boundLookupEstimate.rows();
 		if (!isFiniteNonNegative(rows)) {
 			rows = syntheticJoinRows(node.getLeftArg(), node.getRightArg());
+		}
+		if (boundLookupEstimate == null) {
+			double rightRows = nestedRightSurfaceRows(node, rows);
+			if (isFiniteNonNegative(rightRows)) {
+				stampEstimate(node.getRightArg(), rightRows,
+						Math.max(rightRows, finiteOr(nodeWorkRows(node.getRightArg()), rightRows)),
+						LMDB_BOUND_LOOKUP_SUBTREE, true);
+			}
 		}
 		double workRows = boundLookupEstimate == null
 				? currentWorkOrCombinedChildren(node)
@@ -524,8 +537,195 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (!isFiniteNonNegative(workRows)) {
 			workRows = rows;
 		}
+		rows = chargeRepeatedInvocationRows(node, rows);
 		workRows = chargeRepeatedInvocationWork(node, workRows, rows);
+		stampPlannerDecisionMetrics(node, rows, workRows);
+		if (node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE) == null) {
+			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+					TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
+		}
 		stampEstimate(node, rows, workRows, source);
+	}
+
+	private boolean stampFinalAccessPathEstimate(StatementPattern node) {
+		if (!(statistics instanceof JoinFactorCostModel costModel)) {
+			return false;
+		}
+		Set<String> boundVars = externalBoundVars(node);
+		double outerPrefixRows = externalPrefixRows(node);
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(node,
+				JoinFactorCostModel.CostContext.of(boundVars, outerPrefixRows, Double.NaN,
+						isFiniteNonNegative(outerPrefixRows)));
+		if (estimate.isEmpty()) {
+			return false;
+		}
+		JoinFactorCostModel.FactorCostEstimate factorEstimate = estimate.get();
+		double outputRows = factorEstimate.getOutputRows();
+		double workRows = factorEstimate.getWorkRows();
+		clearAccessPathMetrics(node);
+		copyEstimateMetrics(node, factorEstimate);
+		if (shouldChargeNestedDirectLookup(node, factorEstimate, boundVars, outerPrefixRows)) {
+			double repeatedInvocations = firstFinitePositive(
+					factorEstimate.getDoubleMetrics().getOrDefault("plannedRepeatedInvocations", Double.NaN),
+					outerPrefixRows);
+			double perInvocationRows = firstFinitePositive(
+					factorEstimate.getAccessRowsBeforeFilter(),
+					factorEstimate.getDoubleMetrics()
+							.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN),
+					outputRows);
+			double repeatedOutputRows = repeatedInvocations * Math.max(1.0d, perInvocationRows);
+			if (isFiniteNonNegative(repeatedOutputRows)) {
+				outputRows = Math.max(outputRows, repeatedOutputRows);
+			}
+			double perInvocationWorkRows = firstFinitePositive(
+					factorEstimate.getDoubleMetrics()
+							.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, Double.NaN),
+					perInvocationRows,
+					workRows);
+			double repeatedWorkRows = repeatedInvocations * Math.max(1.0d, perInvocationWorkRows);
+			if (isFiniteNonNegative(repeatedWorkRows)) {
+				workRows = Math.max(workRows, repeatedWorkRows);
+			}
+			node.setDoubleMetricPlanned("plannedRepeatedInvocations", repeatedInvocations);
+		}
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
+		String source = factorEstimate.getStringMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, LMDB_ACCESS_PATH);
+		stampPlannerDecisionMetrics(node, outputRows, workRows);
+		stampEstimate(node, outputRows, workRows, source, true);
+		return true;
+	}
+
+	private boolean shouldChargeNestedDirectLookup(StatementPattern node,
+			JoinFactorCostModel.FactorCostEstimate factorEstimate, Set<String> boundVars, double outerPrefixRows) {
+		return factorEstimate.isDirectLookup()
+				&& !factorEstimate.hasExactOutputRows()
+				&& isFiniteNonNegative(outerPrefixRows)
+				&& outerPrefixRows > 1.0d
+				&& LmdbJoinPlanSupport.isBoundLookupPattern(node, boundVars);
+	}
+
+	private void stampPlannerDecisionMetrics(TupleExpr node, double rows, double workRows) {
+		if (isFiniteNonNegative(rows)) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
+		}
+		if (isFiniteNonNegative(workRows)) {
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, workRows);
+		}
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE, "scalar");
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_COST_SHAPE, "vector");
+	}
+
+	private double chargeRepeatedInvocationRows(TupleExpr node, double rows) {
+		double repeatedInvocations = node.getDoubleMetricPlanned("plannedRepeatedInvocations");
+		if (!isFiniteNonNegative(repeatedInvocations) || repeatedInvocations <= 1.0d) {
+			return rows;
+		}
+		double perInvocationRows = firstFinitePositive(
+				node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS),
+				rows);
+		double repeatedRows = repeatedInvocations * Math.max(1.0d, perInvocationRows);
+		if (!isFiniteNonNegative(repeatedRows)) {
+			return rows;
+		}
+		return isFiniteNonNegative(rows) ? Math.max(rows, repeatedRows) : repeatedRows;
+	}
+
+	private void stampRepeatedSubtreeSurface(TupleExpr node) {
+		if (node == null || node instanceof Projection || node instanceof MultiProjection || node instanceof Service
+				|| TupleExprs.isVariableScopeChange(node)) {
+			return;
+		}
+		double rows = repeatedSubtreeRows(node);
+		if (!isFiniteNonNegative(rows) || rows <= nodeRows(node)) {
+			return;
+		}
+		double workRows = Math.max(rows, finiteOr(nodeWorkRows(node), rows));
+		stampEstimate(node, rows, workRows, sourceForExistingPlan(node, LMDB_BOUND_LOOKUP_SUBTREE), true);
+	}
+
+	private double nestedRightSurfaceRows(Join node, double joinRows) {
+		if (!isFiniteNonNegative(joinRows) || joinRows <= 1.0d) {
+			return Double.NaN;
+		}
+		TupleExpr rightArg = node.getRightArg();
+		if (rightArg instanceof Projection || rightArg instanceof MultiProjection || rightArg instanceof Service
+				|| TupleExprs.isVariableScopeChange(rightArg)) {
+			return Double.NaN;
+		}
+		double rightRows = nodeRows(rightArg);
+		if (!isFiniteNonNegative(rightRows) || rightRows >= joinRows || joinRows <= rightRows * 10.0d) {
+			return Double.NaN;
+		}
+		if (!containsDirectLookupAccess(rightArg)) {
+			return Double.NaN;
+		}
+		return joinRows;
+	}
+
+	private boolean containsDirectLookupAccess(TupleExpr node) {
+		if (node == null) {
+			return false;
+		}
+		if ("directLookup".equals(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
+			return true;
+		}
+		if (node instanceof UnaryTupleOperator unary && !(node instanceof Projection)
+				&& !(node instanceof MultiProjection)
+				&& !(node instanceof Service) && !TupleExprs.isVariableScopeChange(node)) {
+			return containsDirectLookupAccess(unary.getArg());
+		}
+		if (node instanceof BinaryTupleOperator binary && !TupleExprs.isVariableScopeChange(node)) {
+			return containsDirectLookupAccess(binary.getLeftArg()) || containsDirectLookupAccess(binary.getRightArg());
+		}
+		return false;
+	}
+
+	private double repeatedSubtreeRows(TupleExpr node) {
+		if (node == null) {
+			return Double.NaN;
+		}
+		double repeatedRows = Double.NaN;
+		double repeatedInvocations = node.getDoubleMetricPlanned("plannedRepeatedInvocations");
+		if (isFiniteNonNegative(repeatedInvocations) && repeatedInvocations > 1.0d) {
+			double perInvocationRows = firstFinitePositive(
+					node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS),
+					nodeRows(node));
+			repeatedRows = repeatedInvocations * Math.max(1.0d, perInvocationRows);
+		}
+		if (node instanceof UnaryTupleOperator unary && !(node instanceof Projection)
+				&& !(node instanceof MultiProjection)
+				&& !(node instanceof Service) && !TupleExprs.isVariableScopeChange(node)) {
+			repeatedRows = largerFiniteRowCount(repeatedRows, repeatedSubtreeRows(unary.getArg()));
+		} else if (node instanceof BinaryTupleOperator binary && !TupleExprs.isVariableScopeChange(node)) {
+			repeatedRows = largerFiniteRowCount(repeatedRows, repeatedSubtreeRows(binary.getLeftArg()));
+			repeatedRows = largerFiniteRowCount(repeatedRows, repeatedSubtreeRows(binary.getRightArg()));
+		}
+		return repeatedRows;
+	}
+
+	private void clearAccessPathMetrics(StatementPattern node) {
+		Map<String, String> stringMetrics = node.getStringMetricsPlanned();
+		if (!stringMetrics.isEmpty()) {
+			stringMetrics.remove(TelemetryMetricNames.PLANNED_INDEX_NAME);
+			stringMetrics.remove(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS);
+			stringMetrics.remove(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+			stringMetrics.remove(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS);
+		}
+		Map<String, Double> doubleMetrics = node.getDoubleMetricsPlanned();
+		if (!doubleMetrics.isEmpty()) {
+			doubleMetrics.remove(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH);
+			doubleMetrics.remove(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+			doubleMetrics.remove(TelemetryMetricNames.PLANNED_ACCESS_ROWS_AFTER_FILTER);
+			doubleMetrics.remove(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS);
+			doubleMetrics.remove(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES);
+			doubleMetrics.remove("plannedRepeatedInvocations");
+			doubleMetrics.remove("plannedLookupDomainAverageOutputRows");
+			doubleMetrics.remove("plannedDistinctLookupBindings");
+		}
 	}
 
 	private double chargeRepeatedInvocationWork(TupleExpr node, double workRows, double rows) {
@@ -762,6 +962,16 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		return preferred;
 	}
 
+	private double largerFiniteRowCount(double preferred, double candidate) {
+		if (!isFiniteNonNegative(candidate)) {
+			return preferred;
+		}
+		if (!isFiniteNonNegative(preferred) || candidate > preferred) {
+			return candidate;
+		}
+		return preferred;
+	}
+
 	private double finiteDerivedOptionalLeftRows(TupleExpr rightArg) {
 		if (!containsEstimateSource(rightArg, LMDB_FINITE_DERIVED_SURFACE)) {
 			return Double.NaN;
@@ -883,7 +1093,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		QueryModelNode child = node;
 		QueryModelNode parent = node.getParentNode();
 		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
-				&& !TupleExprs.isVariableScopeChange((TupleExpr) parent)) {
+				&& leftBindingsReachThrough(unary)) {
 			child = parent;
 			parent = parent.getParentNode();
 		}
@@ -900,7 +1110,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		QueryModelNode child = node;
 		QueryModelNode parent = node.getParentNode();
 		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
-				&& !TupleExprs.isVariableScopeChange((TupleExpr) parent)) {
+				&& leftBindingsReachThrough(unary)) {
 			child = parent;
 			parent = parent.getParentNode();
 		}
@@ -911,6 +1121,15 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			return nodeRows(join.getLeftArg());
 		}
 		return Double.NaN;
+	}
+
+	private boolean leftBindingsReachThrough(UnaryTupleOperator unary) {
+		return !(unary instanceof Projection
+				|| unary instanceof MultiProjection
+				|| unary instanceof Group
+				|| unary instanceof Service)
+				&& !TupleExprs.isVariableScopeChange(unary)
+				&& !TupleExprs.containsSubquery(unary);
 	}
 
 	private boolean isNestedInvocation(TupleExpr node) {

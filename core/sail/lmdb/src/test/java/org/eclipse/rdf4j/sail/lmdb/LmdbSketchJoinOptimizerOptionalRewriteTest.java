@@ -14,10 +14,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -42,10 +47,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbSketchJoinOptimizerOptionalRewriteTest {
@@ -412,9 +420,85 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 		assertTrue(!containsLeftJoin(root.getArg()));
 	}
 
+	@Test
+	void distributesLeftUnionOptionalWhenCostedCheaper() {
+		StatementPattern personType = statementPattern("person", "type", "personType");
+		StatementPattern employeeType = statementPattern("person", "employeeType", "employeeType");
+		StatementPattern optional = statementPattern("person", "name", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Union(personType, employeeType), optional));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(100.0d, 5.0d), false).optimize(root, null,
+				null);
+
+		Union union = assertInstanceOf(Union.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getLeftArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsLeftUnionOptionalWhenOriginalCostsLess() {
+		StatementPattern personType = statementPattern("person", "type", "personType");
+		StatementPattern employeeType = statementPattern("person", "employeeType", "employeeType");
+		StatementPattern optional = statementPattern("person", "name", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Union(personType, employeeType), optional));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(5.0d, 100.0d), false).optimize(root, null,
+				null);
+
+		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(Union.class, leftJoin.getLeftArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsRightUnionOptionalWithoutMutualExclusionProof() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		StatementPattern name = statementPattern("person", "name", "name");
+		StatementPattern alias = statementPattern("person", "alias", "name");
+		QueryRoot root = new QueryRoot(new LeftJoin(person, new Union(name, alias)));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(100.0d, 5.0d), false).optimize(root, null,
+				null);
+
+		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(Union.class, leftJoin.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void distributesMutuallyExclusiveFiniteRightUnionOptionalWhenCostedCheaper() {
+		BindingSetAssignment people = contactKindValues();
+		StatementPattern email = statementPattern("person", "email", "contact");
+		StatementPattern phone = statementPattern("person", "phone", "contact");
+		TupleExpr right = new Union(new Filter(email, sameTermLiteral("contactKind", "email")),
+				new Filter(phone, sameTermLiteral("contactKind", "phone")));
+		QueryRoot root = new QueryRoot(new LeftJoin(people, right));
+
+		new LmdbSketchJoinOptimizer(new OptionalUnionDistributionCostModel(100.0d, 5.0d), false).optimize(root, null,
+				null);
+
+		Union union = assertInstanceOf(Union.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getLeftArg(), () -> root.getArg().toString());
+		assertInstanceOf(LeftJoin.class, union.getRightArg(), () -> root.getArg().toString());
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
+	}
+
+	private static SameTerm sameTermLiteral(String varName, String value) {
+		return new SameTerm(new Var(varName), new ValueConstant(VF.createLiteral(value)));
+	}
+
+	private static BindingSetAssignment contactKindValues() {
+		MapBindingSet email = new MapBindingSet();
+		email.addBinding("person", VF.createIRI("urn:person:1"));
+		email.addBinding("contactKind", VF.createLiteral("email"));
+		MapBindingSet phone = new MapBindingSet();
+		phone.addBinding("person", VF.createIRI("urn:person:2"));
+		phone.addBinding("contactKind", VF.createLiteral("phone"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(email, phone));
+		return assignment;
 	}
 
 	private static boolean containsLeftJoin(TupleExpr tupleExpr) {
@@ -431,5 +515,33 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
 		}
 		return false;
+	}
+
+	private static final class OptionalUnionDistributionCostModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private final double originalWorkRows;
+		private final double distributedWorkRows;
+
+		private OptionalUnionDistributionCostModel(double originalWorkRows, double distributedWorkRows) {
+			this.originalWorkRows = originalWorkRows;
+			this.distributedWorkRows = distributedWorkRows;
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			if (factor instanceof LeftJoin leftJoin && leftJoin.getLeftArg() instanceof Union) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(originalWorkRows, 1.0d));
+			}
+			if (factor instanceof LeftJoin leftJoin && leftJoin.getRightArg() instanceof Union) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(originalWorkRows, 1.0d));
+			}
+			if (factor instanceof Union union && union.getLeftArg() instanceof LeftJoin
+					&& union.getRightArg() instanceof LeftJoin) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(distributedWorkRows, 1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+		}
 	}
 }

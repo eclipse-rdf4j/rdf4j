@@ -105,13 +105,13 @@ public class ThemeQueryBenchmark {
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 300L;
 
 	@Param({
-			"0",
-			"1",
-			"2",
-			"3",
-			"4",
-			"5",
-			"6",
+//			"0",
+//			"1",
+//			"2",
+//			"3",
+//			"4",
+//			"5",
+//			"6",
 			"7",
 			"8",
 			"9",

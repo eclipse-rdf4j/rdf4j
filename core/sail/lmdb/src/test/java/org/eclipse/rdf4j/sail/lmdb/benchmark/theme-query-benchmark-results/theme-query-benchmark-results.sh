@@ -156,14 +156,42 @@ clean_stream() {
 
 extract_summary_table() {
 	awk '
-	/^Benchmark[[:space:]]+\(themeName\)[[:space:]]+\(z_queryIndex\)[[:space:]]+Mode[[:space:]]+Cnt[[:space:]]+Score/ {
+	BEGIN {
+		header = sprintf("%-37s %-15s %15s %5s %4s %10s %7s %s",
+			"Benchmark", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score", "Error", "Units")
+	}
+	/^Benchmark[[:space:]]+/ && /\(themeName\)/ && /\(z_queryIndex\)/ && /[[:space:]]Score/ {
 		in_table = 1
+		has_sketch_estimator = $0 ~ /\(sketchEstimatorEnabled\)/
+		print header
+		next
 	}
 	in_table {
 		if ($0 ~ /^[[:space:]]*$/) {
 			exit
 		}
-		print
+		if ($1 != "ThemeQueryBenchmark.executeQuery") {
+			next
+		}
+		if (has_sketch_estimator) {
+			theme = $3
+			query = $4
+			mode = $5
+			cnt = $6
+			score = $7
+			error = $9
+			units = $10
+		} else {
+			theme = $2
+			query = $3
+			mode = $4
+			cnt = $5
+			score = $6
+			error = $8
+			units = $9
+		}
+		printf("%-37s %15s %15s %5s %4s %10s %7s %s\n",
+			"ThemeQueryBenchmark.executeQuery", theme, query, mode, cnt, score, error, units)
 	}
 	' "$1"
 }
@@ -179,9 +207,9 @@ synthesize_summary_table() {
 		sub(/[[:space:]]+$/, "", value)
 		return value
 	}
-	/^# Parameters: \(themeName = [A-Z_]+, z_queryIndex = [0-9]+\)$/ {
+	/^# Parameters: \(.*themeName = [A-Z_]+, z_queryIndex = [0-9]+\)$/ {
 		line = $0
-		sub(/^# Parameters: \(themeName = /, "", line)
+		sub(/^# Parameters: \(.*themeName = /, "", line)
 		sub(/\)$/, "", line)
 		split(line, parts, /, z_queryIndex = /)
 		theme = trim(parts[1])
@@ -192,11 +220,11 @@ synthesize_summary_table() {
 		expect_score = 1
 		next
 	}
-	expect_score && $0 ~ /^[[:space:]]*[0-9.]+[[:space:]]+ms\/op$/ {
+	expect_score && $0 ~ /^[[:space:]]*[0-9.]+([[:space:]]+(±|\+\/-)(\([0-9.]+%\))?[[:space:]]+[0-9.]+)?[[:space:]]+ms\/op([[:space:]]+\[Average\])?$/ {
 		line = trim($0)
 		split(line, parts, /[[:space:]]+/)
 		rows[++count] = sprintf("%-37s %15s %15s %5s %4s %10s %7s %s",
-			"ThemeQueryBenchmark.executeQuery", theme, query, "avgt", "", parts[1], "", "ms/op")
+			"ThemeQueryBenchmark.executeQuery", theme, query, "avgt", "", parts[1], parts[3], "ms/op")
 		expect_score = 0
 	}
 	END {

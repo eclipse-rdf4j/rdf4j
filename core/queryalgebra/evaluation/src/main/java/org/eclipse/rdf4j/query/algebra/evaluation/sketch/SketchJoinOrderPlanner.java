@@ -6028,7 +6028,7 @@ final class SketchJoinOrderPlanner {
 	private void logFactorEstimates() {
 		for (int i = 0; i < factors.size(); i++) {
 			PlanFactor factor = factors.get(i);
-			recordDebug("factor[" + i + "]: expr=" + describeTupleExpr(factor.tupleExpr()) + " estimate="
+			recordDebug("estimate factor[" + i + "]: expr=" + describeTupleExpr(factor.tupleExpr()) + " estimate="
 					+ factor.estimate().summary());
 		}
 	}

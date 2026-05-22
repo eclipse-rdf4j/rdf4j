@@ -138,6 +138,24 @@ class SketchJoinOrderPlannerLoggingTest {
 	}
 
 	@Test
+	void traceDiagnosticsIncludePerFactorEstimates() throws Exception {
+		System.setProperty(TRACE_DIAGNOSTICS_PROPERTY, "true");
+
+		JoinOrderPlanner.JoinOrderPlan plan = planTwoFactorGreedyJoin();
+
+		String logOutput = logOutput();
+
+		assertThat(logOutput)
+				.contains("estimate factor[0]:")
+				.contains("baseRows=")
+				.contains("joinVars=");
+
+		assertThat(diagnostics(plan))
+				.anySatisfy(line -> assertThat(line).contains("estimate factor[0]:"))
+				.anySatisfy(line -> assertThat(line).contains("estimate factor[1]:"));
+	}
+
+	@Test
 	void lmdbPlanAlternativesPropertyLogsCostedAlternatives() throws Exception {
 		System.setProperty(LMDB_PLAN_ALTERNATIVES_PROPERTY, "true");
 

@@ -67,10 +67,12 @@ import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -230,6 +232,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private double repeatedSubplanInvocations = 1.0d;
 		private TupleExpr repeatedSubplanSource;
 		private boolean cheapNestedStatementPatternCosting;
+		private boolean suppressNegatedBoundOptionalRewrite;
 		private final Map<TupleExpr, PlannedPrefixEstimate> selectedPlanPrefixByFactor = new IdentityHashMap<>();
 		private Map<String, String> selectedPlanSummaryStringMetrics = Map.of();
 		private Map<String, Double> selectedPlanSummaryDoubleMetrics = Map.of();
@@ -257,11 +260,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (!TupleExprs.isVariableScopeChange(filter)) {
 				List<Filter> filters = new ArrayList<>();
 				TupleExpr filterArg = unwrapJoinFilterChain(filter, filters);
-				if (filterArg instanceof Join) {
-					optimizeJoinReplacement(filter, (Join) filterArg, filters);
+				Projection transparentProjection = transparentFilterProjection(filterArg, filters);
+				TupleExpr effectiveFilterArg = transparentProjection == null ? filterArg
+						: transparentProjection.getArg();
+				if (effectiveFilterArg instanceof Join) {
+					optimizeJoinReplacement(filter, (Join) effectiveFilterArg, filters, transparentProjection);
 					return;
 				}
-				if (filterArg instanceof LeftJoin leftJoin) {
+				if (effectiveFilterArg instanceof LeftJoin leftJoin) {
+					if (handleNegatedBoundOptionalFilter(filter, leftJoin)) {
+						return;
+					}
 					TupleExpr nullRejectingReplacement = rewriteNullRejectingOptionalFilter(filter, leftJoin);
 					if (nullRejectingReplacement != null) {
 						nullRejectingReplacement.visit(this);
@@ -279,8 +288,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						return;
 					}
 				}
-				if (canDeferSinglePatternFilter(filterArg)) {
-					optimizeSinglePatternFilterReplacement(filter, filterArg, filters);
+				if (canDeferSinglePatternFilter(effectiveFilterArg)) {
+					optimizeSinglePatternFilterReplacement(filter, effectiveFilterArg, filters);
 					return;
 				}
 			}
@@ -291,7 +300,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			TupleExpr replacement = rewriteOverlappingOptional(leftJoin);
+			TupleExpr replacement = rewriteLeftUnionOptional(leftJoin);
+			if (replacement != null) {
+				replacement.visit(this);
+				return;
+			}
+			replacement = rewriteMutuallyExclusiveRightUnionOptional(leftJoin);
+			if (replacement != null) {
+				replacement.visit(this);
+				return;
+			}
+			replacement = rewriteOverlappingOptional(leftJoin);
 			if (replacement != null) {
 				replacement.visit(this);
 				return;
@@ -306,6 +325,285 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (replacement != null) {
 				replacement.visit(this);
 			}
+		}
+
+		private TupleExpr rewriteLeftUnionOptional(LeftJoin leftJoin) {
+			if (!(leftJoin.getLeftArg()instanceof Union leftUnion)
+					|| !(statistics instanceof JoinFactorCostModel costModel)) {
+				return null;
+			}
+			LmdbRewriteProof proof = leftUnionOptionalDistributionProof(leftJoin, leftUnion);
+			if (proof == null) {
+				return null;
+			}
+
+			LeftJoin leftBranch = clonedLeftJoin(leftUnion.getLeftArg(), leftJoin.getRightArg(),
+					leftJoin.hasCondition() ? leftJoin.getCondition() : null);
+			LeftJoin rightBranch = clonedLeftJoin(leftUnion.getRightArg(), leftJoin.getRightArg(),
+					leftJoin.hasCondition() ? leftJoin.getCondition() : null);
+			Union distributed = new Union(leftBranch, rightBranch);
+			distributed.setVariableScopeChange(leftUnion.isVariableScopeChange());
+
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(boundVars,
+					repeatedSubplanInvocations, Double.NaN, repeatedSubplanInvocations > 1.0d);
+			Optional<JoinFactorCostModel.FactorCostEstimate> originalEstimate = costModel.estimateFactorCost(leftJoin,
+					context);
+			Optional<JoinFactorCostModel.FactorCostEstimate> distributedEstimate = costModel
+					.estimateFactorCost(distributed, context);
+			double originalWork = originalEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			double distributedWork = distributedEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			boolean selectDistributed = LmdbJoinPlanSupport.isFiniteNonNegative(distributedWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork) || distributedWork < originalWork);
+			String summary = "selected=" + (selectDistributed ? "distributed" : "original")
+					+ ", originalWork=" + formatGuaranteeMetric(originalWork)
+					+ ", distributedWork=" + formatGuaranteeMetric(distributedWork)
+					+ ", " + proof.metricFragment();
+			(selectDistributed ? distributed : leftJoin).setStringMetricPlanned("optimizer.optionalUnionDistribution",
+					summary);
+			if (!selectDistributed) {
+				return null;
+			}
+
+			leftJoin.replaceWith(distributed);
+			return distributed;
+		}
+
+		private TupleExpr rewriteMutuallyExclusiveRightUnionOptional(LeftJoin leftJoin) {
+			if (leftJoin.hasCondition()
+					|| !(leftJoin.getRightArg() instanceof Union)
+					|| !(statistics instanceof JoinFactorCostModel costModel)) {
+				return null;
+			}
+			Set<String> baseNames = plannerBindingNames(leftJoin.getLeftArg().getBindingNames());
+			List<OptionalBranch> branches = collectOptionalUnionBranches(leftJoin.getRightArg(), null);
+			String discriminatorName = mutuallyExclusiveBaseDiscriminatorName(branches, baseNames);
+			if (discriminatorName == null
+					|| !finiteAssignmentCoversDiscriminatorValues(leftJoin.getLeftArg(), branches,
+							discriminatorName)
+					|| !rightUnionOptionalBranchesAreSafe(leftJoin, branches, baseNames)) {
+				return null;
+			}
+			LmdbRewriteProof proof = new LmdbRewriteProof(
+					LmdbRewriteProof.RewriteKind.OPTIONAL_RIGHT_UNION_DISTRIBUTION,
+					LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+					Set.of("mutuallyExclusiveDiscriminator=" + discriminatorName,
+							"finiteBaseCoversDiscriminatorValues",
+							"compatibleProducedBindings"),
+					"right-union-optional-branches-are-mutually-exclusive");
+
+			TupleExpr distributed = null;
+			for (OptionalBranch branch : branches) {
+				Value discriminatorValue = baseConstantEqualities(branch.condition(), baseNames).get(discriminatorName);
+				Filter leftFilter = new Filter(leftJoin.getLeftArg().clone(),
+						new SameTerm(new Var(discriminatorName), new ValueConstant(discriminatorValue)));
+				LeftJoin branchOptional = new LeftJoin(leftFilter, optionalUnionBranch(branch));
+				distributed = distributed == null ? branchOptional : new Union(distributed, branchOptional);
+			}
+			if (distributed == null) {
+				return null;
+			}
+
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(boundVars,
+					repeatedSubplanInvocations, Double.NaN, repeatedSubplanInvocations > 1.0d);
+			Optional<JoinFactorCostModel.FactorCostEstimate> originalEstimate = costModel.estimateFactorCost(leftJoin,
+					context);
+			Optional<JoinFactorCostModel.FactorCostEstimate> distributedEstimate = costModel
+					.estimateFactorCost(distributed, context);
+			double originalWork = originalEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			double distributedWork = distributedEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			boolean selectDistributed = LmdbJoinPlanSupport.isFiniteNonNegative(distributedWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork) || distributedWork < originalWork);
+			String summary = "selected=" + (selectDistributed ? "distributed" : "original")
+					+ ", originalWork=" + formatGuaranteeMetric(originalWork)
+					+ ", distributedWork=" + formatGuaranteeMetric(distributedWork)
+					+ ", " + proof.metricFragment();
+			(selectDistributed ? distributed : leftJoin).setStringMetricPlanned("optimizer.optionalUnionDistribution",
+					summary);
+			if (!selectDistributed) {
+				return null;
+			}
+
+			leftJoin.replaceWith(distributed);
+			return distributed;
+		}
+
+		private String mutuallyExclusiveBaseDiscriminatorName(List<OptionalBranch> branches, Set<String> baseNames) {
+			if (branches.size() < 2) {
+				return null;
+			}
+			Map<String, Set<Value>> valuesByName = new LinkedHashMap<>();
+			Set<String> candidateNames = null;
+			for (OptionalBranch branch : branches) {
+				if (branch.condition() == null) {
+					return null;
+				}
+				Map<String, Value> discriminators = baseConstantEqualities(branch.condition(), baseNames);
+				if (discriminators.isEmpty()) {
+					return null;
+				}
+				if (candidateNames == null) {
+					candidateNames = new LinkedHashSet<>(discriminators.keySet());
+				} else {
+					candidateNames.retainAll(discriminators.keySet());
+				}
+				for (Map.Entry<String, Value> entry : discriminators.entrySet()) {
+					valuesByName.computeIfAbsent(entry.getKey(), key -> new LinkedHashSet<>()).add(entry.getValue());
+				}
+			}
+			if (candidateNames == null) {
+				return null;
+			}
+			for (String candidateName : candidateNames) {
+				Set<Value> values = valuesByName.get(candidateName);
+				if (values != null && values.size() == branches.size()) {
+					return candidateName;
+				}
+			}
+			return null;
+		}
+
+		private boolean finiteAssignmentCoversDiscriminatorValues(TupleExpr leftArg, List<OptionalBranch> branches,
+				String discriminatorName) {
+			if (!(leftArg instanceof BindingSetAssignment assignment) || assignment.getBindingSets() == null) {
+				return false;
+			}
+			Set<String> baseNames = plannerBindingNames(leftArg.getBindingNames());
+			Set<Value> coveredValues = new LinkedHashSet<>();
+			for (OptionalBranch branch : branches) {
+				Value value = baseConstantEqualities(branch.condition(), baseNames).get(discriminatorName);
+				if (value == null) {
+					return false;
+				}
+				coveredValues.add(value);
+			}
+			boolean sawRow = false;
+			for (BindingSet bindingSet : assignment.getBindingSets()) {
+				Value value = bindingSet.getValue(discriminatorName);
+				if (value == null || !coveredValues.contains(value)) {
+					return false;
+				}
+				sawRow = true;
+			}
+			return sawRow;
+		}
+
+		private boolean rightUnionOptionalBranchesAreSafe(LeftJoin leftJoin, List<OptionalBranch> branches,
+				Set<String> baseNames) {
+			if (containsUnsupportedOptionalUnionDistributionArg(leftJoin.getLeftArg())
+					|| containsNestedExistsFilter(leftJoin.getLeftArg())) {
+				return false;
+			}
+			Set<String> producedNames = null;
+			for (OptionalBranch branch : branches) {
+				if (branch.condition() == null
+						|| !branchConditionIsLocalToBaseAndBranch(branch, baseNames)
+						|| containsUnsupportedOptionalUnionDistributionArg(branch.tupleExpr())
+						|| containsNestedExistsFilter(branch.tupleExpr())) {
+					return false;
+				}
+				Set<String> branchProducedNames = new LinkedHashSet<>(plannerOutputBindingNames(branch.tupleExpr()));
+				branchProducedNames.removeAll(baseNames);
+				if (producedNames == null) {
+					producedNames = branchProducedNames;
+				} else if (!producedNames.equals(branchProducedNames)) {
+					return false;
+				}
+			}
+			return producedNames != null;
+		}
+
+		private LeftJoin clonedLeftJoin(TupleExpr leftArg, TupleExpr rightArg, ValueExpr condition) {
+			LeftJoin clone = new LeftJoin(leftArg.clone(), rightArg.clone());
+			if (condition != null) {
+				clone.setCondition(condition.clone());
+			}
+			return clone;
+		}
+
+		private boolean canDistributeLeftUnionOptional(LeftJoin leftJoin, Union leftUnion) {
+			TupleExpr leftBranch = leftUnion.getLeftArg();
+			TupleExpr rightBranch = leftUnion.getRightArg();
+			TupleExpr optionalArg = leftJoin.getRightArg();
+			if (leftUnion.isVariableScopeChange()
+					|| containsUnsupportedOptionalUnionDistributionArg(leftBranch)
+					|| containsUnsupportedOptionalUnionDistributionArg(rightBranch)
+					|| containsUnsupportedOptionalUnionDistributionArg(optionalArg)
+					|| containsNestedExistsFilter(leftBranch)
+					|| containsNestedExistsFilter(rightBranch)
+					|| containsNestedExistsFilter(optionalArg)) {
+				return false;
+			}
+			Set<String> optionalNames = plannerBindingNames(optionalArg.getBindingNames());
+			Set<String> leftSharedNames = new LinkedHashSet<>(plannerBindingNames(leftBranch.getBindingNames()));
+			leftSharedNames.retainAll(optionalNames);
+			Set<String> rightSharedNames = new LinkedHashSet<>(plannerBindingNames(rightBranch.getBindingNames()));
+			rightSharedNames.retainAll(optionalNames);
+			if (leftSharedNames.isEmpty() || !leftSharedNames.equals(rightSharedNames)) {
+				return false;
+			}
+			if (leftJoin.hasCondition()) {
+				Set<String> conditionNames = plannerBindingNames(VarNameCollector.process(leftJoin.getCondition()));
+				if (!optionalConditionVisible(leftBranch, optionalNames, conditionNames)
+						|| !optionalConditionVisible(rightBranch, optionalNames, conditionNames)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private LmdbRewriteProof leftUnionOptionalDistributionProof(LeftJoin leftJoin, Union leftUnion) {
+			if (!canDistributeLeftUnionOptional(leftJoin, leftUnion)) {
+				return null;
+			}
+			Set<String> optionalNames = plannerBindingNames(leftJoin.getRightArg().getBindingNames());
+			Set<String> sharedNames = new LinkedHashSet<>(
+					plannerBindingNames(leftUnion.getLeftArg().getBindingNames()));
+			sharedNames.retainAll(optionalNames);
+			return new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.OPTIONAL_LEFT_UNION_DISTRIBUTION,
+					LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+					Set.of("compatibleUnionBranches", "sharedOptionalBindings="
+							+ LmdbJoinPlanSupport.describeBindingNames(sharedNames)),
+					"left-union-optional-distribution-preserves-branch-multiplicity");
+		}
+
+		private boolean optionalConditionVisible(TupleExpr leftBranch, Set<String> optionalNames,
+				Set<String> conditionNames) {
+			Set<String> visibleNames = new HashSet<>(plannerBindingNames(leftBranch.getBindingNames()));
+			visibleNames.addAll(optionalNames);
+			return visibleNames.containsAll(conditionNames);
+		}
+
+		private boolean containsUnsupportedOptionalUnionDistributionArg(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Extension
+					|| tupleExpr instanceof Group
+					|| tupleExpr instanceof Projection
+					|| tupleExpr instanceof LeftJoin
+					|| tupleExpr instanceof Difference
+					|| tupleExpr instanceof Union
+					|| tupleExpr instanceof Service) {
+				return true;
+			}
+			if (tupleExpr instanceof Join join) {
+				return containsUnsupportedOptionalUnionDistributionArg(join.getLeftArg())
+						|| containsUnsupportedOptionalUnionDistributionArg(join.getRightArg());
+			}
+			if (tupleExpr instanceof Filter filter) {
+				return LmdbJoinPlanSupport.containsExists(filter.getCondition())
+						|| containsUnsupportedOptionalUnionDistributionArg(filter.getArg());
+			}
+			if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+				return TupleExprs.isVariableScopeChange(unaryTupleOperator)
+						|| containsUnsupportedOptionalUnionDistributionArg(unaryTupleOperator.getArg());
+			}
+			return false;
 		}
 
 		private void removeProjectionDeadOptionalUnderDistinct(Distinct distinct) {
@@ -355,16 +653,21 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			double originalRepeatedSubplanInvocations = repeatedSubplanInvocations;
 			TupleExpr originalRepeatedSubplanSource = repeatedSubplanSource;
 			try {
-				boundVars = new HashSet<>(boundVars);
-				boundVars.addAll(leftJoin.getLeftArg().getAssuredBindingNames());
 				double invocationRows = estimatedSubplanInvocationRows(leftJoin.getLeftArg());
-				double boundSurfaceRows = optionalBoundInvocationRows(leftJoin, invocationRows);
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(boundSurfaceRows)) {
-					annotateOptionalBoundSurface(leftJoin.getRightArg(), boundSurfaceRows);
+				Set<String> unanchoredBoundVars = new HashSet<>(boundVars);
+				Set<String> anchoredBoundVars = new HashSet<>(boundVars);
+				anchoredBoundVars.addAll(leftJoin.getLeftArg().getAssuredBindingNames());
+				OptionalRhsAnchoringSelection anchoringSelection = optionalRhsAnchoringSelection(leftJoin,
+						unanchoredBoundVars, anchoredBoundVars, invocationRows);
+				boundVars = new HashSet<>(anchoringSelection.boundVars());
+				double rightInvocationRows = invocationRows;
+				if (anchoringSelection.anchored()) {
+					double boundSurfaceRows = optionalBoundInvocationRows(leftJoin, invocationRows);
+					if (LmdbJoinPlanSupport.isFiniteNonNegative(boundSurfaceRows)) {
+						annotateOptionalBoundSurface(leftJoin.getRightArg(), boundSurfaceRows);
+						rightInvocationRows = Math.max(invocationRows, boundSurfaceRows);
+					}
 				}
-				double rightInvocationRows = LmdbJoinPlanSupport.isFiniteNonNegative(boundSurfaceRows)
-						? Math.max(invocationRows, boundSurfaceRows)
-						: invocationRows;
 				repeatedSubplanInvocations = multiplyInvocations(repeatedSubplanInvocations, rightInvocationRows);
 				repeatedSubplanSource = leftJoin.getLeftArg();
 				leftJoin.getRightArg().visit(this);
@@ -374,6 +677,134 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				boundVars = originalBoundVars;
 				repeatedSubplanInvocations = originalRepeatedSubplanInvocations;
 				repeatedSubplanSource = originalRepeatedSubplanSource;
+			}
+		}
+
+		private OptionalRhsAnchoringSelection optionalRhsAnchoringSelection(LeftJoin leftJoin,
+				Set<String> unanchoredBoundVars, Set<String> anchoredBoundVars, double invocationRows) {
+			LmdbRewriteProof proof = optionalRhsAnchoringProof(leftJoin, unanchoredBoundVars, anchoredBoundVars);
+			if (proof == null || !(statistics instanceof JoinFactorCostModel costModel)) {
+				return new OptionalRhsAnchoringSelection(unanchoredBoundVars, false);
+			}
+
+			TupleExpr rightArg = leftJoin.getRightArg();
+			Optional<JoinFactorCostModel.FactorCostEstimate> originalEstimate = costModel.estimateFactorCost(rightArg,
+					JoinFactorCostModel.CostContext.of(unanchoredBoundVars, invocationRows, Double.NaN, true));
+			double anchoredDistinctLookupBindings = optionalAnchoredDistinctLookupBindings(leftJoin,
+					anchoredBoundVars);
+			Optional<JoinFactorCostModel.FactorCostEstimate> anchoredEstimate = costModel.estimateFactorCost(rightArg,
+					JoinFactorCostModel.CostContext.of(anchoredBoundVars, invocationRows,
+							anchoredDistinctLookupBindings, true));
+			double originalWork = originalEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			double anchoredWork = anchoredEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			boolean selectAnchored = LmdbJoinPlanSupport.isFiniteNonNegative(anchoredWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork) || anchoredWork < originalWork);
+			String summary = "selected=" + (selectAnchored ? "anchored" : "original")
+					+ ", originalWork=" + formatGuaranteeMetric(originalWork)
+					+ ", anchoredWork=" + formatGuaranteeMetric(anchoredWork)
+					+ ", " + proof.metricFragment();
+			setOptionalRhsAnchoringMetric(rightArg, summary);
+			return new OptionalRhsAnchoringSelection(selectAnchored ? anchoredBoundVars : unanchoredBoundVars,
+					selectAnchored);
+		}
+
+		private LmdbRewriteProof optionalRhsAnchoringProof(LeftJoin leftJoin, Set<String> unanchoredBoundVars,
+				Set<String> anchoredBoundVars) {
+			if (anchoredBoundVars.equals(unanchoredBoundVars)) {
+				return null;
+			}
+			Set<String> leftBindingNames = plannerBindingNames(leftJoin.getLeftArg().getBindingNames());
+			Set<String> rightBindingNames = plannerBindingNames(leftJoin.getRightArg().getBindingNames());
+			Set<String> sharedBindingNames = new HashSet<>(leftBindingNames);
+			sharedBindingNames.retainAll(rightBindingNames);
+			if (sharedBindingNames.isEmpty()) {
+				return null;
+			}
+			Set<String> anchoredRightNames = new HashSet<>(anchoredBoundVars);
+			anchoredRightNames.removeAll(unanchoredBoundVars);
+			anchoredRightNames.retainAll(rightBindingNames);
+			if (anchoredRightNames.isEmpty()) {
+				return null;
+			}
+			if (containsUnsupportedOptionalAnchoringArg(leftJoin.getRightArg())
+					|| containsNestedExistsFilter(leftJoin.getLeftArg())
+					|| containsNestedExistsFilter(leftJoin.getRightArg())) {
+				return null;
+			}
+			if (leftJoin.hasCondition()) {
+				Set<String> visibleNames = new HashSet<>(leftBindingNames);
+				visibleNames.addAll(rightBindingNames);
+				if (!visibleNames.containsAll(VarNameCollector.process(leftJoin.getCondition()))) {
+					return null;
+				}
+			}
+			return new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.OPTIONAL_RHS_ANCHORING,
+					LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+					Set.of("leftAssuredSharedBindings="
+							+ LmdbJoinPlanSupport.describeBindingNames(anchoredRightNames),
+							"rhsScopeSafe"),
+					"right-side-planning-uses-left-assured-shared-bindings");
+		}
+
+		private boolean containsUnsupportedOptionalAnchoringArg(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Extension
+					|| tupleExpr instanceof Group
+					|| tupleExpr instanceof Projection
+					|| tupleExpr instanceof LeftJoin
+					|| tupleExpr instanceof Union
+					|| tupleExpr instanceof Difference
+					|| tupleExpr instanceof Service) {
+				return true;
+			}
+			if (tupleExpr instanceof Join join) {
+				return containsUnsupportedOptionalAnchoringArg(join.getLeftArg())
+						|| containsUnsupportedOptionalAnchoringArg(join.getRightArg());
+			}
+			if (tupleExpr instanceof Filter filter) {
+				return containsUnsupportedOptionalAnchoringArg(filter.getArg());
+			}
+			if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+				return TupleExprs.isVariableScopeChange(unaryTupleOperator)
+						|| containsUnsupportedOptionalAnchoringArg(unaryTupleOperator.getArg());
+			}
+			return false;
+		}
+
+		private double optionalAnchoredDistinctLookupBindings(LeftJoin leftJoin, Set<String> anchoredBoundVars) {
+			StatementPattern rightPattern = singleStatementPattern(leftJoin.getRightArg());
+			if (rightPattern == null) {
+				return Double.NaN;
+			}
+			Set<String> lookupNames = optionalLookupBindingNames(rightPattern, anchoredBoundVars);
+			return lookupNames.isEmpty() ? Double.NaN : distinctBindingUpperBound(leftJoin.getLeftArg(), lookupNames);
+		}
+
+		private Set<String> optionalLookupBindingNames(StatementPattern statementPattern,
+				Set<String> candidateBoundVars) {
+			Set<String> lookupNames = new LinkedHashSet<>();
+			addOptionalLookupBindingName(lookupNames, statementPattern.getSubjectVar(), candidateBoundVars);
+			addOptionalLookupBindingName(lookupNames, statementPattern.getPredicateVar(), candidateBoundVars);
+			addOptionalLookupBindingName(lookupNames, statementPattern.getObjectVar(), candidateBoundVars);
+			addOptionalLookupBindingName(lookupNames, statementPattern.getContextVar(), candidateBoundVars);
+			return lookupNames;
+		}
+
+		private void addOptionalLookupBindingName(Set<String> lookupNames, Var var, Set<String> candidateBoundVars) {
+			if (var != null && !var.hasValue() && candidateBoundVars.contains(var.getName())
+					&& !var.getName().startsWith("_const_")) {
+				lookupNames.add(var.getName());
+			}
+		}
+
+		private void setOptionalRhsAnchoringMetric(TupleExpr rightArg, String summary) {
+			rightArg.setStringMetricPlanned("optimizer.optionalRhsAnchoring", summary);
+			StatementPattern rightPattern = singleStatementPattern(rightArg);
+			if (rightPattern != null && rightPattern != rightArg) {
+				rightPattern.setStringMetricPlanned("optimizer.optionalRhsAnchoring", summary);
 			}
 		}
 
@@ -791,6 +1222,130 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return replacement;
 		}
 
+		private boolean handleNegatedBoundOptionalFilter(Filter filter, LeftJoin leftJoin) {
+			if (filter.getArg() != leftJoin || leftJoin.hasCondition() || negatedBound(filter.getCondition()) == null) {
+				return false;
+			}
+			if (suppressNegatedBoundOptionalRewrite) {
+				visitRetainedNegatedBoundOptionalFilter(filter, leftJoin);
+				return true;
+			}
+
+			NegatedBoundOptionalAlternative alternative = negatedBoundOptionalAlternative(filter, leftJoin);
+			if (alternative == null || !selectNegatedBoundAntiJoin(filter, alternative.difference(),
+					alternative.proof())) {
+				visitRetainedNegatedBoundOptionalFilter(filter, leftJoin);
+				return true;
+			}
+
+			Difference replacement = alternative.difference();
+			filter.replaceWith(replacement);
+			replacement.visit(this);
+			return true;
+		}
+
+		private NegatedBoundOptionalAlternative negatedBoundOptionalAlternative(Filter filter, LeftJoin leftJoin) {
+			if (filter.getArg() != leftJoin || leftJoin.hasCondition()) {
+				return null;
+			}
+			Bound negatedBound = negatedBound(filter.getCondition());
+			if (negatedBound == null || negatedBound.getArg().hasValue()) {
+				return null;
+			}
+			String bindingName = negatedBound.getArg().getName();
+			Set<String> optionalBindings = optionalDirectProducedBindingNames(leftJoin);
+			if (!optionalBindings.contains(bindingName)
+					|| !plannerBindingNames(leftJoin.getRightArg().getAssuredBindingNames()).contains(bindingName)) {
+				return null;
+			}
+
+			Set<String> sharedBindings = new HashSet<>(plannerBindingNames(leftJoin.getLeftArg().getBindingNames()));
+			sharedBindings.retainAll(plannerBindingNames(leftJoin.getRightArg().getBindingNames()));
+			if (sharedBindings.isEmpty()) {
+				return null;
+			}
+			if (containsUnsupportedAntiJoinRightArg(leftJoin.getRightArg())
+					|| containsNestedExistsFilter(leftJoin.getLeftArg())
+					|| containsNestedExistsFilter(leftJoin.getRightArg())) {
+				return null;
+			}
+
+			LmdbRewriteProof proof = new LmdbRewriteProof(
+					LmdbRewriteProof.RewriteKind.OPTIONAL_NEGATED_BOUND_ANTI_JOIN,
+					LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+					Set.of("rhsFreshAssuredBinding=" + bindingName,
+							"sharedBindings=" + LmdbJoinPlanSupport.describeBindingNames(sharedBindings),
+							"rhsScopeSafe"),
+					"not-bound-filter-over-optional-is-anti-join-for-fresh-assured-rhs-binding");
+			return new NegatedBoundOptionalAlternative(bindingName, new Difference(leftJoin.getLeftArg().clone(),
+					leftJoin.getRightArg().clone()), proof);
+		}
+
+		private boolean selectNegatedBoundAntiJoin(Filter original, Difference antiJoin, LmdbRewriteProof proof) {
+			if (!(statistics instanceof JoinFactorCostModel costModel)) {
+				antiJoin.setStringMetricPlanned("optimizer.negatedBoundOptionalAlternative",
+						"selected=anti-join, costing=unavailable, " + proof.metricFragment());
+				return true;
+			}
+
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(boundVars,
+					repeatedSubplanInvocations, Double.NaN, repeatedSubplanInvocations > 1.0d);
+			Optional<JoinFactorCostModel.FactorCostEstimate> originalEstimate = costModel.estimateFactorCost(original,
+					context);
+			Optional<JoinFactorCostModel.FactorCostEstimate> antiJoinEstimate = costModel.estimateFactorCost(antiJoin,
+					context);
+			double originalWork = originalEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			double antiJoinWork = antiJoinEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			boolean selectAntiJoin = LmdbJoinPlanSupport.isFiniteNonNegative(antiJoinWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork) || antiJoinWork < originalWork);
+			String summary = "selected=" + (selectAntiJoin ? "anti-join" : "original")
+					+ ", originalWork=" + formatGuaranteeMetric(originalWork)
+					+ ", antiJoinWork=" + formatGuaranteeMetric(antiJoinWork)
+					+ ", " + proof.metricFragment();
+			(selectAntiJoin ? antiJoin : original).setStringMetricPlanned("optimizer.negatedBoundOptionalAlternative",
+					summary);
+			return selectAntiJoin;
+		}
+
+		private void visitRetainedNegatedBoundOptionalFilter(Filter filter, LeftJoin leftJoin) {
+			visitLeftJoin(leftJoin, dependentNestedCostingFilters(filter, leftJoin));
+			optimizeConditionSubqueries(filter.getCondition(), filter.getArg(),
+					estimatedSubplanInvocationRows(filter.getArg()), filter.getArg());
+		}
+
+		private Bound negatedBound(ValueExpr condition) {
+			if (!(condition instanceof Not not) || !(not.getArg()instanceof Bound bound)) {
+				return null;
+			}
+			return bound;
+		}
+
+		private boolean containsUnsupportedAntiJoinRightArg(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Extension
+					|| tupleExpr instanceof Group
+					|| tupleExpr instanceof LeftJoin
+					|| tupleExpr instanceof Union
+					|| tupleExpr instanceof Difference
+					|| tupleExpr instanceof Service) {
+				return true;
+			}
+			if (tupleExpr instanceof Join join) {
+				return containsUnsupportedAntiJoinRightArg(join.getLeftArg())
+						|| containsUnsupportedAntiJoinRightArg(join.getRightArg());
+			}
+			if (tupleExpr instanceof Filter filter) {
+				return containsUnsupportedAntiJoinRightArg(filter.getArg());
+			}
+			if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+				return containsUnsupportedAntiJoinRightArg(unaryTupleOperator.getArg());
+			}
+			return false;
+		}
+
 		private Set<String> optionalProducedBindingNames(LeftJoin leftJoin) {
 			Set<String> optionalBindings = new HashSet<>(leftJoin.getRightArg().getBindingNames());
 			optionalBindings.removeAll(leftJoin.getLeftArg().getBindingNames());
@@ -949,6 +1504,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 								leftAssuredBindings);
 			}
 			if (expression instanceof Not not) {
+				if (not.getArg() instanceof Bound) {
+					return false;
+				}
 				return isNullRejectingOptionalExpression(not.getArg(), optionalBindings, leftAssuredBindings);
 			}
 			if (expression instanceof Compare compare) {
@@ -1352,6 +1910,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				replacement.visit(this);
 				return;
 			}
+			replacement = rewriteMinusAlternatives(difference);
+			if (replacement != null) {
+				replacement.visit(this);
+				return;
+			}
 			replacement = rewriteSafeCorrelatedMinusAsNotExists(difference);
 			if (replacement != null) {
 				replacement.visit(this);
@@ -1360,7 +1923,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 			annotateRetainedDifference(difference);
 			difference.getLeftArg().visit(this);
-			difference.getRightArg().visit(this);
+			MinusBoundRhsPlanningSelection rhsPlanningSelection = minusBoundRhsPlanningSelection(difference);
+			Set<String> originalBoundVars = boundVars;
+			try {
+				boundVars = rhsPlanningSelection.boundVars();
+				difference.getRightArg().visit(this);
+			} finally {
+				boundVars = originalBoundVars;
+			}
 			applyOperatorFeedbackPlannerEstimate(difference, boundVars, repeatedSubplanInvocations,
 					repeatedSubplanInvocations > 1.0d);
 		}
@@ -1444,6 +2014,178 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return replacement;
 		}
 
+		private TupleExpr rewriteMinusAlternatives(Difference difference) {
+			if (!(statistics instanceof JoinFactorCostModel costModel)) {
+				return null;
+			}
+			List<MinusAlternative> alternatives = new ArrayList<>(3);
+			MinusAlternative distributedUnion = distributedUnionMinusAlternative(difference);
+			if (distributedUnion != null) {
+				alternatives.add(distributedUnion);
+			}
+			MinusAlternative combinedRhs = combinedMinusRhsAlternative(difference);
+			if (combinedRhs != null) {
+				alternatives.add(combinedRhs);
+			}
+			MinusAlternative reordered = reorderedChainedMinusAlternative(costModel, difference);
+			if (reordered != null) {
+				alternatives.add(reordered);
+			}
+			if (alternatives.isEmpty()) {
+				return null;
+			}
+
+			double originalWork = estimatedMinusAlternativeWork(costModel, difference);
+			MinusAlternative bestAlternative = null;
+			double bestWork = originalWork;
+			for (MinusAlternative alternative : alternatives) {
+				double alternativeWork = estimatedMinusAlternativeWork(costModel, alternative.tupleExpr());
+				if (!LmdbJoinPlanSupport.isFiniteNonNegative(alternativeWork)) {
+					continue;
+				}
+				if (!LmdbJoinPlanSupport.isFiniteNonNegative(bestWork) || alternativeWork < bestWork) {
+					bestAlternative = alternative;
+					bestWork = alternativeWork;
+				}
+			}
+			if (bestAlternative == null) {
+				return null;
+			}
+
+			bestAlternative.tupleExpr()
+					.setStringMetricPlanned("optimizer.minusAlternative",
+							"selected=" + bestAlternative.name()
+									+ ", originalWork=" + formatGuaranteeMetric(originalWork)
+									+ ", alternativeWork=" + formatGuaranteeMetric(bestWork)
+									+ ", " + bestAlternative.proof().metricFragment());
+			difference.replaceWith(bestAlternative.tupleExpr());
+			return bestAlternative.tupleExpr();
+		}
+
+		private MinusAlternative distributedUnionMinusAlternative(Difference difference) {
+			if (!(difference.getLeftArg()instanceof Union union) || union.isVariableScopeChange()) {
+				return null;
+			}
+			TupleExpr leftBranch = union.getLeftArg();
+			TupleExpr rightBranch = union.getRightArg();
+			TupleExpr minusRight = difference.getRightArg();
+			if (!isSafeMinusAlternativeArg(leftBranch)
+					|| !isSafeMinusAlternativeArg(rightBranch)
+					|| !isSafeMinusAlternativeArg(minusRight)
+					|| containsNestedExistsFilter(leftBranch)
+					|| containsNestedExistsFilter(rightBranch)
+					|| containsNestedExistsFilter(minusRight)
+					|| !plannerOutputBindingNames(leftBranch).equals(plannerOutputBindingNames(rightBranch))) {
+				return null;
+			}
+			TupleExpr alternative = new Union(new Difference(leftBranch.clone(), minusRight.clone()),
+					new Difference(rightBranch.clone(), minusRight.clone()));
+			return new MinusAlternative("union-distributed", alternative,
+					new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_UNION_DISTRIBUTION,
+							LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+							Set.of("leftUnionBranchesCompatible", "rhsScopeSafe"),
+							"union-minus-distribution-preserves-branch-multiplicity"));
+		}
+
+		private MinusAlternative combinedMinusRhsAlternative(Difference difference) {
+			if (!(difference.getLeftArg()instanceof Difference innerDifference)
+					|| !canRewriteChainedMinus(innerDifference, difference.getRightArg())) {
+				return null;
+			}
+			TupleExpr alternative = new Difference(innerDifference.getLeftArg().clone(),
+					new Union(innerDifference.getRightArg().clone(), difference.getRightArg().clone()));
+			return new MinusAlternative("rhs-union", alternative,
+					new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_RHS_UNION,
+							LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+							Set.of("rhsOperandsIndependent", "rhsScopeSafe"),
+							"chained-minus-independent-rhs-operands-can-be-unioned"));
+		}
+
+		private MinusAlternative reorderedChainedMinusAlternative(JoinFactorCostModel costModel,
+				Difference difference) {
+			if (!(difference.getLeftArg()instanceof Difference innerDifference)
+					|| !canRewriteChainedMinus(innerDifference, difference.getRightArg())) {
+				return null;
+			}
+			double firstRhsWork = estimatedMinusAlternativeWork(costModel, innerDifference.getRightArg());
+			double secondRhsWork = estimatedMinusAlternativeWork(costModel, difference.getRightArg());
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(secondRhsWork)
+					|| (LmdbJoinPlanSupport.isFiniteNonNegative(firstRhsWork) && secondRhsWork >= firstRhsWork)) {
+				return null;
+			}
+			TupleExpr alternative = new Difference(
+					new Difference(innerDifference.getLeftArg().clone(), difference.getRightArg().clone()),
+					innerDifference.getRightArg().clone());
+			return new MinusAlternative("rhs-reordered", alternative,
+					new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_RHS_REORDER,
+							LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+							Set.of("rhsOperandsIndependent", "cheaperRhsFirst", "rhsScopeSafe"),
+							"independent-minus-rhs-operands-commute-for-this-query"));
+		}
+
+		private boolean canRewriteChainedMinus(Difference innerDifference, TupleExpr secondRightArg) {
+			TupleExpr leftArg = innerDifference.getLeftArg();
+			TupleExpr firstRightArg = innerDifference.getRightArg();
+			return isSafeMinusAlternativeArg(leftArg)
+					&& isSafeMinusAlternativeArg(firstRightArg)
+					&& isSafeMinusAlternativeArg(secondRightArg)
+					&& !containsNestedExistsFilter(leftArg)
+					&& !containsNestedExistsFilter(firstRightArg)
+					&& !containsNestedExistsFilter(secondRightArg)
+					&& minusRightSidesAreIndependent(leftArg, firstRightArg, secondRightArg);
+		}
+
+		private boolean minusRightSidesAreIndependent(TupleExpr leftArg, TupleExpr firstRightArg,
+				TupleExpr secondRightArg) {
+			Set<String> leftBindingNames = plannerBindingNames(leftArg.getBindingNames());
+			Set<String> firstLocalNames = new HashSet<>(plannerOutputBindingNames(firstRightArg));
+			firstLocalNames.removeAll(leftBindingNames);
+			Set<String> secondLocalNames = new HashSet<>(plannerOutputBindingNames(secondRightArg));
+			secondLocalNames.removeAll(leftBindingNames);
+			return Collections.disjoint(firstLocalNames, secondLocalNames);
+		}
+
+		private boolean isSafeMinusAlternativeArg(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Service
+					|| tupleExpr instanceof Group
+					|| tupleExpr instanceof Extension
+					|| tupleExpr instanceof Projection
+					|| tupleExpr instanceof LeftJoin) {
+				return false;
+			}
+			if (tupleExpr instanceof Join join) {
+				return isSafeMinusAlternativeArg(join.getLeftArg()) && isSafeMinusAlternativeArg(join.getRightArg());
+			}
+			if (tupleExpr instanceof Filter filter) {
+				return !LmdbJoinPlanSupport.containsExists(filter.getCondition())
+						&& isSafeMinusAlternativeArg(filter.getArg());
+			}
+			if (tupleExpr instanceof Union union) {
+				return !union.isVariableScopeChange()
+						&& isSafeMinusAlternativeArg(union.getLeftArg())
+						&& isSafeMinusAlternativeArg(union.getRightArg());
+			}
+			if (tupleExpr instanceof Difference nestedDifference) {
+				return isSafeMinusAlternativeArg(nestedDifference.getLeftArg())
+						&& isSafeMinusAlternativeArg(nestedDifference.getRightArg());
+			}
+			if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+				return !TupleExprs.isVariableScopeChange(unaryTupleOperator)
+						&& isSafeMinusAlternativeArg(unaryTupleOperator.getArg());
+			}
+			return true;
+		}
+
+		private double estimatedMinusAlternativeWork(JoinFactorCostModel costModel, TupleExpr tupleExpr) {
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(boundVars,
+					repeatedSubplanInvocations, Double.NaN, repeatedSubplanInvocations > 1.0d);
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(tupleExpr,
+					context);
+			return estimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+		}
+
 		private void annotateRetainedDifference(Difference difference) {
 			if (!(statistics instanceof JoinFactorCostModel)) {
 				return;
@@ -1452,6 +2194,51 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			difference.setStringMetricPlanned(TelemetryMetricNames.PLANNER_PATH, "ANTI_JOIN_RETAINED");
 			difference.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
 					"costModel=lmdb, antiJoinRewrite=materialized-minus");
+		}
+
+		private MinusBoundRhsPlanningSelection minusBoundRhsPlanningSelection(Difference difference) {
+			if (!(statistics instanceof JoinFactorCostModel costModel)
+					|| !isSafeMinusAlternativeArg(difference.getLeftArg())
+					|| !isSafeMinusAlternativeArg(difference.getRightArg())
+					|| containsNestedExistsFilter(difference.getLeftArg())
+					|| containsNestedExistsFilter(difference.getRightArg())) {
+				return new MinusBoundRhsPlanningSelection(boundVars, false);
+			}
+			Set<String> anchorNames = new LinkedHashSet<>(plannerBindingNames(
+					difference.getLeftArg().getAssuredBindingNames()));
+			anchorNames.retainAll(plannerBindingNames(difference.getRightArg().getBindingNames()));
+			anchorNames.removeAll(boundVars);
+			if (anchorNames.isEmpty()) {
+				return new MinusBoundRhsPlanningSelection(boundVars, false);
+			}
+
+			Set<String> anchoredBoundVars = new LinkedHashSet<>(boundVars);
+			anchoredBoundVars.addAll(anchorNames);
+			LmdbRewriteProof proof = new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_BOUND_RHS_PLANNING,
+					LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+					Set.of("leftAssuredSharedBindings=" + LmdbJoinPlanSupport.describeBindingNames(anchorNames),
+							"rhsScopeSafe"),
+					"minus-rhs-planning-uses-left-assured-shared-bindings");
+			double originalWork = estimatedMinusRhsPlanningWork(costModel, difference.getRightArg(), boundVars);
+			double anchoredWork = estimatedMinusRhsPlanningWork(costModel, difference.getRightArg(), anchoredBoundVars);
+			boolean selectAnchored = LmdbJoinPlanSupport.isFiniteNonNegative(anchoredWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork) || anchoredWork < originalWork);
+			difference.getRightArg()
+					.setStringMetricPlanned("optimizer.minusBoundRhsPlanning",
+							"selected=" + (selectAnchored ? "anchored" : "original")
+									+ ", originalWork=" + formatGuaranteeMetric(originalWork)
+									+ ", anchoredWork=" + formatGuaranteeMetric(anchoredWork)
+									+ ", " + proof.metricFragment());
+			return new MinusBoundRhsPlanningSelection(selectAnchored ? anchoredBoundVars : boundVars, selectAnchored);
+		}
+
+		private double estimatedMinusRhsPlanningWork(JoinFactorCostModel costModel, TupleExpr tupleExpr,
+				Set<String> currentlyBoundVars) {
+			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(tupleExpr,
+					currentlyBoundVars);
+			return estimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
 		}
 
 		private boolean isCorrelatedNotExistsRewriteCheaper(TupleExpr leftArg, TupleExpr rightArg,
@@ -2287,6 +3074,29 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return plannerNames;
 		}
 
+		private Set<String> plannerOutputBindingNames(TupleExpr tupleExpr) {
+			Set<String> bindingNames = new LinkedHashSet<>(plannerBindingNames(tupleExpr.getBindingNames()));
+			if (bindingNames.isEmpty()) {
+				return bindingNames;
+			}
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(StatementPattern statementPattern) {
+					removeValueBoundBindingName(bindingNames, statementPattern.getSubjectVar());
+					removeValueBoundBindingName(bindingNames, statementPattern.getPredicateVar());
+					removeValueBoundBindingName(bindingNames, statementPattern.getObjectVar());
+					removeValueBoundBindingName(bindingNames, statementPattern.getContextVar());
+				}
+			});
+			return bindingNames;
+		}
+
+		private void removeValueBoundBindingName(Set<String> bindingNames, Var var) {
+			if (var != null && var.hasValue()) {
+				bindingNames.remove(var.getName());
+			}
+		}
+
 		private record DirectLookupBound(boolean valid, double rows, boolean sawLookup) {
 
 			private static DirectLookupBound valid(double rows, boolean sawLookup) {
@@ -2411,6 +3221,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void optimizeJoinReplacement(TupleExpr replaceTarget, Join join, List<Filter> additionalFilters) {
+			optimizeJoinReplacement(replaceTarget, join, additionalFilters, null);
+		}
+
+		private void optimizeJoinReplacement(TupleExpr replaceTarget, Join join, List<Filter> additionalFilters,
+				Projection transparentProjection) {
 			Set<String> originalBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
@@ -2419,6 +3234,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				collected.costingOnlyFilters.addAll(contextualCostingFilters);
 				TupleExpr root = buildOrderedRoot(collected, originalBoundVars);
 				if (root != null) {
+					if (transparentProjection != null) {
+						root = wrapWithProjection(root, transparentProjection);
+					}
 					if (TupleExprs.isVariableScopeChange(replaceTarget) && root instanceof AbstractQueryModelNode) {
 						((AbstractQueryModelNode) root).setVariableScopeChange(true);
 					}
@@ -2427,6 +3245,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			} finally {
 				boundVars = originalBoundVars;
 			}
+		}
+
+		private TupleExpr wrapWithProjection(TupleExpr root, Projection projection) {
+			ProjectionElemList projectionElemList = projection.getProjectionElemList().clone();
+			Projection wrapped = new Projection(root, projectionElemList);
+			wrapped.setVariableScopeChange(projection.isVariableScopeChange());
+			return wrapped;
 		}
 
 		private void optimizeSinglePatternFilterReplacement(Filter replaceTarget, TupleExpr filterArg,
@@ -2526,6 +3351,34 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				current = currentFilter.getArg();
 			}
 			return current;
+		}
+
+		private Projection transparentFilterProjection(TupleExpr tupleExpr, List<Filter> filters) {
+			if (!(tupleExpr instanceof Projection projection) || !isIdentityProjection(projection)) {
+				return null;
+			}
+			Set<String> projectedNames = plannerBindingNames(projection.getBindingNames());
+			for (Filter filter : filters) {
+				if (!projectedNames.containsAll(DeferredFilter.conditionBindingNames(filter.getCondition()))) {
+					return null;
+				}
+			}
+			if (projection.getArg() instanceof Join) {
+				return projection;
+			}
+			return null;
+		}
+
+		private boolean isIdentityProjection(Projection projection) {
+			Set<String> names = new HashSet<>();
+			for (var elem : projection.getProjectionElemList().getElements()) {
+				if (elem.getName() == null || elem.getProjectionAlias().isPresent()
+						|| elem.hasAggregateOperatorInExpression() || elem.getSourceExpression() != null
+						|| !names.add(elem.getName())) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private boolean relocateLeftJoinLocalFilters(Filter filter, LeftJoin leftJoin) {
@@ -3118,7 +3971,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			OrderedSegment ordered = orderSegment(segment, boundBeforeSegment, segmentFilters,
 					segmentCostingOnlyFilters);
 			TupleExpr root = buildSegmentRoot(ordered.orderedArgs, segmentFilters, boundBeforeSegment,
-					ordered.filterPlacementSteps, ordered.rightDeepJoinTree);
+					ordered.filterPlacementSteps, ordered.rightDeepJoinTree,
+					ordered.suppressNegatedBoundOptionalRewriteFactors);
 			if (root != null) {
 				root = wrapDelayedExtensions(root, delayedExtensions);
 				roots.add(root);
@@ -3163,11 +4017,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				List<DeferredFilter> segmentFilters, List<DeferredFilter> segmentCostingOnlyFilters) {
 			clearSelectedPlanAnnotations();
 			if (!(statistics instanceof JoinOrderPlanner planner)) {
-				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false, Set.of());
 			}
 			PlannerMemo plannerMemo = new PlannerMemo(planner);
 			GuaranteePlanOptionProvider.Analysis guaranteeAnalysis = GuaranteePlanOptionProvider.analyze(segment,
 					segmentFilters, statistics);
+			List<NegatedBoundOptionalPlanOption> negatedBoundOptionalOptions = negatedBoundOptionalPlanOptions(segment);
 			Optional<String> emptySetOption = guaranteeAnalysis.emptySetOption();
 			if (emptySetOption.isPresent()) {
 				for (DeferredFilter segmentFilter : segmentFilters) {
@@ -3175,7 +4030,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 				selectedPlanSummaryStringMetrics = Map.of("optimizer.guaranteeOptions",
 						"generated=1, selected=" + emptySetOption.get());
-				return new OrderedSegment(new ArrayDeque<>(List.of(new EmptySet())), Map.of(), false);
+				return new OrderedSegment(new ArrayDeque<>(List.of(new EmptySet())), Map.of(), false, Set.of());
 			}
 			int segmentFilterCount = segmentFilters.size();
 			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation();
@@ -3185,7 +4040,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Optional<JoinOrderPlanner.JoinOrderPlan> canonicalFiniteAnchorPlan = Optional.empty();
 			List<TupleExpr> canonicalFiniteAnchorArgs = null;
 			String canonicalFiniteAnchorDiagnostics = "";
-			if (preferFiniteAnchorFastPath && !guaranteeChoices.hasChoiceOptions()) {
+			if (preferFiniteAnchorFastPath && !guaranteeChoices.hasChoiceOptions()
+					&& negatedBoundOptionalOptions.isEmpty()) {
 				plannerFilters = plannerFilterConstraints(segmentFilters, segmentCostingOnlyFilters);
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
@@ -3216,7 +4072,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 							FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 									orderedArgs, boundBeforeSegment);
 							return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(),
-									true);
+									true, Set.of());
 						}
 					} else if (traceGuaranteeDiagnostics) {
 						canonicalFiniteAnchorDiagnostics = canonicalFiniteAnchorDiagnostics + ", valid=false";
@@ -3226,9 +4082,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			JoinOrderPlanner.Algorithm algorithm = plannerAlgorithm(segment.size());
-			Optional<JoinOrderPlanner.JoinOrderPlan> preselectedPlan = preselectedFixedGuaranteePlanOption(segment,
-					boundBeforeSegment, segmentFilters, segmentCostingOnlyFilters, algorithm, plannerMemo,
-					guaranteeChoices);
+			Optional<JoinOrderPlanner.JoinOrderPlan> preselectedPlan = negatedBoundOptionalOptions.isEmpty()
+					? preselectedFixedGuaranteePlanOption(segment, boundBeforeSegment, segmentFilters,
+							segmentCostingOnlyFilters, algorithm, plannerMemo, guaranteeChoices)
+					: Optional.empty();
 			if (preselectedPlan.isPresent()) {
 				JoinOrderPlanner.JoinOrderPlan selectedPlan = preselectedPlan.get();
 				applyPlannerStepEstimates(selectedPlan);
@@ -3238,7 +4095,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				segmentFilterCount = segmentFilters.size();
 				Map<Integer, Integer> filterPlacementSteps = plannerFilterPlacementSteps(selectedPlan,
 						segmentFilterCount, orderedArgs);
-				return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
+				return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false, Set.of());
 			}
 			if (plannerFilters == null) {
 				plannerFilters = plannerFilterConstraints(segmentFilters, segmentCostingOnlyFilters);
@@ -3256,7 +4113,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 								orderedArgs, boundBeforeSegment);
 						return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(),
-								true);
+								true, Set.of());
 					}
 				}
 				return locallySelectiveFallbackOrder(segment);
@@ -3269,6 +4126,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 							.orElse(selectedPlan);
 			selectedPlan = guaranteePlanOption(segment, boundBeforeSegment, plannerFilters, segmentFilters,
 					selectedPlan, plannerMemo, guaranteeChoices);
+			NegatedBoundOptionalPlanSelection negatedBoundOptionalSelection = negatedBoundOptionalPlanOption(segment,
+					boundBeforeSegment, plannerFilters, selectedPlan, plannerMemo, negatedBoundOptionalOptions);
+			selectedPlan = negatedBoundOptionalSelection.plan();
 			boolean canonicalFiniteAnchorBeatsBroadPlan = canonicalFiniteAnchorArgs != null
 					&& canonicalFiniteAnchorPlan.isPresent()
 					&& canonicalFiniteAnchorFastPathBeatsBroadPlan(canonicalFiniteAnchorPlan.get(), selectedPlan);
@@ -3276,7 +4136,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				applyFiniteAnchorPlannerMetrics(canonicalFiniteAnchorArgs);
 				FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 						canonicalFiniteAnchorArgs, boundBeforeSegment);
-				return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(), true);
+				return new OrderedSegment(new ArrayDeque<>(finiteAssignmentReorder.orderedArgs()), Map.of(), true,
+						Set.of());
 			}
 			if (traceGuaranteeDiagnostics && !canonicalFiniteAnchorDiagnostics.isEmpty()) {
 				selectedPlan = selectedPlan.withAdditionalSummaryStringMetrics(Map.of(
@@ -3293,7 +4154,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			List<TupleExpr> orderedArgs = finiteAssignmentReorder.orderedArgs();
 			Map<Integer, Integer> filterPlacementSteps = plannerFilterPlacementSteps(selectedPlan, segmentFilterCount,
 					orderedArgs);
-			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
+			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false,
+					negatedBoundOptionalSelection.suppressedOriginalFactors());
 		}
 
 		private boolean cheapCanonicalFiniteAnchorFastPath(JoinOrderPlanner.JoinOrderPlan plan) {
@@ -3519,6 +4381,106 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			return withGuaranteeOptionMetrics(bestPlan, guaranteeChoices.generatedCount(), selectedOption,
 					candidateSummaries);
+		}
+
+		private List<NegatedBoundOptionalPlanOption> negatedBoundOptionalPlanOptions(List<TupleExpr> segment) {
+			List<NegatedBoundOptionalPlanOption> options = new ArrayList<>();
+			for (int i = 0; i < segment.size(); i++) {
+				TupleExpr factor = segment.get(i);
+				if (TupleExprs.isVariableScopeChange(factor)
+						|| !(factor instanceof Filter filter)
+						|| !(filter.getArg()instanceof LeftJoin leftJoin)) {
+					continue;
+				}
+				NegatedBoundOptionalAlternative alternative = negatedBoundOptionalAlternative(filter, leftJoin);
+				if (alternative == null) {
+					continue;
+				}
+				List<TupleExpr> factors = new ArrayList<>(segment);
+				factors.set(i, alternative.difference());
+				options.add(new NegatedBoundOptionalPlanOption("negated-bound-optional:" + alternative.bindingName(),
+						factor, List.copyOf(factors), alternative.proof()));
+			}
+			return options.isEmpty() ? List.of() : List.copyOf(options);
+		}
+
+		private NegatedBoundOptionalPlanSelection negatedBoundOptionalPlanOption(List<TupleExpr> segment,
+				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> plannerFilters,
+				JoinOrderPlanner.JoinOrderPlan selectedPlan, PlannerMemo plannerMemo,
+				List<NegatedBoundOptionalPlanOption> options) {
+			if (options.isEmpty()) {
+				return new NegatedBoundOptionalPlanSelection(selectedPlan, Set.of());
+			}
+
+			JoinOrderPlanner.JoinOrderPlan bestPlan = selectedPlan;
+			String selectedOption = "original";
+			NegatedBoundOptionalPlanOption selectedRewrite = null;
+			List<String> candidateSummaries = new ArrayList<>(options.size() + 1);
+			candidateSummaries.add(negatedBoundOptionalCandidateSummary("original", selectedPlan));
+			for (NegatedBoundOptionalPlanOption option : options) {
+				JoinOrderPlanner.Algorithm optionAlgorithm = plannerAlgorithm(option.factors().size());
+				JoinOrderPlanner.PlanningAttempt attempt = plannerMemo.planJoinOrderAttempt(option.factors(),
+						new HashSet<>(boundBeforeSegment), optionAlgorithm, plannerFilters);
+				Optional<JoinOrderPlanner.JoinOrderPlan> candidate = attempt.getPlan();
+				if (candidate.isEmpty() || !isValidPlannerOrder(option.factors(), candidate.get())) {
+					candidateSummaries.add(option.name() + "(invalid=no-valid-plan)");
+					continue;
+				}
+				candidateSummaries.add(negatedBoundOptionalCandidateSummary(option.name(), candidate.get()));
+				if (negatedBoundOptionalPlanOptionBeats(candidate.get(), bestPlan)) {
+					bestPlan = candidate.get();
+					selectedOption = option.name();
+					selectedRewrite = option;
+				}
+			}
+
+			Set<TupleExpr> suppressedOriginalFactors = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (NegatedBoundOptionalPlanOption option : options) {
+				suppressedOriginalFactors.add(option.originalFactor());
+			}
+			if (selectedRewrite != null) {
+				suppressedOriginalFactors.remove(selectedRewrite.originalFactor());
+			}
+			JoinOrderPlanner.JoinOrderPlan planWithMetrics = bestPlan.withAdditionalSummaryStringMetrics(Map.of(
+					"optimizer.negatedBoundOptionalAlternative",
+					negatedBoundOptionalPlanOptionSummary(options.size(), selectedOption, candidateSummaries,
+							selectedRewrite == null ? options.getFirst().proof() : selectedRewrite.proof())));
+			return new NegatedBoundOptionalPlanSelection(planWithMetrics, suppressedOriginalFactors);
+		}
+
+		private boolean negatedBoundOptionalPlanOptionBeats(JoinOrderPlanner.JoinOrderPlan candidate,
+				JoinOrderPlanner.JoinOrderPlan incumbent) {
+			double candidateWork = candidate.getEstimatedTotalWork();
+			double incumbentWork = incumbent.getEstimatedTotalWork();
+			return LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(incumbentWork) || candidateWork < incumbentWork);
+		}
+
+		private String negatedBoundOptionalCandidateSummary(String name, JoinOrderPlanner.JoinOrderPlan plan) {
+			return name + "(work=" + formatGuaranteeMetric(plan.getEstimatedTotalWork())
+					+ ", finalRows=" + formatGuaranteeMetric(plan.getEstimatedFinalRows())
+					+ ", maxIntermediate=" + formatGuaranteeMetric(maxIntermediateRows(plan))
+					+ ")";
+		}
+
+		private String negatedBoundOptionalPlanOptionSummary(int generated, String selectedOption,
+				List<String> candidateSummaries, LmdbRewriteProof proof) {
+			StringBuilder summary = new StringBuilder("generated=")
+					.append(generated)
+					.append(", selected=")
+					.append(selectedOption)
+					.append(", candidates=[");
+			int limit = Math.min(MAX_GUARANTEE_OPTION_CANDIDATE_METRICS, candidateSummaries.size());
+			for (int i = 0; i < limit; i++) {
+				if (i > 0) {
+					summary.append(", ");
+				}
+				summary.append(candidateSummaries.get(i));
+			}
+			if (candidateSummaries.size() > limit) {
+				summary.append(", ...");
+			}
+			return summary.append("], ").append(proof.metricFragment()).toString();
 		}
 
 		private GuaranteeOptionPlanSelection bestGuaranteeOptionPlan(List<TupleExpr> optionFactors,
@@ -3776,6 +4738,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			private int generatedCount() {
 				return finiteAnchorOptions.size() + filterOptions.size();
 			}
+		}
+
+		private record NegatedBoundOptionalPlanOption(String name, TupleExpr originalFactor,
+				List<TupleExpr> factors, LmdbRewriteProof proof) {
+		}
+
+		private record NegatedBoundOptionalPlanSelection(JoinOrderPlanner.JoinOrderPlan plan,
+				Set<TupleExpr> suppressedOriginalFactors) {
 		}
 
 		private record NamedGuaranteePlan(String name, JoinOrderPlanner.JoinOrderPlan plan, double comparableWork) {
@@ -4510,7 +5480,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private OrderedSegment locallySelectiveFallbackOrder(List<TupleExpr> segment) {
-			return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+			return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false, Set.of());
 		}
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> selectiveLocalFilterPrefixPlan(List<TupleExpr> segment,
@@ -5331,11 +6301,21 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
 				Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps,
-				boolean rightDeepJoinTree) {
+				boolean rightDeepJoinTree, Set<TupleExpr> suppressNegatedBoundOptionalRewriteFactors) {
 			LmdbDeferredFilterPlacer.JoinTreeShape selectedJoinTreeShape = selectedJoinTreeShape(rightDeepJoinTree);
-			return new LmdbDeferredFilterPlacer(this::optimizeStandalone, this::createJoin,
+			return new LmdbDeferredFilterPlacer(
+					(tupleExpr, standaloneBoundVars) -> optimizeSegmentFactor(tupleExpr, standaloneBoundVars,
+							suppressNegatedBoundOptionalRewriteFactors),
+					this::createJoin,
 					this::wrapTupleExprWithDeferredFilters).buildSegmentRoot(orderedArgs, filters, boundBeforeSegment,
 							filterPlacementSteps, selectedJoinTreeShape);
+		}
+
+		private TupleExpr optimizeSegmentFactor(TupleExpr tupleExpr, Set<String> standaloneBoundVars,
+				Set<TupleExpr> suppressNegatedBoundOptionalRewriteFactors) {
+			boolean suppressRewrite = suppressNegatedBoundOptionalRewriteFactors != null
+					&& suppressNegatedBoundOptionalRewriteFactors.contains(tupleExpr);
+			return optimizeStandalone(tupleExpr, standaloneBoundVars, repeatedSubplanSource, suppressRewrite);
 		}
 
 		private LmdbDeferredFilterPlacer.JoinTreeShape selectedJoinTreeShape(boolean plannedRightDeepJoinTree) {
@@ -5352,7 +6332,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private record OrderedSegment(Deque<TupleExpr> orderedArgs, Map<Integer, Integer> filterPlacementSteps,
-				boolean rightDeepJoinTree) {
+				boolean rightDeepJoinTree, Set<TupleExpr> suppressNegatedBoundOptionalRewriteFactors) {
+		}
+
+		private record OptionalRhsAnchoringSelection(Set<String> boundVars, boolean anchored) {
 		}
 
 		private record PlannedPrefixEstimate(double outputRows, double cumulativeWorkRows) {
@@ -5371,17 +6354,25 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private TupleExpr optimizeStandalone(TupleExpr tupleExpr, Set<String> standaloneBoundVars,
 				TupleExpr invocationSource) {
+			return optimizeStandalone(tupleExpr, standaloneBoundVars, invocationSource, false);
+		}
+
+		private TupleExpr optimizeStandalone(TupleExpr tupleExpr, Set<String> standaloneBoundVars,
+				TupleExpr invocationSource, boolean suppressNegatedBoundOptionalRewrite) {
 			QueryRoot wrapper = new QueryRoot(tupleExpr);
 			Set<String> originalBoundVars = boundVars;
 			TupleExpr originalRepeatedSubplanSource = repeatedSubplanSource;
+			boolean originalSuppressNegatedBoundOptionalRewrite = this.suppressNegatedBoundOptionalRewrite;
 			try {
 				boundVars = new HashSet<>(standaloneBoundVars);
 				repeatedSubplanSource = invocationSource;
+				this.suppressNegatedBoundOptionalRewrite = suppressNegatedBoundOptionalRewrite;
 				tupleExpr.visit(this);
 				return wrapper.getArg();
 			} finally {
 				boundVars = originalBoundVars;
 				repeatedSubplanSource = originalRepeatedSubplanSource;
+				this.suppressNegatedBoundOptionalRewrite = originalSuppressNegatedBoundOptionalRewrite;
 			}
 		}
 
@@ -6072,6 +7063,19 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private record AntiJoinCost(double workRows, double outputRows, double accessRowsBeforeFilter) {
+
+		}
+
+		private record MinusAlternative(String name, TupleExpr tupleExpr, LmdbRewriteProof proof) {
+
+		}
+
+		private record MinusBoundRhsPlanningSelection(Set<String> boundVars, boolean anchored) {
+
+		}
+
+		private record NegatedBoundOptionalAlternative(String bindingName, Difference difference,
+				LmdbRewriteProof proof) {
 
 		}
 	}

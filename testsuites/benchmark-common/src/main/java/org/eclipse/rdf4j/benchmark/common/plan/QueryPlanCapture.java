@@ -610,7 +610,10 @@ public final class QueryPlanCapture {
 		}
 		BigDecimal resultSizeEstimateValue = parseDecimalToken(node, "resultSizeEstimate");
 		BigDecimal resultSizeActualValue = parseDecimalToken(node, "resultSizeActual");
-		recordEstimateAccuracy(accumulator, resultSizeEstimateValue, resultSizeActualValue, isJoinType(normalizedType));
+		BigDecimal effectiveResultSizeEstimateValue = effectiveResultSizeEstimateForActualComparison(node,
+				resultSizeEstimateValue);
+		recordEstimateAccuracy(accumulator, effectiveResultSizeEstimateValue, resultSizeActualValue,
+				isJoinType(normalizedType));
 		BigDecimal selfTimeActual = parseDecimalToken(node, "selfTimeActual");
 		if (selfTimeActual != null) {
 			accumulator.modeledSelfTimeActualSum = accumulator.modeledSelfTimeActualSum.add(selfTimeActual);
@@ -930,6 +933,34 @@ public final class QueryPlanCapture {
 		} catch (NumberFormatException ignored) {
 			return null;
 		}
+	}
+
+	private static BigDecimal effectiveResultSizeEstimateForActualComparison(JsonNode node,
+			BigDecimal resultSizeEstimate) {
+		if (resultSizeEstimate == null) {
+			return null;
+		}
+		BigDecimal repeatedInvocations = parseNestedDecimalToken(node, "doubleMetricsPlanned",
+				"plannedRepeatedInvocations");
+		if (repeatedInvocations == null || repeatedInvocations.compareTo(BigDecimal.ONE) <= 0) {
+			return resultSizeEstimate;
+		}
+		BigDecimal repeatedEstimate = resultSizeEstimate.multiply(repeatedInvocations);
+		BigDecimal plannedWorkRows = parseNestedDecimalToken(node, "doubleMetricsPlanned", "plannedWorkRows");
+		if (plannedWorkRows != null
+				&& plannedWorkRows.compareTo(resultSizeEstimate) >= 0
+				&& plannedWorkRows.compareTo(repeatedEstimate) < 0) {
+			repeatedEstimate = plannedWorkRows;
+		}
+		return repeatedEstimate.compareTo(resultSizeEstimate) > 0 ? repeatedEstimate : resultSizeEstimate;
+	}
+
+	private static BigDecimal parseNestedDecimalToken(JsonNode node, String objectField, String field) {
+		JsonNode object = node.get(objectField);
+		if (object == null || object.isNull()) {
+			return null;
+		}
+		return parseDecimalToken(object, field);
 	}
 
 	private static long positiveLong(long value) {

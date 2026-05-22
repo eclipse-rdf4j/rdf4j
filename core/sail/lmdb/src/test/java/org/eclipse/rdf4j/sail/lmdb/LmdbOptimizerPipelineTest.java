@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationO
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -194,7 +195,20 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(filterIndex >= 0);
 		assertTrue(sketchIndex >= 0);
 		assertTrue(filterIndex < sketchIndex);
+		assertTrue(indexOf(optimizers, CompareOptimizer.class) < sketchIndex);
+		assertTrue(indexOf(optimizers, SameTermFilterOptimizer.class) < sketchIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
+		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) >= 0);
+		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) < indexOf(optimizers,
+				LmdbFilterSimplifierOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbProjectionPushdownOptimizer.class) >= 0);
+		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) < indexOf(optimizers,
+				LmdbProjectionPushdownOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbProjectionPushdownOptimizer.class) < indexOf(optimizers,
+				LmdbSetSemanticsOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbSetSemanticsOptimizer.class) < indexOf(optimizers,
+				LmdbFilterSimplifierOptimizer.class));
+		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < sketchIndex);
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
 		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
 				.stream()

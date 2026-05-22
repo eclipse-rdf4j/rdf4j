@@ -21,6 +21,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -232,6 +233,25 @@ class QueryPlanCaptureTest {
 		assertEquals("greedy", optimized.getDebugMetrics().get("optimizer.strategy"));
 		assertEquals("seed[0] candidate[1] rejected; seed[1] candidate[0] chosen",
 				optimized.getDebugMetrics().get("optimizer.decisionTrace"));
+	}
+
+	@Test
+	void estimateAccuracyUsesRepeatedInvocationRowsWhenPresent() {
+		String explanationJson = """
+				{
+				  "type" : "StatementPattern",
+				  "resultSizeEstimate" : 1.0,
+				  "resultSizeActual" : 100,
+				  "doubleMetricsPlanned" : {
+				    "plannedRepeatedInvocations" : 100.0
+				  }
+				}
+				""";
+
+		Map<String, String> metrics = QueryPlanCapture.extractDebugMetrics(explanationJson);
+
+		assertEquals("1", metrics.get("estimateActualComparableNodeCount"));
+		assertEquals("1", metrics.get("estimateActualQErrorMax"));
 	}
 
 	@Test
