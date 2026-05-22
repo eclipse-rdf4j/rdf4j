@@ -44,14 +44,23 @@ class LmdbNestedBoundLookupEstimateTest {
 	private static final IRI EMPLOYEE = VF.createIRI("urn:test:sparse:employee");
 	private static final IRI DEPARTMENT = VF.createIRI("urn:test:sparse:department");
 	private static final IRI MAKES_OFFER = VF.createIRI("urn:test:sparse:makesOffer");
+	private static final IRI EVENT = VF.createIRI("urn:test:sparse:event");
+	private static final IRI POSITION = VF.createIRI("urn:test:sparse:position");
 	private static final int ORG_COUNT = 3;
 	private static final int PERSONS_PER_ORG = 50;
 	private static final int EMPLOYEES_PER_ORG = 40;
 	private static final int DEPARTMENTS_PER_ORG = 2;
 	private static final int OFFERS_PER_DEPARTMENT = 4;
+	private static final int EVENTS_PER_PERSON = 4;
 	private static final int EXPECTED_OPTIONAL_ROWS = ORG_COUNT * PERSONS_PER_ORG * EMPLOYEES_PER_ORG;
 	private static final int EXPECTED_MAIN_BGP_OUTER_ROWS = ORG_COUNT * DEPARTMENTS_PER_ORG * OFFERS_PER_DEPARTMENT;
 	private static final int EXPECTED_MAIN_BGP_ROWS = EXPECTED_MAIN_BGP_OUTER_ROWS * PERSONS_PER_ORG;
+	private static final int EXPECTED_CHAINED_OPTIONAL_LEFT_ROWS = ORG_COUNT * PERSONS_PER_ORG * EVENTS_PER_PERSON;
+	private static final int EXPECTED_CHAINED_OPTIONAL_ROWS = EXPECTED_CHAINED_OPTIONAL_LEFT_ROWS * EMPLOYEES_PER_ORG;
+	private static final int EXPECTED_DUPLICATED_CHAINED_OPTIONAL_LEFT_ROWS = EXPECTED_MAIN_BGP_ROWS
+			* EVENTS_PER_PERSON;
+	private static final int EXPECTED_DUPLICATED_CHAINED_OPTIONAL_ROWS = EXPECTED_DUPLICATED_CHAINED_OPTIONAL_LEFT_ROWS
+			* EMPLOYEES_PER_ORG;
 
 	@Test
 	void optionalBoundLookupEstimateScalesWithOuterMultisetRows(@TempDir File dataDir) throws Exception {
@@ -95,6 +104,123 @@ class LmdbNestedBoundLookupEstimateTest {
 						employeePattern.getDoubleMetricPlanned(
 								TelemetryMetricNames.PLANNED_WORK_ROWS) >= EXPECTED_OPTIONAL_ROWS,
 						"Bound OPTIONAL lookup work must cover the repeated emitted rows: " + explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void chainedOptionalBoundLookupEstimateUsesExpandedLeftMultisetRows(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadChainedOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = String.join("\n",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  ?person <urn:test:sparse:memberOf> ?org .",
+						"  OPTIONAL {",
+						"    ?person <urn:test:sparse:event> ?event .",
+						"    ?event <urn:test:sparse:position> ?position .",
+						"    FILTER(?position IN (1, 2, 3, 4))",
+						"  }",
+						"  OPTIONAL {",
+						"    ?org <urn:test:sparse:employee> ?employee .",
+						"  }",
+						"}");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(result.hasNext(), "Expected count result");
+					assertEquals(EXPECTED_CHAINED_OPTIONAL_ROWS,
+							((Literal) result.next().getValue("count")).longValue());
+				}
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				StatementPattern employeePattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), EMPLOYEE,
+						"employee");
+				assertNotNull(employeePattern, explanation::toString);
+				assertEquals(EXPECTED_CHAINED_OPTIONAL_ROWS, employeePattern.getResultSizeActual(),
+						explanation::toString);
+				assertTrue(
+						employeePattern.getDoubleMetricPlanned(
+								"plannedRepeatedInvocations") >= EXPECTED_CHAINED_OPTIONAL_LEFT_ROWS,
+						"Second OPTIONAL lookup must be charged for the expanded first OPTIONAL multiset rows: "
+								+ explanation);
+				assertEquals(EXPECTED_CHAINED_OPTIONAL_ROWS, employeePattern.getResultSizeEstimate(),
+						EXPECTED_CHAINED_OPTIONAL_ROWS * 0.25d,
+						"Second OPTIONAL row estimate should track repeated output rows after the first OPTIONAL: "
+								+ explanation);
+				assertTrue(
+						employeePattern.getDoubleMetricPlanned(
+								TelemetryMetricNames.PLANNED_WORK_ROWS) >= EXPECTED_CHAINED_OPTIONAL_ROWS,
+						"Second OPTIONAL work must cover repeated emitted rows after the first OPTIONAL: "
+								+ explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void duplicatedLeftOptionalBridgeEstimateUsesSketchBridgeProduct(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadDuplicatedLeftChainedOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = String.join("\n",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  ?person <urn:test:sparse:memberOf> ?org .",
+						"  ?org <urn:test:sparse:department> ?department .",
+						"  ?department <urn:test:sparse:makesOffer> ?offer .",
+						"  OPTIONAL {",
+						"    ?person <urn:test:sparse:event> ?event .",
+						"    ?event <urn:test:sparse:position> ?position .",
+						"    FILTER(?position IN (1, 2, 3, 4))",
+						"  }",
+						"  OPTIONAL {",
+						"    ?org <urn:test:sparse:employee> ?employee .",
+						"  }",
+						"}");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(result.hasNext(), "Expected count result");
+					assertEquals(EXPECTED_DUPLICATED_CHAINED_OPTIONAL_ROWS,
+							((Literal) result.next().getValue("count")).longValue());
+				}
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				StatementPattern employeePattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), EMPLOYEE,
+						"employee");
+				assertNotNull(employeePattern, explanation::toString);
+				assertEquals(EXPECTED_DUPLICATED_CHAINED_OPTIONAL_ROWS, employeePattern.getResultSizeActual(),
+						explanation::toString);
+				assertTrue(
+						employeePattern.getDoubleMetricPlanned(
+								"plannedRepeatedInvocations") >= EXPECTED_DUPLICATED_CHAINED_OPTIONAL_LEFT_ROWS,
+						"Second OPTIONAL lookup must be charged for the bridge product rows, not just bridge rows: "
+								+ explanation);
+				assertEquals(EXPECTED_DUPLICATED_CHAINED_OPTIONAL_ROWS, employeePattern.getResultSizeEstimate(),
+						EXPECTED_DUPLICATED_CHAINED_OPTIONAL_ROWS * 0.25d,
+						"Second OPTIONAL row estimate should use duplicate-left bridge product rows: "
+								+ explanation);
+				assertTrue(
+						employeePattern.getDoubleMetricPlanned(
+								TelemetryMetricNames.PLANNED_WORK_ROWS) >= EXPECTED_DUPLICATED_CHAINED_OPTIONAL_ROWS,
+						"Second OPTIONAL work must cover duplicate-left bridge product rows: " + explanation);
 			}
 		} finally {
 			repository.shutDown();
@@ -180,6 +306,64 @@ class LmdbNestedBoundLookupEstimateTest {
 				for (int personIndex = 0; personIndex < PERSONS_PER_ORG; personIndex++) {
 					connection.add(VF.createIRI("urn:test:sparse:person:" + orgIndex + ":" + personIndex),
 							MEMBER_OF, org);
+				}
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadChainedOptionalFanout(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int orgIndex = 0; orgIndex < ORG_COUNT; orgIndex++) {
+				Resource org = VF.createIRI("urn:test:sparse:org:" + orgIndex);
+				for (int personIndex = 0; personIndex < PERSONS_PER_ORG; personIndex++) {
+					Resource person = VF.createIRI("urn:test:sparse:person:" + orgIndex + ":" + personIndex);
+					connection.add(person, MEMBER_OF, org);
+					for (int eventIndex = 0; eventIndex < EVENTS_PER_PERSON; eventIndex++) {
+						Resource event = VF.createIRI(
+								"urn:test:sparse:event:" + orgIndex + ":" + personIndex + ":" + eventIndex);
+						connection.add(person, EVENT, event);
+						connection.add(event, POSITION, VF.createLiteral(eventIndex + 1));
+					}
+				}
+				for (int employeeIndex = 0; employeeIndex < EMPLOYEES_PER_ORG; employeeIndex++) {
+					connection.add(org, EMPLOYEE,
+							VF.createIRI("urn:test:sparse:employee:" + orgIndex + ":" + employeeIndex));
+				}
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadDuplicatedLeftChainedOptionalFanout(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int orgIndex = 0; orgIndex < ORG_COUNT; orgIndex++) {
+				Resource org = VF.createIRI("urn:test:sparse:org:" + orgIndex);
+				for (int departmentIndex = 0; departmentIndex < DEPARTMENTS_PER_ORG; departmentIndex++) {
+					Resource department = VF.createIRI(
+							"urn:test:sparse:department:" + orgIndex + ":" + departmentIndex);
+					connection.add(org, DEPARTMENT, department);
+					for (int offerIndex = 0; offerIndex < OFFERS_PER_DEPARTMENT; offerIndex++) {
+						connection.add(department, MAKES_OFFER,
+								VF.createIRI("urn:test:sparse:offer:" + orgIndex + ":" + departmentIndex + ":"
+										+ offerIndex));
+					}
+				}
+				for (int personIndex = 0; personIndex < PERSONS_PER_ORG; personIndex++) {
+					Resource person = VF.createIRI("urn:test:sparse:person:" + orgIndex + ":" + personIndex);
+					connection.add(person, MEMBER_OF, org);
+					for (int eventIndex = 0; eventIndex < EVENTS_PER_PERSON; eventIndex++) {
+						Resource event = VF.createIRI(
+								"urn:test:sparse:event:" + orgIndex + ":" + personIndex + ":" + eventIndex);
+						connection.add(person, EVENT, event);
+						connection.add(event, POSITION, VF.createLiteral(eventIndex + 1));
+					}
+				}
+				for (int employeeIndex = 0; employeeIndex < EMPLOYEES_PER_ORG; employeeIndex++) {
+					connection.add(org, EMPLOYEE,
+							VF.createIRI("urn:test:sparse:employee:" + orgIndex + ":" + employeeIndex));
 				}
 			}
 			connection.commit();

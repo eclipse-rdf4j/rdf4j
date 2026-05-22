@@ -327,7 +327,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		markOptionalRightInvocations(node.getRightArg(), leftRows,
 				plannerBindingNames(node.getLeftArg().getBindingNames()));
 		node.getRightArg().visit(this);
-		double matchedRows = optionalMatchedRows(node);
+		double matchedRows = optionalMatchedRows(node, leftRows);
 		double finiteLeftRows = finiteDerivedOptionalLeftRows(node.getRightArg());
 		if (isFiniteNonNegative(finiteLeftRows)) {
 			leftRows = finiteLeftRows;
@@ -335,8 +335,12 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		OptionalSurfaceEstimate surfaceEstimate = optionalSurfaceEstimate(node);
 		String source = sourceForExistingPlan(node, LMDB_SYNTHETIC);
 		if (surfaceEstimate != null) {
-			leftRows = smallerFiniteRowCount(leftRows, surfaceEstimate.leftRows());
-			matchedRows = smallerFiniteRowCount(matchedRows, surfaceEstimate.matchedRows());
+			if (!isFiniteNonNegative(leftRows)) {
+				leftRows = surfaceEstimate.leftRows();
+			}
+			if (!isFiniteNonNegative(matchedRows)) {
+				matchedRows = surfaceEstimate.matchedRows();
+			}
 			source = sourceForExistingPlan(node, LMDB_LEFT_JOIN_SURFACE);
 		}
 		double rows = isFiniteNonNegative(leftRows) && isFiniteNonNegative(matchedRows)
@@ -863,15 +867,64 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		return false;
 	}
 
-	private double optionalMatchedRows(LeftJoin node) {
+	private double optionalMatchedRows(LeftJoin node, double leftRows) {
 		TupleExpr rightArg = node.getRightArg();
 		double finiteDerivedRows = finiteDerivedOptionalRows(rightArg);
 		if (isFiniteNonNegative(finiteDerivedRows)) {
 			return finiteDerivedRows;
 		}
+		double rightRows = nodeRows(rightArg);
+		double bridgeProductRows = optionalBridgeProductRows(node, leftRows);
+		if (isFiniteNonNegative(bridgeProductRows)) {
+			rightRows = largerFiniteRowCount(rightRows, bridgeProductRows);
+		}
+		if (isFiniteNonNegative(rightRows)) {
+			Set<String> leftBindingNames = plannerBindingNames(node.getLeftArg().getBindingNames());
+			Set<String> sharedBindingNames = new HashSet<>(leftBindingNames);
+			sharedBindingNames.retainAll(plannerBindingNames(rightArg.getBindingNames()));
+			if (sharedBindingNames.isEmpty() && isFiniteNonNegative(leftRows)) {
+				double cartesianRows = leftRows * rightRows;
+				return isFiniteNonNegative(cartesianRows) ? cartesianRows : rightRows;
+			}
+			return rightRows;
+		}
 		double rows = statisticsRows(node);
 		finiteDerivedRows = finiteDerivedOptionalRows(rightArg);
 		return isFiniteNonNegative(finiteDerivedRows) ? finiteDerivedRows : rows;
+	}
+
+	private double optionalBridgeProductRows(LeftJoin node, double leftRows) {
+		if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate = lmdbStatistics
+					.estimateOptionalBridgeProduct(node.getLeftArg(), node.getRightArg(), leftRows);
+			if (estimate != null) {
+				stampOptionalBridgeProductEstimate(node, estimate);
+				return estimate.productRows();
+			}
+		}
+		return Double.NaN;
+	}
+
+	private void stampOptionalBridgeProductEstimate(LeftJoin node,
+			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate) {
+		TupleExpr rightArg = node.getRightArg();
+		stampOptionalBridgeProductEstimate((QueryModelNode) node, estimate);
+		stampOptionalBridgeProductEstimate(rightArg, estimate);
+	}
+
+	private void stampOptionalBridgeProductEstimate(QueryModelNode node,
+			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate) {
+		node.setDoubleMetricPlanned("plannedOptionalBridgeProductRows", estimate.productRows());
+		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixBridgeRows", estimate.prefixBridgeRows());
+		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixRows", estimate.prefixRows());
+		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixSurfaceRows", estimate.prefixSurfaceRows());
+		node.setDoubleMetricPlanned("plannedOptionalBridgePrefixBridgeSurfaceRows",
+				estimate.prefixBridgeSurfaceRows());
+		node.setDoubleMetricPlanned("plannedOptionalBridgeRightRows", estimate.bridgeRightRows());
+		node.setDoubleMetricPlanned("plannedOptionalBridgeAccessRows", estimate.bridgeRows());
+		if (estimate.joinVarName() != null) {
+			node.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
+		}
 	}
 
 	private double finiteDerivedOptionalRows(TupleExpr rightArg) {
