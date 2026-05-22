@@ -892,11 +892,11 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		double rightRows = nodeRows(rightArg);
 		double boundJoinProductRows = boundJoinProductRows(node, leftRows);
 		if (isFiniteNonNegative(boundJoinProductRows)) {
-			rightRows = largerFiniteRowCount(rightRows, boundJoinProductRows);
+			return boundJoinProductRows;
 		}
 		double bridgeProductRows = optionalBridgeProductRows(node, leftRows);
 		if (isFiniteNonNegative(bridgeProductRows)) {
-			rightRows = largerFiniteRowCount(rightRows, bridgeProductRows);
+			return bridgeProductRows;
 		}
 		if (isFiniteNonNegative(rightRows)) {
 			Set<String> leftBindingNames = plannerBindingNames(node.getLeftArg().getBindingNames());

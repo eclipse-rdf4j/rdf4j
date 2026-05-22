@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -48,6 +49,7 @@ class LmdbNestedBoundLookupEstimateTest {
 	private static final IRI PERSON = VF.createIRI("urn:test:sparse:Person");
 	private static final IRI EVENT = VF.createIRI("urn:test:sparse:event");
 	private static final IRI POSITION = VF.createIRI("urn:test:sparse:position");
+	private static final IRI WORKS_EVENT = VF.createIRI("urn:test:sparse:worksEvent");
 	private static final int ORG_COUNT = 3;
 	private static final int PERSONS_PER_ORG = 50;
 	private static final int EMPLOYEES_PER_ORG = 40;
@@ -62,6 +64,8 @@ class LmdbNestedBoundLookupEstimateTest {
 	private static final int EXPECTED_DUPLICATED_CHAINED_OPTIONAL_LEFT_ROWS = EXPECTED_MAIN_BGP_ROWS
 			* EVENTS_PER_PERSON;
 	private static final int EXPECTED_DUPLICATED_CHAINED_OPTIONAL_ROWS = EXPECTED_DUPLICATED_CHAINED_OPTIONAL_LEFT_ROWS
+			* EMPLOYEES_PER_ORG;
+	private static final int EXPECTED_MULTI_BRIDGE_OPTIONAL_ROWS = EXPECTED_MAIN_BGP_ROWS * EVENTS_PER_PERSON
 			* EMPLOYEES_PER_ORG;
 
 	@Test
@@ -321,6 +325,56 @@ class LmdbNestedBoundLookupEstimateTest {
 		}
 	}
 
+	@Test
+	void optionalWithMultipleLeftBridgesCombinesBridgeSignals(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadMultiBridgeOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = String.join("\n",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  ?org <urn:test:sparse:department> ?department .",
+						"  ?department <urn:test:sparse:makesOffer> ?offer .",
+						"  ?person <urn:test:sparse:memberOf> ?org .",
+						"  OPTIONAL {",
+						"    ?person <urn:test:sparse:event> ?event .",
+						"    ?org <urn:test:sparse:employee> ?employee .",
+						"    ?employee <urn:test:sparse:worksEvent> ?event .",
+						"  }",
+						"}");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(result.hasNext(), "Expected count result");
+					assertEquals(EXPECTED_MULTI_BRIDGE_OPTIONAL_ROWS,
+							((Literal) result.next().getValue("count")).longValue());
+				}
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				LeftJoin optional = findLeftJoin((TupleExpr) explanation.tupleExpr());
+				StatementPattern worksEventPattern = findStatementPattern((TupleExpr) explanation.tupleExpr(),
+						WORKS_EVENT, "event");
+				assertNotNull(optional, explanation::toString);
+				assertNotNull(worksEventPattern, explanation::toString);
+				assertEquals(EXPECTED_MULTI_BRIDGE_OPTIONAL_ROWS, worksEventPattern.getResultSizeActual(),
+						explanation::toString);
+				assertEquals(EXPECTED_MULTI_BRIDGE_OPTIONAL_ROWS,
+						optional.getDoubleMetricPlanned("plannedOptionalBridgeProductRows"),
+						EXPECTED_MULTI_BRIDGE_OPTIONAL_ROWS * 0.25d,
+						"Multiple left-anchored RHS bridge patterns should be combined instead of picking the "
+								+ "largest single-bridge quotient: " + explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static void loadDuplicateOuterBindingFanout(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -450,6 +504,48 @@ class LmdbNestedBoundLookupEstimateTest {
 		}
 	}
 
+	private static void loadMultiBridgeOptionalFanout(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int orgIndex = 0; orgIndex < ORG_COUNT; orgIndex++) {
+				Resource org = VF.createIRI("urn:test:sparse:org:" + orgIndex);
+				List<Resource> events = new ArrayList<>();
+				List<Resource> employees = new ArrayList<>();
+				for (int departmentIndex = 0; departmentIndex < DEPARTMENTS_PER_ORG; departmentIndex++) {
+					Resource department = VF.createIRI(
+							"urn:test:sparse:department:" + orgIndex + ":" + departmentIndex);
+					connection.add(org, DEPARTMENT, department);
+					for (int offerIndex = 0; offerIndex < OFFERS_PER_DEPARTMENT; offerIndex++) {
+						connection.add(department, MAKES_OFFER,
+								VF.createIRI("urn:test:sparse:offer:" + orgIndex + ":" + departmentIndex + ":"
+										+ offerIndex));
+					}
+				}
+				for (int personIndex = 0; personIndex < PERSONS_PER_ORG; personIndex++) {
+					Resource person = VF.createIRI("urn:test:sparse:person:" + orgIndex + ":" + personIndex);
+					connection.add(person, MEMBER_OF, org);
+					for (int eventIndex = 0; eventIndex < EVENTS_PER_PERSON; eventIndex++) {
+						Resource event = VF.createIRI(
+								"urn:test:sparse:event:" + orgIndex + ":" + personIndex + ":" + eventIndex);
+						connection.add(person, EVENT, event);
+						events.add(event);
+					}
+				}
+				for (int employeeIndex = 0; employeeIndex < EMPLOYEES_PER_ORG; employeeIndex++) {
+					Resource employee = VF.createIRI("urn:test:sparse:employee:" + orgIndex + ":" + employeeIndex);
+					connection.add(org, EMPLOYEE, employee);
+					employees.add(employee);
+				}
+				for (Resource employee : employees) {
+					for (Resource event : events) {
+						connection.add(employee, WORKS_EVENT, event);
+					}
+				}
+			}
+			connection.commit();
+		}
+	}
+
 	private static StatementPattern findStatementPattern(TupleExpr tupleExpr, IRI predicate, String objectName) {
 		List<StatementPattern> matches = new ArrayList<>(1);
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -461,6 +557,18 @@ class LmdbNestedBoundLookupEstimateTest {
 										&& PERSON.equals(node.getObjectVar().getValue()))) {
 					matches.add(node);
 				}
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static LeftJoin findLeftJoin(TupleExpr tupleExpr) {
+		List<LeftJoin> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				matches.add(node);
+				super.meet(node);
 			}
 		});
 		return matches.isEmpty() ? null : matches.getFirst();
