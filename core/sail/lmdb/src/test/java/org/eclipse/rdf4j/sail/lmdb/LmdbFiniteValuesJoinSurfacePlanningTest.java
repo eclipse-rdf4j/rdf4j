@@ -146,7 +146,15 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"The optional partOf work should stay bounded by the finite ?assembly surface. expectedSurfaceRows="
 							+ expectedSurfaceRows + ", plannedAccessRows=" + plannedAccessRows
 							+ ", plannedWorkRows="
-							+ partOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS));
+							+ partOf.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS)
+							+ ", optionalBoundInvocations="
+							+ partOf.getDoubleMetricPlanned("plannedOptionalBoundInvocations")
+							+ ", repeatedInvocations="
+							+ partOf.getDoubleMetricPlanned("plannedRepeatedInvocations")
+							+ ", distinctLookupBindings="
+							+ partOf.getDoubleMetricPlanned("plannedDistinctLookupBindings")
+							+ ", source="
+							+ partOf.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 			assertTrue(leftJoin.getResultSizeEstimate() <= expectedSurfaceRows * ASSEMBLY_COUNT,
 					"The optional left join should keep a finite result surface upward instead of "
 							+ "keeping a broad synthetic cardinality. expectedSurfaceRows=" + expectedSurfaceRows

@@ -123,6 +123,7 @@ class LmdbSailStore implements SailStore {
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
+	private LmdbOperatorFeedbackStats operatorFeedbackStats;
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
 		Thread t = new Thread(r, "LmdbJoinEstimator-Persist");
@@ -356,6 +357,7 @@ class LmdbSailStore implements SailStore {
 				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
+				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath);
 				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
 				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
@@ -690,6 +692,9 @@ class LmdbSailStore implements SailStore {
 				if (filterSelectivityStats != null) {
 					filterSelectivityStats.persistIfDirty();
 				}
+				if (operatorFeedbackStats != null) {
+					operatorFeedbackStats.persistIfDirty();
+				}
 			} finally {
 				try {
 					if (namespaceStore != null) {
@@ -855,6 +860,9 @@ class LmdbSailStore implements SailStore {
 		if (filterSelectivityStats != null) {
 			filterSelectivityStats.persistIfDirty();
 		}
+		if (operatorFeedbackStats != null) {
+			operatorFeedbackStats.persistIfDirty();
+		}
 	}
 
 	private void scheduleEstimatorPersist() {
@@ -911,7 +919,7 @@ class LmdbSailStore implements SailStore {
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
-				statementPatternCardinalitySource);
+				operatorFeedbackStats, statementPatternCardinalitySource);
 	}
 
 	@Override
@@ -1468,7 +1476,11 @@ class LmdbSailStore implements SailStore {
 						if (filterSelectivityStats != null) {
 							filterSelectivityStats.recordStoreMutation();
 						}
-						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null) {
+						if (operatorFeedbackStats != null) {
+							operatorFeedbackStats.recordStoreMutation();
+						}
+						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null
+								|| operatorFeedbackStats != null) {
 							try {
 								scheduleEstimatorPersist();
 							} catch (RuntimeException e) {

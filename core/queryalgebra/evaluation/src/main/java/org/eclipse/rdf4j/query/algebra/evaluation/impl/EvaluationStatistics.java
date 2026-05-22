@@ -104,6 +104,10 @@ public class EvaluationStatistics {
 		// no-op by default
 	}
 
+	public void recordOperatorOutcome(QueryModelNode node) {
+		// no-op by default
+	}
+
 	public static final class FilterPassEstimate {
 		private static final double WILSON_Z_95 = 1.959963984540054d;
 

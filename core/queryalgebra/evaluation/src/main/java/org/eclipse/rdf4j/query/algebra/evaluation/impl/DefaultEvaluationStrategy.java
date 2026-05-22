@@ -420,7 +420,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (trackResultSize) {
 				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
 				expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-				result = new ResultSizeCountingIterator(result, expr);
+				result = new ResultSizeCountingIterator(result, expr, evaluationStatistics);
 			}
 			return result;
 		} catch (Throwable t) {
@@ -492,7 +492,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (expr.isRuntimeTelemetryEnabled()) {
 				initializeRuntimeTelemetry(expr);
 			}
-			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr);
+			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr, evaluationStatistics);
 		};
 	}
 
@@ -1560,15 +1560,17 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
+		EvaluationStatistics evaluationStatistics;
 		boolean telemetryEnabled;
 		long openedAtNanos;
 		boolean firstRowSeen;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
-				QueryModelNode queryModelNode) {
+				QueryModelNode queryModelNode, EvaluationStatistics evaluationStatistics) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
+			this.evaluationStatistics = evaluationStatistics;
 			this.telemetryEnabled = telemetryActive(queryModelNode);
 			this.openedAtNanos = System.nanoTime();
 			if (telemetryEnabled) {
@@ -1647,6 +1649,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
 							Math.max(0L, System.nanoTime() - openedAtNanos));
 					QueryRuntimeTelemetryRegistry.record(queryModelNode);
+					evaluationStatistics.recordOperatorOutcome(queryModelNode);
 				}
 			} finally {
 				super.handleClose();

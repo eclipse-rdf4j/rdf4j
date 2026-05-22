@@ -621,7 +621,55 @@ final class LmdbDeferredFilterPlacer {
 		while (end + 1 < factors.size() && isCheapLocalFilterForCorrelatedFilter(factors.get(end + 1), filter)) {
 			end++;
 		}
+		if (isNonSelectiveCorrelatedExistsFilter(filter)) {
+			end = expandCorrelatedExistsWindowOverBridgeFactors(factors, filter, end);
+		}
 		return end;
+	}
+
+	private int expandCorrelatedExistsWindowOverBridgeFactors(List<SegmentFactor> factors, DeferredFilter filter,
+			int targetIndex) {
+		Set<String> requiredNames = plannerBindingNames(filter.requiredVars);
+		if (requiredNames.size() < 2) {
+			return targetIndex;
+		}
+		Set<String> reachedNames = new HashSet<>(requiredNames);
+		boolean introducedBridgeName = false;
+		int end = targetIndex;
+		for (int i = targetIndex + 1; i < factors.size(); i++) {
+			Set<String> factorNames = plannerBindingNames(factors.get(i).bindingNames);
+			if (factorNames.isEmpty() || Collections.disjoint(factorNames, reachedNames)) {
+				break;
+			}
+			Set<String> reachedNonRequiredNames = new HashSet<>(reachedNames);
+			reachedNonRequiredNames.removeAll(requiredNames);
+			boolean sharesRequiredName = !Collections.disjoint(factorNames, requiredNames);
+			boolean sharesBridgeName = !Collections.disjoint(factorNames, reachedNonRequiredNames);
+			Set<String> introducedNames = new HashSet<>(factorNames);
+			introducedNames.removeAll(reachedNames);
+			if (!introducedBridgeName && introducedNames.isEmpty()) {
+				break;
+			}
+			end = i;
+			if (!introducedNames.isEmpty()) {
+				introducedBridgeName = true;
+				reachedNames.addAll(introducedNames);
+			}
+			if (introducedBridgeName && sharesRequiredName && sharesBridgeName) {
+				break;
+			}
+			reachedNames.addAll(factorNames);
+		}
+		return end;
+	}
+
+	private boolean isNonSelectiveCorrelatedExistsFilter(DeferredFilter filter) {
+		if (!isCorrelatedExistsFilter(filter)) {
+			return false;
+		}
+		double passRatio = filter.passEstimate()
+				.getPlanningPassRatio();
+		return !LmdbJoinPlanSupport.isValidPassRatio(passRatio) || passRatio >= 0.95d;
 	}
 
 	private int expandCorrelatedNotExistsWindowOverSelectiveLocalFilters(List<SegmentFactor> factors,

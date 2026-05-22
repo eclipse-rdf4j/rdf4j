@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 import java.util.AbstractSet;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -103,6 +105,7 @@ class LmdbEvaluationStatistics
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private final LmdbFilterSelectivityStats filterSelectivityStats;
+	private final LmdbOperatorFeedbackStats operatorFeedbackStats;
 	private volatile long joinSupportCacheExpiryMs = Long.MIN_VALUE;
 	private volatile long joinSupportCacheRevisionId = Long.MIN_VALUE;
 	private volatile boolean joinSupportCacheValue = false;
@@ -124,11 +127,20 @@ class LmdbEvaluationStatistics
 	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats,
 			LmdbStatementPatternCardinalitySource statementPatternCardinalitySource) {
+		this(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats, null,
+				statementPatternCardinalitySource);
+	}
+
+	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats,
+			LmdbOperatorFeedbackStats operatorFeedbackStats,
+			LmdbStatementPatternCardinalitySource statementPatternCardinalitySource) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.statementPatternCardinalitySource = statementPatternCardinalitySource;
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
 		this.filterSelectivityStats = filterSelectivityStats;
+		this.operatorFeedbackStats = operatorFeedbackStats;
 	}
 
 	ValueStore getValueStore() {
@@ -481,6 +493,9 @@ class LmdbEvaluationStatistics
 	}
 
 	private JoinOrderPlan enrichPlanWithAccessMetrics(JoinOrderPlan plan) {
+		if (tripleStore == null) {
+			return plan;
+		}
 		if (plan.getSteps().size() != plan.getOrderedArgs().size()) {
 			return plan;
 		}
@@ -489,6 +504,7 @@ class LmdbEvaluationStatistics
 		List<JoinOrderPlanner.PlanStep> enrichedSteps = null;
 		Map<String, Set<Value>> finiteBindingValues = new HashMap<>();
 		List<TupleExpr> prefixFactors = new ArrayList<>(plan.getOrderedArgs().size());
+		double prefixRowsBeforeStep = 1.0d;
 		for (int i = 0; i < plan.getOrderedArgs().size(); i++) {
 			TupleExpr tupleExpr = plan.getOrderedArgs().get(i);
 			JoinOrderPlanner.PlanStep step = originalSteps.get(i);
@@ -496,17 +512,37 @@ class LmdbEvaluationStatistics
 			Map<String, Set<Value>> finiteValuesForStep = finiteBindingValuesForStep(finiteBindingValues,
 					step.getBoundVarsBefore());
 			boolean hasFiniteValuesForStep = hasFiniteBindingValues(finiteValuesForStep);
-			if (!hasAccessMetrics(step) || (hasFiniteValuesForStep && !hasFiniteDerivedSurfaceSource(step))) {
+			boolean needsNestedPrefixCost = isFiniteNonNegative(prefixRowsBeforeStep) && prefixRowsBeforeStep > 1.0d;
+			if (!hasAccessMetrics(step) || needsNestedPrefixCost
+					|| (hasFiniteValuesForStep && !hasFiniteDerivedSurfaceSource(step))) {
 				Optional<FactorCostEstimate> factorCostEstimate = estimateEnrichedFactorCost(tupleExpr, step,
-						finiteValuesForStep, hasFiniteValuesForStep, prefixFactors);
+						finiteValuesForStep, hasFiniteValuesForStep, prefixFactors, prefixRowsBeforeStep,
+						needsNestedPrefixCost);
 				if (factorCostEstimate.isPresent()) {
 					Map<String, String> stringMetrics = new HashMap<>(step.getStringMetrics());
 					Map<String, Double> doubleMetrics = new HashMap<>(step.getDoubleMetrics());
-					stringMetrics.putAll(factorCostEstimate.get().getStringMetrics());
-					doubleMetrics.putAll(factorCostEstimate.get().getDoubleMetrics());
+					FactorCostEstimate refinedEstimate = factorCostEstimate.get();
+					stringMetrics.putAll(refinedEstimate.getStringMetrics());
+					doubleMetrics.putAll(refinedEstimate.getDoubleMetrics());
+					double factorOutputRows = step.getFactorOutputRows();
+					double prefixOutputRows = step.getPrefixOutputRows();
+					double stepWorkRows = step.getStepWorkRows();
+					if (hasFiniteDerivedSurfaceSource(refinedEstimate)
+							|| refinedEstimate.isRepeatedInvocationsCosted()) {
+						if (isFiniteNonNegative(refinedEstimate.getOutputRows())) {
+							factorOutputRows = refinedEstimate.getOutputRows();
+							if (refinedEstimate.isRepeatedInvocationsCosted()) {
+								prefixOutputRows = factorOutputRows;
+							}
+						}
+						if (isFiniteNonNegative(refinedEstimate.getWorkRows())) {
+							stepWorkRows = refinedEstimate.getWorkRows();
+							doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
+						}
+					}
 					enrichedStep = new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(),
-							step.getFactorOutputRows(),
-							step.getPrefixOutputRows(), step.getStepWorkRows(), stringMetrics, doubleMetrics,
+							factorOutputRows,
+							prefixOutputRows, stepWorkRows, stringMetrics, doubleMetrics,
 							step.getAppliedFilterIndexes());
 				}
 			}
@@ -519,23 +555,60 @@ class LmdbEvaluationStatistics
 			}
 			addFiniteBindingValues(finiteBindingValues, tupleExpr);
 			prefixFactors.add(tupleExpr);
+			if (isFiniteNonNegative(enrichedStep.getPrefixOutputRows())) {
+				prefixRowsBeforeStep = enrichedStep.getPrefixOutputRows();
+			}
 		}
 
 		Map<String, String> summaryStringMetrics = new HashMap<>(plan.getSummaryStringMetrics());
 		summaryStringMetrics.put(TelemetryMetricNames.PLANNER_ID, "lmdb-sketch");
 		summaryStringMetrics.put(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
 				"costModel=lmdb, accessPathSelection=per-step");
-		return new JoinOrderPlan(plan.getOrderedArgs(), plan.getEstimatedFinalRows(), plan.getEstimatedTotalWork(),
-				plan.getDiagnostics(), summaryStringMetrics, plan.getSummaryDoubleMetrics(),
-				enrichedSteps == null ? originalSteps : enrichedSteps);
+		Map<String, Double> summaryDoubleMetrics = new HashMap<>(plan.getSummaryDoubleMetrics());
+		double estimatedTotalWork = plan.getEstimatedTotalWork();
+		double estimatedFinalRows = plan.getEstimatedFinalRows();
+		List<JoinOrderPlanner.PlanStep> finalSteps = enrichedSteps == null ? originalSteps : enrichedSteps;
+		if (enrichedSteps != null && !finalSteps.isEmpty()) {
+			double finalPrefixRows = finalSteps.get(finalSteps.size() - 1).getPrefixOutputRows();
+			if (isFiniteNonNegative(finalPrefixRows)) {
+				estimatedFinalRows = finalPrefixRows;
+			}
+		}
+		if (enrichedSteps != null) {
+			double stepWorkSum = 0.0d;
+			boolean finiteStepWork = true;
+			for (JoinOrderPlanner.PlanStep step : finalSteps) {
+				double stepWorkRows = step.getStepWorkRows();
+				if (!isFiniteNonNegative(stepWorkRows)) {
+					finiteStepWork = false;
+					break;
+				}
+				stepWorkSum += stepWorkRows;
+			}
+			if (finiteStepWork && isFiniteNonNegative(stepWorkSum)) {
+				estimatedTotalWork = stepWorkSum;
+				summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, estimatedTotalWork);
+			}
+		}
+		return new JoinOrderPlan(plan.getOrderedArgs(), estimatedFinalRows, estimatedTotalWork,
+				plan.getDiagnostics(), summaryStringMetrics, summaryDoubleMetrics, finalSteps);
 	}
 
 	private Optional<FactorCostEstimate> estimateEnrichedFactorCost(TupleExpr tupleExpr, JoinOrderPlanner.PlanStep step,
 			Map<String, Set<Value>> finiteValuesForStep, boolean hasFiniteValuesForStep,
-			List<TupleExpr> prefixFactors) {
+			List<TupleExpr> prefixFactors, double prefixRowsBeforeStep, boolean needsNestedPrefixCost) {
+		if (needsNestedPrefixCost) {
+			if (hasFiniteValuesForStep && !prefixFactors.isEmpty()) {
+				return estimateFactorCost(tupleExpr, JoinFactorCostModel.CostContext.of(step.getBoundVarsBefore(),
+						prefixRowsBeforeStep, Double.NaN, true, true, finiteValuesForStep, prefixFactors));
+			}
+			return estimateFactorCost(tupleExpr,
+					JoinFactorCostModel.CostContext.of(step.getBoundVarsBefore(), prefixRowsBeforeStep, Double.NaN,
+							true));
+		}
 		if (hasFiniteValuesForStep && !prefixFactors.isEmpty()) {
 			return estimateFactorCost(tupleExpr, JoinFactorCostModel.CostContext.of(step.getBoundVarsBefore(),
-					step.getPrefixOutputRows(), Double.NaN, false, true, finiteValuesForStep, prefixFactors));
+					prefixRowsBeforeStep, Double.NaN, false, true, finiteValuesForStep, prefixFactors));
 		}
 		return estimateLmdbFactorCost(tupleExpr, step.getBoundVarsBefore(), step.getFactorOutputRows(), true,
 				finiteValuesForStep);
@@ -548,6 +621,11 @@ class LmdbEvaluationStatistics
 
 	private boolean hasFiniteDerivedSurfaceSource(JoinOrderPlanner.PlanStep step) {
 		return "lmdb-finite-derived-surface".equals(step.getStringMetrics()
+				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+	}
+
+	private boolean hasFiniteDerivedSurfaceSource(FactorCostEstimate estimate) {
+		return estimate != null && "lmdb-finite-derived-surface".equals(estimate.getStringMetrics()
 				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 	}
 
@@ -640,6 +718,9 @@ class LmdbEvaluationStatistics
 		}
 		double distinctLookupBindings = context.getDistinctLookupBindings();
 		double repeatedInvocations = repeatedInvocations(estimate, outerPrefixRows, distinctLookupBindings);
+		if (!isFiniteNonNegative(distinctLookupBindings) || distinctLookupBindings <= 0.0d) {
+			distinctLookupBindings = repeatedInvocations;
+		}
 		double multipliedWorkRows = repeatedInvocations * perInvocationWorkRows;
 		double nestedWorkRows = isFiniteNonNegative(multipliedWorkRows)
 				? Math.max(repeatedInvocations, multipliedWorkRows)
@@ -648,6 +729,24 @@ class LmdbEvaluationStatistics
 				repeatedInvocations);
 		if (isFiniteNonNegative(predicateBoundedWorkRows)) {
 			nestedWorkRows = Math.min(nestedWorkRows, predicateBoundedWorkRows);
+		}
+		double lookupDomainOutputRows = lookupDomainAverageRepeatedOutputRows(factor, estimate, context,
+				repeatedInvocations, distinctLookupBindings);
+		double nestedOutputRows = estimate.getOutputRows();
+		if (isFiniteNonNegative(lookupDomainOutputRows)) {
+			nestedOutputRows = lookupDomainOutputRows;
+			if (isDirectLookup(estimate)) {
+				double lookupDomainWorkRows = lookupDomainRepeatedWorkRows(lookupDomainOutputRows,
+						repeatedInvocations);
+				if (isFiniteNonNegative(lookupDomainWorkRows)) {
+					nestedWorkRows = lookupDomainWorkRows;
+				}
+			}
+		} else if (usesOuterBindingsForLookup(factor, context)) {
+			nestedOutputRows = repeatedOutputRows(estimate, repeatedInvocations);
+		}
+		if (isFiniteNonNegative(nestedOutputRows) && nestedOutputRows > nestedWorkRows) {
+			nestedWorkRows = nestedOutputRows;
 		}
 		if (!isFiniteNonNegative(nestedWorkRows) || nestedWorkRows <= workRows) {
 			return estimate;
@@ -658,14 +757,169 @@ class LmdbEvaluationStatistics
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, nestedWorkRows);
 			doubleMetrics.put("plannedRepeatedInvocations", repeatedInvocations);
 			doubleMetrics.putIfAbsent(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, perInvocationWorkRows);
+			if (isFiniteNonNegative(lookupDomainOutputRows)) {
+				doubleMetrics.put("plannedLookupDomainAverageOutputRows", lookupDomainOutputRows);
+			}
 			if (isFiniteNonNegative(distinctLookupBindings)) {
 				doubleMetrics.put("plannedDistinctLookupBindings", distinctLookupBindings);
 			}
 		}
-		return new FactorCostEstimate(nestedWorkRows, estimate.getOutputRows(), estimate.getStringMetrics(),
+		return new FactorCostEstimate(nestedWorkRows, nestedOutputRows, estimate.getStringMetrics(),
 				doubleMetrics, estimate.hasPhysicalAccessPath(), estimate.isDirectLookup(),
 				estimate.getLookupComponentMask(), estimate.getMissingLookupComponentMask(),
 				estimate.getAccessRowsBeforeFilter(), true);
+	}
+
+	private double lookupDomainRepeatedWorkRows(double lookupDomainOutputRows, double repeatedInvocations) {
+		if (!isFiniteNonNegative(lookupDomainOutputRows) || !isFiniteNonNegative(repeatedInvocations)) {
+			return Double.NaN;
+		}
+		double workRows = lookupDomainOutputRows + repeatedInvocations;
+		return isFiniteNonNegative(workRows) ? Math.max(repeatedInvocations, workRows) : Double.NaN;
+	}
+
+	private double repeatedOutputRows(FactorCostEstimate estimate, double repeatedInvocations) {
+		double outputRows = estimate.getOutputRows();
+		if (estimate.isDirectLookup()) {
+			double perInvocationRows = estimate.getAccessRowsBeforeFilter();
+			if (!isFiniteNonNegative(perInvocationRows)) {
+				perInvocationRows = estimate.getWorkRows();
+			}
+			if (isFiniteNonNegative(perInvocationRows)) {
+				outputRows = isFiniteNonNegative(outputRows) ? Math.min(outputRows, perInvocationRows)
+						: perInvocationRows;
+			}
+		}
+		if (!isFiniteNonNegative(outputRows) || !isFiniteNonNegative(repeatedInvocations)) {
+			return outputRows;
+		}
+		double repeatedOutputRows = outputRows * repeatedInvocations;
+		return isFiniteNonNegative(repeatedOutputRows) ? repeatedOutputRows : outputRows;
+	}
+
+	private boolean usesOuterBindingsForLookup(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		SketchBasedJoinEstimator.AccessShape accessShape = accessShapeForContext(factor, context);
+		return accessShape != null && (accessShape.joinBoundComponentMask() != 0
+				|| hasCurrentlyBoundLookupComponent(accessShape.pattern(), accessShape.lookupBoundComponentMask(),
+						context.getCurrentlyBoundVars()));
+	}
+
+	private boolean hasCurrentlyBoundLookupComponent(StatementPattern pattern, int lookupComponentMask,
+			Set<String> currentlyBoundVars) {
+		return currentlyBoundLookupComponentMask(pattern, lookupComponentMask, currentlyBoundVars) != 0;
+	}
+
+	private int currentlyBoundLookupComponentMask(StatementPattern pattern, int lookupComponentMask,
+			Set<String> currentlyBoundVars) {
+		if (pattern == null || lookupComponentMask == 0) {
+			return 0;
+		}
+		Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
+		int currentlyBoundLookupComponentMask = 0;
+		for (Component component : Component.values()) {
+			if ((lookupComponentMask & componentBit(component)) == 0) {
+				continue;
+			}
+			Var componentVar = componentVar(pattern, component);
+			if (componentVar == null || componentVar.hasValue()) {
+				continue;
+			}
+			String name = componentVar.getName();
+			if (name != null && !name.startsWith("_const_") && boundVars.contains(name)) {
+				currentlyBoundLookupComponentMask |= componentBit(component);
+			}
+		}
+		return currentlyBoundLookupComponentMask;
+	}
+
+	private double lookupDomainAverageRepeatedOutputRows(TupleExpr factor, FactorCostEstimate estimate,
+			JoinFactorCostModel.CostContext context, double repeatedInvocations, double distinctLookupBindings) {
+		if (!usesPhysicalBoundLookup(estimate) || !isFiniteNonNegative(repeatedInvocations)
+				|| !isFiniteNonNegative(distinctLookupBindings) || repeatedInvocations <= 0.0d
+				|| distinctLookupBindings <= 0.0d) {
+			return Double.NaN;
+		}
+		SketchBasedJoinEstimator.AccessShape accessShape = accessShapeForContext(factor, context);
+		if (accessShape == null) {
+			return Double.NaN;
+		}
+		int lookupComponentMask = estimate.getLookupComponentMask();
+		if (lookupComponentMask == 0) {
+			lookupComponentMask = lookupComponentMaskWithConstants(accessShape, accessShape.pattern());
+		}
+		int declaredJoinBoundComponentMask = accessShape.joinBoundComponentMask();
+		int derivedJoinBoundComponentMask = currentlyBoundLookupComponentMask(accessShape.pattern(),
+				lookupComponentMask,
+				context.getCurrentlyBoundVars());
+		int joinBoundComponentMask = declaredJoinBoundComponentMask | derivedJoinBoundComponentMask;
+		if (joinBoundComponentMask == 0) {
+			return Double.NaN;
+		}
+		double perInvocationRows = estimate.getAccessRowsBeforeFilter();
+		if (!estimate.isDirectLookup() && isFiniteNonNegative(perInvocationRows)
+				&& perInvocationRows < distinctLookupBindings) {
+			return Double.NaN;
+		}
+		if (isBoundGuardLookup(accessShape.pattern(), context.getCurrentlyBoundVars())) {
+			double repeatedRows = repeatedOutputRows(estimate, repeatedInvocations);
+			if (!isFiniteNonNegative(repeatedRows)) {
+				repeatedRows = repeatedInvocations;
+			}
+			return Math.min(repeatedRows, repeatedInvocations);
+		}
+		int domainLookupComponentMask = lookupComponentMask & ~joinBoundComponentMask;
+		if (domainLookupComponentMask == 0 || domainLookupComponentMask == lookupComponentMask) {
+			return Double.NaN;
+		}
+		double domainRows = accessShape.estimateAccessRows(domainLookupComponentMask);
+		if (!isFiniteNonNegative(domainRows) || domainRows <= 0.0d) {
+			return Double.NaN;
+		}
+		double filterMultiplier = accessShape.filterMultiplier();
+		if (canApplyFilterAtAccess(accessShape, domainLookupComponentMask)
+				&& isFiniteNonNegative(filterMultiplier) && filterMultiplier < 1.0d) {
+			domainRows *= filterMultiplier;
+		}
+		double rowsPerDistinctLookup = domainRows / distinctLookupBindings;
+		if (!isFiniteNonNegative(rowsPerDistinctLookup)) {
+			return Double.NaN;
+		}
+		double repeatedRows = rowsPerDistinctLookup * repeatedInvocations;
+		if (!estimate.isDirectLookup() && isFiniteNonNegative(perInvocationRows)
+				&& perInvocationRows > distinctLookupBindings && isFiniteNonNegative(repeatedRows)) {
+			double repeatedPhysicalRows = repeatedOutputRows(estimate, repeatedInvocations);
+			if (isFiniteNonNegative(repeatedPhysicalRows) && repeatedRows < repeatedPhysicalRows) {
+				return Double.NaN;
+			}
+		}
+		return isFiniteNonNegative(repeatedRows) ? repeatedRows : Double.NaN;
+	}
+
+	private boolean usesPhysicalBoundLookup(FactorCostEstimate estimate) {
+		return estimate != null && estimate.hasPhysicalAccessPath() && estimate.getLookupComponentMask() != 0;
+	}
+
+	private boolean isBoundGuardLookup(StatementPattern pattern, Set<String> currentlyBoundVars) {
+		if (pattern == null) {
+			return false;
+		}
+		Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
+		boolean hasVariableComponent = false;
+		for (Component component : Component.values()) {
+			Var componentVar = componentVar(pattern, component);
+			if (componentVar == null || componentVar.getValue() != null) {
+				continue;
+			}
+			String name = componentVar.getName();
+			if (name == null || name.startsWith("_const_")) {
+				continue;
+			}
+			hasVariableComponent = true;
+			if (!boundVars.contains(name)) {
+				return false;
+			}
+		}
+		return hasVariableComponent;
 	}
 
 	private double predicateBoundedRepeatedPrefixWorkRows(TupleExpr factor, FactorCostEstimate estimate,
@@ -711,9 +965,6 @@ class LmdbEvaluationStatistics
 
 	private double repeatedInvocations(FactorCostEstimate estimate, double outerPrefixRows,
 			double distinctLookupBindings) {
-		if (isDirectLookup(estimate) && isFiniteNonNegative(distinctLookupBindings) && distinctLookupBindings > 0.0d) {
-			return Math.min(outerPrefixRows, distinctLookupBindings);
-		}
 		return outerPrefixRows;
 	}
 
@@ -1021,13 +1272,14 @@ class LmdbEvaluationStatistics
 			return Optional.empty();
 		}
 		double totalSurfaceWorkRows = Math.max(accessPathEstimate.workRowsPerInvocation(), bestSurfaceRows);
-		accessPathEstimate = new AccessPathEstimate(totalSurfaceWorkRows, bestSurfaceRows, bestSurfaceRows,
+		AccessPathEstimate totalSurfaceEstimate = new AccessPathEstimate(totalSurfaceWorkRows, bestSurfaceRows,
+				bestSurfaceRows,
 				accessPathEstimate.indexFieldSequence(), accessPathEstimate.prefixLength(),
 				accessPathEstimate.prefixComponentMask(), accessPathEstimate.directLookup(),
 				accessPathEstimate.lookupComponentMask(), accessPathEstimate.missingLookupComponentMask(),
 				accessPathEstimate.candidateCount());
 		if (baseEstimate != null
-				&& finiteDerivedEstimateIsWorse(baseEstimate, accessPathEstimate, bestSurfaceRows,
+				&& finiteDerivedEstimateIsWorse(baseEstimate, totalSurfaceEstimate, bestSurfaceRows,
 						comparableBaseWorkRows, comparableBaseOutputRows)) {
 			return Optional.empty();
 		}
@@ -1052,10 +1304,13 @@ class LmdbEvaluationStatistics
 		doubleMetrics.put("plannedSurfaceBranches", (double) bestSurfaceEstimate.branchCount());
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH,
 				(double) accessPathEstimate.prefixLength());
-		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, accessPathEstimate.rowsBeforeFilterAtAccess());
-		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, accessPathEstimate.workRowsPerInvocation());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS,
+				perInvocationSurfaceRows(bestSurfaceRows, invocationCount));
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
+				perInvocationSurfaceRows(totalSurfaceWorkRows, invocationCount));
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES,
 				(double) accessPathEstimate.candidateCount());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalSurfaceWorkRows);
 		doubleMetrics.put("plannedRepeatedInvocations", (double) invocationCount);
 		if (isFiniteNonNegative(bestSurfaceEstimate.prefixRows())) {
 			double distinctLookupBindings = bestSurfaceEstimate.prefixRows();
@@ -1069,10 +1324,22 @@ class LmdbEvaluationStatistics
 		}
 
 		double outputRows = bestSurfaceRows;
-		return Optional.of(new FactorCostEstimate(accessPathEstimate.workRowsPerInvocation(), outputRows,
+		double accessRowsBeforeFilter = perInvocationSurfaceRows(bestSurfaceRows, invocationCount);
+		return Optional.of(new FactorCostEstimate(totalSurfaceWorkRows, outputRows,
 				stringMetrics, doubleMetrics, true, accessPathEstimate.directLookup(),
 				accessPathEstimate.lookupComponentMask(), accessPathEstimate.missingLookupComponentMask(),
-				accessPathEstimate.rowsBeforeFilterAtAccess(), true, true));
+				accessRowsBeforeFilter, true, true));
+	}
+
+	private double perInvocationSurfaceRows(double totalRows, int invocationCount) {
+		if (!isFiniteNonNegative(totalRows) || invocationCount <= 0) {
+			return totalRows;
+		}
+		double rows = totalRows / invocationCount;
+		if (!isFiniteNonNegative(rows)) {
+			return totalRows;
+		}
+		return Math.max(1.0d, rows);
 	}
 
 	private int finiteDerivedLookupInvocationCount(FiniteDerivedSurfaceEstimate estimate) {
@@ -1210,6 +1477,9 @@ class LmdbEvaluationStatistics
 			List<TupleExpr> branchWithCurrentFactor = new ArrayList<>(branchFactors.size() + 1);
 			branchWithCurrentFactor.addAll(branchFactors);
 			branchWithCurrentFactor.add(currentFactor.factor());
+			if (!connectedByBindingNames(branchWithCurrentFactor)) {
+				return null;
+			}
 
 			Set<String> sharedBindingNames = sharedBindingNames(branchFactors, currentFactor.factor(), finiteVarName);
 			if (sharedBindingNames.isEmpty()) {
@@ -1489,35 +1759,81 @@ class LmdbEvaluationStatistics
 
 	private double finiteBranchSurfaceRows(List<TupleExpr> factors, String joinVarName) {
 		countSketchJoinSurfaceCall();
-		double rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
-		if (isPositiveFinite(rows)) {
-			return rows;
-		}
+		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
 
 		countExactJoinSurfaceCall();
-		rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(factors, joinVarName);
-		if (isFiniteNonNegative(rows)) {
-			return rows;
+		double exactRows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(factors, joinVarName);
+		if (isFiniteNonNegative(exactRows)
+				&& (!isPositiveFinite(sketchRows) || exactRows < sketchRows)) {
+			return exactRows;
+		}
+		if (isPositiveFinite(sketchRows)) {
+			return sketchRows;
 		}
 
 		countFallbackJoinSurfaceCall();
 		return sketchBasedJoinEstimator.estimateJoinSurfaceRows(factors, joinVarName);
 	}
 
+	double estimateBoundJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+		if (sketchBasedJoinEstimator == null || factors == null || factors.isEmpty() || joinVarName == null) {
+			return Double.NaN;
+		}
+		return finiteBranchSurfaceRows(factors, joinVarName);
+	}
+
 	private double finiteBranchSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
 		countSketchJoinSurfaceCall();
-		double rows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
-		if (isPositiveFinite(rows)) {
-			return rows;
-		}
+		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
 
 		countExactJoinSurfaceCall();
-		rows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(prefixFactors, factor, joinVarName);
-		if (isFiniteNonNegative(rows)) {
-			return rows;
+		double exactRows = sketchBasedJoinEstimator.estimateExactJoinSurfaceRows(prefixFactors, factor, joinVarName);
+		if (isFiniteNonNegative(exactRows)
+				&& (!isPositiveFinite(sketchRows) || exactRows < sketchRows)) {
+			return exactRows;
+		}
+		if (isPositiveFinite(sketchRows)) {
+			return sketchRows;
 		}
 		countFallbackJoinSurfaceCall();
 		return sketchBasedJoinEstimator.estimateJoinSurfaceRows(prefixFactors, factor, joinVarName);
+	}
+
+	double estimateBoundJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
+		if (sketchBasedJoinEstimator == null || prefixFactors == null || prefixFactors.isEmpty()
+				|| factor == null || joinVarName == null) {
+			return Double.NaN;
+		}
+		return finiteBranchSurfaceRows(prefixFactors, factor, joinVarName);
+	}
+
+	double estimateFiniteDerivedLookupInvocationRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+			Map<String, Set<Value>> finiteBindingValues) {
+		if (sketchBasedJoinEstimator == null || prefixFactors == null || prefixFactors.isEmpty()
+				|| factor == null || !hasFiniteBindingValues(finiteBindingValues)) {
+			return Double.NaN;
+		}
+		FiniteDerivedSurfaceEstimate bestSurfaceEstimate = null;
+		for (Map.Entry<String, Set<Value>> entry : finiteBindingValues.entrySet()) {
+			String finiteVarName = entry.getKey();
+			Set<Value> finiteValues = entry.getValue();
+			if (finiteVarName == null || finiteValues == null || finiteValues.isEmpty()
+					|| finiteValues.size() > FINITE_LOOKUP_MAX_COMBINATIONS
+					|| factor.getBindingNames().contains(finiteVarName)) {
+				continue;
+			}
+			FiniteDerivedSurfaceEstimate surfaceEstimate = finiteDerivedSurfaceRows(prefixFactors, factor,
+					finiteVarName, finiteValues);
+			if (surfaceEstimate != null && isFiniteNonNegative(surfaceEstimate.surfaceRows())
+					&& (bestSurfaceEstimate == null
+							|| surfaceEstimate.surfaceRows() < bestSurfaceEstimate.surfaceRows())) {
+				bestSurfaceEstimate = surfaceEstimate;
+			}
+		}
+		if (bestSurfaceEstimate == null) {
+			return Double.NaN;
+		}
+		return finiteDerivedLookupInvocationCount(bestSurfaceEstimate);
 	}
 
 	private void countExactJoinSurfaceCall() {
@@ -1575,6 +1891,56 @@ class LmdbEvaluationStatistics
 			seen.addAll(branchFactor.getBindingNames());
 		}
 		return false;
+	}
+
+	private boolean connectedByBindingNames(List<TupleExpr> branchFactors) {
+		if (branchFactors == null || branchFactors.size() < 2) {
+			return true;
+		}
+		List<Set<String>> factorBindingNames = new ArrayList<>(branchFactors.size());
+		for (TupleExpr branchFactor : branchFactors) {
+			Set<String> bindingNames = plannerBindingNames(branchFactor.getBindingNames());
+			if (!bindingNames.isEmpty()) {
+				factorBindingNames.add(bindingNames);
+			}
+		}
+		if (factorBindingNames.size() < 2) {
+			return true;
+		}
+		Set<String> reached = new HashSet<>(factorBindingNames.getFirst());
+		boolean[] connected = new boolean[factorBindingNames.size()];
+		connected[0] = true;
+		boolean changed;
+		do {
+			changed = false;
+			for (int i = 1; i < factorBindingNames.size(); i++) {
+				if (connected[i] || Collections.disjoint(reached, factorBindingNames.get(i))) {
+					continue;
+				}
+				connected[i] = true;
+				reached.addAll(factorBindingNames.get(i));
+				changed = true;
+			}
+		} while (changed);
+		for (boolean isConnected : connected) {
+			if (!isConnected) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private Set<String> plannerBindingNames(Set<String> bindingNames) {
+		if (bindingNames == null || bindingNames.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> plannerNames = new HashSet<>();
+		for (String bindingName : bindingNames) {
+			if (bindingName != null && !bindingName.startsWith("_const_")) {
+				plannerNames.add(bindingName);
+			}
+		}
+		return plannerNames.isEmpty() ? Set.of() : plannerNames;
 	}
 
 	private SubstitutedFactor substituteFiniteValue(TupleExpr tupleExpr, String finiteVarName, Value finiteValue) {
@@ -1978,6 +2344,9 @@ class LmdbEvaluationStatistics
 	private AccessPathEstimate chooseFiniteAccessPath(int lookupComponentMask, double rowsBeforeFilter,
 			double rowsAfterFilter, int lookupCombinations) {
 		AccessPathEstimate bestEstimate = null;
+		if (tripleStore == null) {
+			return null;
+		}
 		List<TripleStore.IndexAccessPath> candidates = tripleStore.indexAccessPaths(lookupComponentMask);
 		int candidateCount = candidates.size();
 		for (TripleStore.IndexAccessPath candidate : candidates) {
@@ -2393,6 +2762,9 @@ class LmdbEvaluationStatistics
 			double factorRows) {
 		AccessPathEstimate bestEstimate = null;
 		int lookupComponentMask = lookupComponentMaskWithConstants(accessShape, accessShape.pattern());
+		if (tripleStore == null) {
+			return null;
+		}
 		List<TripleStore.IndexAccessPath> candidates = tripleStore.indexAccessPaths(lookupComponentMask);
 		int candidateCount = candidates.size();
 		for (TripleStore.IndexAccessPath candidate : candidates) {
@@ -2985,6 +3357,23 @@ class LmdbEvaluationStatistics
 						FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern),
 						localBoundComponentMask),
 				passedCount, filteredCount, localBoundComponentMask == 0);
+	}
+
+	@Override
+	public void recordOperatorOutcome(QueryModelNode node) {
+		if (operatorFeedbackStats == null || !(node instanceof TupleExpr tupleExpr)
+				|| tupleExpr.getParentNode() != null) {
+			return;
+		}
+		operatorFeedbackStats.recordCompletedQuery(tupleExpr);
+	}
+
+	LmdbOperatorFeedbackStats.OperatorEstimate estimateOperatorFeedback(TupleExpr node, double leftRows,
+			double rightRows, double baseRows, double baseWorkRows) {
+		if (operatorFeedbackStats == null) {
+			return null;
+		}
+		return operatorFeedbackStats.estimate(node, leftRows, rightRows, baseRows, baseWorkRows);
 	}
 
 	private StatementPattern basePatternForFilter(Filter filter) {
