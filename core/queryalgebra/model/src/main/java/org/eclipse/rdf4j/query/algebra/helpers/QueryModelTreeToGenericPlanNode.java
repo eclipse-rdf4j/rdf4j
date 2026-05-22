@@ -111,8 +111,10 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private GenericPlanNode buildPlanNode(QueryModelNode node, Set<String> incomingBindings) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
-		genericPlanNode.setCostEstimate(node.getCostEstimate());
-		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
+		if (hasPlannerEstimateUsage(node)) {
+			genericPlanNode.setCostEstimate(node.getCostEstimate());
+			genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
+		}
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
 		genericPlanNode.setHasNextCallCountActual(runtimeTelemetryMetric(node.getHasNextCallCountActual()));
 		genericPlanNode.setHasNextTrueCountActual(runtimeTelemetryMetric(node.getHasNextTrueCountActual()));
@@ -160,6 +162,12 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 
 		return genericPlanNode;
+	}
+
+	private boolean hasPlannerEstimateUsage(QueryModelNode node) {
+		String usage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return usage != null && !usage.isEmpty()
+				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
 	}
 
 	private long runtimeTelemetryMetric(long value) {

@@ -52,6 +52,10 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String PHARMA_HAS_RESULT_LABEL = "pharma-hasResult";
 	private static final String PHARMA_HAS_ARM_LABEL = "pharma-hasArm";
 	private static final String PHARMA_P_VALUE_FILTER = "pharma-pValue-filter";
+	private static final String SCHEMA = "https://schema.org/";
+	private static final String SPARSE_ITEM_OFFERED_LABEL = "sparse-itemOffered";
+	private static final String SPARSE_MEMBER_OF_LABEL = "sparse-memberOf";
+	private static final String SPARSE_POSITION_FILTER = "sparse-position-filter";
 	private static final int QUERY_EXECUTION_REPETITIONS = 5;
 
 	@Test
@@ -270,6 +274,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.PHARMA.name();
 		benchmark.z_queryIndex = 5;
+		benchmark.sketchEstimatorEnabled = true;
 
 		benchmark.setup();
 		try {
@@ -300,6 +305,62 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertTrue(containsBindingSetAssignmentFor(optimized, "marker"),
 					"Expected q5 to keep the finite marker VALUES anchor visible in the optimized plan; order="
 							+ mandatoryLeafOrder);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
+	void sparseQ0BenchmarkAnchorsPositionFilterBeforePathFanout() throws Exception {
+		deleteBenchmarkStore();
+
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.SPARSE.name();
+		benchmark.z_queryIndex = 0;
+		benchmark.sketchEstimatorEnabled = true;
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("sparse q0 benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
+			int positionFilterIndex = mandatoryLeafOrder.indexOf(SPARSE_POSITION_FILTER);
+			int itemOfferedIndex = mandatoryLeafOrder.indexOf(SPARSE_ITEM_OFFERED_LABEL);
+			int memberOfIndex = mandatoryLeafOrder.indexOf(SPARSE_MEMBER_OF_LABEL);
+			assertTrue(positionFilterIndex >= 0 && itemOfferedIndex >= 0 && memberOfIndex >= 0,
+					"Expected SPARSE q0 mandatory prefix to expose position, itemOffered, and memberOf; order="
+							+ mandatoryLeafOrder + "\n" + optimized);
+			assertTrue(positionFilterIndex < itemOfferedIndex && positionFilterIndex < memberOfIndex,
+					"Expected SPARSE q0 to anchor the selective position filter before the deep path fanout; order="
+							+ mandatoryLeafOrder + "\n" + optimized);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
+	void sparseQ7BenchmarkKeepsOfferPathBeforePersonFanout() throws Exception {
+		deleteBenchmarkStore();
+
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.SPARSE.name();
+		benchmark.z_queryIndex = 7;
+		benchmark.sketchEstimatorEnabled = true;
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("sparse q7 benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			String plan = benchmark.explainOptimizedPlan();
+			int itemOfferedIndex = plan.indexOf("value=https://schema.org/itemOffered");
+			int memberOfIndex = plan.indexOf("value=https://schema.org/memberOf");
+			assertTrue(itemOfferedIndex >= 0 && memberOfIndex >= 0,
+					"Expected SPARSE q7 mandatory prefix to expose itemOffered and memberOf\n" + plan);
+			assertTrue(itemOfferedIndex < memberOfIndex,
+					"Expected SPARSE q7 to keep the offer/work path before person fanout\n" + plan);
 		} finally {
 			benchmark.tearDown();
 		}
@@ -356,6 +417,10 @@ class ThemeQueryBenchmarkSmokeIT {
 				leaves.add(PHARMA_P_VALUE_FILTER);
 				return;
 			}
+			if (isSparsePositionFilter(filter)) {
+				leaves.add(SPARSE_POSITION_FILTER);
+				return;
+			}
 			collectMandatoryLeafOrder(filter.getArg(), leaves);
 			return;
 		}
@@ -363,6 +428,12 @@ class ThemeQueryBenchmarkSmokeIT {
 			String label = labelFor(statementPattern);
 			if (label != null) {
 				leaves.add(label);
+			}
+			return;
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			if (assignment.getBindingNames().contains("personPosition")) {
+				leaves.add(SPARSE_POSITION_FILTER);
 			}
 			return;
 		}
@@ -398,6 +469,14 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 		return (PHARMA + "pValue").equals(statementPattern.getPredicateVar().getValue().stringValue())
 				&& VarNameCollector.process(filter.getCondition()).contains("p");
+	}
+
+	private static boolean isSparsePositionFilter(Filter filter) {
+		if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			return false;
+		}
+		return (SCHEMA + "position").equals(statementPattern.getPredicateVar().getValue().stringValue())
+				&& VarNameCollector.process(filter.getCondition()).contains("personPosition");
 	}
 
 	private static Filter findRecordedOnFilter(TupleExpr optimized) {
@@ -437,6 +516,12 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 		if ((PHARMA + "hasArm").equals(predicateValue)) {
 			return PHARMA_HAS_ARM_LABEL;
+		}
+		if ((SCHEMA + "itemOffered").equals(predicateValue)) {
+			return SPARSE_ITEM_OFFERED_LABEL;
+		}
+		if ((SCHEMA + "memberOf").equals(predicateValue)) {
+			return SPARSE_MEMBER_OF_LABEL;
 		}
 		if ("http://www.w3.org/1999/02/22-rdf-syntax-ns#type".equals(predicateValue)
 				&& object != null

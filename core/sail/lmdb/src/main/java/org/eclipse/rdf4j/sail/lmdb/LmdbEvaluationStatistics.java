@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -610,8 +613,8 @@ class LmdbEvaluationStatistics
 			return estimateFactorCost(tupleExpr, JoinFactorCostModel.CostContext.of(step.getBoundVarsBefore(),
 					prefixRowsBeforeStep, Double.NaN, false, true, finiteValuesForStep, prefixFactors));
 		}
-		return estimateLmdbFactorCost(tupleExpr, step.getBoundVarsBefore(), step.getFactorOutputRows(), true,
-				finiteValuesForStep);
+		return estimateFactorCost(tupleExpr, JoinFactorCostModel.CostContext.of(step.getBoundVarsBefore(),
+				prefixRowsBeforeStep, Double.NaN, false));
 	}
 
 	private boolean hasAccessMetrics(JoinOrderPlanner.PlanStep step) {
@@ -634,7 +637,13 @@ class LmdbEvaluationStatistics
 		if (sketchBasedJoinEstimator == null) {
 			return estimatePageWalkingFactorCost(factor);
 		}
-		return estimateLmdbFactorCost(factor, currentlyBoundVars);
+		Optional<FactorCostEstimate> estimate = estimateLmdbFactorCost(factor, currentlyBoundVars);
+		if (estimate.isEmpty()) {
+			return estimate;
+		}
+		return fuseOperatorFeedbackEstimate(factor,
+				JoinFactorCostModel.CostContext.of(currentlyBoundVars, Double.NaN, Double.NaN, false),
+				estimate.get());
 	}
 
 	@Override
@@ -643,7 +652,7 @@ class LmdbEvaluationStatistics
 			return estimatePageWalkingFactorCost(factor);
 		}
 		if (context == null) {
-			return estimateLmdbFactorCost(factor, Set.of());
+			return estimateFactorCost(factor, Set.of());
 		}
 		Optional<FactorCostEstimate> estimate = estimateLmdbFactorCost(factor, context);
 		if (estimate.isPresent()) {
@@ -660,11 +669,127 @@ class LmdbEvaluationStatistics
 				}
 			}
 		}
+		if (estimate.isPresent()) {
+			estimate = fuseOperatorFeedbackEstimate(factor, context, estimate.get());
+		}
 		if (estimate.isEmpty() || !context.isNestedIteratorInvocation() || factor instanceof BindingSetAssignment
 				|| estimate.get().isRepeatedInvocationsCosted()) {
 			return estimate;
 		}
 		return Optional.of(accountNestedInvocationWork(factor, estimate.get(), context));
+	}
+
+	private Optional<FactorCostEstimate> fuseOperatorFeedbackEstimate(TupleExpr factor,
+			JoinFactorCostModel.CostContext context, FactorCostEstimate baseEstimate) {
+		if (operatorFeedbackStats == null || factor == null || baseEstimate == null) {
+			return Optional.ofNullable(baseEstimate);
+		}
+		if (baseEstimate.hasExactOutputRows() || hasProtectedEstimateSource(baseEstimate)) {
+			return Optional.of(baseEstimate);
+		}
+		double baseRows = baseEstimate.getOutputRows();
+		double baseWorkRows = baseEstimate.getWorkRows();
+		if (!isFiniteNonNegative(baseRows) || !isFiniteNonNegative(baseWorkRows)) {
+			return Optional.of(baseEstimate);
+		}
+		double leftRows = feedbackLeftRows(factor, context);
+		double rightRows = feedbackRightRows(factor, context);
+		LmdbOperatorFeedbackStats.OperatorEstimate feedback = operatorFeedbackStats.estimate(factor, leftRows,
+				rightRows, baseRows, baseWorkRows);
+		if (feedback == null) {
+			return Optional.of(baseEstimate);
+		}
+		return Optional.of(fusedFeedbackEstimate(baseEstimate, feedback));
+	}
+
+	private boolean hasProtectedEstimateSource(FactorCostEstimate estimate) {
+		String source = estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		return "lmdb-finite-binding-lookup".equals(source) || "lmdb-finite-derived-surface".equals(source);
+	}
+
+	private FactorCostEstimate fusedFeedbackEstimate(FactorCostEstimate baseEstimate,
+			LmdbOperatorFeedbackStats.OperatorEstimate feedback) {
+		Map<String, String> stringMetrics = new HashMap<>(baseEstimate.getStringMetrics());
+		String baseSource = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (baseSource != null) {
+			stringMetrics.put("plannedBaseEstimateSource", baseSource);
+		}
+		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, feedback.source());
+		stringMetrics.put("plannedEstimateFusion", "operator_feedback");
+		stringMetrics.put("plannedOperatorFeedbackSource", feedback.source());
+		if (feedback.feedbackKey() != null) {
+			stringMetrics.put("plannedOperatorFeedbackKey", feedback.feedbackKey());
+		}
+
+		Map<String, Double> doubleMetrics = new HashMap<>(baseEstimate.getDoubleMetrics());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, feedback.workRows());
+		doubleMetrics.put("plannedBaseRows", baseEstimate.getOutputRows());
+		doubleMetrics.put("plannedBaseWorkRows", baseEstimate.getWorkRows());
+		doubleMetrics.put("plannedOperatorFeedbackRows", feedback.rows());
+		doubleMetrics.put("plannedOperatorFeedbackWorkRows", feedback.workRows());
+		doubleMetrics.put("plannedOperatorFeedbackEvidence", (double) feedback.evidenceCount());
+		doubleMetrics.put("plannedOperatorFeedbackConfidence", feedback.confidence());
+
+		return new FactorCostEstimate(feedback.workRows(), feedback.rows(), stringMetrics, doubleMetrics,
+				baseEstimate.hasPhysicalAccessPath(), baseEstimate.isDirectLookup(),
+				baseEstimate.getLookupComponentMask(),
+				baseEstimate.getMissingLookupComponentMask(), baseEstimate.getAccessRowsBeforeFilter(), true, false);
+	}
+
+	private double feedbackLeftRows(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		if (!(factor instanceof BinaryTupleOperator binary)) {
+			return Double.NaN;
+		}
+		return feedbackRows(binary.getLeftArg(), context, contextBoundVars(context), contextBoundVarMask(context));
+	}
+
+	private double feedbackRightRows(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		if (!(factor instanceof BinaryTupleOperator binary)) {
+			return Double.NaN;
+		}
+		if (factor instanceof Union) {
+			return feedbackRows(binary.getRightArg(), context, contextBoundVars(context), contextBoundVarMask(context));
+		}
+		if (context != null && context.hasCurrentlyBoundVarMask()) {
+			long rightBoundMask = contextBoundVarMask(context) | bindingMask(context.getVariableNames(),
+					binary.getLeftArg().getBindingNames());
+			return feedbackRows(binary.getRightArg(), context, null, rightBoundMask);
+		}
+		Set<String> rightBoundVars = unionBindingNames(contextBoundVars(context),
+				binary.getLeftArg().getBindingNames());
+		return feedbackRows(binary.getRightArg(), context, rightBoundVars, 0L);
+	}
+
+	private double feedbackRows(TupleExpr tupleExpr, JoinFactorCostModel.CostContext context, Set<String> boundVars,
+			long boundVarMask) {
+		if (tupleExpr == null) {
+			return Double.NaN;
+		}
+		if (context != null && context.hasCurrentlyBoundVarMask()) {
+			return estimateFactorOutputRows(tupleExpr, context.getVariableNames(), boundVarMask);
+		}
+		return estimateFactorOutputRows(tupleExpr, boundVars == null ? Set.of() : boundVars);
+	}
+
+	private Set<String> contextBoundVars(JoinFactorCostModel.CostContext context) {
+		return context == null ? Set.of() : context.getCurrentlyBoundVars();
+	}
+
+	private long contextBoundVarMask(JoinFactorCostModel.CostContext context) {
+		return context == null || !context.hasCurrentlyBoundVarMask() ? 0L : context.getCurrentlyBoundVarMask();
+	}
+
+	private long bindingMask(String[] variableNames, Set<String> bindingNames) {
+		if (variableNames == null || variableNames.length == 0 || bindingNames == null || bindingNames.isEmpty()) {
+			return 0L;
+		}
+		long mask = 0L;
+		for (int i = 0; i < variableNames.length && i < Long.SIZE; i++) {
+			if (bindingNames.contains(variableNames[i])) {
+				mask |= 1L << i;
+			}
+		}
+		return mask;
 	}
 
 	private Optional<FactorCostEstimate> estimatePageWalkingFactorCost(TupleExpr factor) {
@@ -775,7 +900,7 @@ class LmdbEvaluationStatistics
 			return Double.NaN;
 		}
 		double workRows = lookupDomainOutputRows + repeatedInvocations;
-		return isFiniteNonNegative(workRows) ? Math.max(repeatedInvocations, workRows) : Double.NaN;
+		return isFiniteNonNegative(workRows) ? workRows : Double.NaN;
 	}
 
 	private double repeatedOutputRows(FactorCostEstimate estimate, double repeatedInvocations) {
@@ -1809,9 +1934,28 @@ class LmdbEvaluationStatistics
 
 	double estimateFiniteDerivedLookupInvocationRows(List<TupleExpr> prefixFactors, TupleExpr factor,
 			Map<String, Set<Value>> finiteBindingValues) {
+		FiniteDerivedSurfaceEstimate bestSurfaceEstimate = bestFiniteDerivedSurfaceEstimate(prefixFactors, factor,
+				finiteBindingValues);
+		if (bestSurfaceEstimate == null) {
+			return Double.NaN;
+		}
+		return finiteDerivedLookupInvocationCount(bestSurfaceEstimate);
+	}
+
+	double estimateFiniteDerivedLookupPrefixRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+			Map<String, Set<Value>> finiteBindingValues) {
+		FiniteDerivedSurfaceEstimate bestSurfaceEstimate = bestFiniteDerivedSurfaceEstimate(prefixFactors, factor,
+				finiteBindingValues);
+		return bestSurfaceEstimate != null && isFiniteNonNegative(bestSurfaceEstimate.prefixRows())
+				? bestSurfaceEstimate.prefixRows()
+				: Double.NaN;
+	}
+
+	private FiniteDerivedSurfaceEstimate bestFiniteDerivedSurfaceEstimate(List<TupleExpr> prefixFactors,
+			TupleExpr factor, Map<String, Set<Value>> finiteBindingValues) {
 		if (sketchBasedJoinEstimator == null || prefixFactors == null || prefixFactors.isEmpty()
 				|| factor == null || !hasFiniteBindingValues(finiteBindingValues)) {
-			return Double.NaN;
+			return null;
 		}
 		FiniteDerivedSurfaceEstimate bestSurfaceEstimate = null;
 		for (Map.Entry<String, Set<Value>> entry : finiteBindingValues.entrySet()) {
@@ -1830,10 +1974,7 @@ class LmdbEvaluationStatistics
 				bestSurfaceEstimate = surfaceEstimate;
 			}
 		}
-		if (bestSurfaceEstimate == null) {
-			return Double.NaN;
-		}
-		return finiteDerivedLookupInvocationCount(bestSurfaceEstimate);
+		return bestSurfaceEstimate;
 	}
 
 	private void countExactJoinSurfaceCall() {
@@ -2444,12 +2585,13 @@ class LmdbEvaluationStatistics
 			Optional<JoinOrderPlan> plan = estimateJoinOrder(flattenedFactors, boundVars, Algorithm.DYNAMIC_PROGRAMMING,
 					List.of());
 			if (plan.isPresent() && isFiniteNonNegative(plan.get().getEstimatedTotalWork())) {
-				double outputRows = plan.get().getEstimatedFinalRows();
+				JoinOrderPlan joinPlan = plan.get();
+				double outputRows = joinPlan.getEstimatedFinalRows();
 				if (!isFiniteNonNegative(outputRows)) {
 					outputRows = estimateFactorOutputRows(join, boundVars);
 				}
 				if (isFiniteNonNegative(outputRows)) {
-					return Optional.of(new FactorCostEstimate(plan.get().getEstimatedTotalWork(), outputRows));
+					return Optional.of(joinPlanFactorCostEstimate(joinPlan, outputRows));
 				}
 			}
 		}
@@ -2474,6 +2616,35 @@ class LmdbEvaluationStatistics
 			repeatedRightWorkRows = Double.MAX_VALUE;
 		}
 		return Optional.of(new FactorCostEstimate(repeatedRightWorkRows, outputRows));
+	}
+
+	private FactorCostEstimate joinPlanFactorCostEstimate(JoinOrderPlan joinPlan, double outputRows) {
+		Map<String, String> stringMetrics = new HashMap<>(joinPlan.getSummaryStringMetrics());
+		Map<String, Double> doubleMetrics = new HashMap<>(joinPlan.getSummaryDoubleMetrics());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, joinPlan.getEstimatedTotalWork());
+		addJoinPlanStepSourceMetrics(joinPlan, stringMetrics);
+		return new FactorCostEstimate(joinPlan.getEstimatedTotalWork(), outputRows, stringMetrics, doubleMetrics);
+	}
+
+	private void addJoinPlanStepSourceMetrics(JoinOrderPlan joinPlan, Map<String, String> stringMetrics) {
+		TreeSet<String> filterSources = new TreeSet<>();
+		TreeSet<String> estimateSources = new TreeSet<>();
+		for (JoinOrderPlanner.PlanStep step : joinPlan.getSteps()) {
+			String filterSource = step.getStringMetrics().get(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE);
+			if (filterSource != null && !filterSource.isBlank()) {
+				filterSources.add(filterSource);
+			}
+			String estimateSource = step.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (estimateSource != null && !estimateSource.isBlank()) {
+				estimateSources.add(estimateSource);
+			}
+		}
+		if (!filterSources.isEmpty()) {
+			stringMetrics.put("plannedBaseFilterSelectivitySources", String.join(",", filterSources));
+		}
+		if (!estimateSources.isEmpty()) {
+			stringMetrics.put("plannedBaseEstimateSources", String.join(",", estimateSources));
+		}
 	}
 
 	private void flattenJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {

@@ -449,10 +449,12 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		}
 
 		String pattern = statementPatternWindow(plan, predicateIndex, "GroupElem (componentCount)");
-		assertContainsAny(pattern, "plannedEstimateSource=lmdb-finite-derived-surface",
-				"plannedEstimateSource=lmdb-access-path");
-		assertMetricAtMost(pattern, "plannedAccessRows", 420.0d,
+		assertContains(pattern, "plannedLookupComponents=[P, O]");
+		assertDoesNotContain(pattern, "plannedIndexAccessMode=fullScan",
 				"Engineering q2 should keep the optional partOf lookup bounded by the finite assembly surface:\n"
+						+ plan);
+		assertMetricAtMost(pattern, "plannedOptionalBoundInvocations", 3.0d,
+				"Engineering q2 should preserve the finite assembly surface as the optional partOf bound context:\n"
 						+ plan);
 	}
 
@@ -479,7 +481,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		assertContains(pattern, "plannedLookupComponents=[S, P]");
 		assertContains(pattern, "plannedBoundVars=requirement");
 		assertContains(pattern, "plannedAccessWorkRows=1.00");
-		assertContains(pattern, "plannedWorkRows=1.0K");
+		assertContains(pattern, "plannedCostWorkRows=1.0K");
 	}
 
 	private static void assertDevelopOperatorSkeleton(String plan) {

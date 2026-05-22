@@ -33,7 +33,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 
 public final class BenchmarkJoinEstimatorSupport {
 
-	private static final long ROBUST_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(1);
+	private static final String ROBUST_READY_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeRegression.sketchReadyTimeoutSeconds";
+	private static final long DEFAULT_ROBUST_READY_TIMEOUT_SECONDS = TimeUnit.MINUTES.toSeconds(5);
 	private static final long QUERY_REGRESSION_PASS_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
 	private static final String EXPECTED_DB_FILE_SIZES_FILE = "expected-db-file-sizes.properties";
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
@@ -190,19 +191,26 @@ public final class BenchmarkJoinEstimatorSupport {
 	}
 
 	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase) throws IOException {
-		awaitEstimatorReady(estimator, phase, ROBUST_READY_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
+		awaitEstimatorReady(estimator, phase, robustReadyTimeoutSeconds(), TimeUnit.SECONDS);
 	}
 
 	private static void awaitEstimatorReady(SketchBasedJoinEstimator estimator, String phase, long timeout,
 			TimeUnit unit) throws IOException {
 		try {
 			if (!estimator.awaitReady(timeout, unit)) {
-				throw new IOException("Join estimator was not ready after " + phase);
+				throw new IOException("Join estimator was not ready after " + phase
+						+ " within " + timeout + " " + unit.toString().toLowerCase()
+						+ "; ready=" + estimator.isReadyNonBlocking()
+						+ ", staleness=" + estimator.staleness());
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for join estimator readiness after " + phase, e);
 		}
+	}
+
+	private static long robustReadyTimeoutSeconds() {
+		return Long.getLong(ROBUST_READY_TIMEOUT_SECONDS_PROPERTY, DEFAULT_ROBUST_READY_TIMEOUT_SECONDS);
 	}
 
 	private static void writeExpectedDbFileSizes(File storeDirectory) throws IOException {

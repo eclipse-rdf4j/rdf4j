@@ -1225,16 +1225,22 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				plan = explanation.toString();
 			}
 
-			assertTrue(plan.contains("resultSizeEstimate="), plan);
-			assertTrue(plan.contains("costEstimate="), plan);
+			assertFalse(plan.contains("resultSizeEstimate="), plan);
+			assertFalse(plan.contains("costEstimate="), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE + "="), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS + "="), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "="), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE + "="), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_WORK_ROWS + "="), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION + "="), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE + "="), plan);
 			assertTrue(plan.lines()
-					.anyMatch(line -> line.contains("Join") && line.contains("resultSizeEstimate=")
-							&& line.contains("costEstimate=")),
-					"Expected materialized join nodes to carry current row and work estimates\n" + plan);
+					.anyMatch(line -> line.contains("Join")
+							&& line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE + "=")
+							&& line.contains(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS + "=")
+							&& line.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "=")),
+					"Expected materialized join nodes to carry planner-used row and work estimates\n" + plan);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1273,20 +1279,14 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					""";
 			String plan = optimizedPlanFor(repository, query);
 
-			assertOptimizedTupleNodeAnnotated(plan, "Projection");
-			assertOptimizedTupleNodeAnnotated(plan, "Extension");
-			assertOptimizedTupleNodeAnnotated(plan, "Filter");
-			assertOptimizedTupleNodeAnnotated(plan, "Group");
-			assertOptimizedTupleNodeAnnotated(plan, "LeftJoin");
-			assertOptimizedTupleNodeAnnotated(plan, "Union");
-			assertOptimizedTupleNodeAnnotated(plan, "Join");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Projection");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Extension");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Filter");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Group");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "LeftJoin");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Union");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Join");
 			assertOptimizedTupleNodeAnnotated(plan, "StatementPattern");
-			assertTrue(plan.lines()
-					.anyMatch(line -> isTupleNodeLine(line, "Filter")
-							&& (line.contains(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE + "=")
-									|| line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE
-											+ "=lmdb-synthetic"))),
-					"Expected filters to explain their selectivity source or synthetic fallback\n" + plan);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1294,7 +1294,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void leftJoinNodeReceivesCurrentRowsAndSubtreeWork() throws Exception {
+	void leftJoinNodeSuppressesNonPlannerDecisionEstimate() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-plan-leftjoin-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
@@ -1311,7 +1311,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					}
 					""");
 
-			assertOptimizedTupleNodeAnnotated(plan, "LeftJoin");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "LeftJoin");
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1319,7 +1319,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void unionNodeReceivesSummedRowsAndWork() throws Exception {
+	void unionNodeSuppressesNonPlannerDecisionEstimate() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-plan-union-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
@@ -1337,7 +1337,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					}
 					""");
 
-			assertOptimizedTupleNodeAnnotated(plan, "Union");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Union");
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1345,7 +1345,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void groupNodeUsesDistinctGroupEstimateOrSyntheticUpperBound() throws Exception {
+	void groupNodeSuppressesNonPlannerDecisionEstimate() throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-plan-group-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
@@ -1362,7 +1362,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					GROUP BY ?s
 					""");
 
-			assertOptimizedTupleNodeAnnotated(plan, "Group");
+			assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(plan, "Group");
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1937,13 +1937,40 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.filter(candidate -> isTupleNodeLine(candidate, nodeName))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("Expected plan to contain " + nodeName + "\n" + plan));
-		assertFiniteExplainMetric(plan, line, "resultSizeEstimate");
-		assertFiniteExplainMetric(plan, line, "costEstimate");
+		assertNoLegacyEstimates(line);
+		assertFiniteExplainMetric(plan, line, TelemetryMetricNames.PLANNED_CARDINALITY_ROWS);
+		assertFiniteExplainMetric(plan, line, TelemetryMetricNames.PLANNED_COST_WORK_ROWS);
+		assertFiniteExplainMetric(plan, line, TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE);
 		assertFiniteExplainMetric(plan, line, TelemetryMetricNames.PLANNED_WORK_ROWS);
+		assertTrue(line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE + "="),
+				"Expected " + nodeName + " to carry planner estimate usage\nline: " + line + "\n" + plan);
 		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"),
 				"Expected " + nodeName + " to carry lmdb planner id\nline: " + line + "\n" + plan);
 		assertTrue(line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE + "="),
 				"Expected " + nodeName + " to carry estimate source\nline: " + line + "\n" + plan);
+	}
+
+	private static void assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(String plan, String nodeName) {
+		String line = plan.lines()
+				.filter(candidate -> isTupleNodeLine(candidate, nodeName))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Expected plan to contain " + nodeName + "\n" + plan));
+		assertNoLegacyEstimates(line);
+		assertFalse(line.contains(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS + "="),
+				"Wrapper node should not render cardinality without planner-decision usage\nline: " + line + "\n"
+						+ plan);
+		assertFalse(line.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "="),
+				"Wrapper node should not render cost without planner-decision usage\nline: " + line + "\n" + plan);
+		assertFalse(line.contains(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE + "="),
+				"Wrapper node should not render objective score without planner-decision usage\nline: " + line + "\n"
+						+ plan);
+		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"),
+				"Expected " + nodeName + " to carry lmdb planner id\nline: " + line + "\n" + plan);
+	}
+
+	private static void assertNoLegacyEstimates(String line) {
+		assertFalse(line.contains("resultSizeEstimate="), "Legacy row estimates should not be rendered\n" + line);
+		assertFalse(line.contains("costEstimate="), "Legacy cost estimates should not be rendered\n" + line);
 	}
 
 	private static void assertFiniteExplainMetric(String plan, String line, String metricName) {

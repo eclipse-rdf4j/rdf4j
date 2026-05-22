@@ -127,6 +127,47 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void canForceRightDeepJoinTreeForDiagnostics() {
+		BindingSetAssignment boundA = values("a", "user-7", "user-8");
+		BindingSetAssignment boundB = values("b", "user-7", "user-8");
+		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
+		StatementPattern bFollowsC = statementPattern("b", "follows", "c");
+		QueryRoot root = new QueryRoot(new Join(boundA, new Join(boundB, new Join(aFollowsB, bFollowsC))));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(boundA, boundB, aFollowsB, bFollowsC));
+		withJoinTreeShape("right-deep",
+				() -> new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null));
+
+		Join finalJoin = assertInstanceOf(Join.class, root.getArg());
+		assertEquals(boundA, finalJoin.getLeftArg());
+		Join secondJoin = assertInstanceOf(Join.class, finalJoin.getRightArg());
+		assertEquals(boundB, secondJoin.getLeftArg());
+		Join thirdJoin = assertInstanceOf(Join.class, secondJoin.getRightArg());
+		assertEquals(aFollowsB, thirdJoin.getLeftArg());
+		assertEquals(bFollowsC, thirdJoin.getRightArg());
+		assertEquals(List.of(boundA, boundB, aFollowsB, bFollowsC), joinArgs(root.getArg()));
+	}
+
+	@Test
+	void canForceBushyJoinTreeForDiagnostics() {
+		BindingSetAssignment boundA = values("a", "user-7", "user-8");
+		BindingSetAssignment boundB = values("b", "user-7", "user-8");
+		StatementPattern aFollowsB = statementPattern("a", "follows", "b");
+		StatementPattern bFollowsC = statementPattern("b", "follows", "c");
+		QueryRoot root = new QueryRoot(new Join(boundA, new Join(boundB, new Join(aFollowsB, bFollowsC))));
+		PlanningStatistics statistics = PlanningStatistics.withPlan(List.of(boundA, boundB, aFollowsB, bFollowsC));
+		withJoinTreeShape("bushy", () -> new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null));
+
+		Join finalJoin = assertInstanceOf(Join.class, root.getArg());
+		Join leftJoin = assertInstanceOf(Join.class, finalJoin.getLeftArg());
+		assertEquals(boundA, leftJoin.getLeftArg());
+		assertEquals(boundB, leftJoin.getRightArg());
+		Join rightJoin = assertInstanceOf(Join.class, finalJoin.getRightArg());
+		assertEquals(aFollowsB, rightJoin.getLeftArg());
+		assertEquals(bFollowsC, rightJoin.getRightArg());
+		assertEquals(List.of(boundA, boundB, aFollowsB, bFollowsC), joinArgs(root.getArg()));
+	}
+
+	@Test
 	void finiteAnchorMaterializationDoesNotReplanSyntheticJoinsForCardinality() {
 		BindingSetAssignment boundDisease = values("disease", "disease-0", "disease-1");
 		StatementPattern studiesDisease = statementPattern("trial", "studiesDisease", "disease");
@@ -674,6 +715,20 @@ class LmdbSketchJoinOptimizerTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static void withJoinTreeShape(String shape, Runnable runnable) {
+		String previous = System.getProperty("rdf4j.optimizer.lmdb.joinTreeShape");
+		System.setProperty("rdf4j.optimizer.lmdb.joinTreeShape", shape);
+		try {
+			runnable.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.optimizer.lmdb.joinTreeShape");
+			} else {
+				System.setProperty("rdf4j.optimizer.lmdb.joinTreeShape", previous);
+			}
+		}
 	}
 
 	private static ValueExpr and(ValueExpr first, ValueExpr second, ValueExpr... rest) {

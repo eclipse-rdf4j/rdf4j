@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -31,9 +32,12 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -79,11 +83,14 @@ class LmdbThemeQueryRegressionIT {
 	private static final IRI LIBRARY_WRITTEN_BY = VALUE_FACTORY
 			.createIRI("http://example.com/theme/library/writtenBy");
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
-			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+			"StatementPattern \\([^\\n)]*plannedIndexAccessMode=directLookup[^\\n)]*");
 	private static final Pattern OPTIMIZER_CANDIDATES = Pattern.compile(
 			"optimizer\\.logicalExploration=[^\\n)]*candidates=(\\d+)");
+	private static final Pattern OPERATOR_PLANNED_CARDINALITY = Pattern.compile(
+			"(?m)^.*\\b(Join|LeftJoin|Union|Filter)\\b[^\\n]*plannedCardinalityRows=([0-9.E+-]+[KMGT]?).*$");
 	private static final Pattern STATEMENT_PATTERN_LINE = Pattern.compile(
 			"(?m)^[\\s│║╠╚├└─═]*StatementPattern\\b");
+	private static final String COUNT_BINDING_NAME = "count";
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "theme-query-regression";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName()
@@ -221,8 +228,8 @@ class LmdbThemeQueryRegressionIT {
 				for (int queryIndex : HIGH_VALUE_QUERY_INDEXES.get(theme)) {
 					assertQueryRegressionPasses(repository, theme, queryIndex, snapshot -> {
 						assertPlannerDiagnosticsPresent(theme, queryIndex, snapshot.plan());
-						assertContainsAny(snapshot.plan(), "plannedAccessRows", "optimizer.decisionTrace",
-								"plannedFilterEvidenceCount");
+						assertContainsAny(snapshot.plan(), "plannedEstimateUsage=", "optimizer.decisionTrace",
+								"plannedIndexAccessMode=", "plannedFilterEvidenceCount");
 						assertReportedSocialCliqueUsesRobustPlanner(theme, queryIndex, snapshot.plan());
 						assertHighValueAnchors(theme, queryIndex, snapshot.renderedQuery(), snapshot.plan());
 					});
@@ -235,6 +242,56 @@ class LmdbThemeQueryRegressionIT {
 			}
 		} finally {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void sparseFeedbackTrainingRemovesQ0Q7Q8EstimatePathologies(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SPARSE;
+		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			for (int queryIndex : List.of(0, 7, 8)) {
+				assertThemeQueryResult(repository, theme, queryIndex);
+				trainOperatorFeedback(repository, theme, queryIndex);
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
+				assertThemeQueryResult(repository, theme, queryIndex);
+				assertContainsAny(snapshot.plan(),
+						"plannedEstimateSource=learned_operator",
+						"plannedEstimateSource=learned_left_join_surface",
+						"plannedEstimateSource=lmdb-bound-lookup-subtree");
+				if (queryIndex == 0) {
+					assertNoSaturatedOperatorEstimate(snapshot.plan(), "LeftJoin", 1_000_000_000_000.0d,
+							"SPARSE q0 should not keep a saturated bound OPTIONAL estimate after feedback");
+				} else if (queryIndex == 7) {
+					assertOperatorEstimateFloor(snapshot.plan(), "Union", 100_000.0d,
+							"SPARSE q7 should not keep under-costed live optional UNION estimates after feedback");
+				} else {
+					assertNoZeroLiveOperatorEstimate(snapshot.plan(),
+							"SPARSE q8 should not keep zero estimates for live join/filter branches after feedback");
+				}
+			}
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	@Test
+	void sparseQ7KeepsOfferPathBeforePersonFanout(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.SPARSE;
+		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
+			assertBefore(snapshot.renderedQuery(),
+					"?offer <https://schema.org/itemOffered> ?work",
+					"?person <https://schema.org/memberOf> ?org",
+					"SPARSE q7 should keep the offer/work/topic/page path selective before the person fanout\n"
+							+ snapshot.plan());
+		} finally {
+			shutdownAndRelease(repository, store);
 		}
 	}
 
@@ -755,8 +812,14 @@ class LmdbThemeQueryRegressionIT {
 							"value=http://example.com/theme/train/SectionOfLine",
 							"Train q9 should run the track-type EXISTS guard before the section type probe\n"
 									+ snapshot.plan());
-					assertPredicateLookupWorkRowsAbove(snapshot.plan(),
-							"http://example.com/theme/train/connectsOperationalPoint", 10_000.0d);
+					String operationalPointPattern = firstStatementPatternForPredicateAndVar(snapshot.plan(),
+							"http://example.com/theme/train/connectsOperationalPoint", "s", "section");
+					assertVarBindingState(operationalPointPattern, "s", "section", "bound");
+					assertContains(statementPatternHeader(operationalPointPattern),
+							"plannedIndexAccessMode=prefixScan",
+							"Train q9 should keep the operational-point optional branch as an indexed, "
+									+ "outer-bound probe without requiring non-planner explain cost fields\n"
+									+ snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -915,8 +978,14 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 6, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 6, snapshot.plan());
-					assertPredicateLookupWorkRowsAbove(snapshot.plan(), "http://example.com/theme/library/loanedCopy",
-							1_000_000.0d);
+					String loanedCopyPattern = firstStatementPatternForPredicateAndVar(snapshot.plan(),
+							"http://example.com/theme/library/loanedCopy", "s", "loan");
+					assertVarBindingState(loanedCopyPattern, "s", "loan", "bound");
+					assertContains(statementPatternHeader(loanedCopyPattern),
+							"plannedIndexAccessMode=prefixScan",
+							"Library q6 should keep the missing-loan optional branch as an indexed, outer-bound "
+									+ "probe without relying on hidden non-planner explain cost fields\n"
+									+ snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1764,7 +1833,7 @@ class LmdbThemeQueryRegressionIT {
 									+ "component type validation\n"
 									+ snapshot.plan());
 					assertDoesNotContain(snapshot.plan(),
-							"Join (BoundStatementPatternJoinIteration) (resultSizeEstimate=520)",
+							"Join (BoundStatementPatternJoinIteration) (plannedCardinalityRows=520)",
 							"Engineering q8 should not run the component type guard through a per-row "
 									+ "bound-statement count after the satisfies bridge\n"
 									+ snapshot.plan());
@@ -2216,7 +2285,8 @@ class LmdbThemeQueryRegressionIT {
 						"Medical q9 should keep the original anchor when JMH-style warmup feedback still leaves "
 								+ "the condition-code finite anchor with higher work and output surface\n"
 								+ plan);
-				assertContains(plan, "plannedEstimateSource=learned_filter",
+				assertContainsAny(plan, "sources={learned_filter=1}", "source=learned_filter");
+				assertContains(plan, "plannedEstimateUsage=join_order_candidate",
 						"Medical q9 warmups should feed learned filter evidence into the plan that makes the "
 								+ "condition-code finite-anchor decision explicit\n"
 								+ plan);
@@ -2880,6 +2950,120 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
+	private static void assertThemeQueryResult(SailRepository repository, Theme theme, int queryIndex) {
+		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+		QueryResultSummary result = executeQuerySummary(repository, query);
+		Assertions.assertEquals(ThemeQueryCatalog.expectedCountFor(theme, queryIndex), result.rowCount(),
+				"Unexpected row count for theme=" + theme + ", queryIndex=" + queryIndex);
+		OptionalLong expectedCountBinding = ThemeQueryCatalog.expectedCountBindingValueFor(theme, queryIndex);
+		if (expectedCountBinding.isPresent()) {
+			Assertions.assertNotNull(result.countBindingValue(),
+					"Expected ?" + COUNT_BINDING_NAME + " for theme=" + theme
+							+ ", queryIndex=" + queryIndex);
+			Assertions.assertEquals(expectedCountBinding.getAsLong(), result.countBindingValue().longValue(),
+					"Unexpected ?" + COUNT_BINDING_NAME + " for theme=" + theme
+							+ ", queryIndex=" + queryIndex);
+		}
+	}
+
+	private static QueryResultSummary executeQuerySummary(SailRepository repository, String query) {
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+			long rowCount = 0L;
+			Long countBindingValue = null;
+			while (result.hasNext()) {
+				BindingSet bindings = result.next();
+				rowCount++;
+				if (bindings.hasBinding(COUNT_BINDING_NAME)) {
+					if (rowCount > 1L) {
+						throw new AssertionError("Expected a single aggregate row but saw at least " + rowCount);
+					}
+					countBindingValue = countBindingValue(bindings);
+				}
+			}
+			return new QueryResultSummary(rowCount, countBindingValue);
+		}
+	}
+
+	private static Long countBindingValue(BindingSet bindings) {
+		var value = bindings.getValue(COUNT_BINDING_NAME);
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Literal literal) {
+			return literal.longValue();
+		}
+		throw new AssertionError("Unexpected aggregate binding type for " + COUNT_BINDING_NAME
+				+ ": " + value);
+	}
+
+	private static void trainOperatorFeedback(SailRepository repository, Theme theme, int queryIndex) {
+		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+		}
+	}
+
+	private static void assertNoSaturatedOperatorEstimate(String plan, String operator, double threshold,
+			String message) {
+		Matcher matcher = OPERATOR_PLANNED_CARDINALITY.matcher(plan);
+		while (matcher.find()) {
+			if (operator.equals(matcher.group(1)) && parsePlanNumber(matcher.group(2)) >= threshold) {
+				throw new AssertionError(message + "\nSaturated estimate line:\n" + matcher.group());
+			}
+		}
+	}
+
+	private static void assertOperatorEstimateFloor(String plan, String operator, double minimum, String message) {
+		boolean found = false;
+		Matcher matcher = OPERATOR_PLANNED_CARDINALITY.matcher(plan);
+		while (matcher.find()) {
+			if (operator.equals(matcher.group(1))) {
+				found = true;
+				double cardinalityRows = parsePlanNumber(matcher.group(2));
+				double costWorkRows = metricRows(matcher.group(), "plannedCostWorkRows");
+				double estimate = Double.isNaN(costWorkRows)
+						? cardinalityRows
+						: Math.max(cardinalityRows, costWorkRows);
+				if (estimate < minimum) {
+					throw new AssertionError(message + "\nLow estimate/cost line:\n" + matcher.group());
+				}
+			}
+		}
+		Assertions.assertTrue(found, "Expected at least one " + operator + " estimate in:\n" + plan);
+	}
+
+	private static void assertNoZeroLiveOperatorEstimate(String plan, String message) {
+		Matcher matcher = OPERATOR_PLANNED_CARDINALITY.matcher(plan);
+		while (matcher.find()) {
+			double estimate = parsePlanNumber(matcher.group(2));
+			if (estimate == 0.0d) {
+				throw new AssertionError(message + "\nZero estimate line:\n" + matcher.group());
+			}
+		}
+	}
+
+	private static double parsePlanNumber(String token) {
+		if (token == null || token.isEmpty()) {
+			return Double.NaN;
+		}
+		double multiplier = 1.0d;
+		char last = token.charAt(token.length() - 1);
+		if (last == 'K' || last == 'M' || last == 'G' || last == 'T') {
+			token = token.substring(0, token.length() - 1);
+			multiplier = switch (last) {
+			case 'K' -> 1_000.0d;
+			case 'M' -> 1_000_000.0d;
+			case 'G' -> 1_000_000_000.0d;
+			case 'T' -> 1_000_000_000_000.0d;
+			default -> 1.0d;
+			};
+		}
+		return Double.parseDouble(token) * multiplier;
+	}
+
 	private static void assertCountRegressionQueries(SailRepository repository, Theme theme) throws Exception {
 		for (int queryIndex : COUNT_REGRESSION_QUERY_INDEXES.getOrDefault(theme, List.of())) {
 			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
@@ -3450,8 +3634,8 @@ class LmdbThemeQueryRegressionIT {
 			if (isFiniteSurfaceDirectLookup(matcher.group())) {
 				continue;
 			}
-			double accessRows = directLookupAccessRows(matcher.group(), matcher.group(1));
-			if (accessRows > maxWorkRows) {
+			double accessRows = directLookupAccessRows(matcher.group());
+			if (!Double.isNaN(accessRows) && accessRows > maxWorkRows) {
 				throw new AssertionError("Expected direct lookup plannedAccessRows <= " + maxWorkRows + " but got "
 						+ accessRows + " in:\n" + plan);
 			}
@@ -3469,8 +3653,8 @@ class LmdbThemeQueryRegressionIT {
 			if (isFiniteSurfaceDirectLookup(matcher.group())) {
 				continue;
 			}
-			double accessRows = directLookupAccessRows(matcher.group(), matcher.group(1));
-			if (accessRows > maxWorkRows) {
+			double accessRows = directLookupAccessRows(matcher.group());
+			if (!Double.isNaN(accessRows) && accessRows > maxWorkRows) {
 				throw new AssertionError("Expected direct lookup plannedAccessRows <= " + maxWorkRows + " but got "
 						+ accessRows + " in:\n" + plan);
 			}
@@ -3489,8 +3673,8 @@ class LmdbThemeQueryRegressionIT {
 			if (isFiniteSurfaceDirectLookup(matcher.group())) {
 				continue;
 			}
-			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
-			if (workRows > maxWorkRows) {
+			double workRows = directLookupAccessWorkRows(matcher.group());
+			if (!Double.isNaN(workRows) && workRows > maxWorkRows) {
 				throw new AssertionError("Expected direct lookup plannedAccessWorkRows <= " + maxWorkRows
 						+ " but got " + workRows + " in:\n" + plan);
 			}
@@ -3517,14 +3701,20 @@ class LmdbThemeQueryRegressionIT {
 				message + ", got candidates=" + largestCandidates + " max=" + maxCandidates + "\n" + plan);
 	}
 
-	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
-		Matcher accessWorkRows = Pattern.compile("plannedAccessWorkRows=([^,)]*)").matcher(directLookupHeader);
-		return accessWorkRows.find() ? parsePlanRows(accessWorkRows.group(1)) : parsePlanRows(fallbackWorkRows);
+	private static double directLookupAccessWorkRows(String directLookupHeader) {
+		double accessWorkRows = metricRows(directLookupHeader, "plannedAccessWorkRows");
+		if (!Double.isNaN(accessWorkRows)) {
+			return accessWorkRows;
+		}
+		return metricRows(directLookupHeader, "plannedCostWorkRows");
 	}
 
-	private static double directLookupAccessRows(String directLookupHeader, String fallbackWorkRows) {
-		Matcher accessRows = Pattern.compile("plannedAccessRows=([^,)]*)").matcher(directLookupHeader);
-		return accessRows.find() ? parsePlanRows(accessRows.group(1)) : parsePlanRows(fallbackWorkRows);
+	private static double directLookupAccessRows(String directLookupHeader) {
+		double accessRows = metricRows(directLookupHeader, "plannedAccessRows");
+		if (!Double.isNaN(accessRows)) {
+			return accessRows;
+		}
+		return metricRows(directLookupHeader, "plannedCardinalityRows");
 	}
 
 	private static void assertPredicateLookupWorkRowsBelow(String plan, String predicateIri, double maxWorkRows) {
@@ -3590,14 +3780,17 @@ class LmdbThemeQueryRegressionIT {
 		double largestWorkRows = Double.NEGATIVE_INFINITY;
 		String largestPattern = "";
 		for (String pattern : patterns) {
-			double workRows = metricRows(pattern, "plannedWorkRows");
+			double workRows = metricRows(pattern, "plannedCostWorkRows");
+			if (Double.isNaN(workRows)) {
+				workRows = metricRows(pattern, "plannedWorkRows");
+			}
 			if (!Double.isNaN(workRows) && workRows > largestWorkRows) {
 				largestWorkRows = workRows;
 				largestPattern = pattern;
 			}
 		}
 		if (largestPattern.isEmpty()) {
-			throw new AssertionError("Expected plannedWorkRows for predicate `" + predicateIri + "` in:\n"
+			throw new AssertionError("Expected planner-used work rows for predicate `" + predicateIri + "` in:\n"
 					+ patterns + "\nFull plan:\n" + plan);
 		}
 		if (largestWorkRows < minWorkRows) {
@@ -3623,7 +3816,8 @@ class LmdbThemeQueryRegressionIT {
 		if (!Double.isNaN(accessRows)) {
 			return accessRows;
 		}
-		return metricRows(header, "plannedWorkRows");
+		double costWorkRows = metricRows(header, "plannedCostWorkRows");
+		return !Double.isNaN(costWorkRows) ? costWorkRows : metricRows(header, "plannedWorkRows");
 	}
 
 	private static double metricRows(String value, String metricName) {
@@ -3687,6 +3881,9 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	private record OptimizerSnapshot(String plan, String renderedQuery) {
+	}
+
+	private record QueryResultSummary(long rowCount, Long countBindingValue) {
 	}
 
 	private record ShapeAnchor(Theme theme, int queryIndex, String first, String second) {

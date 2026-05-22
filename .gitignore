@@ -60,3 +60,4 @@ e2e/test-results
 /.m2_repo_linux_j26/
 /core/sail/lmdb/persistent-lmdb-theme-store/
 /persistent-lmdb-theme-store/
+papers/

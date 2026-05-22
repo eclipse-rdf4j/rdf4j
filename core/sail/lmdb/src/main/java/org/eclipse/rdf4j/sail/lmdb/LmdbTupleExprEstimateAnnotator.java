@@ -16,6 +16,8 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -290,6 +293,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 				? currentWorkOrCombinedChildren(node)
 				: add(nodeWorkRows(node.getLeftArg()), nodeWorkRows(node.getRightArg()));
 		String source = sourceForExistingPlan(node, LMDB_SYNTHETIC);
+		if (stampFusedCostEstimate(node, externalBoundVars(node), externalPrefixRows(node),
+				isNestedInvocation(node))) {
+			return;
+		}
 		LmdbOperatorFeedbackStats.OperatorEstimate feedback = operatorFeedbackEstimate(node,
 				nodeRows(node.getLeftArg()), nodeRows(node.getRightArg()), rows, workRows, source);
 		if (feedback != null) {
@@ -304,7 +311,8 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	public void meet(LeftJoin node) {
 		node.getLeftArg().visit(this);
 		double leftRows = nodeRows(node.getLeftArg());
-		markOptionalRightInvocations(node.getRightArg(), leftRows);
+		markOptionalRightInvocations(node.getRightArg(), leftRows,
+				plannerBindingNames(node.getLeftArg().getBindingNames()));
 		node.getRightArg().visit(this);
 		double matchedRows = optionalMatchedRows(node);
 		double finiteLeftRows = finiteDerivedOptionalLeftRows(node.getRightArg());
@@ -322,6 +330,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 				? Math.max(leftRows, matchedRows)
 				: finiteOr(matchedRows, leftRows);
 		double workRows = add(nodeWorkRows(node.getLeftArg()), nodeWorkRows(node.getRightArg()));
+		if (stampFusedCostEstimate(node, externalBoundVars(node), externalPrefixRows(node),
+				isNestedInvocation(node))) {
+			return;
+		}
 		LmdbOperatorFeedbackStats.OperatorEstimate feedback = operatorFeedbackEstimate(node, leftRows,
 				nodeRows(node.getRightArg()), rows, workRows, source);
 		if (feedback != null) {
@@ -332,12 +344,39 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		stampEstimate(node, rows, workRows, source);
 	}
 
-	private void markOptionalRightInvocations(TupleExpr rightArg, double leftRows) {
-		if (!isFiniteNonNegative(leftRows) || leftRows <= 1.0d) {
+	private void markOptionalRightInvocations(TupleExpr rightArg, double leftRows, Set<String> boundNames) {
+		if (!isFiniteNonNegative(leftRows) || leftRows <= 1.0d || boundNames.isEmpty()) {
 			return;
 		}
-		StatementPattern pattern = singleStatementPattern(rightArg);
-		if (pattern == null) {
+		if (rightArg instanceof StatementPattern pattern) {
+			markOptionalPatternInvocations(pattern, leftRows, boundNames);
+			return;
+		}
+		if (rightArg instanceof Filter filter) {
+			markOptionalRightInvocations(filter.getArg(), leftRows, boundNames);
+			return;
+		}
+		if (rightArg instanceof Extension extension) {
+			markOptionalRightInvocations(extension.getArg(), leftRows, boundNames);
+			return;
+		}
+		if (rightArg instanceof Union union) {
+			markOptionalRightInvocations(union.getLeftArg(), leftRows, boundNames);
+			markOptionalRightInvocations(union.getRightArg(), leftRows, boundNames);
+			return;
+		}
+		if (rightArg instanceof Join join && !TupleExprs.isVariableScopeChange(rightArg)) {
+			markOptionalRightInvocations(join.getLeftArg(), leftRows, boundNames);
+			Set<String> rightBoundNames = new HashSet<>(boundNames);
+			rightBoundNames.addAll(plannerBindingNames(join.getLeftArg().getBindingNames()));
+			markOptionalRightInvocations(join.getRightArg(), leftRows, rightBoundNames);
+		}
+	}
+
+	private void markOptionalPatternInvocations(StatementPattern pattern, double leftRows, Set<String> boundNames) {
+		Set<String> patternNames = plannerBindingNames(pattern.getBindingNames());
+		if (Collections.disjoint(patternNames, boundNames)
+				|| !LmdbJoinPlanSupport.isBoundLookupPattern(pattern, boundNames)) {
 			return;
 		}
 		double repeatedInvocations = pattern.getDoubleMetricPlanned("plannedRepeatedInvocations");
@@ -368,6 +407,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		node.getRightArg().visit(this);
 		double rows = add(nodeRows(node.getLeftArg()), nodeRows(node.getRightArg()));
 		double workRows = add(nodeWorkRows(node.getLeftArg()), nodeWorkRows(node.getRightArg()));
+		if (stampFusedCostEstimate(node, externalBoundVars(node), externalPrefixRows(node),
+				isNestedInvocation(node))) {
+			return;
+		}
 		LmdbOperatorFeedbackStats.OperatorEstimate feedback = operatorFeedbackEstimate(node,
 				nodeRows(node.getLeftArg()), nodeRows(node.getRightArg()), rows, workRows, LMDB_SYNTHETIC);
 		if (feedback != null) {
@@ -385,6 +428,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		double rows = finiteOr(node.getResultSizeEstimate(), nodeRows(node.getLeftArg()));
 		double workRows = add(nodeWorkRows(node.getLeftArg()), nodeWorkRows(node.getRightArg()));
 		String source = sourceForExistingPlan(node, LMDB_SYNTHETIC);
+		if (stampFusedCostEstimate(node, externalBoundVars(node), externalPrefixRows(node),
+				isNestedInvocation(node))) {
+			return;
+		}
 		LmdbOperatorFeedbackStats.OperatorEstimate feedback = operatorFeedbackEstimate(node,
 				nodeRows(node.getLeftArg()), nodeRows(node.getRightArg()), rows, workRows, source);
 		if (feedback != null) {
@@ -497,7 +544,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		double chargedWorkRows = repeatedInvocations * Math.max(1.0d, perInvocationWorkRows);
 		double lookupDomainOutputRows = node.getDoubleMetricPlanned("plannedLookupDomainAverageOutputRows");
 		if (isFiniteNonNegative(lookupDomainOutputRows)) {
-			chargedWorkRows = Math.max(chargedWorkRows, lookupDomainOutputRows + repeatedInvocations);
+			chargedWorkRows = Math.max(chargedWorkRows, Math.max(lookupDomainOutputRows, repeatedInvocations));
 		}
 		if (!isFiniteNonNegative(chargedWorkRows)) {
 			return workRows;
@@ -787,9 +834,93 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		}
 	}
 
+	private boolean stampFusedCostEstimate(TupleExpr node, Set<String> boundVars, double outerPrefixRows,
+			boolean nestedInvocation) {
+		if (!hasSelectedPlannerOperatorFeedback(node)) {
+			return false;
+		}
+		if (!(statistics instanceof JoinFactorCostModel costModel)) {
+			return false;
+		}
+		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(node,
+				JoinFactorCostModel.CostContext.of(boundVars, outerPrefixRows, Double.NaN, nestedInvocation));
+		if (estimate.isEmpty()) {
+			return false;
+		}
+		JoinFactorCostModel.FactorCostEstimate factorEstimate = estimate.get();
+		String fusion = factorEstimate.getStringMetrics().get("plannedEstimateFusion");
+		if (!"operator_feedback".equals(fusion)) {
+			return false;
+		}
+		copyEstimateMetrics(node, factorEstimate);
+		String source = factorEstimate.getStringMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, LMDB_SYNTHETIC);
+		stampEstimate(node, factorEstimate.getOutputRows(), factorEstimate.getWorkRows(), source, true);
+		return true;
+	}
+
+	private boolean hasSelectedPlannerOperatorFeedback(TupleExpr node) {
+		return hasPlannerEstimateUsage(node)
+				&& "operator_feedback".equals(node.getStringMetricPlanned("plannedEstimateFusion"));
+	}
+
+	private boolean hasPlannerEstimateUsage(TupleExpr node) {
+		String usage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return usage != null && !usage.isEmpty()
+				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
+	}
+
+	private void copyEstimateMetrics(TupleExpr node, JoinFactorCostModel.FactorCostEstimate estimate) {
+		for (Map.Entry<String, String> entry : estimate.getStringMetrics().entrySet()) {
+			node.setStringMetricPlanned(entry.getKey(), entry.getValue());
+		}
+		for (Map.Entry<String, Double> entry : estimate.getDoubleMetrics().entrySet()) {
+			node.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
+		}
+	}
+
+	private Set<String> externalBoundVars(TupleExpr node) {
+		QueryModelNode child = node;
+		QueryModelNode parent = node.getParentNode();
+		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
+				&& !TupleExprs.isVariableScopeChange((TupleExpr) parent)) {
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
+			return plannerBindingNames(leftJoin.getLeftArg().getBindingNames());
+		}
+		if (parent instanceof Join join && join.getRightArg() == child) {
+			return plannerBindingNames(join.getLeftArg().getBindingNames());
+		}
+		return Set.of();
+	}
+
+	private double externalPrefixRows(TupleExpr node) {
+		QueryModelNode child = node;
+		QueryModelNode parent = node.getParentNode();
+		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
+				&& !TupleExprs.isVariableScopeChange((TupleExpr) parent)) {
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
+			return nodeRows(leftJoin.getLeftArg());
+		}
+		if (parent instanceof Join join && join.getRightArg() == child) {
+			return nodeRows(join.getLeftArg());
+		}
+		return Double.NaN;
+	}
+
+	private boolean isNestedInvocation(TupleExpr node) {
+		return isFiniteNonNegative(externalPrefixRows(node));
+	}
+
 	private LmdbOperatorFeedbackStats.OperatorEstimate operatorFeedbackEstimate(TupleExpr node, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows, String source) {
-		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)
+		if (!hasSelectedPlannerOperatorFeedback(node)
+				|| !(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)
 				|| !canApplyOperatorFeedback(node, source)) {
 			return null;
 		}
@@ -803,10 +934,12 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (LEARNED_OPERATOR.equals(source) || LEARNED_LEFT_JOIN_SURFACE.equals(source)) {
 			return false;
 		}
-		if (LMDB_LEFT_JOIN_SURFACE.equals(source)
-				|| source.startsWith("exact")
+		if (source.startsWith("exact")
 				|| source.contains("finite")) {
 			return false;
+		}
+		if (LMDB_LEFT_JOIN_SURFACE.equals(source)) {
+			return node instanceof LeftJoin;
 		}
 		return !containsEstimateSource(node, LMDB_FINITE_BINDING_LOOKUP)
 				&& !containsEstimateSource(node, LMDB_FINITE_DERIVED_SURFACE)

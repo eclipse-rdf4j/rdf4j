@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -54,10 +55,10 @@ final class LmdbOperatorFeedbackStats {
 	static final String LEARNED_LEFT_JOIN_SURFACE = "learned_left_join_surface";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
-	private static final int PERSIST_VERSION = 1;
+	private static final int PERSIST_VERSION = 2;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
-	private static final double MAX_CORRECTION_RATIO = 10_000.0d;
+	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 
 	private final Path estimatorPath;
@@ -85,7 +86,7 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	void recordCompletedQuery(TupleExpr root) {
-		if (root == null || !isCompleted(root)) {
+		if (root == null || !isCompleted(root) || containsSlice(root)) {
 			return;
 		}
 		List<TupleExpr> operators = new ArrayList<>();
@@ -99,12 +100,16 @@ final class LmdbOperatorFeedbackStats {
 			}
 		});
 		for (TupleExpr operator : operators) {
-			recordOperatorOutcome(operator);
+			recordOperatorOutcome(operator, true);
 		}
 	}
 
 	synchronized void recordOperatorOutcome(TupleExpr node) {
-		if (!isSupportedOperator(node) || !isCompleted(node)) {
+		recordOperatorOutcome(node, false);
+	}
+
+	private synchronized void recordOperatorOutcome(TupleExpr node, boolean completedRoot) {
+		if (!isSupportedOperator(node) || !(completedRoot ? isObservedInCompletedRoot(node) : isCompleted(node))) {
 			return;
 		}
 		OperatorKey key = keyFor(node);
@@ -130,7 +135,8 @@ final class LmdbOperatorFeedbackStats {
 		if (counts == null || counts.sampleCount <= 0L) {
 			return null;
 		}
-		OperatorEstimate estimate = counts.estimate(node, leftRows, rightRows, baseRows, baseWorkRows);
+		OperatorEstimate estimate = counts.estimate(node, leftRows, rightRows, baseRows, baseWorkRows,
+				key.toString());
 		if (estimate == null || !isFiniteNonNegative(estimate.rows()) || !isFiniteNonNegative(estimate.workRows())) {
 			return null;
 		}
@@ -313,6 +319,39 @@ final class LmdbOperatorFeedbackStats {
 		return hasNextCalls >= 0L && hasNextTrueCalls >= 0L && hasNextCalls > hasNextTrueCalls;
 	}
 
+	private static boolean isObservedInCompletedRoot(TupleExpr node) {
+		if (isCompleted(node)) {
+			return true;
+		}
+		if (!isFiniteNonNegative(actualRows(node))) {
+			return false;
+		}
+		long hasNextCalls = node.getHasNextCallCountActual();
+		long hasNextTrueCalls = node.getHasNextTrueCountActual();
+		if (hasNextCalls >= 0L && hasNextTrueCalls >= 0L && hasNextCalls < hasNextTrueCalls) {
+			return false;
+		}
+		long closeCount = node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
+		double plannedRepeatedInvocations = node.getDoubleMetricPlanned(PLANNED_REPEATED_INVOCATIONS);
+		return !isFiniteNonNegative(plannedRepeatedInvocations)
+				|| plannedRepeatedInvocations <= 1.0d
+				|| closeCount <= 0L
+				|| closeCount >= Math.max(1L, Math.round(plannedRepeatedInvocations));
+	}
+
+	private static boolean containsSlice(TupleExpr node) {
+		if (node instanceof Slice) {
+			return true;
+		}
+		if (node instanceof UnaryTupleOperator unary) {
+			return containsSlice(unary.getArg());
+		}
+		if (node instanceof BinaryTupleOperator binary) {
+			return containsSlice(binary.getLeftArg()) || containsSlice(binary.getRightArg());
+		}
+		return false;
+	}
+
 	private void evictOldestIfNeeded() {
 		while (learnedByOperator.size() > MAX_ENTRIES) {
 			var iterator = learnedByOperator.keySet().iterator();
@@ -338,6 +377,18 @@ final class LmdbOperatorFeedbackStats {
 			Set<String> rightBindings = plannerBindingNames(binary.getRightArg().getBindingNames());
 			Set<String> sharedBindings = new HashSet<>(leftBindings);
 			sharedBindings.retainAll(rightBindings);
+			if (node instanceof Join) {
+				Set<String> allBindings = plannerBindingNames(node.getBindingNames());
+				return new OperatorKey(operatorType, fingerprint, sortedBindings(allBindings), "", "");
+			}
+			if (node instanceof Union) {
+				List<String> branchBindings = new ArrayList<>(2);
+				branchBindings.add(sortedBindings(leftBindings));
+				branchBindings.add(sortedBindings(rightBindings));
+				Collections.sort(branchBindings);
+				return new OperatorKey(operatorType, fingerprint, String.join(";", branchBindings), "",
+						sortedBindings(plannerBindingNames(node.getBindingNames())));
+			}
 			return new OperatorKey(operatorType, fingerprint, sortedBindings(leftBindings),
 					sortedBindings(rightBindings), sortedBindings(sharedBindings));
 		}
@@ -364,10 +415,20 @@ final class LmdbOperatorFeedbackStats {
 			return "FILTER" + scope + "|arg=" + tupleExprKey(filter.getArg())
 					+ "|condition=" + valueExprKey(filter.getCondition());
 		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
+			return "JOIN|factors=" + joinedJoinSurfaceFactors(join);
+		}
 		if (tupleExpr instanceof LeftJoin leftJoin) {
 			return "LEFT_JOIN" + scope + "|left=" + tupleExprKey(leftJoin.getLeftArg())
 					+ "|right=" + tupleExprKey(leftJoin.getRightArg())
 					+ "|condition=" + valueExprKey(leftJoin.getCondition());
+		}
+		if (tupleExpr instanceof Union union) {
+			List<String> branchKeys = new ArrayList<>(2);
+			branchKeys.add(tupleExprKey(union.getLeftArg()));
+			branchKeys.add(tupleExprKey(union.getRightArg()));
+			Collections.sort(branchKeys);
+			return "UNION" + scope + "|branches=" + String.join(";", branchKeys);
 		}
 		if (tupleExpr instanceof BinaryTupleOperator binary) {
 			return tupleExpr.getClass().getSimpleName().toUpperCase() + scope
@@ -380,6 +441,22 @@ final class LmdbOperatorFeedbackStats {
 		}
 		return tupleExpr.getClass().getSimpleName() + scope + "|signature="
 				+ normalize(tupleExpr.getSignature());
+	}
+
+	private String joinedJoinSurfaceFactors(Join join) {
+		List<String> factorKeys = new ArrayList<>();
+		addJoinSurfaceFactors(join, factorKeys);
+		Collections.sort(factorKeys);
+		return String.join(";", factorKeys);
+	}
+
+	private void addJoinSurfaceFactors(TupleExpr tupleExpr, List<String> factorKeys) {
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
+			addJoinSurfaceFactors(join.getLeftArg(), factorKeys);
+			addJoinSurfaceFactors(join.getRightArg(), factorKeys);
+			return;
+		}
+		factorKeys.add(tupleExprKey(tupleExpr));
 	}
 
 	private int bindingSetCount(BindingSetAssignment assignment) {
@@ -497,9 +574,7 @@ final class LmdbOperatorFeedbackStats {
 			return baseRows * Math.max(0.0d, 1.0d - confidence);
 		}
 		double boundedLearnedRows = clampRowsByBase(learnedRows, baseRows);
-		double logBase = Math.log(Math.max(1.0e-9d, baseRows));
-		double logLearned = Math.log(Math.max(1.0e-9d, boundedLearnedRows));
-		return Math.exp((logBase * (1.0d - confidence)) + (logLearned * confidence));
+		return (baseRows * Math.max(0.0d, 1.0d - confidence)) + (boundedLearnedRows * confidence);
 	}
 
 	private static double confidence(long sampleCount) {
@@ -525,7 +600,8 @@ final class LmdbOperatorFeedbackStats {
 		return new String(bytes, StandardCharsets.UTF_8);
 	}
 
-	record OperatorEstimate(double rows, double workRows, String source, long evidenceCount, double confidence) {
+	record OperatorEstimate(double rows, double workRows, String source, long evidenceCount, double confidence,
+			String feedbackKey) {
 	}
 
 	private record OperatorObservation(double plannedRows, double plannedWorkRows, double actualRows, double leftRows,
@@ -577,7 +653,7 @@ final class LmdbOperatorFeedbackStats {
 		}
 
 		OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
-				double baseWorkRows) {
+				double baseWorkRows, String feedbackKey) {
 			double learnedRows;
 			double learnedWorkRows;
 			if (node instanceof LeftJoin) {
@@ -606,7 +682,8 @@ final class LmdbOperatorFeedbackStats {
 				rows = Math.max(leftRows, rows);
 			}
 			String source = node instanceof LeftJoin ? LEARNED_LEFT_JOIN_SURFACE : LEARNED_OPERATOR;
-			return new OperatorEstimate(rows, Math.max(rows, workRows), source, sampleCount, confidence);
+			return new OperatorEstimate(rows, Math.max(rows, workRows), source, sampleCount, confidence,
+					feedbackKey);
 		}
 
 		private double estimateJoinRows(double leftRows, double baseRows) {

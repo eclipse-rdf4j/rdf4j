@@ -123,6 +123,30 @@ public final class TelemetryMetricNames {
 	public static final String PLANNED_FILTER_EVIDENCE_COUNT = "plannedFilterEvidenceCount";
 	public static final String PLANNED_FILTER_CONFIDENCE = "plannedFilterConfidence";
 	public static final String PLANNED_ESTIMATE_SOURCE = "plannedEstimateSource";
+	public static final String PLANNED_ESTIMATE_USAGE = "plannedEstimateUsage";
+	public static final String PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE = "join_order_candidate";
+	public static final String PLANNED_ESTIMATE_USAGE_ALTERNATIVE_RANKING = "alternative_ranking";
+	public static final String PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED = "explain_recomputed";
+	public static final String PLANNED_ESTIMATE_DECISION_ID = "plannedEstimateDecisionId";
+	public static final String PLANNED_CARDINALITY_SHAPE = "plannedCardinalityShape";
+	public static final String PLANNED_CARDINALITY_ROWS = "plannedCardinalityRows";
+	public static final String PLANNED_CARDINALITY_LOWER = "plannedCardinalityLower";
+	public static final String PLANNED_CARDINALITY_UPPER = "plannedCardinalityUpper";
+	public static final String PLANNED_CARDINALITY_CONFIDENCE = "plannedCardinalityConfidence";
+	public static final String PLANNED_COST_SHAPE = "plannedCostShape";
+	public static final String PLANNED_COST_WORK_ROWS = "plannedCostWorkRows";
+	public static final String PLANNED_COST_LOOKUP_PROBES = "plannedCostLookupProbes";
+	public static final String PLANNED_COST_SCAN_ROWS = "plannedCostScanRows";
+	public static final String PLANNED_COST_RHS_PROBES = "plannedCostRhsProbes";
+	public static final String PLANNED_COST_MATERIALIZATION_ROWS = "plannedCostMaterializationRows";
+	public static final String PLANNED_COST_FANOUT = "plannedCostFanout";
+	public static final String PLANNED_COST_MEMORY_PRESSURE = "plannedCostMemoryPressure";
+	public static final String PLANNED_COST_BRANCH_WORK = "plannedCostBranchWork";
+	public static final String PLANNED_COST_FINAL_ROWS = "plannedCostFinalRows";
+	public static final String PLANNED_COST_MAX_INTERMEDIATE_ROWS = "plannedCostMaxIntermediateRows";
+	public static final String PLANNED_COST_UNCERTAINTY_ROWS = "plannedCostUncertaintyRows";
+	public static final String PLANNED_COST_CARTESIAN_WORK_ROWS = "plannedCostCartesianWorkRows";
+	public static final String PLANNED_OBJECTIVE_SCORE = "plannedObjectiveScore";
 	public static final String PLANNED_UNCERTAINTY_ROWS = "plannedUncertaintyRows";
 	public static final String FILTER_SELECTIVITY_SOURCE = "filterSelectivitySource";
 	public static final String PLANNED_INDEX_ACCESS_MODE = "plannedIndexAccessMode";
@@ -168,5 +192,34 @@ public final class TelemetryMetricNames {
 
 	public static boolean isOptimizerMetric(String metricName) {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);
+	}
+
+	public static boolean isPlannerEstimateMetric(String metricName) {
+		if (metricName == null) {
+			return false;
+		}
+		return metricName.equals(PLANNED_ESTIMATE_SOURCE)
+				|| metricName.equals(PLANNED_ESTIMATE_USAGE)
+				|| metricName.equals(PLANNED_ESTIMATE_DECISION_ID)
+				|| metricName.equals(PLANNED_WORK_ROWS)
+				|| metricName.equals(PLANNED_ACCESS_WORK_ROWS)
+				|| metricName.equals(PLANNED_ACCESS_ROWS)
+				|| metricName.equals(PLANNED_ACCESS_ROWS_AFTER_FILTER)
+				|| metricName.equals(PLANNED_UNCERTAINTY_ROWS)
+				|| metricName.equals(FILTER_SELECTIVITY_SOURCE)
+				|| metricName.equals(OPTIMIZER_ESTIMATE_SOURCE)
+				|| metricName.equals(OPTIMIZER_RUNTIME_FEEDBACK)
+				|| metricName.equals(OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE)
+				|| metricName.startsWith("plannedEstimate")
+				|| metricName.startsWith("plannedCardinality")
+				|| metricName.startsWith("plannedCost")
+				|| metricName.startsWith("plannedObjective")
+				|| metricName.startsWith("plannedFilter")
+				|| metricName.startsWith("plannedOperatorFeedback")
+				|| metricName.startsWith("plannedBase")
+				|| metricName.startsWith("plannedPrefix")
+				|| metricName.startsWith("plannedLookupDomain")
+				|| metricName.startsWith("plannedRepeated")
+				|| metricName.startsWith("plannedDistinctLookup");
 	}
 }

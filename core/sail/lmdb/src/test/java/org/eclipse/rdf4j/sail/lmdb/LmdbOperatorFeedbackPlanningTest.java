@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -22,9 +23,14 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -53,6 +59,12 @@ class LmdbOperatorFeedbackPlanningTest {
 			* REVIEWS_PER_PAGE;
 	private static final int EXPECTED_OPTIONAL_UNION_ROWS = EXPECTED_LEFT_JOIN_ROWS
 			+ ORG_COUNT * DEPARTMENTS_PER_ORG * OFFERS_PER_DEPARTMENT;
+	private static final int PERSONS_PER_ORG_WITH_POSITION_GT_2 = 14;
+	private static final int EXPECTED_FILTERED_LEFT_JOIN_ROWS = ORG_COUNT
+			* PERSONS_PER_ORG_WITH_POSITION_GT_2
+			* DEPARTMENTS_PER_ORG
+			* OFFERS_PER_DEPARTMENT
+			* REVIEWS_PER_PAGE;
 
 	@Test
 	void secondPlanUsesLeftJoinOperatorFeedbackForBoundOptionalFanout(@TempDir File dataDir) throws Exception {
@@ -74,10 +86,9 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertTrue(trainedPlan.contains("plannedEstimateSource=learned_operator")
-						|| trainedPlan.contains("plannedEstimateSource=learned_left_join_surface"),
-						"Second plan should apply completed-query operator feedback to the bound OPTIONAL fanout:\n"
-								+ trainedPlan);
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"Second plan should apply completed-query operator feedback through the cost model "
+								+ "to the bound OPTIONAL fanout");
 			}
 		} finally {
 			repository.shutDown();
@@ -104,9 +115,111 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertTrue(trainedPlan.contains("Union")
-						&& trainedPlan.contains("plannedEstimateSource=learned_operator"),
+				assertTrue(trainedPlan.contains("Union"),
+						"Expected OPTIONAL UNION plan to still contain a union surface:\n" + trainedPlan);
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_OPERATOR,
 						"Second plan should apply completed-query operator feedback to the OPTIONAL UNION fanout:\n"
+								+ trainedPlan);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void operatorFeedbackFusionKeepsLearnedFilterSourcesInCostPath(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSparseOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			String query = filteredLeftJoinFanoutQuery();
+			Filter filter = firstFilter(query);
+			store.getBackingStore()
+					.getEvaluationStatistics()
+					.recordFilterOutcome(filter, ORG_COUNT * PERSONS_PER_ORG_WITH_POSITION_GT_2,
+							ORG_COUNT * (PERSONS_PER_ORG - PERSONS_PER_ORG_WITH_POSITION_GT_2));
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(EXPECTED_FILTERED_LEFT_JOIN_ROWS, count(connection, query));
+				connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+
+				String trainedPlan = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"Operator feedback must affect the planned estimate, not only final annotation");
+				assertTrue(containsLearnedFilterEvidence(trainedPlan),
+						"Fused operator estimates must retain learned-filter evidence from the base estimator:\n"
+								+ trainedPlan);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void operatorFeedbackFusionPathReceivesBackgroundSampledAndLearnedFilterSources(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSparseOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			String query = filteredLeftJoinFanoutQuery();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			}
+			Filter filter = firstFilter(query);
+			int sampled = 0;
+			for (int i = 0; i < 5; i++) {
+				sampled += store.getBackingStore().runBackgroundFilterSamplingCycle(5_000L);
+				EvaluationStatistics.FilterPassEstimate estimate = store.getBackingStore()
+						.getEvaluationStatistics()
+						.estimateFilterPass(filter);
+				if (estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED) {
+					break;
+				}
+			}
+			assertTrue(sampled > 0, "Expected background sampler to process the position filter");
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED,
+					store.getBackingStore().getEvaluationStatistics().estimateFilterPass(filter).getSource(),
+					"Expected background sampling to feed the filter estimator before operator-feedback planning");
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String sampledPlan = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+
+				assertTrue(containsSampledFilterEvidence(sampledPlan),
+						"Expected optimized planning to receive background-sampled filter evidence before runtime "
+								+ "learning can supersede it:\n" + sampledPlan);
+
+				assertEquals(EXPECTED_FILTERED_LEFT_JOIN_ROWS, count(connection, query));
+				connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+
+				String trainedPlan = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"Operator feedback must affect the planned estimate, not only final annotation");
+				assertTrue(containsLearnedFilterEvidence(trainedPlan) || containsSampledFilterEvidence(trainedPlan),
+						"Fused operator estimates must retain the strongest available filter evidence from the base "
+								+ "estimator:\n"
 								+ trainedPlan);
 			}
 		} finally {
@@ -148,6 +261,64 @@ class LmdbOperatorFeedbackPlanningTest {
 				"    { ?person <urn:test:operator-feedback:award> ?opt . }",
 				"  }",
 				"}");
+	}
+
+	private static String filteredLeftJoinFanoutQuery() {
+		return String.join("\n",
+				"SELECT (COUNT(*) AS ?count) WHERE {",
+				"  ?person <urn:test:operator-feedback:memberOf> ?org .",
+				"  ?person <urn:test:operator-feedback:position> ?position .",
+				"  FILTER(?position > 2)",
+				"  ?org <urn:test:operator-feedback:department> ?department .",
+				"  ?department <urn:test:operator-feedback:makesOffer> ?offer .",
+				"  ?offer <urn:test:operator-feedback:page> ?page .",
+				"  OPTIONAL {",
+				"    ?page <urn:test:operator-feedback:review> ?review .",
+				"  }",
+				"}");
+	}
+
+	private static void assertFusedOperatorCostPath(String plan, String expectedSource, String message) {
+		assertTrue(plan.contains("plannedEstimateFusion=operator_feedback")
+				&& plan.contains("plannedOperatorFeedbackSource=" + expectedSource),
+				message + ":\n" + plan);
+		assertTrue(plan.contains("plannedEstimateUsage=join_order_candidate"),
+				"Operator feedback must be shown only when it was a selected join-order planner input:\n" + plan);
+		assertTrue(plan.contains("plannedEstimateDecisionId="),
+				"Selected planner estimates must be tied back to the chosen decision:\n" + plan);
+		assertTrue(plan.contains("plannedCardinalityRows="),
+				"Selected planner estimates must expose structured cardinality, not only legacy resultSizeEstimate:\n"
+						+ plan);
+		assertTrue(plan.contains("plannedCostWorkRows=") && plan.contains("plannedObjectiveScore="),
+				"Selected planner estimates must expose structured cost used for ranking:\n" + plan);
+	}
+
+	private static boolean containsLearnedFilterEvidence(String plan) {
+		return plan.contains("filterSelectivitySource=learned_filter")
+				|| plan.contains("plannedBaseFilterSelectivitySources=learned_filter")
+				|| plan.contains("sources={learned_filter=")
+				|| plan.contains("sources={sampled=1, learned_filter=")
+				|| plan.contains("sources={learned_filter=1, sampled=");
+	}
+
+	private static boolean containsSampledFilterEvidence(String plan) {
+		return plan.contains("filterSelectivitySource=sampled")
+				|| plan.contains("plannedBaseFilterSelectivitySources=sampled")
+				|| plan.contains("sources={sampled=");
+	}
+
+	private static Filter firstFilter(String query) {
+		AtomicReference<Filter> filter = new AtomicReference<>();
+		QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null)
+				.getTupleExpr()
+				.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+					@Override
+					public void meet(Filter node) {
+						filter.compareAndSet(null, node);
+						super.meet(node);
+					}
+				});
+		return filter.get();
 	}
 
 	private static void loadSparseOptionalFanout(SailRepository repository) {

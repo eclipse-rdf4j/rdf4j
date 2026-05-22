@@ -91,6 +91,49 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
+	public void converterSuppressesLegacyEstimatesWithoutPlannerUsage() {
+		Join tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setCostEstimate(12.0);
+		tupleExpr.setResultSizeEstimate(34.0);
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr, null,
+				Explanation.Level.Optimized);
+		tupleExpr.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.getCostEstimate()).isNull();
+		assertThat(root.getResultSizeEstimate()).isNull();
+		assertThat(root.toString()).doesNotContain("costEstimate=", "resultSizeEstimate=");
+	}
+
+	@Test
+	public void printerRendersOnlyPlannerUsedCardinalityAndCost() {
+		Join tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setCostEstimate(12.0);
+		tupleExpr.setResultSizeEstimate(34.0);
+		tupleExpr.setStringMetricPlanned("plannedEstimateUsage", "join_order_candidate");
+		tupleExpr.setStringMetricPlanned("plannedEstimateDecisionId", "join-order:abc123");
+		tupleExpr.setStringMetricPlanned("plannedCostShape", "vector");
+		tupleExpr.setDoubleMetricPlanned("plannedCardinalityRows", 34.0);
+		tupleExpr.setDoubleMetricPlanned("plannedCostWorkRows", 12.0);
+		tupleExpr.setDoubleMetricPlanned("plannedObjectiveScore", 13.0);
+
+		String actual = QueryModelTreePrinter.printTree(tupleExpr);
+
+		assertThat(actual).doesNotContain("costEstimate=", "resultSizeEstimate=");
+		assertThat(actual).contains("plannedEstimateUsage=join_order_candidate");
+		assertThat(actual).contains("plannedEstimateDecisionId=join-order:abc123");
+		assertThat(actual).contains("plannedCardinalityRows=34");
+		assertThat(actual).contains("plannedCostShape=vector");
+		assertThat(actual).contains("plannedCostWorkRows=12");
+		assertThat(actual).contains("plannedObjectiveScore=13");
+	}
+
+	@Test
 	public void derivesVariableShapeMetricsFromTupleExprBindingNames() {
 		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		Extension extension = new Extension(statementPattern, new ExtensionElem(Var.of("o"), "derivedVar"));
@@ -312,8 +355,8 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(telemetry.getSourceRowsScannedActual()).isEqualTo(13L);
 		assertThat(rightSubjectVar(telemetry).getStringMetricsActual())
 				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
-		assertThat(telemetry.toString()).contains("sampleCountActual=");
-		assertThat(telemetry.toString()).contains("varianceActual=");
+		assertThat(telemetry.toString()).doesNotContain("sampleCountActual=");
+		assertThat(telemetry.toString()).doesNotContain("varianceActual=");
 	}
 
 	@Test

@@ -55,6 +55,42 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void equivalentJoinSurfaceReusesFeedbackAcrossJoinTreeOrientation(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join observed = leftDeepThreeWayPath();
+		complete(observed, 240_000, 7, 7);
+		observed.setJoinLeftBindingsConsumedActual(8_000);
+		observed.setJoinRightBindingsConsumedActual(240_000);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(rightDeepThreeWayPath(), 8_000,
+				240_000, 7, 7);
+		assertNotNull(estimate, "Feedback for one physical join tree should match the same logical BGP surface");
+		assertTrue(estimate.rows() > 1_000.0d, "Canonical join-surface feedback should remove tiny BGP estimates");
+	}
+
+	@Test
+	void equivalentLeftJoinSurfaceReusesFeedbackAcrossInnerJoinOrientation(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		LeftJoin observed = new LeftJoin(leftDeepThreeWayPath(), sp("o", P1, "review"));
+		complete(observed, 240_000, 7, 7);
+		observed.setJoinLeftBindingsConsumedActual(8_000);
+		observed.setJoinRightBindingsConsumedActual(240_000);
+		observed.setLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL, 8_000);
+		observed.setLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL, 0);
+
+		stats.recordOperatorOutcome(observed);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
+				new LeftJoin(rightDeepThreeWayPath(), sp("o", P1, "review")), 8_000, 240_000, 7, 7);
+		assertNotNull(estimate,
+				"LeftJoin feedback should be keyed by the logical left/RHS surface, not the left BGP nesting");
+		assertTrue(estimate.rows() > 1_000.0d,
+				"Canonical left-join-surface feedback should remove tiny optional estimates");
+	}
+
+	@Test
 	void boundVariableContextChangesKey(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Join observed = join("s", "x", "o");
@@ -66,6 +102,24 @@ class LmdbOperatorFeedbackStatsTest {
 
 		assertNull(stats.estimate(join("s", "y", "o"), 200, 100, 10, 20),
 				"Different shared/bound context must not reuse operator feedback");
+	}
+
+	@Test
+	void completedRootRecordsNestedJoinWithoutTerminalFalse(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		Join nested = join("s", "x", "o");
+		completeWithoutTerminalFalse(nested, 480_000, 8_000, 204_000);
+		nested.setJoinLeftBindingsConsumedActual(480_000);
+		nested.setJoinRightBindingsConsumedActual(480_000);
+		LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+		complete(root, 480_000, 8_000, 204_000);
+
+		stats.recordCompletedQuery(root);
+
+		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(join("s", "x", "o"), 480_000, 480_000,
+				8_000, 204_000);
+		assertNotNull(estimate, "A completed parent query should record fully consumed nested joins");
+		assertTrue(estimate.rows() > 100_000.0d, "Nested join feedback should correct the SPARSE q7 prefix scale");
 	}
 
 	@Test
@@ -148,7 +202,7 @@ class LmdbOperatorFeedbackStatsTest {
 				new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 1, 1, 1, 1);
 		assertNotNull(estimate);
 		assertTrue(estimate.rows() > 1.0d, "Feedback should still move the estimate");
-		assertTrue(estimate.rows() < 10_000.0d, "One extreme run must not dominate without a clamp");
+		assertTrue(estimate.rows() < 100_000.0d, "One extreme run must not dominate without a clamp");
 	}
 
 	private static Path estimatorPath(Path tempDir) throws Exception {
@@ -160,6 +214,14 @@ class LmdbOperatorFeedbackStatsTest {
 
 	private static Join join(String leftSubject, String sharedName, String rightObject) {
 		return new Join(sp(leftSubject, P1, sharedName), sp(sharedName, P2, rightObject));
+	}
+
+	private static Join leftDeepThreeWayPath() {
+		return new Join(new Join(sp("s", P1, "x"), sp("x", P2, "y")), sp("y", P3, "o"));
+	}
+
+	private static Join rightDeepThreeWayPath() {
+		return new Join(sp("s", P1, "x"), new Join(sp("x", P2, "y"), sp("y", P3, "o")));
 	}
 
 	private static StatementPattern sp(String subjectName, IRI predicate, String objectName) {
@@ -184,6 +246,13 @@ class LmdbOperatorFeedbackStatsTest {
 		node.setLongMetricActual(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL, actualRows);
 		node.setLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL, 1);
 		node.setHasNextCallCountActual(actualRows + 1);
+		node.setHasNextTrueCountActual(actualRows);
+	}
+
+	private static void completeWithoutTerminalFalse(TupleExpr node, long actualRows, double plannedRows,
+			double plannedWorkRows) {
+		complete(node, actualRows, plannedRows, plannedWorkRows);
+		node.setHasNextCallCountActual(actualRows);
 		node.setHasNextTrueCountActual(actualRows);
 	}
 }

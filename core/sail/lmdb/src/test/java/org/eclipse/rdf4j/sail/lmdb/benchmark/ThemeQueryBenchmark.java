@@ -70,7 +70,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
+@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
@@ -102,7 +102,7 @@ public class ThemeQueryBenchmark {
 	private static final String COUNT_BINDING_NAME = "count";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
-	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
+	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 300L;
 
 	@Param({
 			"0",
@@ -122,17 +122,20 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA",
+			// "MEDICAL_RECORDS",
+			// "SOCIAL_MEDIA",
+			// "LIBRARY",
+			// "ENGINEERING",
+			// "HIGHLY_CONNECTED",
+			// "TRAIN",
+			// "ELECTRICAL_GRID",
+			// "PHARMA",
 			"SPARSE"
 	})
 	public String themeName;
+
+	@Param({ "true" })
+	public boolean sketchEstimatorEnabled;
 
 	private SailRepository repository;
 	private LmdbStore store;
@@ -167,7 +170,7 @@ public class ThemeQueryBenchmark {
 		if (!storeDirectory.exists() && !storeDirectory.mkdirs()) {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 		}
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = createStoreConfig();
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
@@ -176,6 +179,51 @@ public class ThemeQueryBenchmark {
 			captureQueryPlanSnapshot();
 		}
 
+		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("\n### Optimized Query - Before running the query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+		}
+
+	}
+
+	@TearDown(Level.Trial)
+	public void tearDown() {
+//		if (previousJoinOrderStrategy != null) {
+//			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = previousJoinOrderStrategy;
+//			previousJoinOrderStrategy = null;
+//		}
+
+		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Optimized Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Telemetry Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+		}
+		if (repository != null) {
+			repository.shutDown();
+			repository = null;
+		}
+		store = null;
+		storeConfig = null;
+//		restoreBenchmarkEstimatorProperties();
 	}
 
 	@Benchmark
@@ -277,6 +325,9 @@ public class ThemeQueryBenchmark {
 	}
 
 	private void waitForSketchesIfEnabled() throws IOException {
+		if (!sketchEstimatorEnabled) {
+			return;
+		}
 		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "true"))) {
 			return;
 		}
@@ -298,7 +349,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + storeDirectory);
 		}
 
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = createStoreConfig();
 		storeConfig.setIterationCacheSyncThreshold(0);
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
@@ -314,6 +365,12 @@ public class ThemeQueryBenchmark {
 
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
+	}
+
+	private LmdbStoreConfig createStoreConfig() {
+		LmdbStoreConfig config = ConfigUtil.createConfig();
+		config.setSketchEstimatorEnabled(sketchEstimatorEnabled);
+		return config;
 	}
 
 	private DbFileSizes readExpectedDbFileSizes() throws IOException {
@@ -394,7 +451,7 @@ public class ThemeQueryBenchmark {
 //			System.out.println("Loading theme dataset: " + theme);
 //			ThemeDataSetGenerator.generate(theme, inserter);
 			for (var themeDataset : Theme.values()) {
-				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.begin(IsolationLevels.NONE);
 
 				System.out.println("Loading theme dataset: " + themeDataset);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
@@ -479,40 +536,6 @@ public class ThemeQueryBenchmark {
 		} catch (ReflectiveOperationException e) {
 			throw new IllegalStateException("Unable to access benchmark evaluation statistics", e);
 		}
-	}
-
-	@TearDown(Level.Trial)
-	public void tearDown() {
-//		if (previousJoinOrderStrategy != null) {
-//			QueryJoinOptimizer.JOIN_ORDER_STRATEGY = previousJoinOrderStrategy;
-//			previousJoinOrderStrategy = null;
-//		}
-
-		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### Optimized Query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				System.out.println(explain);
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-			}
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### Telemetry Query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
-				System.out.println(explain);
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-			}
-		}
-		if (repository != null) {
-			repository.shutDown();
-			repository = null;
-		}
-		store = null;
-		storeConfig = null;
-//		restoreBenchmarkEstimatorProperties();
 	}
 
 	@Test

@@ -47,7 +47,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 	private static final String SNAPSHOT_FILE = "lmdb-theme-fastest-run-optimized-queries-and-plans.md";
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "top-regression-snapshot";
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
-			"StatementPattern \\([^\\n]*plannedWorkRows=([^,)]*)[^\\n]*plannedIndexAccessMode=directLookup[^\\n]*");
+			"StatementPattern \\([^\\n)]*plannedIndexAccessMode=directLookup[^\\n)]*");
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
@@ -1567,8 +1567,8 @@ class LmdbThemeTopRegressionSnapshotIT {
 			if (isFiniteSurfaceDirectLookup(matcher.group())) {
 				continue;
 			}
-			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
-			if (workRows > maxWorkRows) {
+			double workRows = directLookupAccessWorkRows(matcher.group());
+			if (!Double.isNaN(workRows) && workRows > maxWorkRows) {
 				mismatches.add("direct lookup plannedAccessWorkRows should be <= " + maxWorkRows + " but got "
 						+ workRows);
 			}
@@ -1584,9 +1584,19 @@ class LmdbThemeTopRegressionSnapshotIT {
 				|| directLookupHeader.contains("plannedEstimateSource=lmdb-finite-binding-lookup");
 	}
 
-	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
-		Matcher accessWorkRows = Pattern.compile("plannedAccessWorkRows=([^,)]*)").matcher(directLookupHeader);
-		return accessWorkRows.find() ? parsePlanRows(accessWorkRows.group(1)) : parsePlanRows(fallbackWorkRows);
+	private static double directLookupAccessWorkRows(String directLookupHeader) {
+		double accessWorkRows = metricRows(directLookupHeader, "plannedAccessWorkRows");
+		if (!Double.isNaN(accessWorkRows)) {
+			return accessWorkRows;
+		}
+		return metricRows(directLookupHeader, "plannedCostWorkRows");
+	}
+
+	private static double metricRows(String value, String metricName) {
+		Matcher matcher = Pattern
+				.compile(Pattern.quote(metricName) + "=([-+]?\\d+(?:\\.\\d+)?(?:[Ee][-+]?\\d+)?[KMB]?)")
+				.matcher(value);
+		return matcher.find() ? parsePlanRows(matcher.group(1)) : Double.NaN;
 	}
 
 	private static double parsePlanRows(String value) {

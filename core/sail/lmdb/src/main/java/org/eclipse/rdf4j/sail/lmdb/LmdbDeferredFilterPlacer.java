@@ -53,6 +53,13 @@ final class LmdbDeferredFilterPlacer {
 
 	private static final int MAX_MATERIALIZED_BINDING_WINDOW_ROWS = 64;
 	private static final double CORRELATED_ANTI_PROBE_SELECTIVE_FILTER_MAX_PASS_RATIO = 0.50d;
+
+	enum JoinTreeShape {
+		LEFT_DEEP,
+		RIGHT_DEEP,
+		BUSHY
+	}
+
 	private final LmdbUnionFilterDistributor.BranchOptimizer factorOptimizer;
 	private final LmdbUnionFilterDistributor.JoinFactory joinFactory;
 	private final LmdbUnionFilterDistributor.FilterWrapper filterWrapper;
@@ -72,11 +79,18 @@ final class LmdbDeferredFilterPlacer {
 
 	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
 			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps) {
-		return buildSegmentRoot(orderedArgs, filters, boundBeforeSegment, filterPlacementSteps, false);
+		return buildSegmentRoot(orderedArgs, filters, boundBeforeSegment, filterPlacementSteps,
+				JoinTreeShape.LEFT_DEEP);
 	}
 
 	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
 			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps, boolean rightDeepJoinTree) {
+		return buildSegmentRoot(orderedArgs, filters, boundBeforeSegment, filterPlacementSteps,
+				rightDeepJoinTree ? JoinTreeShape.RIGHT_DEEP : JoinTreeShape.LEFT_DEEP);
+	}
+
+	TupleExpr buildSegmentRoot(Deque<TupleExpr> orderedArgs, List<DeferredFilter> filters,
+			Set<String> boundBeforeSegment, Map<Integer, Integer> filterPlacementSteps, JoinTreeShape joinTreeShape) {
 		if (orderedArgs.isEmpty()) {
 			return null;
 		}
@@ -119,7 +133,7 @@ final class LmdbDeferredFilterPlacer {
 		for (SegmentFactor factor : factors) {
 			roots.addLast(factor.tupleExpr);
 		}
-		TupleExpr root = buildJoinRoot(roots, rightDeepJoinTree);
+		TupleExpr root = buildJoinRoot(roots, joinTreeShape);
 		for (DeferredFilter filter : unresolvedFilters) {
 			root = filterWrapper.wrap(root, List.of(filter), "root");
 		}
@@ -1389,14 +1403,21 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs) {
-		return buildJoinRoot(orderedArgs, false);
+		return buildJoinRoot(orderedArgs, JoinTreeShape.LEFT_DEEP);
 	}
 
 	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs, boolean rightDeepJoinTree) {
+		return buildJoinRoot(orderedArgs, rightDeepJoinTree ? JoinTreeShape.RIGHT_DEEP : JoinTreeShape.LEFT_DEEP);
+	}
+
+	private TupleExpr buildJoinRoot(Deque<TupleExpr> orderedArgs, JoinTreeShape joinTreeShape) {
 		if (orderedArgs.isEmpty()) {
 			return null;
 		}
-		if (rightDeepJoinTree) {
+		if (joinTreeShape == JoinTreeShape.BUSHY) {
+			return buildBushyJoinRoot(new ArrayList<>(orderedArgs), 0, orderedArgs.size());
+		}
+		if (joinTreeShape == JoinTreeShape.RIGHT_DEEP) {
 			TupleExpr root = orderedArgs.removeLast();
 			while (!orderedArgs.isEmpty()) {
 				root = joinFactory.create(orderedArgs.removeLast(), root);
@@ -1408,6 +1429,16 @@ final class LmdbDeferredFilterPlacer {
 			root = joinFactory.create(root, orderedArgs.removeFirst());
 		}
 		return root;
+	}
+
+	private TupleExpr buildBushyJoinRoot(List<TupleExpr> orderedArgs, int startInclusive, int endExclusive) {
+		if (endExclusive - startInclusive == 1) {
+			return orderedArgs.get(startInclusive);
+		}
+		int split = startInclusive + ((endExclusive - startInclusive) / 2);
+		TupleExpr left = buildBushyJoinRoot(orderedArgs, startInclusive, split);
+		TupleExpr right = buildBushyJoinRoot(orderedArgs, split, endExclusive);
+		return joinFactory.create(left, right);
 	}
 
 	private static final class BindingAssignmentWindow {

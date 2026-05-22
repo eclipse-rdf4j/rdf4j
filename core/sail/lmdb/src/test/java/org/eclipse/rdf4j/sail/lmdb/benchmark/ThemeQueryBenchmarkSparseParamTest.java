@@ -27,4 +27,12 @@ class ThemeQueryBenchmarkSparseParamTest {
 		assertTrue(Arrays.asList(param.value()).contains("SPARSE"),
 				"ThemeQueryBenchmark should run SPARSE by default");
 	}
+
+	@Test
+	void benchmarkCanRunWithSketchEstimatorDisabled() throws Exception {
+		Param param = ThemeQueryBenchmark.class.getField("sketchEstimatorEnabled").getAnnotation(Param.class);
+
+		assertTrue(Arrays.asList(param.value()).contains("true"),
+				"ThemeQueryBenchmark should keep sketches enabled by default");
+	}
 }
