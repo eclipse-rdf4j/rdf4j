@@ -940,6 +940,8 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 
 	private void stampBoundJoinProductEstimate(QueryModelNode node,
 			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate) {
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-bound-join-product");
+		node.setStringMetricPlanned("plannedEstimateFusion", "tuple_sketch_surface_product");
 		node.setDoubleMetricPlanned("plannedBoundJoinProductRows", estimate.productRows());
 		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixRows", estimate.prefixRows());
 		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixSurfaceRows", estimate.prefixSurfaceRows());

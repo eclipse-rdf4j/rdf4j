@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -101,6 +102,44 @@ class LmdbSketchJoinOptimizerAnchorTest {
 		assertNull(service.getStringMetricPlanned("optimizer.optionalRhsAnchoring"));
 	}
 
+	@Test
+	void passesOptionalLeftPrefixFactorsToRightSideCostingWithoutFiniteValues() {
+		StatementPattern orgType = statementPattern("org", "type", "type");
+		StatementPattern personOrg = statementPattern("person", "memberOf", "org");
+		StatementPattern employee = statementPattern("org", "employee", "employee");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(orgType, personOrg), employee));
+		CapturingOptionalRightCostModel statistics = new CapturingOptionalRightCostModel(employee);
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertTrue(statistics.capturedContexts
+				.stream()
+				.anyMatch(context -> context.isNestedIteratorInvocation()
+						&& context.getFiniteBindingValues().isEmpty()
+						&& context.getPrefixFactors().size() == 2),
+				"Expected optional RHS costing to receive left prefix factors without finite VALUES");
+	}
+
+	@Test
+	void passesAssuredPrefixFactorsThroughPriorOptionalToFollowingOptionalRightSide() {
+		StatementPattern orgType = statementPattern("org", "type", "type");
+		StatementPattern personOrg = statementPattern("person", "memberOf", "org");
+		StatementPattern personName = statementPattern("person", "name", "name");
+		StatementPattern employee = statementPattern("org", "employee", "employee");
+		LeftJoin priorOptional = new LeftJoin(new Join(orgType, personOrg), personName);
+		QueryRoot root = new QueryRoot(new LeftJoin(priorOptional, employee));
+		CapturingOptionalRightCostModel statistics = new CapturingOptionalRightCostModel(employee);
+
+		new LmdbSketchJoinOptimizer(statistics, false).optimize(root, null, null);
+
+		assertTrue(statistics.capturedContexts
+				.stream()
+				.anyMatch(context -> context.isNestedIteratorInvocation()
+						&& context.getFiniteBindingValues().isEmpty()
+						&& context.getPrefixFactors().size() == 2),
+				"Expected following OPTIONAL RHS costing to receive assured prefix factors from the prior OPTIONAL left side");
+	}
+
 	private static BindingSetAssignment values(String bindingName, String... values) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
@@ -160,6 +199,32 @@ class LmdbSketchJoinOptimizerAnchorTest {
 					.map(BindingSetAssignment.class::cast)
 					.filter(assignment -> assignment.getBindingNames().contains(bindingName))
 					.count();
+		}
+	}
+
+	private static final class CapturingOptionalRightCostModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private final TupleExpr rightArg;
+		private final List<JoinFactorCostModel.CostContext> capturedContexts = new ArrayList<>();
+
+		private CapturingOptionalRightCostModel(TupleExpr rightArg) {
+			this.rightArg = rightArg;
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d));
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				JoinFactorCostModel.CostContext context) {
+			if (factor == rightArg || factor.equals(rightArg)) {
+				capturedContexts.add(context);
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 10.0d, Map.of(), Map.of()));
 		}
 	}
 }

@@ -2584,7 +2584,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 				List<TupleExpr> prefixFactors = nestedSurfacePrefixFactors();
 				Map<String, Set<Value>> finiteBindingValues = nestedFiniteBindingValues(prefixFactors);
-				if (!finiteBindingValues.isEmpty() && !prefixFactors.isEmpty()) {
+				if (!prefixFactors.isEmpty()) {
 					return costModel.estimateFactorCost(statementPattern, JoinFactorCostModel.CostContext.of(boundVars,
 							repeatedSubplanInvocations, distinctLookupBindings, true, true, finiteBindingValues,
 							prefixFactors));
@@ -2740,6 +2740,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
 				return collectSurfacePrefixFactors(join.getLeftArg(), factors)
 						&& collectSurfacePrefixFactors(join.getRightArg(), factors);
+			}
+			if (tupleExpr instanceof LeftJoin leftJoin && !TupleExprs.isVariableScopeChange(tupleExpr)) {
+				return collectSurfacePrefixFactors(leftJoin.getLeftArg(), factors);
 			}
 			if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(tupleExpr)) {
 				return collectSurfacePrefixFactors(filter.getArg(), factors);

@@ -92,7 +92,6 @@ class LmdbEvaluationStatistics
 	private static final double DUPLICATE_CORRECTION_MIN_MULTIPLIER = 1.25d;
 	private static final String BOUND_JOIN_PRODUCT_SOURCE = "lmdb-bound-join-product";
 	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
-	private static final String SKETCH_PLANNER_TRACE_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
 	private static final AtomicLong ESTIMATE_TRACE_SEQUENCE = new AtomicLong();
 	private static final String FINITE_DERIVED_SURFACE_CACHE_HITS_METRIC = TelemetryMetricNames.OPTIMIZER_PREFIX
 			+ "finiteDerivedSurfaceCacheHits";
@@ -1406,7 +1405,7 @@ class LmdbEvaluationStatistics
 	}
 
 	private static boolean estimateTraceEnabled() {
-		return Boolean.getBoolean(ESTIMATE_TRACE_PROPERTY) || Boolean.getBoolean(SKETCH_PLANNER_TRACE_PROPERTY);
+		return Boolean.getBoolean(ESTIMATE_TRACE_PROPERTY);
 	}
 
 	private String estimateTraceFactor(TupleExpr factor) {

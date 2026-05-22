@@ -37,6 +37,27 @@ if [[ "${OUTPUT}" != *$'# On failure, reruns single-threaded:\nmvn -Dmaven.repo.
 fi
 
 set +e
+NO_BUILD_OUTPUT="$(bash "${SCRIPT}" --dry-run --no-build --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
+NO_BUILD_STATUS=$?
+set -e
+
+echo "${NO_BUILD_OUTPUT}"
+
+if [[ ${NO_BUILD_STATUS} -ne 0 ]]; then
+        exit ${NO_BUILD_STATUS}
+fi
+
+if [[ "${NO_BUILD_OUTPUT}" == *"mvn "* ]]; then
+        echo "Did not expect Maven commands when --no-build is enabled" >&2
+        exit 1
+fi
+
+if [[ "${NO_BUILD_OUTPUT}" != *"java -jar "* ]]; then
+        echo "Expected benchmark command when --no-build is enabled" >&2
+        exit 1
+fi
+
+set +e
 CLEAN_OUTPUT="$(bash "${SCRIPT}" --dry-run --clean --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
 CLEAN_STATUS=$?
 set -e
@@ -94,7 +115,7 @@ if [[ "${JFR_OUTPUT}" != *"-f 1"* ]]; then
         exit 1
 fi
 
-if [[ "${JFR_OUTPUT}" != *"-XX:StartFlightRecording=settings=profile\\,dumponexit=true"* ]]; then
+if [[ "${JFR_OUTPUT}" != *"-XX:StartFlightRecording:settings=profile\\,dumponexit=true"* ]]; then
         echo "Expected JFR run to enable JFR profiling" >&2
         exit 1
 fi

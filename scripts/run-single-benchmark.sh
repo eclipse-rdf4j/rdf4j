@@ -7,6 +7,7 @@ Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodNa
 
 Options:
   --clean                           Force a clean rebuild before packaging
+  --no-build                        Skip Maven packaging and run an existing benchmark jar
   --dry-run                         Print the Maven and JMH commands without executing them
   --warmup-iterations <number>      Number of warmup iterations (default: 1)
   --measurement-iterations <number> Number of measurement iterations (default: 3)
@@ -30,6 +31,7 @@ module=""
 benchmark_class=""
 benchmark_method=""
 clean_build=false
+no_build=false
 dry_run=false
 warmup_iterations=1
 measurement_iterations=3
@@ -55,6 +57,10 @@ while [[ $# -gt 0 ]]; do
         case "$1" in
         --clean)
                 clean_build=true
+                shift
+                ;;
+        --no-build)
+                no_build=true
                 shift
                 ;;
         --module|-m)
@@ -142,6 +148,11 @@ done
 if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
         echo "Error: --module, --class, and --method are required." >&2
         usage >&2
+        exit 1
+fi
+
+if ${clean_build} && ${no_build}; then
+        echo "Error: --clean and --no-build cannot be combined." >&2
         exit 1
 fi
 
@@ -359,21 +370,29 @@ if ${dry_run}; then
                 echo "${jmh_jfr_notice}"
         fi
         jar_path="$(find_benchmark_jar "${module_dir}" false)"
-        print_command "${mvn_cmd_parallel[@]}"
-        echo "# On failure, reruns single-threaded:"
-        print_command "${mvn_cmd_single_threaded[@]}"
+        if ${no_build}; then
+                echo "# Maven packaging skipped by --no-build."
+        else
+                print_command "${mvn_cmd_parallel[@]}"
+                echo "# On failure, reruns single-threaded:"
+                print_command "${mvn_cmd_single_threaded[@]}"
+        fi
         java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
         print_command "${java_cmd[@]}"
         exit 0
 fi
 
-(
-        cd "${REPO_ROOT}"
-        if ! "${mvn_cmd_parallel[@]}"; then
-                echo "Parallel install failed. Retrying single-threaded install..." >&2
-                "${mvn_cmd_single_threaded[@]}"
-        fi
-)
+if ${no_build}; then
+        echo "Maven packaging skipped by --no-build."
+else
+        (
+                cd "${REPO_ROOT}"
+                if ! "${mvn_cmd_parallel[@]}"; then
+                        echo "Parallel install failed. Retrying single-threaded install..." >&2
+                        "${mvn_cmd_single_threaded[@]}"
+                fi
+        )
+fi
 
 if ${enable_jfr_cpu_times}; then
         require_linux_java25_for_cpu_time_jfr
