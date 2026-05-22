@@ -124,6 +124,15 @@ class LmdbThemeQ9EstimateRegressionTest {
 				assertEquals(EXPECTED_FINAL_ROWS, employeePattern.getResultSizeEstimate(),
 						EXPECTED_FINAL_ROWS * 0.25d,
 						"Following employee OPTIONAL estimate should track repeated output rows: " + explanation);
+				assertEquals("lmdb-bound-join-product",
+						employeePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
+						"Following employee OPTIONAL should use duplicate-corrected tuple sketch product even when "
+								+ "earlier OPTIONALs introduced finite binding values: " + explanation);
+				assertEquals(EXPECTED_FINAL_ROWS,
+						employeePattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS),
+						EXPECTED_FINAL_ROWS * 0.25d,
+						"Following employee OPTIONAL planned cardinality should include rows per repeated lookup: "
+								+ explanation);
 				assertTrue(
 						employeePattern.getDoubleMetricPlanned(
 								TelemetryMetricNames.PLANNED_WORK_ROWS) >= EXPECTED_FINAL_ROWS,
