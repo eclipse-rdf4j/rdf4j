@@ -1149,7 +1149,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.estimateExactJoinSurfaceRows(factors, "org")).thenReturn(100.0d);
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
-			assertEquals(4_000.0d, statistics.estimateBoundJoinSurfaceRows(factors, "org"));
+			double expectedHarmonicSurfaceRows = 2.0d * 3_000.0d * 4_000.0d / (3_000.0d + 4_000.0d);
+			assertEquals(expectedHarmonicSurfaceRows, statistics.estimateBoundJoinSurfaceRows(factors, "org"));
 		}
 
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(List.class), any(String.class));
