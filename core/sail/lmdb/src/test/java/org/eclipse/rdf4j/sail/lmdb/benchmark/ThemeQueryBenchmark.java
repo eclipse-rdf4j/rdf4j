@@ -517,6 +517,13 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
+	TupleExpr explainTelemetryTupleExpr() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+			return (TupleExpr) explanation.tupleExpr();
+		}
+	}
+
 	String explainOptimizedPlan() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.prepareTupleQuery(query)

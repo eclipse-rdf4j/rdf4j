@@ -25,9 +25,12 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -888,6 +891,88 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 		assertEquals(1_200.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
 		assertEquals(300.0d, estimate.getDoubleMetrics().get("plannedDistinctLookupBindings"), 0.0d);
+	}
+
+	@Test
+	void estimateTraceIncludesConnectedJoinCostMetrics() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern orgDepartment = new StatementPattern(
+				Var.of("org"),
+				Var.of("p1", vf.createIRI("urn:test:department")),
+				Var.of("department"));
+		StatementPattern departmentOffer = new StatementPattern(
+				Var.of("department"),
+				Var.of("p2", vf.createIRI("urn:test:makesOffer")),
+				Var.of("offer"));
+		StatementPattern offerItem = new StatementPattern(
+				Var.of("offer"),
+				Var.of("p3", vf.createIRI("urn:test:itemOffered")),
+				Var.of("work"));
+		List<TupleExpr> prefixFactors = List.of(orgDepartment, departmentOffer);
+
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(offerItem);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
+				.thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
+				.thenReturn(accessShape);
+		when(estimator.estimateExactConnectedJoin(any())).thenAnswer(invocation -> {
+			List<?> factors = invocation.getArgument(0);
+			if (factors.size() == 2) {
+				return new SketchBasedJoinEstimator.ExactConnectedJoinEstimate(100.0d, 100.0d, 100.0d, 2, 64);
+			}
+			return new SketchBasedJoinEstimator.ExactConnectedJoinEstimate(250.0d, 200.0d, 400.0d, 3, 128);
+		});
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(
+				Set.of("department", "offer", "org"), 100.0d, Double.NaN, true, true, Map.of(), prefixFactors);
+		String previousProperty = System.getProperty("rdf4j.optimizer.lmdb.estimateTrace");
+		PrintStream previousErr = System.err;
+		ByteArrayOutputStream traceBuffer = new ByteArrayOutputStream();
+		System.setProperty("rdf4j.optimizer.lmdb.estimateTrace", "true");
+		System.setErr(new PrintStream(traceBuffer, true, StandardCharsets.UTF_8));
+		JoinFactorCostModel.FactorCostEstimate estimate;
+		try {
+			estimate = statistics.estimateFactorCost(offerItem, context).orElseThrow();
+		} finally {
+			if (previousProperty == null) {
+				System.clearProperty("rdf4j.optimizer.lmdb.estimateTrace");
+			} else {
+				System.setProperty("rdf4j.optimizer.lmdb.estimateTrace", previousProperty);
+			}
+			System.setErr(previousErr);
+		}
+
+		assertEquals("lmdb-connected-join-sample",
+				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		String connectedTrace = traceBuffer.toString(StandardCharsets.UTF_8)
+				.lines()
+				.filter(line -> line.contains("event=select-connected-join"))
+				.findFirst()
+				.orElseThrow();
+		assertTrue(connectedTrace.contains("plannedConnectedJoinRows=250"), connectedTrace);
+		assertTrue(connectedTrace.contains("plannedConnectedJoinWorkRows=400"), connectedTrace);
+		assertTrue(connectedTrace.contains("plannedConnectedJoinPrefixRows=100"), connectedTrace);
+		assertTrue(connectedTrace.contains("plannedConnectedJoinMinRows=200"), connectedTrace);
+		assertTrue(connectedTrace.contains("plannedConnectedJoinMaxRows=400"), connectedTrace);
 	}
 
 	@Test

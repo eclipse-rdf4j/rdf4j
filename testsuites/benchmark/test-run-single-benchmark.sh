@@ -58,6 +58,27 @@ if [[ "${NO_BUILD_OUTPUT}" != *"java -jar "* ]]; then
 fi
 
 set +e
+SKIP_BUILD_OUTPUT="$(bash "${SCRIPT}" --dry-run --skip-build --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
+SKIP_BUILD_STATUS=$?
+set -e
+
+echo "${SKIP_BUILD_OUTPUT}"
+
+if [[ ${SKIP_BUILD_STATUS} -ne 0 ]]; then
+        exit ${SKIP_BUILD_STATUS}
+fi
+
+if [[ "${SKIP_BUILD_OUTPUT}" == *"mvn "* ]]; then
+        echo "Did not expect Maven commands when --skip-build is enabled" >&2
+        exit 1
+fi
+
+if [[ "${SKIP_BUILD_OUTPUT}" != *"java -jar "* ]]; then
+        echo "Expected benchmark command when --skip-build is enabled" >&2
+        exit 1
+fi
+
+set +e
 CLEAN_OUTPUT="$(bash "${SCRIPT}" --dry-run --clean --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
 CLEAN_STATUS=$?
 set -e

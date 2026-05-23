@@ -7,7 +7,7 @@ Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodNa
 
 Options:
   --clean                           Force a clean rebuild before packaging
-  --no-build                        Skip Maven packaging and run an existing benchmark jar
+  --no-build, --skip-build          Skip Maven packaging and run an existing benchmark jar
   --dry-run                         Print the Maven and JMH commands without executing them
   --warmup-iterations <number>      Number of warmup iterations (default: 1)
   --measurement-iterations <number> Number of measurement iterations (default: 3)
@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
                 clean_build=true
                 shift
                 ;;
-        --no-build)
+        --no-build|--skip-build)
                 no_build=true
                 shift
                 ;;

@@ -12,7 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -21,6 +25,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactConnectedJoinEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceRequest;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -33,8 +39,16 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 	static final String EXACT_JOIN_SURFACE_DISTINCT_IDS = "optimizer.exactJoinSurfaceDistinctIds";
 	static final String EXACT_JOIN_SURFACE_PROBE_COUNT = "optimizer.exactJoinSurfaceProbeCount";
 	static final String EXACT_JOIN_SURFACE_INDEX = "optimizer.exactJoinSurfaceIndex";
+	static final String EXACT_CONNECTED_JOIN_SOURCE = "optimizer.exactConnectedJoinSource";
+	static final String EXACT_CONNECTED_JOIN_ANCHORS = "optimizer.exactConnectedJoinAnchors";
+	static final String EXACT_CONNECTED_JOIN_SAMPLES = "optimizer.exactConnectedJoinSamples";
+	static final String EXACT_CONNECTED_JOIN_MIN_ROWS = "optimizer.exactConnectedJoinMinRows";
+	static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
+	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
 
 	private static final long MISSING_ID = Long.MIN_VALUE;
+	private static final int CONNECTED_JOIN_MAX_ENUMERATED_ROWS = 16_384;
+	private static final double CONNECTED_JOIN_MAX_SAMPLE_MATCHES = 1_000_000.0d;
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
@@ -71,6 +85,229 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		}
 	}
 
+	@Override
+	public double estimateJoin(ExactJoinRequest request) {
+		ExactConnectedJoinEstimate estimate = estimateConnectedJoin(request);
+		return estimate.isSupported() ? estimate.rows() : UNSUPPORTED;
+	}
+
+	@Override
+	public ExactConnectedJoinEstimate estimateConnectedJoin(ExactJoinRequest request) {
+		if (request == null || request.patterns() == null || request.patterns()
+				.size() < 2) {
+			return ExactConnectedJoinEstimate.unsupported();
+		}
+		Guard guard = readGuard.acquire();
+		if (guard == null) {
+			return ExactConnectedJoinEstimate.unsupported();
+		}
+		try (guard; Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			ConnectedJoinEstimate estimate = estimateConnectedJoin(txn, request);
+			if (estimate == null) {
+				return ExactConnectedJoinEstimate.unsupported();
+			}
+			recordConnectedTelemetry(request.patterns(), estimate);
+			return new ExactConnectedJoinEstimate(estimate.rows(), estimate.minRows(), estimate.maxRows(),
+					estimate.anchorCount(), estimate.sampleCount());
+		} catch (IOException | RuntimeException e) {
+			return ExactConnectedJoinEstimate.unsupported();
+		}
+	}
+
+	private ConnectedJoinEstimate estimateConnectedJoin(Txn txn, ExactJoinRequest request) throws IOException {
+		List<Double> estimates = new ArrayList<>(request.patterns().size());
+		int anchorCount = 0;
+		int sampleCount = 0;
+		double minRows = Double.POSITIVE_INFINITY;
+		double maxRows = 0.0d;
+		for (int anchorIndex = 0; anchorIndex < request.patterns()
+				.size(); anchorIndex++) {
+			StatementPattern anchor = request.patterns().get(anchorIndex);
+			if (!hasBoundComponent(anchor)) {
+				continue;
+			}
+			RowScan scan = scanRows(txn, anchor, request.rowBudget(), request.sampleSize());
+			if (scan == null) {
+				continue;
+			}
+			if (scan.scannedRows() == 0L) {
+				trace("connected-empty-anchor", request, "anchor=" + anchorIndex + ", index=" + scan.indexName());
+				return new ConnectedJoinEstimate(0.0d, 1, 0, 0.0d, 0.0d);
+			}
+			long[][] samples = scan.samples();
+			if (samples.length == 0) {
+				continue;
+			}
+			double anchorRows = scan.noExactEstimate() ? estimatePatternRows(anchor, null) : scan.scannedRows();
+			if (!Double.isFinite(anchorRows) || anchorRows <= 0.0d) {
+				continue;
+			}
+			List<StatementPattern> remaining = patternsWithoutIndex(request.patterns(), anchorIndex);
+			double sampleRows = 0.0d;
+			boolean unsupported = false;
+			for (long[] sample : samples) {
+				Map<String, Long> bindings = bindingsFromRow(anchor, sample);
+				double rows = countRemainingJoinRows(txn, remaining, bindings);
+				if (!Double.isFinite(rows) || rows < 0.0d) {
+					unsupported = true;
+					break;
+				}
+				sampleRows = saturatingAdd(sampleRows, rows);
+				if (sampleRows > CONNECTED_JOIN_MAX_SAMPLE_MATCHES * samples.length) {
+					unsupported = true;
+					break;
+				}
+			}
+			if (unsupported) {
+				trace("connected-anchor-unsupported", request,
+						"anchor=" + anchorIndex + ", samples=" + samples.length + ", anchorRows=" + anchorRows);
+				continue;
+			}
+			double rows = (sampleRows / samples.length) * anchorRows;
+			if (!Double.isFinite(rows) || rows < 0.0d) {
+				continue;
+			}
+			estimates.add(rows);
+			anchorCount++;
+			sampleCount += samples.length;
+			minRows = Math.min(minRows, rows);
+			maxRows = Math.max(maxRows, rows);
+			trace("connected-anchor-result", request,
+					"anchor=" + anchorIndex + ", rows=" + rows + ", anchorRows=" + anchorRows
+							+ ", samples=" + samples.length + ", sampled=" + scan.noExactEstimate()
+							+ ", index=" + scan.indexName());
+		}
+		if (estimates.isEmpty()) {
+			return null;
+		}
+		Collections.sort(estimates);
+		double rows;
+		int middle = estimates.size() / 2;
+		if ((estimates.size() & 1) == 1) {
+			rows = estimates.get(middle);
+		} else {
+			double left = estimates.get(middle - 1);
+			double right = estimates.get(middle);
+			rows = left > 0.0d && right > 0.0d ? Math.sqrt(left * right) : (left + right) / 2.0d;
+		}
+		trace("connected-result", request,
+				"rows=" + rows + ", anchors=" + anchorCount + ", samples=" + sampleCount
+						+ ", minRows=" + minRows + ", maxRows=" + maxRows);
+		return new ConnectedJoinEstimate(rows, anchorCount, sampleCount, minRows, maxRows);
+	}
+
+	private RowScan scanRows(Txn txn, StatementPattern pattern, long rowBudget, int sampleSize) throws IOException {
+		if (rowBudget <= 0L || sampleSize <= 0) {
+			return null;
+		}
+		PatternIds ids = patternIds(pattern, null, LmdbValue.UNKNOWN_ID, false);
+		if (ids == null) {
+			return null;
+		}
+		if (ids.zeroRows()) {
+			return RowScan.empty();
+		}
+
+		QuadReservoir reservoir = new QuadReservoir(sampleSize, pattern.toString());
+		long scannedRows = 0L;
+		String indexName;
+		try (RecordIterator records = tripleStore.getTriples(txn, ids.subjectId(), ids.predicateId(), ids.objectId(),
+				ids.contextId(), true)) {
+			indexName = records.getIndexName();
+			long[] quad;
+			while ((quad = records.next()) != null) {
+				if (!matchesRepeatedVariables(pattern, quad)) {
+					continue;
+				}
+				scannedRows++;
+				reservoir.add(quad, scannedRows);
+				if (scannedRows > rowBudget) {
+					return new RowScan(reservoir.copy(), scannedRows, indexName, true);
+				}
+			}
+		}
+		return new RowScan(reservoir.copy(), scannedRows, indexName, false);
+	}
+
+	private double countRemainingJoinRows(Txn txn, List<StatementPattern> remaining, Map<String, Long> bindings)
+			throws IOException {
+		if (remaining.isEmpty()) {
+			return 1.0d;
+		}
+		int selected = selectNextPattern(remaining, bindings);
+		if (selected < 0) {
+			return Double.NaN;
+		}
+		StatementPattern pattern = remaining.get(selected);
+		PatternIds ids = patternIds(pattern, bindings);
+		if (ids == null) {
+			return Double.NaN;
+		}
+		if (ids.zeroRows()) {
+			return 0.0d;
+		}
+		List<StatementPattern> nextRemaining = patternsWithoutIndex(remaining, selected);
+		double rows = 0.0d;
+		int enumeratedRows = 0;
+		try (RecordIterator records = tripleStore.getTriples(txn, ids.subjectId(), ids.predicateId(), ids.objectId(),
+				ids.contextId(), true)) {
+			long[] quad;
+			while ((quad = records.next()) != null) {
+				Map<String, Long> nextBindings = mergeBindings(pattern, quad, bindings);
+				if (nextBindings == null) {
+					continue;
+				}
+				double childRows = countRemainingJoinRows(txn, nextRemaining, nextBindings);
+				if (!Double.isFinite(childRows) || childRows < 0.0d) {
+					return Double.NaN;
+				}
+				rows = saturatingAdd(rows, childRows);
+				enumeratedRows++;
+				if (enumeratedRows > CONNECTED_JOIN_MAX_ENUMERATED_ROWS
+						|| rows > CONNECTED_JOIN_MAX_SAMPLE_MATCHES) {
+					return Double.NaN;
+				}
+			}
+		}
+		return rows;
+	}
+
+	private int selectNextPattern(List<StatementPattern> remaining, Map<String, Long> bindings) throws IOException {
+		int selected = -1;
+		double selectedRows = Double.POSITIVE_INFINITY;
+		for (int i = 0; i < remaining.size(); i++) {
+			StatementPattern pattern = remaining.get(i);
+			if (!sharesBinding(pattern, bindings)) {
+				continue;
+			}
+			PatternIds ids = patternIds(pattern, bindings);
+			if (ids == null) {
+				continue;
+			}
+			double rows = ids.zeroRows() ? 0.0d
+					: cardinalitySource.estimateIds(ids.subjectId(), ids.predicateId(), ids.objectId(),
+							ids.contextId());
+			if (!Double.isFinite(rows) || rows < 0.0d) {
+				rows = Double.POSITIVE_INFINITY;
+			}
+			if (selected < 0 || rows < selectedRows) {
+				selected = i;
+				selectedRows = rows;
+			}
+		}
+		return selected;
+	}
+
+	private static List<StatementPattern> patternsWithoutIndex(List<StatementPattern> patterns, int excludedIndex) {
+		List<StatementPattern> remaining = new ArrayList<>(patterns.size() - 1);
+		for (int i = 0; i < patterns.size(); i++) {
+			if (i != excludedIndex) {
+				remaining.add(patterns.get(i));
+			}
+		}
+		return remaining;
+	}
+
 	private Estimate estimatePairwise(Txn txn, ExactJoinSurfaceRequest request) throws IOException {
 		StatementPattern scanPattern = request.scanPattern();
 		StatementPattern probePattern = request.probePattern();
@@ -80,22 +317,28 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		SharedIdScan scan = scanSharedIds(txn, scanPattern, request.scanSharedComponent(), request.sharedVarName(),
 				request.rowBudget(), request.exactDistinctLimit(), request.sampleSize());
 		if (scan == null) {
+			trace("pairwise-scan-null", request, "");
 			return null;
 		}
-		if (scan.noExactEstimate()) {
+		if (scan.noExactEstimate() && scan.samples().length == 0) {
+			trace("pairwise-no-samples", request,
+					"scannedRows=" + scan.scannedRows() + ", distinctIds=" + scan.distinctIds());
 			return noExactEstimate(scan);
 		}
 		if (scan.scannedRows() == 0L) {
+			trace("pairwise-empty-scan", request, "index=" + scan.indexName());
 			return new Estimate(0.0d, 0L, 0, 0L, scan.indexName());
 		}
 
 		double rows = 0.0d;
 		long probeCount = 0L;
-		if (scan.exactCounts() != null) {
+		if (!scan.noExactEstimate() && scan.exactCounts() != null) {
 			MutableEstimate mutable = new MutableEstimate();
 			scan.exactCounts().forEach((id, count) -> {
 				long probeRows = boundRowsById(probePattern, request.sharedVarName(), id);
 				if (probeRows < 0L) {
+					trace("pairwise-exact-probe-unsupported", request,
+							"sharedId=" + id + ", count=" + count);
 					mutable.unsupported = true;
 					return;
 				}
@@ -112,20 +355,52 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			if (samples.length == 0) {
 				return noExactEstimate(scan);
 			}
+			double scanRows = scan.noExactEstimate()
+					? estimatePatternRows(scanPattern, request.sharedVarName())
+					: scan.scannedRows();
+			if (!Double.isFinite(scanRows) || scanRows <= 0.0d) {
+				trace("pairwise-bad-scan-rows", request,
+						"scannedRows=" + scan.scannedRows() + ", estimatedRows=" + scanRows
+								+ ", samples=" + samples.length);
+				return noExactEstimate(scan);
+			}
 			for (long sample : samples) {
 				long probeRows = boundRowsById(probePattern, request.sharedVarName(), sample);
 				if (probeRows < 0L) {
+					trace("pairwise-sampled-probe-unsupported", request,
+							"sharedId=" + sample + ", scanRows=" + scanRows + ", samples=" + samples.length);
 					return null;
 				}
 				rows += probeRows;
 				probeCount++;
 			}
-			rows = (rows / samples.length) * scan.scannedRows();
+			rows = (rows / samples.length) * scanRows;
 		}
 		if (Double.isFinite(request.disconnectedRowCap())) {
 			rows = Math.min(rows, request.disconnectedRowCap());
 		}
-		return new Estimate(rows, scan.scannedRows(), scan.distinctIds(), probeCount, scan.indexName());
+		trace("pairwise-result", request,
+				"rows=" + rows + ", scannedRows=" + scan.scannedRows() + ", distinctIds=" + scan.distinctIds()
+						+ ", probeCount=" + probeCount + ", sampled=" + (scan.exactCounts() == null
+								|| scan.noExactEstimate())
+						+ ", index=" + scan.indexName());
+		return new Estimate(rows, scan.scannedRows(), scan.distinctIds(), probeCount, scan.indexName(),
+				false, scan.exactCounts() == null || scan.noExactEstimate());
+	}
+
+	private double estimatePatternRows(StatementPattern pattern, String sharedVarName) {
+		try {
+			PatternIds ids = patternIds(pattern, sharedVarName, LmdbValue.UNKNOWN_ID, false);
+			if (ids == null) {
+				return -1.0d;
+			}
+			if (ids.zeroRows()) {
+				return 0.0d;
+			}
+			return cardinalitySource.estimateIds(ids.subjectId(), ids.predicateId(), ids.objectId(), ids.contextId());
+		} catch (IOException | RuntimeException e) {
+			return -1.0d;
+		}
 	}
 
 	private Estimate estimateMultiPattern(Txn txn, ExactJoinSurfaceRequest request) throws IOException {
@@ -135,15 +410,20 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			return null;
 		}
 		SharedIdScan scan = scanSharedIds(txn, scanPattern, scanComponent, request.sharedVarName(),
-				request.rowBudget(), request.exactDistinctLimit(), 0);
+				request.rowBudget(), request.exactDistinctLimit(), request.sampleSize());
 		if (scan == null) {
 			return null;
 		}
-		if (scan.noExactEstimate() || scan.exactCounts() == null) {
+		if (scan.noExactEstimate() && scan.samples().length == 0) {
+			trace("multi-no-samples", request,
+					"scannedRows=" + scan.scannedRows() + ", distinctIds=" + scan.distinctIds());
 			return noExactEstimate(scan);
 		}
 		if (scan.scannedRows() == 0L) {
 			return new Estimate(0.0d, 0L, 0, 0L, scan.indexName());
+		}
+		if (scan.noExactEstimate() || scan.exactCounts() == null) {
+			return estimateMultiPatternSampled(scan, request);
 		}
 
 		long[] ids = new long[scan.exactCounts().size()];
@@ -181,6 +461,52 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			rows = saturatingAdd(rows, counts[i]);
 		}
 		return new Estimate(rows, scan.scannedRows(), scan.distinctIds(), probeCount, scan.indexName());
+	}
+
+	private Estimate estimateMultiPatternSampled(SharedIdScan scan, ExactJoinSurfaceRequest request) {
+		long[] samples = scan.samples();
+		if (samples.length == 0) {
+			return noExactEstimate(scan);
+		}
+		double scanRows = scan.noExactEstimate()
+				? estimatePatternRows(request.scanPattern(), request.sharedVarName())
+				: scan.scannedRows();
+		if (!Double.isFinite(scanRows) || scanRows <= 0.0d) {
+			trace("multi-bad-scan-rows", request,
+					"scannedRows=" + scan.scannedRows() + ", estimatedRows=" + scanRows
+							+ ", samples=" + samples.length);
+			return noExactEstimate(scan);
+		}
+
+		double sampledRows = 0.0d;
+		long probeCount = 0L;
+		for (long sample : samples) {
+			double sampleRows = 1.0d;
+			for (StatementPattern pattern : request.patterns()) {
+				if (pattern == request.scanPattern()) {
+					continue;
+				}
+				if (hasRepeatedUnboundVariableOtherThan(pattern, request.sharedVarName())) {
+					return null;
+				}
+				long rows = boundRowsById(pattern, request.sharedVarName(), sample);
+				if (rows < 0L) {
+					trace("multi-sampled-probe-unsupported", request,
+							"sharedId=" + sample + ", scanRows=" + scanRows + ", samples=" + samples.length);
+					return null;
+				}
+				sampleRows = saturatingMultiply(sampleRows, rows);
+				probeCount++;
+			}
+			sampledRows = saturatingAdd(sampledRows, sampleRows);
+		}
+		double rows = (sampledRows / samples.length) * scanRows;
+		trace("multi-sampled-result", request,
+				"rows=" + rows + ", scannedRows=" + scan.scannedRows() + ", estimatedScanRows=" + scanRows
+						+ ", distinctIds=" + scan.distinctIds() + ", probeCount=" + probeCount
+						+ ", samples=" + samples.length + ", index=" + scan.indexName());
+		return new Estimate(rows, scan.scannedRows(), scan.distinctIds(), probeCount, scan.indexName(),
+				false, true);
 	}
 
 	private SharedIdScan scanSharedIds(Txn txn, StatementPattern pattern, Component sharedComponent,
@@ -273,6 +599,26 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		return new PatternIds(subject, predicate, object, context, false);
 	}
 
+	private PatternIds patternIds(StatementPattern pattern, Map<String, Long> bindings) throws IOException {
+		long subject = componentId(pattern.getSubjectVar(), Component.S, bindings);
+		if (subject == MISSING_ID) {
+			return PatternIds.zero();
+		}
+		long predicate = componentId(pattern.getPredicateVar(), Component.P, bindings);
+		if (predicate == MISSING_ID) {
+			return PatternIds.zero();
+		}
+		long object = componentId(pattern.getObjectVar(), Component.O, bindings);
+		if (object == MISSING_ID) {
+			return PatternIds.zero();
+		}
+		long context = componentId(pattern.getContextVar(), Component.C, bindings);
+		if (context == MISSING_ID) {
+			return PatternIds.zero();
+		}
+		return new PatternIds(subject, predicate, object, context, false);
+	}
+
 	private long componentId(Var var, Component component, String sharedVarName, long sharedId, boolean bindShared)
 			throws IOException {
 		if (var == null) {
@@ -296,6 +642,85 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 			return lmdbValue == null ? MISSING_ID : storedId(lmdbValue);
 		}
 		return storedId(value);
+	}
+
+	private long componentId(Var var, Component component, Map<String, Long> bindings) throws IOException {
+		if (var == null) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		if (!var.hasValue()) {
+			Long boundId = bindings == null ? null : bindings.get(var.getName());
+			return boundId == null ? LmdbValue.UNKNOWN_ID : boundId;
+		}
+		Value value = var.getValue();
+		if (component == Component.C && value == null) {
+			return 0L;
+		}
+		if (!compatible(component, value)) {
+			return MISSING_ID;
+		}
+		if (var instanceof LmdbValueVar lmdbVar && lmdbVar.isLmdbValueResolved()) {
+			LmdbValue lmdbValue = lmdbVar.getLmdbValue();
+			return lmdbValue == null ? MISSING_ID : storedId(lmdbValue);
+		}
+		return storedId(value);
+	}
+
+	private static boolean hasBoundComponent(StatementPattern pattern) {
+		return isBound(pattern.getSubjectVar())
+				|| isBound(pattern.getPredicateVar())
+				|| isBound(pattern.getObjectVar())
+				|| isBound(pattern.getContextVar());
+	}
+
+	private static boolean isBound(Var var) {
+		return var != null && var.hasValue();
+	}
+
+	private static boolean sharesBinding(StatementPattern pattern, Map<String, Long> bindings) {
+		if (bindings == null || bindings.isEmpty()) {
+			return false;
+		}
+		for (Var var : pattern.getVarList()) {
+			if (var != null && !var.hasValue() && bindings.containsKey(var.getName())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static Map<String, Long> bindingsFromRow(StatementPattern pattern, long[] quad) {
+		Map<String, Long> bindings = new HashMap<>();
+		addBinding(bindings, pattern.getSubjectVar(), quad[TripleStore.SUBJ_IDX]);
+		addBinding(bindings, pattern.getPredicateVar(), quad[TripleStore.PRED_IDX]);
+		addBinding(bindings, pattern.getObjectVar(), quad[TripleStore.OBJ_IDX]);
+		addBinding(bindings, pattern.getContextVar(), quad[TripleStore.CONTEXT_IDX]);
+		return bindings;
+	}
+
+	private static Map<String, Long> mergeBindings(StatementPattern pattern, long[] quad, Map<String, Long> bindings) {
+		Map<String, Long> merged = new HashMap<>(bindings);
+		if (!addBinding(merged, pattern.getSubjectVar(), quad[TripleStore.SUBJ_IDX])) {
+			return null;
+		}
+		if (!addBinding(merged, pattern.getPredicateVar(), quad[TripleStore.PRED_IDX])) {
+			return null;
+		}
+		if (!addBinding(merged, pattern.getObjectVar(), quad[TripleStore.OBJ_IDX])) {
+			return null;
+		}
+		if (!addBinding(merged, pattern.getContextVar(), quad[TripleStore.CONTEXT_IDX])) {
+			return null;
+		}
+		return merged;
+	}
+
+	private static boolean addBinding(Map<String, Long> bindings, Var var, long id) {
+		if (var == null || var.hasValue()) {
+			return true;
+		}
+		Long previous = bindings.putIfAbsent(var.getName(), id);
+		return previous == null || previous == id;
 	}
 
 	private long storedId(Value value) throws IOException {
@@ -368,13 +793,24 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 	private static void recordTelemetry(List<StatementPattern> patterns, Estimate estimate) {
 		for (StatementPattern pattern : patterns) {
 			pattern.setStringMetricPlanned(EXACT_JOIN_SURFACE_SOURCE,
-					estimate.noExactEstimate() ? "lmdb-id-no-exact" : "lmdb-id");
+					estimate.noExactEstimate() ? "lmdb-id-no-exact"
+							: estimate.sampledEstimate() ? "lmdb-id-sampled" : "lmdb-id");
 			pattern.setLongMetricPlanned(EXACT_JOIN_SURFACE_SCANNED_ROWS, estimate.scannedRows());
 			pattern.setLongMetricPlanned(EXACT_JOIN_SURFACE_DISTINCT_IDS, estimate.distinctIds());
 			pattern.setLongMetricPlanned(EXACT_JOIN_SURFACE_PROBE_COUNT, estimate.probeCount());
 			if (estimate.indexName() != null && !estimate.indexName().isEmpty()) {
 				pattern.setStringMetricPlanned(EXACT_JOIN_SURFACE_INDEX, estimate.indexName());
 			}
+		}
+	}
+
+	private static void recordConnectedTelemetry(List<StatementPattern> patterns, ConnectedJoinEstimate estimate) {
+		for (StatementPattern pattern : patterns) {
+			pattern.setStringMetricPlanned(EXACT_CONNECTED_JOIN_SOURCE, "lmdb-connected-sampled");
+			pattern.setDoubleMetricPlanned(EXACT_CONNECTED_JOIN_ANCHORS, estimate.anchorCount());
+			pattern.setDoubleMetricPlanned(EXACT_CONNECTED_JOIN_SAMPLES, estimate.sampleCount());
+			pattern.setDoubleMetricPlanned(EXACT_CONNECTED_JOIN_MIN_ROWS, estimate.minRows());
+			pattern.setDoubleMetricPlanned(EXACT_CONNECTED_JOIN_MAX_ROWS, estimate.maxRows());
 		}
 	}
 
@@ -389,7 +825,8 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 	}
 
 	private static Estimate noExactEstimate(SharedIdScan scan) {
-		return new Estimate(NO_EXACT_ESTIMATE, scan.scannedRows(), scan.distinctIds(), 0L, scan.indexName(), true);
+		return new Estimate(NO_EXACT_ESTIMATE, scan.scannedRows(), scan.distinctIds(), 0L, scan.indexName(), true,
+				false);
 	}
 
 	@FunctionalInterface
@@ -423,10 +860,80 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 	}
 
 	private record Estimate(double rows, long scannedRows, int distinctIds, long probeCount, String indexName,
-			boolean noExactEstimate) {
+			boolean noExactEstimate, boolean sampledEstimate) {
 		private Estimate(double rows, long scannedRows, int distinctIds, long probeCount, String indexName) {
-			this(rows, scannedRows, distinctIds, probeCount, indexName, false);
+			this(rows, scannedRows, distinctIds, probeCount, indexName, false, false);
 		}
+	}
+
+	private record RowScan(long[][] samples, long scannedRows, String indexName, boolean noExactEstimate) {
+		private static RowScan empty() {
+			return new RowScan(new long[0][], 0L, null, false);
+		}
+	}
+
+	private record ConnectedJoinEstimate(double rows, int anchorCount, int sampleCount, double minRows,
+			double maxRows) {
+	}
+
+	private static final class QuadReservoir {
+		private final long[][] values;
+		private final java.util.Random random;
+		private int size;
+
+		private QuadReservoir(int capacity, String seed) {
+			values = new long[capacity][];
+			random = new java.util.Random(mix64(seed == null ? 0L : seed.hashCode()));
+		}
+
+		private void add(long[] value, long rowNumber) {
+			long[] copy = value.clone();
+			if (size < values.length) {
+				values[size++] = copy;
+				return;
+			}
+			long replacement = random.nextLong(rowNumber);
+			if (replacement < values.length) {
+				values[(int) replacement] = copy;
+			}
+		}
+
+		private long[][] copy() {
+			long[][] copy = new long[size][];
+			System.arraycopy(values, 0, copy, 0, size);
+			return copy;
+		}
+
+		private static long mix64(long value) {
+			value ^= value >>> 33;
+			value *= 0xff51afd7ed558ccdL;
+			value ^= value >>> 33;
+			value *= 0xc4ceb9fe1a85ec53L;
+			value ^= value >>> 33;
+			return value;
+		}
+	}
+
+	private static void trace(String event, ExactJoinSurfaceRequest request, String details) {
+		if (!Boolean.getBoolean(ESTIMATE_TRACE_PROPERTY)) {
+			return;
+		}
+		System.err.println("[lmdb-id-surface-trace] event=" + event
+				+ " shared=" + request.sharedVarName()
+				+ " pairwise=" + request.pairwiseFallback()
+				+ " scan=" + request.scanPattern()
+				+ " probe=" + request.probePattern()
+				+ (details == null || details.isEmpty() ? "" : " details={" + details + "}"));
+	}
+
+	private static void trace(String event, ExactJoinRequest request, String details) {
+		if (!Boolean.getBoolean(ESTIMATE_TRACE_PROPERTY)) {
+			return;
+		}
+		System.err.println("[lmdb-id-surface-trace] event=" + event
+				+ " connected=true patterns=" + request.patterns()
+						.size()
+				+ (details == null || details.isEmpty() ? "" : " details={" + details + "}"));
 	}
 
 	private static final class MutableEstimate {

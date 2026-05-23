@@ -2293,12 +2293,39 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double NO_EXACT_ESTIMATE = -2.0d;
 
 		double estimate(ExactJoinSurfaceRequest request);
+
+		default double estimateJoin(ExactJoinRequest request) {
+			return UNSUPPORTED;
+		}
+
+		default ExactConnectedJoinEstimate estimateConnectedJoin(ExactJoinRequest request) {
+			double rows = estimateJoin(request);
+			if (!Double.isFinite(rows) || rows < 0.0d || rows == NO_EXACT_ESTIMATE) {
+				return ExactConnectedJoinEstimate.unsupported();
+			}
+			return new ExactConnectedJoinEstimate(rows, rows, rows, 1, 0);
+		}
 	}
 
 	public record ExactJoinSurfaceRequest(List<StatementPattern> patterns, String sharedVarName,
 			StatementPattern scanPattern, Component scanSharedComponent, StatementPattern probePattern,
 			Component probeSharedComponent, long rowBudget, int exactDistinctLimit, int sampleSize,
 			double disconnectedRowCap, boolean pairwiseFallback) {
+	}
+
+	public record ExactJoinRequest(List<StatementPattern> patterns, long rowBudget, int sampleSize) {
+	}
+
+	public record ExactConnectedJoinEstimate(double rows, double minRows, double maxRows, int anchorCount,
+			int sampleCount) {
+
+		public static ExactConnectedJoinEstimate unsupported() {
+			return new ExactConnectedJoinEstimate(-1.0d, -1.0d, -1.0d, 0, 0);
+		}
+
+		public boolean isSupported() {
+			return Double.isFinite(rows) && rows >= 0.0d;
+		}
 	}
 
 	@FunctionalInterface
@@ -7877,16 +7904,24 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		double smallerRowsEstimate = Math.min(leftRowsEstimate, rightRowsEstimate);
 		double smallerDistinctEstimate = Math.min(leftDistinctEstimate, rightDistinctEstimate);
 		double largerDistinctEstimate = Math.max(leftDistinctEstimate, rightDistinctEstimate);
-		if (!Double.isFinite(smallerRowsEstimate) || smallerRowsEstimate <= 0.0d
-				|| smallerRowsEstimate > zeroIntersectionRowBudget
-				|| !Double.isFinite(smallerDistinctEstimate) || smallerDistinctEstimate <= 0.0d
-				|| !Double.isFinite(largerDistinctEstimate) || largerDistinctEstimate <= 0.0d) {
+		if (!Double.isFinite(smallerRowsEstimate) || smallerRowsEstimate <= 0.0d) {
 			return null;
 		}
-		boolean exactEligible = smallerDistinctEstimate <= zeroIntersectionExactDistinctLimit;
-		double skewRatio = largerDistinctEstimate / Math.max(1.0d, smallerDistinctEstimate);
-		boolean skewEligible = zeroIntersectionSkewRatio > 0.0d && skewRatio >= zeroIntersectionSkewRatio;
-		if (!exactEligible && !skewEligible) {
+		boolean hasDistinctEstimates = Double.isFinite(smallerDistinctEstimate) && smallerDistinctEstimate > 0.0d
+				&& Double.isFinite(largerDistinctEstimate) && largerDistinctEstimate > 0.0d;
+		boolean exactEligible = hasDistinctEstimates && smallerDistinctEstimate <= zeroIntersectionExactDistinctLimit;
+		double skewRatio = hasDistinctEstimates
+				? largerDistinctEstimate / Math.max(1.0d, smallerDistinctEstimate)
+				: 0.0d;
+		boolean skewEligible = hasDistinctEstimates
+				&& zeroIntersectionSkewRatio > 0.0d
+				&& skewRatio >= zeroIntersectionSkewRatio;
+		boolean sampleEligible = zeroIntersectionSampleSize > 0;
+		boolean smallerExceedsBudget = smallerRowsEstimate > zeroIntersectionRowBudget;
+		if (smallerExceedsBudget && !sampleEligible) {
+			return null;
+		}
+		if (!exactEligible && !skewEligible && !sampleEligible) {
 			return null;
 		}
 
@@ -7905,7 +7940,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		Component probeSharedComponent = scanLeft ? rightSharedComponent : leftSharedComponent;
 		double scanRowsEstimate = scanLeft ? leftRowsEstimate : rightRowsEstimate;
 		if (!Double.isFinite(scanRowsEstimate) || scanRowsEstimate <= 0.0d
-				|| scanRowsEstimate > zeroIntersectionRowBudget) {
+				|| (scanRowsEstimate > zeroIntersectionRowBudget && !sampleEligible)) {
 			return null;
 		}
 
@@ -7923,6 +7958,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			}
 		}
 
+		if (scanRowsEstimate > zeroIntersectionRowBudget) {
+			return null;
+		}
 		SharedVarScan smallerScan = scanSharedVarRows(scanPattern, scanSharedComponent, sharedVarName);
 		if (smallerScan == null || smallerScan.scannedRows == 0L) {
 			return smallerScan == null ? null : 0.0d;
@@ -8371,6 +8409,49 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return exactSurfaceRows == null ? -1.0d : normalizeRows(exactSurfaceRows);
 	}
 
+	public double estimatePairwiseJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		if (!isReady() || prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
+			return -1.0d;
+		}
+
+		TupleExpr singlePrefixJoinFactor = null;
+		int prefixJoinFactorCount = 0;
+		for (TupleExpr prefixFactor : prefixFactors) {
+			if (prefixFactor == null || !prefixFactor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			prefixJoinFactorCount++;
+			singlePrefixJoinFactor = prefixFactor;
+			if (prefixJoinFactorCount > 1) {
+				return -1.0d;
+			}
+		}
+		if (singlePrefixJoinFactor == null) {
+			return -1.0d;
+		}
+
+		TupleSketchStats leftStats = estimateTupleExprForJoinVar(singlePrefixJoinFactor, joinVarName);
+		TupleSketchStats rightStats = estimateTupleExprForJoinVar(factor, joinVarName);
+		if (leftStats == null || rightStats == null) {
+			return -1.0d;
+		}
+		Double sampledRows = sampledPairwiseJoinSurfaceRows(singlePrefixJoinFactor, factor, joinVarName,
+				leftStats, rightStats);
+		return sampledRows == null ? -1.0d : normalizeRows(sampledRows);
+	}
+
+	public double estimateJoinVarDistinctRows(TupleExpr factor, String joinVarName) {
+		if (!isReady() || factor == null || joinVarName == null) {
+			return -1.0d;
+		}
+		TupleSketchStats stats = estimateTupleExprForJoinVar(factor, joinVarName);
+		if (stats == null || !Double.isFinite(stats.distinct) || stats.distinct < 0.0d) {
+			return -1.0d;
+		}
+		return normalizeRows(stats.distinct);
+	}
+
 	private double estimateJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName,
 			boolean exactFallback) {
 		if (!isReady() || prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
@@ -8378,10 +8459,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 
 		TupleSketchStats prefixStats = null;
+		TupleExpr singlePrefixJoinFactor = null;
+		int prefixJoinFactorCount = 0;
 		for (TupleExpr prefixFactor : prefixFactors) {
 			if (prefixFactor == null || !prefixFactor.getBindingNames().contains(joinVarName)) {
 				continue;
 			}
+			prefixJoinFactorCount++;
+			singlePrefixJoinFactor = prefixFactor;
 			TupleSketchStats factorStats = estimateTupleExprForJoinVar(prefixFactor, joinVarName);
 			if (factorStats == null) {
 				return -1.0d;
@@ -8404,7 +8489,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				&& (!Double.isFinite(surfaceRows) || surfaceRows <= 0.0d || exactSurfaceRows < surfaceRows)) {
 			return exactSurfaceRows;
 		}
+		if (surfaceRows <= 0.0d && prefixJoinFactorCount == 1) {
+			Double sampledSurfaceRows = sampledPairwiseJoinSurfaceRows(singlePrefixJoinFactor, factor, joinVarName,
+					prefixStats, factorStats);
+			if (sampledSurfaceRows != null && sampledSurfaceRows >= 0.0d) {
+				return sampledSurfaceRows;
+			}
+		}
 		return surfaceRows;
+	}
+
+	private Double sampledPairwiseJoinSurfaceRows(TupleExpr left, TupleExpr right, String joinVarName,
+			TupleSketchStats leftStats, TupleSketchStats rightStats) {
+		StatementPattern leftPattern = exactJoinSurfacePattern(left, joinVarName);
+		StatementPattern rightPattern = exactJoinSurfacePattern(right, joinVarName);
+		if (leftPattern == null || rightPattern == null) {
+			return null;
+		}
+		return zeroIntersectionFallbackJoinRows(leftPattern, rightPattern, joinVarName,
+				leftStats.distinct, rightStats.distinct, leftStats.rows, rightStats.rows,
+				Double.POSITIVE_INFINITY);
 	}
 
 	public double estimateJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
@@ -8418,6 +8522,75 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	public double estimateExactJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
 		Double exactSurfaceRows = exactJoinSurfaceRows(factors, null, joinVarName);
 		return exactSurfaceRows == null ? -1.0d : normalizeRows(exactSurfaceRows);
+	}
+
+	public double estimateExactConnectedJoinRows(List<TupleExpr> factors) {
+		ExactConnectedJoinEstimate estimate = estimateExactConnectedJoin(factors);
+		return estimate.isSupported() ? estimate.rows() : -1.0d;
+	}
+
+	public ExactConnectedJoinEstimate estimateExactConnectedJoin(List<TupleExpr> factors) {
+		if (!isReady() || factors == null || factors.size() < 2) {
+			return ExactConnectedJoinEstimate.unsupported();
+		}
+		ExactJoinSurfaceProvider provider = exactJoinSurfaceProvider;
+		if (provider == null) {
+			return ExactConnectedJoinEstimate.unsupported();
+		}
+		List<StatementPattern> patterns = new ArrayList<>(factors.size());
+		for (TupleExpr factor : factors) {
+			PatternEstimateInput input = asSketchCompatibleInput(factor);
+			if (input == null || input.filterMultiplier != 1.0d) {
+				return ExactConnectedJoinEstimate.unsupported();
+			}
+			patterns.add(input.pattern);
+		}
+		ExactConnectedJoinEstimate estimate = provider.estimateConnectedJoin(new ExactJoinRequest(
+				List.copyOf(patterns), zeroIntersectionRowBudget, zeroIntersectionSampleSize));
+		if (estimate == null || !estimate.isSupported()) {
+			return ExactConnectedJoinEstimate.unsupported();
+		}
+		double rows = normalizeRows(estimate.rows());
+		double minRows = Double.isFinite(estimate.minRows()) && estimate.minRows() >= 0.0d
+				? normalizeRows(estimate.minRows())
+				: rows;
+		double maxRows = Double.isFinite(estimate.maxRows()) && estimate.maxRows() >= 0.0d
+				? normalizeRows(estimate.maxRows())
+				: rows;
+		return new ExactConnectedJoinEstimate(rows, minRows, Math.max(rows, maxRows), estimate.anchorCount(),
+				estimate.sampleCount());
+	}
+
+	public double estimatePairwiseJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+		if (!isReady() || factors == null || factors.isEmpty() || joinVarName == null) {
+			return -1.0d;
+		}
+
+		TupleExpr left = null;
+		TupleExpr right = null;
+		for (TupleExpr factor : factors) {
+			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
+				continue;
+			}
+			if (left == null) {
+				left = factor;
+			} else if (right == null) {
+				right = factor;
+			} else {
+				return -1.0d;
+			}
+		}
+		if (left == null || right == null) {
+			return -1.0d;
+		}
+
+		TupleSketchStats leftStats = estimateTupleExprForJoinVar(left, joinVarName);
+		TupleSketchStats rightStats = estimateTupleExprForJoinVar(right, joinVarName);
+		if (leftStats == null || rightStats == null) {
+			return -1.0d;
+		}
+		Double sampledRows = sampledPairwiseJoinSurfaceRows(left, right, joinVarName, leftStats, rightStats);
+		return sampledRows == null ? -1.0d : normalizeRows(sampledRows);
 	}
 
 	private double estimateJoinSurfaceRows(List<TupleExpr> factors, String joinVarName, boolean exactFallback) {

@@ -356,11 +356,19 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			double distributedWork = distributedEstimate
 					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
 					.orElse(Double.NaN);
-			boolean selectDistributed = LmdbJoinPlanSupport.isFiniteNonNegative(distributedWork)
-					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork) || distributedWork < originalWork);
+			OptionalUnionDistributionCost anchoringAwareCost = optionalUnionDistributionAnchoringAwareCost(leftJoin,
+					leftUnion, costModel, context);
+			double comparedOriginalWork = anchoringAwareCost.hasCost() ? anchoringAwareCost.originalWork()
+					: originalWork;
+			double comparedDistributedWork = anchoringAwareCost.hasCost() ? anchoringAwareCost.distributedWork()
+					: distributedWork;
+			boolean selectDistributed = LmdbJoinPlanSupport.isFiniteNonNegative(comparedDistributedWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(comparedOriginalWork)
+							|| comparedDistributedWork < comparedOriginalWork);
 			String summary = "selected=" + (selectDistributed ? "distributed" : "original")
 					+ ", originalWork=" + formatGuaranteeMetric(originalWork)
 					+ ", distributedWork=" + formatGuaranteeMetric(distributedWork)
+					+ optionalUnionDistributionCostSummary(anchoringAwareCost)
 					+ ", " + proof.metricFragment();
 			(selectDistributed ? distributed : leftJoin).setStringMetricPlanned("optimizer.optionalUnionDistribution",
 					summary);
@@ -370,6 +378,98 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 			leftJoin.replaceWith(distributed);
 			return distributed;
+		}
+
+		private OptionalUnionDistributionCost optionalUnionDistributionAnchoringAwareCost(LeftJoin original,
+				Union leftUnion, JoinFactorCostModel costModel, JoinFactorCostModel.CostContext context) {
+			Optional<JoinFactorCostModel.FactorCostEstimate> leftUnionEstimate = costModel
+					.estimateFactorCost(leftUnion, context);
+			if (leftUnionEstimate.isEmpty()) {
+				return OptionalUnionDistributionCost.empty();
+			}
+			double leftUnionWork = leftUnionEstimate.get().getWorkRows();
+			double leftUnionRows = leftUnionEstimate.get().getOutputRows();
+			Optional<JoinFactorCostModel.FactorCostEstimate> originalRightEstimate = estimateOptionalRightCost(
+					original, original.getRightArg(), boundVars, leftUnionRows, Double.NaN, costModel);
+			if (originalRightEstimate.isEmpty()) {
+				return OptionalUnionDistributionCost.empty();
+			}
+			double originalWork = addFinite(leftUnionWork, originalRightEstimate.get().getWorkRows());
+			double leftBranchWork = optionalUnionBranchAnchoringAwareWork(leftUnion.getLeftArg(), original, costModel,
+					context);
+			double rightBranchWork = optionalUnionBranchAnchoringAwareWork(leftUnion.getRightArg(), original, costModel,
+					context);
+			double distributedWork = addFinite(leftBranchWork, rightBranchWork);
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork)
+					|| !LmdbJoinPlanSupport.isFiniteNonNegative(distributedWork)) {
+				return OptionalUnionDistributionCost.empty();
+			}
+			return new OptionalUnionDistributionCost(originalWork, distributedWork,
+					"optional-rhs-anchoring-aware");
+		}
+
+		private String optionalUnionDistributionCostSummary(OptionalUnionDistributionCost cost) {
+			if (cost == null || !cost.hasCost()) {
+				return "";
+			}
+			return ", comparedOriginalWork=" + formatGuaranteeMetric(cost.originalWork())
+					+ ", comparedDistributedWork=" + formatGuaranteeMetric(cost.distributedWork())
+					+ ", comparedWorkSource=" + cost.source();
+		}
+
+		private double optionalUnionBranchAnchoringAwareWork(TupleExpr branchLeft, LeftJoin original,
+				JoinFactorCostModel costModel, JoinFactorCostModel.CostContext context) {
+			Optional<JoinFactorCostModel.FactorCostEstimate> leftEstimate = costModel.estimateFactorCost(branchLeft,
+					context);
+			if (leftEstimate.isEmpty()) {
+				return Double.NaN;
+			}
+			double leftWork = leftEstimate.get().getWorkRows();
+			double leftRows = leftEstimate.get().getOutputRows();
+			Set<String> unanchoredBoundVars = new HashSet<>(boundVars);
+			Set<String> anchoredBoundVars = new HashSet<>(unanchoredBoundVars);
+			anchoredBoundVars.addAll(plannerBindingNames(branchLeft.getAssuredBindingNames()));
+			LeftJoin branchLeftJoin = clonedLeftJoin(branchLeft, original.getRightArg(),
+					original.hasCondition() ? original.getCondition() : null);
+			Optional<JoinFactorCostModel.FactorCostEstimate> unanchoredRightEstimate = estimateOptionalRightCost(
+					branchLeftJoin, branchLeftJoin.getRightArg(), unanchoredBoundVars, leftRows, Double.NaN,
+					costModel);
+			double rightWork = unanchoredRightEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			if (optionalRhsAnchoringProof(branchLeftJoin, unanchoredBoundVars, anchoredBoundVars) != null) {
+				double anchoredDistinctLookupBindings = optionalAnchoredDistinctLookupBindings(branchLeftJoin,
+						anchoredBoundVars);
+				Optional<JoinFactorCostModel.FactorCostEstimate> anchoredRightEstimate = estimateOptionalRightCost(
+						branchLeftJoin, branchLeftJoin.getRightArg(), anchoredBoundVars, leftRows,
+						anchoredDistinctLookupBindings, costModel);
+				double anchoredRightWork = anchoredRightEstimate
+						.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+						.orElse(Double.NaN);
+				if (LmdbJoinPlanSupport.isFiniteNonNegative(anchoredRightWork)
+						&& (!LmdbJoinPlanSupport.isFiniteNonNegative(rightWork) || anchoredRightWork < rightWork)) {
+					rightWork = anchoredRightWork;
+				}
+			}
+			return addFinite(leftWork, rightWork);
+		}
+
+		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateOptionalRightCost(LeftJoin leftJoin,
+				TupleExpr rightArg, Set<String> rightBoundVars, double invocationRows,
+				double distinctLookupBindings, JoinFactorCostModel costModel) {
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(invocationRows)) {
+				invocationRows = estimatedSubplanInvocationRows(leftJoin.getLeftArg());
+			}
+			return costModel.estimateFactorCost(rightArg, JoinFactorCostModel.CostContext.of(rightBoundVars,
+					invocationRows, distinctLookupBindings, true));
+		}
+
+		private double addFinite(double left, double right) {
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(left) || !LmdbJoinPlanSupport.isFiniteNonNegative(right)) {
+				return Double.NaN;
+			}
+			double sum = left + right;
+			return LmdbJoinPlanSupport.isFiniteNonNegative(sum) ? sum : Double.NaN;
 		}
 
 		private TupleExpr rewriteMutuallyExclusiveRightUnionOptional(LeftJoin leftJoin) {
@@ -2795,14 +2895,54 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private double estimatedSubplanOutputRows(TupleExpr tupleExpr) {
 			double plannedRows = tupleExpr.getResultSizeEstimate();
+			double optionalBridgeRows = estimatedOptionalBridgeOutputRows(tupleExpr, plannedRows);
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(optionalBridgeRows)) {
+				if (!LmdbJoinPlanSupport.isFiniteNonNegative(plannedRows) || optionalBridgeRows > plannedRows) {
+					tupleExpr.setResultSizeEstimate(optionalBridgeRows);
+					return optionalBridgeRows;
+				}
+			}
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(plannedRows)) {
 				return plannedRows;
 			}
 			double rows = statistics.getCardinality(tupleExpr);
+			optionalBridgeRows = estimatedOptionalBridgeOutputRows(tupleExpr, rows);
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(optionalBridgeRows)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(rows) || optionalBridgeRows > rows)) {
+				tupleExpr.setResultSizeEstimate(optionalBridgeRows);
+				return optionalBridgeRows;
+			}
 			if (LmdbJoinPlanSupport.isFiniteNonNegative(rows)) {
 				return rows;
 			}
 			return 1.0d;
+		}
+
+		private double estimatedOptionalBridgeOutputRows(TupleExpr tupleExpr, double knownRows) {
+			double plannedBridgeRows = tupleExpr.getDoubleMetricPlanned("plannedOptionalBridgeProductRows");
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(plannedBridgeRows)) {
+				return plannedBridgeRows;
+			}
+			if (!(tupleExpr instanceof LeftJoin leftJoin) || !(statistics instanceof LmdbEvaluationStatistics lmdb)) {
+				return Double.NaN;
+			}
+			double leftRows = estimatedSubplanOutputRows(leftJoin.getLeftArg());
+			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate = lmdb.estimateOptionalBridgeProduct(
+					leftJoin.getLeftArg(), leftJoin.getRightArg(),
+					LmdbJoinPlanSupport.isFiniteNonNegative(leftRows) ? leftRows : knownRows);
+			if (estimate == null || !LmdbJoinPlanSupport.isFiniteNonNegative(estimate.productRows())) {
+				return Double.NaN;
+			}
+			leftJoin.setDoubleMetricPlanned("plannedOptionalBridgeProductRows", estimate.productRows());
+			leftJoin.setDoubleMetricPlanned("plannedOptionalBridgePrefixRows", estimate.prefixRows());
+			leftJoin.setDoubleMetricPlanned("plannedOptionalBridgePrefixBridgeRows", estimate.prefixBridgeRows());
+			if (estimate.joinVarName() != null) {
+				leftJoin.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
+			}
+			if (estimate.source() != null) {
+				leftJoin.setStringMetricPlanned("plannedOptionalBridgeSource", estimate.source());
+			}
+			return estimate.productRows();
 		}
 
 		private double estimatedSubplanInvocationRows(TupleExpr tupleExpr) {
@@ -6430,6 +6570,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private record OptionalRhsAnchoringSelection(Set<String> boundVars, boolean anchored) {
+		}
+
+		private record OptionalUnionDistributionCost(double originalWork, double distributedWork, String source) {
+
+			static OptionalUnionDistributionCost empty() {
+				return new OptionalUnionDistributionCost(Double.NaN, Double.NaN, "");
+			}
+
+			boolean hasCost() {
+				return LmdbJoinPlanSupport.isFiniteNonNegative(originalWork)
+						&& LmdbJoinPlanSupport.isFiniteNonNegative(distributedWork);
+			}
 		}
 
 		private record PlannedPrefixEstimate(double outputRows, double cumulativeWorkRows) {

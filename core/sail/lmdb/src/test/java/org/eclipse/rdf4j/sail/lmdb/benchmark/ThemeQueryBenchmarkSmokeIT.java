@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPlannerAwait;
 import org.junit.jupiter.api.Test;
 
@@ -338,6 +339,15 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertTrue(positionFilterIndex < itemOfferedIndex && positionFilterIndex < memberOfIndex,
 					"Expected SPARSE q0 to anchor the selective position filter before the deep path fanout; order="
 							+ mandatoryLeafOrder + "\n" + optimized);
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, 0);
+			assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
+
+			TupleExpr telemetry = benchmark.explainTelemetryTupleExpr();
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "position", "SPARSE q0");
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "itemOffered", "SPARSE q0");
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "about", "SPARSE q0");
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "mainEntityOfPage", "SPARSE q0");
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "memberOf", "SPARSE q0");
 		} finally {
 			benchmark.tearDown();
 		}
@@ -364,6 +374,51 @@ class ThemeQueryBenchmarkSmokeIT {
 					"Expected SPARSE q7 mandatory prefix to expose itemOffered and memberOf\n" + plan);
 			assertTrue(itemOfferedIndex < memberOfIndex,
 					"Expected SPARSE q7 to keep the offer/work path before person fanout\n" + plan);
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, 7);
+			assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
+
+			TupleExpr telemetry = benchmark.explainTelemetryTupleExpr();
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "makesOffer", "SPARSE q7");
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "itemOffered", "SPARSE q7");
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "about", "SPARSE q7");
+			assertSparseBridgeEstimateWithinOrderOfMagnitude(telemetry, SCHEMA + "mainEntityOfPage", "SPARSE q7");
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	private static void assertSparseBridgeEstimateWithinOrderOfMagnitude(TupleExpr telemetry, String predicate,
+			String queryLabel) {
+		StatementPattern pattern = findFirstPatternByPredicate(telemetry, predicate);
+		assertTrue(pattern != null,
+				"Expected " + queryLabel + " telemetry to contain bridge pattern " + predicate + "\n" + telemetry);
+		assertEstimateWithinOrderOfMagnitude(pattern,
+				queryLabel + " " + predicate + " bridge product should stay within 10x of actual source rows");
+	}
+
+	@Test
+	void sparseQ8BenchmarkKeepsReviewOptionalEstimateWithinOrderOfMagnitude() throws Exception {
+		deleteBenchmarkStore();
+
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.SPARSE.name();
+		benchmark.z_queryIndex = 8;
+		benchmark.sketchEstimatorEnabled = true;
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("sparse q8 benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, 8);
+			assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
+
+			TupleExpr telemetry = benchmark.explainTelemetryTupleExpr();
+			StatementPattern reviewPattern = findPattern(telemetry, SCHEMA + "review", "work", "review");
+			assertTrue(reviewPattern != null,
+					"Expected SPARSE q8 telemetry to contain the review optional pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(reviewPattern,
+					"SPARSE q8 review optional should not ignore the page-walk bridge correction");
 		} finally {
 			benchmark.tearDown();
 		}
@@ -402,9 +457,115 @@ class ThemeQueryBenchmarkSmokeIT {
 					&& eventPositionIndex < eventPositionValuesIndex,
 					"SPARSE q9 should bridge from the left-bound page/event lookup before applying "
 							+ "the finite eventPosition anchor; order=" + optionalLeafOrder + "\n" + plan);
+			StatementPattern employeePattern = findSparseQ9EmployeePattern(optimized);
+			assertTrue(employeePattern != null,
+					"Expected SPARSE q9 lifecycle plan to contain the employee optional pattern\n" + plan);
+			LmdbPlannerAwait.awaitPlannerAssertion("sparse q9 employee optional product estimate", () -> {
+				String refreshedPlan = benchmark.explainOptimizedPlan();
+				TupleExpr refreshedOptimized = benchmark.explainOptimizedTupleExpr();
+				StatementPattern refreshedEmployeePattern = findSparseQ9EmployeePattern(refreshedOptimized);
+				assertTrue(refreshedEmployeePattern != null,
+						"Expected SPARSE q9 lifecycle plan to contain the employee optional pattern\n" + refreshedPlan);
+				assertTrue(
+						"lmdb-bound-join-product".equals(refreshedEmployeePattern
+								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)),
+						"SPARSE q9 employee optional should use the prefix bridge product instead of a plain "
+								+ "access-path estimate\n" + refreshedPlan);
+			});
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, 9);
+			assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
+			TupleExpr telemetry = benchmark.explainTelemetryTupleExpr();
+			StatementPattern telemetryEmployeePattern = findSparseQ9EmployeePattern(telemetry);
+			assertTrue(telemetryEmployeePattern != null,
+					"Expected SPARSE q9 telemetry to contain the employee optional pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(telemetryEmployeePattern,
+					"SPARSE q9 employee optional should not be planned more than 10x below actual source rows");
+			StatementPattern telemetryMakesOfferPattern = findFirstPatternByPredicate(telemetry,
+					SCHEMA + "makesOffer");
+			assertTrue(telemetryMakesOfferPattern != null,
+					"Expected SPARSE q9 telemetry to contain the makesOffer bridge pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(telemetryMakesOfferPattern,
+					"SPARSE q9 makesOffer bridge product should stay within 10x of actual source rows");
+			StatementPattern telemetryEventPattern = findPattern(telemetry, SCHEMA + "event", "page", "event");
+			assertTrue(telemetryEventPattern != null,
+					"Expected SPARSE q9 telemetry to contain the event bridge pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(telemetryEventPattern,
+					"SPARSE q9 event bridge should not ignore the page-walk bridge correction");
+			StatementPattern telemetryEventPositionPattern = findPattern(telemetry, SCHEMA + "position", "event",
+					"eventPosition");
+			assertTrue(telemetryEventPositionPattern != null,
+					"Expected SPARSE q9 telemetry to contain the event position bridge pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(telemetryEventPositionPattern,
+					"SPARSE q9 event position bridge should stay within 10x of actual source rows");
 		} finally {
 			benchmark.tearDown();
 		}
+	}
+
+	@Test
+	void sparseQ10BenchmarkLifecycleKeepsMandatoryBridgeEstimatesWithinOrderOfMagnitude() throws Exception {
+		deleteBenchmarkStore();
+		runSparseBenchmarkTrial(7, 1);
+		runSparseBenchmarkTrial(8, 1);
+		runSparseBenchmarkTrial(9, 1);
+
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.SPARSE.name();
+		benchmark.z_queryIndex = 10;
+		benchmark.sketchEstimatorEnabled = true;
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("sparse q10 benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, 10);
+			assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
+
+			String plan = benchmark.explainOptimizedPlan();
+			assertTrue(plan.contains("optimizer.optionalUnionDistribution=selected=distributed"),
+					"SPARSE q10 should distribute the optional review/event union before the shared type lookup\n"
+							+ plan);
+
+			TupleExpr telemetry = benchmark.explainTelemetryTupleExpr();
+			StatementPattern identifierPattern = findFirstPatternByPredicate(telemetry, SCHEMA + "identifier");
+			assertTrue(identifierPattern != null,
+					"Expected SPARSE q10 telemetry to contain the identifier finite lookup pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(identifierPattern,
+					"SPARSE q10 identifier finite lookup should stay within 10x of actual source rows");
+			StatementPattern aboutPattern = findFirstPatternByPredicate(telemetry, SCHEMA + "about");
+			assertTrue(aboutPattern != null,
+					"Expected SPARSE q10 telemetry to contain the about bridge pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(aboutPattern,
+					"SPARSE q10 about bridge product should stay within 10x of actual source rows");
+			StatementPattern mainEntityOfPagePattern = findFirstPatternByPredicate(telemetry,
+					SCHEMA + "mainEntityOfPage");
+			assertTrue(mainEntityOfPagePattern != null,
+					"Expected SPARSE q10 telemetry to contain the mainEntityOfPage bridge pattern\n" + telemetry);
+			assertEstimateWithinOrderOfMagnitude(mainEntityOfPagePattern,
+					"SPARSE q10 mainEntityOfPage bridge product should stay within 10x of actual source rows");
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	private static void assertEstimateWithinOrderOfMagnitude(StatementPattern statementPattern, String message) {
+		double plannedWorkRows = statementPattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
+		long actualMatchedRows = statementPattern.getSourceRowsMatchedActual();
+		assertTrue(Double.isFinite(plannedWorkRows) && plannedWorkRows > 0.0d,
+				message + ": missing plannedWorkRows; pattern=" + statementPattern);
+		assertTrue(actualMatchedRows > 0L,
+				message + ": missing sourceRowsMatchedActual; pattern=" + statementPattern);
+		assertTrue(plannedWorkRows * 10.0d >= actualMatchedRows,
+				message + ": plannedWorkRows=" + plannedWorkRows + ", sourceRowsMatchedActual=" + actualMatchedRows
+						+ ", source=" + statementPattern
+								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)
+						+ ", pattern=" + statementPattern);
+		assertTrue(actualMatchedRows * 10.0d >= plannedWorkRows,
+				message + ": plannedWorkRows=" + plannedWorkRows + ", sourceRowsMatchedActual=" + actualMatchedRows
+						+ ", source=" + statementPattern
+								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)
+						+ ", pattern=" + statementPattern);
 	}
 
 	private static void runSparseBenchmarkTrial(int queryIndex, int repetitions) throws Exception {
@@ -603,6 +764,57 @@ class ThemeQueryBenchmarkSmokeIT {
 				&& "event".equals(statementPattern.getSubjectVar().getName())
 				&& statementPattern.getObjectVar() != null
 				&& "eventPosition".equals(statementPattern.getObjectVar().getName());
+	}
+
+	private static StatementPattern findSparseQ9EmployeePattern(TupleExpr optimized) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (matches.isEmpty()
+						&& hasPredicate(node, SCHEMA + "employee")
+						&& node.getSubjectVar() != null
+						&& "org".equals(node.getSubjectVar().getName())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static StatementPattern findFirstPatternByPredicate(TupleExpr optimized, String predicate) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (matches.isEmpty() && hasPredicate(node, predicate)) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static StatementPattern findPattern(TupleExpr optimized, String predicate, String subjectName,
+			String objectName) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (matches.isEmpty()
+						&& hasPredicate(node, predicate)
+						&& node.getSubjectVar() != null
+						&& subjectName.equals(node.getSubjectVar().getName())
+						&& node.getObjectVar() != null
+						&& objectName.equals(node.getObjectVar().getName())) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 
 	private static boolean hasPredicate(StatementPattern statementPattern, String predicate) {

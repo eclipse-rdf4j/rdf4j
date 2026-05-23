@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -21,6 +22,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -73,6 +76,11 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	private static final String GROUP_DISTINCT = "lmdb-sketch-var-stats";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
 	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
+	private static final String CONNECTED_JOIN_BLEND_SUPPRESSED = "plannedConnectedJoinBlendSuppressed";
+	private static final String EXACT_CONNECTED_JOIN_MIN_ROWS = "optimizer.exactConnectedJoinMinRows";
+	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
+	private static final String BOUND_LOOKUP_FINAL_ACCESS_BLEND = "bound_lookup_final_access_geometric_mean";
+	private static final double OPTIONAL_BRIDGE_BLEND_MIN_RATIO = 2.0d;
 
 	private static final Set<Class<? extends TupleExpr>> ANNOTATION_POLICY_TYPES = Set.of(
 			StatementPattern.class,
@@ -287,8 +295,26 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		stampRepeatedSubtreeSurface(node.getRightArg());
 		BoundLookupEstimate boundLookupEstimate = boundLookupEstimate(node.getLeftArg(), node.getRightArg());
 		if (boundLookupEstimate != null) {
-			stampEstimate(node.getRightArg(), boundLookupEstimate.rows(), boundLookupEstimate.workRows(),
+			double rightRows = boundLookupEstimate.rows();
+			double rightWorkRows = boundLookupEstimate.workRows();
+			double[] optionalBridgeBlend = connectedBridgeBlend(node.getRightArg(), rightRows, rightWorkRows,
+					"bound_lookup_final_access_geometric_mean");
+			if (optionalBridgeBlend != null) {
+				rightRows = optionalBridgeBlend[0];
+				rightWorkRows = optionalBridgeBlend[1];
+				boundLookupEstimate = new BoundLookupEstimate(rightRows, rightWorkRows);
+			}
+			stampEstimate(node.getRightArg(), rightRows, rightWorkRows,
 					LMDB_BOUND_LOOKUP_SUBTREE, true);
+		} else {
+			double rightRows = nodeRows(node.getRightArg());
+			double rightWorkRows = nodeWorkRows(node.getRightArg());
+			double[] optionalBridgeBlend = connectedBridgeBlend(node.getRightArg(), rightRows, rightWorkRows,
+					"bound_lookup_final_access_geometric_mean");
+			if (optionalBridgeBlend != null) {
+				stampEstimate(node.getRightArg(), optionalBridgeBlend[0], optionalBridgeBlend[1],
+						sourceForExistingPlan(node.getRightArg(), LMDB_BOUND_LOOKUP_SUBTREE), true);
+			}
 		}
 		double rows = boundLookupEstimate == null ? nodeRows(node) : boundLookupEstimate.rows();
 		if (!isFiniteNonNegative(rows)) {
@@ -297,9 +323,14 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (boundLookupEstimate == null) {
 			double rightRows = nestedRightSurfaceRows(node, rows);
 			if (isFiniteNonNegative(rightRows)) {
-				stampEstimate(node.getRightArg(), rightRows,
-						Math.max(rightRows, finiteOr(nodeWorkRows(node.getRightArg()), rightRows)),
-						LMDB_BOUND_LOOKUP_SUBTREE, true);
+				double rightWorkRows = Math.max(rightRows, finiteOr(nodeWorkRows(node.getRightArg()), rightRows));
+				double[] optionalBridgeBlend = connectedBridgeBlend(node.getRightArg(), rightRows, rightWorkRows,
+						"bound_lookup_final_access_geometric_mean");
+				if (optionalBridgeBlend != null) {
+					rightRows = optionalBridgeBlend[0];
+					rightWorkRows = optionalBridgeBlend[1];
+				}
+				stampEstimate(node.getRightArg(), rightRows, rightWorkRows, LMDB_BOUND_LOOKUP_SUBTREE, true);
 			}
 		}
 		double workRows = boundLookupEstimate == null
@@ -543,6 +574,11 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		}
 		rows = chargeRepeatedInvocationRows(node, rows);
 		workRows = chargeRepeatedInvocationWork(node, workRows, rows);
+		double[] optionalBridgeBlend = optionalBridgeBlend(node, rows, workRows);
+		if (optionalBridgeBlend != null) {
+			rows = optionalBridgeBlend[0];
+			workRows = optionalBridgeBlend[1];
+		}
 		stampPlannerDecisionMetrics(node, rows, workRows);
 		if (node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE) == null) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
@@ -557,9 +593,11 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		}
 		Set<String> boundVars = externalBoundVars(node);
 		double outerPrefixRows = externalPrefixRows(node);
+		List<TupleExpr> prefixFactors = externalPrefixFactors(node);
+		Map<String, Set<Value>> finiteBindingValues = finiteBindingValues(boundVars, prefixFactors);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(node,
 				JoinFactorCostModel.CostContext.of(boundVars, outerPrefixRows, Double.NaN,
-						isFiniteNonNegative(outerPrefixRows)));
+						isFiniteNonNegative(outerPrefixRows), true, finiteBindingValues, prefixFactors));
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -592,6 +630,11 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			}
 			node.setDoubleMetricPlanned("plannedRepeatedInvocations", repeatedInvocations);
 		}
+		double[] optionalBridgeBlend = optionalBridgeBlend(node, factorEstimate, outputRows, workRows);
+		if (optionalBridgeBlend != null) {
+			outputRows = optionalBridgeBlend[0];
+			workRows = optionalBridgeBlend[1];
+		}
 		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
 				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
 		String source = factorEstimate.getStringMetrics()
@@ -599,6 +642,150 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		stampPlannerDecisionMetrics(node, outputRows, workRows);
 		stampEstimate(node, outputRows, workRows, source, true);
 		return true;
+	}
+
+	private double[] optionalBridgeBlend(StatementPattern node, JoinFactorCostModel.FactorCostEstimate factorEstimate,
+			double outputRows, double workRows) {
+		if (!isInsideOptionalRightArg(node) || isProtectedEstimateSource(factorEstimate)
+				|| !isFinitePositive(outputRows) || !isFinitePositive(workRows)) {
+			return null;
+		}
+		String fusion = node.getStringMetricPlanned("plannedEstimateFusion");
+		if (!"connected_page_walk".equals(fusion)
+				&& !"connected_page_walk_geometric_blend".equals(fusion)) {
+			return null;
+		}
+		return optionalBridgeBlend(node, outputRows, workRows);
+	}
+
+	private double[] optionalBridgeBlend(TupleExpr node, double outputRows, double workRows) {
+		if (!(node instanceof StatementPattern statementPattern)
+				|| !isInsideOptionalRightArg(statementPattern)
+				|| !isFinitePositive(outputRows) || !isFinitePositive(workRows)) {
+			return null;
+		}
+		return connectedBridgeBlend(statementPattern, outputRows, workRows, "optional_rhs_final_access_geometric_mean");
+	}
+
+	private double[] connectedBridgeBlend(TupleExpr node, double outputRows, double workRows, String blendSource) {
+		if (!(node instanceof StatementPattern statementPattern)
+				|| !isFinitePositive(outputRows) || !isFinitePositive(workRows)) {
+			return null;
+		}
+		if (isProtectedBridgeBlendSource(statementPattern)) {
+			return null;
+		}
+		if (statementPattern.getStringMetricPlanned(CONNECTED_JOIN_BLEND_SUPPRESSED) != null) {
+			return null;
+		}
+		if (BOUND_LOOKUP_FINAL_ACCESS_BLEND.equals(blendSource)
+				&& hasDirectLookupAccessEstimate(statementPattern)) {
+			return null;
+		}
+		double bridgeRows = strongestOptionalBridgeRows(statementPattern);
+		double bridgeWorkRows = strongestOptionalBridgeWorkRows(statementPattern, bridgeRows);
+		if (!isFinitePositive(bridgeRows) || !isFinitePositive(bridgeWorkRows)) {
+			return null;
+		}
+		double rowRatio = ratio(bridgeRows, outputRows);
+		double workRatio = ratio(bridgeWorkRows, workRows);
+		boolean raiseRows = bridgeRows > outputRows
+				&& isFinitePositive(rowRatio)
+				&& rowRatio >= OPTIONAL_BRIDGE_BLEND_MIN_RATIO;
+		boolean raiseWorkRows = bridgeWorkRows > workRows
+				&& isFinitePositive(workRatio)
+				&& workRatio >= OPTIONAL_BRIDGE_BLEND_MIN_RATIO;
+		if (!raiseRows && !raiseWorkRows) {
+			return null;
+		}
+		double blendedRows = raiseRows ? geometricMean(outputRows, bridgeRows) : outputRows;
+		double blendedWorkRows = raiseWorkRows ? geometricMean(workRows, bridgeWorkRows) : workRows;
+		if (!isFinitePositive(blendedRows)) {
+			blendedRows = outputRows;
+		}
+		if (!isFinitePositive(blendedWorkRows)) {
+			blendedWorkRows = workRows;
+		}
+		blendedRows = Math.max(outputRows, blendedRows);
+		blendedWorkRows = Math.max(Math.max(workRows, blendedWorkRows), blendedRows);
+		String baseFusion = statementPattern.getStringMetricPlanned("plannedEstimateFusion");
+		if (baseFusion != null && !"connected_page_walk_geometric_blend".equals(baseFusion)) {
+			statementPattern.setStringMetricPlanned("plannedPreBlendEstimateFusion", baseFusion);
+		}
+		statementPattern.setStringMetricPlanned("plannedEstimateFusion", "connected_page_walk_geometric_blend");
+		statementPattern.setStringMetricPlanned("plannedConnectedJoinBlendSource",
+				blendSource);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBridgeSignalRows", bridgeRows);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBridgeSignalWorkRows", bridgeWorkRows);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBlendRawRows", outputRows);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBlendRawWorkRows", workRows);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBlendRows", blendedRows);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBlendWorkRows", blendedWorkRows);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBlendRowsRatio", rowRatio);
+		statementPattern.setDoubleMetricPlanned("plannedConnectedJoinBlendWorkRatio", workRatio);
+		return new double[] { blendedRows, blendedWorkRows };
+	}
+
+	private boolean isProtectedBridgeBlendSource(StatementPattern statementPattern) {
+		String source = statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		return LMDB_FINITE_BINDING_LOOKUP.equals(source)
+				|| LMDB_FINITE_DERIVED_SURFACE.equals(source)
+				|| LMDB_BOUND_LOOKUP_SUBTREE.equals(source);
+	}
+
+	private boolean hasDirectLookupAccessEstimate(StatementPattern statementPattern) {
+		return "directLookup"
+				.equals(statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))
+				&& isFinitePositive(statementPattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS))
+				&& isFinitePositive(
+						statementPattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS));
+	}
+
+	private boolean isProtectedEstimateSource(JoinFactorCostModel.FactorCostEstimate estimate) {
+		if (estimate == null) {
+			return true;
+		}
+		String source = estimate.getStringMetrics()
+				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if (LMDB_FINITE_BINDING_LOOKUP.equals(source)
+				|| LMDB_FINITE_DERIVED_SURFACE.equals(source)) {
+			return true;
+		}
+		String fusion = estimate.getStringMetrics()
+				.get("plannedEstimateFusion");
+		boolean connectedPageWalk = "lmdb-connected-join-sample".equals(source)
+				|| "connected_page_walk".equals(fusion)
+				|| "connected_page_walk_geometric_blend".equals(fusion);
+		return estimate.hasExactOutputRows() && !connectedPageWalk;
+	}
+
+	private double strongestOptionalBridgeRows(StatementPattern node) {
+		return maxFinite(
+				node.getDoubleMetricPlanned("plannedConnectedJoinRows"),
+				node.getDoubleMetricPlanned("plannedConnectedJoinMinRows"),
+				node.getDoubleMetricPlanned(LmdbSamplingJoinCardinalityEstimator.EXACT_CONNECTED_JOIN_MIN_ROWS));
+	}
+
+	private double strongestOptionalBridgeWorkRows(StatementPattern node, double bridgeRows) {
+		return maxFinite(
+				bridgeRows,
+				node.getDoubleMetricPlanned("plannedConnectedJoinWorkRows"),
+				node.getDoubleMetricPlanned("plannedConnectedJoinMaxRows"),
+				node.getDoubleMetricPlanned(LmdbSamplingJoinCardinalityEstimator.EXACT_CONNECTED_JOIN_MIN_ROWS),
+				node.getDoubleMetricPlanned(LmdbSamplingJoinCardinalityEstimator.EXACT_CONNECTED_JOIN_MAX_ROWS));
+	}
+
+	private boolean isInsideOptionalRightArg(QueryModelNode node) {
+		QueryModelNode child = node;
+		QueryModelNode parent = node == null ? null : node.getParentNode();
+		while (parent != null) {
+			if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
+				return true;
+			}
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		return false;
 	}
 
 	private boolean shouldChargeNestedDirectLookup(StatementPattern node,
@@ -832,10 +1019,91 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 					.estimateBoundJoinProduct(left, right, leftRows);
 			if (estimate != null) {
 				stampBoundJoinProductEstimate(right, estimate);
-				return new BoundLookupEstimate(estimate.productRows(), estimate.productRows());
+				return accessFlooredBoundLookupEstimate(right, estimate.productRows());
 			}
 		}
 		return null;
+	}
+
+	private BoundLookupEstimate accessFlooredBoundLookupEstimate(TupleExpr node, double productRows) {
+		double pageWalkRows = boundLookupPageWalkRows(node);
+		double pageWalkWorkRows = boundLookupPageWalkWorkRows(node, pageWalkRows);
+		double rows = productRows;
+		if (isFiniteNonNegative(pageWalkRows)
+				&& (!isFiniteNonNegative(rows) || rows <= 0.0d || rows * 10.0d < pageWalkRows)) {
+			rows = pageWalkRows;
+			node.setStringMetricPlanned("plannedBoundLookupAccessFloor", "page_walk_repeated_access");
+		}
+		double workRows = maxFinite(productRows, rows, pageWalkWorkRows);
+		if (isFiniteNonNegative(pageWalkRows)) {
+			node.setDoubleMetricPlanned("plannedBoundLookupPageWalkRows", pageWalkRows);
+		}
+		if (isFiniteNonNegative(pageWalkWorkRows)) {
+			node.setDoubleMetricPlanned("plannedBoundLookupPageWalkWorkRows", pageWalkWorkRows);
+		}
+		return new BoundLookupEstimate(rows, workRows);
+	}
+
+	private double boundLookupPageWalkRows(TupleExpr node) {
+		double repeatedInvocations = node.getDoubleMetricPlanned("plannedRepeatedInvocations");
+		double repeatedRows = Double.NaN;
+		if (isFiniteNonNegative(repeatedInvocations) && repeatedInvocations > 1.0d) {
+			double accessRows = firstFinitePositive(
+					node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS),
+					nodeRows(node));
+			if (isFiniteNonNegative(accessRows)) {
+				repeatedRows = repeatedInvocations * Math.max(1.0d, accessRows);
+			}
+		}
+		double pageWalkRows = maxFinite(
+				repeatedRows,
+				node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS),
+				node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS));
+		return blendBoundLookupPageWalkWithConnectedBridge(node, pageWalkRows);
+	}
+
+	private double blendBoundLookupPageWalkWithConnectedBridge(TupleExpr node, double pageWalkRows) {
+		if (!isFiniteNonNegative(pageWalkRows) || pageWalkRows <= 0.0d) {
+			return pageWalkRows;
+		}
+		double exactMinRows = node.getDoubleMetricPlanned(EXACT_CONNECTED_JOIN_MIN_ROWS);
+		double exactMaxRows = node.getDoubleMetricPlanned(EXACT_CONNECTED_JOIN_MAX_ROWS);
+		double connectedRows = firstFinitePositive(exactMinRows, exactMaxRows);
+		if (!isFiniteNonNegative(connectedRows) || connectedRows <= pageWalkRows) {
+			return pageWalkRows;
+		}
+		double disagreementRatio = maxRatio(pageWalkRows, connectedRows);
+		if (!isFiniteNonNegative(disagreementRatio) || disagreementRatio < OPTIONAL_BRIDGE_BLEND_MIN_RATIO) {
+			return pageWalkRows;
+		}
+		double blendedRows = geometricMean(pageWalkRows, connectedRows);
+		if (!isFiniteNonNegative(blendedRows)) {
+			return pageWalkRows;
+		}
+		node.setStringMetricPlanned("plannedBoundLookupPageWalkBlend", "connected_bridge_geometric_mean");
+		node.setDoubleMetricPlanned("plannedBoundLookupPageWalkRawRows", pageWalkRows);
+		node.setDoubleMetricPlanned("plannedBoundLookupPageWalkConnectedRows", connectedRows);
+		return blendedRows;
+	}
+
+	private double boundLookupPageWalkWorkRows(TupleExpr node, double pageWalkRows) {
+		double repeatedInvocations = node.getDoubleMetricPlanned("plannedRepeatedInvocations");
+		double repeatedWorkRows = Double.NaN;
+		if (isFiniteNonNegative(repeatedInvocations) && repeatedInvocations > 1.0d) {
+			double accessWorkRows = firstFinitePositive(
+					node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS),
+					node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS),
+					pageWalkRows,
+					nodeWorkRows(node));
+			if (isFiniteNonNegative(accessWorkRows)) {
+				repeatedWorkRows = repeatedInvocations * Math.max(1.0d, accessWorkRows);
+			}
+		}
+		return maxFinite(
+				repeatedWorkRows,
+				pageWalkRows,
+				node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS),
+				node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE));
 	}
 
 	private boolean boundLookupRowsAlreadyRepeated(TupleExpr tupleExpr) {
@@ -940,8 +1208,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 
 	private void stampBoundJoinProductEstimate(QueryModelNode node,
 			LmdbEvaluationStatistics.BoundJoinProductEstimate estimate) {
-		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-bound-join-product");
-		node.setStringMetricPlanned("plannedEstimateFusion", "tuple_sketch_surface_product");
+		if (!hasSelectedPlannerOperatorFeedback(node)) {
+			node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-bound-join-product");
+			node.setStringMetricPlanned("plannedEstimateFusion", "tuple_sketch_surface_product");
+		}
 		node.setDoubleMetricPlanned("plannedBoundJoinProductRows", estimate.productRows());
 		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixRows", estimate.prefixRows());
 		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixSurfaceRows", estimate.prefixSurfaceRows());
@@ -952,11 +1222,16 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		}
 	}
 
+	private boolean hasSelectedPlannerOperatorFeedback(QueryModelNode node) {
+		return node != null && "operator_feedback".equals(node.getStringMetricPlanned("plannedEstimateFusion"));
+	}
+
 	private void stampOptionalBridgeProductEstimate(LeftJoin node,
 			LmdbEvaluationStatistics.OptionalBridgeProductEstimate estimate) {
 		TupleExpr rightArg = node.getRightArg();
 		stampOptionalBridgeProductEstimate((QueryModelNode) node, estimate);
 		stampOptionalBridgeProductEstimate(rightArg, estimate);
+		stampOptionalBridgeLeafBlends(rightArg);
 	}
 
 	private void stampOptionalBridgeProductEstimate(QueryModelNode node,
@@ -975,6 +1250,32 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		}
 		if (estimate.joinVarName() != null) {
 			node.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
+		}
+	}
+
+	private void stampOptionalBridgeLeafBlends(TupleExpr node) {
+		if (node == null || node instanceof Service || TupleExprs.isVariableScopeChange(node)) {
+			return;
+		}
+		if (node instanceof StatementPattern statementPattern) {
+			double rows = nodeRows(statementPattern);
+			double workRows = nodeWorkRows(statementPattern);
+			double[] optionalBridgeBlend = connectedBridgeBlend(statementPattern, rows, workRows,
+					"optional_rhs_bridge_product_geometric_mean");
+			if (optionalBridgeBlend != null) {
+				stampPlannerDecisionMetrics(statementPattern, optionalBridgeBlend[0], optionalBridgeBlend[1]);
+				stampEstimate(statementPattern, optionalBridgeBlend[0], optionalBridgeBlend[1],
+						sourceForExistingPlan(statementPattern, LMDB_BOUND_LOOKUP_SUBTREE));
+			}
+			return;
+		}
+		if (node instanceof UnaryTupleOperator unary) {
+			stampOptionalBridgeLeafBlends(unary.getArg());
+			return;
+		}
+		if (node instanceof BinaryTupleOperator binary) {
+			stampOptionalBridgeLeafBlends(binary.getLeftArg());
+			stampOptionalBridgeLeafBlends(binary.getRightArg());
 		}
 	}
 
@@ -1074,6 +1375,41 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			return candidate;
 		}
 		return preferred;
+	}
+
+	private double maxFinite(double... values) {
+		double max = Double.NaN;
+		for (double value : values) {
+			max = largerFiniteRowCount(max, value);
+		}
+		return max;
+	}
+
+	private double ratio(double numerator, double denominator) {
+		if (!isFinitePositive(numerator) || !isFinitePositive(denominator)) {
+			return Double.NaN;
+		}
+		double ratio = numerator / denominator;
+		return isFinitePositive(ratio) ? ratio : Double.NaN;
+	}
+
+	private double maxRatio(double leftRows, double rightRows) {
+		if (!isFinitePositive(leftRows) || !isFinitePositive(rightRows)) {
+			return Double.NaN;
+		}
+		return Math.max(leftRows, rightRows) / Math.min(leftRows, rightRows);
+	}
+
+	private double geometricMean(double leftRows, double rightRows) {
+		if (!isFinitePositive(leftRows) || !isFinitePositive(rightRows)) {
+			return Double.NaN;
+		}
+		double mean = Math.sqrt(leftRows * rightRows);
+		return isFinitePositive(mean) ? mean : Double.NaN;
+	}
+
+	private boolean isFinitePositive(double value) {
+		return isFiniteNonNegative(value) && value > 0.0d;
 	}
 
 	private double finiteDerivedOptionalLeftRows(TupleExpr rightArg) {
@@ -1225,6 +1561,114 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			return nodeRows(join.getLeftArg());
 		}
 		return Double.NaN;
+	}
+
+	private List<TupleExpr> externalPrefixFactors(TupleExpr node) {
+		QueryModelNode child = node;
+		QueryModelNode parent = node.getParentNode();
+		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
+				&& leftBindingsReachThrough(unary)) {
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		TupleExpr prefixArg = null;
+		if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
+			prefixArg = leftJoin.getLeftArg();
+		} else if (parent instanceof Join join && join.getRightArg() == child) {
+			prefixArg = join.getLeftArg();
+		}
+		if (prefixArg == null) {
+			return List.of();
+		}
+		List<TupleExpr> factors = new ArrayList<>();
+		if (!collectExternalPrefixFactors(prefixArg, factors)) {
+			return List.of(prefixArg);
+		}
+		return factors.isEmpty() ? List.of() : List.copyOf(factors);
+	}
+
+	private Map<String, Set<Value>> finiteBindingValues(Set<String> boundVars, List<TupleExpr> prefixFactors) {
+		if (boundVars == null || boundVars.isEmpty() || prefixFactors == null || prefixFactors.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Set<Value>> finiteBindingValues = new HashMap<>();
+		for (TupleExpr prefixFactor : prefixFactors) {
+			addFiniteBindingValues(finiteBindingValues, prefixFactor);
+		}
+		if (finiteBindingValues.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Set<Value>> visibleValues = new HashMap<>();
+		for (String boundVar : boundVars) {
+			Set<Value> values = finiteBindingValues.get(boundVar);
+			if (values != null && !values.isEmpty()) {
+				visibleValues.put(boundVar, Set.copyOf(values));
+			}
+		}
+		return visibleValues.isEmpty() ? Map.of() : Map.copyOf(visibleValues);
+	}
+
+	private void addFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues, TupleExpr tupleExpr) {
+		if (tupleExpr == null) {
+			return;
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			addFiniteBindingValues(finiteBindingValues, assignment);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			addFiniteBindingValues(finiteBindingValues, filter.getArg());
+			return;
+		}
+		if (tupleExpr instanceof Extension extension) {
+			addFiniteBindingValues(finiteBindingValues, extension.getArg());
+			return;
+		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			addFiniteBindingValues(finiteBindingValues, join.getLeftArg());
+			addFiniteBindingValues(finiteBindingValues, join.getRightArg());
+		}
+	}
+
+	private void addFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues,
+			BindingSetAssignment assignment) {
+		Map<String, Set<Value>> assignmentValues = new HashMap<>();
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			for (String bindingName : bindingSet.getBindingNames()) {
+				Value value = bindingSet.getValue(bindingName);
+				if (value != null) {
+					assignmentValues.computeIfAbsent(bindingName, ignored -> new HashSet<>()).add(value);
+				}
+			}
+		}
+		for (Map.Entry<String, Set<Value>> entry : assignmentValues.entrySet()) {
+			finiteBindingValues.merge(entry.getKey(), Set.copyOf(entry.getValue()), (left, right) -> {
+				Set<Value> intersection = new HashSet<>(left);
+				intersection.retainAll(right);
+				return intersection.isEmpty() ? Set.of() : Set.copyOf(intersection);
+			});
+		}
+	}
+
+	private boolean collectExternalPrefixFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof StatementPattern || tupleExpr instanceof BindingSetAssignment) {
+			factors.add(tupleExpr);
+			return true;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return collectExternalPrefixFactors(filter.getArg(), factors);
+		}
+		if (tupleExpr instanceof Extension extension) {
+			return collectExternalPrefixFactors(extension.getArg(), factors);
+		}
+		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+			return collectExternalPrefixFactors(join.getLeftArg(), factors)
+					&& collectExternalPrefixFactors(join.getRightArg(), factors);
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return collectExternalPrefixFactors(leftJoin.getLeftArg(), factors);
+		}
+		return false;
 	}
 
 	private boolean leftBindingsReachThrough(UnaryTupleOperator unary) {

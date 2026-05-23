@@ -71,6 +71,9 @@ final class SketchJoinOrderPlanner {
 	private static final int GREEDY_BEAM_WIDTH = 8;
 	private static final double STRUCTURAL_WORK_EQUIVALENCE_ROWS = 4.0d;
 	private static final double ANCHOR_BRIDGE_MAX_STEP_WORK_RATIO = 3.0d;
+	private static final double CONNECTED_PAGE_WALK_BLEND_MIN_RATIO = 2.0d;
+	private static final String EXACT_CONNECTED_JOIN_MIN_ROWS = "optimizer.exactConnectedJoinMinRows";
+	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
 	private static final double BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO = 3.0d;
 	private static final double FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS = 1_000.0d;
@@ -935,6 +938,7 @@ final class SketchJoinOrderPlanner {
 				conditionedEstimate.outputRows(), null);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate = factor.estimate();
 		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
+		rowsEnteringEstimate = connectedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		if (appliesSelectiveSeedFilterRowFlow(seedMask)) {
 			rowsEnteringEstimate = applyUnlockedFilters(0L, seedMask, rowsEnteringEstimate);
 		}
@@ -1148,6 +1152,7 @@ final class SketchJoinOrderPlanner {
 		rowsEnteringEstimate = finiteBindingAssignmentRowFlowEstimate(candidate, prefix.estimate(),
 				rowsEnteringEstimate);
 		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
+		rowsEnteringEstimate = connectedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = boundedFiniteLookupRowFlowEstimate(candidate, mask, currentBoundVarMask,
 				prefix.estimate(), rowsEnteringEstimate, physicalEstimate);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters = rowsEnteringEstimate;
@@ -2918,6 +2923,10 @@ final class SketchJoinOrderPlanner {
 		return maxFinite(maxFinite(first, second, third), fourth, Double.NaN);
 	}
 
+	private double maxFinite(double first, double second, double third, double fourth, double fifth) {
+		return maxFinite(maxFinite(first, second, third, fourth), fifth, Double.NaN);
+	}
+
 	private double maxFinite(double first, double second, double third) {
 		double max = 0.0d;
 		if (isFiniteNonNegative(first)) {
@@ -3942,6 +3951,8 @@ final class SketchJoinOrderPlanner {
 		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = isPlainBindingSetAssignment(factorIndex) ? null
 				: factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
 						!endpointDomainPreparation, estimationTier, selectedPrefix);
+		factorCostEstimate = refineConnectedPageWalkFactorCostEstimate(factorCostEstimate, factorIndex,
+				currentlyBoundVarMask);
 		if (factorCostEstimate != null) {
 			if (isFiniteNonNegative(factorCostEstimate.getOutputRows())) {
 				factorRows = factorCostEstimate.getOutputRows();
@@ -4007,6 +4018,131 @@ final class SketchJoinOrderPlanner {
 		return new FactorPhysicalEstimate(accessWorkRows, factorRows, physicalComparable, missingLookupComponents,
 				lookupComponents, lookupComponentMask, directLookup, accessRowsBeforeFilter, exactOutputRows,
 				factorCostEstimate);
+	}
+
+	private JoinFactorCostModel.FactorCostEstimate refineConnectedPageWalkFactorCostEstimate(
+			JoinFactorCostModel.FactorCostEstimate estimate, int factorIndex, long currentlyBoundVarMask) {
+		if (estimate == null) {
+			return estimate;
+		}
+		if (!hasBoundBridgeContext(factorIndex, currentlyBoundVarMask)) {
+			return estimate;
+		}
+		Map<String, String> stringMetrics = estimate.getStringMetrics();
+		String fusion = stringMetrics.get("plannedEstimateFusion");
+		if (!"connected_page_walk".equals(fusion)) {
+			return estimate;
+		}
+		String source = stringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		if ("lmdb-finite-binding-lookup".equals(source) || "lmdb-finite-derived-surface".equals(source)) {
+			return estimate;
+		}
+		Map<String, Double> doubleMetrics = estimate.getDoubleMetrics();
+		double baseRows = connectedPageWalkBaseRows(estimate, doubleMetrics);
+		double baseWorkRows = connectedPageWalkBaseWorkRows(estimate, doubleMetrics, baseRows);
+		double connectedRows = maxFinite(
+				doubleMetrics.getOrDefault("plannedConnectedJoinRows", Double.NaN),
+				doubleMetrics.getOrDefault("plannedConnectedJoinMinRows", Double.NaN),
+				doubleMetrics.getOrDefault(EXACT_CONNECTED_JOIN_MIN_ROWS, Double.NaN));
+		double connectedWorkRows = maxFinite(
+				connectedRows,
+				doubleMetrics.getOrDefault("plannedConnectedJoinWorkRows", Double.NaN),
+				doubleMetrics.getOrDefault("plannedConnectedJoinMaxRows", Double.NaN),
+				doubleMetrics.getOrDefault(EXACT_CONNECTED_JOIN_MAX_ROWS, Double.NaN));
+		if (!(isFinitePositive(baseRows) && isFinitePositive(baseWorkRows)
+				&& isFinitePositive(connectedRows) && isFinitePositive(connectedWorkRows))) {
+			return estimate;
+		}
+		double rowRatio = connectedRows / baseRows;
+		double workRatio = connectedWorkRows / baseWorkRows;
+		boolean blendRows = Double.isFinite(rowRatio) && rowRatio >= CONNECTED_PAGE_WALK_BLEND_MIN_RATIO;
+		boolean blendWorkRows = Double.isFinite(workRatio) && workRatio >= CONNECTED_PAGE_WALK_BLEND_MIN_RATIO;
+		if (!blendRows && !blendWorkRows) {
+			return estimate;
+		}
+		double refinedRows = blendRows ? geometricMean(baseRows, connectedRows) : baseRows;
+		double refinedWorkRows = blendWorkRows ? geometricMean(baseWorkRows, connectedWorkRows) : baseWorkRows;
+		if (!isFinitePositive(refinedRows) || !isFinitePositive(refinedWorkRows)
+				|| (refinedRows <= baseRows && refinedWorkRows <= baseWorkRows)) {
+			return estimate;
+		}
+		refinedRows = Math.max(baseRows, refinedRows);
+		refinedWorkRows = Math.max(baseWorkRows, refinedWorkRows);
+		Map<String, String> refinedStringMetrics = new HashMap<>(stringMetrics);
+		refinedStringMetrics.put("plannedPreBlendEstimateFusion", fusion);
+		refinedStringMetrics.put("plannedEstimateFusion", "connected_page_walk_geometric_blend");
+		refinedStringMetrics.put("plannedConnectedJoinBlendSource", "planner_factor_cost_geometric_mean");
+		Map<String, Double> refinedDoubleMetrics = new HashMap<>(doubleMetrics);
+		refinedDoubleMetrics.put("plannedConnectedJoinBlendRawRows", baseRows);
+		refinedDoubleMetrics.put("plannedConnectedJoinBlendRawWorkRows", baseWorkRows);
+		refinedDoubleMetrics.put("plannedConnectedJoinBlendRows", refinedRows);
+		refinedDoubleMetrics.put("plannedConnectedJoinBlendWorkRows", refinedWorkRows);
+		refinedDoubleMetrics.put("plannedConnectedJoinBlendRowsRatio", rowRatio);
+		refinedDoubleMetrics.put("plannedConnectedJoinBlendWorkRatio", workRatio);
+		refinedDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, refinedRows);
+		refinedDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, refinedRows);
+		refinedDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, refinedWorkRows);
+		refinedDoubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, refinedWorkRows);
+		return new JoinFactorCostModel.FactorCostEstimate(refinedWorkRows, refinedRows, refinedStringMetrics,
+				refinedDoubleMetrics, estimate.hasPhysicalAccessPath(), estimate.isDirectLookup(),
+				estimate.getLookupComponentMask(), estimate.getMissingLookupComponentMask(),
+				estimate.getAccessRowsBeforeFilter(), true, estimate.hasExactOutputRows());
+	}
+
+	private boolean hasBoundBridgeContext(int factorIndex, long currentlyBoundVarMask) {
+		return (currentlyBoundVarMask & bindingVarMasks[factorIndex] & variableUniverseMask) != 0L;
+	}
+
+	private double connectedPageWalkBaseRows(JoinFactorCostModel.FactorCostEstimate estimate,
+			Map<String, Double> doubleMetrics) {
+		return maxFinite(
+				estimate.getOutputRows(),
+				doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, Double.NaN),
+				doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, Double.NaN),
+				doubleMetrics.getOrDefault("plannedRepeatedInvocations", Double.NaN),
+				Double.NaN);
+	}
+
+	private double connectedPageWalkBaseWorkRows(JoinFactorCostModel.FactorCostEstimate estimate,
+			Map<String, Double> doubleMetrics, double baseRows) {
+		return maxFinite(
+				estimate.getWorkRows(),
+				baseRows,
+				doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_WORK_ROWS, Double.NaN),
+				doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, Double.NaN),
+				maxFinite(
+						doubleMetrics.getOrDefault(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, Double.NaN),
+						doubleMetrics.getOrDefault("plannedRepeatedInvocations", Double.NaN)));
+	}
+
+	private boolean isConnectedPageWalkBlend(FactorPhysicalEstimate physicalEstimate) {
+		if (physicalEstimate == null || physicalEstimate.factorCostEstimate() == null) {
+			return false;
+		}
+		String fusion = physicalEstimate.factorCostEstimate()
+				.getStringMetrics()
+				.get("plannedEstimateFusion");
+		return "connected_page_walk_geometric_blend".equals(fusion);
+	}
+
+	private SketchBasedJoinEstimator.TuplePlanEstimate connectedPhysicalRowFlowEstimate(
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate, FactorPhysicalEstimate physicalEstimate) {
+		if (estimate == null || !isConnectedPageWalkBlend(physicalEstimate)) {
+			return estimate;
+		}
+		double outputRows = physicalEstimate.factorOutputRows();
+		if (!isFiniteNonNegative(outputRows) || outputRows <= estimate.outputRows()) {
+			return estimate;
+		}
+		return estimator.withOutputRowsForJoinOrdering(estimate, outputRows);
+	}
+
+	private boolean isFinitePositive(double value) {
+		return Double.isFinite(value) && value > 0.0d;
+	}
+
+	private double geometricMean(double left, double right) {
+		return Math.sqrt(Math.max(1.0d, left) * Math.max(1.0d, right));
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate factorCostEstimate(int factorIndex, long mask,

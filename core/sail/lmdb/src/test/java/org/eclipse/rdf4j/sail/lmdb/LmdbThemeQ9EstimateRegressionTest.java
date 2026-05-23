@@ -59,6 +59,8 @@ class LmdbThemeQ9EstimateRegressionTest {
 	private static final int DEPARTMENTS_PER_ORG = 2;
 	private static final int OFFERS_PER_DEPARTMENT = 3;
 	private static final int EVENTS_PER_PAGE = 4;
+	private static final int NOISE_PAGE_COUNT = 120;
+	private static final int NOISE_EVENTS_PER_PAGE = 16;
 	private static final int EXPECTED_TYPED_PREFIX_ROWS = ORG_COUNT * DEPARTMENTS_PER_ORG * OFFERS_PER_DEPARTMENT
 			* PERSONS_PER_ORG;
 	private static final int EXPECTED_EVENT_OPTIONAL_ROWS = EXPECTED_TYPED_PREFIX_ROWS * EVENTS_PER_PAGE;
@@ -143,6 +145,133 @@ class LmdbThemeQ9EstimateRegressionTest {
 		}
 	}
 
+	@Test
+	void q9LikeOptionalUsesSelectedBridgeValueFrequencyDespiteUnselectedNoise(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadQ9LikeFanout(repository);
+			loadUnselectedEventPositionNoise(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = String.join("\n",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  ?org <urn:test:q9:department> ?department .",
+						"  ?department <urn:test:q9:makesOffer> ?offer .",
+						"  ?offer <urn:test:q9:itemOffered> ?work .",
+						"  ?work <urn:test:q9:about> ?topic .",
+						"  ?topic <urn:test:q9:mainEntityOfPage> ?page .",
+						"  ?person <urn:test:q9:memberOf> ?org .",
+						"  ?person <urn:test:q9:type> <urn:test:q9:Person> .",
+						"  OPTIONAL {",
+						"    ?page <urn:test:q9:event> ?event .",
+						"    ?event <urn:test:q9:position> ?eventPosition .",
+						"    FILTER(?eventPosition IN (1, 2, 3, 4))",
+						"    BIND(?eventPosition AS ?eventBucket)",
+						"  }",
+						"  OPTIONAL {",
+						"    ?org <urn:test:q9:employee> ?employee .",
+						"  }",
+						"}");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(result.hasNext(), "Expected count result");
+					assertEquals(EXPECTED_FINAL_ROWS, ((Literal) result.next().getValue("count")).longValue());
+				}
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				LeftJoin eventOptional = findOptionalWithBridgeProduct((TupleExpr) explanation.tupleExpr());
+				StatementPattern employeePattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), EMPLOYEE,
+						"employee");
+				assertNotNull(eventOptional, explanation::toString);
+				assertNotNull(employeePattern, explanation::toString);
+				assertEquals(EXPECTED_EVENT_OPTIONAL_ROWS,
+						eventOptional.getDoubleMetricPlanned("plannedOptionalBridgeProductRows"),
+						EXPECTED_EVENT_OPTIONAL_ROWS * 0.25d,
+						"Event OPTIONAL estimate must use value frequency from the page-selected bridge rows, not "
+								+ "global unselected event noise: " + explanation);
+				assertTrue(
+						employeePattern.getDoubleMetricPlanned(
+								"plannedRepeatedInvocations") >= EXPECTED_EVENT_OPTIONAL_ROWS,
+						"Following employee OPTIONAL must be costed from event-expanded rows despite unselected "
+								+ "event noise: " + explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void q9LikeOptionalValuesUsesRepeatedBridgeRowsWithSelectedValueFrequency(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadQ9LikeFanout(repository);
+			loadUnselectedEventPositionNoise(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String query = String.join("\n",
+						"SELECT (COUNT(*) AS ?count) WHERE {",
+						"  ?org <urn:test:q9:department> ?department .",
+						"  ?department <urn:test:q9:makesOffer> ?offer .",
+						"  ?offer <urn:test:q9:itemOffered> ?work .",
+						"  ?work <urn:test:q9:about> ?topic .",
+						"  ?topic <urn:test:q9:mainEntityOfPage> ?page .",
+						"  ?person <urn:test:q9:memberOf> ?org .",
+						"  ?person <urn:test:q9:type> <urn:test:q9:Person> .",
+						"  OPTIONAL {",
+						"    ?page <urn:test:q9:event> ?event .",
+						"    ?event <urn:test:q9:position> ?eventPosition .",
+						"    VALUES ?eventPosition {",
+						"      \"1\"^^<http://www.w3.org/2001/XMLSchema#int>",
+						"      \"2\"^^<http://www.w3.org/2001/XMLSchema#int>",
+						"      \"3\"^^<http://www.w3.org/2001/XMLSchema#int>",
+						"      \"4\"^^<http://www.w3.org/2001/XMLSchema#int>",
+						"    }",
+						"    BIND(?eventPosition AS ?eventBucket)",
+						"  }",
+						"  OPTIONAL {",
+						"    ?org <urn:test:q9:employee> ?employee .",
+						"  }",
+						"}");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(result.hasNext(), "Expected count result");
+					assertEquals(EXPECTED_FINAL_ROWS, ((Literal) result.next().getValue("count")).longValue());
+				}
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				LeftJoin eventOptional = findOptionalWithBridgeProduct((TupleExpr) explanation.tupleExpr());
+				StatementPattern employeePattern = findStatementPattern((TupleExpr) explanation.tupleExpr(), EMPLOYEE,
+						"employee");
+				assertNotNull(eventOptional, explanation::toString);
+				assertNotNull(employeePattern, explanation::toString);
+				assertEquals(EXPECTED_EVENT_OPTIONAL_ROWS,
+						eventOptional.getDoubleMetricPlanned("plannedOptionalBridgeProductRows"),
+						EXPECTED_EVENT_OPTIONAL_ROWS * 0.25d,
+						"VALUES-constrained event OPTIONAL must preserve repeated bridge rows while applying "
+								+ "selected value frequency: " + explanation);
+				assertTrue(
+						employeePattern.getDoubleMetricPlanned(
+								"plannedRepeatedInvocations") >= EXPECTED_EVENT_OPTIONAL_ROWS,
+						"Following employee OPTIONAL must be costed from VALUES-expanded optional rows: "
+								+ explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static void loadQ9LikeFanout(SailRepository repository) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -181,6 +310,21 @@ class LmdbThemeQ9EstimateRegressionTest {
 				for (int employeeIndex = 0; employeeIndex < EMPLOYEES_PER_ORG; employeeIndex++) {
 					connection.add(org, EMPLOYEE,
 							VF.createIRI("urn:test:q9:employee:" + orgIndex + ":" + employeeIndex));
+				}
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadUnselectedEventPositionNoise(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int pageIndex = 0; pageIndex < NOISE_PAGE_COUNT; pageIndex++) {
+				Resource page = VF.createIRI("urn:test:q9:noise-page:" + pageIndex);
+				for (int eventIndex = 0; eventIndex < NOISE_EVENTS_PER_PAGE; eventIndex++) {
+					Resource event = VF.createIRI("urn:test:q9:noise-event:" + pageIndex + ":" + eventIndex);
+					connection.add(page, EVENT, event);
+					connection.add(event, POSITION, VF.createLiteral(1000 + eventIndex));
 				}
 			}
 			connection.commit();
