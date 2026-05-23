@@ -55,10 +55,11 @@ final class LmdbOperatorFeedbackStats {
 	static final String LEARNED_LEFT_JOIN_SURFACE = "learned_left_join_surface";
 
 	private static final String SIDECAR_SUFFIX = ".operators";
-	private static final int PERSIST_VERSION = 2;
+	private static final int PERSIST_VERSION = 3;
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
 	private static final double MAX_CORRECTION_RATIO = 100_000.0d;
+	private static final double MAX_UNCERTAINTY_Q_ERROR = 100.0d;
 	private static final String PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
 
 	private final Path estimatorPath;
@@ -244,8 +245,34 @@ final class LmdbOperatorFeedbackStats {
 				: Double.NaN;
 		double rightBranchRows = node instanceof BinaryTupleOperator binary ? actualRows(binary.getRightArg())
 				: Double.NaN;
+		double actualWorkRows = actualWorkRows(node, actualRows, leftRows, rightRows, leftBranchRows, rightBranchRows);
 		return new OperatorObservation(plannedRows, plannedWorkRows, actualRows, leftRows, rightRows,
-				leftRowsWithMatch, emptyProbeCount, maxRightRowsPerLeft, leftBranchRows, rightBranchRows);
+				actualWorkRows, leftRowsWithMatch, emptyProbeCount, maxRightRowsPerLeft, leftBranchRows,
+				rightBranchRows);
+	}
+
+	private double actualWorkRows(TupleExpr node, double actualRows, double leftRows, double rightRows,
+			double leftBranchRows, double rightBranchRows) {
+		if (node instanceof Union) {
+			double branchRows = sumFiniteRows(leftBranchRows, rightBranchRows);
+			if (isFiniteNonNegative(branchRows)) {
+				return Math.max(actualRows, branchRows);
+			}
+		}
+		double consumedRows = sumFiniteRows(leftRows, rightRows);
+		if (isFiniteNonNegative(consumedRows)) {
+			return Math.max(actualRows, consumedRows);
+		}
+		return actualRows;
+	}
+
+	private static double sumFiniteRows(double leftRows, double rightRows) {
+		boolean hasLeftRows = isFiniteNonNegative(leftRows);
+		boolean hasRightRows = isFiniteNonNegative(rightRows);
+		if (!hasLeftRows && !hasRightRows) {
+			return Double.NaN;
+		}
+		return (hasLeftRows ? leftRows : 0.0d) + (hasRightRows ? rightRows : 0.0d);
 	}
 
 	private double leftRows(TupleExpr node) {
@@ -553,6 +580,20 @@ final class LmdbOperatorFeedbackStats {
 		return Math.max(MIN_CORRECTION_RATIO, Math.min(MAX_CORRECTION_RATIO, ratio));
 	}
 
+	private static double qError(double actualRows, double estimatedRows) {
+		if (!isFiniteNonNegative(actualRows) || !isFiniteNonNegative(estimatedRows)) {
+			return Double.NaN;
+		}
+		if (actualRows == 0.0d && estimatedRows == 0.0d) {
+			return 1.0d;
+		}
+		if (actualRows == 0.0d || estimatedRows == 0.0d) {
+			return MAX_CORRECTION_RATIO;
+		}
+		double ratio = Math.max(actualRows / estimatedRows, estimatedRows / actualRows);
+		return Double.isFinite(ratio) ? Math.max(1.0d, Math.min(MAX_CORRECTION_RATIO, ratio)) : Double.NaN;
+	}
+
 	private static double clampRowsByBase(double rows, double baseRows) {
 		if (!isFiniteNonNegative(rows)) {
 			return Double.NaN;
@@ -601,12 +642,13 @@ final class LmdbOperatorFeedbackStats {
 	}
 
 	record OperatorEstimate(double rows, double workRows, String source, long evidenceCount, double confidence,
-			String feedbackKey) {
+			String feedbackKey, double rowQErrorMean, double rowQErrorMax, double workQErrorMean,
+			double workQErrorMax, double uncertaintyRows) {
 	}
 
 	private record OperatorObservation(double plannedRows, double plannedWorkRows, double actualRows, double leftRows,
-			double rightRows, double leftRowsWithMatch, double emptyProbeCount, double maxRightRowsPerLeft,
-			double leftBranchRows, double rightBranchRows) {
+			double rightRows, double actualWorkRows, double leftRowsWithMatch, double emptyProbeCount,
+			double maxRightRowsPerLeft, double leftBranchRows, double rightBranchRows) {
 	}
 
 	private record OperatorKey(String operatorType, String fingerprint, String leftBindings, String rightBindings,
@@ -637,6 +679,12 @@ final class LmdbOperatorFeedbackStats {
 		private double maxRightRowsPerLeft;
 		private double leftBranchRowsSum;
 		private double rightBranchRowsSum;
+		private long rowQErrorSampleCount;
+		private double rowQErrorSum;
+		private double rowQErrorMax;
+		private long workQErrorSampleCount;
+		private double workQErrorSum;
+		private double workQErrorMax;
 
 		void add(OperatorObservation observation) {
 			sampleCount++;
@@ -650,6 +698,26 @@ final class LmdbOperatorFeedbackStats {
 			maxRightRowsPerLeft = Math.max(maxRightRowsPerLeft, nonNegative(observation.maxRightRowsPerLeft()));
 			leftBranchRowsSum += nonNegative(observation.leftBranchRows());
 			rightBranchRowsSum += nonNegative(observation.rightBranchRows());
+			recordRowQError(observation);
+			recordWorkQError(observation);
+		}
+
+		private void recordRowQError(OperatorObservation observation) {
+			double qError = qError(observation.actualRows(), observation.plannedRows());
+			if (Double.isFinite(qError)) {
+				rowQErrorSampleCount++;
+				rowQErrorSum += qError;
+				rowQErrorMax = Math.max(rowQErrorMax, qError);
+			}
+		}
+
+		private void recordWorkQError(OperatorObservation observation) {
+			double qError = qError(observation.actualWorkRows(), observation.plannedWorkRows());
+			if (Double.isFinite(qError)) {
+				workQErrorSampleCount++;
+				workQErrorSum += qError;
+				workQErrorMax = Math.max(workQErrorMax, qError);
+			}
 		}
 
 		OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
@@ -681,9 +749,37 @@ final class LmdbOperatorFeedbackStats {
 			if (node instanceof LeftJoin && isFiniteNonNegative(leftRows)) {
 				rows = Math.max(leftRows, rows);
 			}
+			double rowQErrorMean = qErrorMean(rowQErrorSum, rowQErrorSampleCount);
+			double workQErrorMean = qErrorMean(workQErrorSum, workQErrorSampleCount);
+			double uncertaintyRows = uncertaintyRows(rows, workRows, rowQErrorMax, workQErrorMax, confidence);
 			String source = node instanceof LeftJoin ? LEARNED_LEFT_JOIN_SURFACE : LEARNED_OPERATOR;
 			return new OperatorEstimate(rows, Math.max(rows, workRows), source, sampleCount, confidence,
-					feedbackKey);
+					feedbackKey, rowQErrorMean, finiteQErrorMax(rowQErrorMax), workQErrorMean,
+					finiteQErrorMax(workQErrorMax), uncertaintyRows);
+		}
+
+		private double qErrorMean(double qErrorSum, long qErrorSampleCount) {
+			return qErrorSampleCount <= 0L ? 1.0d : Math.max(1.0d, qErrorSum / qErrorSampleCount);
+		}
+
+		private double finiteQErrorMax(double qErrorMax) {
+			return qErrorMax > 0.0d && Double.isFinite(qErrorMax) ? Math.max(1.0d, qErrorMax) : 1.0d;
+		}
+
+		private double uncertaintyRows(double rows, double workRows, double rowQErrorMax, double workQErrorMax,
+				double confidence) {
+			double qError = Math.max(finiteQErrorMax(rowQErrorMax), finiteQErrorMax(workQErrorMax));
+			if (qError <= 1.0d) {
+				return 0.0d;
+			}
+			double baseRows = Math.max(nonNegative(rows), nonNegative(workRows));
+			if (!isFiniteNonNegative(baseRows) || baseRows == 0.0d) {
+				return 0.0d;
+			}
+			double uncertaintyMultiplier = Math.min(MAX_UNCERTAINTY_Q_ERROR, qError) - 1.0d;
+			double confidenceGap = 1.0d - Math.max(0.0d, Math.min(1.0d, confidence));
+			double uncertaintyRows = baseRows * uncertaintyMultiplier * Math.max(0.05d, confidenceGap);
+			return isFiniteNonNegative(uncertaintyRows) ? uncertaintyRows : 0.0d;
 		}
 
 		private double estimateJoinRows(double leftRows, double baseRows) {
@@ -761,6 +857,12 @@ final class LmdbOperatorFeedbackStats {
 			out.writeDouble(maxRightRowsPerLeft);
 			out.writeDouble(leftBranchRowsSum);
 			out.writeDouble(rightBranchRowsSum);
+			out.writeLong(rowQErrorSampleCount);
+			out.writeDouble(rowQErrorSum);
+			out.writeDouble(rowQErrorMax);
+			out.writeLong(workQErrorSampleCount);
+			out.writeDouble(workQErrorSum);
+			out.writeDouble(workQErrorMax);
 		}
 
 		static LearnedOperatorCounts readFrom(DataInputStream in) throws IOException {
@@ -776,6 +878,12 @@ final class LmdbOperatorFeedbackStats {
 			counts.maxRightRowsPerLeft = in.readDouble();
 			counts.leftBranchRowsSum = in.readDouble();
 			counts.rightBranchRowsSum = in.readDouble();
+			counts.rowQErrorSampleCount = in.readLong();
+			counts.rowQErrorSum = in.readDouble();
+			counts.rowQErrorMax = in.readDouble();
+			counts.workQErrorSampleCount = in.readLong();
+			counts.workQErrorSum = in.readDouble();
+			counts.workQErrorMax = in.readDouble();
 			return counts;
 		}
 

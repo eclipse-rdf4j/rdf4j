@@ -221,6 +221,27 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void lmdbPipelineAddsSemanticDependencyOptimizerOnlyWhenConfigured() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		List<QueryOptimizer> defaultOptimizers = optimizers(
+				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
+
+		assertFalse(defaultOptimizers.stream().anyMatch(LmdbSemanticDependencyOptimizer.class::isInstance));
+
+		LmdbSemanticDependencies dependencies = LmdbSemanticDependencies.builder()
+				.functionalBySubject(SimpleValueFactory.getInstance().createIRI("urn:ssn"))
+				.build();
+		List<QueryOptimizer> configuredOptimizers = optimizers(new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics(), dependencies).getOptimizers());
+
+		int semanticIndex = indexOf(configuredOptimizers, LmdbSemanticDependencyOptimizer.class);
+		assertTrue(semanticIndex >= 0);
+		assertTrue(indexOf(configuredOptimizers, LmdbSetSemanticsOptimizer.class) < semanticIndex);
+		assertTrue(semanticIndex < indexOf(configuredOptimizers, LmdbFilterSimplifierOptimizer.class));
+	}
+
+	@Test
 	void lmdbPipelineDoesNotRunEagerDomainFilterOptimizer() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);

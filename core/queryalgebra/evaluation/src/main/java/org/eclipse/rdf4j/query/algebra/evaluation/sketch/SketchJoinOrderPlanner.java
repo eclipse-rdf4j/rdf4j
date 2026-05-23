@@ -6138,9 +6138,32 @@ final class SketchJoinOrderPlanner {
 		}
 		stringMetrics.putAll(factorCostEstimate.getStringMetrics());
 		doubleMetrics.putAll(factorCostEstimate.getDoubleMetrics());
+		if (physicalEstimate.physicalComparable() && physicalEstimate.lookupComponentMask() != 0) {
+			stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+					physicalEstimate.directLookup() ? "directLookup" : "prefixScan");
+			stringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
+					componentMaskString(physicalEstimate.lookupComponentMask()));
+			if (isFiniteNonNegative(physicalEstimate.accessRowsBeforeFilter())) {
+				doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS,
+						physicalEstimate.accessRowsBeforeFilter());
+			}
+		}
 		if (physicalEstimate.physicalComparable() && isFiniteNonNegative(physicalEstimate.workRows())) {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, physicalEstimate.workRows());
 		}
+	}
+
+	private String componentMaskString(int componentMask) {
+		if (componentMask == 0) {
+			return "[]";
+		}
+		List<String> components = new ArrayList<>(COMPONENT_VALUES.length);
+		for (SketchBasedJoinEstimator.Component component : COMPONENT_VALUES) {
+			if ((componentMask & (1 << component.ordinal())) != 0) {
+				components.add(component.name());
+			}
+		}
+		return components.toString();
 	}
 
 	private Set<String> sharedJoinVars(TupleExpr tupleExpr, Set<String> boundBefore) {

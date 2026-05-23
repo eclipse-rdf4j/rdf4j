@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -94,6 +95,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
@@ -180,7 +182,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
  * </pre>
  */
 @Experimental
-public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider {
+public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider, PropertyPathEstimateProvider {
 
 	public static final String REFRESH_THREAD_NAME = "RdfJoinEstimator-Refresh";
 
@@ -214,6 +216,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final double FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT = 1.25d;
 	private static final Object FINITE_FILTER_UNSUPPORTED = new Object();
 	private static final Object FINITE_FILTER_UNBOUND = new Object();
+	private static final long CHARACTERISTIC_SET_SCAN_ROW_BUDGET = 100_000L;
+	private static final int CHARACTERISTIC_SET_SUBJECT_BUDGET = 16_384;
 	/* ────────────────────────────────────────────────────────────── */
 	/* Public enums */
 	/* ────────────────────────────────────────────────────────────── */
@@ -3779,6 +3783,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		public double count() {
 			return resultSize;
 		}
+
+		public double distinct() {
+			return distinct;
+		}
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -7049,6 +7057,189 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		return outcome.plan()
 				.map(JoinOrderPlanner.JoinOrderPlan::getEstimatedFinalRows)
 				.orElse(-1.0d);
+	}
+
+	@Override
+	public Optional<PropertyPathEstimate> estimate(ArbitraryLengthPath path, Set<String> boundVars) {
+		if (!isReady() || path == null) {
+			return Optional.empty();
+		}
+		StatementPattern step = singlePredicatePathStep(path.getPathExpression());
+		if (step == null) {
+			return Optional.empty();
+		}
+
+		String predicate = getValueOrNull(step.getPredicateVar());
+		String context = getValueOrNull(step.getContextVar());
+		double directRows = normalizeRows(estimatePatternRows(step));
+		JoinEstimate subjectStats = estimate(Component.S, null, predicate, null, context);
+		JoinEstimate objectStats = estimate(Component.O, null, predicate, null, context);
+		double predicateRows = normalizeRows(subjectStats.estimate());
+		double distinctSubjects = finiteOr(subjectStats.distinct(), predicateRows);
+		double distinctObjects = finiteOr(objectStats.distinct(), predicateRows);
+		double averageFanout = distinctSubjects > 0.0d ? predicateRows / distinctSubjects : 0.0d;
+		if (!Double.isFinite(averageFanout) || averageFanout < 0.0d) {
+			averageFanout = 0.0d;
+		}
+
+		double rows = estimateArbitraryLengthPathRows(directRows, path.getMinLength(), averageFanout, predicateRows);
+		return Optional.of(new PropertyPathEstimate(rows, distinctSubjects, distinctObjects, averageFanout,
+				"sketch-single-predicate-path"));
+	}
+
+	@Override
+	public Optional<PropertyPathEstimate> estimate(ZeroLengthPath path, Set<String> boundVars) {
+		if (!isReady() || path == null) {
+			return Optional.empty();
+		}
+		Value subject = path.getSubjectVar() == null ? null : path.getSubjectVar().getValue();
+		Value object = path.getObjectVar() == null ? null : path.getObjectVar().getValue();
+		double rows;
+		if (subject != null && object != null) {
+			rows = subject.equals(object) ? 1.0d : 0.0d;
+		} else if (subject != null || object != null) {
+			rows = 1.0d;
+		} else {
+			rows = Math.max(1.0d, estimate(Component.S, null, null, null, getValueOrNull(path.getContextVar()))
+					.distinct());
+		}
+		return Optional.of(new PropertyPathEstimate(rows, rows, rows, 1.0d, "sketch-zero-length-path"));
+	}
+
+	public Optional<CharacteristicSetEstimate> estimateSubjectStar(List<StatementPattern> patterns,
+			Set<String> boundVars) {
+		if (!isReady() || patterns == null || patterns.size() < 3) {
+			return Optional.empty();
+		}
+
+		String subjectName = null;
+		Set<IRI> predicates = new HashSet<>();
+		Set<String> objectNames = new HashSet<>();
+		List<StatementPattern> accepted = new ArrayList<>(patterns.size());
+		for (StatementPattern pattern : patterns) {
+			Var subjectVar = pattern.getSubjectVar();
+			if (subjectVar == null || subjectVar.hasValue() || subjectVar.getName() == null
+					|| subjectVar.getName().startsWith("_const_")) {
+				return Optional.empty();
+			}
+			if (subjectName == null) {
+				subjectName = subjectVar.getName();
+			} else if (!subjectName.equals(subjectVar.getName())) {
+				return Optional.empty();
+			}
+			Var contextVar = pattern.getContextVar();
+			if (contextVar != null) {
+				return Optional.empty();
+			}
+			IRI predicate = constantIri(pattern.getPredicateVar());
+			if (predicate == null || !predicates.add(predicate)) {
+				return Optional.empty();
+			}
+			Var objectVar = pattern.getObjectVar();
+			if (objectVar != null && !objectVar.hasValue()) {
+				String objectName = objectVar.getName();
+				if (objectName == null || subjectName.equals(objectName) || objectName.startsWith("_const_")
+						|| !objectNames.add(objectName)) {
+					return Optional.empty();
+				}
+			}
+			accepted.add(pattern);
+		}
+		if (boundVars != null && boundVars.contains(subjectName)) {
+			return Optional.empty();
+		}
+
+		Map<Resource, double[]> countsBySubject = new HashMap<>();
+		long scannedRows = 0L;
+		for (int i = 0; i < accepted.size(); i++) {
+			StatementPattern pattern = accepted.get(i);
+			IRI predicate = (IRI) pattern.getPredicateVar().getValue();
+			Value object = pattern.getObjectVar() == null ? null : pattern.getObjectVar().getValue();
+			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, predicate,
+					object)) {
+				while (statements.hasNext()) {
+					Statement statement = statements.next();
+					scannedRows++;
+					if (scannedRows > CHARACTERISTIC_SET_SCAN_ROW_BUDGET) {
+						return Optional.empty();
+					}
+					double[] counts = countsBySubject.computeIfAbsent(statement.getSubject(),
+							ignored -> new double[accepted.size()]);
+					if (countsBySubject.size() > CHARACTERISTIC_SET_SUBJECT_BUDGET) {
+						return Optional.empty();
+					}
+					counts[i]++;
+				}
+			} catch (SketchStatementSourceException e) {
+				return Optional.empty();
+			}
+		}
+
+		long subjectCount = 0L;
+		double rows = 0.0d;
+		for (double[] counts : countsBySubject.values()) {
+			double product = 1.0d;
+			for (double count : counts) {
+				if (count <= 0.0d) {
+					product = 0.0d;
+					break;
+				}
+				product *= count;
+			}
+			if (product > 0.0d) {
+				subjectCount++;
+				rows += product;
+			}
+		}
+		if (!Double.isFinite(rows)) {
+			return Optional.empty();
+		}
+		return Optional.of(new CharacteristicSetEstimate(predicates, subjectCount, normalizeRows(rows), scannedRows,
+				"exact-subject-characteristic-set"));
+	}
+
+	private static IRI constantIri(Var var) {
+		if (var == null || !var.hasValue() || !(var.getValue()instanceof IRI iri)) {
+			return null;
+		}
+		return iri;
+	}
+
+	private StatementPattern singlePredicatePathStep(TupleExpr pathExpression) {
+		if (!(pathExpression instanceof StatementPattern pattern)) {
+			return null;
+		}
+		Var predicate = pattern.getPredicateVar();
+		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+			return null;
+		}
+		return pattern;
+	}
+
+	private double estimateArbitraryLengthPathRows(double directRows, long minLength, double averageFanout,
+			double predicateRows) {
+		if (!Double.isFinite(directRows) || directRows < 0.0d) {
+			return 0.0d;
+		}
+		double rows = minLength <= 0 ? directRows + 1.0d : directRows;
+		double cappedFanout = Math.min(Math.max(averageFanout, 0.0d), 8.0d);
+		double next = directRows;
+		for (int depth = 2; depth <= 4; depth++) {
+			next *= cappedFanout;
+			if (!Double.isFinite(next) || next <= 0.0d) {
+				break;
+			}
+			rows += next;
+		}
+		double cap = Math.max(directRows, predicateRows) * 4.0d;
+		if (Double.isFinite(cap) && cap > 0.0d) {
+			rows = Math.min(rows, cap);
+		}
+		return normalizeRows(rows);
+	}
+
+	private static double finiteOr(double value, double fallback) {
+		return Double.isFinite(value) && value >= 0.0d ? value : Math.max(0.0d, fallback);
 	}
 
 	public double cardinality(LeftJoin node) {

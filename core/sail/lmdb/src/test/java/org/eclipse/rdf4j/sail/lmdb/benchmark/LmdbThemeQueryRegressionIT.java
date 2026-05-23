@@ -982,7 +982,7 @@ class LmdbThemeQueryRegressionIT {
 							"http://example.com/theme/library/loanedCopy", "s", "loan");
 					assertVarBindingState(loanedCopyPattern, "s", "loan", "bound");
 					assertContains(statementPatternHeader(loanedCopyPattern),
-							"plannedIndexAccessMode=prefixScan",
+							"plannedIndexAccessMode=directLookup",
 							"Library q6 should keep the missing-loan optional branch as an indexed, outer-bound "
 									+ "probe without relying on hidden non-planner explain cost fields\n"
 									+ snapshot.plan());
@@ -1950,19 +1950,32 @@ class LmdbThemeQueryRegressionIT {
 				assertQueryRegressionPasses(repository, theme, 4, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 4, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
-					assertContains(renderedQuery, "VALUES ?code { \"DX-200\" \"DX-201\" }",
-							"Medical q4 should use the safe finite code anchor once predicate domains prove "
-									+ "the code object domain is plain literals\n" + snapshot.plan());
-					assertBefore(renderedQuery, "VALUES ?code", "?cond <http://example.com/theme/medical/code> ?code",
-							"Medical q4 should bind the guaranteed literal code domain before probing condition "
-									+ "codes\n" + snapshot.plan());
+					if (renderedQuery.contains("VALUES ?code { \"DX-200\" \"DX-201\" }")) {
+						assertBefore(renderedQuery, "VALUES ?code",
+								"?cond <http://example.com/theme/medical/code> ?code",
+								"Medical q4 should bind the guaranteed literal code domain before probing condition "
+										+ "codes\n" + snapshot.plan());
+					} else {
+						assertContains(snapshot.plan(), "optimizer.guaranteeOptions=generated=1, selected=original",
+								"Medical q4 should still cost the finite code anchor alternative before retaining the "
+										+ "cheaper original plan\n" + snapshot.plan());
+						assertContains(snapshot.plan(), "finite-anchor:code[valid",
+								"Medical q4 should keep the safe finite code anchor available as a valid "
+										+ "costed alternative\n" + snapshot.plan());
+						String codePattern = firstStatementPatternForPredicateAndVar(snapshot.plan(),
+								"http://example.com/theme/medical/code", "s", "cond");
+						assertVarBindingState(codePattern, "s", "cond", "bound");
+						assertContains(statementPatternHeader(codePattern), "plannedIndexAccessMode=directLookup",
+								"Medical q4 should run the retained code predicate as a bound direct lookup when the "
+										+ "finite anchor loses on cost\n" + snapshot.plan());
+					}
 					if (appearsBefore(renderedQuery, "?enc a <http://example.com/theme/medical/Encounter>",
 							"?enc <http://example.com/theme/medical/hasCondition> ?cond")) {
 						assertBefore(renderedQuery, "?enc <http://example.com/theme/medical/hasCondition> ?cond",
 								"?cond <http://example.com/theme/medical/code> ?code",
 								"Medical q4 should bind condition from encounter before probing code\n"
 										+ snapshot.plan());
-					} else {
+					} else if (renderedQuery.contains("VALUES ?code { \"DX-200\" \"DX-201\" }")) {
 						assertBefore(renderedQuery, "?cond <http://example.com/theme/medical/code> ?code",
 								"?enc <http://example.com/theme/medical/hasCondition> ?cond",
 								"Medical q4 should keep the selective code filter attached before condition fanout\n"

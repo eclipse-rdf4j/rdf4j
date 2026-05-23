@@ -87,6 +87,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKey
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -356,8 +357,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			double distributedWork = distributedEstimate
 					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
 					.orElse(Double.NaN);
-			OptionalUnionDistributionCost anchoringAwareCost = optionalUnionDistributionAnchoringAwareCost(leftJoin,
-					leftUnion, costModel, context);
+			OptionalUnionDistributionCost anchoringAwareCost = statistics instanceof LmdbEvaluationStatistics
+					? optionalUnionDistributionAnchoringAwareCost(leftJoin, leftUnion, costModel, context)
+					: OptionalUnionDistributionCost.empty();
 			double comparedOriginalWork = anchoringAwareCost.hasCost() ? anchoringAwareCost.originalWork()
 					: originalWork;
 			double comparedDistributedWork = anchoringAwareCost.hasCost() ? anchoringAwareCost.distributedWork()
@@ -389,12 +391,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			double leftUnionWork = leftUnionEstimate.get().getWorkRows();
 			double leftUnionRows = leftUnionEstimate.get().getOutputRows();
-			Optional<JoinFactorCostModel.FactorCostEstimate> originalRightEstimate = estimateOptionalRightCost(
-					original, original.getRightArg(), boundVars, leftUnionRows, Double.NaN, costModel);
-			if (originalRightEstimate.isEmpty()) {
+			double originalRightWork = optionalAnchoringAwareRightWork(original, boundVars, leftUnionRows,
+					costModel);
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(originalRightWork)) {
 				return OptionalUnionDistributionCost.empty();
 			}
-			double originalWork = addFinite(leftUnionWork, originalRightEstimate.get().getWorkRows());
+			double originalWork = addFinite(leftUnionWork, originalRightWork);
 			double leftBranchWork = optionalUnionBranchAnchoringAwareWork(leftUnion.getLeftArg(), original, costModel,
 					context);
 			double rightBranchWork = optionalUnionBranchAnchoringAwareWork(leftUnion.getRightArg(), original, costModel,
@@ -426,32 +428,37 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			double leftWork = leftEstimate.get().getWorkRows();
 			double leftRows = leftEstimate.get().getOutputRows();
-			Set<String> unanchoredBoundVars = new HashSet<>(boundVars);
-			Set<String> anchoredBoundVars = new HashSet<>(unanchoredBoundVars);
-			anchoredBoundVars.addAll(plannerBindingNames(branchLeft.getAssuredBindingNames()));
 			LeftJoin branchLeftJoin = clonedLeftJoin(branchLeft, original.getRightArg(),
 					original.hasCondition() ? original.getCondition() : null);
+			double rightWork = optionalAnchoringAwareRightWork(branchLeftJoin, boundVars, leftRows, costModel);
+			return addFinite(leftWork, rightWork);
+		}
+
+		private double optionalAnchoringAwareRightWork(LeftJoin leftJoin, Set<String> unanchoredBoundVars,
+				double invocationRows, JoinFactorCostModel costModel) {
+			Set<String> unanchored = new HashSet<>(unanchoredBoundVars);
+			Set<String> anchored = new HashSet<>(unanchored);
+			anchored.addAll(plannerBindingNames(leftJoin.getLeftArg().getAssuredBindingNames()));
 			Optional<JoinFactorCostModel.FactorCostEstimate> unanchoredRightEstimate = estimateOptionalRightCost(
-					branchLeftJoin, branchLeftJoin.getRightArg(), unanchoredBoundVars, leftRows, Double.NaN,
-					costModel);
+					leftJoin, leftJoin.getRightArg(), unanchored, invocationRows, Double.NaN, costModel);
 			double rightWork = unanchoredRightEstimate
 					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
 					.orElse(Double.NaN);
-			if (optionalRhsAnchoringProof(branchLeftJoin, unanchoredBoundVars, anchoredBoundVars) != null) {
-				double anchoredDistinctLookupBindings = optionalAnchoredDistinctLookupBindings(branchLeftJoin,
-						anchoredBoundVars);
-				Optional<JoinFactorCostModel.FactorCostEstimate> anchoredRightEstimate = estimateOptionalRightCost(
-						branchLeftJoin, branchLeftJoin.getRightArg(), anchoredBoundVars, leftRows,
-						anchoredDistinctLookupBindings, costModel);
-				double anchoredRightWork = anchoredRightEstimate
-						.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
-						.orElse(Double.NaN);
-				if (LmdbJoinPlanSupport.isFiniteNonNegative(anchoredRightWork)
-						&& (!LmdbJoinPlanSupport.isFiniteNonNegative(rightWork) || anchoredRightWork < rightWork)) {
-					rightWork = anchoredRightWork;
-				}
+			if (optionalRhsAnchoringProof(leftJoin, unanchored, anchored) == null) {
+				return rightWork;
 			}
-			return addFinite(leftWork, rightWork);
+			double anchoredDistinctLookupBindings = optionalAnchoredDistinctLookupBindings(leftJoin, anchored);
+			Optional<JoinFactorCostModel.FactorCostEstimate> anchoredRightEstimate = estimateOptionalRightCost(
+					leftJoin, leftJoin.getRightArg(), anchored, invocationRows,
+					anchoredDistinctLookupBindings, costModel);
+			double anchoredRightWork = anchoredRightEstimate
+					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
+					.orElse(Double.NaN);
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(anchoredRightWork)
+					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(rightWork) || anchoredRightWork < rightWork)) {
+				return anchoredRightWork;
+			}
+			return rightWork;
 		}
 
 		private Optional<JoinFactorCostModel.FactorCostEstimate> estimateOptionalRightCost(LeftJoin leftJoin,
@@ -2649,6 +2656,37 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			for (Map.Entry<String, Double> entry : factorCost.getDoubleMetrics().entrySet()) {
 				statementPattern.setDoubleMetricPlanned(entry.getKey(), entry.getValue());
 			}
+			applyPhysicalAccessPathMetrics(statementPattern, factorCost);
+		}
+
+		private void applyPhysicalAccessPathMetrics(StatementPattern statementPattern,
+				JoinFactorCostModel.FactorCostEstimate factorCost) {
+			if (!factorCost.hasPhysicalAccessPath()) {
+				return;
+			}
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+					factorCost.isDirectLookup() ? "directLookup" : "prefixScan");
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
+					componentMaskDescription(factorCost.getLookupComponentMask()));
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS,
+					componentMaskDescription(factorCost.getMissingLookupComponentMask()));
+			if (LmdbJoinPlanSupport.isFiniteNonNegative(factorCost.getAccessRowsBeforeFilter())) {
+				statementPattern.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS,
+						factorCost.getAccessRowsBeforeFilter());
+			}
+		}
+
+		private String componentMaskDescription(int componentMask) {
+			if (componentMask == 0) {
+				return "[]";
+			}
+			List<String> components = new ArrayList<>(SketchBasedJoinEstimator.Component.values().length);
+			for (SketchBasedJoinEstimator.Component component : SketchBasedJoinEstimator.Component.values()) {
+				if ((componentMask & (1 << component.ordinal())) != 0) {
+					components.add(component.name());
+				}
+			}
+			return components.toString();
 		}
 
 		private boolean hasAcceptedPlannerStepEstimate(StatementPattern statementPattern) {
@@ -2938,9 +2976,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			leftJoin.setDoubleMetricPlanned("plannedOptionalBridgePrefixBridgeRows", estimate.prefixBridgeRows());
 			if (estimate.joinVarName() != null) {
 				leftJoin.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
+				leftJoin.setStringMetricPlanned("plannedBridgeCorrectionJoinVar", estimate.joinVarName());
 			}
 			if (estimate.source() != null) {
 				leftJoin.setStringMetricPlanned("plannedOptionalBridgeSource", estimate.source());
+				leftJoin.setStringMetricPlanned("plannedBridgeCorrectionSource", estimate.source());
 			}
 			return estimate.productRows();
 		}

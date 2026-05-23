@@ -127,6 +127,44 @@ class LmdbOperatorFeedbackPlanningTest {
 	}
 
 	@Test
+	void operatorFeedbackPlanExposesLearnedQError(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSparseOptionalFanout(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			LmdbPlannerAwait.awaitSketchesReady(store);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
+				connection.prepareTupleQuery(leftJoinFanoutQuery()).explain(Explanation.Level.Telemetry);
+
+				String trainedPlan = connection.prepareTupleQuery(leftJoinFanoutQuery())
+						.explain(Explanation.Level.Optimized)
+						.toString();
+
+				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"Operator feedback must still be selected for the trained OPTIONAL fanout");
+				assertTrue(trainedPlan.contains("plannedOperatorFeedbackRowQErrorMean="),
+						"Trained plans must expose learned row q-error:\n" + trainedPlan);
+				assertTrue(trainedPlan.contains("plannedOperatorFeedbackWorkQErrorMean="),
+						"Trained plans must expose learned work q-error:\n" + trainedPlan);
+				assertTrue(trainedPlan.contains("plannedOperatorFeedbackUncertaintyRows="),
+						"Trained plans must expose learned uncertainty used by robust ranking:\n" + trainedPlan);
+				assertTrue(trainedPlan.contains("plannedBridgeCorrectionSource="),
+						"Plans must expose which bridge/star/path correction surface was used:\n" + trainedPlan);
+				assertTrue(trainedPlan.contains("plannedBridgeCorrectionJoinVar=page"),
+						"Plans must expose the bridge variable used for the OPTIONAL RHS correction:\n" + trainedPlan);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void operatorFeedbackFusionKeepsLearnedFilterSourcesInCostPath(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);

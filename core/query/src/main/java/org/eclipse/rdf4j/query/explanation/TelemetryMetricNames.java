@@ -216,6 +216,7 @@ public final class TelemetryMetricNames {
 				|| metricName.startsWith("plannedObjective")
 				|| metricName.startsWith("plannedFilter")
 				|| metricName.startsWith("plannedOperatorFeedback")
+				|| metricName.startsWith("plannedBridge")
 				|| metricName.startsWith("plannedBase")
 				|| metricName.startsWith("plannedPrefix")
 				|| metricName.startsWith("plannedLookupDomain")

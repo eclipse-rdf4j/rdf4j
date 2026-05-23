@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -57,12 +58,20 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
+	private final LmdbSemanticDependencies semanticDependencies;
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		this(strategy, tripleSource, evaluationStatistics, LmdbSemanticDependencies.empty());
+	}
+
+	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, LmdbSemanticDependencies semanticDependencies) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
+		this.semanticDependencies = Objects.requireNonNull(semanticDependencies,
+				"semanticDependencies must not be null");
 	}
 
 	@Override
@@ -81,12 +90,16 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		optimizers.add(SAME_TERM_FILTER_OPTIMIZER);
 		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
 		optimizers.add(QUERY_MODEL_NORMALIZER);
+		optimizers.add(new LmdbOptionalNormalFormOptimizer(evaluationStatistics));
 		optimizers.add(PROJECTION_REMOVAL_OPTIMIZER);
 		optimizers.add(new FilterOptimizer(null, false, false));
 		optimizers.add(ITERATIVE_EVALUATION_OPTIMIZER);
 		optimizers.add(new LmdbBoundSimplifierOptimizer());
 		optimizers.add(new LmdbProjectionPushdownOptimizer());
 		optimizers.add(new LmdbSetSemanticsOptimizer());
+		if (!semanticDependencies.isEmpty()) {
+			optimizers.add(new LmdbSemanticDependencyOptimizer(semanticDependencies));
+		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
 		optimizers.add(new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()));
 		optimizers.add(ORDER_LIMIT_OPTIMIZER);

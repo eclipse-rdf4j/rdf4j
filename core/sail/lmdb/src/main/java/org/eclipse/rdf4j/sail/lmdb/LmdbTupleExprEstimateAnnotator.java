@@ -56,6 +56,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.CharacteristicSetEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.PropertyPathEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -153,12 +155,18 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	@Override
 	public void meet(ZeroLengthPath node) {
 		node.visitChildren(this);
+		if (stampPropertyPathEstimate(node)) {
+			return;
+		}
 		stampLeaf(node, GENERIC_STATISTICS);
 	}
 
 	@Override
 	public void meet(ArbitraryLengthPath node) {
 		node.visitChildren(this);
+		if (stampPropertyPathEstimate(node)) {
+			return;
+		}
 		stampLeaf(node, GENERIC_STATISTICS);
 	}
 
@@ -337,6 +345,12 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 				? currentWorkOrCombinedChildren(node)
 				: add(nodeWorkRows(node.getLeftArg()), nodeWorkRows(node.getRightArg()));
 		String source = sourceForExistingPlan(node, LMDB_SYNTHETIC);
+		CharacteristicSetEstimate characteristicSetEstimate = characteristicSetEstimate(node);
+		if (characteristicSetEstimate != null) {
+			rows = characteristicSetEstimate.rows();
+			workRows = Math.max(finiteOr(workRows, rows), characteristicSetEstimate.scannedRows());
+			source = "lmdb-characteristic-set";
+		}
 		if (stampFusedCostEstimate(node, externalBoundVars(node), externalPrefixRows(node),
 				isNestedInvocation(node))) {
 			return;
@@ -346,6 +360,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		if (feedback != null) {
 			stampOperatorFeedback(node, feedback);
 			stampEstimate(node, feedback.rows(), feedback.workRows(), feedback.source(), true);
+			return;
+		}
+		if (characteristicSetEstimate != null) {
+			stampCharacteristicSetEstimate(node, characteristicSetEstimate, workRows);
 			return;
 		}
 		stampEstimate(node, rows, workRows, source);
@@ -587,6 +605,84 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		stampEstimate(node, rows, workRows, source);
 	}
 
+	private boolean stampPropertyPathEstimate(ArbitraryLengthPath node) {
+		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
+			return false;
+		}
+		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, externalBoundVars(node));
+		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate)).isPresent();
+	}
+
+	private boolean stampPropertyPathEstimate(ZeroLengthPath node) {
+		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
+			return false;
+		}
+		Optional<PropertyPathEstimate> estimate = lmdbStatistics.estimatePropertyPath(node, externalBoundVars(node));
+		return estimate.filter(pathEstimate -> stampPropertyPathEstimate(node, pathEstimate)).isPresent();
+	}
+
+	private boolean stampPropertyPathEstimate(TupleExpr node, PropertyPathEstimate estimate) {
+		stampPlannerDecisionMetrics(node, estimate.rows(), estimate.rows());
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
+		stampEstimate(node, estimate.rows(), estimate.rows(), "lmdb-property-path", true);
+		node.setDoubleMetricPlanned("plannedPathDistinctSubjects", estimate.distinctSubjects());
+		node.setDoubleMetricPlanned("plannedPathDistinctObjects", estimate.distinctObjects());
+		node.setDoubleMetricPlanned("plannedPathAverageFanout", estimate.averagePathFanout());
+		node.setStringMetricPlanned("plannedPropertyPathMethod", estimate.method());
+		node.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.PROPERTY_PATH_COST_ANNOTATION,
+						LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+						Set.of("pathEstimateMethod=" + estimate.method(), "source=lmdb-property-path"),
+						"property-path-cardinality-annotation").metricFragment());
+		return true;
+	}
+
+	private CharacteristicSetEstimate characteristicSetEstimate(Join node) {
+		if (!(statistics instanceof LmdbEvaluationStatistics lmdbStatistics)) {
+			return null;
+		}
+		List<StatementPattern> patterns = new ArrayList<>();
+		if (!collectSubjectStarPatterns(node, patterns) || patterns.size() < 3) {
+			return null;
+		}
+		return lmdbStatistics.estimateSubjectStar(patterns, externalBoundVars(node))
+				.orElse(null);
+	}
+
+	private boolean collectSubjectStarPatterns(TupleExpr node, List<StatementPattern> patterns) {
+		if (node instanceof StatementPattern statementPattern) {
+			patterns.add(statementPattern);
+			return true;
+		}
+		if (node instanceof Join join) {
+			return collectSubjectStarPatterns(join.getLeftArg(), patterns)
+					&& collectSubjectStarPatterns(join.getRightArg(), patterns);
+		}
+		if (node instanceof Projection projection) {
+			return collectSubjectStarPatterns(projection.getArg(), patterns);
+		}
+		return false;
+	}
+
+	private void stampCharacteristicSetEstimate(Join node, CharacteristicSetEstimate estimate, double workRows) {
+		double rows = estimate.rows();
+		double finalWorkRows = Math.max(finiteOr(workRows, rows), estimate.scannedRows());
+		stampPlannerDecisionMetrics(node, rows, finalWorkRows);
+		node.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+				TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_JOIN_ORDER_CANDIDATE);
+		stampEstimate(node, rows, finalWorkRows, "lmdb-characteristic-set", true);
+		node.setDoubleMetricPlanned("plannedCharacteristicSetSubjectCount", estimate.subjectCount());
+		node.setDoubleMetricPlanned("plannedCharacteristicSetScannedRows", estimate.scannedRows());
+		node.setStringMetricPlanned("plannedCharacteristicSetMethod", estimate.method());
+		node.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.CHARACTERISTIC_SET_STAR_ESTIMATE,
+						LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+						Set.of("method=" + estimate.method(), "source=lmdb-characteristic-set",
+								"predicateCount=" + estimate.predicates().size()),
+						"characteristic-set-star-cardinality").metricFragment());
+	}
+
 	private boolean stampFinalAccessPathEstimate(StatementPattern node) {
 		if (!(statistics instanceof JoinFactorCostModel costModel)) {
 			return false;
@@ -602,6 +698,20 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			return false;
 		}
 		JoinFactorCostModel.FactorCostEstimate factorEstimate = estimate.get();
+		if (shouldKeepSelectedPlannerAccessPath(node, factorEstimate)) {
+			double outputRows = firstFinitePositive(
+					node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS),
+					nodeRows(node),
+					factorEstimate.getOutputRows());
+			double workRows = firstFinitePositive(
+					node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS),
+					node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS),
+					currentWork(node),
+					factorEstimate.getWorkRows());
+			stampPlannerDecisionMetrics(node, outputRows, workRows);
+			stampEstimate(node, outputRows, workRows, sourceForExistingPlan(node, LMDB_ACCESS_PATH));
+			return true;
+		}
 		double outputRows = factorEstimate.getOutputRows();
 		double workRows = factorEstimate.getWorkRows();
 		clearAccessPathMetrics(node);
@@ -642,6 +752,25 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		stampPlannerDecisionMetrics(node, outputRows, workRows);
 		stampEstimate(node, outputRows, workRows, source, true);
 		return true;
+	}
+
+	private boolean shouldKeepSelectedPlannerAccessPath(StatementPattern node,
+			JoinFactorCostModel.FactorCostEstimate replacementEstimate) {
+		if (!hasPlannerEstimateUsage(node)
+				|| !"directLookup".equals(node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))
+				|| replacementEstimate == null
+				|| replacementEstimate.isDirectLookup()) {
+			return false;
+		}
+		double selectedAccessRows = node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+		double replacementAccessRows = firstFinitePositive(
+				replacementEstimate.getAccessRowsBeforeFilter(),
+				replacementEstimate.getDoubleMetrics()
+						.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN),
+				replacementEstimate.getOutputRows());
+		return isFiniteNonNegative(selectedAccessRows)
+				&& isFiniteNonNegative(replacementAccessRows)
+				&& selectedAccessRows <= replacementAccessRows;
 	}
 
 	private double[] optionalBridgeBlend(StatementPattern node, JoinFactorCostModel.FactorCostEstimate factorEstimate,
@@ -1217,8 +1346,10 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixSurfaceRows", estimate.prefixSurfaceRows());
 		node.setDoubleMetricPlanned("plannedBoundJoinProductPrefixRightSurfaceRows",
 				estimate.prefixRightSurfaceRows());
+		node.setStringMetricPlanned("plannedBridgeCorrectionSource", "lmdb-bound-join-product");
 		if (estimate.joinVarName() != null) {
 			node.setStringMetricPlanned("plannedBoundJoinProductJoinVar", estimate.joinVarName());
+			node.setStringMetricPlanned("plannedBridgeCorrectionJoinVar", estimate.joinVarName());
 		}
 	}
 
@@ -1247,9 +1378,11 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		node.setDoubleMetricPlanned("plannedOptionalBridgeAccessRows", estimate.bridgeRows());
 		if (estimate.source() != null) {
 			node.setStringMetricPlanned("plannedOptionalBridgeSource", estimate.source());
+			node.setStringMetricPlanned("plannedBridgeCorrectionSource", estimate.source());
 		}
 		if (estimate.joinVarName() != null) {
 			node.setStringMetricPlanned("plannedOptionalBridgeJoinVar", estimate.joinVarName());
+			node.setStringMetricPlanned("plannedBridgeCorrectionJoinVar", estimate.joinVarName());
 		}
 	}
 
@@ -1530,61 +1663,75 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 	}
 
 	private Set<String> externalBoundVars(TupleExpr node) {
-		QueryModelNode child = node;
-		QueryModelNode parent = node.getParentNode();
-		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
-				&& leftBindingsReachThrough(unary)) {
-			child = parent;
-			parent = parent.getParentNode();
+		List<TupleExpr> prefixArgs = externalPrefixArgs(node);
+		if (prefixArgs.isEmpty()) {
+			return Set.of();
 		}
-		if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
-			return plannerBindingNames(leftJoin.getLeftArg().getBindingNames());
+		Set<String> boundVars = new HashSet<>();
+		for (TupleExpr prefixArg : prefixArgs) {
+			boundVars.addAll(plannerBindingNames(prefixArg.getBindingNames()));
 		}
-		if (parent instanceof Join join && join.getRightArg() == child) {
-			return plannerBindingNames(join.getLeftArg().getBindingNames());
-		}
-		return Set.of();
+		return boundVars.isEmpty() ? Set.of() : Set.copyOf(boundVars);
 	}
 
 	private double externalPrefixRows(TupleExpr node) {
-		QueryModelNode child = node;
-		QueryModelNode parent = node.getParentNode();
-		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
-				&& leftBindingsReachThrough(unary)) {
-			child = parent;
-			parent = parent.getParentNode();
-		}
-		if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
-			return nodeRows(leftJoin.getLeftArg());
-		}
-		if (parent instanceof Join join && join.getRightArg() == child) {
-			return nodeRows(join.getLeftArg());
+		for (TupleExpr prefixArg : externalPrefixArgs(node)) {
+			double rows = nodeRows(prefixArg);
+			if (isFiniteNonNegative(rows)) {
+				return rows;
+			}
 		}
 		return Double.NaN;
 	}
 
 	private List<TupleExpr> externalPrefixFactors(TupleExpr node) {
-		QueryModelNode child = node;
-		QueryModelNode parent = node.getParentNode();
-		while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
-				&& leftBindingsReachThrough(unary)) {
-			child = parent;
-			parent = parent.getParentNode();
-		}
-		TupleExpr prefixArg = null;
-		if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
-			prefixArg = leftJoin.getLeftArg();
-		} else if (parent instanceof Join join && join.getRightArg() == child) {
-			prefixArg = join.getLeftArg();
-		}
-		if (prefixArg == null) {
+		List<TupleExpr> prefixArgs = externalPrefixArgs(node);
+		if (prefixArgs.isEmpty()) {
 			return List.of();
 		}
 		List<TupleExpr> factors = new ArrayList<>();
-		if (!collectExternalPrefixFactors(prefixArg, factors)) {
-			return List.of(prefixArg);
+		for (TupleExpr prefixArg : prefixArgs) {
+			if (!collectExternalPrefixFactors(prefixArg, factors)) {
+				factors.add(prefixArg);
+			}
 		}
 		return factors.isEmpty() ? List.of() : List.copyOf(factors);
+	}
+
+	private List<TupleExpr> externalPrefixArgs(TupleExpr node) {
+		List<TupleExpr> prefixArgs = new ArrayList<>();
+		QueryModelNode child = node;
+		QueryModelNode parent = node.getParentNode();
+		while (parent != null) {
+			while (parent instanceof UnaryTupleOperator unary && unary.getArg() == child
+					&& leftBindingsReachThrough(unary)) {
+				child = parent;
+				parent = parent.getParentNode();
+			}
+			if (parent instanceof Join join && !TupleExprs.isVariableScopeChange(join)
+					&& !TupleExprs.containsSubquery(join)) {
+				if (join.getRightArg() == child) {
+					prefixArgs.add(join.getLeftArg());
+				}
+				child = parent;
+				parent = parent.getParentNode();
+				continue;
+			}
+			if (parent instanceof LeftJoin leftJoin && !TupleExprs.isVariableScopeChange(leftJoin)
+					&& !TupleExprs.containsSubquery(leftJoin)) {
+				if (leftJoin.getRightArg() == child) {
+					prefixArgs.add(leftJoin.getLeftArg());
+				}
+				child = parent;
+				parent = parent.getParentNode();
+				continue;
+			}
+			break;
+		}
+		if (prefixArgs.isEmpty()) {
+			return List.of();
+		}
+		return List.copyOf(prefixArgs);
 	}
 
 	private Map<String, Set<Value>> finiteBindingValues(Set<String> boundVars, List<TupleExpr> prefixFactors) {
