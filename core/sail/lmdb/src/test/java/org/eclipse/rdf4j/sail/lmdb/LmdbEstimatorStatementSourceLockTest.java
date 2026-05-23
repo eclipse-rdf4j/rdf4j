@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.lang.reflect.Constructor;
+import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -27,10 +28,11 @@ import java.util.concurrent.TimeoutException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource.StatementIds;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -50,7 +52,11 @@ class LmdbEstimatorStatementSourceLockTest {
 			seedStatement(backingStore, predicate);
 
 			SketchStatementSource statementSource = guardedEstimatorStatementSource(backingStore);
-			CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, predicate, null);
+			OptionalLong predicateId = statementSource.idOf(Component.P, predicate);
+			assertTrue(predicateId.isPresent());
+			CloseableIteration<StatementIds> statements = statementSource.getStatementIds(
+					SketchStatementSource.UNBOUND_ID, predicateId.getAsLong(), SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID);
 			try {
 				assertTrue(statements.hasNext());
 

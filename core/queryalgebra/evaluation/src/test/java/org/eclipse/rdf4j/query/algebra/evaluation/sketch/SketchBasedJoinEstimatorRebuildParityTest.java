@@ -17,20 +17,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource.StatementIds;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorRebuildParityTest {
@@ -54,32 +49,35 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 		SketchBasedJoinEstimator rebuilt = new SketchBasedJoinEstimator(rebuildStore, config());
 		rebuilt.rebuild();
 
-		SketchBasedJoinEstimator incremental = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		StubSketchStatementSource incrementalStore = new StubSketchStatementSource();
+		SketchBasedJoinEstimator incremental = new SketchBasedJoinEstimator(incrementalStore, config());
 		for (Statement statement : statements) {
 			incremental.addStatement(statement);
 		}
 		incremental.debugFlushPendingIncremental();
 
-		assertEqualEstimate(rebuilt.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:group-a"),
-				incremental.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:group-a"));
-		assertEqualEstimate(rebuilt.cardinalitySingle(SketchBasedJoinEstimator.Component.O, "urn:o:shared-1"),
-				incremental.cardinalitySingle(SketchBasedJoinEstimator.Component.O, "urn:o:shared-1"));
-		assertEqualEstimate(rebuilt.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, "urn:p:group-a",
-				"urn:o:shared-1"),
-				incremental.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, "urn:p:group-a",
-						"urn:o:shared-1"));
+		long groupA = rebuildStore.iriId(SketchBasedJoinEstimator.Component.P, "urn:p:group-a");
+		long groupB = rebuildStore.iriId(SketchBasedJoinEstimator.Component.P, "urn:p:group-b");
+		long shared1 = rebuildStore.iriId(SketchBasedJoinEstimator.Component.O, "urn:o:shared-1");
+		long shared2 = rebuildStore.iriId(SketchBasedJoinEstimator.Component.O, "urn:o:shared-2");
+		assertEqualEstimate(rebuilt.cardinalitySingle(SketchBasedJoinEstimator.Component.P, groupA),
+				incremental.cardinalitySingle(SketchBasedJoinEstimator.Component.P, groupA));
+		assertEqualEstimate(rebuilt.cardinalitySingle(SketchBasedJoinEstimator.Component.O, shared1),
+				incremental.cardinalitySingle(SketchBasedJoinEstimator.Component.O, shared1));
+		assertEqualEstimate(rebuilt.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, groupA, shared1),
+				incremental.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, groupA, shared1));
 		assertEqualEstimate(rebuilt.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
-				SketchBasedJoinEstimator.Component.P, "urn:p:group-a",
-				SketchBasedJoinEstimator.Component.P, "urn:p:group-b"),
+				SketchBasedJoinEstimator.Component.P, groupA,
+				SketchBasedJoinEstimator.Component.P, groupB),
 				incremental.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
-						SketchBasedJoinEstimator.Component.P, "urn:p:group-a",
-						SketchBasedJoinEstimator.Component.P, "urn:p:group-b"));
+						SketchBasedJoinEstimator.Component.P, groupA,
+						SketchBasedJoinEstimator.Component.P, groupB));
 		assertEqualEstimate(rebuilt.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
-				SketchBasedJoinEstimator.Pair.PO, "urn:p:group-a", "urn:o:shared-1",
-				SketchBasedJoinEstimator.Pair.PO, "urn:p:group-b", "urn:o:shared-2"),
+				SketchBasedJoinEstimator.Pair.PO, groupA, shared1,
+				SketchBasedJoinEstimator.Pair.PO, groupB, shared2),
 				incremental.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
-						SketchBasedJoinEstimator.Pair.PO, "urn:p:group-a", "urn:o:shared-1",
-						SketchBasedJoinEstimator.Pair.PO, "urn:p:group-b", "urn:o:shared-2"));
+						SketchBasedJoinEstimator.Pair.PO, groupA, shared1,
+						SketchBasedJoinEstimator.Pair.PO, groupB, shared2));
 	}
 
 	@Test
@@ -115,9 +113,11 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 		assertEquals(null, rebuildFailure.get(), "Rebuild should complete without failure");
 		assertTrue(!rebuildThread.isAlive(), "Rebuild should finish after releasing the scan");
 
-		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:added") > 0.0,
+		long addedPredicate = store.iriId(SketchBasedJoinEstimator.Component.P, "urn:p:added");
+		long removedPredicate = store.iriId(SketchBasedJoinEstimator.Component.P, "urn:p:removed");
+		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, addedPredicate) > 0.0,
 				"Incremental add flushed during rebuild must be present after publish");
-		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:removed") < 0.5,
+		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, removedPredicate) < 0.5,
 				"Incremental delete flushed during rebuild must be present after publish");
 	}
 
@@ -176,18 +176,9 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 		assertEquals(expected, actual, Math.max(0.000001d, Math.abs(expected) * 0.000001d));
 	}
 
-	private static final class BlockingSnapshotStore implements SketchStatementSource {
-		private final List<Statement> data = new CopyOnWriteArrayList<>();
+	private static final class BlockingSnapshotStore extends StubSketchStatementSource {
 		private final CountDownLatch releaseScan = new CountDownLatch(1);
 		private volatile CountDownLatch blockAfterFirstStatement;
-
-		void add(Statement statement) {
-			data.add(statement);
-		}
-
-		void remove(Statement statement) {
-			data.remove(statement);
-		}
 
 		CountDownLatch blockAfterFirstStatement() {
 			blockAfterFirstStatement = new CountDownLatch(1);
@@ -199,33 +190,27 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 		}
 
 		@Override
-		public ValueFactory getValueFactory() {
-			return VF;
+		public CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId, long objectId,
+				long contextId) {
+			return new BlockingIteration(super.getStatementIds(subjectId, predicateId, objectId, contextId));
 		}
 
-		@Override
-		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
-			List<Statement> snapshot = new ArrayList<>(data);
-			List<Statement> matches = new ArrayList<>();
-			for (Statement statement : snapshot) {
-				if (matches(subj, pred, obj, contexts, statement)) {
-					matches.add(statement);
-				}
-			}
-			return new BlockingIteration(matches);
-		}
-
-		private final class BlockingIteration extends CloseableIteratorIteration<Statement> {
+		private final class BlockingIteration implements CloseableIteration<StatementIds> {
+			private final CloseableIteration<StatementIds> delegate;
 			private boolean blocked;
 
-			private BlockingIteration(List<Statement> matches) {
-				super(matches.iterator());
+			private BlockingIteration(CloseableIteration<StatementIds> delegate) {
+				this.delegate = delegate;
 			}
 
 			@Override
-			public Statement next() {
-				Statement next = super.next();
+			public boolean hasNext() {
+				return delegate.hasNext();
+			}
+
+			@Override
+			public StatementIds next() {
+				StatementIds next = delegate.next();
 				CountDownLatch latch = blockAfterFirstStatement;
 				if (!blocked && latch != null) {
 					blocked = true;
@@ -239,27 +224,16 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 				}
 				return next;
 			}
-		}
 
-		private static boolean matches(Resource subj, IRI pred, Value obj, Resource[] contexts, Statement statement) {
-			if (subj != null && !subj.equals(statement.getSubject())) {
-				return false;
+			@Override
+			public void remove() {
+				delegate.remove();
 			}
-			if (pred != null && !pred.equals(statement.getPredicate())) {
-				return false;
+
+			@Override
+			public void close() {
+				delegate.close();
 			}
-			if (obj != null && !obj.equals(statement.getObject())) {
-				return false;
-			}
-			if (contexts == null || contexts.length == 0) {
-				return true;
-			}
-			for (Resource context : contexts) {
-				if (Objects.equals(context, statement.getContext())) {
-					return true;
-				}
-			}
-			return false;
 		}
 	}
 }

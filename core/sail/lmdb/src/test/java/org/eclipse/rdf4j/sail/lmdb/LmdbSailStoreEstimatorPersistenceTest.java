@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -386,22 +388,26 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			SketchBasedJoinEstimator estimator = reopened.getBackingStore().getSketchBasedJoinEstimator();
 			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS),
 					"Expected estimator to load persisted snapshot in the background");
-			assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()),
+			long p1Id = id(estimator, SketchBasedJoinEstimator.Component.P, p1);
+			long p2Id = id(estimator, SketchBasedJoinEstimator.Component.P, p2);
+			long o1Id = id(estimator, SketchBasedJoinEstimator.Component.O, o1);
+			long c1Id = id(estimator, SketchBasedJoinEstimator.Component.C, c1);
+			assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1Id),
 					0.0d,
 					"Predicate sketch should survive LMDB restart");
 			assertEquals(2.0d,
-					estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(), o1.stringValue()),
+					estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1Id, o1Id),
 					0.0d,
 					"Pair sketch should survive LMDB restart");
 			assertEquals(2.0d,
-					estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(),
-							o1.stringValue(), c1.stringValue()),
+					estimator.estimateCount(SketchBasedJoinEstimator.Component.S, SketchStatementSource.UNBOUND_ID,
+							p1Id, o1Id, c1Id),
 					0.0d,
 					"Complement sketches should survive LMDB restart");
 			assertEquals(1.0d,
 					estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
 							SketchBasedJoinEstimator.Component.P,
-							p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
+							p1Id, SketchBasedJoinEstimator.Component.P, p2Id),
 					0.0d,
 					"Join-binding sketches should survive LMDB restart");
 		} finally {
@@ -446,22 +452,26 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			assertTrue(estimator.awaitReady(10, TimeUnit.SECONDS),
 					"Expected estimator to remain loadable across repeated init/shutdown");
-			assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()),
+			long p1Id = id(estimator, SketchBasedJoinEstimator.Component.P, p1);
+			long p2Id = id(estimator, SketchBasedJoinEstimator.Component.P, p2);
+			long o1Id = id(estimator, SketchBasedJoinEstimator.Component.O, o1);
+			long c1Id = id(estimator, SketchBasedJoinEstimator.Component.C, c1);
+			assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1Id),
 					0.0d,
 					"Predicate sketch should survive repeated repository lifecycle");
 			assertEquals(2.0d,
-					estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(), o1.stringValue()),
+					estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1Id, o1Id),
 					0.0d,
 					"Pair sketch should survive repeated repository lifecycle");
 			assertEquals(2.0d,
-					estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(),
-							o1.stringValue(), c1.stringValue()),
+					estimator.estimateCount(SketchBasedJoinEstimator.Component.S, SketchStatementSource.UNBOUND_ID,
+							p1Id, o1Id, c1Id),
 					0.0d,
 					"Complement sketch should survive repeated repository lifecycle");
 			assertEquals(1.0d,
 					estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
 							SketchBasedJoinEstimator.Component.P,
-							p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
+							p1Id, SketchBasedJoinEstimator.Component.P, p2Id),
 					0.0d,
 					"Join-binding sketch should survive repeated repository lifecycle");
 		} finally {
@@ -491,7 +501,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				conn.commit();
 			}
 
-			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 0.0d,
+			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, p)), 0.0d,
 					"Estimator should track committed READ_COMMITTED additions");
 		} finally {
 			store.shutDown();
@@ -531,10 +542,12 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			flushPendingIncremental(estimator);
 			assertTrue(estimator.isReadyNonBlocking(),
 					"READ_COMMITTED bulk load into an empty store should retain exact estimator updates");
-			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()) > 400.0d,
+			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, p)) > 400.0d,
 					"Exact async ingestion should populate predicate sketches after drain");
 			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.O,
-					vf.createIRI("urn:empty-bulk:o:0").stringValue()) > 0.0d,
+					id(estimator, SketchBasedJoinEstimator.Component.O,
+							vf.createIRI("urn:empty-bulk:o:0"))) > 0.0d,
 					"Exact async ingestion should populate object sketches after drain");
 		} finally {
 			store.shutDown();
@@ -640,16 +653,16 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				conn.begin(IsolationLevels.NONE);
 				conn.addStatement(s, p, o);
-				assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
-						0.0d,
+				assertEquals(2.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+						id(estimator, SketchBasedJoinEstimator.Component.P, p)), 0.0d,
 						"NONE isolation applies estimator deltas eagerly before commit");
 				conn.rollback();
 			}
 
 			assertFalse(estimator.isReadyNonBlocking(),
 					"Rollback must discard eager non-isolated estimator state");
-			assertEquals(0.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
-					0.0d,
+			assertEquals(0.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, p)), 0.0d,
 					"Rolled-back statement must not remain visible to estimator sketches");
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				assertFalse(conn.hasStatement(s, p, o, false),
@@ -702,7 +715,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			assertTrue(estimator.isReadyNonBlocking(),
 					"Rollback before chunk handoff should only clear the LMDB-owned estimator buffer");
-			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()), 0.0d,
+			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, p)), 0.0d,
 					"Rollback before chunk handoff should keep the committed estimator state");
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				assertFalse(conn.hasStatement(s, p, o, false),
@@ -750,7 +764,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED);
 			try {
-				for (int i = 0; i < 1024; i++) {
+				int estimatorAddChunkSize = estimatorAddChunkSize(sink);
+				for (int i = 0; i < estimatorAddChunkSize; i++) {
 					sink.approve(vf.createIRI("urn:read-committed-chunk-rollback:s:" + i), p,
 							vf.createIRI("urn:read-committed-chunk-rollback:o:" + i), null);
 				}
@@ -907,7 +922,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 					"Large bulk loads should retain exact estimator updates while memory permits");
 			assertEquals(0, pendingIncrementalStatementQueueSize(estimator),
 					"Drained bulk loads should not leave caller-owned pending estimator state");
-			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()) > 1000.0d,
+			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, p)) > 1000.0d,
 					"Large bulk loads should update predicate sketches exactly after async drain");
 			AtomicLong approxStoreSize = (AtomicLong) objectField(estimator, "approxStoreSize");
 			assertEquals(statements.size() + 1L, approxStoreSize.get(),
@@ -957,7 +973,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 					"READ_COMMITTED bulk chunks should retain exact estimator updates before total load size is known");
 			assertEquals(0, pendingIncrementalStatementQueueSize(estimator),
 					"Drained bulk chunks should not leave caller-owned pending estimator state");
-			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()) > 250.0d,
+			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, p)) > 250.0d,
 					"READ_COMMITTED bulk chunks should update predicate sketches exactly after async drain");
 			AtomicLong approxStoreSize = (AtomicLong) objectField(estimator, "approxStoreSize");
 			assertEquals(chunk.size() + 1L, approxStoreSize.get(),
@@ -1005,7 +1022,8 @@ class LmdbSailStoreEstimatorPersistenceTest {
 					"Large direct sink loads should keep exact sketch ingestion while memory permits");
 			assertEquals(0, pendingIncrementalStatementQueueSize(estimator),
 					"Drained direct sink loads should not leave caller-owned pending estimator state");
-			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()) > 1000.0d,
+			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, p)) > 1000.0d,
 					"Large direct sink loads should update predicate sketches exactly after async drain");
 			AtomicLong approxStoreSize = (AtomicLong) objectField(estimator, "approxStoreSize");
 			assertEquals(1026L, approxStoreSize.get(),
@@ -1086,6 +1104,15 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		return pending == null ? 0 : pending.size();
 	}
 
+	private static int estimatorAddChunkSize(SailSink sink) throws Exception {
+		List<?> pending = (List<?>) objectField(sink, "pendingEstimatorAdds");
+		if (pending != null) {
+			return pending.size();
+		}
+		Object store = objectField(sink, "this$0");
+		return ((Number) objectField(store, "estimatorAddChunkSize")).intValue();
+	}
+
 	private static void flushPendingIncremental(SketchBasedJoinEstimator estimator) throws Exception {
 		Method method = SketchBasedJoinEstimator.class.getDeclaredMethod("debugFlushPendingIncremental");
 		method.setAccessible(true);
@@ -1120,6 +1147,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				System.setProperty(key, previous);
 			}
 		}
+	}
+
+	private static long id(SketchBasedJoinEstimator estimator, SketchBasedJoinEstimator.Component component,
+			Value value) {
+		return estimator.idOf(component, value).orElseThrow(() -> new AssertionError("Expected LMDB ID for " + value));
 	}
 
 	private static File estimatorStore(File dataDir) {

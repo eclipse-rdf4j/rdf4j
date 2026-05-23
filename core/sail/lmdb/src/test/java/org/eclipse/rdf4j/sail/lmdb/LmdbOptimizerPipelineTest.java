@@ -135,7 +135,9 @@ class LmdbOptimizerPipelineTest {
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			EvaluationStrategy initialStrategy = createEvaluationStrategy(factory);
+			assertInstanceOf(DefaultEvaluationStrategy.class, initialStrategy);
+			assertInstanceOf(StandardQueryOptimizerPipeline.class, capturedOptimizerPipeline(initialStrategy));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -144,7 +146,8 @@ class LmdbOptimizerPipelineTest {
 
 			LmdbPlannerAwait.awaitEstimatorReady(estimator);
 			LmdbPlannerAwait.awaitPlannerAssertion("long-lived connection chooses LMDB factory",
-					() -> assertInstanceOf(StrictEvaluationStrategy.class, createEvaluationStrategy(factory)));
+					() -> assertInstanceOf(LmdbQueryOptimizerPipeline.class,
+							capturedOptimizerPipeline(createEvaluationStrategy(factory))));
 		} finally {
 			store.shutDown();
 		}
@@ -560,6 +563,12 @@ class LmdbOptimizerPipelineTest {
 		Field field = SailSourceConnection.class.getDeclaredField("evalStratFactory");
 		field.setAccessible(true);
 		return (EvaluationStrategyFactory) field.get(connection);
+	}
+
+	private static QueryOptimizerPipeline capturedOptimizerPipeline(EvaluationStrategy strategy) throws Exception {
+		Field field = DefaultEvaluationStrategy.class.getDeclaredField("pipeline");
+		field.setAccessible(true);
+		return (QueryOptimizerPipeline) field.get(strategy);
 	}
 
 	private static EvaluationStrategy createEvaluationStrategy(EvaluationStrategyFactory factory) {

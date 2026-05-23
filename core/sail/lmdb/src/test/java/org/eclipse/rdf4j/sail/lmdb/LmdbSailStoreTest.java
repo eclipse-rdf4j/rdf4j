@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
@@ -57,6 +58,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource.StatementIds;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -765,7 +767,7 @@ public class LmdbSailStoreTest {
 			estimatorField.setAccessible(true);
 			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
 			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
-			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
+			doAnswer(invocation -> null).when(estimatorSpy).addStatementIds(anyList());
 
 			estimatorField.set(backingStore, estimatorSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
@@ -773,8 +775,8 @@ public class LmdbSailStoreTest {
 				sink.approveAll(sampleStatements(2048), Set.of());
 				sink.flush();
 
-				verify(estimatorSpy, times(1)).addStatements(any());
-				verify(estimatorSpy, never()).addStatement(any());
+				verify(estimatorSpy, times(1)).addStatementIds(anyList());
+				verify(estimatorSpy, never()).addStatementIds(any(StatementIds.class));
 			} finally {
 				estimatorField.set(backingStore, originalEstimator);
 			}
@@ -798,7 +800,7 @@ public class LmdbSailStoreTest {
 			estimatorField.setAccessible(true);
 			SketchBasedJoinEstimator originalEstimator = (SketchBasedJoinEstimator) estimatorField.get(backingStore);
 			SketchBasedJoinEstimator estimatorSpy = spy(originalEstimator);
-			doAnswer(invocation -> null).when(estimatorSpy).addStatements(any());
+			doAnswer(invocation -> null).when(estimatorSpy).addStatementIds(anyList());
 			doAnswer(invocation -> null).when(estimatorSpy).recordStoreSizeDelta(anyLong(), anyLong());
 
 			estimatorField.set(backingStore, estimatorSpy);
@@ -807,8 +809,8 @@ public class LmdbSailStoreTest {
 				sink.approveAll(sampleStatements(8192), Set.of());
 				sink.flush();
 
-				verify(estimatorSpy, never()).addStatements(any());
-				verify(estimatorSpy, never()).addStatement(any());
+				verify(estimatorSpy, never()).addStatementIds(anyList());
+				verify(estimatorSpy, never()).addStatementIds(any(StatementIds.class));
 				verify(estimatorSpy, times(1)).recordStoreSizeDelta(8192L, 0L);
 			} finally {
 				estimatorField.set(backingStore, originalEstimator);
@@ -873,7 +875,9 @@ public class LmdbSailStoreTest {
 		CountDownLatch releaseIteration = new CountDownLatch(1);
 		AtomicReference<Throwable> scannerFailure = new AtomicReference<>();
 		Thread scanner = new Thread(() -> {
-			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null, null)) {
+			try (CloseableIteration<StatementIds> statements = statementSource.getStatementIds(
+					SketchStatementSource.UNBOUND_ID, SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID, SketchStatementSource.UNBOUND_ID)) {
 				assertTrue("Expected estimator statement source to open a non-empty snapshot", statements.hasNext());
 				iterationOpened.countDown();
 				assertTrue("Timed out waiting to release estimator snapshot",

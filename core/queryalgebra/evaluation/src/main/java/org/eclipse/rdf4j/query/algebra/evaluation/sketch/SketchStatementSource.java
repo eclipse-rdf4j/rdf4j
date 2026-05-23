@@ -12,11 +12,10 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import java.util.OptionalLong;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -27,10 +26,23 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 @Experimental
 public interface SketchStatementSource {
 
-	CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
-			Resource... contexts);
+	long UNBOUND_ID = Long.MIN_VALUE;
+	long DEFAULT_CONTEXT_ID = 0L;
+
+	CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId, long objectId, long contextId);
+
+	OptionalLong idOf(SketchBasedJoinEstimator.Component component, Value value);
 
 	default ValueFactory getValueFactory() {
 		return SimpleValueFactory.getInstance();
+	}
+
+	record StatementIds(long subject, long predicate, long object, long context) {
+
+		public StatementIds {
+			if (subject == UNBOUND_ID || predicate == UNBOUND_ID || object == UNBOUND_ID || context == UNBOUND_ID) {
+				throw new IllegalArgumentException("Statement IDs must be bound");
+			}
+		}
 	}
 }

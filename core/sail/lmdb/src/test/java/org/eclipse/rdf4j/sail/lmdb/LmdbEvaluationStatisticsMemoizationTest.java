@@ -35,9 +35,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -81,6 +83,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource.StatementIds;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -1730,8 +1735,18 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		ScriptedJoinEstimator(JoinOrderPlanner.JoinOrderPlan greedyPlan,
 				JoinOrderPlanner.JoinOrderPlan selectedPlan) {
-			super((subject, predicate, object, contexts) -> new EmptyIteration<>(),
-					SketchBasedJoinEstimator.Config.defaults());
+			super(new SketchStatementSource() {
+				@Override
+				public CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId,
+						long objectId, long contextId) {
+					return new EmptyIteration<>();
+				}
+
+				@Override
+				public OptionalLong idOf(Component component, org.eclipse.rdf4j.model.Value value) {
+					return OptionalLong.empty();
+				}
+			}, SketchBasedJoinEstimator.Config.defaults());
 			this.greedyPlan = greedyPlan;
 			this.selectedPlan = selectedPlan;
 		}

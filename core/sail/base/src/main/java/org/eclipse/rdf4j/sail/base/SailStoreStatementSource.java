@@ -14,6 +14,10 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.OptionalLong;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -23,6 +27,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -34,20 +39,22 @@ import org.eclipse.rdf4j.sail.SailException;
 public final class SailStoreStatementSource implements SketchStatementSource {
 
 	private final SailStore sailStore;
+	private final AtomicLong nextId = new AtomicLong(1L);
+	private final ConcurrentMap<Value, Long> valueIds = new ConcurrentHashMap<>();
 
 	public SailStoreStatementSource(SailStore sailStore) {
 		this.sailStore = Objects.requireNonNull(sailStore, "sailStore");
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
-			Resource... contexts) {
+	public CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId, long objectId,
+			long contextId) {
 		SailDataset dataset = null;
 		CloseableIteration<? extends Statement> statements = null;
 		try {
 			dataset = sailStore.getExplicitSailSource().dataset(IsolationLevels.READ_COMMITTED);
-			statements = dataset.getStatements(subject, predicate, object, contexts);
-			return new DatasetClosingIteration(dataset, statements);
+			statements = dataset.getStatements(null, null, null);
+			return new DatasetClosingIteration(dataset, statements, this, subjectId, predicateId, objectId, contextId);
 		} catch (SailException e) {
 			if (statements != null) {
 				statements.close();
@@ -60,32 +67,88 @@ public final class SailStoreStatementSource implements SketchStatementSource {
 	}
 
 	@Override
+	public OptionalLong idOf(SketchBasedJoinEstimator.Component component, Value value) {
+		if (component == SketchBasedJoinEstimator.Component.C && value == null) {
+			return OptionalLong.of(DEFAULT_CONTEXT_ID);
+		}
+		if (value == null || !compatible(component, value)) {
+			return OptionalLong.empty();
+		}
+		Long id = valueIds.get(value);
+		return id == null ? OptionalLong.empty() : OptionalLong.of(id);
+	}
+
+	@Override
 	public ValueFactory getValueFactory() {
 		return sailStore.getValueFactory();
 	}
 
-	private static final class DatasetClosingIteration implements CloseableIteration<Statement> {
+	private long idOfOrCreate(Value value) {
+		return valueIds.computeIfAbsent(value, ignored -> nextId.getAndIncrement());
+	}
+
+	private long contextIdOfOrCreate(Resource context) {
+		if (context == null) {
+			return DEFAULT_CONTEXT_ID;
+		}
+		return idOfOrCreate(context);
+	}
+
+	private static boolean compatible(SketchBasedJoinEstimator.Component component, Value value) {
+		return switch (component) {
+		case S, C -> value instanceof Resource;
+		case P -> value instanceof IRI;
+		case O -> true;
+		};
+	}
+
+	private static boolean matches(long requestedId, long actualId) {
+		return requestedId == UNBOUND_ID || requestedId == actualId;
+	}
+
+	private static final class DatasetClosingIteration implements CloseableIteration<StatementIds> {
 
 		private SailDataset dataset;
 		private CloseableIteration<? extends Statement> statements;
+		private final SailStoreStatementSource source;
+		private final long subjectId;
+		private final long predicateId;
+		private final long objectId;
+		private final long contextId;
+		private StatementIds next;
 
-		private DatasetClosingIteration(SailDataset dataset, CloseableIteration<? extends Statement> statements) {
+		private DatasetClosingIteration(SailDataset dataset, CloseableIteration<? extends Statement> statements,
+				SailStoreStatementSource source, long subjectId, long predicateId, long objectId, long contextId) {
 			this.dataset = dataset;
 			this.statements = statements;
+			this.source = source;
+			this.subjectId = subjectId;
+			this.predicateId = predicateId;
+			this.objectId = objectId;
+			this.contextId = contextId;
 		}
 
 		@Override
 		public boolean hasNext() {
+			if (next != null) {
+				return true;
+			}
 			CloseableIteration<? extends Statement> current = statements;
 			if (current == null) {
 				return false;
 			}
 			try {
-				boolean hasNext = current.hasNext();
-				if (!hasNext) {
-					close();
+				while (current.hasNext()) {
+					Statement statement = current.next();
+					StatementIds ids = source.idsOf(statement);
+					if (matches(subjectId, ids.subject()) && matches(predicateId, ids.predicate())
+							&& matches(objectId, ids.object()) && matches(contextId, ids.context())) {
+						next = ids;
+						return true;
+					}
 				}
-				return hasNext;
+				close();
+				return false;
 			} catch (SailException e) {
 				close();
 				throw new SketchStatementSourceException(e);
@@ -93,17 +156,13 @@ public final class SailStoreStatementSource implements SketchStatementSource {
 		}
 
 		@Override
-		public Statement next() {
-			CloseableIteration<? extends Statement> current = statements;
-			if (current == null) {
+		public StatementIds next() {
+			if (!hasNext()) {
 				throw new NoSuchElementException("Iteration has been closed");
 			}
-			try {
-				return current.next();
-			} catch (SailException e) {
-				close();
-				throw new SketchStatementSourceException(e);
-			}
+			StatementIds current = next;
+			next = null;
+			return current;
 		}
 
 		@Override
@@ -131,5 +190,10 @@ public final class SailStoreStatementSource implements SketchStatementSource {
 				}
 			}
 		}
+	}
+
+	private StatementIds idsOf(Statement statement) {
+		return new StatementIds(idOfOrCreate(statement.getSubject()), idOfOrCreate(statement.getPredicate()),
+				idOfOrCreate(statement.getObject()), contextIdOfOrCreate(statement.getContext()));
 	}
 }

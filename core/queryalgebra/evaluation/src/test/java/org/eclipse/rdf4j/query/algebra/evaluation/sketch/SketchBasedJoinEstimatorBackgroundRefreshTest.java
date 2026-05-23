@@ -22,13 +22,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource.StatementIds;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -101,8 +98,10 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		try {
 			estimator.rebuild();
 			assertTrue(estimator.isReadyNonBlocking(), "Initial rebuild should publish a ready snapshot");
-			double before = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, "urn:p", "urn:o",
-					null);
+			long predicateId = store.iriId(SketchBasedJoinEstimator.Component.P, "urn:p");
+			long objectId = store.iriId(SketchBasedJoinEstimator.Component.O, "urn:o");
+			double before = estimator.estimateCount(SketchBasedJoinEstimator.Component.S,
+					SketchStatementSource.UNBOUND_ID, predicateId, objectId, SketchStatementSource.UNBOUND_ID);
 			assertTrue(before > 0.0d, "Expected initial snapshot to estimate the loaded statement");
 
 			estimator.startBackgroundRefresh(-1);
@@ -112,19 +111,20 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 			assertTrue(estimator.isReadyNonBlocking(),
 					"Deferred background rebuild should not make the published snapshot unavailable");
 			assertEquals(before,
-					estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, "urn:p", "urn:o", null),
+					estimator.estimateCount(SketchBasedJoinEstimator.Component.S,
+							SketchStatementSource.UNBOUND_ID, predicateId, objectId,
+							SketchStatementSource.UNBOUND_ID),
 					0.0d);
 		} finally {
 			estimator.close();
 		}
 	}
 
-	private static final class CountingEmptyStore implements SketchStatementSource {
+	private static class CountingEmptyStore extends StubSketchStatementSource {
 		private final AtomicInteger rebuildCount = new AtomicInteger();
-		private final List<Statement> statements;
 
 		CountingEmptyStore(Statement... statements) {
-			this.statements = List.of(statements);
+			addAll(List.of(statements));
 		}
 
 		int rebuildCount() {
@@ -132,24 +132,18 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		}
 
 		@Override
-		public ValueFactory getValueFactory() {
-			return VF;
-		}
-
-		@Override
-		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
+		public CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId, long objectId,
+				long contextId) {
 			rebuildCount.incrementAndGet();
-			return new CloseableIteratorIteration<>(statements.iterator());
+			return super.getStatementIds(subjectId, predicateId, objectId, contextId);
 		}
 	}
 
-	private static final class DeferringAfterInitialRebuildStore implements SketchStatementSource {
+	private static final class DeferringAfterInitialRebuildStore extends StubSketchStatementSource {
 		private final AtomicInteger rebuildCount = new AtomicInteger();
-		private final List<Statement> statements;
 
 		DeferringAfterInitialRebuildStore(Statement... statements) {
-			this.statements = List.of(statements);
+			addAll(List.of(statements));
 		}
 
 		boolean awaitDeferredAttempt() throws InterruptedException {
@@ -164,17 +158,12 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 		}
 
 		@Override
-		public ValueFactory getValueFactory() {
-			return VF;
-		}
-
-		@Override
-		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
+		public CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId, long objectId,
+				long contextId) {
 			if (rebuildCount.incrementAndGet() > 1) {
 				throw new SketchStatementSourceException(new IllegalStateException("deferred"));
 			}
-			return new CloseableIteratorIteration<>(statements.iterator());
+			return super.getStatementIds(subjectId, predicateId, objectId, contextId);
 		}
 	}
 

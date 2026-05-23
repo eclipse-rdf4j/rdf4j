@@ -50,7 +50,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 			assertEquals(0, estimator.debugPendingIncrementalCount(),
 					"Full statement queue should be handed to the background worker at the configured limit");
 			estimator.debugFlushPendingIncremental();
-			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 0.0,
+			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, predicate)) > 0.0,
 					"Flushed background queue should update sketches");
 		});
 	}
@@ -96,7 +97,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 			estimator.debugFlushPendingIncremental();
 			assertEquals(0, estimator.debugPendingIncrementalCount(),
 					"Explicit flush should drain the active statement queue");
-			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 0.0,
+			assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+					id(estimator, SketchBasedJoinEstimator.Component.P, predicate)) > 0.0,
 					"Explicit flush should apply partial statement queues");
 		});
 	}
@@ -116,7 +118,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 				"Bulk committed adds should use the same estimator-owned per-statement queue");
 		estimator.debugFlushPendingIncremental();
 		assertTrue(estimator.isReadyNonBlocking(), "Bulk exact ingest should leave the estimator ready");
-		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 100.0,
+		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+				id(estimator, SketchBasedJoinEstimator.Component.P, predicate)) > 100.0,
 				"Bulk exact ingest should update predicate sketches");
 	}
 
@@ -137,7 +140,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 		assertEquals(1, debugPendingIncrementalChunkCount(estimator),
 				"Bulk committed adds should retain one chunk-level async unit, not one unit per statement");
 		estimator.debugFlushPendingIncremental();
-		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 100.0,
+		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+				id(estimator, SketchBasedJoinEstimator.Component.P, predicate)) > 100.0,
 				"Chunk-level exact ingest should update predicate sketches after drain");
 	}
 
@@ -179,7 +183,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 
 			estimator.debugFlushPendingIncremental();
 			assertTrue(
-					estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 10.0,
+					estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+							id(estimator, SketchBasedJoinEstimator.Component.P, predicate)) > 10.0,
 					"Backlogged exact ingestion should update predicate sketches after drain");
 		});
 	}
@@ -240,7 +245,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 		assertEquals(0, estimator.debugPendingIncrementalCount(),
 				"Bulk fallback should not retain exact statement updates");
 		assertEquals(0.0,
-				estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
+				estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+						id(estimator, SketchBasedJoinEstimator.Component.P, predicate)),
 				"Bulk fallback should not publish partial exact sketch updates");
 	}
 
@@ -264,7 +270,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 		assertFalse(estimator.isReadyNonBlocking(),
 				"Rebuild memory monitor fallback should leave the estimator awaiting a later rebuild");
 		assertEquals(0.0,
-				estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
+				estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+						store.id(SketchBasedJoinEstimator.Component.P, predicate)),
 				"Rebuild memory fallback should not publish partial sketches");
 	}
 
@@ -322,7 +329,7 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 						}
 						estimator.debugFlushPendingIncremental();
 						assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
-								predicate.stringValue()) > 0.0,
+								id(estimator, SketchBasedJoinEstimator.Component.P, predicate)) > 0.0,
 								"Lazy workers should still publish incremental updates");
 						assertTrue(awaitThreadCount("RdfJoinEstimator-Partition-", partitionThreadsBefore, 2,
 								TimeUnit.SECONDS), "Partition workers should retire after the keep-alive timeout");
@@ -367,6 +374,11 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 
 	private static Statement statement(String subject, IRI predicate, String object) {
 		return VF.createStatement(VF.createIRI(subject), predicate, VF.createIRI(object));
+	}
+
+	private static long id(SketchBasedJoinEstimator estimator, SketchBasedJoinEstimator.Component component,
+			IRI value) {
+		return estimator.idOf(component, value).orElseThrow();
 	}
 
 	private static boolean awaitPendingCount(SketchBasedJoinEstimator estimator, int expected, long timeout,

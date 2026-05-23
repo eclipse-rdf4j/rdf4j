@@ -1020,8 +1020,12 @@ class LmdbEvaluationStatistics
 		if (accessPathEstimate.missingLookupComponentMask() != 0) {
 			return Optional.empty();
 		}
-		double totalSurfaceWorkRows = Math.max(accessPathEstimate.workRowsPerInvocation(), bestSurfaceRows);
-		accessPathEstimate = new AccessPathEstimate(totalSurfaceWorkRows, bestSurfaceRows, bestSurfaceRows,
+		double perInvocationSurfaceWorkRows = Math.max(accessPathEstimate.workRowsPerInvocation(), bestSurfaceRows);
+		double repeatedSurfaceWorkRows = perInvocationSurfaceWorkRows * invocationCount;
+		double totalSurfaceWorkRows = isFiniteNonNegative(repeatedSurfaceWorkRows)
+				? Math.max(invocationCount, repeatedSurfaceWorkRows)
+				: perInvocationSurfaceWorkRows;
+		accessPathEstimate = new AccessPathEstimate(perInvocationSurfaceWorkRows, bestSurfaceRows, bestSurfaceRows,
 				accessPathEstimate.indexFieldSequence(), accessPathEstimate.prefixLength(),
 				accessPathEstimate.prefixComponentMask(), accessPathEstimate.directLookup(),
 				accessPathEstimate.lookupComponentMask(), accessPathEstimate.missingLookupComponentMask(),
@@ -1054,6 +1058,7 @@ class LmdbEvaluationStatistics
 				(double) accessPathEstimate.prefixLength());
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, accessPathEstimate.rowsBeforeFilterAtAccess());
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, accessPathEstimate.workRowsPerInvocation());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, totalSurfaceWorkRows);
 		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES,
 				(double) accessPathEstimate.candidateCount());
 		doubleMetrics.put("plannedRepeatedInvocations", (double) invocationCount);
@@ -1069,7 +1074,7 @@ class LmdbEvaluationStatistics
 		}
 
 		double outputRows = bestSurfaceRows;
-		return Optional.of(new FactorCostEstimate(accessPathEstimate.workRowsPerInvocation(), outputRows,
+		return Optional.of(new FactorCostEstimate(totalSurfaceWorkRows, outputRows,
 				stringMetrics, doubleMetrics, true, accessPathEstimate.directLookup(),
 				accessPathEstimate.lookupComponentMask(), accessPathEstimate.missingLookupComponentMask(),
 				accessPathEstimate.rowsBeforeFilterAtAccess(), true, true));

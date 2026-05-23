@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -229,13 +230,19 @@ class SketchEstimatorThemeJoinAccuracyIT {
 					Var.of("branchName"));
 			Join join = new Join(locatedAtPattern, branchNamePattern);
 
-			double leftRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.O, null,
-					LIBRARY_LOCATED_AT.stringValue(), null, null);
-			double rightRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null,
-					LIBRARY_NAME.stringValue(), null, null);
-			double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O, null,
-					LIBRARY_LOCATED_AT.stringValue(), null, null)
-					.join(SketchBasedJoinEstimator.Component.S, null, LIBRARY_NAME.stringValue(), null, null)
+			long locatedAtId = id(estimator, SketchBasedJoinEstimator.Component.P, LIBRARY_LOCATED_AT);
+			long nameId = id(estimator, SketchBasedJoinEstimator.Component.P, LIBRARY_NAME);
+			double leftRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.O,
+					SketchStatementSource.UNBOUND_ID, locatedAtId, SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID);
+			double rightRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.S,
+					SketchStatementSource.UNBOUND_ID, nameId, SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID);
+			double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O,
+					SketchStatementSource.UNBOUND_ID, locatedAtId, SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID)
+					.join(SketchBasedJoinEstimator.Component.S, SketchStatementSource.UNBOUND_ID, nameId,
+							SketchStatementSource.UNBOUND_ID, SketchStatementSource.UNBOUND_ID)
 					.estimate();
 			double plannerJoinEstimate = statistics.getCardinality(join);
 			long actualJoinRows = exactJoinRowsForLocatedAtName(repository);
@@ -251,16 +258,16 @@ class SketchEstimatorThemeJoinAccuracyIT {
 	}
 
 	private static void printScenarioDiagnostics(SketchBasedJoinEstimator estimator, JoinScenario scenario) {
-		String context = THEME_GRAPH.stringValue();
-		String leftPredicate = scenario.left.predicate().stringValue();
-		String leftObject = scenario.left.object().stringValue();
-		String rightPredicate = scenario.right.predicate().stringValue();
-		String rightObject = scenario.right.object().stringValue();
+		long context = id(estimator, SketchBasedJoinEstimator.Component.C, THEME_GRAPH);
+		long leftPredicate = id(estimator, SketchBasedJoinEstimator.Component.P, scenario.left.predicate());
+		long leftObject = id(estimator, SketchBasedJoinEstimator.Component.O, scenario.left.object());
+		long rightPredicate = id(estimator, SketchBasedJoinEstimator.Component.P, scenario.right.predicate());
+		long rightObject = id(estimator, SketchBasedJoinEstimator.Component.O, scenario.right.object());
 
-		double leftEstimate = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, leftPredicate,
-				leftObject, context);
-		double rightEstimate = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, rightPredicate,
-				rightObject, context);
+		double leftEstimate = estimator.estimateCount(SketchBasedJoinEstimator.Component.S,
+				SketchStatementSource.UNBOUND_ID, leftPredicate, leftObject, context);
+		double rightEstimate = estimator.estimateCount(SketchBasedJoinEstimator.Component.S,
+				SketchStatementSource.UNBOUND_ID, rightPredicate, rightObject, context);
 		double poLeft = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, leftPredicate, leftObject);
 		double pcLeft = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PC, leftPredicate, context);
 		double ocLeft = estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.OC, leftObject, context);
@@ -308,15 +315,20 @@ class SketchEstimatorThemeJoinAccuracyIT {
 	private static double estimateScenarioJoin(SketchBasedJoinEstimator estimator, JoinScenario scenario) {
 		return estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
 				SketchBasedJoinEstimator.Pair.PO,
-				scenario.left.predicate().stringValue(),
-				scenario.left.object().stringValue(),
+				id(estimator, SketchBasedJoinEstimator.Component.P, scenario.left.predicate()),
+				id(estimator, SketchBasedJoinEstimator.Component.O, scenario.left.object()),
 				SketchBasedJoinEstimator.Pair.PO,
-				scenario.right.predicate().stringValue(),
-				scenario.right.object().stringValue());
+				id(estimator, SketchBasedJoinEstimator.Component.P, scenario.right.predicate()),
+				id(estimator, SketchBasedJoinEstimator.Component.O, scenario.right.object()));
 	}
 
 	private static boolean awaitJoinEstimationReady(SketchBasedJoinEstimator estimator) throws InterruptedException {
 		return estimator.awaitReady(60, TimeUnit.SECONDS);
+	}
+
+	private static long id(SketchBasedJoinEstimator estimator, SketchBasedJoinEstimator.Component component,
+			Value value) {
+		return estimator.idOf(component, value).orElseThrow(() -> new AssertionError("Expected LMDB ID for " + value));
 	}
 
 	private static void loadAllThemesInSingleGraph(SailRepository repository) {
@@ -352,13 +364,19 @@ class SketchEstimatorThemeJoinAccuracyIT {
 				assertTrue(awaitJoinEstimationReady(estimator),
 						"Expected library-theme estimator rebuild to finish before persistence");
 			}
-			double leftRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.O, null,
-					LIBRARY_LOCATED_AT.stringValue(), null, null);
-			double rightRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null,
-					LIBRARY_NAME.stringValue(), null, null);
-			double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O, null,
-					LIBRARY_LOCATED_AT.stringValue(), null, null)
-					.join(SketchBasedJoinEstimator.Component.S, null, LIBRARY_NAME.stringValue(), null, null)
+			long locatedAtId = id(estimator, SketchBasedJoinEstimator.Component.P, LIBRARY_LOCATED_AT);
+			long nameId = id(estimator, SketchBasedJoinEstimator.Component.P, LIBRARY_NAME);
+			double leftRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.O,
+					SketchStatementSource.UNBOUND_ID, locatedAtId, SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID);
+			double rightRows = estimator.estimateCount(SketchBasedJoinEstimator.Component.S,
+					SketchStatementSource.UNBOUND_ID, nameId, SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID);
+			double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O,
+					SketchStatementSource.UNBOUND_ID, locatedAtId, SketchStatementSource.UNBOUND_ID,
+					SketchStatementSource.UNBOUND_ID)
+					.join(SketchBasedJoinEstimator.Component.S, SketchStatementSource.UNBOUND_ID, nameId,
+							SketchStatementSource.UNBOUND_ID, SketchStatementSource.UNBOUND_ID)
 					.estimate();
 			boolean persisted = estimator.persistIfDirty()
 					|| Files.isRegularFile(dataDir.toPath()

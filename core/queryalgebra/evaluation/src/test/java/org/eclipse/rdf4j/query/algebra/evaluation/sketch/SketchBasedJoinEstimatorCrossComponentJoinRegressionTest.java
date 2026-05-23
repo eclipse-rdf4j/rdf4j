@@ -49,9 +49,12 @@ class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest {
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
 		estimator.rebuild();
 
-		double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O, null,
-				locatedAt.stringValue(), null, null)
-				.join(SketchBasedJoinEstimator.Component.S, null, hasName.stringValue(), null, null)
+		double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O,
+				SketchStatementSource.UNBOUND_ID, store.id(SketchBasedJoinEstimator.Component.P, locatedAt),
+				SketchStatementSource.UNBOUND_ID, SketchStatementSource.UNBOUND_ID)
+				.join(SketchBasedJoinEstimator.Component.S, SketchStatementSource.UNBOUND_ID,
+						store.id(SketchBasedJoinEstimator.Component.P, hasName), SketchStatementSource.UNBOUND_ID,
+						SketchStatementSource.UNBOUND_ID)
 				.estimate();
 		double plannerJoinEstimate = estimator.cardinality(new Join(
 				new StatementPattern(Var.of("copy"), Var.of("locatedAt", locatedAt), Var.of("branch")),

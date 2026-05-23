@@ -25,12 +25,15 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Pair;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -162,27 +165,36 @@ public class SketchEstimatorThemeMemoryBenchmark {
 	}
 
 	private static long probeEstimator(SketchBasedJoinEstimator estimator, List<Theme> themes) {
-		String rdfType = RDF.TYPE.stringValue();
-		String copy = LIBRARY + "Copy";
-		String locatedAt = LIBRARY + "locatedAt";
-		String branchZero = LIBRARY + "branch/0";
-		String condition = MEDICAL + "Condition";
-		String code = MEDICAL + "code";
+		long rdfType = id(estimator, Component.P, RDF.TYPE);
+		long copy = id(estimator, Component.O, Values.iri(LIBRARY + "Copy"));
+		long locatedAt = id(estimator, Component.P, Values.iri(LIBRARY + "locatedAt"));
+		long branchZero = id(estimator, Component.O, Values.iri(LIBRARY + "branch/0"));
+		long condition = id(estimator, Component.O, Values.iri(MEDICAL + "Condition"));
+		long code = id(estimator, Component.P, Values.iri(MEDICAL + "code"));
 		long checksum = Math.round(estimator.cardinalitySingle(Component.P, rdfType));
 		if (themes.contains(Theme.LIBRARY)) {
 			checksum += Math.round(estimator.cardinalityPair(Pair.PO, rdfType, copy));
-			checksum += Math.round(estimator.estimateCount(Component.S, null, rdfType, copy, null));
-			checksum += Math.round(estimator.estimate(Component.O, null, rdfType, copy, null)
-					.join(Component.S, null, locatedAt, branchZero, null)
+			checksum += Math.round(estimator.estimateCount(Component.S, SketchStatementSource.UNBOUND_ID, rdfType,
+					copy, SketchStatementSource.UNBOUND_ID));
+			checksum += Math.round(estimator.estimate(Component.O, SketchStatementSource.UNBOUND_ID, rdfType, copy,
+					SketchStatementSource.UNBOUND_ID)
+					.join(Component.S, SketchStatementSource.UNBOUND_ID, locatedAt, branchZero,
+							SketchStatementSource.UNBOUND_ID)
 					.estimate());
 		}
 		if (themes.contains(Theme.MEDICAL_RECORDS)) {
 			checksum += Math.round(estimator.cardinalityPair(Pair.PO, rdfType, condition));
-			checksum += Math.round(estimator.estimate(Component.S, null, rdfType, condition, null)
-					.join(Component.S, null, code, null, null)
+			checksum += Math.round(estimator.estimate(Component.S, SketchStatementSource.UNBOUND_ID, rdfType,
+					condition, SketchStatementSource.UNBOUND_ID)
+					.join(Component.S, SketchStatementSource.UNBOUND_ID, code, SketchStatementSource.UNBOUND_ID,
+							SketchStatementSource.UNBOUND_ID)
 					.estimate());
 		}
 		return checksum;
+	}
+
+	private static long id(SketchBasedJoinEstimator estimator, Component component, Value value) {
+		return estimator.idOf(component, value).orElseThrow(() -> new AssertionError("Expected LMDB ID for " + value));
 	}
 
 	private static long executeSanityQuery(SailRepository repository, List<Theme> themes) {

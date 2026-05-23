@@ -17,6 +17,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -43,7 +44,8 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final String VALUES_DATA_FILE = "values/data.mdb";
 	private static final String JOIN_ESTIMATOR_METADATA_FILE = "join-estimator.rjes/metadata.bin";
 	private static final byte[] JOIN_ESTIMATOR_METADATA_MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
-	private static final int JOIN_ESTIMATOR_METADATA_VERSION = 2;
+	private static final int JOIN_ESTIMATOR_METADATA_VERSION = 3;
+	private static final int JOIN_ESTIMATOR_TERM_KEY_FORMAT_LONG_ID = 1;
 	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
 	private static final int DEFAULT_PREDICATE_BUCKET_COUNT = 64;
 	private static final int DEFAULT_CONTEXT_BUCKET_COUNT = 16;
@@ -67,8 +69,8 @@ public final class BenchmarkJoinEstimatorSupport {
 	public static void persistEstimatorAfterBulkLoad(SailRepository repository, LmdbStore store) throws IOException {
 		repository.init();
 		SketchBasedJoinEstimator estimator = resolveEstimator(store);
-		estimator.rebuild();
-		awaitEstimatorReady(estimator, "bulk-load rebuild");
+		long scannedRows = rebuildUntilBulkLoadReady(estimator);
+		awaitEstimatorReady(estimator, "bulk-load rebuild" + estimatorDiagnosticSuffix(estimator, scannedRows));
 		persistReusableEstimatorSnapshot(estimator);
 	}
 
@@ -202,6 +204,57 @@ public final class BenchmarkJoinEstimatorSupport {
 		}
 	}
 
+	private static long rebuildUntilBulkLoadReady(SketchBasedJoinEstimator estimator) throws IOException {
+		long scannedRows = 0L;
+		for (int attempt = 0; attempt < 3; attempt++) {
+			scannedRows += estimator.rebuild();
+			if (estimator.isReadyNonBlocking() || !debugBooleanField(estimator, "rebuildRequired")) {
+				return scannedRows;
+			}
+		}
+		return scannedRows;
+	}
+
+	private static String estimatorDiagnosticSuffix(SketchBasedJoinEstimator estimator, long scannedRows)
+			throws IOException {
+		return " (scannedRows=" + scannedRows
+				+ ", readyNonBlocking=" + estimator.isReadyNonBlocking()
+				+ ", rebuildRequired=" + debugField(estimator, "rebuildRequired")
+				+ ", sketchesLoaded=" + debugField(estimator, "sketchesLoaded")
+				+ ", approxStoreSize=" + debugAtomicLongField(estimator, "approxStoreSize")
+				+ ", residentSketches=" + debugSketchCount(estimator, "debugResidentSketches")
+				+ ", persistedSketches=" + debugSketchCount(estimator, "debugPersistedSketches") + ")";
+	}
+
+	private static int debugSketchCount(SketchBasedJoinEstimator estimator, String methodName) throws IOException {
+		Object result = invoke(reflectMethod(SketchBasedJoinEstimator.class, methodName), estimator);
+		return result instanceof java.util.Collection<?> collection ? collection.size() : -1;
+	}
+
+	private static Object debugField(SketchBasedJoinEstimator estimator, String fieldName) throws IOException {
+		try {
+			Field field = SketchBasedJoinEstimator.class.getDeclaredField(fieldName);
+			field.setAccessible(true);
+			Object value = field.get(estimator);
+			if (value instanceof java.util.concurrent.atomic.AtomicBoolean atomicBoolean) {
+				return atomicBoolean.get();
+			}
+			return value;
+		} catch (NoSuchFieldException | IllegalAccessException e) {
+			throw new IOException("Unable to read join-estimator field " + fieldName, e);
+		}
+	}
+
+	private static boolean debugBooleanField(SketchBasedJoinEstimator estimator, String fieldName) throws IOException {
+		Object value = debugField(estimator, fieldName);
+		return value instanceof Boolean booleanValue ? booleanValue : Boolean.TRUE.equals(value);
+	}
+
+	private static long debugAtomicLongField(SketchBasedJoinEstimator estimator, String fieldName) throws IOException {
+		Object value = debugField(estimator, fieldName);
+		return value instanceof java.util.concurrent.atomic.AtomicLong atomicLong ? atomicLong.get() : -1L;
+	}
+
 	private static void writeExpectedDbFileSizes(File storeDirectory) throws IOException {
 		Properties properties = new Properties();
 		properties.setProperty(TRIPLES_DATA_SIZE_PROPERTY,
@@ -277,22 +330,19 @@ public final class BenchmarkJoinEstimatorSupport {
 				}
 			}
 			int version = input.readInt();
-			if (version != 1 && version != JOIN_ESTIMATOR_METADATA_VERSION) {
+			if (version != JOIN_ESTIMATOR_METADATA_VERSION) {
+				return null;
+			}
+			int termKeyFormat = input.readInt();
+			if (termKeyFormat != JOIN_ESTIMATOR_TERM_KEY_FORMAT_LONG_ID) {
 				return null;
 			}
 			int bucketCount = input.readInt();
-			int subjectBucketCount = bucketCount;
-			int predicateBucketCount = bucketCount;
-			int objectBucketCount = bucketCount;
-			int contextBucketCount = bucketCount;
-			boolean contextPairSketchesEnabled = true;
-			if (version >= JOIN_ESTIMATOR_METADATA_VERSION) {
-				subjectBucketCount = input.readInt();
-				predicateBucketCount = input.readInt();
-				objectBucketCount = input.readInt();
-				contextBucketCount = input.readInt();
-				contextPairSketchesEnabled = input.readBoolean();
-			}
+			int subjectBucketCount = input.readInt();
+			int predicateBucketCount = input.readInt();
+			int objectBucketCount = input.readInt();
+			int contextBucketCount = input.readInt();
+			boolean contextPairSketchesEnabled = input.readBoolean();
 			int sketchNominalEntries = input.readInt();
 			return new EstimatorMetadataFingerprint(subjectBucketCount, predicateBucketCount, objectBucketCount,
 					contextBucketCount, contextPairSketchesEnabled, sketchNominalEntries);

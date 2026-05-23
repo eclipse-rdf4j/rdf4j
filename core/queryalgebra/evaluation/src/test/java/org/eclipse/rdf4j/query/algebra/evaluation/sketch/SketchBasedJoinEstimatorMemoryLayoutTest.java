@@ -44,8 +44,8 @@ class SketchBasedJoinEstimatorMemoryLayoutTest {
 
 	@Test
 	void deleteUpdatesUseTombstoneSketches() {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
-				smallConfig());
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallConfig());
 		IRI predicate = VF.createIRI("urn:memory-layout:p");
 		Statement statement = VF.createStatement(VF.createIRI("urn:memory-layout:s"), predicate,
 				VF.createIRI("urn:memory-layout:o"));
@@ -53,13 +53,13 @@ class SketchBasedJoinEstimatorMemoryLayoutTest {
 		estimator.addStatement(statement);
 		estimator.debugFlushPendingIncremental();
 
-		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()) > 0.0);
+		long predicateId = store.id(SketchBasedJoinEstimator.Component.P, predicate);
+		assertTrue(estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicateId) > 0.0);
 
 		estimator.deleteStatement(statement);
 		estimator.debugFlushPendingIncremental();
 
-		assertEquals(0.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()),
-				0.0001);
+		assertEquals(0.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicateId), 0.0001);
 		assertTrue(
 				estimator.debugResidentSketches()
 						.stream()

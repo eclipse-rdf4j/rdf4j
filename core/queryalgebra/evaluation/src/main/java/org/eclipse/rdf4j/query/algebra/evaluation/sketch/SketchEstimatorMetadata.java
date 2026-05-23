@@ -20,9 +20,11 @@ import java.nio.charset.StandardCharsets;
 final class SketchEstimatorMetadata {
 
 	static final byte[] MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
-	static final int VERSION = 2;
+	static final int VERSION = 3;
+	static final int TERM_KEY_FORMAT_LONG_ID = 1;
 
 	final int bucketCount;
+	final int termKeyFormat;
 	final int subjectBucketCount;
 	final int predicateBucketCount;
 	final int objectBucketCount;
@@ -39,11 +41,12 @@ final class SketchEstimatorMetadata {
 
 	SketchEstimatorMetadata(int subjectBucketCount, int predicateBucketCount, int objectBucketCount,
 			int contextBucketCount, boolean contextPairSketchesEnabled, int sketchNominalEntries,
-			String defaultContext, byte activeSlot,
+			int termKeyFormat, String defaultContext, byte activeSlot,
 			long seenCount, long approxStoreSize, long lastPublishTime,
 			long slotGenerationA, long slotGenerationB) {
 		this.bucketCount = Math.max(Math.max(subjectBucketCount, predicateBucketCount),
 				Math.max(objectBucketCount, contextBucketCount));
+		this.termKeyFormat = termKeyFormat;
 		this.subjectBucketCount = subjectBucketCount;
 		this.predicateBucketCount = predicateBucketCount;
 		this.objectBucketCount = objectBucketCount;
@@ -63,6 +66,7 @@ final class SketchEstimatorMetadata {
 	void writeTo(DataOutput out) throws IOException {
 		out.write(MAGIC);
 		out.writeInt(VERSION);
+		out.writeInt(termKeyFormat);
 		out.writeInt(bucketCount);
 		out.writeInt(subjectBucketCount);
 		out.writeInt(predicateBucketCount);
@@ -87,8 +91,12 @@ final class SketchEstimatorMetadata {
 			}
 		}
 		int version = in.readInt();
-		if (version != 1 && version != VERSION) {
+		if (version != VERSION) {
 			throw new IOException("Unsupported join estimator directory metadata version: " + version);
+		}
+		int termKeyFormat = in.readInt();
+		if (termKeyFormat != TERM_KEY_FORMAT_LONG_ID) {
+			throw new IOException("Unsupported join estimator term-key format: " + termKeyFormat);
 		}
 		int bucketCount = in.readInt();
 		int subjectBucketCount = bucketCount;
@@ -96,13 +104,11 @@ final class SketchEstimatorMetadata {
 		int objectBucketCount = bucketCount;
 		int contextBucketCount = bucketCount;
 		boolean contextPairSketchesEnabled = true;
-		if (version >= 2) {
-			subjectBucketCount = in.readInt();
-			predicateBucketCount = in.readInt();
-			objectBucketCount = in.readInt();
-			contextBucketCount = in.readInt();
-			contextPairSketchesEnabled = in.readBoolean();
-		}
+		subjectBucketCount = in.readInt();
+		predicateBucketCount = in.readInt();
+		objectBucketCount = in.readInt();
+		contextBucketCount = in.readInt();
+		contextPairSketchesEnabled = in.readBoolean();
 		int sketchNominalEntries = in.readInt();
 		String defaultContext = readString(in);
 		byte activeSlot = in.readByte();
@@ -112,7 +118,8 @@ final class SketchEstimatorMetadata {
 		long slotGenerationA = in.readLong();
 		long slotGenerationB = in.readLong();
 		return new SketchEstimatorMetadata(subjectBucketCount, predicateBucketCount, objectBucketCount,
-				contextBucketCount, contextPairSketchesEnabled, sketchNominalEntries, defaultContext, activeSlot,
+				contextBucketCount, contextPairSketchesEnabled, sketchNominalEntries, termKeyFormat, defaultContext,
+				activeSlot,
 				seenCount, approxStoreSize, lastPublishTime, slotGenerationA,
 				slotGenerationB);
 	}

@@ -14,8 +14,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -24,27 +27,89 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Values;
 
 /**
  * A small in-memory statement source for unit tests of {@link SketchBasedJoinEstimator}.
  */
 class StubSketchStatementSource implements SketchStatementSource {
 
-	private final List<Statement> data = new CopyOnWriteArrayList<>();
+	private final Map<Value, Long> valueIds = new HashMap<>();
+	private final List<StoredStatement> data = new CopyOnWriteArrayList<>();
+	private long nextId = 1L;
 
 	public void add(Statement st) {
-		data.add(st);
+		addAndReturnIds(st);
 	}
 
 	public void addAll(Collection<Statement> sts) {
-		data.addAll(sts);
+		for (Statement statement : sts) {
+			add(statement);
+		}
+	}
+
+	public StatementIds addAndReturnIds(Statement st) {
+		StatementIds ids = idsOf(st);
+		data.add(new StoredStatement(st, ids));
+		return ids;
+	}
+
+	public void remove(Statement st) {
+		data.removeIf(stored -> stored.statement.equals(st));
+	}
+
+	public StatementIds idsOf(Statement st) {
+		return new StatementIds(idOfOrCreate(st.getSubject()), idOfOrCreate(st.getPredicate()),
+				idOfOrCreate(st.getObject()), contextIdOfOrCreate(st.getContext()));
+	}
+
+	public long id(SketchBasedJoinEstimator.Component component, Value value) {
+		return idOf(component, value).orElseThrow();
+	}
+
+	public long iriId(SketchBasedJoinEstimator.Component component, String iri) {
+		return id(component, Values.iri(iri));
 	}
 
 	@Override
+	public CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId, long objectId,
+			long contextId) {
+		List<StatementIds> matches = new ArrayList<>();
+		for (StoredStatement stored : data) {
+			StatementIds ids = stored.ids;
+			if (!matches(subjectId, ids.subject())) {
+				continue;
+			}
+			if (!matches(predicateId, ids.predicate())) {
+				continue;
+			}
+			if (!matches(objectId, ids.object())) {
+				continue;
+			}
+			if (!matches(contextId, ids.context())) {
+				continue;
+			}
+			matches.add(ids);
+		}
+		return new CloseableIteratorIteration<>(matches.iterator());
+	}
+
+	@Override
+	public synchronized OptionalLong idOf(SketchBasedJoinEstimator.Component component, Value value) {
+		if (component == SketchBasedJoinEstimator.Component.C && value == null) {
+			return OptionalLong.of(DEFAULT_CONTEXT_ID);
+		}
+		if (value == null || !compatible(component, value)) {
+			return OptionalLong.empty();
+		}
+		return OptionalLong.of(idOfOrCreate(value));
+	}
+
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		List<Statement> matches = new ArrayList<>();
-		for (Statement statement : data) {
+		for (StoredStatement stored : data) {
+			Statement statement = stored.statement;
 			if (subj != null && !subj.equals(statement.getSubject())) {
 				continue;
 			}
@@ -69,5 +134,31 @@ class StubSketchStatementSource implements SketchStatementSource {
 			matches.add(statement);
 		}
 		return new CloseableIteratorIteration<>(matches.iterator());
+	}
+
+	private synchronized long idOfOrCreate(Value value) {
+		return valueIds.computeIfAbsent(value, ignored -> nextId++);
+	}
+
+	private long contextIdOfOrCreate(Resource context) {
+		if (context == null) {
+			return DEFAULT_CONTEXT_ID;
+		}
+		return idOfOrCreate(context);
+	}
+
+	private static boolean matches(long requestedId, long actualId) {
+		return requestedId == UNBOUND_ID || requestedId == actualId;
+	}
+
+	private static boolean compatible(SketchBasedJoinEstimator.Component component, Value value) {
+		return switch (component) {
+		case S, C -> value instanceof Resource;
+		case P -> value instanceof IRI;
+		case O -> true;
+		};
+	}
+
+	private record StoredStatement(Statement statement, StatementIds ids) {
 	}
 }

@@ -78,6 +78,14 @@ class SketchBasedJoinEstimatorConfigTest {
 		est.rebuild();
 	}
 
+	private long id(SketchBasedJoinEstimator.Component component, Value value) {
+		return store.id(component, value);
+	}
+
+	private static long unbound() {
+		return SketchStatementSource.UNBOUND_ID;
+	}
+
 	@Test
 	void customDefaultContextValue() {
 		// Given a custom default context label configured via constructor
@@ -93,12 +101,11 @@ class SketchBasedJoinEstimatorConfigTest {
 		store.add(st(s1, p1, o1));
 		rebuild(est);
 
-		// The custom label must be used to represent the default context in sketches
-		double cardMine = est.cardinalitySingle(SketchBasedJoinEstimator.Component.C, "urn:mine");
-		double cardDefault = est.cardinalitySingle(SketchBasedJoinEstimator.Component.C, "urn:default-context");
+		// Default graph is represented by the fixed LMDB default context ID.
+		double cardDefault = est.cardinalitySingle(SketchBasedJoinEstimator.Component.C,
+				SketchStatementSource.DEFAULT_CONTEXT_ID);
 
-		assertEquals(1.0, cardMine, 0.0001);
-		assertEquals(0.0, cardDefault, 0.0001);
+		assertEquals(1.0, cardDefault, 0.0001);
 	}
 
 	@Test
@@ -135,10 +142,11 @@ class SketchBasedJoinEstimatorConfigTest {
 		store.add(st(s1, p1, o1));
 		rebuild(estimator);
 
-		double initial = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(), null,
-				null);
-		double repeated = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(), null,
-				null);
+		long predicateId = id(SketchBasedJoinEstimator.Component.P, p1);
+		double initial = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, unbound(), predicateId,
+				unbound(), unbound());
+		double repeated = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, unbound(), predicateId,
+				unbound(), unbound());
 		assertEquals(initial, repeated, 0.0d, "Expected repeated estimate reads to stay stable before mutations");
 
 		Resource s2 = VF.createIRI("urn:s2");
@@ -146,8 +154,8 @@ class SketchBasedJoinEstimatorConfigTest {
 		store.add(st(s2, p1, o2));
 		estimator.addStatement(st(s2, p1, o2));
 
-		double refreshed = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(), null,
-				null);
+		double refreshed = estimator.estimateCount(SketchBasedJoinEstimator.Component.S, unbound(), predicateId,
+				unbound(), unbound());
 		assertEquals(2.0d, refreshed, 0.0d, "Expected estimate cache to invalidate immediately after sketch mutation");
 	}
 
@@ -269,14 +277,18 @@ class SketchBasedJoinEstimatorConfigTest {
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, cfg);
 		estimator.rebuild();
 
-		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.S, s1.stringValue()), 0.0);
-		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0);
-		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.O, o1.stringValue()), 0.0);
-		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.C, c1.stringValue()), 0.0);
-		assertEquals(1.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.SP, s1.stringValue(),
-				p1.stringValue()), 0.0);
-		assertEquals(1.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.OC, o1.stringValue(),
-				c1.stringValue()), 0.0);
+		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.S,
+				id(SketchBasedJoinEstimator.Component.S, s1)), 0.0);
+		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+				id(SketchBasedJoinEstimator.Component.P, p1)), 0.0);
+		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.O,
+				id(SketchBasedJoinEstimator.Component.O, o1)), 0.0);
+		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.C,
+				id(SketchBasedJoinEstimator.Component.C, c1)), 0.0);
+		assertEquals(1.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.SP,
+				id(SketchBasedJoinEstimator.Component.S, s1), id(SketchBasedJoinEstimator.Component.P, p1)), 0.0);
+		assertEquals(1.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.OC,
+				id(SketchBasedJoinEstimator.Component.O, o1), id(SketchBasedJoinEstimator.Component.C, c1)), 0.0);
 	}
 
 	@Test
@@ -292,17 +304,18 @@ class SketchBasedJoinEstimatorConfigTest {
 		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, cfg);
 		estimator.rebuild();
 
-		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.C, c1.stringValue()), 0.0);
+		long contextId = id(SketchBasedJoinEstimator.Component.C, c1);
+		long predicateId = id(SketchBasedJoinEstimator.Component.P, p1);
+		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.C, contextId), 0.0);
 		assertEquals(1.0,
-				estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(), null,
-						c1.stringValue()),
+				estimator.estimateCount(SketchBasedJoinEstimator.Component.S, unbound(), predicateId, unbound(),
+						contextId),
 				0.0);
-		assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.SC, s1.stringValue(),
-				c1.stringValue()), 0.0);
-		assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PC, p1.stringValue(),
-				c1.stringValue()), 0.0);
-		assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.OC, o1.stringValue(),
-				c1.stringValue()), 0.0);
+		assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.SC,
+				id(SketchBasedJoinEstimator.Component.S, s1), contextId), 0.0);
+		assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PC, predicateId, contextId), 0.0);
+		assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.OC,
+				id(SketchBasedJoinEstimator.Component.O, o1), contextId), 0.0);
 	}
 
 	@Test
@@ -330,10 +343,12 @@ class SketchBasedJoinEstimatorConfigTest {
 			assertEquals(16, componentArrayLength(singleTriples, "P"));
 			assertEquals(32, componentArrayLength(singleTriples, "O"));
 			assertEquals(8, componentArrayLength(singleTriples, "C"));
-			assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.C, c1.stringValue()),
+			long contextId = id(SketchBasedJoinEstimator.Component.C, c1);
+			long predicateId = id(SketchBasedJoinEstimator.Component.P, p1);
+			assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.C, contextId),
 					0.0);
-			assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PC, p1.stringValue(),
-					c1.stringValue()), 0.0);
+			assertEquals(0.0, estimator.cardinalityPair(SketchBasedJoinEstimator.Pair.PC, predicateId, contextId),
+					0.0);
 		} finally {
 			properties.restore();
 		}

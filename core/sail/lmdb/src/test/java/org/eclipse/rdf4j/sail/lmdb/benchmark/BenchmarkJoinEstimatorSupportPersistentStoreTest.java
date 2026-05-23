@@ -31,7 +31,7 @@ import org.junit.jupiter.api.io.TempDir;
 class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 
 	private static final byte[] JOIN_ESTIMATOR_METADATA_MAGIC = new byte[] { 'R', 'J', 'E', 'D' };
-	private static final int JOIN_ESTIMATOR_METADATA_VERSION = 2;
+	private static final int JOIN_ESTIMATOR_METADATA_VERSION = 3;
 	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
 	private static final int DEFAULT_PREDICATE_BUCKET_COUNT = 64;
 	private static final int DEFAULT_CONTEXT_BUCKET_COUNT = 16;
@@ -168,6 +168,38 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 	}
 
 	@Test
+	void preparePersistentThemeRegressionStoreRebuildsWhenEstimatorSnapshotUsesOldStringKeys(@TempDir Path dataDir)
+			throws Exception {
+		System.setProperty(BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName(),
+				dataDir.resolve("persistent-lmdb-theme-store").toString());
+
+		AtomicInteger buildCount = new AtomicInteger();
+		ThemeRegressionStore first = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+				"theme-query-regression/string-key-estimator",
+				storeDirectory -> {
+					buildCount.incrementAndGet();
+					writeFakeStoreDataFiles(storeDirectory, 91, 93);
+					writeFakeOldStringKeyEstimatorMetadata(storeDirectory);
+				});
+		ThemeRegressionStore second = BenchmarkJoinEstimatorSupport.preparePersistentThemeRegressionStore(
+				"theme-query-regression/string-key-estimator",
+				storeDirectory -> {
+					buildCount.incrementAndGet();
+					writeFakeStoreDataFiles(storeDirectory, 95, 99);
+					writeFakeEstimatorMetadata(storeDirectory);
+				});
+
+		assertTrue(first.persistent());
+		assertFalse(first.reused());
+		assertTrue(second.persistent());
+		assertFalse(second.reused());
+		assertEquals(first.storeDirectory(), second.storeDirectory());
+		assertEquals(2, buildCount.get());
+		assertEquals(95L, Files.size(second.storeDirectory().resolve("triples/data.mdb")));
+		assertEquals(99L, Files.size(second.storeDirectory().resolve("values/data.mdb")));
+	}
+
+	@Test
 	void preparePersistentThemeRegressionStoreRebuildsWhenEstimatorSnapshotConfigurationDiffers(@TempDir Path dataDir)
 			throws Exception {
 		System.setProperty(BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreRootPropertyName(),
@@ -269,6 +301,7 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 				DataOutputStream output = new DataOutputStream(outputStream)) {
 			output.write(JOIN_ESTIMATOR_METADATA_MAGIC);
 			output.writeInt(JOIN_ESTIMATOR_METADATA_VERSION);
+			output.writeInt(1);
 			output.writeInt(Math.max(Math.max(fingerprint.subjectBucketCount, fingerprint.predicateBucketCount),
 					Math.max(fingerprint.objectBucketCount, fingerprint.contextBucketCount)));
 			output.writeInt(fingerprint.subjectBucketCount);
@@ -284,6 +317,23 @@ class BenchmarkJoinEstimatorSupportPersistentStoreTest {
 			output.writeLong(0L);
 			output.writeLong(0L);
 			output.writeLong(0L);
+		}
+	}
+
+	private static void writeFakeOldStringKeyEstimatorMetadata(Path storeDirectory) throws IOException {
+		Files.createDirectories(storeDirectory.resolve("join-estimator.rjes"));
+		try (OutputStream outputStream = Files
+				.newOutputStream(storeDirectory.resolve("join-estimator.rjes/metadata.bin"));
+				DataOutputStream output = new DataOutputStream(outputStream)) {
+			output.write(JOIN_ESTIMATOR_METADATA_MAGIC);
+			output.writeInt(2);
+			output.writeInt(DEFAULT_BUCKET_COUNT);
+			output.writeInt(DEFAULT_BUCKET_COUNT);
+			output.writeInt(DEFAULT_PREDICATE_BUCKET_COUNT);
+			output.writeInt(DEFAULT_BUCKET_COUNT);
+			output.writeInt(DEFAULT_CONTEXT_BUCKET_COUNT);
+			output.writeBoolean(false);
+			output.writeInt(DEFAULT_SKETCH_NOMINAL_ENTRIES);
 		}
 	}
 

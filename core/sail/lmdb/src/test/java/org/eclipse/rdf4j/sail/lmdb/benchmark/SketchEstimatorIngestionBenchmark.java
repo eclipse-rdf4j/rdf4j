@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -28,6 +30,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource.StatementIds;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -66,13 +69,14 @@ public class SketchEstimatorIngestionBenchmark {
 		public int statementCount;
 
 		List<Statement> statements;
-		String predicateValue;
+		List<StatementIds> statementIds;
+		BenchmarkStatementSource source;
+		long predicateValueId;
 
 		@Setup(Level.Trial)
 		public void setupStatements() {
 			IRI predicate = VF.createIRI("urn:bench:p");
 			Resource context = VF.createIRI("urn:bench:c");
-			predicateValue = predicate.stringValue();
 			statements = new ArrayList<>(statementCount);
 			for (int i = 0; i < statementCount; i++) {
 				statements.add(VF.createStatement(
@@ -81,6 +85,9 @@ public class SketchEstimatorIngestionBenchmark {
 						VF.createIRI("urn:bench:o:" + (i % 97)),
 						context));
 			}
+			source = new BenchmarkStatementSource(statements);
+			statementIds = statements.stream().map(source::idsOf).toList();
+			predicateValueId = source.idOf(SketchBasedJoinEstimator.Component.P, predicate).orElseThrow();
 		}
 	}
 
@@ -90,7 +97,7 @@ public class SketchEstimatorIngestionBenchmark {
 
 		@Setup(Level.Invocation)
 		public void setupEstimator() {
-			estimator = new SketchBasedJoinEstimator(new BenchmarkStatementSource(List.of()), CONFIG);
+			estimator = new SketchBasedJoinEstimator(source, CONFIG);
 		}
 
 		@TearDown(Level.Invocation)
@@ -105,7 +112,7 @@ public class SketchEstimatorIngestionBenchmark {
 
 		@Setup(Level.Invocation)
 		public void setupEstimator() {
-			estimator = new SketchBasedJoinEstimator(new BenchmarkStatementSource(statements), CONFIG);
+			estimator = new SketchBasedJoinEstimator(source, CONFIG);
 		}
 
 		@TearDown(Level.Invocation)
@@ -122,7 +129,7 @@ public class SketchEstimatorIngestionBenchmark {
 		@Setup(Level.Invocation)
 		public void setupEstimator() throws Exception {
 			tempDir = Files.createTempDirectory("rdf4j-sketch-ingest-bench");
-			estimator = new SketchBasedJoinEstimator(new BenchmarkStatementSource(statements), CONFIG);
+			estimator = new SketchBasedJoinEstimator(source, CONFIG);
 			estimator.configurePersistence(tempDir.resolve("join-estimator.rjes"), false);
 		}
 
@@ -139,10 +146,10 @@ public class SketchEstimatorIngestionBenchmark {
 
 	@Benchmark
 	public double incrementalBatchFlush(IncrementalState state) {
-		for (Statement statement : state.statements) {
-			state.estimator.addStatement(statement);
+		for (StatementIds statementIds : state.statementIds) {
+			state.estimator.addStatementIds(statementIds);
 		}
-		return state.estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, state.predicateValue);
+		return state.estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, state.predicateValueId);
 	}
 
 	@Benchmark
@@ -155,9 +162,13 @@ public class SketchEstimatorIngestionBenchmark {
 		return state.estimator.rebuild();
 	}
 
-	private record BenchmarkStatementSource(List<Statement> data) implements SketchStatementSource {
+	private static final class BenchmarkStatementSource implements SketchStatementSource {
+		private final List<StatementIds> data;
+		private final Map<Value, Long> valueIds = new HashMap<>();
+		private long nextId = 1L;
+
 		private BenchmarkStatementSource(List<Statement> data) {
-			this.data = List.copyOf(data);
+			this.data = data.stream().map(this::idsOf).toList();
 		}
 
 		@Override
@@ -166,34 +177,46 @@ public class SketchEstimatorIngestionBenchmark {
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
-			List<Statement> matches = new ArrayList<>(data.size());
-			for (Statement statement : data) {
-				if (subj != null && !subj.equals(statement.getSubject())) {
+		public CloseableIteration<StatementIds> getStatementIds(long subjectId, long predicateId, long objectId,
+				long contextId) {
+			List<StatementIds> matches = new ArrayList<>(data.size());
+			for (StatementIds ids : data) {
+				if (subjectId != UNBOUND_ID && subjectId != ids.subject()) {
 					continue;
 				}
-				if (pred != null && !pred.equals(statement.getPredicate())) {
+				if (predicateId != UNBOUND_ID && predicateId != ids.predicate()) {
 					continue;
 				}
-				if (obj != null && !obj.equals(statement.getObject())) {
+				if (objectId != UNBOUND_ID && objectId != ids.object()) {
 					continue;
 				}
-				if (contexts != null && contexts.length > 0) {
-					boolean contextMatch = false;
-					for (Resource context : contexts) {
-						if (Objects.equals(context, statement.getContext())) {
-							contextMatch = true;
-							break;
-						}
-					}
-					if (!contextMatch) {
-						continue;
-					}
+				if (contextId != UNBOUND_ID && contextId != ids.context()) {
+					continue;
 				}
-				matches.add(statement);
+				matches.add(ids);
 			}
 			return new CloseableIteratorIteration<>(matches.iterator());
+		}
+
+		@Override
+		public OptionalLong idOf(SketchBasedJoinEstimator.Component component, Value value) {
+			if (component == SketchBasedJoinEstimator.Component.C && value == null) {
+				return OptionalLong.of(DEFAULT_CONTEXT_ID);
+			}
+			Long id = valueIds.get(value);
+			return id == null ? OptionalLong.empty() : OptionalLong.of(id);
+		}
+
+		private StatementIds idsOf(Statement statement) {
+			return new StatementIds(
+					id(statement.getSubject()),
+					id(statement.getPredicate()),
+					id(statement.getObject()),
+					statement.getContext() == null ? DEFAULT_CONTEXT_ID : id(statement.getContext()));
+		}
+
+		private long id(Value value) {
+			return valueIds.computeIfAbsent(value, ignored -> nextId++);
 		}
 	}
 }

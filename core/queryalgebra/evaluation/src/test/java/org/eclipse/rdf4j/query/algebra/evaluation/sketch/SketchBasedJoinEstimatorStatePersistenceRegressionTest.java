@@ -55,20 +55,27 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 		reader.configurePersistence(snapshot, true);
 		assertTrue(reader.isReady(), "Expected lazy snapshot load");
 
-		assertEquals(2.0d, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0d,
+		assertEquals(2.0d, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+				sourceStore.id(SketchBasedJoinEstimator.Component.P, p1)), 0.0d,
 				"Single-cardinality sketch should survive snapshot reload");
 		assertEquals(2.0d,
-				reader.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(), o1.stringValue()),
+				reader.cardinalityPair(SketchBasedJoinEstimator.Pair.PO,
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p1),
+						sourceStore.id(SketchBasedJoinEstimator.Component.O, o1)),
 				0.0d,
 				"Pair-cardinality sketch should survive snapshot reload");
 		assertEquals(2.0d,
-				reader.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(), o1.stringValue(),
-						c1.stringValue()),
+				reader.estimateCount(SketchBasedJoinEstimator.Component.S, unbound(),
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p1),
+						sourceStore.id(SketchBasedJoinEstimator.Component.O, o1),
+						sourceStore.id(SketchBasedJoinEstimator.Component.C, c1)),
 				0.0d,
 				"Complement sketches should survive snapshot reload");
 		assertEquals(1.0d,
 				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
-						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p1),
+						SketchBasedJoinEstimator.Component.P,
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p2)),
 				0.0d,
 				"Join-binding sketches should survive snapshot reload");
 	}
@@ -84,7 +91,8 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 		Resource c1 = VF.createIRI("urn:evict:c1");
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSketchStatementSource(), smallConfig());
+		StubSketchStatementSource sourceStore = new StubSketchStatementSource();
+		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
 		writer.configurePersistence(snapshot, false);
 
 		writer.addStatement(st(s1, p1, o1, c1));
@@ -97,20 +105,27 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 		reader.configurePersistence(snapshot, true);
 		assertTrue(reader.isReady(), "Expected lazy load after incremental persist");
 
-		assertEquals(2.0d, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p1.stringValue()), 0.0d,
+		assertEquals(2.0d, reader.cardinalitySingle(SketchBasedJoinEstimator.Component.P,
+				sourceStore.id(SketchBasedJoinEstimator.Component.P, p1)), 0.0d,
 				"Incremental single-cardinality sketch should survive snapshot reload");
 		assertEquals(2.0d,
-				reader.cardinalityPair(SketchBasedJoinEstimator.Pair.PO, p1.stringValue(), o1.stringValue()),
+				reader.cardinalityPair(SketchBasedJoinEstimator.Pair.PO,
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p1),
+						sourceStore.id(SketchBasedJoinEstimator.Component.O, o1)),
 				0.0d,
 				"Incremental pair-cardinality sketch should survive snapshot reload");
 		assertEquals(2.0d,
-				reader.estimateCount(SketchBasedJoinEstimator.Component.S, null, p1.stringValue(), o1.stringValue(),
-						c1.stringValue()),
+				reader.estimateCount(SketchBasedJoinEstimator.Component.S, unbound(),
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p1),
+						sourceStore.id(SketchBasedJoinEstimator.Component.O, o1),
+						sourceStore.id(SketchBasedJoinEstimator.Component.C, c1)),
 				0.0d,
 				"Incremental complement sketches should survive snapshot reload");
 		assertEquals(1.0d,
 				reader.estimateJoinOn(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P,
-						p1.stringValue(), SketchBasedJoinEstimator.Component.P, p2.stringValue()),
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p1),
+						SketchBasedJoinEstimator.Component.P,
+						sourceStore.id(SketchBasedJoinEstimator.Component.P, p2)),
 				0.0d,
 				"Incremental join-binding sketches should survive snapshot reload");
 	}
@@ -125,6 +140,10 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	private static long unbound() {
+		return SketchStatementSource.UNBOUND_ID;
 	}
 
 }

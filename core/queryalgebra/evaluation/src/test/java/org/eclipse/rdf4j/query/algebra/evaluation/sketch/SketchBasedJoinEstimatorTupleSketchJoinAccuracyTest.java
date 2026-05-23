@@ -53,8 +53,8 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		estimator.rebuild();
 
 		double estimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
-				SketchBasedJoinEstimator.Component.P, leftPredicate.stringValue(),
-				SketchBasedJoinEstimator.Component.P, rightPredicate.stringValue());
+				SketchBasedJoinEstimator.Component.P, store.id(SketchBasedJoinEstimator.Component.P, leftPredicate),
+				SketchBasedJoinEstimator.Component.P, store.id(SketchBasedJoinEstimator.Component.P, rightPredicate));
 
 		assertEquals(250.0d, estimate, 0.0d,
 				"Join estimate should sum per-key left fanout * right fanout, not only overlap distinct keys");
@@ -65,7 +65,8 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		IRI leftPredicate = VF.createIRI("urn:tuple:delete:left");
 		IRI rightPredicate = VF.createIRI("urn:tuple:delete:right");
 		Resource shared = VF.createIRI("urn:tuple:delete:key");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
 		Statement leftOne = statement("urn:tuple:delete:left:1", leftPredicate, shared);
 		Statement leftTwo = statement("urn:tuple:delete:left:2", leftPredicate, shared);
 		Statement leftThree = statement("urn:tuple:delete:left:3", leftPredicate, shared);
@@ -79,8 +80,8 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		estimator.debugFlushPendingIncremental();
 
 		double estimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
-				SketchBasedJoinEstimator.Component.P, leftPredicate.stringValue(),
-				SketchBasedJoinEstimator.Component.P, rightPredicate.stringValue());
+				SketchBasedJoinEstimator.Component.P, store.id(SketchBasedJoinEstimator.Component.P, leftPredicate),
+				SketchBasedJoinEstimator.Component.P, store.id(SketchBasedJoinEstimator.Component.P, rightPredicate));
 
 		assertEquals(2.0d, estimate, 0.0d,
 				"Deleting one row for a repeated join binding should reduce multiplicity from 3 to 2");
@@ -94,8 +95,8 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		IRI rightPairPredicate = VF.createIRI("urn:tuple:tombstone:rightPair");
 		Resource leftPairObject = VF.createIRI("urn:tuple:tombstone:leftPairObject");
 		Resource rightPairObject = VF.createIRI("urn:tuple:tombstone:rightPairObject");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
-				largeExactConfig());
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, largeExactConfig());
 		List<Statement> statements = new ArrayList<>();
 
 		for (int i = 0; i < 1_600; i++) {
@@ -135,26 +136,32 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 
 		long objectJoinTruth = truthJoinOnObjectByPredicates(remaining, leftPredicate, rightPredicate);
 		double objectJoinEstimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
-				SketchBasedJoinEstimator.Component.P, leftPredicate.stringValue(),
-				SketchBasedJoinEstimator.Component.P, rightPredicate.stringValue());
+				SketchBasedJoinEstimator.Component.P, store.id(SketchBasedJoinEstimator.Component.P, leftPredicate),
+				SketchBasedJoinEstimator.Component.P, store.id(SketchBasedJoinEstimator.Component.P, rightPredicate));
 		assertEstimateEqualsTruth(objectJoinTruth, objectJoinEstimate, "object join");
 		double fluentObjectJoinEstimate = estimator
-				.estimate(SketchBasedJoinEstimator.Component.O, null, leftPredicate.stringValue(), null, null)
-				.join(SketchBasedJoinEstimator.Component.O, null, rightPredicate.stringValue(), null, null)
+				.estimate(SketchBasedJoinEstimator.Component.O, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, leftPredicate), unbound(), unbound())
+				.join(SketchBasedJoinEstimator.Component.O, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, rightPredicate), unbound(), unbound())
 				.estimate();
 		assertEstimateEqualsTruth(objectJoinTruth, fluentObjectJoinEstimate, "fluent object join");
 
 		long subjectPairJoinTruth = truthJoinOnSubjectByPredicateObject(remaining, leftPairPredicate, leftPairObject,
 				rightPairPredicate, rightPairObject);
 		double subjectPairJoinEstimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.S,
-				SketchBasedJoinEstimator.Pair.PO, leftPairPredicate.stringValue(), leftPairObject.stringValue(),
-				SketchBasedJoinEstimator.Pair.PO, rightPairPredicate.stringValue(), rightPairObject.stringValue());
+				SketchBasedJoinEstimator.Pair.PO, store.id(SketchBasedJoinEstimator.Component.P, leftPairPredicate),
+				store.id(SketchBasedJoinEstimator.Component.O, leftPairObject),
+				SketchBasedJoinEstimator.Pair.PO, store.id(SketchBasedJoinEstimator.Component.P, rightPairPredicate),
+				store.id(SketchBasedJoinEstimator.Component.O, rightPairObject));
 		assertEstimateEqualsTruth(subjectPairJoinTruth, subjectPairJoinEstimate, "subject pair join");
 		double fluentSubjectPairJoinEstimate = estimator
-				.estimate(SketchBasedJoinEstimator.Component.S, null, leftPairPredicate.stringValue(),
-						leftPairObject.stringValue(), null)
-				.join(SketchBasedJoinEstimator.Component.S, null, rightPairPredicate.stringValue(),
-						rightPairObject.stringValue(), null)
+				.estimate(SketchBasedJoinEstimator.Component.S, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, leftPairPredicate),
+						store.id(SketchBasedJoinEstimator.Component.O, leftPairObject), unbound())
+				.join(SketchBasedJoinEstimator.Component.S, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, rightPairPredicate),
+						store.id(SketchBasedJoinEstimator.Component.O, rightPairObject), unbound())
 				.estimate();
 		assertEstimateEqualsTruth(subjectPairJoinTruth, fluentSubjectPairJoinEstimate, "fluent subject pair join");
 	}
@@ -172,8 +179,10 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		estimator.rebuild();
 
 		double estimate = estimator
-				.estimate(SketchBasedJoinEstimator.Component.O, null, leftPredicate.stringValue(), null, null)
-				.join(SketchBasedJoinEstimator.Component.O, null, rightPredicate.stringValue(), null, null)
+				.estimate(SketchBasedJoinEstimator.Component.O, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, leftPredicate), unbound(), unbound())
+				.join(SketchBasedJoinEstimator.Component.O, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, rightPredicate), unbound(), unbound())
 				.estimate();
 
 		assertTrue(estimate > 0.0d,
@@ -193,8 +202,10 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		estimator.rebuild();
 
 		double estimate = estimator
-				.estimate(SketchBasedJoinEstimator.Component.O, null, leftPredicate.stringValue(), null, null)
-				.join(SketchBasedJoinEstimator.Component.O, null, rightPredicate.stringValue(), null, null)
+				.estimate(SketchBasedJoinEstimator.Component.O, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, leftPredicate), unbound(), unbound())
+				.join(SketchBasedJoinEstimator.Component.O, unbound(),
+						store.id(SketchBasedJoinEstimator.Component.P, rightPredicate), unbound(), unbound())
 				.estimate();
 
 		assertEquals(0.0d, estimate, 0.0d, "Exact non-estimation sketches should keep exact disjoint zero");
@@ -233,6 +244,10 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	private static long unbound() {
+		return SketchStatementSource.UNBOUND_ID;
 	}
 
 	private static void addRows(StubSketchStatementSource store, String subjectPrefix, IRI predicate, Resource object,
