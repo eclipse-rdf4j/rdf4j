@@ -72,7 +72,11 @@ class LmdbCharacteristicSetEstimateTest {
 						FULL_STAR_COUNT * 0.25d, explanation::toString);
 			}
 		} finally {
-			repository.shutDown();
+			try {
+				repository.shutDown();
+			} finally {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
 		}
 	}
 

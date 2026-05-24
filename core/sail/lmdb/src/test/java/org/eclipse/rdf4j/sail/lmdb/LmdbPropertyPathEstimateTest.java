@@ -60,7 +60,11 @@ class LmdbPropertyPathEstimateTest {
 						explanation::toString);
 			}
 		} finally {
-			repository.shutDown();
+			try {
+				repository.shutDown();
+			} finally {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
 		}
 	}
 

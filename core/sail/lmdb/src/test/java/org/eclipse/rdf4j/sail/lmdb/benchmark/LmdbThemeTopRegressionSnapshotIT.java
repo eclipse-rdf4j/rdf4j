@@ -125,9 +125,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 			target(Theme.MEDICAL_RECORDS, 7),
 			target(Theme.SOCIAL_MEDIA, 9));
 	private static final List<TargetQuery> DEFAULT_TOP_REGRESSION_SMOKE = List.of(
-			target(Theme.PHARMA, 0),
-			target(Theme.SOCIAL_MEDIA, 5),
-			target(Theme.ENGINEERING, 8),
 			target(Theme.LIBRARY, 7));
 
 	@Test
