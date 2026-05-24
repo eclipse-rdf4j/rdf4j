@@ -318,6 +318,157 @@ class LmdbDistinctCursorSkipTest {
 	}
 
 	@Test
+	void distinctPredicateUnionBranchesUseCursorSkip(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			IRI leftObject = VF.createIRI("urn:distinct:union:left");
+			IRI rightObject = VF.createIRI("urn:distinct:union:right");
+			Set<IRI> expectedPredicates = new LinkedHashSet<>();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				for (int predicateIndex = 0; predicateIndex < 4; predicateIndex++) {
+					IRI predicate = VF.createIRI("urn:distinct:union:p:" + predicateIndex);
+					expectedPredicates.add(predicate);
+					for (int row = 0; row < 30; row++) {
+						connection.add(VF.createIRI("urn:distinct:union:left:s:" + predicateIndex + ":" + row),
+								predicate, leftObject);
+						connection.add(VF.createIRI("urn:distinct:union:right:s:" + predicateIndex + ":" + row),
+								predicate, rightObject);
+					}
+				}
+				connection.commit();
+				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.awaitSketchesReady(store);
+
+				String query = """
+						SELECT DISTINCT ?p WHERE {
+						  { ?s ?p <urn:distinct:union:left> }
+						  UNION
+						  { ?x ?p <urn:distinct:union:right> }
+						}
+						""";
+				Set<Value> resultPredicates = new LinkedHashSet<>();
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					while (result.hasNext()) {
+						resultPredicates.add(result.next().getValue("p"));
+					}
+				}
+				assertEquals(expectedPredicates, resultPredicates);
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				List<StatementPattern> patterns = statementPatterns((TupleExpr) explanation.tupleExpr());
+				assertEquals(2, patterns.size(), explanation::toString);
+				for (StatementPattern pattern : patterns) {
+					assertEquals(LmdbDistinctCursorSkipSupport.ACCESS_MODE,
+							pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+							explanation::toString);
+					assertTrue(pattern.getSourceRowsScannedActual() <= expectedPredicates.size() + 6L,
+							"UNION branch DISTINCT should scan near predicate count:\n" + explanation);
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void distinctSubjectMinusLeftInputUsesCursorSkip(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			IRI tag = VF.createIRI("urn:distinct:minus:tag");
+			IRI disabled = VF.createIRI("urn:distinct:minus:disabled");
+			Set<Value> expectedSubjects = new LinkedHashSet<>();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				for (int subjectIndex = 0; subjectIndex < 4; subjectIndex++) {
+					IRI subject = VF.createIRI("urn:distinct:minus:s:" + subjectIndex);
+					if (subjectIndex != 2) {
+						expectedSubjects.add(subject);
+					}
+					for (int tagIndex = 0; tagIndex < 50; tagIndex++) {
+						connection.add(subject, tag, VF.createIRI("urn:distinct:minus:tag:" + tagIndex));
+					}
+				}
+				connection.add(VF.createIRI("urn:distinct:minus:s:2"), disabled,
+						VF.createIRI("urn:distinct:minus:reason"));
+				connection.commit();
+				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.awaitSketchesReady(store);
+
+				String query = """
+						SELECT DISTINCT ?s WHERE {
+						  ?s <urn:distinct:minus:tag> ?tag
+						  MINUS { ?s <urn:distinct:minus:disabled> ?reason }
+						}
+						""";
+				Set<Value> resultSubjects = new LinkedHashSet<>();
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					while (result.hasNext()) {
+						resultSubjects.add(result.next().getValue("s"));
+					}
+				}
+				assertEquals(expectedSubjects, resultSubjects);
+
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				StatementPattern leftPattern = firstStatementPattern((TupleExpr) explanation.tupleExpr());
+				assertNotNull(leftPattern, explanation::toString);
+				assertEquals(LmdbDistinctCursorSkipSupport.ACCESS_MODE,
+						leftPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+						explanation::toString);
+				assertTrue(leftPattern.getSourceRowsScannedActual() <= 6L,
+						"MINUS left input DISTINCT should scan near subject count:\n" + explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void distinctPredicateJoinDoesNotSkipWhenObjectFeedsJoin(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			IRI usedBy = VF.createIRI("urn:distinct:join:usedBy");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				for (int predicateIndex = 0; predicateIndex < 3; predicateIndex++) {
+					IRI predicate = VF.createIRI("urn:distinct:join:p:" + predicateIndex);
+					for (int row = 0; row < 20; row++) {
+						IRI object = VF.createIRI("urn:distinct:join:o:" + predicateIndex + ":" + row);
+						connection.add(VF.createIRI("urn:distinct:join:s:" + predicateIndex + ":" + row),
+								predicate, object);
+						connection.add(object, usedBy, VF.createIRI("urn:distinct:join:x:" + row));
+					}
+				}
+				connection.commit();
+				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.awaitSketchesReady(store);
+
+				String query = "SELECT DISTINCT ?p WHERE { ?s ?p ?o . ?o <urn:distinct:join:usedBy> ?x }";
+				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				StatementPattern firstPattern = firstStatementPattern((TupleExpr) explanation.tupleExpr());
+				assertNotNull(firstPattern, explanation::toString);
+				assertTrue(!LmdbDistinctCursorSkipSupport.ACCESS_MODE
+						.equals(firstPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE)),
+						"?o is observed by the join and cannot be skipped:\n" + explanation);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void successorQuadAdvancesVarintBoundaries() {
 		for (long predicate : new long[] { 240L, 2287L, 3672L, 67823L }) {
 			long[] successor = new long[4];
@@ -328,6 +479,18 @@ class LmdbDistinctCursorSkipTest {
 			assertEquals(0L, successor[TripleStore.OBJ_IDX]);
 			assertEquals(0L, successor[TripleStore.CONTEXT_IDX]);
 		}
+	}
+
+	@Test
+	void successorQuadPreservesSuffixConstantsAfterDistinctPrefix() {
+		long[] successor = new long[4];
+		assertTrue(LmdbDistinctCursorSkipSupport.successorQuad("posc".toCharArray(),
+				new long[] { 11L, 3672L, 93548L, 0L },
+				new long[] { -1L, -1L, 93548L, -1L }, 1, successor));
+		assertEquals(0L, successor[TripleStore.SUBJ_IDX]);
+		assertEquals(3673L, successor[TripleStore.PRED_IDX]);
+		assertEquals(93548L, successor[TripleStore.OBJ_IDX]);
+		assertEquals(0L, successor[TripleStore.CONTEXT_IDX]);
 	}
 
 	@Test
@@ -345,6 +508,11 @@ class LmdbDistinctCursorSkipTest {
 	}
 
 	private static StatementPattern firstStatementPattern(TupleExpr tupleExpr) {
+		List<StatementPattern> patterns = statementPatterns(tupleExpr);
+		return patterns.isEmpty() ? null : patterns.getFirst();
+	}
+
+	private static List<StatementPattern> statementPatterns(TupleExpr tupleExpr) {
 		List<StatementPattern> patterns = new ArrayList<>(1);
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -352,6 +520,6 @@ class LmdbDistinctCursorSkipTest {
 				patterns.add(node);
 			}
 		});
-		return patterns.isEmpty() ? null : patterns.getFirst();
+		return patterns;
 	}
 }

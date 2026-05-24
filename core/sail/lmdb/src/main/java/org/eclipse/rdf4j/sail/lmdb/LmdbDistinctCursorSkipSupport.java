@@ -59,12 +59,17 @@ final class LmdbDistinctCursorSkipSupport {
 
 	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleStore.TripleIndex index, long[] quad,
 			int prefixLength) {
+		return writeSuccessorKey(keyBuffer, index, quad, null, prefixLength);
+	}
+
+	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleStore.TripleIndex index, long[] quad,
+			long[] lowerBoundTemplate, int prefixLength) {
 		if (keyBuffer == null || index == null || quad == null || prefixLength <= 0) {
 			return false;
 		}
 		char[] fields = index.getFieldSeq();
 		long[] next = new long[4];
-		if (!successorQuad(fields, quad, prefixLength, next)) {
+		if (!successorQuad(fields, quad, lowerBoundTemplate, prefixLength, next)) {
 			return false;
 		}
 		keyBuffer.clear();
@@ -74,7 +79,55 @@ final class LmdbDistinctCursorSkipSupport {
 		return true;
 	}
 
+	static boolean writeCurrentPrefixLowerBoundKey(ByteBuffer keyBuffer, TripleStore.TripleIndex index, long[] quad,
+			long[] lowerBoundTemplate, int prefixLength) {
+		if (keyBuffer == null || index == null || quad == null || prefixLength <= 0) {
+			return false;
+		}
+		char[] fields = index.getFieldSeq();
+		long[] next = new long[4];
+		for (int i = 0; i < fields.length; i++) {
+			int componentIndex = quadIndex(fields[i]);
+			if (i < prefixLength) {
+				next[componentIndex] = quad[componentIndex];
+			} else {
+				next[componentIndex] = lowerBoundComponent(lowerBoundTemplate, componentIndex);
+			}
+		}
+		keyBuffer.clear();
+		index.toKey(keyBuffer, next[TripleStore.SUBJ_IDX], next[TripleStore.PRED_IDX],
+				next[TripleStore.OBJ_IDX], next[TripleStore.CONTEXT_IDX]);
+		keyBuffer.flip();
+		return true;
+	}
+
+	static int compareFixedSuffixAfterPrefix(char[] fields, long[] quad, long[] lowerBoundTemplate,
+			int prefixLength) {
+		if (fields == null || quad == null || lowerBoundTemplate == null || prefixLength < 0) {
+			return 0;
+		}
+		for (int i = Math.min(prefixLength, fields.length); i < fields.length; i++) {
+			int componentIndex = quadIndex(fields[i]);
+			if (isFixedLowerBoundComponent(lowerBoundTemplate, componentIndex)) {
+				long current = quad[componentIndex];
+				long lowerBound = lowerBoundTemplate[componentIndex];
+				if (current < lowerBound) {
+					return -1;
+				}
+				if (current > lowerBound) {
+					return 1;
+				}
+			}
+		}
+		return 0;
+	}
+
 	static boolean successorQuad(char[] fields, long[] quad, int prefixLength, long[] successor) {
+		return successorQuad(fields, quad, null, prefixLength, successor);
+	}
+
+	static boolean successorQuad(char[] fields, long[] quad, long[] lowerBoundTemplate, int prefixLength,
+			long[] successor) {
 		if (fields == null || quad == null || successor == null || prefixLength <= 0
 				|| fields.length > successor.length) {
 			return false;
@@ -83,10 +136,15 @@ final class LmdbDistinctCursorSkipSupport {
 		int lastPrefix = Math.min(prefixLength, fields.length) - 1;
 		for (int i = lastPrefix; i >= 0; i--) {
 			int componentIndex = quadIndex(fields[i]);
+			if (isFixedLowerBoundComponent(lowerBoundTemplate, componentIndex)) {
+				continue;
+			}
 			if (successor[componentIndex] < Long.MAX_VALUE) {
 				successor[componentIndex]++;
 				for (int j = i + 1; j < fields.length; j++) {
-					successor[quadIndex(fields[j])] = 0L;
+					int suffixComponentIndex = quadIndex(fields[j]);
+					successor[suffixComponentIndex] = lowerBoundComponent(lowerBoundTemplate,
+							suffixComponentIndex);
 				}
 				return true;
 			}
@@ -100,18 +158,21 @@ final class LmdbDistinctCursorSkipSupport {
 		int distinctComponentMask = 0;
 		int prefixComponentMask = 0;
 		for (int i = 0; i < indexFieldSequence.length(); i++) {
+			if (foundDistinctVars.containsAll(distinctVars)) {
+				break;
+			}
 			char field = indexFieldSequence.charAt(i);
 			Var var = componentVar(pattern, field);
+			int mask = componentMask(field);
 			if (var != null && var.getValue() != null) {
 				prefixLength++;
-				prefixComponentMask |= componentMask(field);
+				prefixComponentMask |= mask;
 				continue;
 			}
 			String name = var == null ? null : var.getName();
 			if (name != null && distinctVars.contains(name)) {
 				prefixLength++;
 				foundDistinctVars.add(name);
-				int mask = componentMask(field);
 				distinctComponentMask |= mask;
 				prefixComponentMask |= mask;
 				continue;
@@ -153,6 +214,24 @@ final class LmdbDistinctCursorSkipSupport {
 		case 'c' -> 3;
 		default -> throw new IllegalArgumentException("Unknown statement field: " + field);
 		};
+	}
+
+	private static boolean isFixedLowerBoundComponent(long[] lowerBoundTemplate, int componentIndex) {
+		if (lowerBoundTemplate == null || componentIndex < 0 || componentIndex >= lowerBoundTemplate.length) {
+			return false;
+		}
+		long value = lowerBoundTemplate[componentIndex];
+		if (componentIndex == TripleStore.CONTEXT_IDX) {
+			return value >= 0L;
+		}
+		return value > 0L;
+	}
+
+	private static long lowerBoundComponent(long[] lowerBoundTemplate, int componentIndex) {
+		if (isFixedLowerBoundComponent(lowerBoundTemplate, componentIndex)) {
+			return lowerBoundTemplate[componentIndex];
+		}
+		return 0L;
 	}
 
 	private static int quadIndex(char field) {

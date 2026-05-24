@@ -222,8 +222,8 @@ class LmdbRecordIterator implements RecordIterator {
 					lastResult = MDB_NOTFOUND;
 				} else if (matches()) {
 					sourceRowsFilteredActual++;
-					// value doesn't match search key/mask, fetch next value
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					// value doesn't match search key/mask, fetch next candidate value
+					lastResult = fetchNextFilteredCursorPosition();
 				} else {
 					// Matching value found
 					index.keyToQuad(keyData.mv_data(), originalQuad, quad);
@@ -251,12 +251,41 @@ class LmdbRecordIterator implements RecordIterator {
 			if (minKeyBuf == null) {
 				minKeyBuf = pool.getKeyBuffer();
 			}
-			if (!LmdbDistinctCursorSkipSupport.writeSuccessorKey(minKeyBuf, index, quad, distinctPrefixLength)) {
+			if (!LmdbDistinctCursorSkipSupport.writeSuccessorKey(minKeyBuf, index, quad, originalQuad,
+					distinctPrefixLength)) {
 				return MDB_NOTFOUND;
 			}
 			keyData.mv_data(minKeyBuf);
 			distinctCursorSkipSeekCountActual++;
 			return mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+		}
+		return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+	}
+
+	private int fetchNextFilteredCursorPosition() {
+		if (distinctPrefixLength > 0) {
+			index.keyToQuad(keyData.mv_data(), quad);
+			int suffixComparison = LmdbDistinctCursorSkipSupport.compareFixedSuffixAfterPrefix(index.getFieldSeq(),
+					quad, originalQuad, distinctPrefixLength);
+			if (suffixComparison != 0) {
+				if (minKeyBuf == null) {
+					minKeyBuf = pool.getKeyBuffer();
+				}
+				boolean hasSeekKey;
+				if (suffixComparison < 0) {
+					hasSeekKey = LmdbDistinctCursorSkipSupport.writeCurrentPrefixLowerBoundKey(minKeyBuf, index,
+							quad, originalQuad, distinctPrefixLength);
+				} else {
+					hasSeekKey = LmdbDistinctCursorSkipSupport.writeSuccessorKey(minKeyBuf, index, quad,
+							originalQuad, distinctPrefixLength);
+				}
+				if (!hasSeekKey) {
+					return MDB_NOTFOUND;
+				}
+				keyData.mv_data(minKeyBuf);
+				distinctCursorSkipSeekCountActual++;
+				return mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+			}
 		}
 		return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 	}

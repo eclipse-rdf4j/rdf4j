@@ -253,33 +253,107 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void annotateDistinctPhysicalRequirements(Distinct distinct) {
-			if (!(distinct.getArg()instanceof Projection projection) || !isIdentityProjection(projection)
-					|| !(projection.getArg()instanceof StatementPattern statementPattern)) {
+			if (!(distinct.getArg()instanceof Projection projection) || !isIdentityProjection(projection)) {
 				return;
 			}
-			Set<String> distinctVars = new LinkedHashSet<>();
-			for (var elem : projection.getProjectionElemList().getElements()) {
-				if (elem.getName() == null || !distinctVars.add(elem.getName())) {
+			Set<String> distinctVars = identityProjectionNames(projection);
+			if (distinctVars.isEmpty()) {
+				return;
+			}
+			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, Set.of(),
+					"distinct-projection");
+		}
+
+		private void annotateDistinctPhysicalRequirements(TupleExpr tupleExpr, Set<String> distinctVars,
+				Set<String> blockedVars, String source) {
+			if (distinctVars.isEmpty() || tupleExpr == null || !tupleExpr.getBindingNames().containsAll(distinctVars)) {
+				return;
+			}
+			if (tupleExpr instanceof StatementPattern statementPattern) {
+				annotateDistinctStatementPattern(statementPattern, distinctVars, blockedVars, source);
+			} else if (tupleExpr instanceof Projection projection) {
+				if (!isIdentityProjection(projection)
+						|| !identityProjectionNames(projection).containsAll(distinctVars)) {
 					return;
 				}
+				annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, blockedVars,
+						source + "|projection");
+			} else if (tupleExpr instanceof Union union) {
+				annotateDistinctPhysicalRequirements(union.getLeftArg(), distinctVars, blockedVars,
+						source + "|unionLeft");
+				annotateDistinctPhysicalRequirements(union.getRightArg(), distinctVars, blockedVars,
+						source + "|unionRight");
+			} else if (tupleExpr instanceof Join join) {
+				Set<String> sharedNames = intersect(join.getLeftArg().getBindingNames(), join.getRightArg()
+						.getBindingNames());
+				Set<String> childBlockedVars = union(blockedVars, sharedNames);
+				annotateDistinctPhysicalRequirements(join.getLeftArg(), distinctVars, childBlockedVars,
+						source + "|joinLeft");
+				annotateDistinctPhysicalRequirements(join.getRightArg(), distinctVars, childBlockedVars,
+						source + "|joinRight");
+			} else if (tupleExpr instanceof Difference difference) {
+				Set<String> sharedNames = intersect(difference.getLeftArg().getBindingNames(), difference.getRightArg()
+						.getBindingNames());
+				annotateDistinctPhysicalRequirements(difference.getLeftArg(), distinctVars, union(blockedVars,
+						sharedNames), source + "|minusLeft");
+			} else if (tupleExpr instanceof Filter filter) {
+				annotateDistinctPhysicalRequirements(filter.getArg(), distinctVars, union(blockedVars,
+						VarNameCollector.process(filter.getCondition())), source + "|filter");
 			}
-			if (distinctVars.isEmpty() || !statementPattern.getBindingNames().containsAll(distinctVars)) {
+		}
+
+		private void annotateDistinctStatementPattern(StatementPattern statementPattern, Set<String> distinctVars,
+				Set<String> blockedVars, String source) {
+			Set<String> patternVars = statementPattern.getBindingNames();
+			if (!patternVars.containsAll(distinctVars)) {
 				return;
 			}
-			Set<String> skippedVars = new HashSet<>(statementPattern.getBindingNames());
+			Set<String> skippedVars = new HashSet<>(patternVars);
 			skippedVars.removeAll(distinctVars);
-			if (skippedVars.isEmpty()) {
+			if (skippedVars.isEmpty() || !Collections.disjoint(skippedVars, blockedVars)) {
 				return;
 			}
-			new LmdbDistinctRequirement(distinctVars, distinctVars, Set.of(), "distinct-projection")
+			Set<String> requiredVarsAbove = union(distinctVars, intersect(patternVars, blockedVars));
+			new LmdbDistinctRequirement(distinctVars, requiredVarsAbove, blockedVars, source)
 					.annotate(statementPattern);
 			LmdbRewriteProof proof = new LmdbRewriteProof(
 					LmdbRewriteProof.RewriteKind.DISTINCT_PHYSICAL_CURSOR_SKIP,
 					LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
-					Set.of("identityProjection", "statementPatternLeaf", "finalDistinctRetained"),
+					Set.of("finalDistinctRetained", "skippedVarsUnobserved", "statementPatternLeaf"),
 					"DISTINCT suffix variables are not observed above the statement-pattern scan");
 			statementPattern.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
 					proof.metricFragment());
+		}
+
+		private Set<String> identityProjectionNames(Projection projection) {
+			Set<String> names = new LinkedHashSet<>();
+			for (var elem : projection.getProjectionElemList().getElements()) {
+				if (elem.getName() == null || !names.add(elem.getName())) {
+					return Set.of();
+				}
+			}
+			return names;
+		}
+
+		private Set<String> union(Set<String> left, Set<String> right) {
+			if (left.isEmpty()) {
+				return right;
+			}
+			if (right.isEmpty()) {
+				return left;
+			}
+			Set<String> result = new LinkedHashSet<>(left);
+			result.addAll(right);
+			return result;
+		}
+
+		private Set<String> intersect(Set<String> left, Set<String> right) {
+			if (left.isEmpty() || right.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> result = new LinkedHashSet<>(left);
+			result.retainAll(right);
+			return result;
 		}
 
 		@Override
