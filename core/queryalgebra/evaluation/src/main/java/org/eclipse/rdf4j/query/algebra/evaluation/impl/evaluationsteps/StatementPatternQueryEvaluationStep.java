@@ -996,6 +996,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
 		}
 
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
+		}
+
 		private IndexReportingIterator indexReporter() {
 			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
 		}
@@ -1074,6 +1086,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		public long getSourceRowsFilteredActual() {
 			IndexReportingIterator metrics = indexReporter();
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
 		}
 
 		private IndexReportingIterator indexReporter() {
@@ -1192,6 +1216,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			long locallySeenRows = locallyMatchedRows + locallyFilteredRows;
 			return locallySeenRows > 0 ? locallyFilteredRows : -1;
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
 		}
 
 		private IndexReportingIterator indexReporter() {

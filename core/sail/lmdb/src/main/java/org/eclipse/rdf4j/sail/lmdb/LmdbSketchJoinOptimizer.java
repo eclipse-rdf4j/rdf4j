@@ -248,7 +248,38 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Distinct distinct) {
 			removeProjectionDeadOptionalUnderDistinct(distinct);
+			annotateDistinctPhysicalRequirements(distinct);
 			super.meet(distinct);
+		}
+
+		private void annotateDistinctPhysicalRequirements(Distinct distinct) {
+			if (!(distinct.getArg()instanceof Projection projection) || !isIdentityProjection(projection)
+					|| !(projection.getArg()instanceof StatementPattern statementPattern)) {
+				return;
+			}
+			Set<String> distinctVars = new LinkedHashSet<>();
+			for (var elem : projection.getProjectionElemList().getElements()) {
+				if (elem.getName() == null || !distinctVars.add(elem.getName())) {
+					return;
+				}
+			}
+			if (distinctVars.isEmpty() || !statementPattern.getBindingNames().containsAll(distinctVars)) {
+				return;
+			}
+			Set<String> skippedVars = new HashSet<>(statementPattern.getBindingNames());
+			skippedVars.removeAll(distinctVars);
+			if (skippedVars.isEmpty()) {
+				return;
+			}
+			new LmdbDistinctRequirement(distinctVars, distinctVars, Set.of(), "distinct-projection")
+					.annotate(statementPattern);
+			LmdbRewriteProof proof = new LmdbRewriteProof(
+					LmdbRewriteProof.RewriteKind.DISTINCT_PHYSICAL_CURSOR_SKIP,
+					LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+					Set.of("identityProjection", "statementPatternLeaf", "finalDistinctRetained"),
+					"DISTINCT suffix variables are not observed above the statement-pattern scan");
+			statementPattern.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
+					proof.metricFragment());
 		}
 
 		@Override

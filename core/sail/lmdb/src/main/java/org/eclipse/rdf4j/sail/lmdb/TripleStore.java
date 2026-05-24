@@ -88,6 +88,7 @@ import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -1283,6 +1284,28 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, idFilter);
 	}
 
+	Optional<RecordIterator> getTriplesWithDistinctCursorSkip(Txn txn, StatementPattern statementPattern, long subj,
+			long pred, long obj, long context, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern == null || idFilter == null || !idFilter.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern);
+		if (plan.isEmpty()) {
+			return Optional.empty();
+		}
+		TripleIndex index = getIndex(plan.get().indexFieldSequence());
+		if (index == null) {
+			return Optional.empty();
+		}
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return Optional.of(new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, context, explicit, txn,
+				idFilter, plan.get().prefixLength()));
+	}
+
+	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern) {
+		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, indexAccessPaths(0));
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {
@@ -1301,6 +1324,15 @@ class TripleStore implements Closeable {
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch, LmdbValueIdFilter idFilter) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn, idFilter);
+	}
+
+	private TripleIndex getIndex(String indexFieldSequence) {
+		for (TripleIndex index : indexes) {
+			if (indexFieldSequence.equals(new String(index.getFieldSeq()))) {
+				return index;
+			}
+		}
+		return null;
 	}
 
 	/**

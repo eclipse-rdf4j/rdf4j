@@ -5124,9 +5124,145 @@ class LmdbEvaluationStatistics
 		if (collectMetrics) {
 			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, workRows);
 		}
-		return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics,
+		FactorCostEstimate baseEstimate = new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics,
 				true, "directLookup".equals(indexAccessMode), lookupComponentMask,
-				missingLookupComponentMask, accessRowsBeforeFilter));
+				missingLookupComponentMask, accessRowsBeforeFilter);
+		Optional<FactorCostEstimate> distinctCursorSkipEstimate = estimateDistinctCursorSkipCost(outputRows,
+				accessShape, baseEstimate, collectMetrics);
+		return distinctCursorSkipEstimate.isPresent() ? distinctCursorSkipEstimate : Optional.of(baseEstimate);
+	}
+
+	private Optional<FactorCostEstimate> estimateDistinctCursorSkipCost(double outputRows,
+			SketchBasedJoinEstimator.AccessShape accessShape, FactorCostEstimate baseEstimate, boolean collectMetrics) {
+		if (tripleStore == null || accessShape == null || baseEstimate == null
+				|| !isFiniteNonNegative(baseEstimate.getWorkRows())) {
+			return Optional.empty();
+		}
+		StatementPattern pattern = accessShape.pattern();
+		Optional<LmdbDistinctRequirement> requirement = LmdbDistinctRequirement.from(pattern);
+		if (requirement.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = tripleStore.distinctCursorSkipPlan(pattern);
+		if (plan.isEmpty()) {
+			annotateDistinctCursorSkipDecision(pattern, "rejected:no-prefix-compatible-index", Double.NaN,
+					outputRows);
+			return Optional.empty();
+		}
+		double distinctRows = estimateDistinctRequirementRows(pattern, requirement.get(), outputRows);
+		annotateDistinctCursorSkipDecision(pattern, "candidate", distinctRows, outputRows);
+		if (!isFiniteNonNegative(distinctRows) || distinctRows <= 0.0d || distinctRows >= outputRows) {
+			annotateDistinctCursorSkipDecision(pattern, "rejected:distinct-cardinality-not-selective",
+					distinctRows, outputRows);
+			return Optional.empty();
+		}
+		double skipWorkRows = Math.max(1.0d, distinctRows);
+		if (skipWorkRows >= baseEstimate.getWorkRows()) {
+			annotateDistinctCursorSkipDecision(pattern, "rejected:normal-access-cheaper", distinctRows,
+					outputRows);
+			return Optional.empty();
+		}
+		annotateDistinctCursorSkipDecision(pattern, "selected", distinctRows, outputRows);
+
+		Map<String, String> stringMetrics = Map.of();
+		Map<String, Double> doubleMetrics = Map.of();
+		if (collectMetrics) {
+			Map<String, String> mutableStringMetrics = new HashMap<>(baseEstimate.getStringMetrics());
+			Map<String, Double> mutableDoubleMetrics = new HashMap<>(baseEstimate.getDoubleMetrics());
+			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_NAME, plan.get().indexFieldSequence());
+			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+					LmdbDistinctCursorSkipSupport.ACCESS_MODE);
+			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS,
+					componentMaskString(plan.get().prefixComponentMask()));
+			mutableStringMetrics.remove(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS);
+			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_INDEX,
+					plan.get().indexFieldSequence());
+			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_PREFIX,
+					componentMaskString(plan.get().prefixComponentMask()));
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH,
+					(double) plan.get().prefixLength());
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, distinctRows);
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, skipWorkRows);
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_ROWS, distinctRows);
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_NORMAL_ROWS, outputRows);
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_DISTINCT_CURSOR_SKIP_FANOUT,
+					outputRows / Math.max(1.0d, distinctRows));
+			stringMetrics = mutableStringMetrics;
+			doubleMetrics = mutableDoubleMetrics;
+		}
+
+		return Optional.of(new FactorCostEstimate(skipWorkRows, distinctRows, stringMetrics, doubleMetrics, true,
+				false, plan.get().prefixComponentMask(), 0, distinctRows));
+	}
+
+	private void annotateDistinctCursorSkipDecision(StatementPattern pattern, String decision, double distinctRows,
+			double normalRows) {
+		pattern.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PREFIX + "distinctCursorSkipDecision",
+				decision);
+		if (isFiniteNonNegative(distinctRows)) {
+			pattern.setDoubleMetricPlanned(TelemetryMetricNames.OPTIMIZER_PREFIX + "distinctCursorSkipCandidateRows",
+					distinctRows);
+		}
+		if (isFiniteNonNegative(normalRows)) {
+			pattern.setDoubleMetricPlanned(TelemetryMetricNames.OPTIMIZER_PREFIX + "distinctCursorSkipNormalRows",
+					normalRows);
+		}
+	}
+
+	private double estimateDistinctRequirementRows(StatementPattern pattern, LmdbDistinctRequirement requirement,
+			double outputRows) {
+		if (sketchBasedJoinEstimator == null || requirement.distinctVars().isEmpty()) {
+			return Double.NaN;
+		}
+		double rows = 1.0d;
+		for (String distinctVar : requirement.distinctVars()) {
+			double varRows = estimateDistinctVariableRows(pattern, distinctVar);
+			if (!isFiniteNonNegative(varRows) || varRows <= 0.0d) {
+				return Double.NaN;
+			}
+			rows *= varRows;
+			if (!isFiniteNonNegative(rows) || rows >= outputRows) {
+				return outputRows;
+			}
+		}
+		return Math.min(outputRows, rows);
+	}
+
+	private double estimateDistinctVariableRows(StatementPattern pattern, String distinctVar) {
+		double rows = sketchBasedJoinEstimator.estimateJoinVarDistinctRows(pattern, distinctVar);
+		if (!isFiniteNonNegative(rows) || rows <= 0.0d) {
+			rows = estimateComponentDistinctRows(pattern, distinctVar);
+		}
+		return rows;
+	}
+
+	private double estimateComponentDistinctRows(StatementPattern pattern, String varName) {
+		Component component = componentForBindingName(pattern, varName);
+		if (component == null) {
+			return Double.NaN;
+		}
+		return sketchBasedJoinEstimator.estimate(component,
+				valueString(pattern.getSubjectVar()),
+				valueString(pattern.getPredicateVar()),
+				valueString(pattern.getObjectVar()),
+				valueString(pattern.getContextVar())).distinct();
+	}
+
+	private Component componentForBindingName(StatementPattern pattern, String varName) {
+		for (Component component : Component.values()) {
+			Var var = componentVar(pattern, component);
+			if (var != null && varName.equals(var.getName()) && var.getValue() == null) {
+				return component;
+			}
+		}
+		return null;
+	}
+
+	private String valueString(Var var) {
+		if (var == null || var.getValue() == null) {
+			return null;
+		}
+		return var.getValue().stringValue();
 	}
 
 	private Optional<FactorCostEstimate> estimateJoinFactorCost(Join join, Set<String> boundVars) {

@@ -540,6 +540,29 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		queryModelNode.setLongMetricActual(metricName, longMetric(queryModelNode, metricName) + delta);
 	}
 
+	private static void setLongMetricAtLeast(QueryModelNode queryModelNode, String metricName, long value) {
+		if (value <= 0) {
+			return;
+		}
+		queryModelNode.setLongMetricActual(metricName, Math.max(longMetric(queryModelNode, metricName), value));
+	}
+
+	private static void recordIndexSpecificActualMetrics(QueryModelNode queryModelNode,
+			IndexReportingIterator sourceMetrics) {
+		addLongMetric(queryModelNode, TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL,
+				sourceMetrics.getDistinctCursorSkipCountActual());
+		addLongMetric(queryModelNode, TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL,
+				sourceMetrics.getDistinctCursorSkipSeekCountActual());
+		if (TelemetryMetricNames.INDEX_ACCESS_MODE_DISTINCT_CURSOR_SKIP
+				.equals(queryModelNode.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
+			long completedSkips = Math.max(0L, queryModelNode.getSourceRowsMatchedActual() - 1L);
+			setLongMetricAtLeast(queryModelNode, TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL,
+					completedSkips);
+			setLongMetricAtLeast(queryModelNode, TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL,
+					completedSkips);
+		}
+	}
+
 	private static void addDoubleMetric(QueryModelNode queryModelNode, String metricName, double delta) {
 		if (delta <= 0) {
 			return;
@@ -1643,6 +1666,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 						queryModelNode.setSourceRowsFilteredActual(
 								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
 					}
+					recordIndexSpecificActualMetrics(queryModelNode, sourceMetrics);
 				}
 				if (telemetryEnabled) {
 					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
@@ -1678,6 +1702,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		public long getSourceRowsFilteredActual() {
 			IndexReportingIterator metrics = indexReporter();
 			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getDistinctCursorSkipSeekCountActual();
 		}
 
 		private IndexReportingIterator indexReporter() {
@@ -1771,6 +1807,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 						queryModelNode.setSourceRowsFilteredActual(
 								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
 					}
+					recordIndexSpecificActualMetrics(queryModelNode, sourceMetrics);
 				}
 			} finally {
 				super.handleClose();

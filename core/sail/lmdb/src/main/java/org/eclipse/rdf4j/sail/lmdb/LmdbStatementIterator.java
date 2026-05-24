@@ -228,4 +228,14 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	public long getSourceRowsFilteredActual() {
 		return recordIt.getSourceRowsFilteredActual();
 	}
+
+	@Override
+	public long getDistinctCursorSkipCountActual() {
+		return recordIt.getDistinctCursorSkipCountActual();
+	}
+
+	@Override
+	public long getDistinctCursorSkipSeekCountActual() {
+		return recordIt.getDistinctCursorSkipSeekCountActual();
+	}
 }

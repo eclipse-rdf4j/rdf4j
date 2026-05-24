@@ -14,3 +14,24 @@ Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.433 s -- in or
 Test set: org.eclipse.rdf4j.sail.lmdb.LmdbNestedBoundLookupEstimateTest
 -------------------------------------------------------------------------------
 Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.135 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbNestedBoundLookupEstimateTest
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.LmdbDistinctCursorSkipTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.599 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbDistinctCursorSkipTest
+org.eclipse.rdf4j.sail.lmdb.LmdbDistinctCursorSkipTest.distinctPredicateProjectionScansPredicatePrefixesInsteadOfAllStatements(File) -- Time elapsed: 0.579 s <<< FAILURE!
+org.opentest4j.AssertionFailedError:
+Distinct (resultSizeActual=4, hasNextCallCountActual=6, hasNextTrueCountActual=5, hasNextTimeNanosActual=4.0M, nextCallCountActual=4, nextTimeNanosActual=959, plannerId=lmdb-sketch, firstRowTimeNanosActual=80.0K, openCountActual=1, lastRowTimeNanosActual=4.3M, closeCountActual=1, inputRowsActual=1000, rowsDroppedActual=996, selectivityActual=0.00, expansionFactorActual=0.00, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.67, avgHasNextNanosActual=680.8K, avgNextNanosActual=240, duplicatesRemovedActual=996, dedupRateActual=1.00)
+   Projection (resultSizeActual=1000, hasNextCallCountActual=2.0K, hasNextTrueCountActual=2.0K, hasNextTimeNanosActual=2.1M, nextCallCountActual=1000, nextTimeNanosActual=489.6K, plannerId=lmdb-sketch, firstRowTimeNanosActual=66.3K, openCountActual=1, lastRowTimeNanosActual=4.0M, closeCountActual=1, varsDroppedActual=2, metricOrigin.varsDroppedActual=derived, sampleCountActual=1, varianceActual=0, stddevActual=0, confidenceScoreActual=0.50, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=1.1K, avgNextNanosActual=490)
+   ├── ProjectionElemList (hasNextFalseCountActual=0)
+   │     ProjectionElem "p" (hasNextFalseCountActual=0)
+   └── StatementPattern [index: spoc]  (resultSizeActual=1000, hasNextCallCountActual=2.0K, hasNextTrueCountActual=2.0K, hasNextTimeNanosActual=1.0M, nextCallCountActual=1000, nextTimeNanosActual=192.5K, sourceRowsScannedActual=1000, sourceRowsMatchedActual=1000, plannedObjectiveScore=1000, plannedAccessRows=1000, plannedAccessWorkRows=1000, plannedCostWorkRows=1000, plannedCostFinalRows=1000, plannedAccessPathCandidates=2.00, plannedCardinalityRows=1000, plannedWorkRows=1000, plannedEstimateUsage=join_order_candidate, plannedCardinalityShape=scalar, plannedCostShape=vector, plannedIndexName=spoc, plannedIndexAccessMode=fullScan, plannedLookupComponents=[], plannerId=lmdb-sketch, plannedEstimateSource=lmdb-access-path, firstRowTimeNanosActual=78.5K, indexLookupCountActual=1, openCountActual=1, lastRowTimeNanosActual=3.1M, closeCountActual=1, varsAddedActual=3, optimizer.idFilterRuntime=none, metricOrigin.varsAddedActual=derived, hasNextFalseCountActual=1, nextPerHasNextRatioActual=0.50, avgHasNextNanosActual=527, avgNextNanosActual=193, indexHitRateActual=1.00)
+         s: Var (name=s) (bindingState=unbound, hasNextFalseCountActual=0)
+         p: Var (name=p) (bindingState=unbound, hasNextFalseCountActual=0)
+         o: Var (name=o) (bindingState=unbound, hasNextFalseCountActual=0)
+ ==> expected: <4> but was: <1000>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:201)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:174)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:729)
+	at org.eclipse.rdf4j.sail.lmdb.LmdbDistinctCursorSkipTest.distinctPredicateProjectionScansPredicatePrefixesInsteadOfAllStatements(LmdbDistinctCursorSkipTest.java:79)

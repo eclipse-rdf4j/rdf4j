@@ -3800,7 +3800,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		PatternStats(ArrayOfDoublesSketch s, double card) {
 			this.sketch = s;
-			this.distinct = TupleSketchOps.estimateDistinct(s);
+			this.distinct = TupleSketchOps.estimatePositiveDistinct(s);
 			this.card = card;
 		}
 	}
@@ -4061,7 +4061,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private BindingSketchResult bindingsSketch(State st, Component j, EnumMap<Component, String> f) {
 
 		if (f.isEmpty()) {
-			return BindingSketchResult.of(null); // no constant – unsupported
+			return BindingSketchResult.of(globalComponentSketch(st, j));
 		}
 
 		/* 1 constant → single complement */
@@ -4165,6 +4165,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		ArrayOfDoublesSketch additions = pairWrapper(st, pair, false).getComplementSketch(join, key);
 		ArrayOfDoublesSketch deletions = pairWrapper(st, pair, true).getComplementSketch(join, key);
 		return netBindingSketch(additions, deletions, st.k);
+	}
+
+	private ArrayOfDoublesSketch globalComponentSketch(State st, Component component) {
+		return getSketchForRead(st,
+				new SketchAddress(REC_GLOBAL_COMPONENT, false, (byte) component.ordinal(), (byte) 0, 0, 0));
 	}
 
 	private static ArrayOfDoublesSketch netBindingSketch(ArrayOfDoublesSketch additions,
@@ -5201,9 +5206,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				continue;
 			}
 			Component component = getComponent(pattern, var);
-			ArrayOfDoublesSketch sketch = getSketchForRead(snap,
-					new SketchAddress(REC_GLOBAL_COMPONENT, false, (byte) component.ordinal(), (byte) 0, 0, 0));
-			double distinct = clampDistinct(TupleSketchOps.estimateDistinct(sketch), rows);
+			ArrayOfDoublesSketch sketch = globalComponentSketch(snap, component);
+			double distinct = clampDistinct(TupleSketchOps.estimatePositiveDistinct(sketch), rows);
 			if (!(Double.isFinite(distinct) && distinct > 0.0d)) {
 				distinct = clampDistinct(rows, rows);
 				sketch = null;
@@ -8977,10 +8981,6 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private TupleSketchStats estimatePatternForJoinVar(StatementPattern pattern, String joinVarName,
 			double filterMultiplier) {
-		if (!hasBoundComponent(pattern)) {
-			return null;
-		}
-
 		Var joinVar = findUnboundVarByName(pattern, joinVarName);
 		if (joinVar == null) {
 			return null;

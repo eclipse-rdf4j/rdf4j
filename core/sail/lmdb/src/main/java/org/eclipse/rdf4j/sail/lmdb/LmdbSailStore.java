@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
@@ -1010,7 +1011,8 @@ class LmdbSailStore implements SailStore {
 
 		for (int i = 0; i < contextIDList.size(); i++) {
 			long contextID = contextIDList.get(i);
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, idFilter);
+			RecordIterator records = getRecords(txn, statementPattern, subjID, predID, objID, contextID, explicit,
+					idFilter);
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore,
 					subjID, knownSubject, predID, knownPredicate, objID, knownObject, contextID,
 					knownContextList.get(i)));
@@ -1021,6 +1023,20 @@ class LmdbSailStore implements SailStore {
 		} else {
 			return new UnionIteration<>(perContextIterList);
 		}
+	}
+
+	private RecordIterator getRecords(Txn txn, StatementPattern statementPattern, long subjID, long predID, long objID,
+			long contextID, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern != null
+				&& LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(
+						statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
+			Optional<RecordIterator> distinctRecords = tripleStore.getTriplesWithDistinctCursorSkip(txn,
+					statementPattern, subjID, predID, objID, contextID, explicit, idFilter);
+			if (distinctRecords.isPresent()) {
+				return distinctRecords.get();
+			}
+		}
+		return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, idFilter);
 	}
 
 	private Resource currentResource(Resource value, long id) {

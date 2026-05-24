@@ -66,6 +66,8 @@ public final class TelemetryMetricNames {
 	public static final String INDEX_HIT_RATE_ACTUAL = "indexHitRateActual";
 	public static final String INDEX_NAME = "indexName";
 	public static final String INDEX_NAMES = "indexNames";
+	public static final String DISTINCT_CURSOR_SKIP_COUNT_ACTUAL = "distinctCursorSkipCountActual";
+	public static final String DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL = "distinctCursorSkipSeekCountActual";
 
 	public static final String REMOTE_REQUEST_COUNT_ACTUAL = "remoteRequestCountActual";
 	public static final String REMOTE_ASK_REQUEST_COUNT_ACTUAL = "remoteAskRequestCountActual";
@@ -150,10 +152,20 @@ public final class TelemetryMetricNames {
 	public static final String PLANNED_UNCERTAINTY_ROWS = "plannedUncertaintyRows";
 	public static final String FILTER_SELECTIVITY_SOURCE = "filterSelectivitySource";
 	public static final String PLANNED_INDEX_ACCESS_MODE = "plannedIndexAccessMode";
+	public static final String INDEX_ACCESS_MODE_DISTINCT_CURSOR_SKIP = "distinctCursorSkip";
 	public static final String PLANNED_ACCESS_ROWS = "plannedAccessRows";
 	public static final String PLANNED_ACCESS_ROWS_AFTER_FILTER = "plannedAccessRowsAfterFilter";
 	public static final String PLANNED_ACCESS_PATH_CANDIDATES = "plannedAccessPathCandidates";
 	public static final String PLANNED_MISSING_LOOKUP_COMPONENTS = "plannedMissingLookupComponents";
+	public static final String PLANNED_DISTINCT_REQUIREMENT_VARS = "plannedDistinctRequirementVars";
+	public static final String PLANNED_DISTINCT_REQUIRED_VARS_ABOVE = "plannedDistinctRequiredVarsAbove";
+	public static final String PLANNED_DISTINCT_BLOCKED_VARS = "plannedDistinctBlockedVars";
+	public static final String PLANNED_DISTINCT_REQUIREMENT_SOURCE = "plannedDistinctRequirementSource";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_INDEX = "plannedDistinctCursorSkipIndex";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_PREFIX = "plannedDistinctCursorSkipPrefix";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_ROWS = "plannedDistinctCursorSkipRows";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_NORMAL_ROWS = "plannedDistinctCursorSkipNormalRows";
+	public static final String PLANNED_DISTINCT_CURSOR_SKIP_FANOUT = "plannedDistinctCursorSkipFanout";
 	public static final String DEFERRED_FILTER_SCOPE = "deferredFilterScope";
 	public static final String SHARED_JOIN_VARS = "sharedJoinVars";
 	public static final String UNLOCKED_FILTERS = "unlockedFilters";
@@ -221,6 +233,7 @@ public final class TelemetryMetricNames {
 				|| metricName.startsWith("plannedPrefix")
 				|| metricName.startsWith("plannedLookupDomain")
 				|| metricName.startsWith("plannedRepeated")
-				|| metricName.startsWith("plannedDistinctLookup");
+				|| metricName.startsWith("plannedDistinctLookup")
+				|| metricName.startsWith("plannedDistinct");
 	}
 }

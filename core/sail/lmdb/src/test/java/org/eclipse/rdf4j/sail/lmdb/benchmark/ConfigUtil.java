@@ -32,7 +32,7 @@ final class ConfigUtil {
 		return createConfig(ALL_TRIPLE_INDEXES);
 	}
 
-	private static LmdbStoreConfig createConfig(String tripleIndexes) {
+	static LmdbStoreConfig createConfig(String tripleIndexes) {
 		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB

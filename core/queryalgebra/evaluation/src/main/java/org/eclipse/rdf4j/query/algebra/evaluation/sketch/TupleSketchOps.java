@@ -101,6 +101,10 @@ final class TupleSketchOps {
 		return sketch.getEstimate();
 	}
 
+	static double estimatePositiveDistinct(ArrayOfDoublesSketch sketch) {
+		return summarizePositiveEntries(sketch).positiveDistinct();
+	}
+
 	static double estimateIntersectionProductSum(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
 		return intersectProductStats(left, right, k).positiveSum();
 	}

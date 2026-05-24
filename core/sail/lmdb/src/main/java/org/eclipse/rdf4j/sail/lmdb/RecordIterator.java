@@ -40,6 +40,14 @@ interface RecordIterator extends Closeable {
 		return -1;
 	}
 
+	default long getDistinctCursorSkipCountActual() {
+		return -1;
+	}
+
+	default long getDistinctCursorSkipSeekCountActual() {
+		return -1;
+	}
+
 	/**
 	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
 	 * records.
