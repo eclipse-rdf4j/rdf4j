@@ -110,6 +110,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final double CORRELATED_NOT_EXISTS_FILTER_PREFIX_WORK_TOLERANCE = 1.15d;
 	private static final double CORRELATED_NOT_EXISTS_FINITE_BINDING_PREFIX_WORK_TOLERANCE = 2.50d;
 	private static final double SCAN_LED_LOCAL_FILTER_PREFIX_WORK_TOLERANCE = 2.00d;
+	private static final double OPTIONAL_UNION_DISTRIBUTION_MIN_WORK_IMPROVEMENT_RATIO = 0.05d;
+	private static final double OPTIONAL_UNION_DISTRIBUTION_MIN_WORK_IMPROVEMENT_ROWS = 1024.0d;
 	private static final long CORRELATED_NOT_EXISTS_FILTER_PREFIX_MIN_EVIDENCE = 100L;
 	private static final long SAMPLED_ZERO_PASS_RATIO_MIN_EVIDENCE = 1_024L;
 	private static final int CANONICAL_FINITE_ANCHOR_LITERAL_FILTER_SCORE = 50;
@@ -488,9 +490,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					: originalWork;
 			double comparedDistributedWork = anchoringAwareCost.hasCost() ? anchoringAwareCost.distributedWork()
 					: distributedWork;
-			boolean selectDistributed = LmdbJoinPlanSupport.isFiniteNonNegative(comparedDistributedWork)
-					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(comparedOriginalWork)
-							|| comparedDistributedWork < comparedOriginalWork);
+			boolean selectDistributed = selectOptionalUnionDistribution(distributedWork, originalWork,
+					comparedDistributedWork, comparedOriginalWork, anchoringAwareCost.hasCost());
 			String summary = "selected=" + (selectDistributed ? "distributed" : "original")
 					+ ", originalWork=" + formatGuaranteeMetric(originalWork)
 					+ ", distributedWork=" + formatGuaranteeMetric(distributedWork)
@@ -603,6 +604,40 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			return LmdbJoinPlanSupport.isFiniteNonNegative(sum) ? sum : Double.NaN;
 		}
 
+		private boolean materiallyCheaperOptionalUnionDistribution(double distributedWork, double originalWork) {
+			double improvementRows = originalWork - distributedWork;
+			if (!cheaperOptionalUnionDistribution(distributedWork, originalWork)) {
+				return false;
+			}
+			double requiredImprovementRows = Math.max(OPTIONAL_UNION_DISTRIBUTION_MIN_WORK_IMPROVEMENT_ROWS,
+					originalWork * OPTIONAL_UNION_DISTRIBUTION_MIN_WORK_IMPROVEMENT_RATIO);
+			return improvementRows >= requiredImprovementRows;
+		}
+
+		private boolean cheaperOptionalUnionDistribution(double distributedWork, double originalWork) {
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(distributedWork)) {
+				return false;
+			}
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork)) {
+				return true;
+			}
+			return distributedWork < originalWork;
+		}
+
+		private boolean selectOptionalUnionDistribution(double distributedWork, double originalWork,
+				double comparedDistributedWork, double comparedOriginalWork, boolean hasAnchoringAwareCost) {
+			if (!hasAnchoringAwareCost) {
+				return cheaperOptionalUnionDistribution(distributedWork, originalWork);
+			}
+			if (materiallyCheaperOptionalUnionDistribution(comparedDistributedWork, comparedOriginalWork)) {
+				return true;
+			}
+			if (materiallyCheaperOptionalUnionDistribution(comparedOriginalWork, comparedDistributedWork)) {
+				return false;
+			}
+			return false;
+		}
+
 		private TupleExpr rewriteMutuallyExclusiveRightUnionOptional(LeftJoin leftJoin) {
 			if (leftJoin.hasCondition()
 					|| !(leftJoin.getRightArg() instanceof Union)
@@ -650,8 +685,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			double distributedWork = distributedEstimate
 					.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
 					.orElse(Double.NaN);
-			boolean selectDistributed = LmdbJoinPlanSupport.isFiniteNonNegative(distributedWork)
-					&& (!LmdbJoinPlanSupport.isFiniteNonNegative(originalWork) || distributedWork < originalWork);
+			boolean selectDistributed = cheaperOptionalUnionDistribution(distributedWork, originalWork);
 			String summary = "selected=" + (selectDistributed ? "distributed" : "original")
 					+ ", originalWork=" + formatGuaranteeMetric(originalWork)
 					+ ", distributedWork=" + formatGuaranteeMetric(distributedWork)
@@ -998,17 +1032,33 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			if (tupleExpr instanceof Group
 					|| tupleExpr instanceof Projection
-					|| tupleExpr instanceof LeftJoin
-					|| tupleExpr instanceof Union
 					|| tupleExpr instanceof Difference
 					|| tupleExpr instanceof Service) {
 				return true;
+			}
+			if (tupleExpr instanceof LeftJoin leftJoin) {
+				if (leftJoin.hasCondition()) {
+					Set<String> visibleNames = new HashSet<>(leftJoin.getLeftArg().getBindingNames());
+					visibleNames.addAll(leftJoin.getRightArg().getBindingNames());
+					if (!visibleNames.containsAll(VarNameCollector.process(leftJoin.getCondition()))) {
+						return true;
+					}
+				}
+				return containsUnsupportedOptionalAnchoringArg(leftJoin.getLeftArg())
+						|| containsUnsupportedOptionalAnchoringArg(leftJoin.getRightArg());
+			}
+			if (tupleExpr instanceof Union union) {
+				return containsUnsupportedOptionalAnchoringArg(union.getLeftArg())
+						|| containsUnsupportedOptionalAnchoringArg(union.getRightArg());
 			}
 			if (tupleExpr instanceof Join join) {
 				return containsUnsupportedOptionalAnchoringArg(join.getLeftArg())
 						|| containsUnsupportedOptionalAnchoringArg(join.getRightArg());
 			}
 			if (tupleExpr instanceof Filter filter) {
+				if (LmdbJoinPlanSupport.containsExists(filter.getCondition())) {
+					return true;
+				}
 				return containsUnsupportedOptionalAnchoringArg(filter.getArg());
 			}
 			if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {

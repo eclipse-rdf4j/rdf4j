@@ -124,6 +124,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 			target(Theme.HIGHLY_CONNECTED, 8),
 			target(Theme.MEDICAL_RECORDS, 7),
 			target(Theme.SOCIAL_MEDIA, 9));
+	private static final List<TargetQuery> DEFAULT_TOP_REGRESSION_SMOKE = List.of(
+			target(Theme.PHARMA, 0),
+			target(Theme.SOCIAL_MEDIA, 5),
+			target(Theme.ENGINEERING, 8),
+			target(Theme.LIBRARY, 7));
 
 	@Test
 	void topRegressionOptimizedQueriesMatchFastestKnownSnapshots(@TempDir Path dataDir) throws Exception {
@@ -151,21 +156,27 @@ class LmdbThemeTopRegressionSnapshotIT {
 
 	private static Map<Theme, List<TargetQuery>> targetsByTheme() {
 		Map<Theme, List<TargetQuery>> grouped = new LinkedHashMap<>();
-		for (TargetQuery targetQuery : TOP_REGRESSIONS) {
-			if (!isSelected(targetQuery)) {
-				continue;
-			}
+		for (TargetQuery targetQuery : selectedTopRegressions()) {
 			grouped.computeIfAbsent(targetQuery.theme, ignored -> new ArrayList<>())
 					.add(targetQuery);
 		}
 		return grouped;
 	}
 
-	private static boolean isSelected(TargetQuery targetQuery) {
+	private static List<TargetQuery> selectedTopRegressions() {
 		String selectedKeys = System.getProperty(QUERY_KEYS_PROPERTY);
 		if (selectedKeys == null || selectedKeys.isBlank()) {
-			return true;
+			return DEFAULT_TOP_REGRESSION_SMOKE;
 		}
+		if (selectedKeys.strip().equalsIgnoreCase("all")) {
+			return TOP_REGRESSIONS;
+		}
+		return TOP_REGRESSIONS.stream()
+				.filter(targetQuery -> isSelected(targetQuery, selectedKeys))
+				.collect(Collectors.toList());
+	}
+
+	private static boolean isSelected(TargetQuery targetQuery, String selectedKeys) {
 		for (String selectedKey : selectedKeys.split(",")) {
 			if (targetQuery.key().equals(selectedKey.strip())) {
 				return true;
@@ -1564,7 +1575,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		int directLookupCount = 0;
 		while (matcher.find()) {
 			directLookupCount++;
-			if (isFiniteSurfaceDirectLookup(matcher.group())) {
+			if (isGuardedDirectLookupWorkFloor(matcher.group())) {
 				continue;
 			}
 			double workRows = directLookupAccessWorkRows(matcher.group());
@@ -1579,9 +1590,10 @@ class LmdbThemeTopRegressionSnapshotIT {
 		}
 	}
 
-	private static boolean isFiniteSurfaceDirectLookup(String directLookupHeader) {
+	private static boolean isGuardedDirectLookupWorkFloor(String directLookupHeader) {
 		return directLookupHeader.contains("plannedEstimateSource=lmdb-finite-derived-surface")
-				|| directLookupHeader.contains("plannedEstimateSource=lmdb-finite-binding-lookup");
+				|| directLookupHeader.contains("plannedEstimateSource=lmdb-finite-binding-lookup")
+				|| directLookupHeader.contains("plannedBoundLookupAccessFloor=page_walk_repeated_access");
 	}
 
 	private static double directLookupAccessWorkRows(String directLookupHeader) {

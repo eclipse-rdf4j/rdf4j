@@ -39,7 +39,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbThemeFastestRunSnapshotIT {
 
-	private static final Pattern FILTER_PASS_RATIO = Pattern.compile("plannedFilterPassRatio=([0-9.]+)");
+	private static final Pattern FILTER_PASS_RATIO = Pattern.compile("(?:plannedFilterPassRatio|passRatio)=([0-9.]+)");
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
 			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 	private static final String RESULT_DIRECTORY = "src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark";
@@ -72,36 +72,38 @@ class LmdbThemeFastestRunSnapshotIT {
 	@Test
 	void pharmaQuery0BenchmarkLifecycleAvoidsMemoExplosion(@TempDir Path dataDir) throws Exception {
 		Path storeDir = dataDir.resolve("pharma-q0-benchmark-lifecycle");
-		LmdbStoreConfig bulkLoadConfig = ConfigUtil.createConfig();
-		bulkLoadConfig.setIterationCacheSyncThreshold(0);
-		LmdbStore store = new LmdbStore(storeDir.toFile(), bulkLoadConfig);
-		SailRepository repository = new SailRepository(store);
 		try {
-			for (Theme theme : Theme.values()) {
-				loadData(repository, theme);
+			LmdbStoreConfig bulkLoadConfig = ConfigUtil.createConfig();
+			bulkLoadConfig.setIterationCacheSyncThreshold(0);
+			LmdbStore store = new LmdbStore(storeDir.toFile(), bulkLoadConfig);
+			SailRepository repository = new SailRepository(store);
+			try {
+				loadData(repository, Theme.PHARMA);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+
+			store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
+			repository = new SailRepository(store);
+			try {
+				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "PHARMA:0 benchmark lifecycle", 60,
+						TimeUnit.SECONDS);
+				OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
+				assertCanonicalFiniteAnchorFastPath(query0.plan(), "PHARMA:0 benchmark lifecycle");
+				OptimizerSnapshot telemetryQuery0 = explain(repository, Theme.PHARMA, 0, Explanation.Level.Telemetry);
+				assertCanonicalFiniteAnchorFastPath(telemetryQuery0.plan(), "PHARMA:0 benchmark lifecycle telemetry");
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
 		} finally {
-			shutdownAndRelease(repository, store);
-		}
-
-		store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
-		repository = new SailRepository(store);
-		try {
-			repository.init();
-			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "PHARMA:0 benchmark lifecycle", 60,
-					TimeUnit.SECONDS);
-			OptimizerSnapshot query0 = explainOptimized(repository, Theme.PHARMA, 0);
-			assertCanonicalFiniteAnchorFastPath(query0.plan(), "PHARMA:0 benchmark lifecycle");
-			OptimizerSnapshot telemetryQuery0 = explain(repository, Theme.PHARMA, 0, Explanation.Level.Telemetry);
-			assertCanonicalFiniteAnchorFastPath(telemetryQuery0.plan(), "PHARMA:0 benchmark lifecycle telemetry");
-		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDir);
 		}
 	}
 
 	@Test
 	void pharmaQueries0And1KeepFastPlanShape(@TempDir Path dataDir) throws Exception {
-		Path storeDir = prepareAllThemesBenchmarkStore(dataDir);
+		Path storeDir = preparePharmaBenchmarkStore(dataDir);
 		try {
 			LmdbStore store = new LmdbStore(storeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -156,19 +158,17 @@ class LmdbThemeFastestRunSnapshotIT {
 		}
 	}
 
-	private static Path prepareAllThemesBenchmarkStore(Path dataDir) throws Exception {
+	private static Path preparePharmaBenchmarkStore(Path dataDir) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
-						dataDir.resolve("fastest-run-snapshot-all-themes"),
-						PERSISTENT_STORE_KEY_PREFIX + "/ALL_THEMES",
+						dataDir.resolve("fastest-run-snapshot-pharma"),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + Theme.PHARMA.name() + "-fast-shapes",
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
 							try {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-								for (Theme theme : Theme.values()) {
-									loadData(repository, theme);
-								}
+								loadData(repository, Theme.PHARMA);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 								primePharmaFastestRunLearnedStats(repository);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
@@ -178,7 +178,7 @@ class LmdbThemeFastestRunSnapshotIT {
 						});
 		if (preparedStore.reused()) {
 			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
-					+ " for fastest-run all-theme regression. " + PERSISTENT_STORE_HINT);
+					+ " for fastest-run PHARMA regression. " + PERSISTENT_STORE_HINT);
 		}
 		return preparedStore.storeDirectory();
 	}
@@ -300,15 +300,15 @@ class LmdbThemeFastestRunSnapshotIT {
 		int filterIndex = plan.lastIndexOf("Filter (", patternIndex);
 		assertTrue(filterIndex >= 0, key + " should wrap " + filteredPattern + " in a planned filter:\n" + plan);
 
-		int filterLineEnd = plan.indexOf('\n', filterIndex);
-		String filterLine = plan.substring(filterIndex, filterLineEnd >= 0 ? filterLineEnd : plan.length());
-		Matcher ratioMatcher = FILTER_PASS_RATIO.matcher(filterLine);
+		int patternLineEnd = plan.indexOf('\n', patternIndex);
+		String filterRegion = plan.substring(filterIndex, patternLineEnd >= 0 ? patternLineEnd : plan.length());
+		Matcher ratioMatcher = FILTER_PASS_RATIO.matcher(filterRegion);
 		assertTrue(ratioMatcher.find(),
 				key + " should include a filter pass ratio for " + filteredPattern + ":\n" + plan);
 
 		double ratio = Double.parseDouble(ratioMatcher.group(1));
 		assertTrue(ratio >= minRatio && ratio <= maxRatio,
-				key + " should apply the selective score filter before join-order scoring: " + filterLine + "\n"
+				key + " should apply the selective score filter before join-order scoring: " + filterRegion + "\n"
 						+ plan);
 	}
 

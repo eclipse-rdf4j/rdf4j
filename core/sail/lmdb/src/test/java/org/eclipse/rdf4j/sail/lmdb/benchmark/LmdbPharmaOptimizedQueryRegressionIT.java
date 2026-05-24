@@ -42,12 +42,12 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	private static final Theme THEME = Theme.PHARMA;
 	private static final int MAX_QUERY_INDEX = 10;
 	private static final String QUERY_INDEXES_PROPERTY = "rdf4j.lmdb.pharmaRegression.queryIndexes";
-	private static final String PERSISTENT_STORE_KEY = "pharma-regression/all-themes";
+	private static final String PERSISTENT_STORE_KEY = "pharma-regression/pharma-only";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
-	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
-			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+	private static final Pattern DIRECT_LOOKUP_ACCESS_WORK_ROWS = Pattern.compile(
+			"StatementPattern \\([^)]*plannedAccessWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
 
 	@Test
 	void pharmaQueriesUsePlannerCostInvariants(@TempDir Path dataDir) throws Exception {
@@ -93,9 +93,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
-			for (Theme themeDataset : Theme.values()) {
-				ThemeDataSetGenerator.generate(themeDataset, inserter);
-			}
+			ThemeDataSetGenerator.generate(THEME, inserter);
 			connection.commit();
 		}
 	}
@@ -173,7 +171,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 		assertFalse(snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE"),
 				key + " should not reject supported segment shapes:\n" + snapshot.plan);
-		assertDirectLookupWorkRowsBelow(snapshot.plan, 100_000.0d, key);
+		assertDirectLookupAccessWorkRowsBelow(snapshot.plan, 100_000.0d, key);
 		if (queryIndex == 0) {
 			assertBefore(snapshot.renderedQuery, "?trial a <http://example.com/theme/pharma/ClinicalTrial> .",
 					"?trial <http://example.com/theme/pharma/hasArm> ?arm .",
@@ -189,8 +187,8 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 	}
 
-	private static void assertDirectLookupWorkRowsBelow(String plan, double maxWorkRows, String key) {
-		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+	private static void assertDirectLookupAccessWorkRowsBelow(String plan, double maxWorkRows, String key) {
+		Matcher matcher = DIRECT_LOOKUP_ACCESS_WORK_ROWS.matcher(plan);
 		while (matcher.find()) {
 			double workRows = parsePlanRows(matcher.group(1));
 			assertTrue(workRows <= maxWorkRows,

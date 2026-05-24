@@ -76,6 +76,7 @@ final class SketchJoinOrderPlanner {
 	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
 	private static final double BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO = 3.0d;
+	private static final double SUBJECT_TYPE_GUARD_SEED_MAX_ROW_RATIO = 1.25d;
 	private static final double FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS = 1_000.0d;
 	private static final int FINITE_DOMAIN_FILTER_MAX_ENUMERATED_BINDINGS = 4096;
 	private static final int COMPLETED_DEFERRED_FILTER_CONNECTIONS = 2;
@@ -943,6 +944,9 @@ final class SketchJoinOrderPlanner {
 		if (shouldDelayFiniteLookupGuardedSeed(factorIndex)) {
 			return null;
 		}
+		if (shouldDelaySubjectExpansionSeedUntilTypeGuard(factorIndex)) {
+			return null;
+		}
 		long seedMask = bit(factorIndex);
 		long seedBoundVarMask = initiallyBoundVarMask | bindingVarMasks[factorIndex];
 		PlanFactor factor = factors.get(factorIndex);
@@ -1085,6 +1089,40 @@ final class SketchJoinOrderPlanner {
 		return (missingLookupVars != 0L && (missingLookupVars & ~pendingAssignmentVars) == 0L)
 				|| shouldDelayBroadLookupForFinitePrefixGuard(physicalEstimate, missingLookupVars,
 						pendingAssignmentVars);
+	}
+
+	private boolean shouldDelaySubjectExpansionSeedUntilTypeGuard(int factorIndex) {
+		if (isSubjectTypeGuard(factorIndex) || isBindingSetAssignment(factorIndex)
+				|| statementPatternFactor(factorIndex) == null
+				|| unlocksNestedFilterOnIntroducedNonSubjectEndpoint(factorIndex, initiallyBoundVarMask)
+				|| hasStrongSelectiveLocalFilter(factorIndex, initiallyBoundVarMask)
+				|| participatesInPendingFiniteFilter(factorIndex, initiallyBoundVarMask)
+				|| unlocksStrongSelectiveDeferredFilterOnSeed(factorIndex)) {
+			return false;
+		}
+		long introducedSubjectVars = subjectVarMask(factorIndex) & ~initiallyBoundVarMask & variableUniverseMask;
+		if (introducedSubjectVars == 0L) {
+			return false;
+		}
+		double seedRows = factorOutputRows[factorIndex];
+		if (!(isFiniteNonNegative(seedRows) && seedRows > 1.0d)) {
+			return false;
+		}
+		long guards = remainingSubjectTypeGuardMask(0L, factorIndex);
+		while (guards != 0L) {
+			int guard = Long.numberOfTrailingZeros(guards);
+			guards &= guards - 1L;
+			if ((subjectVarMask(guard) & introducedSubjectVars) == 0L
+					|| !isFactorActionLegal(guard, initiallyBoundVarMask)) {
+				continue;
+			}
+			double guardRows = factorOutputRows[guard];
+			if (isFiniteNonNegative(guardRows)
+					&& guardRows <= seedRows * SUBJECT_TYPE_GUARD_SEED_MAX_ROW_RATIO) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean appliesSelectiveSeedFilterRowFlow(long seedMask) {
@@ -2363,6 +2401,7 @@ final class SketchJoinOrderPlanner {
 		if (isSubjectTypeGuard(factorIndex)
 				|| unlocksNestedFilterOnIntroducedNonSubjectEndpoint(factorIndex, currentlyBoundVarMask)
 				|| hasStrongSelectiveLocalFilter(factorIndex, currentlyBoundVarMask)
+				|| participatesInPendingFiniteFilter(factorIndex, currentlyBoundVarMask)
 				|| unlocksStrongSelectiveDeferredFilterOnSeed(factorIndex)) {
 			return 0.0d;
 		}
@@ -2415,6 +2454,11 @@ final class SketchJoinOrderPlanner {
 		double passRatio = newlyUnlockedFilterPassRatio(0L, bit(factorIndex), initiallyBoundVarMask,
 				initiallyBoundVarMask | bindingVarMasks[factorIndex]);
 		return isValidPassRatio(passRatio) && passRatio <= SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO;
+	}
+
+	private boolean participatesInPendingFiniteFilter(int factorIndex, long currentlyBoundVarMask) {
+		long introducedVars = bindingVarMasks[factorIndex] & ~currentlyBoundVarMask & variableUniverseMask;
+		return finiteFilterParticipationCount(introducedVars) > 0;
 	}
 
 	private double delayedEndpointSubjectTypeGuardSeedWorkRows(int factorIndex, long currentlyBoundVarMask,

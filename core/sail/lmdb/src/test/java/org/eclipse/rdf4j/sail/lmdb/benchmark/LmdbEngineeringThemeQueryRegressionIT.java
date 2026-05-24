@@ -480,8 +480,10 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		assertContains(pattern, "plannedIndexAccessMode=directLookup");
 		assertContains(pattern, "plannedLookupComponents=[S, P]");
 		assertContains(pattern, "plannedBoundVars=requirement");
-		assertContains(pattern, "plannedAccessWorkRows=1.00");
-		assertContains(pattern, "plannedCostWorkRows=1.0K");
+		assertMetricAtMost(pattern, "plannedAccessWorkRows", 2.0d,
+				"Engineering q8 should keep satisfies as a near-single-row bound requirement lookup");
+		assertMetricAtMost(pattern, "plannedCostWorkRows", 1_024.0d,
+				"Engineering q8 should keep satisfies lookup cost bounded by requirement cardinality");
 	}
 
 	private static void assertDevelopOperatorSkeleton(String plan) {

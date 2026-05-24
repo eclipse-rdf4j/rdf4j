@@ -480,6 +480,23 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 		assertInstanceOf(LeftJoin.class, union.getRightArg(), () -> root.getArg().toString());
 	}
 
+	@Test
+	void plansNestedUnionOptionalRhsWithSafeLeftAnchorsWhenCheaper() {
+		StatementPattern work = statementPattern("work", "about", "topic");
+		StatementPattern page = statementPattern("topic", "mainEntityOfPage", "page");
+		StatementPattern review = statementPattern("work", "review", "shared");
+		StatementPattern event = statementPattern("page", "event", "shared");
+		StatementPattern sharedType = statementPattern("shared", "type", "sharedType");
+		TupleExpr right = new LeftJoin(new Union(review, event), sharedType);
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(work, page), right));
+
+		new LmdbSketchJoinOptimizer(new OptionalRhsAnchoringCostModel(100.0d, 5.0d, Set.of("work", "page")),
+				false).optimize(root, null, null);
+
+		String metric = firstOptionalRhsAnchoringMetric(root.getArg());
+		assertTrue(metric != null && metric.contains("selected=anchored"), () -> root.getArg().toString());
+	}
+
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var(predicateName, VF.createIRI("urn:" + predicateName)),
 				new Var(objectName));
@@ -515,6 +532,54 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 			return containsLeftJoin(join.getLeftArg()) || containsLeftJoin(join.getRightArg());
 		}
 		return false;
+	}
+
+	private static String firstOptionalRhsAnchoringMetric(TupleExpr tupleExpr) {
+		String metric = tupleExpr.getStringMetricPlanned("optimizer.optionalRhsAnchoring");
+		if (metric != null) {
+			return metric;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			return firstOptionalRhsAnchoringMetric(filter.getArg());
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unary) {
+			return firstOptionalRhsAnchoringMetric(unary.getArg());
+		}
+		if (tupleExpr instanceof Join join) {
+			String left = firstOptionalRhsAnchoringMetric(join.getLeftArg());
+			return left != null ? left : firstOptionalRhsAnchoringMetric(join.getRightArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			String left = firstOptionalRhsAnchoringMetric(leftJoin.getLeftArg());
+			return left != null ? left : firstOptionalRhsAnchoringMetric(leftJoin.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			String left = firstOptionalRhsAnchoringMetric(union.getLeftArg());
+			return left != null ? left : firstOptionalRhsAnchoringMetric(union.getRightArg());
+		}
+		return null;
+	}
+
+	private static final class OptionalRhsAnchoringCostModel extends EvaluationStatistics
+			implements JoinFactorCostModel {
+
+		private final double originalWorkRows;
+		private final double anchoredWorkRows;
+		private final Set<String> anchorNames;
+
+		private OptionalRhsAnchoringCostModel(double originalWorkRows, double anchoredWorkRows,
+				Set<String> anchorNames) {
+			this.originalWorkRows = originalWorkRows;
+			this.anchoredWorkRows = anchoredWorkRows;
+			this.anchorNames = anchorNames;
+		}
+
+		@Override
+		public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+				Set<String> currentlyBoundVars) {
+			double workRows = currentlyBoundVars.containsAll(anchorNames) ? anchoredWorkRows : originalWorkRows;
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(workRows, 1.0d));
+		}
 	}
 
 	private static final class OptionalUnionDistributionCostModel extends EvaluationStatistics

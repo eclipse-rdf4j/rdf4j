@@ -206,8 +206,8 @@ class LmdbThemeQueryRegressionIT {
 			"  }",
 			"  UNION",
 			"  {",
-			"    ?entity <http://example.com/theme/library/title> ?name .",
 			"    ?entity a <http://example.com/theme/library/Book> .",
+			"    ?entity <http://example.com/theme/library/title> ?name .",
 			"    VALUES ?target { \"Member 1\" \"Member 2\" }",
 			"    FILTER ((?name = ?target) || (?name = \"Member 3\"))",
 			"  }",
@@ -2637,7 +2637,7 @@ class LmdbThemeQueryRegressionIT {
 		try {
 			loadBenchmarkData(repository, theme);
 		} finally {
-			repository.shutDown();
+			shutdownAndRelease(repository, store);
 		}
 		return themeDir;
 	}
@@ -2655,7 +2655,7 @@ class LmdbThemeQueryRegressionIT {
 		try {
 			loadData(repository, theme);
 		} finally {
-			repository.shutDown();
+			shutdownAndRelease(repository, store);
 		}
 
 		store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());

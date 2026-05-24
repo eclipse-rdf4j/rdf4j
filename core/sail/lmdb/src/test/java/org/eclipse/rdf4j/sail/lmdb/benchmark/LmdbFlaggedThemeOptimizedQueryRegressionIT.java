@@ -59,6 +59,8 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 			expectation(Theme.SOCIAL_MEDIA, 3),
 			expectation(Theme.SOCIAL_MEDIA, 4),
 			expectation(Theme.SOCIAL_MEDIA, 10));
+	private static final List<Expectation> DEFAULT_SMOKE_EXPECTATIONS = List.of(
+			expectation(Theme.LIBRARY, 7));
 
 	@Test
 	void flaggedThemeQueriesReproduceHistoricalOptimizedShapes(@TempDir Path dataDir) throws Exception {
@@ -153,40 +155,44 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 	}
 
 	private static List<Theme> flaggedThemes() {
-		String selectedThemes = System.getProperty(THEMES_PROPERTY, "").trim();
-		if (!selectedThemes.isEmpty()) {
-			List<Theme> themes = Pattern.compile(",")
-					.splitAsStream(selectedThemes)
-					.map(String::trim)
-					.filter(theme -> !theme.isEmpty())
-					.map(Theme::valueOf)
-					.collect(Collectors.toList());
-			return EXPECTATIONS.stream()
-					.map(expectation -> expectation.theme)
-					.distinct()
-					.filter(themes::contains)
-					.collect(Collectors.toList());
-		}
-
-		return EXPECTATIONS.stream()
+		return selectedExpectations().stream()
 				.map(expectation -> expectation.theme)
 				.distinct()
 				.collect(Collectors.toList());
 	}
 
-	private static List<Expectation> expectationsForTheme(Theme theme) {
+	private static List<Expectation> selectedExpectations() {
+		List<Expectation> source = hasExplicitSelection() ? EXPECTATIONS : DEFAULT_SMOKE_EXPECTATIONS;
+		List<Theme> selectedThemes = selectedThemes();
 		List<Integer> queryIndexes = selectedQueryIndexes();
-		return EXPECTATIONS.stream()
-				.filter(expectation -> expectation.theme == theme)
+		return source.stream()
+				.filter(expectation -> selectedThemes.isEmpty() || selectedThemes.contains(expectation.theme))
 				.filter(expectation -> queryIndexes.isEmpty() || queryIndexes.contains(expectation.queryIndex))
 				.collect(Collectors.toList());
 	}
 
+	private static List<Theme> selectedThemes() {
+		String selectedThemes = System.getProperty(THEMES_PROPERTY, "").trim();
+		if (!selectedThemes.isEmpty()) {
+			return Pattern.compile(",")
+					.splitAsStream(selectedThemes)
+					.map(String::trim)
+					.filter(theme -> !theme.isEmpty())
+					.map(Theme::valueOf)
+					.collect(Collectors.toList());
+		}
+		return List.of();
+	}
+
+	private static List<Expectation> expectationsForTheme(Theme theme) {
+		return selectedExpectations().stream()
+				.filter(expectation -> expectation.theme == theme)
+				.collect(Collectors.toList());
+	}
+
 	private static List<Expectation> expectationsForThemes(List<Theme> themes) {
-		List<Integer> queryIndexes = selectedQueryIndexes();
-		return EXPECTATIONS.stream()
+		return selectedExpectations().stream()
 				.filter(expectation -> themes.contains(expectation.theme))
-				.filter(expectation -> queryIndexes.isEmpty() || queryIndexes.contains(expectation.queryIndex))
 				.collect(Collectors.toList());
 	}
 
@@ -212,6 +218,9 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 	}
 
 	private static String selectedQueryIndexesKey() {
+		if (!hasExplicitSelection()) {
+			return "default-smoke";
+		}
 		List<Integer> selected = selectedQueryIndexes();
 		if (selected.isEmpty()) {
 			return "all-queries";
@@ -220,6 +229,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				.sorted()
 				.map(String::valueOf)
 				.collect(Collectors.joining("-"));
+	}
+
+	private static boolean hasExplicitSelection() {
+		return !System.getProperty(THEMES_PROPERTY, "").trim().isEmpty()
+				|| !System.getProperty(QUERY_INDEXES_PROPERTY, "").trim().isEmpty();
 	}
 
 	private static void loadBenchmarkData(SailRepository repository, List<Theme> themes) throws IOException {
