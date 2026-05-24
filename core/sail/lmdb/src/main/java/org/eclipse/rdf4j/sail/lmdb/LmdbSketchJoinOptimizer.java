@@ -108,6 +108,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 	private static final double CORRELATED_NOT_EXISTS_FILTER_PREFIX_MAX_PASS_RATIO = 0.50d;
 	private static final double SAMPLED_LOCAL_FILTER_PREFIX_MAX_PASS_RATIO = 0.10d;
 	private static final double CORRELATED_NOT_EXISTS_FILTER_PREFIX_WORK_TOLERANCE = 1.15d;
+	private static final double CORRELATED_NOT_EXISTS_FINITE_BINDING_PREFIX_WORK_TOLERANCE = 2.50d;
 	private static final double SCAN_LED_LOCAL_FILTER_PREFIX_WORK_TOLERANCE = 2.00d;
 	private static final long CORRELATED_NOT_EXISTS_FILTER_PREFIX_MIN_EVIDENCE = 100L;
 	private static final long SAMPLED_ZERO_PASS_RATIO_MIN_EVIDENCE = 1_024L;
@@ -4443,6 +4444,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			selectedPlan = sampledZeroFanoutGuardPlan(segment, boundBeforeSegment, plannerFilters, segmentFilters,
 					selectedPlan, algorithm, planner)
 							.orElse(selectedPlan);
+			selectedPlan = correlatedNotExistsFiniteBindingPrefixPlan(segment, boundBeforeSegment, plannerFilters,
+					segmentFilters, selectedPlan, algorithm, planner)
+							.orElse(selectedPlan);
 			selectedPlan = guaranteePlanOption(segment, boundBeforeSegment, plannerFilters, segmentFilters,
 					selectedPlan, plannerMemo, guaranteeChoices);
 			NegatedBoundOptionalPlanSelection negatedBoundOptionalSelection = negatedBoundOptionalPlanOption(segment,
@@ -4468,8 +4472,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			segmentFilterCount = segmentFilters.size();
 			applyPlannerStepEstimates(selectedPlan);
+			Set<String> correlatedNotExistsFiniteBindingNames = correlatedNotExistsFiniteBindingNames(segment,
+					segmentFilters, plannerFilters);
+			List<TupleExpr> selectedOrderedArgs = promoteFiniteBindingPrefix(selectedPlan.getOrderedArgs(),
+					correlatedNotExistsFiniteBindingNames);
 			FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
-					selectedPlan.getOrderedArgs(), boundBeforeSegment);
+					selectedOrderedArgs, boundBeforeSegment, correlatedNotExistsFiniteBindingNames);
 			List<TupleExpr> orderedArgs = finiteAssignmentReorder.orderedArgs();
 			Map<Integer, Integer> filterPlacementSteps = plannerFilterPlacementSteps(selectedPlan, segmentFilterCount,
 					orderedArgs);
@@ -5754,6 +5762,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private FiniteAssignmentReorder deferFiniteAssignmentsAfterBoundExactLookups(List<TupleExpr> orderedArgs,
 				Set<String> boundBeforeSegment) {
+			return deferFiniteAssignmentsAfterBoundExactLookups(orderedArgs, boundBeforeSegment, Set.of());
+		}
+
+		private FiniteAssignmentReorder deferFiniteAssignmentsAfterBoundExactLookups(List<TupleExpr> orderedArgs,
+				Set<String> boundBeforeSegment, Set<String> protectedFiniteBindings) {
 			List<TupleExpr> reordered = new ArrayList<>(orderedArgs);
 			Set<String> bound = new HashSet<>(boundBeforeSegment);
 			boolean changed = false;
@@ -5763,6 +5776,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						tupleExpr);
 				if (assignmentNames.isEmpty()
 						|| assignmentNames.get().isEmpty()
+						|| !Collections.disjoint(assignmentNames.get(), protectedFiniteBindings)
 						|| !isSingleLiteralBindingAssignment(tupleExpr)) {
 					bound.addAll(plannerBindingNames(tupleExpr.getBindingNames()));
 					i++;
@@ -5802,6 +5816,27 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return sawValue;
+		}
+
+		private boolean isSingletonLiteralBindingAssignment(TupleExpr tupleExpr) {
+			if (!(tupleExpr instanceof BindingSetAssignment assignment)
+					|| assignment.getAssuredBindingNames().size() != 1
+					|| assignment.getBindingSets() == null) {
+				return false;
+			}
+			int rows = 0;
+			for (BindingSet bindingSet : assignment.getBindingSets()) {
+				rows++;
+				if (rows > 1) {
+					return false;
+				}
+				for (String bindingName : assignment.getAssuredBindingNames()) {
+					if (!(bindingSet.getValue(bindingName) instanceof Literal)) {
+						return false;
+					}
+				}
+			}
+			return rows == 1;
 		}
 
 		private int assignmentDependentBoundLookupBlockEnd(List<TupleExpr> orderedArgs, int assignmentIndex,
@@ -5911,6 +5946,151 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return Optional.empty();
 			}
 			return candidatePlan;
+		}
+
+		private Optional<JoinOrderPlanner.JoinOrderPlan> correlatedNotExistsFiniteBindingPrefixPlan(
+				List<TupleExpr> segment,
+				Set<String> boundBeforeSegment, List<JoinOrderPlanner.FilterConstraint> plannerFilters,
+				List<DeferredFilter> segmentFilters, JoinOrderPlanner.JoinOrderPlan selectedPlan,
+				JoinOrderPlanner.Algorithm algorithm, JoinOrderPlanner planner) {
+			Set<String> prefixNames = correlatedNotExistsFiniteBindingNames(segment, segmentFilters, plannerFilters);
+			if (prefixNames.isEmpty()) {
+				return Optional.empty();
+			}
+			List<TupleExpr> prefix = finiteBindingPrefix(segment, prefixNames);
+			if (prefix.isEmpty()) {
+				return Optional.empty();
+			}
+			List<TupleExpr> candidateOrder = connectedOrderWithPrefix(segment, prefix, boundBeforeSegment);
+			if (candidateOrder.equals(selectedPlan.getOrderedArgs())) {
+				return Optional.empty();
+			}
+			Optional<JoinOrderPlanner.JoinOrderPlan> candidatePlan = planner.estimateJoinOrder(candidateOrder,
+					new HashSet<>(boundBeforeSegment), algorithm, plannerFilters);
+			if (candidatePlan.isEmpty() || !isValidPlannerOrder(segment, candidatePlan.get())) {
+				return Optional.empty();
+			}
+			if (!withinCorrelatedNotExistsFiniteBindingPrefixBudget(selectedPlan, candidatePlan.get())) {
+				return Optional.empty();
+			}
+			return candidatePlan;
+		}
+
+		private Set<String> correlatedNotExistsFiniteBindingNames(List<TupleExpr> segment,
+				List<DeferredFilter> segmentFilters, List<JoinOrderPlanner.FilterConstraint> plannerFilters) {
+			Set<String> finiteNames = finiteLiteralBindingNames(segment);
+			if (finiteNames.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> referencedNames = new LinkedHashSet<>();
+			for (DeferredFilter filter : segmentFilters) {
+				if (!filter.requiredVars.isEmpty() && conditionContainsNotExists(filter.condition)) {
+					referencedNames.addAll(filter.requiredVars);
+					referencedNames.addAll(filter.conditionVars);
+				}
+			}
+			for (JoinOrderPlanner.FilterConstraint filter : plannerFilters) {
+				if (!filter.isCostOnly()
+						&& (filter.isNotExists()
+								|| filter.getCondition().filter(this::conditionContainsNotExists).isPresent())) {
+					referencedNames.addAll(filter.getRequiredVars());
+					filter.getCondition()
+							.map(DeferredFilter::conditionBindingNames)
+							.ifPresent(referencedNames::addAll);
+				}
+			}
+			boolean hasCorrelatedNotExistsFilter = hasCorrelatedNotExistsFilter(segmentFilters, plannerFilters);
+			finiteNames.retainAll(referencedNames);
+			if (finiteNames.isEmpty() && hasCorrelatedNotExistsFilter && referencedNames.isEmpty()) {
+				return finiteLiteralBindingNames(segment);
+			}
+			return finiteNames;
+		}
+
+		private Set<String> finiteLiteralBindingNames(List<TupleExpr> segment) {
+			Set<String> finiteNames = new LinkedHashSet<>();
+			for (TupleExpr tupleExpr : segment) {
+				if (!isSingletonLiteralBindingAssignment(tupleExpr)) {
+					continue;
+				}
+				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(
+						tupleExpr);
+				if (assignmentNames.isPresent()) {
+					finiteNames.addAll(assignmentNames.get());
+				}
+			}
+			return finiteNames;
+		}
+
+		private boolean hasCorrelatedNotExistsFilter(List<DeferredFilter> segmentFilters,
+				List<JoinOrderPlanner.FilterConstraint> plannerFilters) {
+			return hasCorrelatedNotExistsFilter(segmentFilters)
+					|| plannerFilters.stream()
+							.anyMatch(filter -> !filter.isCostOnly()
+									&& (filter.isNotExists()
+											|| filter.getCondition()
+													.filter(this::conditionContainsNotExists)
+													.isPresent()));
+		}
+
+		private List<TupleExpr> promoteFiniteBindingPrefix(List<TupleExpr> orderedArgs, Set<String> prefixNames) {
+			if (prefixNames.isEmpty() || orderedArgs.isEmpty()) {
+				return orderedArgs;
+			}
+			List<TupleExpr> prefix = new ArrayList<>(prefixNames.size());
+			List<TupleExpr> remaining = new ArrayList<>(orderedArgs.size());
+			for (TupleExpr tupleExpr : orderedArgs) {
+				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(
+						tupleExpr);
+				if (assignmentNames.isPresent()
+						&& !Collections.disjoint(assignmentNames.get(), prefixNames)
+						&& isSingletonLiteralBindingAssignment(tupleExpr)) {
+					prefix.add(tupleExpr);
+				} else {
+					remaining.add(tupleExpr);
+				}
+			}
+			if (prefix.isEmpty()) {
+				return orderedArgs;
+			}
+			List<TupleExpr> promoted = new ArrayList<>(orderedArgs.size());
+			promoted.addAll(prefix);
+			promoted.addAll(remaining);
+			return promoted.equals(orderedArgs) ? orderedArgs : List.copyOf(promoted);
+		}
+
+		private List<TupleExpr> finiteBindingPrefix(List<TupleExpr> segment, Set<String> prefixNames) {
+			List<TupleExpr> prefix = new ArrayList<>(prefixNames.size());
+			Set<String> seen = new HashSet<>();
+			for (TupleExpr tupleExpr : segment) {
+				Optional<Set<String>> assignmentNames = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(
+						tupleExpr);
+				if (assignmentNames.isEmpty() || Collections.disjoint(assignmentNames.get(), prefixNames)) {
+					continue;
+				}
+				if (!isSingleLiteralBindingAssignment(tupleExpr) || !seen.addAll(assignmentNames.get())) {
+					return List.of();
+				}
+				prefix.add(tupleExpr);
+			}
+			return prefix;
+		}
+
+		private boolean withinCorrelatedNotExistsFiniteBindingPrefixBudget(
+				JoinOrderPlanner.JoinOrderPlan selectedPlan,
+				JoinOrderPlanner.JoinOrderPlan candidatePlan) {
+			double candidateWork = candidatePlan.getEstimatedTotalWork();
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(candidateWork)) {
+				return false;
+			}
+			double selectedWork = selectedPlan.getEstimatedTotalWork();
+			if (!LmdbJoinPlanSupport.isFiniteNonNegative(selectedWork) || selectedWork == 0.0d) {
+				return true;
+			}
+			if (anchorRowsGrowTooMuch(candidatePlan.getEstimatedFinalRows(), selectedPlan.getEstimatedFinalRows())) {
+				return false;
+			}
+			return candidateWork <= selectedWork * CORRELATED_NOT_EXISTS_FINITE_BINDING_PREFIX_WORK_TOLERANCE;
 		}
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> sampledZeroFanoutGuardPlan(List<TupleExpr> segment,
