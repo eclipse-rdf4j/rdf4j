@@ -416,7 +416,7 @@ final class SketchJoinOrderPlanner {
 
 		StatePlan result = null;
 		for (int i = 0; i < factors.size(); i++) {
-			result = result == null ? seedPlan(i) : extendPlan(result, i);
+			result = result == null ? seedPlan(i, false) : extendPlan(result, i);
 			if (result == null) {
 				recordDebug("fixed rejected: factor requires unbound external filter vars factor=" + i);
 				return new PlanOutcome(Optional.empty(), SketchBasedJoinEstimator.SketchPlannerPath.UNSUPPORTED_SHAPE,
@@ -935,17 +935,23 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private StatePlan seedPlan(int factorIndex) {
+		return seedPlan(factorIndex, true);
+	}
+
+	private StatePlan seedPlan(int factorIndex, boolean applySeedDelayGuards) {
 		if (!isFactorActionLegal(factorIndex, initiallyBoundVarMask)) {
 			return null;
 		}
-		if (shouldDelayUnfilteredFiniteSeed(factorIndex)) {
-			return null;
-		}
-		if (shouldDelayFiniteLookupGuardedSeed(factorIndex)) {
-			return null;
-		}
-		if (shouldDelaySubjectExpansionSeedUntilTypeGuard(factorIndex)) {
-			return null;
+		if (applySeedDelayGuards) {
+			if (shouldDelayUnfilteredFiniteSeed(factorIndex)) {
+				return null;
+			}
+			if (shouldDelayFiniteLookupGuardedSeed(factorIndex)) {
+				return null;
+			}
+			if (shouldDelaySubjectExpansionSeedUntilTypeGuard(factorIndex)) {
+				return null;
+			}
 		}
 		long seedMask = bit(factorIndex);
 		long seedBoundVarMask = initiallyBoundVarMask | bindingVarMasks[factorIndex];
