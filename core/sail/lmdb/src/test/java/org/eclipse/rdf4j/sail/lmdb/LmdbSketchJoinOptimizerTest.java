@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -39,7 +41,11 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -50,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -124,6 +131,22 @@ class LmdbSketchJoinOptimizerTest {
 		assertEquals(boundA, valueJoin.getLeftArg());
 		assertEquals(boundB, valueJoin.getRightArg());
 		assertEquals(List.of(boundA, boundB, aFollowsB, bFollowsC), joinArgs(root.getArg()));
+	}
+
+	@Test
+	void distinctRequirementStopsAtServiceJoinBarrier() {
+		StatementPattern local = statementPattern("s", "p", "o");
+		StatementPattern remotePattern = statementPattern("p", "x", "y");
+		Service service = new Service(Var.of("serviceRef", VF.createIRI("urn:service")), remotePattern,
+				"SERVICE <urn:service> { ?p ?x ?y }", Map.of(), null, false);
+		QueryRoot root = new QueryRoot(new Distinct(projection(new Join(local, service), "p")));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertNull(local.getStringMetricPlanned(TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS),
+				"SERVICE is a scope/side-effect barrier for DISTINCT cursor skip");
+		assertNull(local.getStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT),
+				"SERVICE is a scope/side-effect barrier for DISTINCT cursor skip proof");
 	}
 
 	@Test
@@ -715,6 +738,14 @@ class LmdbSketchJoinOptimizerTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static Projection projection(TupleExpr arg, String... bindingNames) {
+		ProjectionElemList elemList = new ProjectionElemList();
+		for (String bindingName : bindingNames) {
+			elemList.addElement(new ProjectionElem(bindingName));
+		}
+		return new Projection(arg, elemList);
 	}
 
 	private static void withJoinTreeShape(String shape, Runnable runnable) {

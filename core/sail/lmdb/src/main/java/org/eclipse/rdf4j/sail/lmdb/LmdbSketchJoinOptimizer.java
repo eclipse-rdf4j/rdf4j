@@ -269,6 +269,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (distinctVars.isEmpty() || tupleExpr == null || !tupleExpr.getBindingNames().containsAll(distinctVars)) {
 				return;
 			}
+			if (containsDistinctRequirementBarrier(tupleExpr)) {
+				return;
+			}
 			if (tupleExpr instanceof StatementPattern statementPattern) {
 				annotateDistinctStatementPattern(statementPattern, distinctVars, blockedVars, source);
 			} else if (tupleExpr instanceof Projection projection) {
@@ -323,6 +326,21 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					"DISTINCT suffix variables are not observed above the statement-pattern scan");
 			statementPattern.setStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PHYSICAL_REFINEMENT,
 					proof.metricFragment());
+		}
+
+		private boolean containsDistinctRequirementBarrier(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof Service) {
+				return true;
+			}
+			boolean[] containsService = new boolean[1];
+			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<>() {
+
+				@Override
+				public void meet(Service node) {
+					containsService[0] = true;
+				}
+			});
+			return containsService[0];
 		}
 
 		private Set<String> identityProjectionNames(Projection projection) {
