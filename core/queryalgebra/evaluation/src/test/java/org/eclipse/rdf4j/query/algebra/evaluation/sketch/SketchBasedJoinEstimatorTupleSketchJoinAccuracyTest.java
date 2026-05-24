@@ -160,7 +160,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 	}
 
 	@Test
-	void fluentJoinUsesOneSigmaUpperBoundWhenEstimationModeIntersectionPointIsZero() {
+	void fluentJoinUsesOneTenthOneSigmaUpperBoundWhenEstimationModeIntersectionPointIsZero() {
 		IRI leftPredicate = VF.createIRI("urn:tuple:upper-bound:left");
 		IRI rightPredicate = VF.createIRI("urn:tuple:upper-bound:right");
 		StubSketchStatementSource store = new StubSketchStatementSource();
@@ -176,8 +176,8 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 				.join(SketchBasedJoinEstimator.Component.O, null, rightPredicate.stringValue(), null, null)
 				.estimate();
 
-		assertTrue(estimate > 0.0d,
-				"An estimation-mode zero intersection point should use the one-sigma upper bound before zero");
+		assertEquals(47.0d, estimate, 0.0d,
+				"An estimation-mode zero intersection point should use one tenth of the one-sigma bound");
 	}
 
 	@Test

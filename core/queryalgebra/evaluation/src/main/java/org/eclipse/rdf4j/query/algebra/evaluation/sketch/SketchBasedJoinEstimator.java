@@ -476,6 +476,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final String ZERO_INTERSECTION_SKEW_RATIO_PROPERTY = "zeroIntersectionSkewRatio";
 	private static final String ZERO_INTERSECTION_ROW_BUDGET_PROPERTY = "zeroIntersectionRowBudget";
 	private static final String ZERO_INTERSECTION_SAMPLE_SIZE_PROPERTY = "zeroIntersectionSampleSize";
+	private static final double ZERO_INTERSECTION_ONE_SIGMA_UPPER_BOUND_FRACTION = 0.1d;
 	private static final long DEFAULT_ESTIMATE_CACHE_SECONDS = 60L;
 	private static final int MAX_ESTIMATE_CACHE_ENTRIES = 4096;
 
@@ -5930,6 +5931,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				|| !(Double.isFinite(rightDistinct) && rightDistinct > 0.0d)) {
 			return 0.0d;
 		}
+		boundedDistinct *= ZERO_INTERSECTION_ONE_SIGMA_UPPER_BOUND_FRACTION;
 		double leftFanout = Math.max(1.0d, leftRows / leftDistinct);
 		double rightFanout = Math.max(1.0d, rightRows / rightDistinct);
 		double rows = saturatingMultiply(saturatingMultiply(boundedDistinct, leftFanout), rightFanout);
