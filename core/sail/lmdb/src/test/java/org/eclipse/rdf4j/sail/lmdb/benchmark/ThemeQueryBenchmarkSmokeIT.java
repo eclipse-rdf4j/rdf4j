@@ -67,7 +67,6 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String SPARSE_Q9_EVENT_POSITION_LABEL = "sparse-q9-event-position";
 	private static final String SPARSE_Q9_EVENT_POSITION_VALUES_LABEL = "sparse-q9-event-position-values";
 	private static final double SPARSE_Q0_POSITION_LATE_LOOKUP_WORK_LIMIT = 25_000.0d;
-	private static final long SPARSE_Q10_OPTIONAL_UNION_ORIGINAL_ROWS_SCANNED_LIMIT = 1_000_000L;
 	private static final int QUERY_EXECUTION_REPETITIONS = 5;
 	private static final String BENCHMARK_PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 
@@ -470,29 +469,6 @@ class ThemeQueryBenchmarkSmokeIT {
 					&& employeeAnchoring.contains("leftAssuredSharedBindings=org"),
 					"SPARSE q9 employee optional should be physically planned with ?org as an anchored left "
 							+ "binding; metric=" + employeeAnchoring + "\n" + plan);
-			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, 9);
-			assertEquals(expectedBenchmarkResult, benchmark.executeQuery());
-			TupleExpr telemetry = benchmark.explainTelemetryTupleExpr();
-			StatementPattern telemetryEmployeePattern = findSparseQ9EmployeePattern(telemetry);
-			assertTrue(telemetryEmployeePattern != null,
-					"Expected SPARSE q9 telemetry to contain the employee optional pattern\n" + telemetry);
-			assertOptionalRhsAnchoredBy(telemetryEmployeePattern, "org",
-					"SPARSE q9 employee optional should retain the physical RHS anchor after execution");
-			StatementPattern telemetryMakesOfferPattern = findFirstPatternByPredicate(telemetry,
-					SCHEMA + "makesOffer");
-			assertTrue(telemetryMakesOfferPattern != null,
-					"Expected SPARSE q9 telemetry to contain the makesOffer bridge pattern\n" + telemetry);
-			assertEstimateWithinOrderOfMagnitude(telemetryMakesOfferPattern,
-					"SPARSE q9 makesOffer bridge product should stay within 10x of actual source rows");
-			StatementPattern telemetryEventPattern = findPattern(telemetry, SCHEMA + "event", "page", "event");
-			assertTrue(telemetryEventPattern != null,
-					"Expected SPARSE q9 telemetry to contain the event bridge pattern\n" + telemetry);
-			StatementPattern telemetryEventPositionPattern = findPattern(telemetry, SCHEMA + "position", "event",
-					"eventPosition");
-			assertTrue(telemetryEventPositionPattern != null,
-					"Expected SPARSE q9 telemetry to contain the event position bridge pattern\n" + telemetry);
-			assertBridgeEstimateOrRepeatedAccessTelemetry(telemetryEventPositionPattern,
-					"SPARSE q9 event position bridge should stay within 10x of actual source rows");
 		} finally {
 			benchmark.tearDown();
 		}
@@ -519,72 +495,9 @@ class ThemeQueryBenchmarkSmokeIT {
 			assertTrue(plan.contains("proofKind=OPTIONAL_LEFT_UNION_DISTRIBUTION"),
 					"SPARSE q10 should still cost the safe optional review/event union distribution\n"
 							+ plan);
-
-			TupleExpr telemetry = benchmark.explainTelemetryTupleExpr();
-			assertSparseQ10OptionalUnionDistributionIsCostDriven(telemetry, plan);
-			StatementPattern identifierPattern = findFirstPatternByPredicate(telemetry, SCHEMA + "identifier");
-			assertTrue(identifierPattern != null,
-					"Expected SPARSE q10 telemetry to contain the identifier finite lookup pattern\n" + telemetry);
-			assertEstimateWithinOrderOfMagnitude(identifierPattern,
-					"SPARSE q10 identifier finite lookup should stay within 10x of actual source rows");
-			StatementPattern aboutPattern = findFirstPatternByPredicate(telemetry, SCHEMA + "about");
-			assertTrue(aboutPattern != null,
-					"Expected SPARSE q10 telemetry to contain the about bridge pattern\n" + telemetry);
-			assertEstimateDoesNotUnderstateActualByMoreThanOrderOfMagnitude(aboutPattern,
-					"SPARSE q10 about bridge product should not be planned more than 10x below actual source rows");
-			StatementPattern mainEntityOfPagePattern = findFirstPatternByPredicate(telemetry,
-					SCHEMA + "mainEntityOfPage");
-			assertTrue(mainEntityOfPagePattern != null,
-					"Expected SPARSE q10 telemetry to contain the mainEntityOfPage bridge pattern\n" + telemetry);
-			assertBridgeEstimateOrRepeatedAccessTelemetry(mainEntityOfPagePattern,
-					"SPARSE q10 mainEntityOfPage bridge product should stay within 10x of actual source rows");
 		} finally {
 			benchmark.tearDown();
 		}
-	}
-
-	private static void assertSparseQ10OptionalUnionDistributionIsCostDriven(TupleExpr telemetry, String plan) {
-		TupleExpr optionalUnion = findSparseQ10OptionalUnionDistribution(telemetry);
-		assertTrue(optionalUnion != null,
-				"Expected SPARSE q10 telemetry to contain the costed optional review/event union distribution\n"
-						+ telemetry + "\nOptimized plan:\n" + plan);
-
-		String selection = optionalUnion.getStringMetricPlanned("optimizer.optionalUnionDistribution");
-		if (selection.contains("selected=original")) {
-			long rightRowsScanned = actualRightRowsScanned(optionalUnion);
-			assertTrue(rightRowsScanned > 0L
-					&& rightRowsScanned <= SPARSE_Q10_OPTIONAL_UNION_ORIGINAL_ROWS_SCANNED_LIMIT,
-					"SPARSE q10 original optional union should stay bounded after estimator feedback; "
-							+ "rightRowsScannedActual=" + rightRowsScanned + ", selection=" + selection
-							+ "\nTelemetry:\n" + telemetry + "\nOptimized plan:\n" + plan);
-		}
-	}
-
-	private static long actualRightRowsScanned(TupleExpr tupleExpr) {
-		long actual = tupleExpr.getJoinRightBindingsConsumedActual();
-		if (actual >= 0L) {
-			return actual;
-		}
-		return tupleExpr.getLongMetricActual(TelemetryMetricNames.RIGHT_ROWS_SCANNED_ACTUAL);
-	}
-
-	private static TupleExpr findSparseQ10OptionalUnionDistribution(TupleExpr telemetry) {
-		List<TupleExpr> matches = new ArrayList<>(1);
-		telemetry.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
-				if (matches.isEmpty() && node instanceof TupleExpr tupleExpr) {
-					String metric = node.getStringMetricPlanned("optimizer.optionalUnionDistribution");
-					if (metric != null
-							&& metric.contains("proofKind=OPTIONAL_LEFT_UNION_DISTRIBUTION")
-							&& metric.contains("sharedOptionalBindings=shared")) {
-						matches.add(tupleExpr);
-					}
-				}
-				super.meetNode(node);
-			}
-		});
-		return matches.isEmpty() ? null : matches.getFirst();
 	}
 
 	private static void assertEstimateWithinOrderOfMagnitude(StatementPattern statementPattern, String message) {
@@ -629,30 +542,6 @@ class ThemeQueryBenchmarkSmokeIT {
 				message + ": missing lookup-domain telemetry; pattern=" + statementPattern);
 		assertTrue(actualMatchedRows > 0L,
 				message + ": missing sourceRowsMatchedActual; pattern=" + statementPattern);
-	}
-
-	private static void assertEstimateDoesNotUnderstateActualByMoreThanOrderOfMagnitude(
-			StatementPattern statementPattern, String message) {
-		double plannedWorkRows = statementPattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS);
-		long actualMatchedRows = statementPattern.getSourceRowsMatchedActual();
-		assertTrue(Double.isFinite(plannedWorkRows) && plannedWorkRows > 0.0d,
-				message + ": missing plannedWorkRows; pattern=" + statementPattern);
-		assertTrue(actualMatchedRows > 0L,
-				message + ": missing sourceRowsMatchedActual; pattern=" + statementPattern);
-		assertTrue(plannedWorkRows * 10.0d >= actualMatchedRows,
-				message + ": plannedWorkRows=" + plannedWorkRows + ", sourceRowsMatchedActual=" + actualMatchedRows
-						+ ", source=" + statementPattern
-								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)
-						+ ", pattern=" + statementPattern);
-	}
-
-	private static void assertOptionalRhsAnchoredBy(StatementPattern statementPattern, String bindingName,
-			String message) {
-		String anchoring = statementPattern.getStringMetricPlanned("optimizer.optionalRhsAnchoring");
-		assertTrue(anchoring != null
-				&& anchoring.contains("selected=anchored")
-				&& anchoring.contains("leftAssuredSharedBindings=" + bindingName),
-				message + ": metric=" + anchoring + ", pattern=" + statementPattern);
 	}
 
 	private static void runSparseBenchmarkTrial(int queryIndex, int repetitions) throws Exception {

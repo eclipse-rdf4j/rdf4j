@@ -33,9 +33,14 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestInstance.Lifecycle;
 import org.junit.jupiter.api.io.TempDir;
 
+@TestInstance(Lifecycle.PER_CLASS)
 class LmdbEngineeringThemeQueryRegressionIT {
 
 	private static final String PERSISTENT_STORE_KEY_PREFIX = "engineering-regression";
@@ -46,171 +51,110 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	private static final String ENGINEERING_NAME = ENGINEERING_NS + "name";
 	private static final String ENGINEERING_ASSEMBLY = ENGINEERING_NS + "Assembly";
 	private static final String ENGINEERING_PART_OF = ENGINEERING_NS + "partOf";
+	private static final List<Integer> REGRESSION_PRIME_QUERY_INDEXES = List.of(2, 4, 7, 8, 9, 10);
 
-	@Test
-	void requirementExistsMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
-		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 7);
-		try {
-			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				assertQueryRegressionPasses(repository, theme, 7,
-						snapshot -> assertEngineeringQ7DevelopPlanShape(snapshot.renderedQuery().trim(),
-								snapshot.plan()));
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-		} finally {
+	@TempDir
+	private static Path dataDir;
+
+	private Path themeDir;
+
+	@BeforeAll
+	void prepareEngineeringThemeStore() throws Exception {
+		themeDir = prepareThemeStore(dataDir, Theme.ENGINEERING);
+	}
+
+	@AfterAll
+	void deleteEngineeringThemeStore() {
+		if (themeDir != null) {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
-	void assemblyOptionalMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
-		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 10);
-		try {
-			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				assertQueryRegressionPasses(repository, theme, 10, snapshot -> {
+	void requirementExistsMinusUsesDevelopPlanShape() throws Exception {
+		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 7,
+				snapshot -> assertEngineeringQ7DevelopPlanShape(snapshot.renderedQuery().trim(), snapshot.plan())));
+	}
+
+	@Test
+	void assemblyOptionalMinusUsesDevelopPlanShape() throws Exception {
+		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 10,
+				snapshot -> {
 					assertEngineeringQ10DevelopRenderedShape(snapshot.renderedQuery().trim(), snapshot.plan());
 					assertEngineeringQ10DevelopPlanShape(snapshot.plan());
-				});
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-		} finally {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
-		}
+				}));
 	}
 
 	@Test
-	void componentNameFilterUsesFiniteValuesAnchor(@TempDir Path dataDir) throws Exception {
-		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 4);
-		try {
-			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				assertQueryRegressionPasses(repository, theme, 4,
-						snapshot -> assertEngineeringQ4FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan()));
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-		} finally {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
-		}
+	void componentNameFilterUsesFiniteValuesAnchor() throws Exception {
+		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 4,
+				snapshot -> assertEngineeringQ4FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan())));
 	}
 
 	@Test
-	void assemblyComponentCountsKeepsFastValuesFilterPlanShape(@TempDir Path dataDir) throws Exception {
-		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
-		try {
-			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				assertQueryRegressionPasses(repository, theme, 2,
-						snapshot -> assertEngineeringQ2FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan()));
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-		} finally {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
-		}
+	void assemblyComponentCountsKeepsFastValuesFilterPlanShape() throws Exception {
+		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 2,
+				snapshot -> assertEngineeringQ2FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan())));
 	}
 
 	@Test
-	void assemblyNameTypePartOfSketchSurfaceUsesFiniteBranches(@TempDir Path dataDir) throws Exception {
-		Path themeDir = prepareThemeStore(dataDir, Theme.ENGINEERING, 2);
-		try {
-			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				repository.init();
-				SketchBasedJoinEstimator estimator = BenchmarkJoinEstimatorSupport.resolveEstimator(store);
-				double rows = 0.0d;
-				StringBuilder diagnostics = new StringBuilder();
-				for (int assemblyIndex = 1; assemblyIndex <= 3; assemblyIndex++) {
-					String assemblyName = "Assembly " + assemblyIndex;
-					StatementPattern name = new StatementPattern(Var.of("assembly"),
-							Var.of("namePredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_NAME)),
-							Var.of("assemblyName", SimpleValueFactory.getInstance().createLiteral(assemblyName)));
-					StatementPattern type = new StatementPattern(Var.of("assembly"),
-							Var.of("typePredicate", RDF.TYPE),
-							Var.of("type", SimpleValueFactory.getInstance().createIRI(ENGINEERING_ASSEMBLY)));
-					StatementPattern partOf = new StatementPattern(Var.of("component"),
-							Var.of("partOfPredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_PART_OF)),
-							Var.of("assembly"));
-					double nameRows = estimator.estimateJoinSurfaceRows(List.of(name), name, "assembly");
-					double nameTypeRows = estimator.estimateJoinSurfaceRows(List.of(name), type, "assembly");
-					double branchRows = estimator.estimateJoinSurfaceRows(List.of(name, type), partOf, "assembly");
-					rows += branchRows;
-					diagnostics.append(assemblyName)
-							.append(": name=")
-							.append(nameRows)
-							.append(", nameType=")
-							.append(nameTypeRows)
-							.append(", branch=")
-							.append(branchRows)
-							.append('\n');
-				}
-				assertMetricAtLeast("surfaceRows=" + rows + "\n" + diagnostics, "surfaceRows", 315.0d,
-						"Finite assembly-name branches should estimate the joined assembly/component surface");
-			} finally {
-				shutdownAndRelease(repository, store);
+	void assemblyNameTypePartOfSketchSurfaceUsesFiniteBranches() throws Exception {
+		assertWithEngineeringStore((repository, store) -> {
+			repository.init();
+			SketchBasedJoinEstimator estimator = BenchmarkJoinEstimatorSupport.resolveEstimator(store);
+			double rows = 0.0d;
+			StringBuilder diagnostics = new StringBuilder();
+			for (int assemblyIndex = 1; assemblyIndex <= 3; assemblyIndex++) {
+				String assemblyName = "Assembly " + assemblyIndex;
+				StatementPattern name = new StatementPattern(Var.of("assembly"),
+						Var.of("namePredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_NAME)),
+						Var.of("assemblyName", SimpleValueFactory.getInstance().createLiteral(assemblyName)));
+				StatementPattern type = new StatementPattern(Var.of("assembly"),
+						Var.of("typePredicate", RDF.TYPE),
+						Var.of("type", SimpleValueFactory.getInstance().createIRI(ENGINEERING_ASSEMBLY)));
+				StatementPattern partOf = new StatementPattern(Var.of("component"),
+						Var.of("partOfPredicate", SimpleValueFactory.getInstance().createIRI(ENGINEERING_PART_OF)),
+						Var.of("assembly"));
+				double nameRows = estimator.estimateJoinSurfaceRows(List.of(name), name, "assembly");
+				double nameTypeRows = estimator.estimateJoinSurfaceRows(List.of(name), type, "assembly");
+				double branchRows = estimator.estimateJoinSurfaceRows(List.of(name, type), partOf, "assembly");
+				rows += branchRows;
+				diagnostics.append(assemblyName)
+						.append(": name=")
+						.append(nameRows)
+						.append(", nameType=")
+						.append(nameTypeRows)
+						.append(", branch=")
+						.append(branchRows)
+						.append('\n');
 			}
-		} finally {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
-		}
+			assertMetricAtLeast("surfaceRows=" + rows + "\n" + diagnostics, "surfaceRows", 315.0d,
+					"Finite assembly-name branches should estimate the joined assembly/component surface");
+		});
 	}
 
 	@Test
-	void componentRequirementAggregationKeepsBoundLookupCardinality(@TempDir Path dataDir) throws Exception {
-		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 8);
-		try {
-			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				assertQueryRegressionPasses(repository, theme, 8, snapshot -> {
+	void componentRequirementAggregationKeepsBoundLookupCardinality() throws Exception {
+		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 8,
+				snapshot -> {
 					assertEngineeringQ8FastPlanShape(snapshot.renderedQuery().trim(), snapshot.plan());
-				});
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-		} finally {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
-		}
+				}));
 	}
 
 	@Test
-	void engineeringQ9KeepsOptionalNameExistsCombinedFilterShape(@TempDir Path dataDir) throws Exception {
-		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 9);
-		try {
-			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
+	void engineeringQ9KeepsOptionalNameExistsCombinedFilterShape() throws Exception {
+		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 9,
+				snapshot -> {
 					assertEngineeringQ9FastRenderedShape(snapshot.renderedQuery().trim(), snapshot.plan());
 					assertEngineeringQ9FastPlanShape(snapshot.plan());
-				});
-			} finally {
-				shutdownAndRelease(repository, store);
-			}
-		} finally {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
-		}
+				}));
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme, int queryIndexToPrime) throws Exception {
+	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve(theme.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "-q" + queryIndexToPrime,
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name(),
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -218,7 +162,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadData(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, theme, queryIndexToPrime);
+								primeLearnedFilterStats(repository, theme, REGRESSION_PRIME_QUERY_INDEXES);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -231,6 +175,20 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		return preparedStore.storeDirectory();
 	}
 
+	private void assertWithEngineeringRepository(RepositoryAssertion assertion) throws Exception {
+		assertWithEngineeringStore((repository, store) -> assertion.assertWith(repository));
+	}
+
+	private void assertWithEngineeringStore(StoreAssertion assertion) throws Exception {
+		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			assertion.assertWith(repository, store);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -240,13 +198,15 @@ class LmdbEngineeringThemeQueryRegressionIT {
 		}
 	}
 
-	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, int queryIndex) {
-		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
-		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
-		long actual = executeQuery(repository, query);
-		if (actual != expected) {
-			throw new AssertionError("Unable to prime learned filter stats: theme=" + theme + ", queryIndex="
-					+ queryIndex + ", expected=" + expected + ", actual=" + actual);
+	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, List<Integer> queryIndexes) {
+		for (int queryIndex : queryIndexes) {
+			String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
+			long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
+			long actual = executeQuery(repository, query);
+			if (actual != expected) {
+				throw new AssertionError("Unable to prime learned filter stats: theme=" + theme + ", queryIndex="
+						+ queryIndex + ", expected=" + expected + ", actual=" + actual);
+			}
 		}
 	}
 
@@ -627,6 +587,16 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	@FunctionalInterface
 	private interface SnapshotAssertion {
 		void assertSnapshot(OptimizerSnapshot snapshot) throws Exception;
+	}
+
+	@FunctionalInterface
+	private interface RepositoryAssertion {
+		void assertWith(SailRepository repository) throws Exception;
+	}
+
+	@FunctionalInterface
+	private interface StoreAssertion {
+		void assertWith(SailRepository repository, LmdbStore store) throws Exception;
 	}
 
 	private static void assertContainsAny(String value, String... expectedTokens) {

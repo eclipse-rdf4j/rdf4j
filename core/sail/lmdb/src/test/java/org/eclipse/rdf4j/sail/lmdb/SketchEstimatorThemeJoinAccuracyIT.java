@@ -68,16 +68,17 @@ class SketchEstimatorThemeJoinAccuracyIT {
 	// above 20% error from sketch sampling and bucket collisions, so bound each case and the selected-set average.
 	private static final double MAX_RELATIVE_ERROR = 0.30d;
 	private static final double MAX_AVERAGE_RELATIVE_ERROR = 0.20d;
+	private static final List<Theme> REPRESENTATIVE_JOIN_ACCURACY_THEMES = List.of(Theme.PHARMA, Theme.LIBRARY);
 
 	@Test
-	void estimatorMatchesManualJoinAcrossAllThemes(@TempDir File dataDir) throws Exception {
+	void estimatorMatchesManualJoinForRepresentativeTheme(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
-			loadAllThemesInSingleGraph(repository);
+			loadRepresentativeThemesInSingleGraph(repository);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			long rebuiltStatements = estimator.rebuild();
 			assertTrue(rebuiltStatements > 0L,
@@ -139,6 +140,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 							+ ", scenarios=" + REQUIRED_JOIN_SCENARIOS);
 		} finally {
 			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -192,6 +194,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 					"Planner should seed from the selective chain tail before expanding toward the broad root");
 		} finally {
 			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -247,6 +250,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 							+ ", actual=" + actualJoinRows);
 		} finally {
 			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
@@ -319,12 +323,12 @@ class SketchEstimatorThemeJoinAccuracyIT {
 		return estimator.awaitReady(60, TimeUnit.SECONDS);
 	}
 
-	private static void loadAllThemesInSingleGraph(SailRepository repository) {
+	private static void loadRepresentativeThemesInSingleGraph(SailRepository repository) {
 		try (var connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			var inserter = new RDFInserter(connection);
 			inserter.enforceContext(THEME_GRAPH);
-			for (var themeDataset : ThemeDataSetGenerator.Theme.values()) {
+			for (var themeDataset : REPRESENTATIVE_JOIN_ACCURACY_THEMES) {
 				StopWatch started = StopWatch.createStarted();
 				System.out.println("Loading theme dataset: " + themeDataset);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);

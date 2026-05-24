@@ -249,49 +249,57 @@ class LmdbThemeQueryRegressionIT {
 	void sparseFeedbackTrainingRemovesQ0Q7Q8EstimatePathologies(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SPARSE;
 		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
 		try {
-			for (int queryIndex : List.of(0, 7, 8)) {
-				assertThemeQueryResult(repository, theme, queryIndex);
-				trainOperatorFeedback(repository, theme, queryIndex);
-				OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
-				assertThemeQueryResult(repository, theme, queryIndex);
-				assertContainsAny(snapshot.plan(),
-						"plannedEstimateSource=learned_operator",
-						"plannedEstimateSource=learned_left_join_surface",
-						"plannedEstimateSource=lmdb-bound-lookup-subtree");
-				if (queryIndex == 0) {
-					assertNoSaturatedOperatorEstimate(snapshot.plan(), "LeftJoin", 1_000_000_000_000.0d,
-							"SPARSE q0 should not keep a saturated bound OPTIONAL estimate after feedback");
-				} else if (queryIndex == 7) {
-					assertOperatorEstimateFloor(snapshot.plan(), "Union", 100_000.0d,
-							"SPARSE q7 should not keep under-costed live optional UNION estimates after feedback");
-				} else {
-					assertNoZeroLiveOperatorEstimate(snapshot.plan(),
-							"SPARSE q8 should not keep zero estimates for live join/filter branches after feedback");
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				for (int queryIndex : List.of(0, 7, 8)) {
+					assertThemeQueryResult(repository, theme, queryIndex);
+					trainOperatorFeedback(repository, theme, queryIndex);
+					OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
+					assertThemeQueryResult(repository, theme, queryIndex);
+					assertContainsAny(snapshot.plan(),
+							"plannedEstimateSource=learned_operator",
+							"plannedEstimateSource=learned_left_join_surface",
+							"plannedEstimateSource=lmdb-bound-lookup-subtree");
+					if (queryIndex == 0) {
+						assertNoSaturatedOperatorEstimate(snapshot.plan(), "LeftJoin", 1_000_000_000_000.0d,
+								"SPARSE q0 should not keep a saturated bound OPTIONAL estimate after feedback");
+					} else if (queryIndex == 7) {
+						assertOperatorEstimateFloor(snapshot.plan(), "Union", 100_000.0d,
+								"SPARSE q7 should not keep under-costed live optional UNION estimates after feedback");
+					} else {
+						assertNoZeroLiveOperatorEstimate(snapshot.plan(),
+								"SPARSE q8 should not keep zero estimates for live join/filter branches after feedback");
+					}
 				}
+			} finally {
+				shutdownAndRelease(repository, store);
 			}
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
 	@Test
 	void sparseQ7KeepsOfferPathBeforePersonFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SPARSE;
-		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
-			OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
-			assertBefore(snapshot.renderedQuery(),
-					"?offer <https://schema.org/itemOffered> ?work",
-					"?person <https://schema.org/memberOf> ?org",
-					"SPARSE q7 should keep the offer/work/topic/page path selective before the person fanout\n"
-							+ snapshot.plan());
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 7);
+				assertBefore(snapshot.renderedQuery(),
+						"?offer <https://schema.org/itemOffered> ?work",
+						"?person <https://schema.org/memberOf> ?org",
+						"SPARSE q7 should keep the offer/work/topic/page path selective before the person fanout\n"
+								+ snapshot.plan());
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
 		} finally {
-			shutdownAndRelease(repository, store);
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
 	}
 
