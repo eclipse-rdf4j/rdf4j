@@ -320,6 +320,29 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void distinctCursorSkipActualMetricsAreAccessOnly() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL, 3L);
+		join.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL, 2L);
+
+		String joinPlan = join.toString();
+
+		assertFalse(joinPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL), joinPlan);
+		assertFalse(joinPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL), joinPlan);
+
+		GenericPlanNode statementPattern = new GenericPlanNode("StatementPattern");
+		statementPattern.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL, 3L);
+		statementPattern.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL, 2L);
+
+		String statementPatternPlan = statementPattern.toString();
+
+		assertTrue(statementPatternPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL),
+				statementPatternPlan);
+		assertTrue(statementPatternPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL),
+				statementPatternPlan);
+	}
+
+	@Test
 	void regularJoinTypeIsHidden() {
 		GenericPlanNode join = new GenericPlanNode("Join");
 		join.setStringMetricActual("joinType", "regular join");

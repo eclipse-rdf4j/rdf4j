@@ -102,7 +102,9 @@ public class GenericPlanNode {
 			TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL,
 			TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
 			TelemetryMetricNames.INDEX_NAME,
-			TelemetryMetricNames.INDEX_NAMES);
+			TelemetryMetricNames.INDEX_NAMES,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL);
 
 	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
