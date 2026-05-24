@@ -393,7 +393,9 @@ class LmdbSketchAwareFilterPlacementIT {
 							.orElseThrow();
 
 					assertTrue(withFilter.getEstimatedFinalRows() < withoutFilter.getEstimatedFinalRows(),
-							"Expected unlocked deferred filter pass ratio to shrink final rows");
+							"Expected unlocked deferred filter pass ratio to shrink final rows. without="
+									+ withoutFilter.getEstimatedFinalRows() + ", with="
+									+ withFilter.getEstimatedFinalRows() + ", plan=" + describePlan(withFilter));
 					assertTrue(withFilter.getSteps()
 							.stream()
 							.anyMatch(step -> step.getStringMetrics()
@@ -667,6 +669,38 @@ class LmdbSketchAwareFilterPlacementIT {
 
 	private static void assertCriteriaEventually(String criteria, CriteriaAssertion assertion) throws Exception {
 		LmdbPlannerAwait.awaitPlannerAssertion(criteria, assertion::assertPasses);
+	}
+
+	private static String describePlan(JoinOrderPlanner.JoinOrderPlan plan) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("rows=")
+				.append(plan.getEstimatedFinalRows())
+				.append(", work=")
+				.append(plan.getEstimatedTotalWork())
+				.append(", summary=")
+				.append(plan.getSummaryStringMetrics())
+				.append(", steps=[");
+		for (JoinOrderPlanner.PlanStep step : plan.getSteps()) {
+			if (builder.charAt(builder.length() - 1) != '[') {
+				builder.append(", ");
+			}
+			builder.append("{before=")
+					.append(step.getBoundVarsBefore())
+					.append(", factorRows=")
+					.append(step.getFactorOutputRows())
+					.append(", prefixRows=")
+					.append(step.getPrefixOutputRows())
+					.append(", work=")
+					.append(step.getStepWorkRows())
+					.append(", filters=")
+					.append(step.getAppliedFilterIndexes())
+					.append(", strings=")
+					.append(step.getStringMetrics())
+					.append(", doubles=")
+					.append(step.getDoubleMetrics())
+					.append('}');
+		}
+		return builder.append(']').toString();
 	}
 
 	private static <T> T awaitCriteria(String criteria, CriteriaProbe<T> probe) throws Exception {

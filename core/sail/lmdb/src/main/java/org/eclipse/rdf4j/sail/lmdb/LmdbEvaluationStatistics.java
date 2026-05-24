@@ -603,11 +603,14 @@ class LmdbEvaluationStatistics
 					double factorOutputRows = step.getFactorOutputRows();
 					double prefixOutputRows = step.getPrefixOutputRows();
 					double stepWorkRows = step.getStepWorkRows();
+					boolean hasDeferredFilterAction = !step.getAppliedFilterIndexes().isEmpty()
+							|| step.getStringMetrics()
+									.containsKey(TelemetryMetricNames.UNLOCKED_FILTERS);
 					if (hasFiniteDerivedSurfaceSource(refinedEstimate)
 							|| refinedEstimate.isRepeatedInvocationsCosted()) {
 						if (isFiniteNonNegative(refinedEstimate.getOutputRows())) {
 							factorOutputRows = refinedEstimate.getOutputRows();
-							if (refinedEstimate.isRepeatedInvocationsCosted()) {
+							if (refinedEstimate.isRepeatedInvocationsCosted() && !hasDeferredFilterAction) {
 								prefixOutputRows = factorOutputRows;
 							}
 						}

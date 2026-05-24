@@ -66,10 +66,12 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -255,6 +257,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			super.meet(distinct);
 		}
 
+		@Override
+		public void meet(Reduced reduced) {
+			annotateReducedPhysicalRequirements(reduced);
+			super.meet(reduced);
+		}
+
 		private void annotateDistinctPhysicalRequirements(Distinct distinct) {
 			if (!(distinct.getArg()instanceof Projection projection) || !isIdentityProjection(projection)) {
 				return;
@@ -265,6 +273,20 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, Set.of(),
 					"distinct-projection");
+		}
+
+		private void annotateReducedPhysicalRequirements(Reduced reduced) {
+			if (!(reduced.getArg()instanceof Order order)
+					|| !(order.getArg()instanceof Projection projection)
+					|| !isIdentityProjection(projection)) {
+				return;
+			}
+			Set<String> distinctVars = identityProjectionNames(projection);
+			if (distinctVars.isEmpty() || !distinctVars.containsAll(VarNameCollector.process(order.getElements()))) {
+				return;
+			}
+			annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, Set.of(),
+					"distinct-reduced-order-projection");
 		}
 
 		private void annotateDistinctPhysicalRequirements(TupleExpr tupleExpr, Set<String> distinctVars,
@@ -284,6 +306,12 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 				annotateDistinctPhysicalRequirements(projection.getArg(), distinctVars, blockedVars,
 						source + "|projection");
+			} else if (tupleExpr instanceof Order order) {
+				if (!distinctVars.containsAll(VarNameCollector.process(order.getElements()))) {
+					return;
+				}
+				annotateDistinctPhysicalRequirements(order.getArg(), distinctVars, blockedVars,
+						source + "|order");
 			} else if (tupleExpr instanceof Union union) {
 				annotateDistinctPhysicalRequirements(union.getLeftArg(), distinctVars, blockedVars,
 						source + "|unionLeft");
