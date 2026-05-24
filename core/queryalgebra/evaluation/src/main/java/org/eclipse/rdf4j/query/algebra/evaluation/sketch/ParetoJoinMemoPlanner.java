@@ -27,6 +27,8 @@ import java.util.function.ToLongFunction;
 
 final class ParetoJoinMemoPlanner<T> {
 
+	private static final int TRACE_LIMIT = 12;
+
 	private final int factorCount;
 	private final int maxPlanStepCount;
 	private final int frontierLimit;
@@ -97,7 +99,8 @@ final class ParetoJoinMemoPlanner<T> {
 		ParetoFrontier<T> finalFrontier = finalFrontier(frontierByGroup);
 		stats.finalFrontierWidth = finalFrontier == null ? 0 : finalFrontier.size();
 		return new Result<>(finalFrontier == null || finalFrontier.isEmpty() ? null : finalFrontier.best().value(),
-				stats.toStats(), finalFrontier == null ? List.of() : finalFrontier.entries());
+				stats.toStats(), finalFrontier == null ? List.of() : finalFrontier.entries(),
+				stats.consideredTrace(), stats.rejectedTrace());
 	}
 
 	Result<T> planBeam() {
@@ -136,7 +139,7 @@ final class ParetoJoinMemoPlanner<T> {
 		});
 		stats.finalFrontierWidth = finalBeam.size();
 		return new Result<>(finalBeam.isEmpty() ? null : finalBeam.best().value(), stats.toStats(),
-				finalBeam.entries());
+				finalBeam.entries(), stats.consideredTrace(), stats.rejectedTrace());
 	}
 
 	private FrontierStore<T> frontierStore() {
@@ -161,17 +164,32 @@ final class ParetoJoinMemoPlanner<T> {
 	private boolean add(ParetoFrontier<T> frontier, T plan, StatsBuilder stats) {
 		int dominatedBefore = frontier.dominatedRejectedCount();
 		int trimmedBefore = frontier.trimmedCount();
-		boolean accepted = frontier.add(plan, costVector.apply(plan));
+		JoinCostVector vector = costVector.apply(plan);
+		boolean accepted = frontier.add(plan, vector);
+		int dominatedDelta = frontier.dominatedRejectedCount() - dominatedBefore;
+		int trimmedDelta = frontier.trimmedCount() - trimmedBefore;
+		String status = accepted ? "accepted" : rejectedStatus(dominatedDelta, trimmedDelta);
+		stats.recordCandidate(plan, vector, status, planStepCount.applyAsInt(plan), accepted);
 		stats.candidates++;
 		if (accepted) {
 			stats.accepted++;
 		} else {
 			stats.rejectedAlternatives++;
 		}
-		stats.dominated += frontier.dominatedRejectedCount() - dominatedBefore;
-		stats.trimmed += frontier.trimmedCount() - trimmedBefore;
+		stats.dominated += dominatedDelta;
+		stats.trimmed += trimmedDelta;
 		stats.maxFrontierWidth = Math.max(stats.maxFrontierWidth, frontier.size());
 		return accepted;
+	}
+
+	private String rejectedStatus(int dominatedDelta, int trimmedDelta) {
+		if (dominatedDelta > 0) {
+			return "dominated";
+		}
+		if (trimmedDelta > 0) {
+			return "trimmed";
+		}
+		return "rejected";
 	}
 
 	private boolean addToMemoGroup(FrontierStore<T> frontierByGroup, DepthKeyQueue groupsByDepth, T plan,
@@ -189,7 +207,7 @@ final class ParetoJoinMemoPlanner<T> {
 		return accepted;
 	}
 
-	private static final class StatsBuilder {
+	private final class StatsBuilder {
 		private int candidates;
 		private int accepted;
 		private int rejectedAlternatives;
@@ -197,18 +215,46 @@ final class ParetoJoinMemoPlanner<T> {
 		private int trimmed;
 		private int maxFrontierWidth;
 		private int finalFrontierWidth;
+		private final List<TraceEntry<T>> consideredTrace = new ArrayList<>(TRACE_LIMIT);
+		private final List<TraceEntry<T>> rejectedTrace = new ArrayList<>(TRACE_LIMIT);
+
+		private void recordCandidate(T plan, JoinCostVector vector, String status, int depth, boolean accepted) {
+			TraceEntry<T> entry = new TraceEntry<>(plan, vector, status, depth);
+			appendBounded(consideredTrace, entry);
+			if (!accepted) {
+				appendBounded(rejectedTrace, entry);
+			}
+		}
+
+		private void appendBounded(List<TraceEntry<T>> trace, TraceEntry<T> entry) {
+			if (trace.size() < TRACE_LIMIT) {
+				trace.add(entry);
+			}
+		}
 
 		private Stats toStats() {
 			return new Stats(candidates, accepted, rejectedAlternatives, dominated, trimmed, maxFrontierWidth,
 					finalFrontierWidth);
 		}
+
+		private List<TraceEntry<T>> consideredTrace() {
+			return List.copyOf(consideredTrace);
+		}
+
+		private List<TraceEntry<T>> rejectedTrace() {
+			return List.copyOf(rejectedTrace);
+		}
 	}
 
-	record Result<T> (T best, Stats stats, List<ParetoFrontier.Entry<T>> finalEntries) {
+	record Result<T> (T best, Stats stats, List<ParetoFrontier.Entry<T>> finalEntries,
+			List<TraceEntry<T>> consideredTrace, List<TraceEntry<T>> rejectedTrace) {
 	}
 
 	record Stats(int candidates, int accepted, int rejectedAlternatives, int dominated, int trimmed,
 			int maxFrontierWidth, int finalFrontierWidth) {
+	}
+
+	record TraceEntry<T> (T plan, JoinCostVector costVector, String status, int depth) {
 	}
 
 	private static final class DepthKeyQueue {

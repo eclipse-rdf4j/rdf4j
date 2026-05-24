@@ -260,6 +260,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(exploration.contains("finalFrontierWidth=6"), exploration);
 		assertTrue(exploration.contains("finalFrontier=[{order="),
 				"Explain telemetry should show the bounded Pareto frontier alternatives: " + exploration);
+		assertTrue(exploration.contains("considered=[{status=accepted"),
+				"Explain telemetry should show sampled alternatives the planner considered: " + exploration);
 		Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
 		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_CANDIDATE_COUNT), 0.0d);
 		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_ACCEPTED_ALTERNATIVE_COUNT), 0.0d);
@@ -268,6 +270,44 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(0.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_TRIMMED_ALTERNATIVE_COUNT), 0.0d);
 		assertEquals(6.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_FINAL_FRONTIER_WIDTH), 0.0d);
 		assertEquals(6.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_MAX_FRONTIER_WIDTH), 0.0d);
+	}
+
+	@Test
+	void paretoPlanSummaryExposesRejectedCandidateReasons() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI pA = VF.createIRI("urn:frontier-rejected:a");
+		IRI pB = VF.createIRI("urn:frontier-rejected:b");
+		IRI pC = VF.createIRI("urn:frontier-rejected:c");
+		store.add(VF.createStatement(VF.createIRI("urn:a:s"), pA, VF.createIRI("urn:a:o")));
+		store.add(VF.createStatement(VF.createIRI("urn:b:s"), pB, VF.createIRI("urn:b:o")));
+		store.add(VF.createStatement(VF.createIRI("urn:c:s"), pC, VF.createIRI("urn:c:o")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		StatementPattern a = pattern("aS", pA, "aO");
+		StatementPattern b = pattern("bS", pB, "bO");
+		StatementPattern c = pattern("cS", pC, "cO");
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == b && boundVars.contains("aS")) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+			}
+			if (factor == a && boundVars.contains("bS")) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(10.0d, 1.0d));
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(a, b, c), Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING,
+						costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		String exploration = plan.getSummaryStringMetrics()
+				.get(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION);
+		assertTrue(exploration.contains("rejected=[{status=dominated"),
+				"Explain telemetry should show sampled rejected alternatives and reason: " + exploration);
 	}
 
 	@Test
