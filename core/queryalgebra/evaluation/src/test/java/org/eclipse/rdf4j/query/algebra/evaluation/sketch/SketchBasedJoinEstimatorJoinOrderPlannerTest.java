@@ -227,7 +227,7 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void paretoPlanSummaryTracksFinalFrontierWidthWithoutDiagnostics() {
+	void paretoPlanSummaryExposesBoundedFrontierAndCountersWithoutDiagnostics() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:frontier:a");
 		IRI pB = VF.createIRI("urn:frontier:b");
@@ -258,8 +258,16 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(exploration.contains("mode=pareto-memo"), exploration);
 		assertTrue(exploration.contains("finalVector="), exploration);
 		assertTrue(exploration.contains("finalFrontierWidth=6"), exploration);
-		assertTrue(!exploration.contains("finalFrontier=["),
-				"Compact frontier alternatives should stay behind trace diagnostics: " + exploration);
+		assertTrue(exploration.contains("finalFrontier=[{order="),
+				"Explain telemetry should show the bounded Pareto frontier alternatives: " + exploration);
+		Map<String, Double> metrics = plan.getSummaryDoubleMetrics();
+		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_CANDIDATE_COUNT), 0.0d);
+		assertEquals(15.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_ACCEPTED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(0.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_REJECTED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(0.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_DOMINATED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(0.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_TRIMMED_ALTERNATIVE_COUNT), 0.0d);
+		assertEquals(6.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_FINAL_FRONTIER_WIDTH), 0.0d);
+		assertEquals(6.0d, metrics.get(TelemetryMetricNames.OPTIMIZER_MAX_FRONTIER_WIDTH), 0.0d);
 	}
 
 	@Test

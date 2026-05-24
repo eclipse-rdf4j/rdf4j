@@ -189,6 +189,12 @@ public final class TelemetryMetricNames {
 	public static final String OPTIMIZER_SCORE = OPTIMIZER_PREFIX + "score";
 	public static final String OPTIMIZER_SCORE_COMPONENTS = OPTIMIZER_PREFIX + "scoreComponents";
 	public static final String OPTIMIZER_CANDIDATE_COUNT = OPTIMIZER_PREFIX + "candidateCount";
+	public static final String OPTIMIZER_ACCEPTED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "acceptedAlternativeCount";
+	public static final String OPTIMIZER_REJECTED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "rejectedAlternativeCount";
+	public static final String OPTIMIZER_DOMINATED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "dominatedAlternativeCount";
+	public static final String OPTIMIZER_TRIMMED_ALTERNATIVE_COUNT = OPTIMIZER_PREFIX + "trimmedAlternativeCount";
+	public static final String OPTIMIZER_MAX_FRONTIER_WIDTH = OPTIMIZER_PREFIX + "maxFrontierWidth";
+	public static final String OPTIMIZER_FINAL_FRONTIER_WIDTH = OPTIMIZER_PREFIX + "finalFrontierWidth";
 	public static final String OPTIMIZER_REJECTION_REASON = OPTIMIZER_PREFIX + "rejectionReason";
 	public static final String OPTIMIZER_ESTIMATE_SOURCE = OPTIMIZER_PREFIX + "estimateSource";
 	public static final String OPTIMIZER_PLANNER_ID = OPTIMIZER_PREFIX + "plannerId";

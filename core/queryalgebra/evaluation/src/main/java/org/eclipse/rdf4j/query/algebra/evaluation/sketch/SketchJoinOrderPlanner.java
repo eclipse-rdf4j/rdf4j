@@ -426,10 +426,7 @@ final class SketchJoinOrderPlanner {
 		logicalAcceptedCount = factors.size();
 		logicalFinalFrontierWidth = 1;
 		logicalMaxFrontierWidth = 1;
-		if (traceDiagnostics) {
-			logicalFinalFrontierSummary = "[{order=" + describeFactorOrder(result) + ", vector="
-					+ result.costVector() + "}]";
-		}
+		logicalFinalFrontierSummary = "[]";
 		recordDebug("fixed result: order=" + describeFactorOrder(result) + " estimate="
 				+ result.estimate().summary() + " workRows=" + result.totalWork());
 		return new PlanOutcome(Optional.of(toJoinOrderPlan(result, algorithm)),
@@ -478,6 +475,19 @@ final class SketchJoinOrderPlanner {
 		}
 		Map<String, Double> summaryDoubleMetrics = new HashMap<>();
 		summaryDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, result.totalWork());
+		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_CANDIDATE_COUNT, (double) logicalCandidateCount);
+		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_ACCEPTED_ALTERNATIVE_COUNT,
+				(double) logicalAcceptedCount);
+		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_REJECTED_ALTERNATIVE_COUNT,
+				(double) logicalRejectedAlternatives);
+		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_DOMINATED_ALTERNATIVE_COUNT,
+				(double) logicalDominatedCount);
+		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_TRIMMED_ALTERNATIVE_COUNT,
+				(double) logicalTrimmedCount);
+		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_MAX_FRONTIER_WIDTH,
+				(double) logicalMaxFrontierWidth);
+		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_FINAL_FRONTIER_WIDTH,
+				(double) logicalFinalFrontierWidth);
 		if (sketchIntersectionUpperBoundUses > 0) {
 			summaryDoubleMetrics.put("optimizer.sketchIntersectionUpperBoundUses",
 					(double) sketchIntersectionUpperBoundUses);
@@ -2964,10 +2974,6 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private void captureFinalFrontierSummary(ParetoJoinMemoPlanner.Result<StatePlan> result) {
-		if (!traceDiagnostics) {
-			logicalFinalFrontierSummary = "[]";
-			return;
-		}
 		if (result == null || result.finalEntries().isEmpty()) {
 			logicalFinalFrontierSummary = "[]";
 			return;
@@ -6221,10 +6227,8 @@ final class SketchJoinOrderPlanner {
 				.append(logicalFinalFrontierWidth)
 				.append(", finalVector=")
 				.append(finalVector);
-		if (traceDiagnostics) {
-			builder.append(", finalFrontier=")
-					.append(logicalFinalFrontierSummary);
-		}
+		builder.append(", finalFrontier=")
+				.append(logicalFinalFrontierSummary);
 		return builder.toString();
 	}
 

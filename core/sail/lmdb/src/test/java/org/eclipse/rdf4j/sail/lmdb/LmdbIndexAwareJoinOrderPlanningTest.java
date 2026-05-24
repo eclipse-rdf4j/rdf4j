@@ -200,6 +200,11 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 						optimizedPlan);
 				assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES + "="),
 						optimizedPlan);
+				assertTrue(optimizedPlan.contains(TelemetryMetricNames.OPTIMIZER_CANDIDATE_COUNT + "="),
+						optimizedPlan);
+				assertTrue(optimizedPlan.contains(TelemetryMetricNames.OPTIMIZER_FINAL_FRONTIER_WIDTH + "="),
+						optimizedPlan);
+				assertTrue(optimizedPlan.contains("finalFrontier="), optimizedPlan);
 			}
 		} finally {
 			repository.shutDown();
