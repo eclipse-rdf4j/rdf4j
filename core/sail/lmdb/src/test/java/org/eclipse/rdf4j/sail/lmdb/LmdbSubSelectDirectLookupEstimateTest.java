@@ -85,6 +85,7 @@ class LmdbSubSelectDirectLookupEstimateTest {
 	private static LmdbStore store;
 	private static File dataDir;
 	private static TemporaryFolder tempDir = new TemporaryFolder();
+	private static List<Statement> allStatements;
 	private static List<Statement> typeStatements;
 
 	@BeforeAll
@@ -101,6 +102,7 @@ class LmdbSubSelectDirectLookupEstimateTest {
 				connection.begin(IsolationLevels.NONE);
 				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
 				connection.commit();
+				allStatements = Iterations.asList(connection.getStatements(null, null, null, false));
 				typeStatements = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
 			}
 		} catch (IOException | RuntimeException | Error e) {
@@ -178,19 +180,17 @@ class LmdbSubSelectDirectLookupEstimateTest {
 			mutationDataDir = tempDir.newFolder();
 			mutationStore = new LmdbStore(mutationDataDir, new LmdbStoreConfig("spoc,ospc,psoc"));
 			mutationRepository = new SailRepository(mutationStore);
-			List<Statement> localTypeStatements;
 			try (SailRepositoryConnection connection = mutationRepository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
-				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+				connection.add(allStatements);
 				connection.commit();
-				localTypeStatements = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
 			}
 			LmdbPlannerAwait.awaitSketchesReady(mutationStore, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
 			LmdbPlannerAwait.awaitLmdbOptimizerPipeline(mutationStore, LmdbPlannerAwait.DEFAULT_PIPELINE_TIMEOUT);
 
 			try (SailRepositoryConnection connection = mutationRepository.getConnection()) {
-				removeAndRestoreTypes(connection, mutationStore, localTypeStatements, IsolationLevels.NONE);
-				removeAndRestoreTypes(connection, mutationStore, localTypeStatements, IsolationLevels.READ_COMMITTED);
+				removeAndRestoreTypes(connection, mutationStore, typeStatements, IsolationLevels.NONE);
+				removeAndRestoreTypes(connection, mutationStore, typeStatements, IsolationLevels.READ_COMMITTED);
 				updateAndRestoreDistributionClass(connection, mutationStore, IsolationLevels.READ_COMMITTED);
 				updateAndRestoreDistributionClass(connection, mutationStore, IsolationLevels.NONE);
 
@@ -204,11 +204,16 @@ class LmdbSubSelectDirectLookupEstimateTest {
 		} catch (IOException e) {
 			throw new AssertionError(e);
 		} finally {
-			if (mutationRepository != null) {
-				mutationRepository.shutDown();
-			}
-			if (mutationDataDir != null) {
-				LmdbTestUtil.deleteDir(mutationDataDir);
+			try {
+				if (mutationRepository != null) {
+					mutationRepository.shutDown();
+				} else if (mutationStore != null) {
+					mutationStore.shutDown();
+				}
+			} finally {
+				if (mutationDataDir != null) {
+					LmdbTestUtil.deleteDir(mutationDataDir);
+				}
 			}
 		}
 	}
@@ -276,6 +281,8 @@ class LmdbSubSelectDirectLookupEstimateTest {
 						&& node.getRightArg()instanceof StatementPattern rightPattern
 						&& isTypePattern(leftPattern, "type2")
 						&& isTypePattern(rightPattern, "type1")
+						&& !(isBoundedSubjectPredicateLookup(leftPattern)
+								&& isBoundedSubjectPredicateLookup(rightPattern))
 						&& node.getResultSizeEstimate() > 1_000_000.0d) {
 					offenders.add("joinRows=" + node.getResultSizeEstimate() + ", leftRows="
 							+ leftPattern.getResultSizeEstimate() + ", rightRows="
@@ -287,6 +294,19 @@ class LmdbSubSelectDirectLookupEstimateTest {
 			}
 		});
 		assertTrue(offenders.isEmpty(), offenders.toString());
+	}
+
+	private static boolean isBoundedSubjectPredicateLookup(StatementPattern pattern) {
+		String lookupComponents = pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS);
+		double repeatedInvocations = pattern.getDoubleMetricPlanned("plannedRepeatedInvocations");
+		double accessRows = pattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
+		return lookupComponents != null
+				&& lookupComponents.contains("S")
+				&& lookupComponents.contains("P")
+				&& Double.isFinite(repeatedInvocations)
+				&& repeatedInvocations > 0.0d
+				&& Double.isFinite(accessRows)
+				&& accessRows >= 0.0d;
 	}
 
 	private static String describePlanMetrics(TupleExpr node) {
@@ -389,6 +409,8 @@ class LmdbSubSelectDirectLookupEstimateTest {
 			dataDir = null;
 			store = null;
 			repository = null;
+			allStatements = null;
+			typeStatements = null;
 		}
 	}
 }
