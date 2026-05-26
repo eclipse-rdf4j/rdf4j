@@ -24,6 +24,10 @@ final class ConfigUtil {
 		return createConfig(DEFAULT_TRIPLE_INDEXES);
 	}
 
+	static LmdbStoreConfig createConfig(boolean bloomFiltersEnabled) {
+		return createConfig(DEFAULT_TRIPLE_INDEXES).setBloomFiltersEnabled(bloomFiltersEnabled);
+	}
+
 	static LmdbStoreConfig createAllIndexesConfig() {
 		return createConfig(ALL_TRIPLE_INDEXES);
 	}

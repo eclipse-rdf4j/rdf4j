@@ -41,6 +41,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -257,6 +259,7 @@ class LmdbSailStore implements SailStore {
 			var valueStore = new ValueStore(new File(dataDir, "values"), config);
 			this.valueStore = valueStore;
 			tripleStore = new TripleStore(new File(dataDir, "triples"), config, valueStore);
+			tripleStore.setRdfTypeId(valueStore.getId(RDF.TYPE));
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
 		} finally {
@@ -399,6 +402,10 @@ class LmdbSailStore implements SailStore {
 				super.handleClose();
 			}
 		};
+	}
+
+	ValueStore getValueStore() {
+		return valueStore;
 	}
 
 	/**
@@ -688,6 +695,9 @@ class LmdbSailStore implements SailStore {
 						predicateCache.put(pred, predicateId);
 					}
 					bulk.predicates[batchIndex] = predicateId;
+					if (RDF.TYPE.equals(pred)) {
+						tripleStore.setRdfTypeId(predicateId);
+					}
 
 					bulk.objects[batchIndex] = valueStore.storeValue(obj);
 					if (context == null) {
@@ -792,6 +802,9 @@ class LmdbSailStore implements SailStore {
 						q.c = contextId;
 					}
 					q.explicit = explicit;
+					if (RDF.TYPE.equals(pred)) {
+						tripleStore.setRdfTypeId(q.p);
+					}
 
 					if (multiThreadingActive) {
 						while (!opQueue.add(q)) {
@@ -935,6 +948,9 @@ class LmdbSailStore implements SailStore {
 				q.o = valueStore.storeValue(obj);
 				q.c = context == null ? 0 : valueStore.storeValue(context);
 				q.explicit = explicit;
+				if (RDF.TYPE.equals(pred)) {
+					tripleStore.setRdfTypeId(q.p);
+				}
 
 				submitOperation(q);
 			} catch (IOException e) {
@@ -1094,7 +1110,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private final class LmdbSailDataset implements SailDataset {
+	private final class LmdbSailDataset implements SailDataset, LmdbBloomFilterSnapshot {
 
 		private final boolean explicit;
 		private final Txn txn;
@@ -1112,6 +1128,17 @@ class LmdbSailStore implements SailStore {
 		public void close() {
 			// close the associated txn
 			txn.close();
+		}
+
+		@Override
+		public boolean mightMatchBloom(Value value, List<List<LmdbCountingBloomStore.Filter>> alternatives)
+				throws QueryEvaluationException {
+			try {
+				long valueId = valueStore.getId(value);
+				return valueId != LmdbValue.UNKNOWN_ID && tripleStore.mightMatchBloom(txn, alternatives, valueId);
+			} catch (IOException e) {
+				throw new QueryEvaluationException("Unable to evaluate LMDB bloom filter gate", e);
+			}
 		}
 
 		@Override

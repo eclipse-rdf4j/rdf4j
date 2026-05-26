@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -57,10 +58,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms32G", "-Xmx32G" })
-@Measurement(iterations = 10, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -75,8 +76,11 @@ public class ThemeQueryBenchmark {
 	private static final long EXPECTED_VALUES_DATA_SIZE_BYTES = 713687040L;
 
 	@Param({
-			// "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
-			"11", "12" })
+			"0", "1", "2",
+//			"3", "4", "5", "6", "7", "8", "9",
+//			"10",
+//			"11", "12"
+	})
 	public int z_queryIndex;
 
 	@Param({
@@ -91,6 +95,9 @@ public class ThemeQueryBenchmark {
 	})
 	public String themeName;
 
+	@Param({ "true", "false" })
+	public boolean bloomFiltersEnabled;
+
 	private SailRepository repository;
 	private LmdbStore store;
 	private LmdbStoreConfig storeConfig;
@@ -100,10 +107,10 @@ public class ThemeQueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
-				.include("ThemeQueryBenchmark")
+				.include("ThemeQueryBenchmark.executeQuery")
 				.forks(0)
 				.measurementTime(TimeValue.milliseconds(1000))
-				.measurementIterations(10)
+				.measurementIterations(1)
 				.measurementBatchSize(1)
 				.warmupIterations(0)
 				.build();
@@ -118,12 +125,17 @@ public class ThemeQueryBenchmark {
 		if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = ConfigUtil.createConfig(bloomFiltersEnabled);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
 		if (QueryPlanCapture.isCaptureEnabled()) {
 			captureQueryPlanSnapshot();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			System.out.println(explain);
 		}
 	}
 
@@ -132,7 +144,7 @@ public class ThemeQueryBenchmark {
 		try (var connection = repository.getConnection()) {
 			long count;
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(10);
+			tupleQuery.setMaxExecutionTime(0);
 			try (var evaluate = tupleQuery.evaluate()) {
 				count = evaluate
 						.stream()
@@ -179,7 +191,7 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
 
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = ConfigUtil.createConfig(bloomFiltersEnabled);
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		loadData();

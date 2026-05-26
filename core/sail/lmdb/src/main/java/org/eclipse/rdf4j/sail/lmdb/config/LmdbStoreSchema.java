@@ -97,6 +97,26 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI VALUE_HASH_CACHE_ENABLED;
 
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#bloomFiltersEnabled</tt>
+	 */
+	public final static IRI BLOOM_FILTERS_ENABLED;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#bloomFilterTargetFalsePositiveRate</tt>
+	 */
+	public final static IRI BLOOM_FILTER_TARGET_FALSE_POSITIVE_RATE;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#bloomFilterExpectedElementsPerFilter</tt>
+	 */
+	public final static IRI BLOOM_FILTER_EXPECTED_ELEMENTS_PER_FILTER;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#bloomFilterPartitionCounters</tt>
+	 */
+	public final static IRI BLOOM_FILTER_PARTITION_COUNTERS;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
@@ -113,5 +133,11 @@ public class LmdbStoreSchema {
 		PAGE_CARDINALITY_ESTIMATOR = factory.createIRI(NAMESPACE, "pageCardinalityEstimator");
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
 		VALUE_HASH_CACHE_ENABLED = factory.createIRI(NAMESPACE, "valueHashCacheEnabled");
+		BLOOM_FILTERS_ENABLED = factory.createIRI(NAMESPACE, "bloomFiltersEnabled");
+		BLOOM_FILTER_TARGET_FALSE_POSITIVE_RATE = factory.createIRI(NAMESPACE,
+				"bloomFilterTargetFalsePositiveRate");
+		BLOOM_FILTER_EXPECTED_ELEMENTS_PER_FILTER = factory.createIRI(NAMESPACE,
+				"bloomFilterExpectedElementsPerFilter");
+		BLOOM_FILTER_PARTITION_COUNTERS = factory.createIRI(NAMESPACE, "bloomFilterPartitionCounters");
 	}
 }

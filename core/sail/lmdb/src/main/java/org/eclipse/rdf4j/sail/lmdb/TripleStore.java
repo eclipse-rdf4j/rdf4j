@@ -87,12 +87,15 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbCountingBloomStore.Filter;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
@@ -165,6 +168,8 @@ class TripleStore implements Closeable {
 	 */
 	private final List<TripleIndex> indexes = new ArrayList<>();
 	private final ValueStore valueStore;
+	private final LmdbCountingBloomStore bloomStore;
+	private long rdfTypeId = LmdbValue.UNKNOWN_ID;
 
 	private long env;
 	private final int contextsDbi;
@@ -173,6 +178,7 @@ class TripleStore implements Closeable {
 	private final boolean pageCardinalityEstimator;
 	private long mapSize;
 	private long writeTxn;
+	private boolean writeTxnDirty;
 	private final TxnManager txnManager;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
@@ -201,8 +207,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 49));
+		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred), 1 for bloom filters
+		E(mdb_env_set_maxdbs(env, 50));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -224,6 +230,7 @@ class TripleStore implements Closeable {
 			return ip.get(0);
 		});
 
+		bloomStore = config.getBloomFiltersEnabled() ? new LmdbCountingBloomStore(env, config) : null;
 		txnManager = new TxnManager(env, Mode.RESET);
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
@@ -270,6 +277,10 @@ class TripleStore implements Closeable {
 			storeProperties(propFile);
 		}
 
+		if (valueStore != null) {
+			rdfTypeId = valueStore.getId(RDF.TYPE);
+		}
+		rebuildBloomFilters();
 		resetAlignedWriteCursorState();
 	}
 
@@ -308,6 +319,49 @@ class TripleStore implements Closeable {
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	void setRdfTypeId(long rdfTypeId) {
+		this.rdfTypeId = rdfTypeId;
+	}
+
+	boolean mightMatchBloom(Txn txn, List<List<Filter>> alternatives, long value) throws IOException {
+		return bloomStore == null || bloomStore.mightContain(txn, alternatives, value);
+	}
+
+	private void rebuildBloomFilters() throws IOException {
+		if (bloomStore == null) {
+			return;
+		}
+		while (true) {
+			try {
+				transaction(env, (stack, txn) -> {
+					if (!bloomStore.requiresRebuild(txn)) {
+						return null;
+					}
+					bloomStore.reset(txn);
+					TripleIndex mainIndex = indexes.get(0);
+					for (boolean explicit : new boolean[] { true, false }) {
+						try (RecordIterator it = new LmdbRecordIterator(mainIndex, false, -1, -1, -1, -1, explicit,
+								txnManager.createTxn(txn))) {
+							long[] quad;
+							while ((quad = it.next()) != null) {
+								addBloom(txn, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], explicit);
+							}
+						}
+					}
+					return null;
+				});
+				return;
+			} catch (IOException e) {
+				if (!autoGrow || !isMapFullException(e)) {
+					throw e;
+				}
+				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, bloomStore.maxWriteBytesPerStatement());
+				E(mdb_env_set_mapsize(env, mapSize));
+				logger.debug("resized map to {} while rebuilding bloom filters", mapSize);
+			}
+		}
 	}
 
 	/**
@@ -1032,10 +1086,45 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean requiresResize() {
+		return requiresResize(0);
+	}
+
+	private boolean requiresResize(long requiredSize) {
 		if (autoGrow) {
-			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);
+			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, requiredSize);
 		} else {
 			return false;
+		}
+	}
+
+	private long bloomWriteBytesPerStatement() {
+		return bloomStore == null ? 0 : bloomStore.maxWriteBytesPerStatement();
+	}
+
+	private long bloomWriteBytesForStatements(int count) {
+		if (bloomStore == null || count <= 0) {
+			return 0;
+		}
+		long bytesPerStatement = bloomStore.maxWriteBytesPerStatement();
+		if (count > Long.MAX_VALUE / bytesPerStatement) {
+			return Long.MAX_VALUE;
+		}
+		return bytesPerStatement * count;
+	}
+
+	private void growMapAndRestartWriteTransaction(long requiredSize) throws IOException {
+		closeAlignedWriteCursors();
+		long newMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize,
+				LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize));
+		E(mdb_txn_commit(writeTxn));
+		mapSize = newMapSize;
+		E(mdb_env_set_mapsize(env, mapSize));
+		logger.debug("resized map to {} before bulk adding", mapSize);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_txn_begin(env, NULL, 0, pp));
+			writeTxn = pp.get(0);
+			writeTxnDirty = false;
 		}
 	}
 
@@ -1056,7 +1145,7 @@ class TripleStore implements Closeable {
 			keyVal.mv_data(keyBuf);
 
 			if (recordCache == null) {
-				if (requiresResize()) {
+				if (requiresResize(bloomWriteBytesPerStatement())) {
 					// map is full, resize required
 					recordCache = new TxnRecordCache(dir);
 					logger.debug("resize of map size {} required while adding - initialize record cache", mapSize);
@@ -1075,7 +1164,10 @@ class TripleStore implements Closeable {
 					}
 				}
 				// put record in cache and return immediately
-				return recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
+				boolean added = recordCache.storeRecord(quad, explicit,
+						explicit ? !mainExplicitExists : !mainInferredExists);
+				writeTxnDirty |= added;
+				return added;
 			}
 
 			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
@@ -1091,6 +1183,7 @@ class TripleStore implements Closeable {
 			}
 
 			if (stAdded) {
+				writeTxnDirty = true;
 				for (int i = 1; i < indexes.size(); i++) {
 
 					TripleIndex index = indexes.get(i);
@@ -1108,6 +1201,10 @@ class TripleStore implements Closeable {
 				}
 
 				incrementContext(stack, context);
+				if (foundImplicit) {
+					removeBloom(subj, pred, obj, false);
+				}
+				addBloom(subj, pred, obj, explicit);
 			}
 		}
 
@@ -1122,8 +1219,20 @@ class TripleStore implements Closeable {
 		if (count == 0) {
 			return;
 		}
-		if (count == 1 || count < subj.length || recordCache != null || requiresResize()) {
+		if (count == 1 || count < subj.length) {
 			storeTriplesIndividually(subj, pred, obj, context, count, explicit);
+			return;
+		}
+		long bloomWriteBytes = bloomWriteBytesForStatements(count);
+		if (recordCache == null && requiresResize(bloomWriteBytes) && !writeTxnDirty) {
+			growMapAndRestartWriteTransaction(bloomWriteBytes);
+		}
+		if (recordCache != null || requiresResize(bloomWriteBytes)) {
+			if (recordCache == null) {
+				recordCache = new TxnRecordCache(dir);
+				logger.debug("resize of map size {} required while bulk adding - initialize record cache", mapSize);
+			}
+			storeTriplesInRecordCache(subj, pred, obj, context, count, explicit);
 			return;
 		}
 
@@ -1161,6 +1270,7 @@ class TripleStore implements Closeable {
 				}
 
 				if (rc == MDB_SUCCESS) {
+					writeTxnDirty = true;
 					sortedIndices[addedCount++] = i;
 					if (explicit) {
 						promotedFromImplicit[i] = mdb_del(writeTxn, mainIndex.getDB(false), keyVal,
@@ -1235,6 +1345,14 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
+
+			for (int i = 0; i < addedCount; i++) {
+				int statementIndex = mainOrderIndices[i];
+				if (promotedFromImplicit[statementIndex]) {
+					removeBloom(subj[statementIndex], pred[statementIndex], obj[statementIndex], false);
+				}
+				addBloom(subj[statementIndex], pred[statementIndex], obj[statementIndex], explicit);
+			}
 		}
 
 		if (remainingStart < count) {
@@ -1256,6 +1374,41 @@ class TripleStore implements Closeable {
 		for (int i = startIndex; i < count; i++) {
 			storeTriple(subj[i], pred[i], obj[i], context[i], explicit);
 		}
+	}
+
+	private void storeTriplesInRecordCache(long[] subj, long[] pred, long[] obj, long[] context, int count,
+			boolean explicit)
+			throws IOException {
+		TripleIndex mainIndex = indexes.get(0);
+		int addedCount = 0;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+
+			for (int i = 0; i < count; i++) {
+				long[] quad = new long[] { subj[i], pred[i], obj[i], context[i] };
+				keyBuf.clear();
+				mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
+
+				boolean mainExplicitExists = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == MDB_SUCCESS;
+				boolean mainInferredExists = mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
+				if (explicit) {
+					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
+					if (inferredCacheState == TxnRecordCache.RecordState.ADD
+							|| inferredCacheState == TxnRecordCache.RecordState.ABSENT && mainInferredExists) {
+						recordCache.removeRecord(quad, false, true);
+					}
+				}
+				if (recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists)) {
+					writeTxnDirty = true;
+					addedCount++;
+				}
+			}
+		}
+		logAddedStatements(addedCount);
 	}
 
 	private boolean shouldFallBackFromAlignedWrite() {
@@ -1423,7 +1576,11 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean shouldFallBackFromAlignedContextWrite(IOException e) {
-		return autoGrow && e.getMessage() != null && e.getMessage().contains("MDB_MAP_FULL");
+		return autoGrow && isMapFullException(e);
+	}
+
+	private boolean isMapFullException(IOException e) {
+		return e.getMessage() != null && e.getMessage().contains("MDB_MAP_FULL");
 	}
 
 	private void undoContextIncrements(LongIntHashMap contextIncrements) throws IOException {
@@ -1536,6 +1693,7 @@ class TripleStore implements Closeable {
 				}
 				if (recordCache != null) {
 					recordCache.removeRecord(quad, explicit, true);
+					writeTxnDirty = true;
 					handler.accept(quad);
 					continue;
 				}
@@ -1551,6 +1709,8 @@ class TripleStore implements Closeable {
 				}
 
 				decrementContext(stack, quad[CONTEXT_IDX]);
+				removeBloom(quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], explicit);
+				writeTxnDirty = true;
 				handler.accept(quad);
 			}
 		}
@@ -1569,7 +1729,7 @@ class TripleStore implements Closeable {
 
 				Record r;
 				while ((r = it.next()) != null) {
-					if (requiresResize()) {
+					if (requiresResize(bloomWriteBytesPerStatement())) {
 						// resize map if required
 						E(mdb_txn_commit(writeTxn));
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
@@ -1577,6 +1737,7 @@ class TripleStore implements Closeable {
 						logger.debug("resized map to {}", mapSize);
 						E(mdb_txn_begin(env, NULL, 0, pp));
 						writeTxn = pp.get(0);
+						writeTxnDirty = false;
 					}
 
 					for (int i = 0; i < indexes.size(); i++) {
@@ -1593,7 +1754,6 @@ class TripleStore implements Closeable {
 							E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));
 						}
 					}
-
 					if (r.contextDelta) {
 						if (r.add) {
 							incrementContext(stack, r.quad[CONTEXT_IDX]);
@@ -1601,10 +1761,44 @@ class TripleStore implements Closeable {
 							decrementContext(stack, r.quad[CONTEXT_IDX]);
 						}
 					}
+					if (r.add) {
+						addBloom(r.quad[SUBJ_IDX], r.quad[PRED_IDX], r.quad[OBJ_IDX], explicit);
+					} else {
+						removeBloom(r.quad[SUBJ_IDX], r.quad[PRED_IDX], r.quad[OBJ_IDX], explicit);
+					}
+					writeTxnDirty = true;
 				}
 			}
 		}
 		recordCache.close();
+	}
+
+	private void addBloom(long subj, long pred, long obj, boolean explicit) throws IOException {
+		addBloom(writeTxn, subj, pred, obj, explicit);
+	}
+
+	private void addBloom(long txn, long subj, long pred, long obj, boolean explicit) throws IOException {
+		if (bloomStore != null) {
+			bloomStore.add(txn, Filter.predicateSubject(explicit, pred), subj);
+			bloomStore.add(txn, Filter.predicateObject(explicit, pred), obj);
+			if (pred == rdfTypeId) {
+				bloomStore.add(txn, Filter.typeSubject(explicit, obj), subj);
+			}
+		}
+	}
+
+	private void removeBloom(long subj, long pred, long obj, boolean explicit) throws IOException {
+		removeBloom(writeTxn, subj, pred, obj, explicit);
+	}
+
+	private void removeBloom(long txn, long subj, long pred, long obj, boolean explicit) throws IOException {
+		if (bloomStore != null) {
+			bloomStore.remove(txn, Filter.predicateSubject(explicit, pred), subj);
+			bloomStore.remove(txn, Filter.predicateObject(explicit, pred), obj);
+			if (pred == rdfTypeId) {
+				bloomStore.remove(txn, Filter.typeSubject(explicit, obj), subj);
+			}
+		}
 	}
 
 	public void startTransaction() throws IOException {
@@ -1614,6 +1808,7 @@ class TripleStore implements Closeable {
 			closeAlignedWriteCursors();
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
+			writeTxnDirty = false;
 		}
 	}
 
@@ -1645,6 +1840,7 @@ class TripleStore implements Closeable {
 									PointerBuffer pp = stack.mallocPointer(1);
 									mdb_txn_begin(env, NULL, 0, pp);
 									writeTxn = pp.get(0);
+									writeTxnDirty = false;
 								}
 								updateFromCache();
 								// finally, commit write transaction
@@ -1672,6 +1868,7 @@ class TripleStore implements Closeable {
 				}
 			} finally {
 				writeTxn = 0;
+				writeTxnDirty = false;
 				// ensure that record cache is always reset
 				if (recordCache != null) {
 					try {

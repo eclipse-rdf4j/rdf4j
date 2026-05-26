@@ -50,6 +50,10 @@ public class SailDatasetTripleSource implements RDFStarTripleSource {
 		return dataset.toString();
 	}
 
+	public SailDataset getSailDataset() {
+		return dataset;
+	}
+
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {

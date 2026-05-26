@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -92,5 +93,13 @@ abstract class DelegatingSailDataset implements SailDataset {
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public <T> List<T> getSupportedDatasets(Class<T> datasetType) {
+		if (datasetType.isInstance(this)) {
+			return List.of(datasetType.cast(this));
+		}
+		return delegate.getSupportedDatasets(datasetType);
 	}
 }

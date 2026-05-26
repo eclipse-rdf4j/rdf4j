@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -220,6 +221,37 @@ public class SnapshotSailStoreTest {
 						.contains("statementsAdded=2"));
 	}
 
+	@Test
+	public void supportedDatasetsPassThroughOnlyTransparentWrappers() {
+		CapabilityDataset first = new CapabilityDataset();
+		CapabilityDataset second = new CapabilityDataset();
+
+		SailDataset delegated = new DelegatingSailDataset(first) {
+		};
+		assertThat(delegated.getSupportedDatasets(DatasetCapability.class)).containsExactly(first);
+
+		SailDataset union = UnionSailDataset.getInstance(new DelegatingSailDataset(first) {
+		}, new DelegatingSailDataset(second) {
+		});
+		assertThat(union.getSupportedDatasets(DatasetCapability.class)).containsExactly(first, second);
+
+		SailDataset changed = new SailDatasetImpl(first, new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		});
+		try {
+			assertThat(changed.getSupportedDatasets(DatasetCapability.class)).isEmpty();
+		} finally {
+			changed.close();
+		}
+	}
+
 	private Sail createSail(SailStore sailStore) {
 		return new AbstractNotifyingSail() {
 			@Override
@@ -336,6 +368,37 @@ public class SnapshotSailStoreTest {
 		@Override
 		public void close() {
 			closeCount.incrementAndGet();
+		}
+	}
+
+	private interface DatasetCapability {
+	}
+
+	private static final class CapabilityDataset implements SailDataset, DatasetCapability {
+
+		@Override
+		public void close() throws SailException {
+		}
+
+		@Override
+		public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public String getNamespace(String prefix) throws SailException {
+			return null;
+		}
+
+		@Override
+		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws SailException {
+			return new EmptyIteration<>();
 		}
 	}
 

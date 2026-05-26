@@ -139,7 +139,17 @@ class LmdbRecordIterator implements RecordIterator {
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
+
+		if (count++ % 1000 == 0) {
+			try {
+				Thread.sleep(1);
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
+			}
+		}
 	}
+
+	static int count = 0;
 
 	@Override
 	public long[] next() {

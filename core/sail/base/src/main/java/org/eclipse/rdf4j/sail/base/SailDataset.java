@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -128,6 +129,23 @@ public interface SailDataset extends SailClosable {
 	@Experimental
 	default Comparator<Value> getComparator() {
 		return null;
+	}
+
+	/**
+	 * Returns this dataset, or safely contained datasets, that expose the requested capability type.
+	 * <p>
+	 * Wrappers that change the visible statement set should only expose wrapped datasets when the requested capability
+	 * remains valid for the wrapper's visible state.
+	 *
+	 * @param datasetType requested dataset or capability type
+	 * @return matching datasets or capabilities
+	 */
+	@Experimental
+	default <T> List<T> getSupportedDatasets(Class<T> datasetType) {
+		if (datasetType.isInstance(this)) {
+			return List.of(datasetType.cast(this));
+		}
+		return List.of();
 	}
 
 }

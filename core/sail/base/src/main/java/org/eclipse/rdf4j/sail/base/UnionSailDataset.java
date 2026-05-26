@@ -11,8 +11,10 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -226,5 +228,22 @@ class UnionSailDataset implements SailDataset {
 		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
 
 		return comparator1;
+	}
+
+	@Override
+	public <T> List<T> getSupportedDatasets(Class<T> datasetType) {
+		List<T> supported1 = dataset1.getSupportedDatasets(datasetType);
+		List<T> supported2 = dataset2.getSupportedDatasets(datasetType);
+		if (supported1.isEmpty()) {
+			return supported2;
+		}
+		if (supported2.isEmpty()) {
+			return supported1;
+		}
+
+		List<T> supported = new ArrayList<>(supported1.size() + supported2.size());
+		supported.addAll(supported1);
+		supported.addAll(supported2);
+		return List.copyOf(supported);
 	}
 }

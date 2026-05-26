@@ -89,6 +89,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean valueHashCacheEnabled = false;
 
+	private boolean bloomFiltersEnabled = true;
+
+	private double bloomFilterTargetFalsePositiveRate = 0.01;
+
+	private int bloomFilterExpectedElementsPerFilter = 100_000;
+
+	private int bloomFilterPartitionCounters = 4096;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -240,6 +248,42 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean getBloomFiltersEnabled() {
+		return bloomFiltersEnabled;
+	}
+
+	public LmdbStoreConfig setBloomFiltersEnabled(boolean bloomFiltersEnabled) {
+		this.bloomFiltersEnabled = bloomFiltersEnabled;
+		return this;
+	}
+
+	public double getBloomFilterTargetFalsePositiveRate() {
+		return bloomFilterTargetFalsePositiveRate;
+	}
+
+	public LmdbStoreConfig setBloomFilterTargetFalsePositiveRate(double bloomFilterTargetFalsePositiveRate) {
+		this.bloomFilterTargetFalsePositiveRate = bloomFilterTargetFalsePositiveRate;
+		return this;
+	}
+
+	public int getBloomFilterExpectedElementsPerFilter() {
+		return bloomFilterExpectedElementsPerFilter;
+	}
+
+	public LmdbStoreConfig setBloomFilterExpectedElementsPerFilter(int bloomFilterExpectedElementsPerFilter) {
+		this.bloomFilterExpectedElementsPerFilter = bloomFilterExpectedElementsPerFilter;
+		return this;
+	}
+
+	public int getBloomFilterPartitionCounters() {
+		return bloomFilterPartitionCounters;
+	}
+
+	public LmdbStoreConfig setBloomFilterPartitionCounters(int bloomFilterPartitionCounters) {
+		this.bloomFilterPartitionCounters = bloomFilterPartitionCounters;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -287,6 +331,21 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (valueHashCacheEnabled) {
 			m.add(implNode, LmdbStoreSchema.VALUE_HASH_CACHE_ENABLED, vf.createLiteral(true));
+		}
+		if (!bloomFiltersEnabled) {
+			m.add(implNode, LmdbStoreSchema.BLOOM_FILTERS_ENABLED, vf.createLiteral(false));
+		}
+		if (bloomFilterTargetFalsePositiveRate != 0.01) {
+			m.add(implNode, LmdbStoreSchema.BLOOM_FILTER_TARGET_FALSE_POSITIVE_RATE,
+					vf.createLiteral(bloomFilterTargetFalsePositiveRate));
+		}
+		if (bloomFilterExpectedElementsPerFilter != 100_000) {
+			m.add(implNode, LmdbStoreSchema.BLOOM_FILTER_EXPECTED_ELEMENTS_PER_FILTER,
+					vf.createLiteral(bloomFilterExpectedElementsPerFilter));
+		}
+		if (bloomFilterPartitionCounters != 4096) {
+			m.add(implNode, LmdbStoreSchema.BLOOM_FILTER_PARTITION_COUNTERS,
+					vf.createLiteral(bloomFilterPartitionCounters));
 		}
 		return implNode;
 	}
@@ -431,6 +490,55 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(
 									"Boolean value required for " + LmdbStoreSchema.VALUE_HASH_CACHE_ENABLED
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.BLOOM_FILTERS_ENABLED, null))
+					.ifPresent(lit -> {
+						try {
+							setBloomFiltersEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.BLOOM_FILTERS_ENABLED
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.BLOOM_FILTER_TARGET_FALSE_POSITIVE_RATE, null))
+					.ifPresent(lit -> {
+						try {
+							setBloomFilterTargetFalsePositiveRate(lit.doubleValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Double value required for "
+											+ LmdbStoreSchema.BLOOM_FILTER_TARGET_FALSE_POSITIVE_RATE
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.BLOOM_FILTER_EXPECTED_ELEMENTS_PER_FILTER, null))
+					.ifPresent(lit -> {
+						try {
+							setBloomFilterExpectedElementsPerFilter(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Integer value required for "
+											+ LmdbStoreSchema.BLOOM_FILTER_EXPECTED_ELEMENTS_PER_FILTER
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.BLOOM_FILTER_PARTITION_COUNTERS, null))
+					.ifPresent(lit -> {
+						try {
+							setBloomFilterPartitionCounters(lit.intValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Integer value required for "
+											+ LmdbStoreSchema.BLOOM_FILTER_PARTITION_COUNTERS
 											+ " property, found " + lit);
 						}
 					});

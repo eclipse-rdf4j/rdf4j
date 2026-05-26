@@ -142,6 +142,58 @@ class LmdbStoreConfigTest {
 		);
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportBloomFiltersEnabled(final boolean bloomFiltersEnabled) {
+		testParseAndExport(
+				LmdbStoreSchema.BLOOM_FILTERS_ENABLED,
+				Values.literal(bloomFiltersEnabled),
+				LmdbStoreConfig::getBloomFiltersEnabled,
+				bloomFiltersEnabled,
+				!bloomFiltersEnabled
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(doubles = { 0.1, 0.01, 0.001 })
+	void testThatLmdbStoreConfigParseAndExportBloomFilterTargetFalsePositiveRate(
+			final double bloomFilterTargetFalsePositiveRate
+	) {
+		testParseAndExport(
+				LmdbStoreSchema.BLOOM_FILTER_TARGET_FALSE_POSITIVE_RATE,
+				Values.literal(bloomFilterTargetFalsePositiveRate),
+				LmdbStoreConfig::getBloomFilterTargetFalsePositiveRate,
+				bloomFilterTargetFalsePositiveRate,
+				bloomFilterTargetFalsePositiveRate != 0.01
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 4096, 100_000 })
+	void testThatLmdbStoreConfigParseAndExportBloomFilterExpectedElementsPerFilter(
+			final int bloomFilterExpectedElementsPerFilter
+	) {
+		testParseAndExport(
+				LmdbStoreSchema.BLOOM_FILTER_EXPECTED_ELEMENTS_PER_FILTER,
+				Values.literal(bloomFilterExpectedElementsPerFilter),
+				LmdbStoreConfig::getBloomFilterExpectedElementsPerFilter,
+				bloomFilterExpectedElementsPerFilter,
+				bloomFilterExpectedElementsPerFilter != 100_000
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 4096, 100_000 })
+	void testThatLmdbStoreConfigParseAndExportBloomFilterPartitionCounters(final int bloomFilterPartitionCounters) {
+		testParseAndExport(
+				LmdbStoreSchema.BLOOM_FILTER_PARTITION_COUNTERS,
+				Values.literal(bloomFilterPartitionCounters),
+				LmdbStoreConfig::getBloomFilterPartitionCounters,
+				bloomFilterPartitionCounters,
+				bloomFilterPartitionCounters != 4096
+		);
+	}
+
 	// TODO: Add more tests for other properties
 
 	@Test
