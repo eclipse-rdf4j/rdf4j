@@ -4151,6 +4151,7 @@ final class SketchJoinOrderPlanner {
 		boolean directLookup = false;
 		double accessRowsBeforeFilter = Double.NaN;
 		boolean exactOutputRows = false;
+		SketchBasedJoinEstimator.AccessShape accessShape = null;
 		boolean endpointDomainPreparation = isEndpointDomainPreparationStep(factorIndex, mask, currentlyBoundVarMask,
 				prefixEstimate);
 		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = isPlainBindingSetAssignment(factorIndex) ? null
@@ -4171,6 +4172,7 @@ final class SketchJoinOrderPlanner {
 							&& factorCostEstimate.getStringMetrics()
 									.containsKey(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
 			if (physicalComparable) {
+				accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
 				if (factorCostEstimate.hasPhysicalAccessPath()) {
 					directLookup = factorCostEstimate.isDirectLookup();
 					int missingLookupComponentMask = factorCostEstimate.getMissingLookupComponentMask();
@@ -4192,6 +4194,17 @@ final class SketchJoinOrderPlanner {
 							.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_ROWS, Double.NaN);
 				}
 			}
+			factorCostEstimate = scaleCostedLookupDomainByPrefixMultiplicity(factorIndex, mask, currentlyBoundVarMask,
+					prefixEstimate, accessShape, lookupComponentMask, factorCostEstimate);
+			if (factorCostEstimate != null) {
+				if (isFiniteNonNegative(factorCostEstimate.getOutputRows())) {
+					factorRows = factorCostEstimate.getOutputRows();
+				}
+				if (isFiniteNonNegative(factorCostEstimate.getWorkRows())) {
+					accessWorkRows = factorCostEstimate.getWorkRows();
+				}
+				exactOutputRows = factorCostEstimate.hasExactOutputRows();
+			}
 		}
 		boolean repeatedLookupAmplified = false;
 		if (!isFiniteNonNegative(accessWorkRows)) {
@@ -4199,7 +4212,9 @@ final class SketchJoinOrderPlanner {
 					prefixEstimate);
 		} else if (!costModelChargedRepeatedInvocations(factorCostEstimate)
 				&& shouldAmplifyRepeatedLookup(factorIndex, mask, currentlyBoundVarMask, prefixEstimate)) {
-			SketchBasedJoinEstimator.AccessShape accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
+			if (accessShape == null) {
+				accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
+			}
 			double perInvocationWorkRows = accessWorkRows;
 			if (isFiniteNonNegative(accessRowsBeforeFilter)) {
 				perInvocationWorkRows = Math.max(perInvocationWorkRows, accessRowsBeforeFilter);
@@ -4208,9 +4223,11 @@ final class SketchJoinOrderPlanner {
 					accessShape, lookupComponentMask);
 			repeatedLookupAmplified = true;
 		}
+		if (accessShape == null) {
+			accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
+		}
 		accessWorkRows = applySelectedFiniteLookupDomainWork(factorIndex, mask, accessWorkRows, prefixEstimate,
-				accessShape(factorIndex, mask, currentlyBoundVarMask), lookupComponentMask, factorCostEstimate,
-				repeatedLookupAmplified);
+				accessShape, lookupComponentMask, factorCostEstimate, repeatedLookupAmplified);
 		accessWorkRows = applyPendingSmallBindingAssignmentDomainWork(factorIndex, mask, currentlyBoundVarMask,
 				accessWorkRows, prefixEstimate);
 		accessWorkRows = applyPendingBoundSubjectTypeGuardWork(factorIndex, mask, currentlyBoundVarMask,
@@ -4223,6 +4240,66 @@ final class SketchJoinOrderPlanner {
 		return new FactorPhysicalEstimate(accessWorkRows, factorRows, physicalComparable, missingLookupComponents,
 				lookupComponents, lookupComponentMask, directLookup, accessRowsBeforeFilter, exactOutputRows,
 				factorCostEstimate);
+	}
+
+	private JoinFactorCostModel.FactorCostEstimate scaleCostedLookupDomainByPrefixMultiplicity(int factorIndex,
+			long mask, long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
+			SketchBasedJoinEstimator.AccessShape accessShape, int lookupComponentMask,
+			JoinFactorCostModel.FactorCostEstimate estimate) {
+		if (estimate == null || prefixEstimate == null || !estimate.isRepeatedInvocationsCosted()
+				|| isBindingSetAssignment(factorIndex) || accessShape == null || lookupComponentMask == 0) {
+			return estimate;
+		}
+		long lookupVars = lookupVarMask(accessShape, lookupComponentMask) & currentlyBoundVarMask;
+		if (lookupVars == 0L) {
+			return estimate;
+		}
+		double prefixRows = effectiveInvocationRows(mask, prefixEstimate);
+		double costedInvocations = estimate.getDoubleMetrics()
+				.getOrDefault("plannedRepeatedInvocations", Double.NaN);
+		if (!isFinitePositive(prefixRows) || prefixRows <= 1.0d
+				|| !isFinitePositive(costedInvocations) || costedInvocations >= prefixRows) {
+			return estimate;
+		}
+		double distinctLookupBindings = distinctLookupBindings(factorIndex, mask, prefixEstimate, accessShape,
+				lookupComponentMask);
+		if (isFinitePositive(distinctLookupBindings)) {
+			costedInvocations = Math.min(costedInvocations, distinctLookupBindings);
+		}
+		if (!isFinitePositive(costedInvocations) || costedInvocations >= prefixRows) {
+			return estimate;
+		}
+		double multiplicityRows = prefixRows / costedInvocations;
+		double outputRows = estimate.getOutputRows();
+		double workRows = firstFinitePositive(estimate.getWorkRows(), outputRows);
+		double scaledOutputRows = outputRows * multiplicityRows;
+		double scaledWorkRows = workRows * multiplicityRows;
+		if (!isFinitePositive(scaledOutputRows) || !isFinitePositive(scaledWorkRows)
+				|| (scaledOutputRows <= outputRows && scaledWorkRows <= estimate.getWorkRows())) {
+			return estimate;
+		}
+
+		// Keep this as math, not an ordering heuristic. VALUES domains can be good or bad depending on bag
+		// multiplicity; hard-coding factor placement fixes one query by making another plan worse.
+		Map<String, String> stringMetrics = new HashMap<>(estimate.getStringMetrics());
+		stringMetrics.put("plannedLookupDomainPreMultiplicityFusion",
+				stringMetrics.getOrDefault("plannedEstimateFusion", "cost_model"));
+		stringMetrics.put("plannedEstimateFusion", "lookup_domain_bag_multiplicity");
+		Map<String, Double> doubleMetrics = new HashMap<>(estimate.getDoubleMetrics());
+		doubleMetrics.put("plannedLookupDomainCostedInvocations", costedInvocations);
+		doubleMetrics.put("plannedLookupDomainPrefixRows", prefixRows);
+		doubleMetrics.put("plannedLookupDomainMultiplicityRows", multiplicityRows);
+		doubleMetrics.put("plannedRepeatedInvocations", prefixRows);
+		doubleMetrics.put("plannedLookupDomainAverageOutputRows", scaledOutputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, scaledOutputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, scaledOutputRows);
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, Math.max(scaledWorkRows, scaledOutputRows));
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, Math.max(scaledWorkRows, scaledOutputRows));
+		return new JoinFactorCostModel.FactorCostEstimate(Math.max(scaledWorkRows, scaledOutputRows),
+				scaledOutputRows, stringMetrics, doubleMetrics, estimate.hasPhysicalAccessPath(),
+				estimate.isDirectLookup(), estimate.getLookupComponentMask(),
+				estimate.getMissingLookupComponentMask(), estimate.getAccessRowsBeforeFilter(), true,
+				estimate.hasExactOutputRows());
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate refineConnectedPageWalkFactorCostEstimate(

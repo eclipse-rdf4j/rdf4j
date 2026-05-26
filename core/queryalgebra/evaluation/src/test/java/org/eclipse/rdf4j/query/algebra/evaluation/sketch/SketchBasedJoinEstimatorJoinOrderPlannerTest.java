@@ -63,6 +63,8 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final int EXACT_STATEMENT_LOOKUP_MASK = componentMask(SketchBasedJoinEstimator.Component.S,
 			SketchBasedJoinEstimator.Component.P, SketchBasedJoinEstimator.Component.O);
+	private static final int PREDICATE_OBJECT_LOOKUP_MASK = componentMask(SketchBasedJoinEstimator.Component.P,
+			SketchBasedJoinEstimator.Component.O);
 	private final List<SketchBasedJoinEstimator> estimators = new ArrayList<>();
 
 	@AfterEach
@@ -2091,6 +2093,70 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void fixedOrderScorerMultipliesFiniteLookupDomainByOuterPrefixMultiplicity() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		int codeValueCount = bindingSetRows(fixture.codeValues);
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars, Map.of());
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context.getCurrentlyBoundVars(), context.getFiniteBindingValues());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars,
+					Map<String, Set<Value>> finiteBindingValues) {
+				if (factor == fixture.codeValues) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(codeValueCount, codeValueCount));
+				}
+				if (factor == fixture.typePattern) {
+					return Optional.of(exactLogicalCost(
+							boundVars.contains("enc") ? 1.0d : 25_000.0d,
+							boundVars.contains("enc") ? 1.0d : 25_000.0d));
+				}
+				if (factor == fixture.codePattern) {
+					if (hasFiniteBindingValues(finiteBindingValues, "condCode")) {
+						return Optional.of(finiteObjectLookupDomainCost(49_835.0d, 49_835.0d, codeValueCount));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(220_400.0d, 220_400.0d));
+				}
+				if (factor == fixture.hasConditionPattern) {
+					boolean encBound = boundVars.contains("enc");
+					boolean condBound = boundVars.contains("cond");
+					if (encBound && condBound) {
+						return Optional.of(exactDirectLookup(1.0d, 1.0d));
+					}
+					if (encBound || condBound) {
+						return Optional.of(repeatedInvocationCost(49_835.0d, 49_835.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(220_400.0d, 49_835.0d));
+				}
+				return Optional.empty();
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan splitPrefixEstimate = estimateJoinOrder(fixture.estimator, costModel,
+				List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern, fixture.hasConditionPattern));
+		JoinOrderPlanner.PlanStep codeLookupStep = splitPrefixEstimate.getSteps()
+				.get(2);
+		double expectedLookupRows = 25_000.0d * 49_835.0d;
+
+		assertTrue(codeLookupStep.getBoundVarsBefore().contains("enc"),
+				"The regression setup must keep the broad encounter prefix before the finite lookup");
+		assertTrue(codeLookupStep.getBoundVarsBefore().contains("condCode"),
+				"The regression setup must bind the finite lookup domain before the code lookup");
+		assertTrue(codeLookupStep.getFactorOutputRows() >= expectedLookupRows * 0.99d,
+				"A finite VALUES lookup under an unrelated bag prefix must multiply the lookup domain by the "
+						+ "outer prefix multiplicity. expected at least " + expectedLookupRows + ", step="
+						+ codeLookupStep.getDoubleMetrics());
+	}
+
+	@Test
 	void planJoinOrderKeepsValuesAnchorConnectedAcrossTwoHopBridge() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("urn:twoHop:type");
@@ -3376,6 +3442,24 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	private static JoinFactorCostModel.FactorCostEstimate exactDirectLookup(double workRows, double outputRows) {
 		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(), true, true,
 				EXACT_STATEMENT_LOOKUP_MASK, 0, workRows);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate exactLogicalCost(double workRows, double outputRows) {
+		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(),
+				false, false, 0, 0, Double.NaN, false, true);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate finiteObjectLookupDomainCost(double workRows,
+			double outputRows, int repeatedInvocations) {
+		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows,
+				Map.of(
+						TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "directLookup",
+						TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, "[P, O]"),
+				Map.of(
+						TelemetryMetricNames.PLANNED_ACCESS_ROWS, outputRows,
+						TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, workRows,
+						"plannedRepeatedInvocations", (double) repeatedInvocations),
+				true, true, PREDICATE_OBJECT_LOOKUP_MASK, 0, outputRows, true, true);
 	}
 
 	private static JoinFactorCostModel.FactorCostEstimate repeatedInvocationCost(double workRows, double outputRows) {
