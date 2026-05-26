@@ -79,6 +79,28 @@ if [[ "${SKIP_BUILD_OUTPUT}" != *"java -jar "* ]]; then
 fi
 
 set +e
+PREFLIGHT_OUTPUT="$(RDF4J_BENCHMARK_FORK_SOCKET_PREFLIGHT_CMD=false bash "${SCRIPT}" --no-build --module docs --class org.eclipse.rdf4j.benchmark.MissingBenchmark --method missingMethod 2>&1)"
+PREFLIGHT_STATUS=$?
+set -e
+
+echo "${PREFLIGHT_OUTPUT}"
+
+if [[ ${PREFLIGHT_STATUS} -eq 0 ]]; then
+        echo "Expected fork socket preflight to fail before benchmark execution" >&2
+        exit 1
+fi
+
+if [[ "${PREFLIGHT_OUTPUT}" != *"JMH fork socket preflight failed"* ]]; then
+        echo "Expected early JMH fork socket preflight failure" >&2
+        exit 1
+fi
+
+if [[ "${PREFLIGHT_OUTPUT}" == *"Unable to locate a benchmark jar"* ]]; then
+        echo "Expected fork socket preflight to run before benchmark jar lookup" >&2
+        exit 1
+fi
+
+set +e
 CLEAN_OUTPUT="$(bash "${SCRIPT}" --dry-run --clean --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
 CLEAN_STATUS=$?
 set -e

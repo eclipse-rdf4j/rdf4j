@@ -357,6 +357,55 @@ require_linux_java25_for_cpu_time_jfr() {
         fi
 }
 
+check_jmh_fork_socket_support() {
+        if [[ "${forks}" == "0" ]]; then
+                return 0
+        fi
+
+        if [[ "${RDF4J_BENCHMARK_SKIP_FORK_SOCKET_PREFLIGHT:-false}" == "true" ]]; then
+                return 0
+        fi
+
+        local output
+        local status
+        set +e
+        if [[ -n "${RDF4J_BENCHMARK_FORK_SOCKET_PREFLIGHT_CMD:-}" ]]; then
+                output="$(bash -c "${RDF4J_BENCHMARK_FORK_SOCKET_PREFLIGHT_CMD}" 2>&1)"
+                status=$?
+        else
+                local tmp_dir
+                local source_file
+                tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/rdf4j-jmh-preflight.XXXXXX")"
+                source_file="${tmp_dir}/JmhForkSocketPreflight.java"
+                cat > "${source_file}" <<'JAVA'
+import java.net.ServerSocket;
+
+public class JmhForkSocketPreflight {
+	public static void main(String[] args) throws Exception {
+		try (ServerSocket serverSocket = new ServerSocket(0)) {
+			serverSocket.setReuseAddress(true);
+		}
+	}
+}
+JAVA
+                output="$(java "${source_file}" 2>&1)"
+                status=$?
+                rm -rf "${tmp_dir}"
+        fi
+        set -e
+
+        if [[ ${status} -ne 0 ]]; then
+                echo "Error: JMH fork socket preflight failed." >&2
+                echo "JMH opens a local ServerSocket before forked benchmark runs. This environment will likely fail later with BinaryLinkServer/SocketException after packaging." >&2
+                echo "Escalate or run outside the restricted sandbox before rerunning this benchmark, or pass --forks 0 for an in-process diagnostic run." >&2
+                if [[ -n "${output}" ]]; then
+                        echo "Preflight output:" >&2
+                        echo "${output}" >&2
+                fi
+                exit 1
+        fi
+}
+
 print_command() {
         printf '%q ' "$@"
         printf '\n'
@@ -381,6 +430,8 @@ if ${dry_run}; then
         print_command "${java_cmd[@]}"
         exit 0
 fi
+
+check_jmh_fork_socket_support
 
 if ${no_build}; then
         echo "Maven packaging skipped by --no-build."
