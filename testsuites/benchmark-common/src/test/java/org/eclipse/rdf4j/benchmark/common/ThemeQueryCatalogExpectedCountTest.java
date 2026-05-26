@@ -46,7 +46,7 @@ class ThemeQueryCatalogExpectedCountTest {
 	@Test
 	void expectedCountBindingValuesMatchCatalogValues() {
 		Map<Theme, long[]> expectedCountBindingValues = Map.of(
-				Theme.MEDICAL_RECORDS, new long[] { 7571, 0, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335,
+				Theme.MEDICAL_RECORDS, new long[] { 7571, 49835, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335,
 						-1, -1 },
 				Theme.SOCIAL_MEDIA, new long[] { 6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1 },
 				Theme.LIBRARY, new long[] { 128853, 0, -1, 7958, 0, 217, -1, 77295, -1, 0, 4, -1, -1 },

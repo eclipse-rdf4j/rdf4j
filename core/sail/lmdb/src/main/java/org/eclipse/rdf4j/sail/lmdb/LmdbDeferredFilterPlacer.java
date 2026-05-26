@@ -90,7 +90,7 @@ final class LmdbDeferredFilterPlacer {
 		Set<String> finitePrefixBindingNames = new HashSet<>();
 		for (int i = 0; i < orderedJoinArgs.size(); i++) {
 			TupleExpr optimized = factorOptimizer.optimize(orderedJoinArgs.get(i), prefixBindingNames);
-			optimized = applyCompatibleLocalDeferredFilters(optimized, pendingFilters);
+			optimized = applyCompatibleLocalDeferredFilters(optimized, pendingFilters, prefixBindingNames);
 			Set<StatementPattern> currentPatterns = LmdbJoinPlanSupport.collectPatternIdentities(optimized);
 			optimized = applyPrefixBindingDeferredFilters(optimized, pendingFilters, prefixBindingNames,
 					finitePrefixBindingNames,
@@ -377,6 +377,7 @@ final class LmdbDeferredFilterPlacer {
 	private boolean canApplyDeferredFilterToBindingPrefix(DeferredFilter deferredFilter, Set<String> prefixBindingNames,
 			Set<String> assignmentBindingNames, Set<String> conditionBindingNames) {
 		return !conditionBindingNames.isEmpty()
+				&& assignmentBindingNames.containsAll(conditionBindingNames)
 				&& (deferredFilter.conditionCost > JoinOrderPlanner.FILTER_COST_CHEAP
 						|| !Collections.disjoint(prefixBindingNames, conditionBindingNames))
 				&& !prefixBindingNames.containsAll(conditionBindingNames)
@@ -418,14 +419,15 @@ final class LmdbDeferredFilterPlacer {
 		return contains[0];
 	}
 
-	private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {
+	private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters,
+			Set<String> prefixBindingNames) {
 		if (deferredFilters.isEmpty()) {
 			return tupleExpr;
 		}
 		List<DeferredFilter> localFilters = new ArrayList<>();
 		for (int i = 0; i < deferredFilters.size();) {
 			DeferredFilter deferredFilter = deferredFilters.get(i);
-			if (!canApplyDeferredFilterToTupleExpr(deferredFilter, tupleExpr)) {
+			if (!canApplyDeferredFilterToTupleExpr(deferredFilter, tupleExpr, prefixBindingNames)) {
 				i++;
 				continue;
 			}
@@ -435,11 +437,14 @@ final class LmdbDeferredFilterPlacer {
 		return localFilters.isEmpty() ? tupleExpr : filterWrapper.wrap(tupleExpr, localFilters, "localPattern");
 	}
 
-	private boolean canApplyDeferredFilterToTupleExpr(DeferredFilter deferredFilter, TupleExpr tupleExpr) {
+	private boolean canApplyDeferredFilterToTupleExpr(DeferredFilter deferredFilter, TupleExpr tupleExpr,
+			Set<String> prefixBindingNames) {
+		Set<String> availableBindingNames = new HashSet<>(prefixBindingNames);
+		availableBindingNames.addAll(tupleExpr.getBindingNames());
 		return tupleExpr instanceof StatementPattern
 				&& deferredFilter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP
 				&& deferredFilter.patternLocalBase == tupleExpr
-				&& tupleExpr.getBindingNames().containsAll(deferredFilter.requiredVars);
+				&& availableBindingNames.containsAll(placementBindingNames(deferredFilter));
 	}
 
 	private boolean hasPendingSplitExistsFilter(List<DeferredFilter> deferredFilters, DeferredFilter candidate,
@@ -463,6 +468,7 @@ final class LmdbDeferredFilterPlacer {
 	private boolean groupDeferredFilterOnSmallestWindow(List<SegmentFactor> factors, DeferredFilter filter,
 			Set<String> boundBeforeSegment) {
 		int[] window = null;
+		Set<String> placementBindingNames = placementBindingNames(filter);
 		if (groupDeferredFilterOnBindingAssignments(factors, filter, boundBeforeSegment)) {
 			return true;
 		}
@@ -470,13 +476,13 @@ final class LmdbDeferredFilterPlacer {
 			return true;
 		}
 		if (filter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP) {
-			window = smallestSinglePatternBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
+			window = smallestSinglePatternBindingCoveringWindow(factors, placementBindingNames, boundBeforeSegment);
 			if (window != null) {
 				return groupDeferredFilterOnWindow(factors, filter, window);
 			}
 		}
 		if (filter.conditionCost == JoinOrderPlanner.FILTER_COST_CHEAP) {
-			window = smallestBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
+			window = smallestBindingCoveringWindow(factors, placementBindingNames, boundBeforeSegment);
 		}
 		if (window == null && isCorrelatedNotExistsFilter(filter)) {
 			window = smallestBindingCoveringWindow(factors, filter.requiredVars, boundBeforeSegment);
@@ -492,7 +498,7 @@ final class LmdbDeferredFilterPlacer {
 			if (window == null) {
 				return false;
 			}
-			window = expandWindowToCoverRequiredVars(factors, window, filter.requiredVars, boundBeforeSegment);
+			window = expandWindowToCoverRequiredVars(factors, window, placementBindingNames, boundBeforeSegment);
 			if (window == null) {
 				return false;
 			}
@@ -570,7 +576,7 @@ final class LmdbDeferredFilterPlacer {
 		for (int i = 0; i <= targetIndex; i++) {
 			availableNames.addAll(factors.get(i).bindingNames);
 		}
-		if (!availableNames.containsAll(filter.requiredVars)) {
+		if (!availableNames.containsAll(placementBindingNames(filter))) {
 			return false;
 		}
 		return groupDeferredFiltersOnWindow(factors, List.of(filter), new int[] { 0, targetIndex },
@@ -861,7 +867,7 @@ final class LmdbDeferredFilterPlacer {
 
 	private BindingAssignmentWindow bindingAssignmentCoveringWindow(List<SegmentFactor> factors,
 			DeferredFilter deferredFilter, Set<String> boundBeforeSegment) {
-		Set<String> missingVars = new HashSet<>(deferredFilter.requiredVars);
+		Set<String> missingVars = new HashSet<>(placementBindingNames(deferredFilter));
 		missingVars.removeAll(boundBeforeSegment);
 		if (missingVars.isEmpty()) {
 			return null;
@@ -881,6 +887,14 @@ final class LmdbDeferredFilterPlacer {
 			}
 		}
 		return null;
+	}
+
+	private Set<String> placementBindingNames(DeferredFilter filter) {
+		if (LmdbJoinPlanSupport.containsExists(filter.condition)) {
+			return filter.requiredVars;
+		}
+		Set<String> conditionBindingNames = conditionBindingNames(filter);
+		return conditionBindingNames.isEmpty() ? filter.requiredVars : conditionBindingNames;
 	}
 
 	private boolean groupDeferredFilterOnWindow(List<SegmentFactor> factors, DeferredFilter filter, int[] window) {

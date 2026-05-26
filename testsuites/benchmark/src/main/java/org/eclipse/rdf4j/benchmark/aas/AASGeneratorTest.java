@@ -108,17 +108,17 @@ class AASGeneratorTest {
 		Repository repository = new SailRepository(new MemoryStore());
 		repository.init();
 		String query1 = """
-			PREFIX aas: <https://admin-shell.io/aas/3/>
-			SELECT ?propertyName ?propertyValue ?valueType
-			WHERE {
-			  <urn:aas:DriveUnitAAS:DU-1-1> a aas:AssetAdministrationShell ;
-			       aas:submodel/aas:submodelElement/(aas:value)* ?prop .
-			  ?prop a aas:Property ;
-			        aas:idShort ?propertyName ;
-			        aas:value ?propertyValue .
-			  OPTIONAL { ?prop aas:valueType ?valueType }
-			}
-			""";
+				PREFIX aas: <https://admin-shell.io/aas/3/>
+				SELECT ?propertyName ?propertyValue ?valueType
+				WHERE {
+				  <urn:aas:DriveUnitAAS:DU-1-1> a aas:AssetAdministrationShell ;
+				       aas:submodel/aas:submodelElement/(aas:value)* ?prop .
+				  ?prop a aas:Property ;
+				        aas:idShort ?propertyName ;
+				        aas:value ?propertyValue .
+				  OPTIONAL { ?prop aas:valueType ?valueType }
+				}
+				""";
 		try (RepositoryConnection connection = repository.getConnection()) {
 			new AASGenerator().generateAndAdd(connection, 20, 2, 2);
 			try (var result = connection.prepareTupleQuery(query1).evaluate()) {
@@ -133,16 +133,16 @@ class AASGeneratorTest {
 		Repository repository = new SailRepository(new MemoryStore());
 		repository.init();
 		String query2 = """
-			PREFIX aas: <https://admin-shell.io/aas/3/>
-			SELECT * WHERE {
-			  ?aas a aas:AssetAdministrationShell ;
-			      aas:assetInformation/aas:specificAssetId [ aas:value "DriveUnit" ] ;
-			      aas:submodel/aas:submodelElement/(aas:value)* ?p1 .
-			  ?p1 aas:idShort "ratedPower" ;
-			      ?pred ?v1 .
-			  FILTER (?v1 > 9.0)
-			}
-			""";
+				PREFIX aas: <https://admin-shell.io/aas/3/>
+				SELECT * WHERE {
+				  ?aas a aas:AssetAdministrationShell ;
+				      aas:assetInformation/aas:specificAssetId [ aas:value "DriveUnit" ] ;
+				      aas:submodel/aas:submodelElement/(aas:value)* ?p1 .
+				  ?p1 aas:idShort "ratedPower" ;
+				      ?pred ?v1 .
+				  FILTER (?v1 > 9.0)
+				}
+				""";
 		try (RepositoryConnection connection = repository.getConnection()) {
 			new AASGenerator().generateAndAdd(connection, 20, 2, 2);
 			try (var result = connection.prepareTupleQuery(query2).evaluate()) {

@@ -132,9 +132,10 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println("Number of statements: " + connection.size());
 		}
-		/*try (SailRepositoryConnection connection = repository.getConnection()) {
-			System.out.println(connection.prepareTupleQuery(QUERY_2).explain(Explanation.Level.Executed));
-		}*/
+		/*
+		 * try (SailRepositoryConnection connection = repository.getConnection()) {
+		 * System.out.println(connection.prepareTupleQuery(QUERY_2).explain(Explanation.Level.Executed)); }
+		 */
 	}
 
 	@TearDown(Level.Trial)
