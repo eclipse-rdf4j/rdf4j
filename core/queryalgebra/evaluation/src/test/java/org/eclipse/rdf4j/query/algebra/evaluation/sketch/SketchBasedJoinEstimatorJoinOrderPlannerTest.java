@@ -1593,6 +1593,132 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planJoinOrderDoesNotForceUnboundTypeGuardSeedOverCheaperSubjectExpansion() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI aasType = VF.createIRI("urn:aas:AssetAdministrationShell");
+		IRI submodel = VF.createIRI("urn:aas:submodel");
+
+		for (int i = 0; i < 12; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:aas:" + i), rdfType, aasType));
+		}
+		for (int i = 0; i < 10; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:aas:" + i), submodel,
+					VF.createIRI("urn:submodel:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("aas"), Var.of("rdfType", rdfType),
+				Var.of("aasType", aasType));
+		StatementPattern submodelPattern = pattern("aas", submodel, "submodel");
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars);
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars) {
+				if (factor == typePattern) {
+					return Optional.of(boundVars.contains("aas")
+							? exactDirectLookup(1.0d, 1.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(100.0d, 12.0d));
+				}
+				if (factor == submodelPattern) {
+					return Optional.of(boundVars.contains("aas")
+							? exactDirectLookup(1.0d, 1.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(1.0d, 10.0d));
+				}
+				return Optional.empty();
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(typePattern, submodelPattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		assertEquals(submodelPattern, plan.getOrderedArgs().get(0),
+				"Planner should seed from the cheaper expansion instead of forcing rdf:type first");
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void planJoinOrderDoesNotForceBoundTypeGuardOverCheaperBridge() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI relationshipElement = VF.createIRI("urn:aas:RelationshipElement");
+		IRI element = VF.createIRI("urn:aas:submodelElement");
+		IRI second = VF.createIRI("urn:aas:second");
+
+		for (int i = 0; i < 10; i++) {
+			Resource rel = VF.createIRI("urn:rel:" + i);
+			store.add(VF.createStatement(VF.createIRI("urn:submodel:" + i), element, rel));
+			store.add(VF.createStatement(rel, rdfType, relationshipElement));
+			store.add(VF.createStatement(rel, second, VF.createIRI("urn:ref:" + i)));
+		}
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern elementPattern = pattern("submodel", element, "rel");
+		StatementPattern typePattern = new StatementPattern(Var.of("rel"), Var.of("rdfType", rdfType),
+				Var.of("relationshipElement", relationshipElement));
+		StatementPattern secondPattern = pattern("rel", second, "ref");
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars);
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars) {
+				if (factor == elementPattern) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 10.0d));
+				}
+				if (factor == typePattern) {
+					return Optional.of(boundVars.contains("rel")
+							? new JoinFactorCostModel.FactorCostEstimate(100.0d, 10.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(10_000.0d, 10.0d));
+				}
+				if (factor == secondPattern) {
+					return Optional.of(boundVars.contains("rel")
+							? new JoinFactorCostModel.FactorCostEstimate(1.0d, 10.0d)
+							: new JoinFactorCostModel.FactorCostEstimate(100.0d, 10.0d));
+				}
+				return Optional.empty();
+			}
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(elementPattern, typePattern, secondPattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertTrue(orderedArgs.indexOf(secondPattern) < orderedArgs.indexOf(typePattern),
+				"Costed relationship bridge should not be displaced by an rdf:type guard. orderedArgs=" + orderedArgs
+						+ ", steps=" + plan.getSteps() + ", metrics=" + plan.getSummaryDoubleMetrics());
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void estimateFilterPassIgnoresLearnedFeedbackInsideSubqueryScope() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI weight = VF.createIRI("urn:weight");

@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 SCRIPT="${REPO_ROOT}/scripts/run-single-benchmark.sh"
 
+python3 "${REPO_ROOT}/scripts/query-plan-risk-guard.py" --self-test
+
 set +e
 OUTPUT="$(bash "${SCRIPT}" --dry-run --module testsuites/benchmark --class org.eclipse.rdf4j.benchmark.ReasoningBenchmark --method forwardChainingSchemaCachingRDFSInferencer 2>&1)"
 STATUS=$?

@@ -21,6 +21,9 @@ Options:
   --enable-jmh-jfr                  Enable JMH's Java Flight Recorder profiler
   --jmh-jfr-output-dir <path>       Override the destination directory for JMH JFR recordings
   --                                Treat the remaining arguments as raw JMH arguments
+
+Environment:
+  RDF4J_BENCHMARK_PLAN_GUARD=false  Disable early query-plan risk detection
 USAGE
 }
 
@@ -411,6 +414,36 @@ print_command() {
         printf '\n'
 }
 
+plan_guard_enabled() {
+        case "${RDF4J_BENCHMARK_PLAN_GUARD:-true}" in
+        false|FALSE|0|no|NO)
+                return 1
+                ;;
+        *)
+                return 0
+                ;;
+        esac
+}
+
+run_benchmark_command() {
+        if ! plan_guard_enabled; then
+                "${java_cmd[@]}"
+                return
+        fi
+
+        local guard_script="${REPO_ROOT}/scripts/query-plan-risk-guard.py"
+        set +e
+        "${java_cmd[@]}" 2>&1 | python3 "${guard_script}"
+        local java_status=${PIPESTATUS[0]}
+        local guard_status=${PIPESTATUS[1]}
+        set -e
+
+        if [[ ${guard_status} -ne 0 ]]; then
+                return "${guard_status}"
+        fi
+        return "${java_status}"
+}
+
 if ${dry_run}; then
         if ${enable_jfr}; then
                 echo "${jfr_notice}"
@@ -467,4 +500,4 @@ if ${enable_jmh_jfr}; then
 fi
 
 printf 'Running benchmark with jar %s\n' "${jar_path}"
-"${java_cmd[@]}"
+run_benchmark_command

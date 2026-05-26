@@ -80,7 +80,6 @@ final class SketchJoinOrderPlanner {
 	static final String PLANNED_COST_EVIDENCE_COUNT = "plannedCostEvidenceCount";
 	private static final double SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO = 0.25d;
 	private static final double BROAD_BRIDGE_ENDPOINT_PREP_MIN_RATIO = 3.0d;
-	private static final double SUBJECT_TYPE_GUARD_SEED_MAX_ROW_RATIO = 1.25d;
 	private static final double FINITE_DOMAIN_PREFIX_GUARD_MIN_ACCESS_ROWS = 1_000.0d;
 	private static final int FINITE_DOMAIN_FILTER_MAX_ENUMERATED_BINDINGS = 4096;
 	private static final int COMPLETED_DEFERRED_FILTER_CONNECTIONS = 2;
@@ -957,9 +956,6 @@ final class SketchJoinOrderPlanner {
 			if (shouldDelayFiniteLookupGuardedSeed(factorIndex)) {
 				return null;
 			}
-			if (shouldDelaySubjectExpansionSeedUntilTypeGuard(factorIndex)) {
-				return null;
-			}
 		}
 		long seedMask = bit(factorIndex);
 		long seedBoundVarMask = initiallyBoundVarMask | bindingVarMasks[factorIndex];
@@ -1103,40 +1099,6 @@ final class SketchJoinOrderPlanner {
 		return (missingLookupVars != 0L && (missingLookupVars & ~pendingAssignmentVars) == 0L)
 				|| shouldDelayBroadLookupForFinitePrefixGuard(physicalEstimate, missingLookupVars,
 						pendingAssignmentVars);
-	}
-
-	private boolean shouldDelaySubjectExpansionSeedUntilTypeGuard(int factorIndex) {
-		if (isSubjectTypeGuard(factorIndex) || isBindingSetAssignment(factorIndex)
-				|| statementPatternFactor(factorIndex) == null
-				|| unlocksNestedFilterOnIntroducedNonSubjectEndpoint(factorIndex, initiallyBoundVarMask)
-				|| hasStrongSelectiveLocalFilter(factorIndex, initiallyBoundVarMask)
-				|| participatesInPendingFiniteFilter(factorIndex, initiallyBoundVarMask)
-				|| unlocksStrongSelectiveDeferredFilterOnSeed(factorIndex)) {
-			return false;
-		}
-		long introducedSubjectVars = subjectVarMask(factorIndex) & ~initiallyBoundVarMask & variableUniverseMask;
-		if (introducedSubjectVars == 0L) {
-			return false;
-		}
-		double seedRows = factorOutputRows[factorIndex];
-		if (!(isFiniteNonNegative(seedRows) && seedRows > 1.0d)) {
-			return false;
-		}
-		long guards = remainingSubjectTypeGuardMask(0L, factorIndex);
-		while (guards != 0L) {
-			int guard = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(guard) & introducedSubjectVars) == 0L
-					|| !isFactorActionLegal(guard, initiallyBoundVarMask)) {
-				continue;
-			}
-			double guardRows = factorOutputRows[guard];
-			if (isFiniteNonNegative(guardRows)
-					&& guardRows <= seedRows * SUBJECT_TYPE_GUARD_SEED_MAX_ROW_RATIO) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private boolean appliesSelectiveSeedFilterRowFlow(long seedMask) {
@@ -3338,7 +3300,7 @@ final class SketchJoinOrderPlanner {
 		long candidates = candidatesMask(plan);
 		candidates = delayFiniteCompletableLookupCandidates(plan, candidates);
 		candidates = delayUnfilteredFiniteAssignmentsUntilExactLookupGuards(plan, candidates);
-		candidates = preferBoundSubjectTypeGuards(plan, candidates);
+		// rdf:type guards are compared by cost like any other factor; do not prune competing bridge actions here.
 		long actions = candidates | availableFilterActionMask(plan);
 		plan.candidateActionsMask = actions;
 		plan.candidateActionsMaskLoaded = true;
@@ -3589,41 +3551,6 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		return eligible & ~blocked;
-	}
-
-	private long preferBoundSubjectTypeGuards(StatePlan plan, long candidates) {
-		if (candidates == 0L) {
-			return candidates;
-		}
-		long mask = plan.mask();
-		long boundVars = plan.boundVarMask();
-		long guardSubjects = 0L;
-		long guardCandidates = candidates & subjectTypeGuardFactorMask;
-		while (guardCandidates != 0L) {
-			int i = Long.numberOfTrailingZeros(guardCandidates);
-			guardCandidates &= guardCandidates - 1L;
-			guardSubjects |= subjectVarMask(i) & boundVars;
-		}
-		if (guardSubjects == 0L) {
-			return candidates;
-		}
-		long filtered = candidates;
-		long nonGuardCandidates = candidates & ~subjectTypeGuardFactorMask;
-		while (nonGuardCandidates != 0L) {
-			int i = Long.numberOfTrailingZeros(nonGuardCandidates);
-			nonGuardCandidates &= nonGuardCandidates - 1L;
-			if ((subjectVarMask(i) & guardSubjects) == 0L
-					|| introducesPendingSubjectTypeGuard(i, mask, boundVars)) {
-				continue;
-			}
-			filtered &= ~bit(i);
-		}
-		return filtered == 0L ? candidates : filtered;
-	}
-
-	private boolean introducesPendingSubjectTypeGuard(int factorIndex, long mask, long boundVarMask) {
-		long introducedVars = bindingVarMasks[factorIndex] & ~boundVarMask;
-		return introducedVars != 0L && introducedVarsHasPendingSubjectTypeGuard(factorIndex, mask, introducedVars);
 	}
 
 	private SketchBasedJoinEstimator.JoinStepEstimate estimateTransition(
@@ -4229,8 +4156,6 @@ final class SketchJoinOrderPlanner {
 		accessWorkRows = applySelectedFiniteLookupDomainWork(factorIndex, mask, accessWorkRows, prefixEstimate,
 				accessShape, lookupComponentMask, factorCostEstimate, repeatedLookupAmplified);
 		accessWorkRows = applyPendingSmallBindingAssignmentDomainWork(factorIndex, mask, currentlyBoundVarMask,
-				accessWorkRows, prefixEstimate);
-		accessWorkRows = applyPendingBoundSubjectTypeGuardWork(factorIndex, mask, currentlyBoundVarMask,
 				accessWorkRows, prefixEstimate);
 		accessWorkRows = applyDisconnectedCartesianExpansionWork(factorIndex, mask, currentlyBoundVarMask,
 				accessWorkRows, prefixEstimate);
@@ -5287,44 +5212,6 @@ final class SketchJoinOrderPlanner {
 		}
 		return factorAccessWorkRows(factorIndex, mask, currentlyBoundVarMask,
 				factorOutputRows[factorIndex], prefixEstimate);
-	}
-
-	private double applyPendingBoundSubjectTypeGuardWork(int factorIndex, long mask, long currentlyBoundVarMask,
-			double accessWorkRows, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
-		if (!isFiniteNonNegative(accessWorkRows) || isSubjectTypeGuard(factorIndex)) {
-			return accessWorkRows;
-		}
-		double pendingGuardWorkRows = pendingBoundSubjectTypeGuardWorkRows(factorIndex, mask, currentlyBoundVarMask,
-				prefixEstimate);
-		if (!(pendingGuardWorkRows > 0.0d)) {
-			return accessWorkRows;
-		}
-		double adjustedWorkRows = accessWorkRows + pendingGuardWorkRows;
-		return isFiniteNonNegative(adjustedWorkRows) && adjustedWorkRows > accessWorkRows
-				? adjustedWorkRows
-				: accessWorkRows;
-	}
-
-	private double pendingBoundSubjectTypeGuardWorkRows(int factorIndex, long mask, long currentlyBoundVarMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
-		long boundSubjectVars = subjectVarMask(factorIndex) & currentlyBoundVarMask;
-		if (boundSubjectVars == 0L) {
-			return 0.0d;
-		}
-		double rows = 0.0d;
-		long guards = remainingSubjectTypeGuardMask(mask, factorIndex);
-		while (guards != 0L) {
-			int i = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(i) & boundSubjectVars) == 0L) {
-				continue;
-			}
-			double guardWorkRows = rawFactorAccessWorkRows(i, mask, currentlyBoundVarMask, prefixEstimate);
-			if (isFiniteNonNegative(guardWorkRows)) {
-				rows += guardWorkRows;
-			}
-		}
-		return rows;
 	}
 
 	private double applyDisconnectedCartesianExpansionWork(int factorIndex, long mask, long currentlyBoundVarMask,
