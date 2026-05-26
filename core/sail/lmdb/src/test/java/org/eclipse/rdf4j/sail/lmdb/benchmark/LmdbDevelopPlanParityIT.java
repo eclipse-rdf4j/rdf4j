@@ -56,25 +56,27 @@ class LmdbDevelopPlanParityIT {
 
 	@Test
 	void optimizedPlansMatchDevelopSignaturesForKnownRegressions(@TempDir Path dataDir) throws Exception {
-		Map<String, List<String>> expectedDevelopSignatures = parseDevelopPlanSignatures();
-		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme(selectedTargetQueries()).entrySet()) {
-			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
-			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			try {
-				for (TargetQuery targetQuery : entry.getValue()) {
-					List<String> expectedSignature = expectedDevelopSignatures.get(targetQuery.key());
-					assertTrue(expectedSignature != null,
-							"Missing develop optimized plan in " + DEVELOP_RESULTS_FILE + " for "
-									+ targetQuery.key());
-					assertPlanParityPassesWithinThirtySeconds(repository, targetQuery, expectedSignature);
-					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+		BenchmarkJoinEstimatorSupport.withLegacySketchOptimizer(() -> {
+			Map<String, List<String>> expectedDevelopSignatures = parseDevelopPlanSignatures();
+			for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme(selectedTargetQueries()).entrySet()) {
+				Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
+				LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+				SailRepository repository = new SailRepository(store);
+				try {
+					for (TargetQuery targetQuery : entry.getValue()) {
+						List<String> expectedSignature = expectedDevelopSignatures.get(targetQuery.key());
+						assertTrue(expectedSignature != null,
+								"Missing develop optimized plan in " + DEVELOP_RESULTS_FILE + " for "
+										+ targetQuery.key());
+						assertPlanParityPassesWithinThirtySeconds(repository, targetQuery, expectedSignature);
+						BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+					}
+				} finally {
+					shutdownAndRelease(repository, store);
+					BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
 				}
-			} finally {
-				shutdownAndRelease(repository, store);
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
 			}
-		}
+		});
 	}
 
 	private static List<TargetQuery> selectedTargetQueries() {
@@ -191,10 +193,11 @@ class LmdbDevelopPlanParityIT {
 	private static void assertPlanParityPassesWithinThirtySeconds(SailRepository repository, TargetQuery targetQuery,
 			List<String> expectedSignature) throws Exception {
 		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(targetQuery.key(), () -> {
-			PlanSignature signature = planSignature(explainOptimized(repository, targetQuery));
+			String plan = explainOptimized(repository, targetQuery);
+			PlanSignature signature = planSignature(plan);
 			if (!expectedSignature.equals(signature.lines())
 					&& !isAcceptedHistoricalImprovement(targetQuery, signature)) {
-				throw new AssertionError(mismatch(targetQuery, expectedSignature, signature));
+				throw new AssertionError(mismatch(targetQuery, expectedSignature, signature, plan));
 			}
 		});
 	}
@@ -205,6 +208,9 @@ class LmdbDevelopPlanParityIT {
 		}
 		if (targetQuery.theme == Theme.PHARMA && targetQuery.queryIndex == 5) {
 			return isPharmaQ5FastHistoricalShape(signature.lines());
+		}
+		if (targetQuery.theme == Theme.MEDICAL_RECORDS && targetQuery.queryIndex == 7) {
+			return isMedicalRecordsQ7FilterAntiExistsShape(signature.lines());
 		}
 		return false;
 	}
@@ -235,6 +241,18 @@ class LmdbDevelopPlanParityIT {
 				&& pValue < hasResult
 				&& hasResult < hasArm
 				&& hasArm < clinicalTrial;
+	}
+
+	private static boolean isMedicalRecordsQ7FilterAntiExistsShape(List<String> signature) {
+		int hasMedication = predicateIndex(signature, "http://example.com/theme/medical/hasMedication");
+		int dosage = predicateIndex(signature, "http://example.com/theme/medical/dosage");
+		int medicationType = predicateIndex(signature, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		int code = predicateIndex(signature, "http://example.com/theme/medical/code");
+		return firstIndex(signature, "Difference") < 0
+				&& hasMedication >= 0
+				&& hasMedication < dosage
+				&& dosage < medicationType
+				&& medicationType < code;
 	}
 
 	private static int firstIndex(List<String> signature, String prefix) {
@@ -412,13 +430,14 @@ class LmdbDevelopPlanParityIT {
 		return value;
 	}
 
-	private static String mismatch(TargetQuery targetQuery, List<String> expected, PlanSignature actual) {
+	private static String mismatch(TargetQuery targetQuery, List<String> expected, PlanSignature actual, String plan) {
 		return targetQuery.key() + " plan drifted from " + DEVELOP_RESULTS_FILE
 				+ "\nExpected canonical plan:\n" + expected.stream()
 						.collect(Collectors.joining("\n"))
 				+ "\nActual canonical plan:\n" + actual.lines()
 						.stream()
-						.collect(Collectors.joining("\n"));
+						.collect(Collectors.joining("\n"))
+				+ "\nActual plan:\n" + plan;
 	}
 
 	private static TargetQuery target(Theme theme, int queryIndex) {

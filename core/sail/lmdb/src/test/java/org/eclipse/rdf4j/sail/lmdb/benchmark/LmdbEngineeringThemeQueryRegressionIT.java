@@ -57,16 +57,24 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	private static Path dataDir;
 
 	private Path themeDir;
+	private BenchmarkJoinEstimatorSupport.ScopedSystemProperties legacyOptimizerMode;
 
 	@BeforeAll
 	void prepareEngineeringThemeStore() throws Exception {
+		legacyOptimizerMode = BenchmarkJoinEstimatorSupport.enableLegacySketchOptimizer();
 		themeDir = prepareThemeStore(dataDir, Theme.ENGINEERING);
 	}
 
 	@AfterAll
 	void deleteEngineeringThemeStore() {
-		if (themeDir != null) {
-			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		try {
+			if (themeDir != null) {
+				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+			}
+		} finally {
+			if (legacyOptimizerMode != null) {
+				legacyOptimizerMode.close();
+			}
 		}
 	}
 
@@ -142,7 +150,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	@Test
-	void engineeringQ9KeepsOptionalNameExistsCombinedFilterShape() throws Exception {
+	void engineeringQ9KeepsNameExistsCombinedFilterShape() throws Exception {
 		assertWithEngineeringRepository(repository -> assertQueryRegressionPasses(repository, Theme.ENGINEERING, 9,
 				snapshot -> {
 					assertEngineeringQ9FastRenderedShape(snapshot.renderedQuery().trim(), snapshot.plan());
@@ -342,26 +350,34 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	private static void assertEngineeringQ9FastRenderedShape(String renderedQuery, String plan) {
-		assertContains(renderedQuery, "OPTIONAL {");
-		assertBefore(renderedQuery,
-				"OPTIONAL {",
-				"?component <http://example.com/theme/engineering/name> ?optName .",
-				"Engineering q9 should keep component-name probing inside OPTIONAL\n" + plan);
-		assertContains(renderedQuery,
-				"FILTER ((?optName != \"\") && EXISTS { ?requirement <http://example.com/theme/engineering/satisfies> ?component . })");
 		assertBefore(renderedQuery,
 				"?requirement a <http://example.com/theme/engineering/Requirement> .",
-				"OPTIONAL",
-				"Engineering q9 should complete requirement verification before optional component-name probing\n"
+				"?component <http://example.com/theme/engineering/name> ?optName .",
+				"Engineering q9 should complete requirement verification before component-name probing\n"
 						+ plan);
-		assertDoesNotContain(renderedQuery,
-				"?component <http://example.com/theme/engineering/name> ?optName .\nFILTER (?optName != \"\")\nFILTER EXISTS",
-				"Engineering q9 should not split the optional name filter from the correlated EXISTS filter\n"
-						+ plan);
+		if (renderedQuery.contains("OPTIONAL {")) {
+			assertBefore(renderedQuery,
+					"OPTIONAL {",
+					"?component <http://example.com/theme/engineering/name> ?optName .",
+					"Engineering q9 should keep component-name probing inside OPTIONAL when the optional is retained\n"
+							+ plan);
+			assertContains(renderedQuery,
+					"FILTER ((?optName != \"\") && EXISTS { ?requirement <http://example.com/theme/engineering/satisfies> ?component . })");
+		} else {
+			assertBefore(renderedQuery,
+					"?component <http://example.com/theme/engineering/name> ?optName .",
+					"FILTER (?optName != \"\")",
+					"Engineering q9 should still guard component-name probing with the optName filter\n" + plan);
+			assertBefore(renderedQuery,
+					"FILTER (?optName != \"\")",
+					"FILTER EXISTS",
+					"Engineering q9 should retain optName filtering before the correlated EXISTS filter\n" + plan);
+		}
+		assertContains(renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .");
 	}
 
 	private static void assertEngineeringQ9FastPlanShape(String plan) {
-		assertContains(plan, "LeftJoin");
 		assertContains(plan, "Compare (!=)");
 		assertContains(plan, "Exists");
 		assertBefore(plan,

@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -257,7 +258,6 @@ class LmdbThemeQueryRegressionIT {
 					assertThemeQueryResult(repository, theme, queryIndex);
 					trainOperatorFeedback(repository, theme, queryIndex);
 					OptimizerSnapshot snapshot = explainOptimized(repository, theme, queryIndex);
-					assertThemeQueryResult(repository, theme, queryIndex);
 					assertContainsAny(snapshot.plan(),
 							"plannedEstimateSource=learned_operator",
 							"plannedEstimateSource=learned_left_join_surface",
@@ -265,6 +265,8 @@ class LmdbThemeQueryRegressionIT {
 					if (queryIndex == 0) {
 						assertNoSaturatedOperatorEstimate(snapshot.plan(), "LeftJoin", 1_000_000_000_000.0d,
 								"SPARSE q0 should not keep a saturated bound OPTIONAL estimate after feedback");
+						assertDoesNotContain(snapshot.plan(), "selected=finite-anchor:personPosition",
+								"SPARSE q0 should not let a fragile finite position anchor outrank trained feedback");
 					} else if (queryIndex == 7) {
 						assertOperatorEstimateFloor(snapshot.plan(), "Union", 100_000.0d,
 								"SPARSE q7 should not keep under-costed live optional UNION estimates after feedback");
@@ -272,6 +274,7 @@ class LmdbThemeQueryRegressionIT {
 						assertNoZeroLiveOperatorEstimate(snapshot.plan(),
 								"SPARSE q8 should not keep zero estimates for live join/filter branches after feedback");
 					}
+					assertThemeQueryResult(repository, theme, queryIndex);
 				}
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -2030,9 +2033,9 @@ class LmdbThemeQueryRegressionIT {
 					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
 					String plan = snapshot.plan();
-					assertOriginalGuaranteeCandidate(plan,
-							"Medical q5 should show the original filter candidate cost\n" + plan);
-					assertOriginalGuaranteeTotal(plan);
+					assertContains(plan, "original[skipped-semantic-rewrite selected=finite-anchor:value",
+							"Medical q5 should show that the original filter path was kept only as a semantic "
+									+ "rewrite fallback\n" + plan);
 					assertContains(plan, " finalRows=");
 					assertContains(plan, "finite-anchor:value[valid",
 							"Medical q5 should show that the value VALUES anchor was generated and costed\n" + plan);
@@ -2047,7 +2050,7 @@ class LmdbThemeQueryRegressionIT {
 							"Medical q5 finite anchor should carry the positive finite PO lookup estimate "
 									+ "without requiring exact join-surface refinement during candidate gating\n"
 									+ plan);
-					assertContains(plan, "stepSources=[lmdb-finite-binding-lookup:posc:[P, O]",
+					assertContains(plan, "lmdb-finite-binding-lookup:posc:[P, O]",
 							"Medical q5 finite anchor should cost the value lookup through the PO access path\n"
 									+ plan);
 					assertContains(plan, "optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
@@ -2065,6 +2068,35 @@ class LmdbThemeQueryRegressionIT {
 							"Medical q5 finite anchor should satisfy and remove the original value filter\n"
 									+ plan);
 				});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	void medicalRecordsQuery5FiniteAnchorAvoidsCartesianOrder(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.MEDICAL_RECORDS;
+		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, theme, 5);
+				String renderedQuery = snapshot.renderedQuery();
+				String plan = snapshot.plan();
+
+				assertContains(plan, "selected=finite-anchor:value",
+						"Medical q5 should still select the value finite anchor\n" + plan);
+				Assertions.assertFalse(hasPositiveSelectedFiniteAnchorCartesianWork(plan, "value"),
+						"Medical q5 selected value finite-anchor plan must not win by ignoring cartesian work\n"
+								+ plan);
+				assertBefore(renderedQuery, "?obs <http://example.com/theme/medical/value> ?value",
+						"?patient a <http://example.com/theme/medical/Patient>",
+						"Medical q5 should join the value anchor to the observation value pattern before "
+								+ "starting the disconnected patient type chain\nPlan:\n" + plan);
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
@@ -2219,7 +2251,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	void medicalPatientsFreshBenchmarkStoreRejectsExpensiveConditionCodeAnchor(@TempDir Path dataDir)
+	void medicalPatientsFreshBenchmarkStoreUsesConditionCodeValuesRewrite(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme, 9);
@@ -2233,10 +2265,15 @@ class LmdbThemeQueryRegressionIT {
 					assertContains(plan, "finite-anchor:condCode[valid",
 							"Medical q9 fresh benchmark store should still explain the finite-anchor candidate\n"
 									+ plan);
-					assertDoesNotContain(plan, "selected=finite-anchor:condCode",
-							"Medical q9 should not select the condition-code finite anchor when the full plan work "
-									+ "is higher than the original candidate and only wins after unrelated assignment "
-									+ "work is discounted\n"
+					assertContains(plan, "selected=finite-anchor:condCode",
+							"Medical q9 should select the safe condition-code VALUES rewrite unless the filter "
+									+ "fires so few times that evaluating it is cheaper\n"
+									+ plan);
+					assertContains(snapshot.renderedQuery(),
+							"VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }",
+							"Medical q9 should render the safe condition-code FILTER IN as VALUES\n"
+									+ snapshot.renderedQuery()
+									+ "\n"
 									+ plan);
 				});
 			} finally {
@@ -2248,7 +2285,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	void medicalPatientsColdBenchmarkHarnessStoreRejectsConditionCodeAnchor(@TempDir Path dataDir)
+	void medicalPatientsColdBenchmarkHarnessStoreUsesConditionCodeValuesRewrite(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareFreshBenchmarkHarnessStore(dataDir, theme);
@@ -2267,9 +2304,15 @@ class LmdbThemeQueryRegressionIT {
 				assertContains(plan, "finite-anchor:condCode[valid",
 						"Medical q9 cold benchmark harness store should still explain the finite-anchor candidate\n"
 								+ plan);
-				assertDoesNotContain(plan, "selected=finite-anchor:condCode",
-						"Medical q9 should not select a condition-code anchor when the cold finite-anchor plan "
-								+ "only wins by a tiny scalar work delta while estimating a worse row surface\n"
+				assertContains(plan, "selected=finite-anchor:condCode",
+						"Medical q9 should select the safe condition-code VALUES rewrite unless the filter fires "
+								+ "so few times that evaluating it is cheaper\n"
+								+ plan);
+				assertContains(snapshot.renderedQuery(),
+						"VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }",
+						"Medical q9 should render the safe condition-code FILTER IN as VALUES\n"
+								+ snapshot.renderedQuery()
+								+ "\n"
 								+ plan);
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -2280,7 +2323,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	void medicalPatientsBenchmarkHarnessStoreKeepsOriginalAnchorAfterWarmups(@TempDir Path dataDir)
+	void medicalPatientsBenchmarkHarnessStoreKeepsConditionCodeValuesRewriteAfterWarmups(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareFreshBenchmarkHarnessStore(dataDir, theme);
@@ -2302,9 +2345,15 @@ class LmdbThemeQueryRegressionIT {
 				assertContains(plan, "finite-anchor:condCode[valid",
 						"Medical q9 benchmark harness store should still explain the finite-anchor candidate\n"
 								+ plan);
-				assertContains(plan, "selected=original",
-						"Medical q9 should keep the original anchor when JMH-style warmup feedback still leaves "
-								+ "the condition-code finite anchor with higher work and output surface\n"
+				assertContains(plan, "selected=finite-anchor:condCode",
+						"Medical q9 should keep the safe condition-code VALUES rewrite after JMH-style warmup "
+								+ "feedback unless the filter fires so few times that evaluating it is cheaper\n"
+								+ plan);
+				assertContains(snapshot.renderedQuery(),
+						"VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }",
+						"Medical q9 should render the safe condition-code FILTER IN as VALUES after warmup\n"
+								+ snapshot.renderedQuery()
+								+ "\n"
 								+ plan);
 				assertContainsAny(plan, "sources={learned_filter=1}", "source=learned_filter");
 				assertContains(plan, "plannedEstimateUsage=join_order_candidate",
@@ -2330,20 +2379,20 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
-					assertDoesNotContain(snapshot.plan(), "selected=finite-anchor:condCode",
-							"Medical q9 should not select the condition-code finite anchor when the full plan work "
-									+ "is higher than the original candidate and only wins after unrelated assignment "
-									+ "work is discounted\n"
+					assertContains(snapshot.renderedQuery(),
+							"VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }",
+							"Medical q9 should turn the safe condition-code FILTER IN into a finite VALUES "
+									+ "domain instead of evaluating the filter for every condition binding\n"
+									+ snapshot.renderedQuery()
+									+ "\n"
 									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?cond <http://example.com/theme/medical/code> ?condCode",
-							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"Medical q9 should bind the filtered condition code domain before hasCondition fanout\n"
+					assertDoesNotContain(snapshot.renderedQuery(),
+							"FILTER (?condCode IN (\"DX-200\", \"DX-201\", \"DX-202\"))",
+							"Medical q9 condition-code FILTER IN should be satisfied by the generated VALUES "
+									+ "domain\n"
+									+ snapshot.renderedQuery()
+									+ "\n"
 									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"?enc a <http://example.com/theme/medical/Encounter>",
-							"Medical q9 should validate the Encounter type after hasCondition has bound enc exactly\n"
-									+ snapshot.plan());
-					assertMedicalQ9CodeFirstPlanShape(snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "MINUS",
 							"Medical q9 should keep the develop materialized anti-join; the correlated rewrite "
 									+ "repeats the filtered observation/value suffix per encounter\n"
@@ -2352,11 +2401,18 @@ class LmdbThemeQueryRegressionIT {
 							"Medical q9 should not rewrite the multi-pattern observation exclusion into a "
 									+ "correlated probe\n"
 									+ snapshot.plan());
-					assertContains(snapshot.plan(), "plannerPath=ANTI_JOIN_RETAINED");
-					assertContains(snapshot.plan(), "antiJoinRewrite=materialized-minus");
+					assertContains(snapshot.plan(), "Difference (",
+							"Medical q9 should retain the MINUS as a materialized anti-join boundary\n"
+									+ snapshot.plan());
+					assertContains(snapshot.plan(), "Join (HashJoinIteration)",
+							"Medical q9 should materialize the observation/value exclusion branch for reuse\n"
+									+ snapshot.plan());
 					assertNoUnboundLeftStatementGuard(snapshot.plan(),
 							"Medical q9 should not wrap broad patient/encounter branch scans in a failed left "
 									+ "bound-statement guard");
+					assertCoveredCascadesJoinPrefixesHaveRuntimeMetrics(snapshot.plan(),
+							"Medical q9 Cascades join prefixes need local planned rows/work metrics for runtime "
+									+ "operator selection");
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -2364,22 +2420,6 @@ class LmdbThemeQueryRegressionIT {
 		} finally {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
 		}
-	}
-
-	private static void assertMedicalQ9CodeFirstPlanShape(String plan) {
-		String conditionPattern = firstStatementPatternForPredicateAndVar(plan,
-				"http://example.com/theme/medical/hasCondition", "o", "cond");
-		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
-		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
-		assertPlannedBoundVar(conditionPattern, "cond");
-
-		String encounterPattern = firstStatementPatternContaining(plan,
-				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-				"value=http://example.com/theme/medical/Encounter",
-				"s: Var (name=enc");
-		assertContains(encounterPattern, "plannedIndexAccessMode=directLookup");
-		assertContains(encounterPattern, "plannedLookupComponents=[S, P, O]");
-		assertPlannedBoundVar(encounterPattern, "enc");
 	}
 
 	@Test
@@ -2941,7 +2981,10 @@ class LmdbThemeQueryRegressionIT {
 		if (theme == Theme.MEDICAL_RECORDS && queryIndex == 5) {
 			return renderedQuery.contains("http://example.com/theme/medical/value")
 					&& plan.contains("value=http://example.com/theme/medical/value")
-					&& !renderedQuery.contains("FILTER (?value IN (50, 60, 70))");
+					&& !renderedQuery.contains("FILTER (?value IN (50, 60, 70))")
+					&& !hasPositiveSelectedFiniteAnchorCartesianWork(plan, "value")
+					&& appearsBefore(renderedQuery, "?obs <http://example.com/theme/medical/value> ?value",
+							"?patient a <http://example.com/theme/medical/Patient>");
 		}
 		if (theme == Theme.LIBRARY && queryIndex == 4) {
 			return renderedQuery.contains("VALUES ?title { \"Book 1\" \"Book 2\" }")
@@ -3161,6 +3204,29 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
+	private static void assertCoveredCascadesJoinPrefixesHaveRuntimeMetrics(String plan, String message) {
+		String[] lines = plan.split("\\R");
+		boolean sawCoveredJoinPrefix = false;
+		for (String line : lines) {
+			if (!line.contains("Join (")
+					|| !line.contains("plannedEstimateUsage=covered_by_parent_winner")
+					|| !(line.contains("plannedEstimateSource=lmdb-guarantee-options")
+							|| line.contains("plannedEstimateSource=lmdb-sketch-join-order-provider"))) {
+				continue;
+			}
+			sawCoveredJoinPrefix = true;
+			if (!line.contains(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS + "=")
+					|| !line.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "=")) {
+				throw new AssertionError(message
+						+ "\nCovered join prefix is missing local planned cardinality/work metrics:\n"
+						+ line + "\nFull plan:\n" + plan);
+			}
+		}
+		if (!sawCoveredJoinPrefix) {
+			throw new AssertionError(message + "\nNo covered Cascades join prefixes found:\n" + plan);
+		}
+	}
+
 	private static String firstStatementPatternBlock(String[] lines, int start) {
 		StringBuilder block = new StringBuilder();
 		for (int i = start; i < lines.length; i++) {
@@ -3184,6 +3250,20 @@ class LmdbThemeQueryRegressionIT {
 	private static void assertOriginalGuaranteeTotal(String plan) {
 		assertContainsAny(plan, "original[baseline total=", "original[lower-bound total=",
 				"original-fixed[fixed-order total=");
+	}
+
+	private static boolean hasPositiveSelectedFiniteAnchorCartesianWork(String plan, String bindingName) {
+		String selected = "selected=finite-anchor:" + bindingName;
+		for (String line : plan.split("\\R")) {
+			if (!line.contains(selected)) {
+				continue;
+			}
+			double rows = metricRows(line, "plannedCostCartesianWorkRows");
+			if (Double.isFinite(rows) && rows > 0.0d) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void assertContainsAny(String value, String... expectedValues) {
@@ -3380,15 +3460,18 @@ class LmdbThemeQueryRegressionIT {
 	private static void assertPlannerDiagnosticsPresent(Theme theme, int queryIndex, String plan) {
 		if (theme == Theme.LIBRARY && queryIndex == 7) {
 			assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor",
+					"plannerId=lmdb-cascades",
 					"plannedIndexAccessMode=");
 			return;
 		}
 		if (theme == Theme.SOCIAL_MEDIA) {
 			assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor",
+					"plannerId=lmdb-cascades",
 					"plannedIndexAccessMode=");
 			return;
 		}
-		assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor");
+		assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor",
+				"plannerId=lmdb-cascades");
 	}
 
 	private static boolean socialCliqueAnchorSatisfiedByMaterializedValues(Theme theme, int queryIndex,

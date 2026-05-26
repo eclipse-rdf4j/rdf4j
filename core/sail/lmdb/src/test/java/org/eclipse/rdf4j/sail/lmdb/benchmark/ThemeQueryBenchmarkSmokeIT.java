@@ -52,6 +52,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String MEDICAL_RECORDED_ON = MEDICAL + "recordedOn";
 	private static final String MEDICAL_RECORDED_ON_FILTER = "recordedOn-filter";
 	private static final String MEDICAL_RECORDED_ON_LABEL = "recordedOn";
+	private static final String MEDICAL_HAS_ENCOUNTER_LABEL = "hasEncounter";
 	private static final String MEDICAL_HANDLED_BY_LABEL = "handledBy";
 	private static final String MEDICAL_TYPE_LABEL = "encounter-type";
 	private static final String PHARMA = "http://example.com/theme/pharma/";
@@ -69,6 +70,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final double SPARSE_Q0_POSITION_LATE_LOOKUP_WORK_LIMIT = 25_000.0d;
 	private static final int QUERY_EXECUTION_REPETITIONS = 5;
 	private static final String BENCHMARK_PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String LMDB_CASCADES_MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
 
 	private static String previousBenchmarkProfilingProperty;
 
@@ -293,6 +295,34 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void medicalQ0OptionalBindsEncounterThroughPatientBeforeRecordedOn() throws Exception {
+		ThemeQueryBenchmark benchmark = newBenchmark(Theme.MEDICAL_RECORDS, 0);
+
+		benchmark.setup();
+		try {
+			LmdbPlannerAwait.awaitPlannerAssertion("medical query zero benchmark sketches ready",
+					() -> assertTrue(benchmark.evaluationStatistics().supportsJoinEstimation(),
+							"Theme benchmark setup should wait for LMDB sketches before plan assertions"));
+			String plan = benchmark.explainOptimizedPlan();
+			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			List<String> optionalLeafOrder = collectMedicalQ0EncounterOptionalLeafOrder(optimized);
+			int encounterBridgeIndex = optionalLeafOrder.indexOf(MEDICAL_HAS_ENCOUNTER_LABEL);
+			int recordedOnIndex = optionalLeafOrder.indexOf(MEDICAL_RECORDED_ON_LABEL);
+
+			assertTrue(encounterBridgeIndex >= 0 && recordedOnIndex >= 0,
+					"Expected Medical q0 OPTIONAL RHS to expose hasEncounter and recordedOn; order="
+							+ optionalLeafOrder + "\n" + plan);
+			assertTrue(encounterBridgeIndex < recordedOnIndex,
+					"Medical q0 OPTIONAL RHS should bridge from the outer-bound ?patient to ?enc before "
+							+ "reading recordedOn; order=" + optionalLeafOrder + "\n" + plan);
+			assertTrue(planContainsBoundPatientEncounterBridge(plan),
+					"Medical q0 OPTIONAL RHS should plan hasEncounter as a patient-bound bridge\n" + plan);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	@Test
 	void explainQueryPlacesPharmaQ5PValueFilterBeforeTrialExpansion() throws Exception {
 		ThemeQueryBenchmark benchmark = newBenchmark(Theme.PHARMA, 5);
 
@@ -431,6 +461,31 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void sparseQ6LegacyPipelineReturnsExpectedUnionFanoutCount() throws Exception {
+		String previousCascadesMode = System.getProperty(LMDB_CASCADES_MODE_PROPERTY);
+		System.setProperty(LMDB_CASCADES_MODE_PROPERTY, "off");
+		ThemeQueryBenchmark benchmark = newBenchmark(Theme.SPARSE, 6);
+
+		try {
+			benchmark.setup();
+			String optimizedPlan = benchmark.explainOptimizedPlan();
+			long expectedBenchmarkResult = expectedBenchmarkResult(Theme.SPARSE, 6);
+			try {
+				assertEquals(expectedBenchmarkResult, benchmark.executeQuery(240));
+			} catch (IllegalStateException e) {
+				throw new AssertionError(e.getMessage() + "\n" + optimizedPlan, e);
+			}
+		} finally {
+			benchmark.tearDown();
+			if (previousCascadesMode == null) {
+				System.clearProperty(LMDB_CASCADES_MODE_PROPERTY);
+			} else {
+				System.setProperty(LMDB_CASCADES_MODE_PROPERTY, previousCascadesMode);
+			}
+		}
+	}
+
+	@Test
 	@Order(Integer.MAX_VALUE - 2)
 	void sparseQ9BenchmarkLifecycleAnchorsEventPositionThroughPageBridgeAfterPriorSparseTrials() throws Exception {
 		runSparseBenchmarkTrial(7, 1);
@@ -522,7 +577,7 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static void assertBridgeEstimateOrRepeatedAccessTelemetry(StatementPattern statementPattern,
 			String message) {
 		String estimateSource = statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-		if ("lmdb-access-path".equals(estimateSource) || "lmdb-bound-lookup-subtree".equals(estimateSource)) {
+		if ("lmdb-bound-lookup-subtree".equals(estimateSource)) {
 			assertRepeatedAccessTelemetryPresent(statementPattern, message);
 			return;
 		}
@@ -612,6 +667,45 @@ class ThemeQueryBenchmarkSmokeIT {
 		return selected;
 	}
 
+	private static List<String> collectMedicalQ0EncounterOptionalLeafOrder(TupleExpr optimized) {
+		List<String> selected = new ArrayList<>();
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin node) {
+				if (selected.isEmpty()) {
+					List<String> leaves = new ArrayList<>();
+					collectMedicalQ0EncounterOptionalLeafOrder(node.getRightArg(), leaves);
+					if (leaves.contains(MEDICAL_HAS_ENCOUNTER_LABEL)
+							&& leaves.contains(MEDICAL_RECORDED_ON_LABEL)) {
+						selected.addAll(leaves);
+					}
+				}
+				super.meet(node);
+			}
+		});
+		return selected;
+	}
+
+	private static boolean planContainsBoundPatientEncounterBridge(String plan) {
+		String predicate = "value=" + MEDICAL + "hasEncounter";
+		int searchIndex = 0;
+		while (searchIndex < plan.length()) {
+			int predicateIndex = plan.indexOf(predicate, searchIndex);
+			if (predicateIndex < 0) {
+				return false;
+			}
+			int from = Math.max(0, predicateIndex - 700);
+			int to = Math.min(plan.length(), predicateIndex + 900);
+			String window = plan.substring(from, to);
+			if (window.contains("s: Var (name=patient) (bindingState=bound)")
+					&& window.contains("o: Var (name=enc)")) {
+				return true;
+			}
+			searchIndex = predicateIndex + predicate.length();
+		}
+		return false;
+	}
+
 	private static TupleExpr mandatoryRoot(TupleExpr optimized) {
 		LeftJoin leftJoin = findFirst(optimized, LeftJoin.class);
 		return leftJoin == null ? optimized : leftJoin.getLeftArg();
@@ -686,6 +780,29 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
+	private static void collectMedicalQ0EncounterOptionalLeafOrder(TupleExpr tupleExpr, List<String> leaves) {
+		if (tupleExpr instanceof Join join) {
+			collectMedicalQ0EncounterOptionalLeafOrder(join.getLeftArg(), leaves);
+			collectMedicalQ0EncounterOptionalLeafOrder(join.getRightArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof Filter filter) {
+			collectMedicalQ0EncounterOptionalLeafOrder(filter.getArg(), leaves);
+			return;
+		}
+		if (tupleExpr instanceof StatementPattern statementPattern) {
+			if (isMedicalQ0EncounterBridge(statementPattern)) {
+				leaves.add(MEDICAL_HAS_ENCOUNTER_LABEL);
+			} else if (hasPredicate(statementPattern, MEDICAL_RECORDED_ON)) {
+				leaves.add(MEDICAL_RECORDED_ON_LABEL);
+			}
+			return;
+		}
+		if (tupleExpr instanceof UnaryTupleOperator unaryTupleOperator) {
+			collectMedicalQ0EncounterOptionalLeafOrder(unaryTupleOperator.getArg(), leaves);
+		}
+	}
+
 	private static String labelForLeaf(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof Filter filter && isPharmaPValueFilter(filter)) {
 			return PHARMA_P_VALUE_FILTER;
@@ -737,6 +854,14 @@ class ThemeQueryBenchmarkSmokeIT {
 				&& "event".equals(statementPattern.getSubjectVar().getName())
 				&& statementPattern.getObjectVar() != null
 				&& "eventPosition".equals(statementPattern.getObjectVar().getName());
+	}
+
+	private static boolean isMedicalQ0EncounterBridge(StatementPattern statementPattern) {
+		return hasPredicate(statementPattern, MEDICAL + "hasEncounter")
+				&& statementPattern.getSubjectVar() != null
+				&& "patient".equals(statementPattern.getSubjectVar().getName())
+				&& statementPattern.getObjectVar() != null
+				&& "enc".equals(statementPattern.getObjectVar().getName());
 	}
 
 	private static StatementPattern findSparseQ9EmployeePattern(TupleExpr optimized) {

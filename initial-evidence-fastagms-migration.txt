@@ -1,0 +1,200 @@
+[INFO] Skipping execution because parameter 'skip' was set to true.
+[INFO] 
+[INFO] --- spotless:2.34.0:check (spotless-check) @ rdf4j-runtime-osgi ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- install:3.1.4:install (default-install) @ rdf4j-runtime-osgi ---
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/runtime-osgi/dependency-reduced-pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-runtime-osgi/6.0.0-SNAPSHOT/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.pom
+[INFO] 
+[INFO] --- spring-boot:4.0.2:repackage (default) @ rdf4j-server-boot ---
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/runtime-osgi/target/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.jar to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-runtime-osgi/6.0.0-SNAPSHOT/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- bundle:5.1.9:install (default-install) @ rdf4j-runtime-osgi ---
+[INFO] Installing org/eclipse/rdf4j/rdf4j-runtime-osgi/6.0.0-SNAPSHOT/rdf4j-runtime-osgi-6.0.0-SNAPSHOT.jar
+[INFO] Writing OBR metadata
+[INFO] Replacing main artifact /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT.jar with repackaged archive, adding nested dependencies in BOOT-INF/.
+[INFO] The original artifact has been renamed to /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT.jar.original
+[INFO] 
+[INFO] --- assembly:3.7.1:single (server-boot-distribution) @ rdf4j-server-boot ---
+[INFO] Reading assembly descriptor: src/assembly/server-boot-distribution.xml
+[INFO] Building zip: /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT-distribution.zip
+[INFO] Building war: /Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/sparql/target/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.war
+[INFO] Building war: /Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/repository/target/rdf4j-repository-compliance-6.0.0-SNAPSHOT.war
+[INFO] 
+[INFO] --- failsafe:3.5.4:integration-test (integration-tests) @ rdf4j-sparql-compliance ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- failsafe:3.5.4:verify (verify) @ rdf4j-sparql-compliance ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- japicmp:0.18.3:cmp (default) @ rdf4j-sparql-compliance ---
+[INFO] Skipping execution because parameter 'skip' was set to true.
+[INFO] 
+[INFO] --- spotless:2.34.0:check (spotless-check) @ rdf4j-sparql-compliance ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- install:3.1.4:install (default-install) @ rdf4j-sparql-compliance ---
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/sparql/pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-sparql-compliance/6.0.0-SNAPSHOT/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.pom
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/sparql/target/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.war to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-sparql-compliance/6.0.0-SNAPSHOT/rdf4j-sparql-compliance-6.0.0-SNAPSHOT.war
+[INFO] 
+[INFO] --- failsafe:3.5.4:integration-test (integration-tests) @ rdf4j-repository-compliance ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- failsafe:3.5.4:verify (verify) @ rdf4j-repository-compliance ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- japicmp:0.18.3:cmp (default) @ rdf4j-repository-compliance ---
+[INFO] Skipping execution because parameter 'skip' was set to true.
+[INFO] 
+[INFO] --- spotless:2.34.0:check (spotless-check) @ rdf4j-repository-compliance ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- install:3.1.4:install (default-install) @ rdf4j-repository-compliance ---
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/repository/pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-repository-compliance/6.0.0-SNAPSHOT/rdf4j-repository-compliance-6.0.0-SNAPSHOT.pom
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/repository/target/rdf4j-repository-compliance-6.0.0-SNAPSHOT.war to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-repository-compliance/6.0.0-SNAPSHOT/rdf4j-repository-compliance-6.0.0-SNAPSHOT.war
+[INFO] 
+[INFO] --- failsafe:3.5.4:integration-test (integration-tests) @ rdf4j-server-boot ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- failsafe:3.5.4:verify (verify) @ rdf4j-server-boot ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- japicmp:0.18.3:cmp (default) @ rdf4j-server-boot ---
+[INFO] Skipping execution because parameter 'skip' was set to true.
+[INFO] 
+[INFO] --- spotless:2.34.0:check (spotless-check) @ rdf4j-server-boot ---
+[INFO] Spotless check skipped
+[INFO] 
+[INFO] --- install:3.1.4:install (default-install) @ rdf4j-server-boot ---
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/server-boot/pom.xml to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-server-boot/6.0.0-SNAPSHOT/rdf4j-server-boot-6.0.0-SNAPSHOT.pom
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT.jar to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-server-boot/6.0.0-SNAPSHOT/rdf4j-server-boot-6.0.0-SNAPSHOT.jar
+[INFO] Installing /Users/havardottestad/Documents/Programming/rdf4j-small-things/tools/server-boot/target/rdf4j-server-boot-6.0.0-SNAPSHOT-distribution.zip to /Users/havardottestad/Documents/Programming/rdf4j-small-things/.m2_repo/org/eclipse/rdf4j/rdf4j-server-boot/6.0.0-SNAPSHOT/rdf4j-server-boot-6.0.0-SNAPSHOT-distribution.zip
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for Eclipse RDF4J 6.0.0-SNAPSHOT:
+[INFO] 
+[INFO] Eclipse RDF4J ...................................... SUCCESS [  0.371 s]
+[INFO] RDF4J: Assembly Descriptors ........................ SUCCESS [  0.291 s]
+[INFO] RDF4J: Core ........................................ SUCCESS [  0.024 s]
+[INFO] RDF4J: common ...................................... SUCCESS [  0.027 s]
+[INFO] RDF4J: common annotation ........................... SUCCESS [  0.371 s]
+[INFO] RDF4J: Model API ................................... SUCCESS [  0.660 s]
+[INFO] RDF4J: common exception ............................ SUCCESS [  0.069 s]
+[INFO] RDF4J: common IO ................................... SUCCESS [  0.289 s]
+[INFO] RDF4J: common order ................................ SUCCESS [  0.066 s]
+[INFO] RDF4J: common iterators ............................ SUCCESS [  0.227 s]
+[INFO] RDF4J: common text ................................. SUCCESS [  0.083 s]
+[INFO] RDF4J: RDF Vocabularies ............................ SUCCESS [  0.225 s]
+[INFO] RDF4J: Model ....................................... SUCCESS [  0.672 s]
+[INFO] RDF4J: common transaction .......................... SUCCESS [  0.137 s]
+[INFO] RDF4J: common XML .................................. SUCCESS [  0.113 s]
+[INFO] RDF4J: SparqlBuilder ............................... SUCCESS [  0.481 s]
+[INFO] RDF4J: Rio ......................................... SUCCESS [  0.018 s]
+[INFO] RDF4J: Rio - API ................................... SUCCESS [  0.392 s]
+[INFO] RDF4J: Rio - Languages ............................. SUCCESS [  0.059 s]
+[INFO] RDF4J: Rio - Datatypes ............................. SUCCESS [  0.100 s]
+[INFO] RDF4J: Query ....................................... SUCCESS [  0.276 s]
+[INFO] RDF4J: Rio - Binary ................................ SUCCESS [  0.162 s]
+[INFO] RDF4J: Rio - N-Triples ............................. SUCCESS [  0.174 s]
+[INFO] RDF4J: Rio - HDT ................................... SUCCESS [  0.178 s]
+[INFO] RDF4J: Rio - JSON-LD 1.0 (legacy) .................. SUCCESS [  0.306 s]
+[INFO] RDF4J: Query algebra ............................... SUCCESS [  0.025 s]
+[INFO] RDF4J: Query algebra - model ....................... SUCCESS [  0.752 s]
+[INFO] RDF4J: Rio - N-Quads ............................... SUCCESS [  0.154 s]
+[INFO] RDF4J: Query parser ................................ SUCCESS [  0.023 s]
+[INFO] RDF4J: Query parser - API .......................... SUCCESS [  0.112 s]
+[INFO] RDF4J: Rio - Turtle ................................ SUCCESS [  0.250 s]
+[INFO] RDF4J: Rio - TriG .................................. SUCCESS [  0.133 s]
+[INFO] RDF4J: Query parser - SPARQL ....................... SUCCESS [  1.256 s]
+[INFO] RDF4J: Test Suites ................................. SUCCESS [  0.023 s]
+[INFO] RDF4J: benchmarks .................................. SUCCESS [  2.360 s]
+[INFO] RDF4J: Rio - JSON-LD ............................... SUCCESS [  0.176 s]
+[INFO] RDF4J: Rio - N3 (writer-only) ...................... SUCCESS [  0.110 s]
+[INFO] RDF4J: Rio - RDF/JSON .............................. SUCCESS [  0.170 s]
+[INFO] RDF4J: Rio - RDF/XML ............................... SUCCESS [  0.231 s]
+[INFO] RDF4J: Rio - TriX .................................. SUCCESS [  0.120 s]
+[INFO] RDF4J: Collection Factory that may be shared ....... SUCCESS [  0.017 s]
+[INFO] RDF4J: Collection Factory - API .................... SUCCESS [  0.094 s]
+[INFO] RDF4J: Sail ........................................ SUCCESS [  0.023 s]
+[INFO] RDF4J: Sail API .................................... SUCCESS [  0.304 s]
+[INFO] RDF4J: Query result IO ............................. SUCCESS [  0.018 s]
+[INFO] RDF4J: Query result IO - API ....................... SUCCESS [  0.081 s]
+[INFO] RDF4J: QueryResultIO testsuite ..................... SUCCESS [  0.084 s]
+[INFO] RDF4J: Query result IO - binary .................... SUCCESS [  0.127 s]
+[INFO] RDF4J: Query result IO - SPARQL/JSON ............... SUCCESS [  0.208 s]
+[INFO] RDF4J: Query result IO - SPARQL/XML ................ SUCCESS [  0.166 s]
+[INFO] RDF4J: Query result IO - XSLX ...................... SUCCESS [  0.161 s]
+[INFO] RDF4J: Query result IO - ODS ....................... SUCCESS [  0.124 s]
+[INFO] RDF4J: Query result IO - plain text booleans ....... SUCCESS [  0.181 s]
+[INFO] RDF4J: Repository .................................. SUCCESS [  0.021 s]
+[INFO] RDF4J: Repository - API ............................ SUCCESS [  0.376 s]
+[INFO] RDF4J: HTTP ........................................ SUCCESS [  0.021 s]
+[INFO] RDF4J: HTTP protocol ............................... SUCCESS [  0.140 s]
+[INFO] RDF4J: HTTP client API ............................. SUCCESS [  0.677 s]
+[INFO] RDF4J: HTTP client JDK implementation .............. SUCCESS [  0.114 s]
+[INFO] RDF4J: HTTP client Apache HttpComponents 5 implementation SUCCESS [  0.108 s]
+[INFO] RDF4J: HTTP client ................................. SUCCESS [  0.276 s]
+[INFO] RDF4J: SPARQL Repository ........................... SUCCESS [  0.182 s]
+[INFO] RDF4J: Query algebra - evaluation .................. SUCCESS [  2.381 s]
+[INFO] RDF4J: Repository API testsuite .................... SUCCESS [  0.277 s]
+[INFO] RDF4J: SailRepository .............................. SUCCESS [  0.215 s]
+[INFO] RDF4J: Repository - event (wrapper) ................ SUCCESS [  0.139 s]
+[INFO] RDF4J: HTTPRepository .............................. SUCCESS [  0.187 s]
+[INFO] RDF4J: Repository manager .......................... SUCCESS [  0.218 s]
+[INFO] RDF4J: Sail base implementations ................... SUCCESS [  0.223 s]
+[INFO] RDF4J: Sail API testsuite .......................... SUCCESS [  0.155 s]
+[INFO] RDF4J: Query Rendering ............................. SUCCESS [  0.988 s]
+[INFO] RDF4J: MemoryStore ................................. SUCCESS [  0.379 s]
+[INFO] RDF4J: Query algebra - GeoSPARQL ................... SUCCESS [  0.274 s]
+[INFO] RDF4J: DatasetRepository (wrapper) ................. SUCCESS [  0.075 s]
+[INFO] RDF4J: Repository - context aware (wrapper) ........ SUCCESS [  0.131 s]
+[INFO] RDF4J: Model API testsuite ......................... SUCCESS [  0.096 s]
+[INFO] RDF4J: Sail Model .................................. SUCCESS [  0.122 s]
+[INFO] RDF4J: Collection Factory - Map DB v3 backed ....... SUCCESS [  0.311 s]
+[INFO] RDF4J: NativeStore ................................. SUCCESS [  0.710 s]
+[INFO] RDF4J: Inferencer Sails ............................ SUCCESS [  0.286 s]
+[INFO] RDF4J: LmdbStore ................................... SUCCESS [  4.345 s]
+[INFO] RDF4J: SHACL ....................................... SUCCESS [  3.770 s]
+[INFO] RDF4J: Lucene Sail API ............................. SUCCESS [  0.344 s]
+[INFO] RDF4J: Lucene Sail Index ........................... SUCCESS [  0.387 s]
+[INFO] RDF4J: Elastic Search Sail Index ................... SUCCESS [  0.336 s]
+[INFO] RDF4J: Extensible Store ............................ SUCCESS [  0.491 s]
+[INFO] RDF4J: Elasticsearch Store ......................... SUCCESS [  0.369 s]
+[INFO] RDF4J: SPIN ........................................ SUCCESS [  0.504 s]
+[INFO] RDF4J: Client Libraries ............................ SUCCESS [  0.011 s]
+[INFO] RDF4J: Storage Libraries ........................... SUCCESS [  0.016 s]
+[INFO] RDF4J: Collection Factory - Map DB backed .......... SUCCESS [  0.146 s]
+[INFO] RDF4J: Tools ....................................... SUCCESS [  0.024 s]
+[INFO] RDF4J: application configuration ................... SUCCESS [  0.181 s]
+[INFO] RDF4J: HTTP server - core .......................... SUCCESS [  0.450 s]
+[INFO] RDF4J: SPARQL compliance test suite ................ SUCCESS [  1.986 s]
+[INFO] RDF4J: Federation .................................. SUCCESS [  0.965 s]
+[INFO] RDF4J: Console ..................................... SUCCESS [  0.400 s]
+[INFO] RDF4J: HTTP server ................................. SUCCESS [  1.267 s]
+[INFO] RDF4J: Workbench ................................... SUCCESS [  1.851 s]
+[INFO] RDF4J: Server + Workbench Spring Boot runner ....... SUCCESS [  3.790 s]
+[INFO] RDF4J: Runtime ..................................... SUCCESS [  0.020 s]
+[INFO] RDF4J: Runtime - OSGi .............................. SUCCESS [  3.456 s]
+[INFO] RDF4J: Spring components ........................... SUCCESS [  0.042 s]
+[INFO] RDF4J: Spring boot component for a HTTP sparql server SUCCESS [  0.334 s]
+[INFO] RDF4J: Spring ...................................... SUCCESS [  0.622 s]
+[INFO] RDF4J: Spring Demo ................................. SUCCESS [  0.228 s]
+[INFO] RDF4J: Rio compliance test suite ................... SUCCESS [  1.391 s]
+[INFO] RDF4J: Lucene Sail Tests ........................... SUCCESS [  0.246 s]
+[INFO] RDF4J: GeoSPARQL compliance test suite ............. SUCCESS [  0.078 s]
+[INFO] RDF4J: benchmarks .................................. SUCCESS [  5.597 s]
+[INFO] RDF4J: Compliance tests ............................ SUCCESS [  0.024 s]
+[INFO] RDF4J: Repository compliance tests ................. SUCCESS [  2.587 s]
+[INFO] RDF4J: Rio compliance tests ........................ SUCCESS [  0.084 s]
+[INFO] RDF4J: Model compliance tests ...................... SUCCESS [  0.074 s]
+[INFO] RDF4J: SPARQL query parser compliance tests ........ SUCCESS [  2.503 s]
+[INFO] RDF4J: Lucene Sail Tests ........................... SUCCESS [  0.084 s]
+[INFO] RDF4J: Elasticsearch Sail Tests .................... SUCCESS [  0.158 s]
+[INFO] RDF4J: GeoSPARQL compliance tests .................. SUCCESS [  0.068 s]
+[INFO] RDF4J: Code examples ............................... SUCCESS [  0.165 s]
+[INFO] RDF4J: BOM ......................................... SUCCESS [  0.017 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  27.465 s (Wall Clock)
+[INFO] Finished at: 2026-05-25T22:24:36+02:00
+[INFO] ------------------------------------------------------------------------

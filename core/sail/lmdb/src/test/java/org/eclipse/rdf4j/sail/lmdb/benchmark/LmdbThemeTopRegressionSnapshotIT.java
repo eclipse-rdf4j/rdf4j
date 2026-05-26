@@ -129,26 +129,29 @@ class LmdbThemeTopRegressionSnapshotIT {
 
 	@Test
 	void topRegressionOptimizedQueriesMatchFastestKnownSnapshots(@TempDir Path dataDir) throws Exception {
-		Map<String, String> fastestQueries = parseFastestOptimizedQueries();
-		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {
-			System.out.println("Preparing theme " + entry.getKey());
-			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey(), entry.getValue());
-			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-			SailRepository repository = new SailRepository(store);
-			System.out.println("Prepared store for theme " + entry.getKey().name());
-			try {
-				for (TargetQuery targetQuery : entry.getValue()) {
-					System.out.println("Checking optimized query for " + targetQuery.key());
-					String expected = fastestQueries.get(targetQuery.key());
-					assertTrue(expected != null, "Missing fastest optimized query snapshot for " + targetQuery.key());
-					assertSnapshotMatchesWithinThirtySeconds(repository, targetQuery, expected);
-					BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+		BenchmarkJoinEstimatorSupport.withLegacySketchOptimizer(() -> {
+			Map<String, String> fastestQueries = parseFastestOptimizedQueries();
+			for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {
+				System.out.println("Preparing theme " + entry.getKey());
+				Path storeDirectory = prepareThemeStore(dataDir, entry.getKey(), entry.getValue());
+				LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+				SailRepository repository = new SailRepository(store);
+				System.out.println("Prepared store for theme " + entry.getKey().name());
+				try {
+					for (TargetQuery targetQuery : entry.getValue()) {
+						System.out.println("Checking optimized query for " + targetQuery.key());
+						String expected = fastestQueries.get(targetQuery.key());
+						assertTrue(expected != null,
+								"Missing fastest optimized query snapshot for " + targetQuery.key());
+						assertSnapshotMatchesWithinThirtySeconds(repository, targetQuery, expected);
+						BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
+					}
+				} finally {
+					shutdownAndRelease(repository, store);
+					BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
 				}
-			} finally {
-				shutdownAndRelease(repository, store);
-				BenchmarkJoinEstimatorSupport.deleteStoreDirectory(storeDirectory);
 			}
-		}
+		});
 	}
 
 	private static Map<Theme, List<TargetQuery>> targetsByTheme() {

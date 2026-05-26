@@ -53,6 +53,8 @@ public final class BenchmarkJoinEstimatorSupport {
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ENABLED = "rdf4j.lmdb.themeRegression.persistentStore.enabled";
 	private static final String PERSISTENT_THEME_REGRESSION_STORE_ROOT = "rdf4j.lmdb.themeRegression.persistentStore.root";
 	private static final String DEFAULT_PERSISTENT_THEME_REGRESSION_STORE_ROOT = "persistent-lmdb-theme-store";
+	private static final String LEGACY_SKETCH_OPTIMIZER_PROPERTY = "rdf4j.optimizer.lmdb.legacySketchOptimizer";
+	private static final String CASCADES_MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
 	private static final Method GET_BACKING_STORE = reflectMethod(LmdbStore.class, "getBackingStore");
 
 	private BenchmarkJoinEstimatorSupport() {
@@ -140,6 +142,21 @@ public final class BenchmarkJoinEstimatorSupport {
 			QueryRegressionAssertion assertion) throws Exception {
 		LmdbPlannerAwait.awaitPlannerAssertion("query regression " + queryKey,
 				Duration.ofNanos(QUERY_REGRESSION_PASS_TIMEOUT_NANOS), assertion::assertPasses);
+	}
+
+	public static ScopedSystemProperties enableLegacySketchOptimizer() {
+		ScopedSystemProperties scope = new ScopedSystemProperties(
+				LEGACY_SKETCH_OPTIMIZER_PROPERTY,
+				CASCADES_MODE_PROPERTY);
+		System.setProperty(LEGACY_SKETCH_OPTIMIZER_PROPERTY, "true");
+		System.setProperty(CASCADES_MODE_PROPERTY, "off");
+		return scope;
+	}
+
+	public static void withLegacySketchOptimizer(QueryRegressionAssertion assertion) throws Exception {
+		try (ScopedSystemProperties ignored = enableLegacySketchOptimizer()) {
+			assertion.assertPasses();
+		}
 	}
 
 	public static boolean isPersistentThemeRegressionStoreEnabled() {
@@ -421,6 +438,31 @@ public final class BenchmarkJoinEstimatorSupport {
 	@FunctionalInterface
 	public interface QueryRegressionAssertion {
 		void assertPasses() throws Exception;
+	}
+
+	public static final class ScopedSystemProperties implements AutoCloseable {
+
+		private final String[] names;
+		private final String[] previousValues;
+
+		private ScopedSystemProperties(String... names) {
+			this.names = names.clone();
+			this.previousValues = new String[names.length];
+			for (int i = 0; i < names.length; i++) {
+				previousValues[i] = System.getProperty(names[i]);
+			}
+		}
+
+		@Override
+		public void close() {
+			for (int i = names.length - 1; i >= 0; i--) {
+				if (previousValues[i] == null) {
+					System.clearProperty(names[i]);
+				} else {
+					System.setProperty(names[i], previousValues[i]);
+				}
+			}
+		}
 	}
 
 	public record ThemeRegressionStore(Path storeDirectory, boolean persistent, boolean reused) {

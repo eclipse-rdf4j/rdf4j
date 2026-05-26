@@ -70,10 +70,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
+@Warmup(iterations = 20, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -107,14 +107,14 @@ public class ThemeQueryBenchmark {
 	@Param({
 //			"0",
 //			"1",
-			"2",
+//			"2",
 //			"3",
 //			"4",
 //			"5",
 //			"6",
 //			"7",
 //			"8",
-//			"9",
+			"9",
 //			"10",
 //			"11",
 //			"12"
@@ -130,7 +130,7 @@ public class ThemeQueryBenchmark {
 //			 "TRAIN",
 //			 "ELECTRICAL_GRID",
 //			 "PHARMA",
-			"SPARSE"
+//			"SPARSE"
 	})
 	public String themeName;
 
@@ -148,10 +148,10 @@ public class ThemeQueryBenchmark {
 		var opt = new OptionsBuilder()
 				.include(ThemeQueryBenchmark.class.getName() + ".executeQuery")
 				.forks(0)
-				.measurementIterations(10)
+				.measurementIterations(1)
 				.measurementBatchSize(1)
-				.measurementTime(TimeValue.milliseconds(1))
-				.warmupIterations(10)
+				.measurementTime(TimeValue.milliseconds(1000))
+				.warmupIterations(0)
 				.build();
 		new Runner(opt).run();
 	}
@@ -228,15 +228,29 @@ public class ThemeQueryBenchmark {
 
 	@Benchmark
 	public long executeQuery() {
+		return executeQuery(120);
+	}
+
+	public long executeQuery(int maxExecutionTimeSeconds) {
 		try (var connection = repository.getConnection()) {
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(120);
+			tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
 			QueryResultSummary result = evaluateQuery(tupleQuery, expectedCountBindingValue.isPresent());
 			assertExpectedResult(result, expectedCountBindingValue);
 
 			return benchmarkResult(result, expectedCountBindingValue);
+		}
+	}
+
+	long executeCountQuery(String queryString, long expectedCountBindingValue, int maxExecutionTimeSeconds) {
+		try (var connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(queryString);
+			tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
+			QueryResultSummary result = evaluateQuery(tupleQuery, true);
+			assertExpectedCountQueryResult(queryString, result, expectedCountBindingValue);
+			return result.countBindingValue;
 		}
 	}
 
@@ -287,6 +301,23 @@ public class ThemeQueryBenchmark {
 						+ queryDescription() + ": expected " + expectedValue + " but got "
 						+ result.countBindingValue);
 			}
+		}
+	}
+
+	private void assertExpectedCountQueryResult(String queryString, QueryResultSummary result,
+			long expectedCountBindingValue) {
+		if (result.rowCount != 1L) {
+			throw new IllegalStateException("Expected exactly one count row for forced benchmark query but got "
+					+ result.rowCount + "\n" + queryString);
+		}
+		if (result.countBindingValue == null) {
+			throw new IllegalStateException("Expected literal ?" + COUNT_BINDING_NAME
+					+ " binding for forced benchmark query but got null\n" + queryString);
+		}
+		if (result.countBindingValue != expectedCountBindingValue) {
+			throw new IllegalStateException("Unexpected ?" + COUNT_BINDING_NAME
+					+ " binding for forced benchmark query: expected " + expectedCountBindingValue + " but got "
+					+ result.countBindingValue + "\n" + queryString);
 		}
 	}
 
@@ -525,10 +556,21 @@ public class ThemeQueryBenchmark {
 	}
 
 	String explainOptimizedPlan() {
+		return explainOptimizedPlan(query);
+	}
+
+	String explainOptimizedPlan(String queryString) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
+			return connection.prepareTupleQuery(queryString)
 					.explain(Explanation.Level.Optimized)
 					.toString();
+		}
+	}
+
+	String renderOptimizedQuery(String queryString) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			Explanation explanation = connection.prepareTupleQuery(queryString).explain(Explanation.Level.Optimized);
+			return new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr());
 		}
 	}
 
