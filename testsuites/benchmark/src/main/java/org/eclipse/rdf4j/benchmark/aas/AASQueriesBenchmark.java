@@ -50,7 +50,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 3)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx4G" })
 @Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class AASQueriesBenchmark {
@@ -107,7 +107,7 @@ public class AASQueriesBenchmark {
 	@Param({ "100" })
 	private int sensorCount;
 
-	@Param({ "memory" })
+	@Param({ "lmdb" })
 	// @Param({ "lmdb", "memory", "native" })
 	private String store;
 
@@ -116,7 +116,7 @@ public class AASQueriesBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options options = new OptionsBuilder()
-				.include("AASQueriesBenchmark\\.")
+				.include("AASQueriesBenchmark\\.query2")
 				.forks(1)
 				.build();
 		new Runner(options).run();
