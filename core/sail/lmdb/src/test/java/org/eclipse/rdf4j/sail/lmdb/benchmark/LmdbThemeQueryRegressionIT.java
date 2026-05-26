@@ -2269,6 +2269,10 @@ class LmdbThemeQueryRegressionIT {
 							"Medical q9 should select the safe condition-code VALUES rewrite unless the filter "
 									+ "fires so few times that evaluating it is cheaper\n"
 									+ plan);
+					Assertions.assertFalse(hasPositiveSelectedFiniteAnchorCartesianWork(plan, "condCode"),
+							"Medical q9 selected condition-code finite-anchor plan must not win by splitting its "
+									+ "connected VALUES component with Cartesian work\n"
+									+ plan);
 					assertContains(snapshot.renderedQuery(),
 							"VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }",
 							"Medical q9 should render the safe condition-code FILTER IN as VALUES\n"
@@ -2307,6 +2311,10 @@ class LmdbThemeQueryRegressionIT {
 				assertContains(plan, "selected=finite-anchor:condCode",
 						"Medical q9 should select the safe condition-code VALUES rewrite unless the filter fires "
 								+ "so few times that evaluating it is cheaper\n"
+								+ plan);
+				Assertions.assertFalse(hasPositiveSelectedFiniteAnchorCartesianWork(plan, "condCode"),
+						"Medical q9 selected condition-code finite-anchor plan must not win by splitting its "
+								+ "connected VALUES component with Cartesian work\n"
 								+ plan);
 				assertContains(snapshot.renderedQuery(),
 						"VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }",
@@ -2348,6 +2356,10 @@ class LmdbThemeQueryRegressionIT {
 				assertContains(plan, "selected=finite-anchor:condCode",
 						"Medical q9 should keep the safe condition-code VALUES rewrite after JMH-style warmup "
 								+ "feedback unless the filter fires so few times that evaluating it is cheaper\n"
+								+ plan);
+				Assertions.assertFalse(hasPositiveSelectedFiniteAnchorCartesianWork(plan, "condCode"),
+						"Medical q9 selected condition-code finite-anchor plan must not win by splitting its "
+								+ "connected VALUES component with Cartesian work\n"
 								+ plan);
 				assertContains(snapshot.renderedQuery(),
 						"VALUES ?condCode { \"DX-200\" \"DX-201\" \"DX-202\" }",

@@ -2416,10 +2416,17 @@ class LmdbEvaluationStatistics
 
 	private boolean finiteBindingValuesAffectBoundJoinProduct(TupleExpr factor,
 			JoinFactorCostModel.CostContext context) {
-		if (factor == null || context == null || !hasFiniteBindingValues(context.getFiniteBindingValues())) {
+		if (context == null) {
 			return false;
 		}
-		Set<String> finiteBindings = plannerBindingNames(context.getFiniteBindingValues().keySet());
+		return finiteBindingValuesAffectFactor(factor, context.getFiniteBindingValues());
+	}
+
+	private boolean finiteBindingValuesAffectFactor(TupleExpr factor, Map<String, Set<Value>> finiteBindingValues) {
+		if (factor == null || !hasFiniteBindingValues(finiteBindingValues)) {
+			return false;
+		}
+		Set<String> finiteBindings = plannerBindingNames(finiteBindingValues.keySet());
 		if (finiteBindings.isEmpty()) {
 			return false;
 		}
@@ -3214,7 +3221,98 @@ class LmdbEvaluationStatistics
 				return null;
 			}
 		}
-		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount);
+		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount, false);
+	}
+
+	private FiniteDerivedSurfaceEstimate finiteConstrainedSurfaceRows(List<TupleExpr> prefixFactors,
+			TupleExpr factor, String finiteVarName, Set<Value> finiteValues, boolean allowExact) {
+		if (prefixFactors == null || prefixFactors.isEmpty() || factor == null || finiteVarName == null
+				|| finiteValues == null || finiteValues.isEmpty()) {
+			return null;
+		}
+		double rows = 0.0d;
+		int branchCount = 0;
+		boolean exactRows = true;
+		for (Value finiteValue : finiteValues) {
+			SubstitutedFactor currentFactor = substituteFiniteValue(factor, finiteVarName, finiteValue);
+			if (currentFactor.unsupported() || currentFactor.factor() == null || !currentFactor.substituted()) {
+				return null;
+			}
+			List<TupleExpr> branchWithCurrentFactor = new ArrayList<>(prefixFactors.size() + 1);
+			branchWithCurrentFactor.addAll(prefixFactors);
+			branchWithCurrentFactor.add(currentFactor.factor());
+			if (!connectedByBindingNames(branchWithCurrentFactor)) {
+				return null;
+			}
+			Set<String> sharedBindingNames = sharedBindingNames(prefixFactors, currentFactor.factor(),
+					finiteVarName);
+			if (sharedBindingNames.isEmpty()) {
+				return null;
+			}
+			double branchSurfaceRows = Double.NaN;
+			for (String sharedBindingName : sharedBindingNames) {
+				double surfaceRows = finiteBranchSurfaceRows(prefixFactors, currentFactor.factor(),
+						sharedBindingName, allowExact);
+				if (isFiniteNonNegative(surfaceRows) && (!isFiniteNonNegative(branchSurfaceRows)
+						|| surfaceRows < branchSurfaceRows)) {
+					branchSurfaceRows = surfaceRows;
+				}
+			}
+			double exactBranchRows = estimateExactFiniteConstrainedBranchRows(branchWithCurrentFactor);
+			double branchRows = exactBranchRows;
+			if (!isFiniteNonNegative(branchRows)) {
+				exactRows = false;
+				branchRows = estimateFiniteBranchRows(branchWithCurrentFactor);
+			}
+			if (!isFiniteNonNegative(branchRows)) {
+				branchRows = branchSurfaceRows;
+			}
+			if (!isFiniteNonNegative(branchRows)) {
+				return null;
+			}
+			rows += branchRows;
+			branchCount++;
+			if (!isFiniteNonNegative(rows)) {
+				return null;
+			}
+		}
+		double prefixRows = estimateFiniteBranchRows(prefixFactors);
+		if (!isFiniteNonNegative(prefixRows)) {
+			prefixRows = rows;
+		}
+		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount, exactRows);
+	}
+
+	private double estimateExactFiniteConstrainedBranchRows(List<TupleExpr> branchFactors) {
+		if (sketchBasedJoinEstimator == null || branchFactors == null || branchFactors.size() < 2
+				|| !connectedByBindingNames(branchFactors)) {
+			if (estimateTraceEnabled()) {
+				traceEstimate("finite-constrained-branch-reject",
+						branchFactors == null || branchFactors.isEmpty() ? null : branchFactors.getFirst(), null,
+						"reason=unsupported-input, factorCount="
+								+ (branchFactors == null ? -1 : branchFactors.size())
+								+ ", connected=" + (branchFactors != null && connectedByBindingNames(branchFactors)));
+			}
+			return Double.NaN;
+		}
+		ExactConnectedJoinEstimate estimate = sketchBasedJoinEstimator.estimateExactConnectedJoin(branchFactors);
+		if (estimate == null || !estimate.isSupported() || !isFiniteNonNegative(estimate.rows())) {
+			if (estimateTraceEnabled()) {
+				traceEstimate("finite-constrained-branch-reject", branchFactors.getFirst(), null,
+						"reason=exact-unsupported, factorCount=" + branchFactors.size());
+			}
+			return Double.NaN;
+		}
+		if (estimateTraceEnabled()) {
+			traceEstimate("finite-constrained-branch-rows", branchFactors.getFirst(), null,
+					"factorCount=" + branchFactors.size()
+							+ ", rows=" + estimateTraceRows(estimate.rows())
+							+ ", minRows=" + estimateTraceRows(estimate.minRows())
+							+ ", maxRows=" + estimateTraceRows(estimate.maxRows())
+							+ ", anchors=" + estimate.anchorCount()
+							+ ", samples=" + estimate.sampleCount());
+		}
+		return estimate.rows();
 	}
 
 	private double estimateFiniteBranchRows(List<TupleExpr> branchFactors) {
@@ -4055,7 +4153,7 @@ class LmdbEvaluationStatistics
 			if (!isPositiveFinite(factorRows)) {
 				factorRows = factorEstimate.get().getWorkRows();
 			}
-			factorRows = repeatedBoundProductRows(prefixFactors, factor, rows, factorRows);
+			factorRows = repeatedBoundProductRows(prefixFactors, factor, rows, factorRows, finiteBindingValues);
 			if (!isFiniteNonNegative(factorRows)) {
 				return Double.NaN;
 			}
@@ -4115,7 +4213,13 @@ class LmdbEvaluationStatistics
 			if (!isPositiveFinite(factorRows)) {
 				factorRows = factorEstimate.get().getWorkRows();
 			}
-			factorRows = repeatedBoundProductRows(prefixFactors, factor, rows, factorRows);
+			FiniteDerivedSurfaceEstimate finiteConstrainedEstimate = bestFiniteConstrainedSurfaceEstimate(
+					prefixFactors, factor, finiteBindingValues);
+			if (finiteConstrainedEstimate != null && isFiniteNonNegative(finiteConstrainedEstimate.surfaceRows())) {
+				factorRows = finiteConstrainedRowsWithPrefixMultiplicity(finiteConstrainedEstimate, prefixBridge);
+			} else {
+				factorRows = repeatedBoundProductRows(prefixFactors, factor, rows, factorRows, finiteBindingValues);
+			}
 			if (!isFiniteNonNegative(factorRows)) {
 				return Double.NaN;
 			}
@@ -4124,6 +4228,23 @@ class LmdbEvaluationStatistics
 			prefixFactors.add(factor);
 		}
 		return rows;
+	}
+
+	private double finiteConstrainedRowsWithPrefixMultiplicity(FiniteDerivedSurfaceEstimate estimate,
+			PrefixBridgeEstimate prefixBridge) {
+		if (estimate == null || !isFiniteNonNegative(estimate.surfaceRows())) {
+			return Double.NaN;
+		}
+		if (estimate.exactRows()) {
+			return estimate.surfaceRows();
+		}
+		if (prefixBridge == null || !isPositiveFinite(prefixBridge.rows())
+				|| !isPositiveFinite(prefixBridge.prefixBridgeSurfaceRows())) {
+			return estimate.surfaceRows();
+		}
+		double duplicateMultiplier = prefixBridge.rows() / prefixBridge.prefixBridgeSurfaceRows();
+		double rows = estimate.surfaceRows() * duplicateMultiplier;
+		return isFiniteNonNegative(rows) ? rows : estimate.surfaceRows();
 	}
 
 	private List<TupleExpr> reachableFactorOrder(Set<String> initialBoundNames, List<TupleExpr> factors) {
@@ -4152,8 +4273,15 @@ class LmdbEvaluationStatistics
 	}
 
 	private double repeatedBoundProductRows(List<TupleExpr> prefixFactors, TupleExpr factor, double prefixRows,
-			double fallbackRows) {
+			double fallbackRows, Map<String, Set<Value>> finiteBindingValues) {
 		if (prefixFactors == null || prefixFactors.isEmpty() || factor == null || !isPositiveFinite(prefixRows)) {
+			return fallbackRows;
+		}
+		if (finiteBindingValuesAffectFactor(factor, finiteBindingValues)) {
+			double constrainedRows = finiteConstrainedFactorRows(prefixFactors, factor, finiteBindingValues);
+			if (isFiniteNonNegative(constrainedRows)) {
+				return constrainedRows;
+			}
 			return fallbackRows;
 		}
 		BoundJoinProductEstimate productEstimate = duplicateCorrectedBoundJoinRows(prefixFactors, factor, prefixRows);
@@ -4161,6 +4289,13 @@ class LmdbEvaluationStatistics
 			return fallbackRows;
 		}
 		return productEstimate.productRows();
+	}
+
+	private double finiteConstrainedFactorRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+			Map<String, Set<Value>> finiteBindingValues) {
+		FiniteDerivedSurfaceEstimate estimate = bestFiniteConstrainedSurfaceEstimate(prefixFactors, factor,
+				finiteBindingValues);
+		return estimate == null ? Double.NaN : estimate.surfaceRows();
 	}
 
 	private double repeatedBoundGuardRows(List<TupleExpr> prefixFactors, TupleExpr guardFactor,
@@ -4901,6 +5036,36 @@ class LmdbEvaluationStatistics
 			}
 			FiniteDerivedSurfaceEstimate surfaceEstimate = finiteDerivedSurfaceRows(prefixFactors, factor,
 					finiteVarName, finiteValues);
+			if (surfaceEstimate != null && isFiniteNonNegative(surfaceEstimate.surfaceRows())
+					&& (bestSurfaceEstimate == null
+							|| surfaceEstimate.surfaceRows() < bestSurfaceEstimate.surfaceRows())) {
+				bestSurfaceEstimate = surfaceEstimate;
+			}
+		}
+		return bestSurfaceEstimate;
+	}
+
+	private FiniteDerivedSurfaceEstimate bestFiniteConstrainedSurfaceEstimate(List<TupleExpr> prefixFactors,
+			TupleExpr factor, Map<String, Set<Value>> finiteBindingValues) {
+		if (sketchBasedJoinEstimator == null || prefixFactors == null || prefixFactors.isEmpty()
+				|| factor == null || !hasFiniteBindingValues(finiteBindingValues)) {
+			return null;
+		}
+		Set<String> factorBindingNames = plannerBindingNames(factor.getBindingNames());
+		if (factorBindingNames.isEmpty()) {
+			return null;
+		}
+		FiniteDerivedSurfaceEstimate bestSurfaceEstimate = null;
+		for (Map.Entry<String, Set<Value>> entry : finiteBindingValues.entrySet()) {
+			String finiteVarName = entry.getKey();
+			Set<Value> finiteValues = entry.getValue();
+			if (finiteVarName == null || finiteValues == null || finiteValues.isEmpty()
+					|| finiteValues.size() > FINITE_LOOKUP_MAX_COMBINATIONS
+					|| !factorBindingNames.contains(finiteVarName)) {
+				continue;
+			}
+			FiniteDerivedSurfaceEstimate surfaceEstimate = finiteConstrainedSurfaceRows(prefixFactors, factor,
+					finiteVarName, finiteValues, false);
 			if (surfaceEstimate != null && isFiniteNonNegative(surfaceEstimate.surfaceRows())
 					&& (bestSurfaceEstimate == null
 							|| surfaceEstimate.surfaceRows() < bestSurfaceEstimate.surfaceRows())) {
@@ -6573,7 +6738,8 @@ class LmdbEvaluationStatistics
 
 	}
 
-	private record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount) {
+	private record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
+			boolean exactRows) {
 
 	}
 

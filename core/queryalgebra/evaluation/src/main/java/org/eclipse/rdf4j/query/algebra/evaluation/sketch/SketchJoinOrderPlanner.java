@@ -1207,6 +1207,8 @@ final class SketchJoinOrderPlanner {
 		if (!isFactorActionLegal(candidate, currentBoundVarMask)) {
 			return null;
 		}
+		// Avoid steering a specific factor shape into a preferred position here. If a connected VALUES rewrite is
+		// good, its row/work estimates must make it win generally; otherwise another BGP variant will regress.
 		SketchBasedJoinEstimator.JoinStepEstimate step = estimateTransition(prefix.estimate(), candidate);
 		long nextMask = mask | bit(candidate);
 		SketchBasedJoinEstimator.TuplePlanEstimate conditionedEstimate = conditionedFactorEstimate(candidate,
@@ -3112,6 +3114,8 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private StatePlan optimizeGreedy() {
+		// Keep order selection driven by estimates and available rewrites. Query-shape heuristics can help the
+		// query in front of us while hard-coding an optimization choice that makes a different query worse.
 		logicalExplorationMode = "pareto-beam";
 		ParetoJoinMemoPlanner.Result<StatePlan> result = memoPlanner().planBeam();
 		applyPlannerStats(result.stats());
@@ -3664,8 +3668,7 @@ final class SketchJoinOrderPlanner {
 				|| (runtimeVarMasks[factorIndex] & ~currentlyBoundVarMask) == 0L) {
 			return Double.NaN;
 		}
-		if (physicalEstimate.exactOutputRows()
-				&& costModelChargedRepeatedInvocations(physicalEstimate.factorCostEstimate())) {
+		if (costModelChargedRepeatedInvocations(physicalEstimate.factorCostEstimate())) {
 			return Double.NaN;
 		}
 		if (isEndpointDomainPreparationStep(factorIndex, mask, currentlyBoundVarMask, prefixEstimate)) {

@@ -481,6 +481,14 @@ public interface JoinFactorCostModel {
 					false);
 		}
 
+		/**
+		 * Creates a factor estimate under the supplied bound-variable context.
+		 *
+		 * The estimate may describe either one physical probe or a whole finite/prefix lookup domain. Set
+		 * {@code nestedInvocationCosted} to {@code true} when {@code workRows} and {@code outputRows} already include
+		 * the repeated invocations implied by {@link CostContext#getOuterPrefixRows()} or
+		 * {@link CostContext#getFiniteBindingValues()}. The join-order layer must not multiply those estimates again.
+		 */
 		public FactorCostEstimate(double workRows, double outputRows, Map<String, String> stringMetrics,
 				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
 				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,

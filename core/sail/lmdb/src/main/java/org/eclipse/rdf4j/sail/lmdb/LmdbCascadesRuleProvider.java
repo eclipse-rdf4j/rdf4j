@@ -925,6 +925,8 @@ final class LmdbCascadesRuleProvider {
 
 		private Optional<List<TupleExpr>> finiteAnchorConnectedOrder(String optionName, List<TupleExpr> factors,
 				Set<String> boundVars, boolean generatedAnchorFirst) {
+			// Do not extend this with more shape-specific ordering rules. They may fix one finite-anchor query while
+			// hiding bad estimates and making another VALUES BGP worse; prefer new rewrites plus better costing.
 			String generatedAnchorBinding = optionName.substring("finite-anchor:".length());
 			if (generatedAnchorBinding.isBlank()) {
 				return Optional.empty();

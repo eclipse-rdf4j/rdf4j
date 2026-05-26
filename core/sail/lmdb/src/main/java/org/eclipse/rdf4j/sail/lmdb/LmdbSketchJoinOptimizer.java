@@ -5186,6 +5186,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private Optional<List<TupleExpr>> finiteAnchorConnectedOrder(List<TupleExpr> optionFactors,
 				Set<String> boundBeforeSegment, String optionName) {
+			// Do not extend this with more shape-specific ordering rules. They may fix one finite-anchor query while
+			// hiding bad estimates and making another VALUES BGP worse; prefer new rewrites plus better costing.
 			if (optionName == null || !optionName.startsWith("finite-anchor:") || optionFactors.size() < 3) {
 				return Optional.empty();
 			}

@@ -19,7 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -2012,6 +2014,183 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planJoinOrderKeepsObjectValuesLookupInConnectedComponent() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		List<TupleExpr> args = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern);
+		JoinOrderPlanner.JoinOrderPlan connectedEstimate = estimateValuesBridge(fixture,
+				List.of(fixture.codeValues, fixture.codePattern, fixture.hasConditionPattern, fixture.typePattern));
+		JoinOrderPlanner.JoinOrderPlan cartesianEstimate = estimateValuesBridge(fixture,
+				List.of(fixture.hasConditionPattern, fixture.codeValues, fixture.codePattern, fixture.typePattern));
+
+		JoinOrderPlanner.JoinOrderPlan plan = planValuesBridge(fixture, args);
+
+		assertEquals(0.0d, plannedCartesianWorkRows(connectedEstimate), 0.0001d,
+				"Fixed-order estimation should recognize the connected VALUES lookup order as non-Cartesian");
+		assertTrue(plannedCartesianWorkRows(cartesianEstimate) > 0.0d,
+				"Fixed-order estimation should charge the graph-edge/VALUES split as Cartesian");
+		assertTrue(connectedEstimate.getEstimatedTotalWork() < cartesianEstimate.getEstimatedTotalWork(),
+				"Fixed-order estimation should price the connected VALUES lookup below the Cartesian split. connected="
+						+ connectedEstimate.getSummaryDoubleMetrics() + ", cartesian="
+						+ cartesianEstimate.getSummaryDoubleMetrics());
+		assertConnectedComponentWithoutSplit(plan, args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected VALUES lookup BGP should not be planned through a Cartesian prefix: "
+						+ plan.getOrderedArgs());
+	}
+
+	@Test
+	void planJoinOrderKeepsObjectValuesLookupConnectedWhenValuesDeclaredLast() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		List<TupleExpr> component = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern);
+		List<TupleExpr> args = List.of(fixture.typePattern, fixture.codePattern, fixture.hasConditionPattern,
+				fixture.codeValues);
+
+		JoinOrderPlanner.JoinOrderPlan plan = planValuesBridge(fixture, args);
+
+		assertConnectedComponentWithoutSplit(plan, component);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Input order should not make the VALUES anchor split its connected BGP component: "
+						+ plan.getOrderedArgs());
+	}
+
+	@Test
+	void planJoinOrderKeepsObjectValuesLookupConnectedWithUnrelatedValues() {
+		ValuesBridgeFixture fixture = valuesBridgeFixture();
+		BindingSetAssignment unrelatedValues = singleVariableValues("unusedCode",
+				List.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201")));
+		List<TupleExpr> component = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern);
+		List<TupleExpr> args = List.of(fixture.typePattern, fixture.codeValues, fixture.codePattern,
+				fixture.hasConditionPattern, unrelatedValues);
+		JoinOrderPlanner.JoinOrderPlan connectedEstimate = estimateValuesBridge(fixture,
+				List.of(fixture.codeValues, fixture.codePattern, fixture.hasConditionPattern, fixture.typePattern,
+						unrelatedValues));
+		JoinOrderPlanner.JoinOrderPlan cartesianEstimate = estimateValuesBridge(fixture,
+				List.of(fixture.hasConditionPattern, fixture.codeValues, fixture.codePattern, fixture.typePattern,
+						unrelatedValues));
+
+		JoinOrderPlanner.JoinOrderPlan plan = planValuesBridge(fixture, args);
+
+		assertTrue(plannedCartesianWorkRows(connectedEstimate) > 0.0d,
+				"The unrelated VALUES factor should be the only Cartesian work in the connected fixed order");
+		assertTrue(plannedCartesianWorkRows(cartesianEstimate) > plannedCartesianWorkRows(connectedEstimate),
+				"Fixed-order estimation should charge the extra split inside the connected component");
+		assertTrue(connectedEstimate.getEstimatedTotalWork() < cartesianEstimate.getEstimatedTotalWork(),
+				"Fixed-order estimation should price unrelated VALUES after the connected component below the split. "
+						+ "connected=" + connectedEstimate.getSummaryDoubleMetrics() + ", cartesian="
+						+ cartesianEstimate.getSummaryDoubleMetrics());
+		assertConnectedComponentWithoutSplit(plan, component);
+		assertTrue(plan.getOrderedArgs().indexOf(unrelatedValues) > lastIndexOf(plan.getOrderedArgs(), component),
+				"Unrelated VALUES should not be inserted before the connected VALUES component is complete: "
+						+ plan.getOrderedArgs());
+		assertTrue(plannedCartesianWorkRows(plan) > 0.0d,
+				"The unrelated VALUES factor is the only expected Cartesian work in this synthetic BGP: "
+						+ plan.getSummaryDoubleMetrics());
+	}
+
+	@Test
+	void planJoinOrderKeepsValuesAnchorConnectedAcrossTwoHopBridge() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("urn:twoHop:type");
+		IRI rootClass = VF.createIRI("urn:twoHop:Root");
+		IRI hasMiddle = VF.createIRI("urn:twoHop:hasMiddle");
+		IRI hasLeaf = VF.createIRI("urn:twoHop:hasLeaf");
+		List<Value> leafValues = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			leafValues.add(VF.createIRI("urn:twoHop:leaf:" + i));
+		}
+		for (int rootIndex = 0; rootIndex < 96; rootIndex++) {
+			Resource root = VF.createIRI("urn:twoHop:root:" + rootIndex);
+			Resource middle = VF.createIRI("urn:twoHop:middle:" + rootIndex);
+			store.add(VF.createStatement(root, rdfType, rootClass));
+			store.add(VF.createStatement(root, hasMiddle, middle));
+			store.add(VF.createStatement(middle, hasLeaf, leafValues.get(rootIndex % leafValues.size())));
+		}
+
+		BindingSetAssignment leafValuesAssignment = singleVariableValues("leaf", leafValues.subList(0, 3));
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("root"), Var.of("rdfType", rdfType),
+				Var.of("rootClass", rootClass));
+		StatementPattern middlePattern = pattern("root", hasMiddle, "middle");
+		StatementPattern leafPattern = pattern("middle", hasLeaf, "leaf");
+		List<TupleExpr> component = List.of(typePattern, leafValuesAssignment, middlePattern, leafPattern);
+		List<TupleExpr> args = List.of(typePattern, leafValuesAssignment, leafPattern, middlePattern);
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars, Map.of());
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context.getCurrentlyBoundVars(), context.getFiniteBindingValues());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars,
+					Map<String, Set<Value>> finiteBindingValues) {
+				if (factor == leafValuesAssignment) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(3.0d, 3.0d));
+				}
+				if (factor == leafPattern) {
+					boolean middleBound = boundVars.contains("middle");
+					boolean finiteLeafBound = hasFiniteBindingValues(finiteBindingValues, "leaf");
+					if (middleBound && boundVars.contains("leaf")) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+					}
+					if (finiteLeafBound) {
+						return Optional.of(repeatedInvocationCost(48.0d, 48.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(middleBound ? 1.0d : 96.0d,
+							middleBound ? 1.0d : 96.0d));
+				}
+				if (factor == middlePattern) {
+					boolean middleBound = boundVars.contains("middle");
+					boolean rootBound = boundVars.contains("root");
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							middleBound || rootBound ? 1.0d : 96.0d,
+							middleBound || rootBound ? 1.0d : 96.0d));
+				}
+				if (factor == typePattern) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							boundVars.contains("root") ? 1.0d : 96.0d,
+							boundVars.contains("root") ? 1.0d : 96.0d));
+				}
+				return Optional.empty();
+			}
+		};
+		JoinOrderPlanner.JoinOrderPlan connectedEstimate = estimateJoinOrder(estimator, costModel,
+				List.of(leafValuesAssignment, leafPattern, middlePattern, typePattern));
+		JoinOrderPlanner.JoinOrderPlan cartesianEstimate = estimateJoinOrder(estimator, costModel,
+				List.of(middlePattern, leafValuesAssignment, leafPattern, typePattern));
+
+		JoinOrderPlanner.PlanningAttempt attempt = estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of());
+
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a two-hop VALUES bridge plan");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertEquals(0.0d, plannedCartesianWorkRows(connectedEstimate), 0.0001d,
+				"Fixed-order estimation should recognize the two-hop VALUES bridge as connected");
+		assertTrue(plannedCartesianWorkRows(cartesianEstimate) > 0.0d,
+				"Fixed-order estimation should charge a split before the VALUES leaf as Cartesian");
+		assertTrue(connectedEstimate.getEstimatedTotalWork() < cartesianEstimate.getEstimatedTotalWork(),
+				"Fixed-order estimation should price the connected two-hop VALUES bridge below the Cartesian split. "
+						+ "connected=" + connectedEstimate.getSummaryDoubleMetrics() + ", cartesian="
+						+ cartesianEstimate.getSummaryDoubleMetrics());
+		assertConnectedComponentWithoutSplit(plan, component);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected two-hop VALUES bridge should not be planned through a Cartesian prefix: "
+						+ plan.getOrderedArgs());
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void planJoinOrderKeepsSmallValuesAnchorBeforeBroadBridgeScan() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -2972,6 +3151,158 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		return operator;
 	}
 
+	private ValuesBridgeFixture valuesBridgeFixture() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("urn:valuesBridge:type");
+		IRI encounterClass = VF.createIRI("urn:valuesBridge:Encounter");
+		IRI hasCondition = VF.createIRI("urn:valuesBridge:hasCondition");
+		IRI code = VF.createIRI("urn:valuesBridge:code");
+		List<Value> codes = List.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201"),
+				VF.createLiteral("DX-202"));
+		for (int encIndex = 0; encIndex < 128; encIndex++) {
+			Resource encounter = VF.createIRI("urn:valuesBridge:enc:" + encIndex);
+			store.add(VF.createStatement(encounter, rdfType, encounterClass));
+			for (int condIndex = 0; condIndex < 2; condIndex++) {
+				Resource condition = VF.createIRI("urn:valuesBridge:cond:" + encIndex + ':' + condIndex);
+				store.add(VF.createStatement(encounter, hasCondition, condition));
+				store.add(VF.createStatement(condition, code, codes.get((encIndex + condIndex) % codes.size())));
+			}
+		}
+
+		BindingSetAssignment codeValues = singleVariableValues("condCode", codes);
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern typePattern = new StatementPattern(Var.of("enc"), Var.of("rdfType", rdfType),
+				Var.of("encounterClass", encounterClass));
+		StatementPattern codePattern = pattern("cond", code, "condCode");
+		StatementPattern hasConditionPattern = pattern("enc", hasCondition, "cond");
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					Set<String> currentlyBoundVars) {
+				return estimate(factor, currentlyBoundVars, Map.of());
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr factor,
+					JoinFactorCostModel.CostContext context) {
+				return estimate(factor, context.getCurrentlyBoundVars(), context.getFiniteBindingValues());
+			}
+
+			private Optional<JoinFactorCostModel.FactorCostEstimate> estimate(TupleExpr factor, Set<String> boundVars,
+					Map<String, Set<Value>> finiteBindingValues) {
+				if (factor == codeValues) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(3.0d, 3.0d));
+				}
+				if (factor == typePattern) {
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							boundVars.contains("enc") ? 1.0d : 25_000.0d,
+							boundVars.contains("enc") ? 1.0d : 25_000.0d));
+				}
+				if (factor == codePattern) {
+					boolean condBound = boundVars.contains("cond");
+					boolean finiteCodeBound = hasFiniteBindingValues(finiteBindingValues, "condCode");
+					if (condBound && boundVars.contains("condCode")) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+					}
+					if (finiteCodeBound) {
+						return Optional.of(repeatedInvocationCost(49_835.0d, 49_835.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(
+							condBound ? 1.0d : 220_400.0d,
+							condBound ? 1.0d : 220_400.0d));
+				}
+				if (factor == hasConditionPattern) {
+					boolean encBound = boundVars.contains("enc");
+					boolean condBound = boundVars.contains("cond");
+					if (encBound && condBound) {
+						return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+					}
+					if (encBound || condBound) {
+						return Optional.of(repeatedInvocationCost(49_835.0d, 49_835.0d));
+					}
+					return Optional.of(new JoinFactorCostModel.FactorCostEstimate(220_400.0d, 49_835.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 2.0d));
+			}
+		};
+		return new ValuesBridgeFixture(estimator, typePattern, codeValues, codePattern, hasConditionPattern,
+				costModel);
+	}
+
+	private static JoinOrderPlanner.JoinOrderPlan planValuesBridge(ValuesBridgeFixture fixture, List<TupleExpr> args) {
+		JoinOrderPlanner.PlanningAttempt attempt = fixture.estimator.planJoinOrderAttempt(args, Set.of(),
+				JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, fixture.costModel, List.of());
+		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce a VALUES bridge plan");
+		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
+		assertTrue(plan.getOrderedArgs().containsAll(args), "Expected every VALUES bridge factor in selected plan");
+		assertParetoMemoExploration(plan);
+		assertPlanWorkMatchesStepSum(plan);
+		return plan;
+	}
+
+	private static JoinOrderPlanner.JoinOrderPlan estimateValuesBridge(ValuesBridgeFixture fixture,
+			List<TupleExpr> args) {
+		return estimateJoinOrder(fixture.estimator, fixture.costModel, args);
+	}
+
+	private static JoinOrderPlanner.JoinOrderPlan estimateJoinOrder(SketchBasedJoinEstimator estimator,
+			JoinFactorCostModel costModel, List<TupleExpr> args) {
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.estimateJoinOrder(args, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.orElseThrow(() -> new AssertionError("Expected fixed-order estimate for " + args));
+		assertPlanWorkMatchesStepSum(plan);
+		return plan;
+	}
+
+	private static void assertConnectedComponentWithoutSplit(JoinOrderPlanner.JoinOrderPlan plan,
+			List<TupleExpr> component) {
+		Set<TupleExpr> componentSet = Collections.newSetFromMap(new IdentityHashMap<>());
+		componentSet.addAll(component);
+		Set<String> boundVars = new LinkedHashSet<>();
+		int seen = 0;
+		for (TupleExpr factor : plan.getOrderedArgs()) {
+			if (!componentSet.contains(factor)) {
+				continue;
+			}
+			Set<String> factorVars = factor.getBindingNames();
+			if (seen > 0) {
+				Set<String> sharedVars = new LinkedHashSet<>(boundVars);
+				sharedVars.retainAll(factorVars);
+				assertTrue(!sharedVars.isEmpty(),
+						"Connected component was split by a Cartesian prefix at factor " + factor
+								+ "; component order was " + plan.getOrderedArgs());
+			}
+			boundVars.addAll(factorVars);
+			seen++;
+		}
+		assertEquals(component.size(), seen, "Expected every connected component factor in selected plan");
+	}
+
+	private static int lastIndexOf(List<TupleExpr> orderedArgs, List<TupleExpr> component) {
+		int index = -1;
+		for (TupleExpr factor : component) {
+			index = Math.max(index, orderedArgs.indexOf(factor));
+		}
+		return index;
+	}
+
+	private static double plannedCartesianWorkRows(JoinOrderPlanner.JoinOrderPlan plan) {
+		return plan.getSummaryDoubleMetrics()
+				.getOrDefault(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS, 0.0d);
+	}
+
+	private record ValuesBridgeFixture(
+			SketchBasedJoinEstimator estimator,
+			StatementPattern typePattern,
+			BindingSetAssignment codeValues,
+			StatementPattern codePattern,
+			StatementPattern hasConditionPattern,
+			JoinFactorCostModel costModel) {
+	}
+
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
 				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
@@ -3045,6 +3376,16 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	private static JoinFactorCostModel.FactorCostEstimate exactDirectLookup(double workRows, double outputRows) {
 		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(), true, true,
 				EXACT_STATEMENT_LOOKUP_MASK, 0, workRows);
+	}
+
+	private static JoinFactorCostModel.FactorCostEstimate repeatedInvocationCost(double workRows, double outputRows) {
+		return new JoinFactorCostModel.FactorCostEstimate(workRows, outputRows, Map.of(), Map.of(),
+				false, false, 0, 0, Double.NaN, true);
+	}
+
+	private static boolean hasFiniteBindingValues(Map<String, Set<Value>> finiteBindingValues, String bindingName) {
+		Set<Value> values = finiteBindingValues.get(bindingName);
+		return values != null && !values.isEmpty();
 	}
 
 	private static JoinFactorCostModel directLookupAwareCostModel(StatementPattern typePattern,
