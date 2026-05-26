@@ -75,6 +75,18 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void differenceWithoutSharedVariablesKeepsLeftRows() {
+		CascadesCostModel model = model(new TrackingProvider());
+		StatementPattern left = pattern("left", "p1", "leftObject");
+		StatementPattern right = pattern("right", "p2", "rightObject");
+
+		LogicalProperties difference = model.logicalProperties(new Difference(left, right));
+
+		assertEquals(20.0d, difference.estimatedRows(), 0.0d,
+				"SPARQL MINUS without shared variables must keep all left rows");
+	}
+
+	@Test
 	void localCostUsesStandardOptimizationEstimatorTier() {
 		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel();
 		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),

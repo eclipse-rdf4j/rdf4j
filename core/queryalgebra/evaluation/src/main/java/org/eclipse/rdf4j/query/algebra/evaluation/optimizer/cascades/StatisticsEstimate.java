@@ -14,11 +14,17 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 
 /** RDF-specific row estimate with q-error interval and provenance. */
 @Experimental
 public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, double workRows, String method,
-		Map<String, Double> metrics) {
+		Map<String, Double> metrics, BagEstimate bagEstimate) {
+
+	public StatisticsEstimate(double rows, QErrorInterval qErrorInterval, double workRows, String method,
+			Map<String, Double> metrics) {
+		this(rows, qErrorInterval, workRows, method, metrics, null);
+	}
 
 	public StatisticsEstimate {
 		rows = QErrorInterval.finiteNonNegative(rows, 0.0d);
@@ -26,6 +32,7 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 		workRows = QErrorInterval.finiteNonNegative(workRows, rows);
 		method = method == null || method.isBlank() ? "unknown" : method;
 		metrics = metrics == null || metrics.isEmpty() ? Map.of() : Map.copyOf(metrics);
+		bagEstimate = bagEstimate == null ? null : bagEstimate;
 	}
 
 	public static StatisticsEstimate exact(double rows, String method) {
@@ -42,7 +49,25 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 		return safe.toStatistics(effectiveMethod);
 	}
 
+	public static StatisticsEstimate fromBag(BagEstimate bag, String method) {
+		BagEstimate safe = bag == null ? BagEstimate.heuristic(1.0d, method) : bag;
+		String effectiveMethod = method == null || method.isBlank() ? safe.source() : method;
+		return new StatisticsEstimate(safe.rows(), QErrorInterval.heuristic(safe.rows(), 4.0d, effectiveMethod),
+				safe.workRows(), effectiveMethod, safe.metrics(), safe);
+	}
+
+	public StatisticsEstimate withBag(BagEstimate bag) {
+		return new StatisticsEstimate(rows, qErrorInterval, workRows, method, metrics, bag);
+	}
+
 	public EstimateVector vector() {
 		return EstimateVector.fromStatistics(this);
+	}
+
+	public BagEstimate bag() {
+		if (bagEstimate != null) {
+			return bagEstimate;
+		}
+		return new BagEstimate(rows, workRows, 0.0d, qErrorInterval.confidence(), method, Map.of(), Map.of(), metrics);
 	}
 }

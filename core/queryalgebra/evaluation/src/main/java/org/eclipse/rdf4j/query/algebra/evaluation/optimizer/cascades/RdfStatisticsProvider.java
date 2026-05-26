@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 
 /**
  * RDF-specific statistics provider used by Cascades costing.
@@ -48,8 +50,8 @@ public interface RdfStatisticsProvider {
 		if (left == null || right == null) {
 			return Optional.empty();
 		}
-		return Optional.of(StatisticsEstimate.fromVector(left.vector().union(right.vector(), "provider-union"),
-				"provider-union"));
+		BagEstimate bag = EstimateMath.union(left.bag(), right.bag());
+		return Optional.of(StatisticsEstimate.fromBag(bag, "provider-union"));
 	}
 
 	default Optional<StatisticsEstimate> leftJoin(StatisticsEstimate left, StatisticsEstimate right,
@@ -57,11 +59,8 @@ public interface RdfStatisticsProvider {
 		if (left == null || right == null) {
 			return Optional.empty();
 		}
-		double outputRows = Math.max(left.rows(), Math.min(left.rows() * Math.max(1.0d, right.rows()),
-				Math.max(left.rows(), left.rows() + right.rows())));
-		return Optional.of(StatisticsEstimate.fromVector(
-				left.vector().join(right.vector(), outputRows, "provider-leftjoin"),
-				"provider-leftjoin"));
+		BagEstimate bag = EstimateMath.leftJoin(left.bag(), right.bag(), joinVars);
+		return Optional.of(StatisticsEstimate.fromBag(bag, "provider-leftjoin"));
 	}
 
 	default Optional<StatisticsEstimate> minus(StatisticsEstimate left, StatisticsEstimate right,
@@ -69,24 +68,16 @@ public interface RdfStatisticsProvider {
 		if (left == null || right == null) {
 			return Optional.empty();
 		}
-		double selectivity = joinVars == null || joinVars.isEmpty() ? 0.95d : 0.50d;
-		EstimateVector vector = left.vector()
-				.withRows(left.rows() * selectivity, "provider-minus")
-				.withWorkRows(left.workRows() + Math.max(1.0d, left.rows()) + right.workRows(), "anti-probe-work");
-		return Optional.of(StatisticsEstimate.fromVector(vector, "provider-minus"));
+		BagEstimate bag = EstimateMath.difference(left.bag(), right.bag(), joinVars);
+		return Optional.of(StatisticsEstimate.fromBag(bag, "provider-minus"));
 	}
 
 	default Optional<StatisticsEstimate> distinct(StatisticsEstimate input, Set<String> distinctVars) {
 		if (input == null) {
 			return Optional.empty();
 		}
-		double rows = distinctVars == null || distinctVars.isEmpty() ? input.rows()
-				: Math.max(1.0d,
-						input.rows() * 0.80d);
-		EstimateVector vector = input.vector()
-				.withRows(Math.min(input.rows(), rows), "provider-distinct")
-				.withWorkRows(input.workRows() + input.rows(), "distinct-work");
-		return Optional.of(StatisticsEstimate.fromVector(vector, "provider-distinct"));
+		BagEstimate bag = EstimateMath.distinct(input.bag(), distinctVars);
+		return Optional.of(StatisticsEstimate.fromBag(bag, "provider-distinct"));
 	}
 
 	default Optional<StatisticsEstimate> starMultiPredicateScan(List<StatementPattern> starPatterns,

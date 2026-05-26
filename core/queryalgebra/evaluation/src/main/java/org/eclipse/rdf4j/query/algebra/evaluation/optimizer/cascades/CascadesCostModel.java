@@ -28,12 +28,18 @@ import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -44,6 +50,10 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
@@ -317,7 +327,15 @@ public interface CascadesCostModel {
 			} else if (tupleExpr instanceof Union union) {
 				estimate = estimateUnion(union, effectiveBoundVars);
 			} else if (tupleExpr instanceof Projection projection) {
-				estimate = estimateUnary(projection, effectiveBoundVars, "projection");
+				estimate = estimateProjection(projection, effectiveBoundVars);
+			} else if (tupleExpr instanceof Extension extension) {
+				estimate = estimateExtension(extension, effectiveBoundVars);
+			} else if (tupleExpr instanceof Group group) {
+				estimate = estimateGroup(group, effectiveBoundVars);
+			} else if (tupleExpr instanceof Slice slice) {
+				estimate = estimateSlice(slice, effectiveBoundVars);
+			} else if (tupleExpr instanceof Order order) {
+				estimate = estimateOrder(order, effectiveBoundVars);
 			} else if (tupleExpr instanceof Distinct distinct) {
 				estimate = estimateDistinct(distinct, effectiveBoundVars);
 			} else if (tupleExpr instanceof Reduced reduced) {
@@ -387,7 +405,9 @@ public interface CascadesCostModel {
 			QErrorInterval passInterval = QErrorInterval.fromBounds(passEstimate.getLower95PassRatio(), passRatio,
 					passEstimate.getUpper95PassRatio(), passEstimate.getConfidenceScore(),
 					"filter-" + passEstimate.getSource().name().toLowerCase(java.util.Locale.ROOT));
-			return StatisticsEstimate.fromVector(input.vector().filter(passRatio, passInterval, "filter"), "filter");
+			BagEstimate bag = EstimateMath.filter(input.bag(), passRatio, "filter");
+			return StatisticsEstimate.fromVector(input.vector().filter(passRatio, passInterval, "filter"), "filter")
+					.withBag(bag);
 		}
 
 		private StatisticsEstimate estimateJoin(Join join, Set<String> boundVars) {
@@ -395,8 +415,7 @@ public interface CascadesCostModel {
 			Set<String> rightBoundVars = unionNames(boundVars, join.getLeftArg().getAssuredBindingNames());
 			StatisticsEstimate right = estimate(join.getRightArg(), rightBoundVars);
 			Set<String> sharedVars = sharedNames(join.getLeftArg(), join.getRightArg());
-			double outputRows = estimateJoinRows(left, right, sharedVars);
-			return StatisticsEstimate.fromVector(left.vector().join(right.vector(), outputRows, "join"), "join");
+			return StatisticsEstimate.fromBag(EstimateMath.innerJoin(left.bag(), right.bag(), sharedVars), "join");
 		}
 
 		private StatisticsEstimate estimateLeftJoin(LeftJoin leftJoin, Set<String> boundVars) {
@@ -405,10 +424,8 @@ public interface CascadesCostModel {
 			StatisticsEstimate right = estimate(leftJoin.getRightArg(), rightBoundVars);
 			Set<String> sharedVars = sharedNames(leftJoin.getLeftArg(), leftJoin.getRightArg());
 			return rdfStatisticsProvider.leftJoin(left, right, sharedVars)
-					.orElseGet(() -> StatisticsEstimate.fromVector(left.vector()
-							.join(right.vector(), Math.max(left.rows(), estimateJoinRows(left, right, sharedVars)),
-									"leftjoin"),
-							"leftjoin"));
+					.orElseGet(() -> StatisticsEstimate.fromBag(EstimateMath.leftJoin(left.bag(), right.bag(),
+							sharedVars), "leftjoin"));
 		}
 
 		private StatisticsEstimate estimateDifference(Difference difference, Set<String> boundVars) {
@@ -417,18 +434,15 @@ public interface CascadesCostModel {
 			StatisticsEstimate right = estimate(difference.getRightArg(), rightBoundVars);
 			Set<String> sharedVars = sharedNames(difference.getLeftArg(), difference.getRightArg());
 			return rdfStatisticsProvider.minus(left, right, sharedVars)
-					.orElseGet(() -> StatisticsEstimate.fromVector(left.vector()
-							.withRows(left.rows() * 0.50d, "minus")
-							.withWorkRows(left.workRows() + Math.max(1.0d, left.rows()) + right.workRows(),
-									"minus-probe"),
-							"minus"));
+					.orElseGet(() -> StatisticsEstimate.fromBag(EstimateMath.difference(left.bag(), right.bag(),
+							sharedVars), "minus"));
 		}
 
 		private StatisticsEstimate estimateUnion(Union union, Set<String> boundVars) {
 			StatisticsEstimate left = estimate(union.getLeftArg(), boundVars);
 			StatisticsEstimate right = estimate(union.getRightArg(), boundVars);
 			return rdfStatisticsProvider.union(left, right)
-					.orElseGet(() -> StatisticsEstimate.fromVector(left.vector().union(right.vector(), "union"),
+					.orElseGet(() -> StatisticsEstimate.fromBag(EstimateMath.union(left.bag(), right.bag()),
 							"union"));
 		}
 
@@ -443,19 +457,89 @@ public interface CascadesCostModel {
 		private StatisticsEstimate estimateDistinct(UnaryTupleOperator operator, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(operator.getArg(), boundVars);
 			return rdfStatisticsProvider.distinct(input, operator.getBindingNames())
-					.orElseGet(() -> StatisticsEstimate.fromVector(input.vector()
-							.withRows(input.rows() * 0.80d, "distinct")
-							.withWorkRows(input.workRows() + input.rows(), "distinct-work"), "distinct"));
+					.orElseGet(() -> StatisticsEstimate.fromBag(EstimateMath.distinct(input.bag(),
+							operator.getBindingNames()), "distinct"));
+		}
+
+		private StatisticsEstimate estimateProjection(Projection projection, Set<String> boundVars) {
+			StatisticsEstimate input = estimate(projection.getArg(), boundVars);
+			BagEstimate bag = input.bag();
+			for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+				String sourceName = element.getName();
+				String targetName = element.getProjectionAlias().orElse(sourceName);
+				if (!sourceName.equals(targetName)) {
+					bag = EstimateMath.extendAlias(bag, sourceName, targetName);
+				}
+			}
+			return StatisticsEstimate.fromBag(EstimateMath.project(bag, projection.getBindingNames()), "projection");
+		}
+
+		private StatisticsEstimate estimateExtension(Extension extension, Set<String> boundVars) {
+			StatisticsEstimate input = estimate(extension.getArg(), boundVars);
+			BagEstimate bag = input.bag();
+			for (ExtensionElem element : extension.getElements()) {
+				ValueExpr expr = element.getExpr();
+				if (expr instanceof ValueConstant) {
+					bag = EstimateMath.extendConstant(bag, element.getName());
+				} else if (expr instanceof Var var && var.getName() != null) {
+					bag = EstimateMath.extendAlias(bag, var.getName(), element.getName());
+				} else {
+					bag = bag.withVariable(element.getName(), VariableEstimate.bound(bag.rows(), bag.rows()));
+				}
+			}
+			return StatisticsEstimate.fromBag(bag.withWorkRows(input.workRows() + Math.max(1.0d, input.rows()),
+					"extension-work"), "extension");
+		}
+
+		private StatisticsEstimate estimateGroup(Group group, Set<String> boundVars) {
+			StatisticsEstimate input = estimate(group.getArg(), boundVars);
+			BagEstimate bag = EstimateMath.group(input.bag(), group.getGroupBindingNames());
+			for (String aggregateName : group.getAggregateBindingNames()) {
+				bag = bag.withVariable(aggregateName, VariableEstimate.bound(bag.rows(), bag.rows()));
+			}
+			return StatisticsEstimate.fromBag(bag, "group");
+		}
+
+		private StatisticsEstimate estimateSlice(Slice slice, Set<String> boundVars) {
+			StatisticsEstimate input = estimate(slice.getArg(), boundVars);
+			return StatisticsEstimate.fromBag(EstimateMath.slice(input.bag(), slice.getOffset(), slice.getLimit()),
+					"slice");
+		}
+
+		private StatisticsEstimate estimateOrder(Order order, Set<String> boundVars) {
+			StatisticsEstimate input = estimate(order.getArg(), boundVars);
+			return StatisticsEstimate.fromBag(EstimateMath.order(input.bag()), "order");
 		}
 
 		private StatisticsEstimate estimateBindingSetAssignment(BindingSetAssignment assignment) {
 			double rows = 0.0d;
+			List<String> variables = new ArrayList<>(assignment.getBindingNames());
+			variables.sort(String::compareTo);
+			List<List<Value>> exactRows = new ArrayList<>();
+			boolean completeRows = true;
 			if (assignment.getBindingSets() != null) {
-				for (Object ignored : assignment.getBindingSets()) {
+				for (BindingSet bindingSet : assignment.getBindingSets()) {
 					rows += 1.0d;
+					List<Value> row = new ArrayList<>(variables.size());
+					for (String variable : variables) {
+						Binding binding = bindingSet.getBinding(variable);
+						if (binding == null) {
+							completeRows = false;
+							break;
+						}
+						row.add(binding.getValue());
+					}
+					if (completeRows) {
+						exactRows.add(List.copyOf(row));
+					}
 				}
 			}
-			return StatisticsEstimate.exact(rows, "binding-set-assignment");
+			BagEstimate bag = BagEstimate.exact(rows, "binding-set-assignment");
+			if (completeRows && !variables.isEmpty()) {
+				bag = bag.withFiniteRelation(FiniteRelationEstimate.fromRows(variables, exactRows,
+						"binding-set-assignment"));
+			}
+			return StatisticsEstimate.fromBag(bag, "binding-set-assignment");
 		}
 
 		private StatisticsEstimate fallbackEstimate(TupleExpr tupleExpr) {
