@@ -12,7 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.File;
 import java.time.Duration;
@@ -43,7 +43,7 @@ class LmdbExactJoinSurfaceIdScanTest {
 	private static final IRI MARKER = VF.createIRI("urn:test:marker");
 
 	@Test
-	void exactJoinSurfaceUsesLmdbIdScanAndReportsTelemetry(@TempDir File dataDir) throws Exception {
+	void exactJoinSurfaceSkipsLmdbIdScanFallback(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc,psoc"));
 		SailRepository repository = new SailRepository(store);
 		try {
@@ -56,8 +56,32 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimateExactJoinSurfaceRows(List.of(knows, name), "friend");
 
-			assertEquals(4.0d, rows, 0.01d, "Expected ID scan to count the shared ?friend surface exactly");
-			assertLmdbIdTelemetry(knows, name);
+			assertEquals(-1.0d, rows, 0.0d,
+					"Exact join-surface estimates must not use LMDB RecordIterator scans");
+			assertNoLmdbIdTelemetry(knows, name);
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void pairwiseJoinSurfaceEstimateDoesNotUseLmdbIdScanFallback(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			loadResourceJoinData(repository);
+			SketchBasedJoinEstimator estimator = rebuildAndGetEstimator(store);
+
+			StatementPattern knows = pattern("person", KNOWS, "friend");
+			StatementPattern name = pattern("friend", NAME, "name");
+
+			double rows = estimator.estimatePairwiseJoinSurfaceRows(List.of(knows, name), "friend");
+
+			assertEquals(-1.0d, rows, 0.0d,
+					"Pairwise planning fallback must use sketches/page-walk estimates, not LMDB RecordIterator scans");
+			assertNoLmdbIdTelemetry(knows, name);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -85,10 +109,11 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimateExactJoinSurfaceRows(List.of(knows, impossibleName), "friend");
 
-			assertEquals(0.0d, rows, 0.0d, "A missing bound constant ID should make the surface exactly empty");
+			assertEquals(-1.0d, rows, 0.0d,
+					"Exact join-surface estimates must not open an LMDB scan even for missing constants");
 			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingObject),
 					"The read-only ID lookup must not create a value-store entry");
-			assertLmdbIdTelemetry(knows, impossibleName);
+			assertNoLmdbIdTelemetry(knows, impossibleName);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -109,8 +134,9 @@ class LmdbExactJoinSurfaceIdScanTest {
 
 			double rows = estimator.estimateExactJoinSurfaceRows(List.of(observations, markers), "value");
 
-			assertEquals(3.0d, rows, 0.01d, "Expected inlined integer literal IDs to join without value resolution");
-			assertLmdbIdTelemetry(observations, markers);
+			assertEquals(-1.0d, rows, 0.0d,
+					"Exact join-surface estimates must not sample inlined literal IDs from LMDB");
+			assertNoLmdbIdTelemetry(observations, markers);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -162,11 +188,8 @@ class LmdbExactJoinSurfaceIdScanTest {
 		}
 	}
 
-	private static void assertLmdbIdTelemetry(TupleExpr first, TupleExpr second) {
-		String firstSource = first.getStringMetricPlanned("optimizer.exactJoinSurfaceSource");
-		String secondSource = second.getStringMetricPlanned("optimizer.exactJoinSurfaceSource");
-		assertTrue("lmdb-id".equals(firstSource) || "lmdb-id".equals(secondSource),
-				() -> "Expected LMDB ID exact-surface telemetry. first=" + firstSource + ", second="
-						+ secondSource);
+	private static void assertNoLmdbIdTelemetry(TupleExpr first, TupleExpr second) {
+		assertNull(first.getStringMetricPlanned("optimizer.exactJoinSurfaceSource"));
+		assertNull(second.getStringMetricPlanned("optimizer.exactJoinSurfaceSource"));
 	}
 }

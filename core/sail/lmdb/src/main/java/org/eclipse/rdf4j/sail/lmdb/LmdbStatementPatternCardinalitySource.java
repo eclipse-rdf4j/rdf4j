@@ -38,6 +38,14 @@ final class LmdbStatementPatternCardinalitySource {
 	}
 
 	double estimate(StatementPattern pattern) {
+		return estimate(pattern, false);
+	}
+
+	double estimateForPlanning(StatementPattern pattern) {
+		return estimate(pattern, true);
+	}
+
+	private double estimate(StatementPattern pattern, boolean planning) {
 		if (pattern == null) {
 			return -1.0d;
 		}
@@ -54,10 +62,14 @@ final class LmdbStatementPatternCardinalitySource {
 		if (!(ctx instanceof Resource)) {
 			ctx = null;
 		}
-		return estimate((Resource) subj, (IRI) pred, obj, (Resource) ctx);
+		return estimate((Resource) subj, (IRI) pred, obj, (Resource) ctx, planning);
 	}
 
 	double estimate(Resource subj, IRI pred, Value obj, Resource ctx) {
+		return estimate(subj, pred, obj, ctx, false);
+	}
+
+	private double estimate(Resource subj, IRI pred, Value obj, Resource ctx, boolean planning) {
 		try {
 			long subjId = resolveId(subj);
 			if (subjId == Long.MIN_VALUE) {
@@ -75,21 +87,31 @@ final class LmdbStatementPatternCardinalitySource {
 			if (ctxId == Long.MIN_VALUE) {
 				return 0.0d;
 			}
-			return estimateIds(subjId, predId, objId, ctxId);
+			return estimateIds(subjId, predId, objId, ctxId, planning);
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
 		}
 	}
 
 	double estimateIds(long subjId, long predId, long objId, long ctxId) {
+		return estimateIds(subjId, predId, objId, ctxId, false);
+	}
+
+	double estimateIdsForPlanning(long subjId, long predId, long objId, long ctxId) {
+		return estimateIds(subjId, predId, objId, ctxId, true);
+	}
+
+	private double estimateIds(long subjId, long predId, long objId, long ctxId, boolean planning) {
 		try {
 			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, tripleStore.getDataRevision(),
-					subjId, predId, objId, ctxId);
+					subjId, predId, objId, ctxId, planning);
 			Double cached = SHARED_CARDINALITY_CACHE.get(key);
 			if (cached != null) {
 				return cached;
 			}
-			double cardinality = tripleStore.cardinality(subjId, predId, objId, ctxId);
+			double cardinality = planning
+					? tripleStore.planningCardinality(subjId, predId, objId, ctxId)
+					: tripleStore.cardinality(subjId, predId, objId, ctxId);
 			cacheSharedCardinality(key, cardinality);
 			return cardinality;
 		} catch (IOException | RuntimeException e) {
@@ -123,22 +145,25 @@ final class LmdbStatementPatternCardinalitySource {
 		private final long predId;
 		private final long objId;
 		private final long ctxId;
+		private final boolean planning;
 		private final int hashCode;
 
 		private SharedCardinalityKey(int tripleStoreIdentity, long dataRevision, long subjId, long predId,
-				long objId, long ctxId) {
+				long objId, long ctxId, boolean planning) {
 			this.tripleStoreIdentity = tripleStoreIdentity;
 			this.dataRevision = dataRevision;
 			this.subjId = subjId;
 			this.predId = predId;
 			this.objId = objId;
 			this.ctxId = ctxId;
+			this.planning = planning;
 			int hash = Integer.hashCode(tripleStoreIdentity);
 			hash = 31 * hash + Long.hashCode(dataRevision);
 			hash = 31 * hash + Long.hashCode(subjId);
 			hash = 31 * hash + Long.hashCode(predId);
 			hash = 31 * hash + Long.hashCode(objId);
 			hash = 31 * hash + Long.hashCode(ctxId);
+			hash = 31 * hash + Boolean.hashCode(planning);
 			this.hashCode = hash;
 		}
 
@@ -155,7 +180,8 @@ final class LmdbStatementPatternCardinalitySource {
 					&& subjId == other.subjId
 					&& predId == other.predId
 					&& objId == other.objId
-					&& ctxId == other.ctxId;
+					&& ctxId == other.ctxId
+					&& planning == other.planning;
 		}
 
 		@Override

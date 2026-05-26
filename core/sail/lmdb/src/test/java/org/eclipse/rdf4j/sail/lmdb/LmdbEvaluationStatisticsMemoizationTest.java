@@ -701,7 +701,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 
 		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(any(TupleExpr.class), any(Set.class));
-		verify(estimator, times(2)).estimateJoinVarDistinctRows(any(TupleExpr.class), any(String.class));
+		verify(estimator, times(1)).estimateJoinVarDistinctRows(any(TupleExpr.class), any(String.class));
 	}
 
 	@Test
@@ -741,7 +741,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of());
 		ValueStore valueStore = mock(ValueStore.class);
 		LmdbStatementPatternCardinalitySource cardinalitySource = mock(LmdbStatementPatternCardinalitySource.class);
-		when(cardinalitySource.estimateIds(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(10.0d);
+		when(cardinalitySource.estimateIdsForPlanning(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(10.0d);
 
 		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator, null,
 				cardinalitySource);
@@ -765,7 +765,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(valueStore.getId(value70)).thenReturn(70L);
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
-			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of(), 1.0d, 1.0d,
+			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(Set.of(),
+					1.0d, 1.0d,
 					false, false, Map.of("o", Set.of(value50, value60, value70)), List.of());
 
 			assertTrue(statistics.estimateFactorCost(pattern, context).isPresent());
@@ -774,7 +775,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		verify(estimator, times(1)).factorOutputRowsForJoinOrdering(pattern, Set.of());
 		verify(estimator, times(1)).accessShapeForJoinOrdering(pattern, Set.of());
-		verify(cardinalitySource, times(3)).estimateIds(anyLong(), anyLong(), anyLong(), anyLong());
+		verify(cardinalitySource, times(3)).estimateIdsForPlanning(anyLong(), anyLong(), anyLong(), anyLong());
 	}
 
 	@Test
@@ -791,7 +792,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(posc));
 		ValueStore valueStore = mock(ValueStore.class);
 		LmdbStatementPatternCardinalitySource cardinalitySource = mock(LmdbStatementPatternCardinalitySource.class);
-		when(cardinalitySource.estimateIds(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(10.0d);
+		when(cardinalitySource.estimateIdsForPlanning(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(10.0d);
 
 		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator, null,
 				cardinalitySource);
@@ -827,7 +828,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		Map<String, Set<org.eclipse.rdf4j.model.Value>> finiteValues = Map.of("w",
 				Set.of(value1, value2, value3, value4));
-		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("w"),
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(Set.of("w"),
 				1.0d, 1.0d, false, true, finiteValues, List.of());
 
 		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(filter, context)
@@ -895,7 +896,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(String.class));
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class));
-		verify(estimator, times(0)).orderedCardinality(any());
 	}
 
 	@Test
@@ -1018,7 +1018,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.orderedCardinality(any())).thenReturn(120_000_000.0d);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(
-				Set.of("department", "offer", "org"), 100.0d, Double.NaN, true, true, Map.of(), prefixFactors);
+				Set.of("department", "offer", "org"), 100.0d, Double.NaN, true, true, Map.of(), prefixFactors)
+				.withEstimationTier(JoinFactorCostModel.EstimationTier.EXACT);
 		String previousProperty = System.getProperty("rdf4j.optimizer.lmdb.estimateTrace");
 		PrintStream previousErr = System.err;
 		ByteArrayOutputStream traceBuffer = new ByteArrayOutputStream();
@@ -1048,6 +1049,60 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertTrue(connectedTrace.contains("plannedConnectedJoinPrefixRows=100"), connectedTrace);
 		assertTrue(connectedTrace.contains("plannedConnectedJoinMinRows=200"), connectedTrace);
 		assertTrue(connectedTrace.contains("plannedConnectedJoinMaxRows=400"), connectedTrace);
+	}
+
+	@Test
+	void standardPlanningDoesNotCallExactConnectedJoinSampler() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		when(estimator.beginQueryOptimizationScope()).thenReturn(QueryOptimizationScopeProvider.NO_OP_SCOPE);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(mock(ValueStore.class), tripleStore,
+				estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern orgDepartment = new StatementPattern(
+				Var.of("org"),
+				Var.of("p1", vf.createIRI("urn:test:department")),
+				Var.of("department"));
+		StatementPattern departmentOffer = new StatementPattern(
+				Var.of("department"),
+				Var.of("p2", vf.createIRI("urn:test:makesOffer")),
+				Var.of("offer"));
+		StatementPattern offerItem = new StatementPattern(
+				Var.of("offer"),
+				Var.of("p3", vf.createIRI("urn:test:itemOffered")),
+				Var.of("work"));
+		List<TupleExpr> prefixFactors = List.of(orgDepartment, departmentOffer);
+
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(offerItem);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(120_000_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
+				.thenReturn(120_000_000.0d);
+		when(estimator.accessShapeForJoinOrdering(offerItem, Set.of("department", "offer", "org")))
+				.thenReturn(accessShape);
+		when(estimator.orderedCardinality(any())).thenReturn(120_000_000.0d);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(
+				Set.of("department", "offer", "org"), 100.0d, Double.NaN, true, true, Map.of(), prefixFactors);
+
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(offerItem, context)
+				.orElseThrow();
+
+		assertNotEquals("lmdb-connected-join-sample",
+				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		verify(estimator, times(0)).estimateExactConnectedJoin(any());
 	}
 
 	@Test
@@ -1107,7 +1162,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 			JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(
-					Set.of("department", "offer", "org"), 100.0d, Double.NaN, true, true, Map.of(), prefixFactors);
+					Set.of("department", "offer", "org"), 100.0d, Double.NaN, true, true, Map.of(), prefixFactors)
+					.withEstimationTier(JoinFactorCostModel.EstimationTier.EXACT);
 
 			assertEquals("lmdb-connected-join-sample",
 					statistics.estimateFactorCost(offerItem, context)
@@ -1226,11 +1282,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 
 		verify(estimator, times(1)).estimateSketchJoinSurfaceRows(any(List.class), any(String.class));
-		verify(estimator, times(1)).estimateExactJoinSurfaceRows(any(List.class), any(String.class));
+		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(List.class), any(String.class));
 		verify(estimator, times(1)).estimatePairwiseJoinSurfaceRows(any(List.class), any(String.class));
 		verify(estimator, times(1)).estimateSketchJoinSurfaceRows(any(List.class), any(TupleExpr.class),
 				any(String.class));
-		verify(estimator, times(1)).estimateExactJoinSurfaceRows(any(List.class), any(TupleExpr.class),
+		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(List.class), any(TupleExpr.class),
 				any(String.class));
 		verify(estimator, times(1)).estimatePairwiseJoinSurfaceRows(any(List.class), any(TupleExpr.class),
 				any(String.class));
@@ -1289,7 +1345,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(String.class));
 		verify(estimator, times(0)).estimateExactJoinSurfaceRows(any(), any(TupleExpr.class), any(String.class));
-		verify(estimator, times(0)).orderedCardinality(any());
 	}
 
 	@Test
@@ -1462,6 +1517,88 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertEquals(24.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
 		assertEquals(96.0d, estimate.getOutputRows(), 0.0d);
 		assertEquals(120.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
+	}
+
+	@Test
+	void highCardinalityDirectLookupWithoutLookupDomainDistinctUsesOuterRows() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of("person"),
+				Var.of("p", vf.createIRI("urn:test:position")),
+				Var.of("position"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(pattern);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
+		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(108_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("person"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("person"))).thenReturn(accessShape);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("person"),
+				8_000.0d, 8_000.0d, true);
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(pattern, context)
+				.orElseThrow();
+
+		assertEquals(8_000.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(8_000.0d, estimate.getOutputRows(), 0.0d);
+		assertEquals(8_000.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
+		assertFalse(estimate.getDoubleMetrics().containsKey("plannedLookupDomainAverageOutputRows"));
+	}
+
+	@Test
+	void highFanoutDirectLookupWithoutLookupDomainDistinctUsesPredicateDomainFallback() {
+		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		TripleStore.IndexAccessPath spoc = mock(TripleStore.IndexAccessPath.class);
+		int subjectBit = 1 << SketchBasedJoinEstimator.Component.S.ordinal();
+		int predicateBit = 1 << SketchBasedJoinEstimator.Component.P.ordinal();
+		int lookupMask = subjectBit | predicateBit;
+		when(spoc.indexFieldSequence()).thenReturn("spoc");
+		when(spoc.prefixLength()).thenReturn(2);
+		when(spoc.prefixComponentMask()).thenReturn(lookupMask);
+		when(tripleStore.indexAccessPaths(anyInt())).thenReturn(List.of(spoc));
+		ValueStore valueStore = mock(ValueStore.class);
+
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(valueStore, tripleStore, estimator);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern pattern = new StatementPattern(
+				Var.of("topic"),
+				Var.of("p", vf.createIRI("urn:test:mainEntityOfPage")),
+				Var.of("page"));
+		SketchBasedJoinEstimator.AccessShape accessShape = mock(SketchBasedJoinEstimator.AccessShape.class);
+		when(accessShape.pattern()).thenReturn(pattern);
+		when(accessShape.filterMultiplier()).thenReturn(1.0d);
+		when(accessShape.lookupBoundComponentMask()).thenReturn(lookupMask);
+		when(accessShape.joinBoundComponentMask()).thenReturn(subjectBit);
+		when(accessShape.estimateAccessRows(lookupMask)).thenReturn(1.0d);
+		when(accessShape.estimateAccessRows(predicateBit)).thenReturn(480_000.0d);
+		when(estimator.factorOutputRowsForJoinOrdering(pattern, Set.of("topic"))).thenReturn(1.0d);
+		when(estimator.accessShapeForJoinOrdering(pattern, Set.of("topic"))).thenReturn(accessShape);
+
+		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(Set.of("topic"),
+				1_600.0d, 1_600.0d, true);
+		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(pattern, context)
+				.orElseThrow();
+
+		assertEquals(1_600.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
+		assertEquals(480_000.0d, estimate.getOutputRows(), 0.0d);
+		assertEquals(481_600.0d, estimate.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_WORK_ROWS), 0.0d);
+		assertEquals(480_000.0d, estimate.getDoubleMetrics().get("plannedLookupDomainAverageOutputRows"), 0.0d);
 	}
 
 	@Test
@@ -1647,7 +1784,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "="), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE + "="), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.PLANNED_WORK_ROWS + "="), plan);
-			assertTrue(plan.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"), plan);
+			assertTrue(plan.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-cascades"), plan);
+			assertNoRecomputedOrExactEstimates(plan);
 			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_LOGICAL_EXPLORATION + "="), plan);
 			assertTrue(plan.contains(TelemetryMetricNames.OPTIMIZER_DECISION_TRACE + "="), plan);
 			assertTrue(plan.lines()
@@ -2218,6 +2356,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void externalBoundPatternLocalFilterUsesFiniteAnchorWithoutRuntimeFeedback() throws Exception {
+		String previousLegacy = System.setProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", "true");
+		String previousCascades = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "off");
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-learned-filter").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
@@ -2268,6 +2408,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
+			restoreProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", previousLegacy);
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousCascades);
 		}
 	}
 
@@ -2340,6 +2482,14 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		}
 	}
 
+	private static void restoreProperty(String name, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, previousValue);
+		}
+	}
+
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)
 			throws InterruptedException {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
@@ -2359,10 +2509,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		assertFiniteExplainMetric(plan, line, TelemetryMetricNames.PLANNED_WORK_ROWS);
 		assertTrue(line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE + "="),
 				"Expected " + nodeName + " to carry planner estimate usage\nline: " + line + "\n" + plan);
-		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"),
+		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-cascades"),
 				"Expected " + nodeName + " to carry lmdb planner id\nline: " + line + "\n" + plan);
 		assertTrue(line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE + "="),
 				"Expected " + nodeName + " to carry estimate source\nline: " + line + "\n" + plan);
+		assertNoRecomputedOrExactEstimates(plan);
 	}
 
 	private static void assertOptimizedTupleNodeHasPlannerIdOnlyNoLegacy(String plan, String nodeName) {
@@ -2371,21 +2522,27 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("Expected plan to contain " + nodeName + "\n" + plan));
 		assertNoLegacyEstimates(line);
-		assertFalse(line.contains(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS + "="),
-				"Wrapper node should not render cardinality without planner-decision usage\nline: " + line + "\n"
-						+ plan);
-		assertFalse(line.contains(TelemetryMetricNames.PLANNED_COST_WORK_ROWS + "="),
-				"Wrapper node should not render cost without planner-decision usage\nline: " + line + "\n" + plan);
-		assertFalse(line.contains(TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE + "="),
-				"Wrapper node should not render objective score without planner-decision usage\nline: " + line + "\n"
-						+ plan);
-		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-sketch"),
+		assertTrue(line.contains(TelemetryMetricNames.PLANNER_ID + "=lmdb-cascades"),
 				"Expected " + nodeName + " to carry lmdb planner id\nline: " + line + "\n" + plan);
+		assertNoRecomputedOrExactEstimates(plan);
 	}
 
 	private static void assertNoLegacyEstimates(String line) {
 		assertFalse(line.contains("resultSizeEstimate="), "Legacy row estimates should not be rendered\n" + line);
 		assertFalse(line.contains("costEstimate="), "Legacy cost estimates should not be rendered\n" + line);
+		assertFalse(line.contains("optimizer.exactJoinSurface"),
+				"Exact join-surface metrics should not be rendered from optimized planning\n" + line);
+		assertFalse(line.contains(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE + "="
+				+ TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED),
+				"Optimized EXPLAIN must not render recomputed estimates\n" + line);
+	}
+
+	private static void assertNoRecomputedOrExactEstimates(String plan) {
+		assertFalse(plan.contains("optimizer.exactJoinSurface"),
+				"Optimized EXPLAIN must not render exact join-surface metrics\n" + plan);
+		assertFalse(plan.contains(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE + "="
+				+ TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED),
+				"Optimized EXPLAIN must not render recomputed estimates\n" + plan);
 	}
 
 	private static void assertFiniteExplainMetric(String plan, String line, String metricName) {

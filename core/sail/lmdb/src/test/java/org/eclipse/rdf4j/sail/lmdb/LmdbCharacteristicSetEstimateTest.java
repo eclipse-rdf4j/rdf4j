@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.File;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -23,6 +24,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -64,6 +67,18 @@ class LmdbCharacteristicSetEstimateTest {
 				Join starJoin = findCharacteristicSetJoin((TupleExpr) explanation.tupleExpr());
 
 				assertNotNull(starJoin, explanation::toString);
+				LmdbStarJoinScanSupport.Plan starPlan = LmdbStarJoinScanSupport.plan(starJoin)
+						.orElseThrow(() -> new AssertionError(explanation.toString()));
+				LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+						.getEvaluationStatistics();
+				CharacteristicSetEstimate estimate = statistics.estimateSubjectStar(starPlan.patterns(), Set.of())
+						.orElseThrow();
+				assertEquals(FULL_STAR_COUNT, estimate.rows(), FULL_STAR_COUNT * 0.25d,
+						() -> estimate + "\n" + explanation);
+				StatisticsEstimate starScanEstimate = statistics.starMultiPredicateScan(starPlan.patterns(), Set.of())
+						.orElseThrow();
+				assertEquals(FULL_STAR_COUNT, starScanEstimate.rows(), FULL_STAR_COUNT * 0.25d,
+						() -> starScanEstimate + "\n" + explanation);
 				assertEquals("lmdb-characteristic-set",
 						starJoin.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
 						explanation::toString);

@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -150,6 +151,8 @@ class LmdbSubSelectDirectLookupEstimateTest {
 				}
 			});
 			assertTrue(offenders.isEmpty(), offenders.toString());
+			assertNoUnboundedTypeTypeCrossProduct(tupleExpr);
+			assertNoTypeFilterBeforeDatasetBridge(tupleExpr);
 		}
 	}
 
@@ -283,8 +286,8 @@ class LmdbSubSelectDirectLookupEstimateTest {
 						&& isTypePattern(rightPattern, "type1")
 						&& !(isBoundedSubjectPredicateLookup(leftPattern)
 								&& isBoundedSubjectPredicateLookup(rightPattern))
-						&& node.getResultSizeEstimate() > 1_000_000.0d) {
-					offenders.add("joinRows=" + node.getResultSizeEstimate() + ", leftRows="
+						&& plannedRows(node) > 1_000_000.0d) {
+					offenders.add("joinRows=" + plannedRows(node) + ", leftRows="
 							+ leftPattern.getResultSizeEstimate() + ", rightRows="
 							+ rightPattern.getResultSizeEstimate() + ", join=" + describePlanMetrics(node)
 							+ ", left=" + describePlanMetrics(leftPattern) + ", right="
@@ -294,6 +297,65 @@ class LmdbSubSelectDirectLookupEstimateTest {
 			}
 		});
 		assertTrue(offenders.isEmpty(), offenders.toString());
+	}
+
+	private static void assertNoTypeFilterBeforeDatasetBridge(TupleExpr tupleExpr) {
+		List<String> offenders = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				if (containsUnboundedTypeTypeJoin(node.getLeftArg()) && isDatasetBridgePattern(node.getRightArg())) {
+					offenders.add("join=" + describePlanMetrics(node) + ", left=" + node.getLeftArg()
+							+ ", right=" + describePlanMetrics(node.getRightArg()));
+				}
+				super.meet(node);
+			}
+		});
+		assertTrue(offenders.isEmpty(), offenders.toString());
+	}
+
+	private static boolean containsUnboundedTypeTypeJoin(TupleExpr tupleExpr) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				if (found[0]) {
+					return;
+				}
+				if (node.getLeftArg()instanceof StatementPattern leftPattern
+						&& node.getRightArg()instanceof StatementPattern rightPattern
+						&& isTypePattern(leftPattern, "type2")
+						&& isTypePattern(rightPattern, "type1")
+						&& !(isBoundedSubjectPredicateLookup(leftPattern)
+								&& isBoundedSubjectPredicateLookup(rightPattern))) {
+					found[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean isDatasetBridgePattern(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof StatementPattern pattern)) {
+			return false;
+		}
+		return pattern.getSubjectVar() != null
+				&& "b".equals(pattern.getSubjectVar().getName())
+				&& pattern.getPredicateVar() != null
+				&& pattern.getPredicateVar().hasValue()
+				&& DCAT.HAS_DATASET.equals(pattern.getPredicateVar().getValue())
+				&& pattern.getObjectVar() != null
+				&& "a".equals(pattern.getObjectVar().getName());
+	}
+
+	private static double plannedRows(TupleExpr node) {
+		double vectorRows = node.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS);
+		if (Double.isFinite(vectorRows)) {
+			return vectorRows;
+		}
+		return node.getResultSizeEstimate();
 	}
 
 	private static boolean isBoundedSubjectPredicateLookup(StatementPattern pattern) {

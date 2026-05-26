@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.config;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.StringTokenizer;
 
@@ -121,6 +122,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private long sketchEstimatorThrottleEveryN = SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
 
 	private long sketchEstimatorThrottleMillis = SKETCH_ESTIMATOR_THROTTLE_MILLIS;
+
+	private String sketchEstimatorStrategy = "fastagms";
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -371,6 +374,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public String getSketchEstimatorStrategy() {
+		return sketchEstimatorStrategy;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorStrategy(String sketchEstimatorStrategy) {
+		this.sketchEstimatorStrategy = normalizeSketchEstimatorStrategy(sketchEstimatorStrategy);
+		return this;
+	}
+
 	public boolean getOptimizerSamplingEnabled() {
 		return optimizerSamplingEnabled;
 	}
@@ -545,6 +557,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (sketchEstimatorThrottleMillis != SKETCH_ESTIMATOR_THROTTLE_MILLIS) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS,
 					vf.createLiteral(sketchEstimatorThrottleMillis));
+		}
+		if (!"fastagms".equals(sketchEstimatorStrategy)) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, vf.createLiteral(sketchEstimatorStrategy));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -780,6 +795,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					.ifPresent(lit -> setSketchEstimatorThrottleMillis(parseLong(lit,
 							LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS)));
 
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, null))
+					.ifPresent(lit -> setSketchEstimatorStrategy(lit.getLabel()));
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, null))
 					.ifPresent(lit -> {
 						try {
@@ -862,5 +880,22 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Long value required for " + property + " property, found " + lit);
 		}
+	}
+
+	private static String normalizeSketchEstimatorStrategy(String value) {
+		if (value == null) {
+			throw new SailConfigException("Sketch estimator strategy value required, found null");
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "fastagms" -> "fastagms";
+		case "tuple" -> "tuple";
+		case "joinsketch" -> "joinsketch";
+		default -> throw new SailConfigException(
+				"Sketch estimator strategy value required: fastagms, tuple, or joinsketch; found " + value);
+		};
 	}
 }

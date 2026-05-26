@@ -35,6 +35,8 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -67,6 +69,22 @@ class LmdbNestedBoundLookupEstimateTest {
 			* EMPLOYEES_PER_ORG;
 	private static final int EXPECTED_MULTI_BRIDGE_OPTIONAL_ROWS = EXPECTED_MAIN_BGP_ROWS * EVENTS_PER_PERSON
 			* EMPLOYEES_PER_ORG;
+
+	private String previousLegacySketchOptimizer;
+	private String previousCascadesMode;
+
+	@BeforeEach
+	void enableLegacySketchOptimizer() {
+		previousLegacySketchOptimizer = System.setProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY,
+				"true");
+		previousCascadesMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "off");
+	}
+
+	@AfterEach
+	void restoreOptimizerMode() {
+		restoreProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY, previousLegacySketchOptimizer);
+		restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousCascadesMode);
+	}
 
 	@Test
 	void optionalBoundLookupEstimateScalesWithOuterMultisetRows(@TempDir File dataDir) throws Exception {
@@ -572,5 +590,13 @@ class LmdbNestedBoundLookupEstimateTest {
 			}
 		});
 		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static void restoreProperty(String key, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, previousValue);
+		}
 	}
 }

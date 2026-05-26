@@ -68,6 +68,9 @@ class LmdbThemeQ9EstimateRegressionTest {
 
 	@Test
 	void q9LikeOptionalKeepsRepeatedBridgeRowsForFollowingOptional(@TempDir File dataDir) throws Exception {
+		String previousLegacy = System.setProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY,
+				"true");
+		String previousCascades = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "off");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -142,11 +145,16 @@ class LmdbThemeQ9EstimateRegressionTest {
 			}
 		} finally {
 			repository.shutDown();
+			restoreProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY, previousLegacy);
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousCascades);
 		}
 	}
 
 	@Test
 	void q9LikeOptionalUsesSelectedBridgeValueFrequencyDespiteUnselectedNoise(@TempDir File dataDir) throws Exception {
+		String previousLegacy = System.setProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY,
+				"true");
+		String previousCascades = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "off");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -203,11 +211,16 @@ class LmdbThemeQ9EstimateRegressionTest {
 			}
 		} finally {
 			repository.shutDown();
+			restoreProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY, previousLegacy);
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousCascades);
 		}
 	}
 
 	@Test
 	void q9LikeOptionalValuesUsesRepeatedBridgeRowsWithSelectedValueFrequency(@TempDir File dataDir) throws Exception {
+		String previousLegacy = System.setProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY,
+				"true");
+		String previousCascades = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "off");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -269,6 +282,8 @@ class LmdbThemeQ9EstimateRegressionTest {
 			}
 		} finally {
 			repository.shutDown();
+			restoreProperty(LmdbQueryOptimizerPipeline.LEGACY_SKETCH_OPTIMIZER_PROPERTY, previousLegacy);
+			restoreProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previousCascades);
 		}
 	}
 
@@ -359,5 +374,13 @@ class LmdbThemeQ9EstimateRegressionTest {
 			}
 		});
 		return matches.isEmpty() ? null : matches.getFirst();
+	}
+
+	private static void restoreProperty(String name, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, previousValue);
+		}
 	}
 }

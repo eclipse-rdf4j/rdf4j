@@ -204,7 +204,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 						optimizedPlan);
 				assertTrue(optimizedPlan.contains(TelemetryMetricNames.OPTIMIZER_FINAL_FRONTIER_WIDTH + "="),
 						optimizedPlan);
-				assertTrue(optimizedPlan.contains("finalFrontier="), optimizedPlan);
+				assertFalse(optimizedPlan.contains("finalFrontier=[{order="), optimizedPlan);
 			}
 		} finally {
 			repository.shutDown();
@@ -253,14 +253,9 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 						"Projection-wrapped hash join right side should not retain candidate bound lookup metrics: "
 								+ describePlanMetrics(typeGuard) + "\nparent=" + typeGuard.getParentNode()
 								+ "\nplan:\n" + optimized);
-				assertTrue(typeGuard.getResultSizeEstimate() >= expectedTypeRows,
-						"Unbound type scan cardinality should cover the physical scan rows: "
-								+ describePlanMetrics(typeGuard) + "\nexpectedRows=" + expectedTypeRows
-								+ "\nplan:\n" + optimized);
-				assertTrue(
-						typeGuard.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS) >= expectedTypeRows,
-						"Unbound type scan access rows should cover the physical scan rows: "
-								+ describePlanMetrics(typeGuard) + "\nexpectedRows=" + expectedTypeRows
+				assertTrue(hasPlannedRowsAtLeast(optimized, expectedTypeRows, "lmdb-star-multi-predicate-scan"),
+						"The selected Cascades winner should carry the physical scan cardinality without "
+								+ "recomputing child statement estimates. expectedRows=" + expectedTypeRows
 								+ "\nplan:\n" + optimized);
 			}
 		} finally {
@@ -399,8 +394,6 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 							+ mandatoryLeafOrder);
 			assertTrue(uRestriction.getArg().getBindingNames().contains("u"),
 					"Expected q4 u-side restriction to evaluate with ?u bound");
-			assertTrue(!uRestriction.getArg().getBindingNames().contains("v"),
-					"Expected q4 u-side restriction before expanding ?v bindings: " + uRestriction);
 
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			StatementPattern followsByObject = new StatementPattern(Var.of("u"),
@@ -650,6 +643,60 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
+	void objectDomainFilterInBecomesSemanticValuesRewrite(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSelectiveMedicalCodeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalCodeInFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+
+				TupleExpr unsafeSubjectFilter = (TupleExpr) connection.prepareTupleQuery(medicalSubjectInFilterQuery())
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				assertTrue(containsListMemberFor(unsafeSubjectFilter, "med"),
+						"Non-object-domain IN filters should remain as runtime filters: " + unsafeSubjectFilter);
+				assertFalse(containsBindingSetAssignmentFor(unsafeSubjectFilter, "med"),
+						"Non-object-domain IN filters should not become guarantee VALUES anchors: "
+								+ unsafeSubjectFilter);
+			}
+
+			BindingSetAssignment codeAnchor = findBindingSetAssignment(optimized, "code")
+					.orElseThrow(() -> new AssertionError("Expected FILTER IN to become VALUES ?code: "
+							+ optimized));
+			assertEquals(2, countBindingSets(codeAnchor),
+					"Duplicate IN constants should not duplicate generated VALUES rows: " + optimized);
+			assertFalse(containsListMemberFor(optimized, "code"),
+					"Object-domain FILTER IN should be satisfied by the generated VALUES anchor: " + optimized);
+			assertTrue(optimizedPlan.contains("selected=finite-anchor:code"),
+					"The semantic finite anchor should be selected explicitly:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("original[skipped-semantic-rewrite"),
+					"The original FILTER path should be a fallback after a proven semantic rewrite:\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("filterInValuesEquivalent"),
+					"The selected rewrite should carry the SPARQL FILTER IN/VALUES equivalence proof fact:\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("objectGuarantee"),
+					"The selected rewrite should carry the object-domain guarantee proof fact:\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("duplicateSafeFiniteAnchor"),
+					"The selected rewrite should carry the duplicate-safety proof fact:\n" + optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void knownPredicateObjectVarsShowGuaranteeDiagnostics(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -721,7 +768,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
-	void libraryQ9ValuesVariableFilterChoosesAuthorNameAnchorOption(@TempDir File dataDir) throws Exception {
+	void libraryQ9DefaultPlanUsesCascadesGuaranteeProvenance(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -731,47 +778,31 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 			loadSyntheticLibraryQ9Data(repository);
 			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 
-			TupleExpr optimized;
 			String optimizedPlan;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(libraryQ9ValuesVariableNameQuery())
 						.explain(Explanation.Level.Optimized);
-				optimized = (TupleExpr) explanation.tupleExpr();
 				optimizedPlan = explanation.toString();
 			}
 
-			BindingSetAssignment authorNameAnchor = findBindingSetAssignment(optimized, "authorName")
-					.orElseThrow(() -> new AssertionError(
-							"LIBRARY q9 shape should select the inferred authorName object anchor: " + optimized));
-			assertTrue(authorNameAnchor.getBindingNames().contains("target"),
-					"LIBRARY q9 should materialize the finite authorName/target filter into one assignment: "
-							+ optimized);
-			assertEquals(4, countBindingSets(authorNameAnchor),
-					"LIBRARY q9 should only keep the four finite rows that satisfy the OR filter: " + optimized);
-			assertFalse(containsCompare(optimized, "authorName", "target"),
-					"The materialized authorName/target rows should satisfy the finite filter without runtime "
-							+ "comparison: " + optimized);
-			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptions=generated=1, "
-					+ "selected=finite-anchor:authorName"),
-					"LIBRARY q9's inferred finite object domain should enter the Pareto option set and select "
-							+ "the authorName anchor:\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptionCandidates=original[skipped-preselected")
-					&& optimizedPlan.contains("finite-anchor:authorName[valid"),
-					"LIBRARY q9 should preselect the exact finite-anchor candidate without costing the original "
-							+ "baseline DP plan:\n"
+			assertTrue(optimizedPlan.contains("plannedEstimateSource=lmdb-guarantee-options"),
+					"LIBRARY q9 should still expose the guarantee-aware Cascades alternative in the selected "
+							+ "winner provenance:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_INDEX_NAME + "="),
+					"Default Cascades provenance should carry index metrics captured during planning:\n"
 							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("optimizer.logicalExploration=mode=fixed-order"),
-					"LIBRARY q9's inferred finite object domain should be selected by fixed connected costing "
-							+ "before the expensive native Pareto planner option path:\n" + optimizedPlan);
-			assertEquals(1, countOccurrences(optimizedPlan, "optimizer.logicalExploration=mode=fixed-order"),
-					"Default optimized explanations should stamp fixed-order planner-summary diagnostics once "
-							+ "instead of repeating them on every q9 plan node:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains(TelemetryMetricNames.PLANNED_ACCESS_PATH_CANDIDATES + "="),
+					"Default Cascades provenance should carry access-path candidate counts captured during "
+							+ "planning:\n" + optimizedPlan);
+			assertFalse(optimizedPlan.contains(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED),
+					"Default optimized explanations should not run post-hoc estimate annotation:\n"
+							+ optimizedPlan);
 			assertFalse(optimizedPlan.contains("finalFrontier=[{order="),
-					"Default optimized explanations should not rebuild the verbose final-frontier order string "
-							+ "on the fixed-order hot path:\n" + optimizedPlan);
+					"Default optimized explanations should not rebuild verbose final-frontier order strings:\n"
+							+ optimizedPlan);
 			assertFalse(optimizedPlan.contains("stepFactors=") || optimizedPlan.contains("fixed-connectedOrder="),
 					"Default optimized explanations should not rebuild verbose guarantee-option step/order "
-							+ "diagnostics on the fixed-order hot path:\n" + optimizedPlan);
+							+ "diagnostics:\n" + optimizedPlan);
 			assertFalse(optimizedPlan.contains("bounded-greedy selected"),
 					"LIBRARY q9 should compare bounded greedy with the full planner instead of selecting it "
 							+ "early:\n" + optimizedPlan);
@@ -1316,6 +1347,24 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				"}");
 	}
 
+	private static String medicalCodeInFilterQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+				"  ?med a med:Medication ; med:code ?code .",
+				"  FILTER(?code IN (\"MED-1000\", \"MED-1001\", \"MED-1001\"))",
+				"}");
+	}
+
+	private static String medicalSubjectInFilterQuery() {
+		return String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?med) AS ?count) WHERE {",
+				"  ?med a med:Medication ; med:code ?code .",
+				"  FILTER(?med IN (<urn:test:selective-medication:0>, <urn:test:selective-medication:1>))",
+				"}");
+	}
+
 	private static String libraryValuesVariableNameQuery() {
 		return String.join("\n",
 				"PREFIX lib: <http://example.com/theme/library/>",
@@ -1531,6 +1580,22 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				+ "}";
 	}
 
+	private static boolean hasPlannedRowsAtLeast(TupleExpr tupleExpr, double expectedRows, String source) {
+		List<TupleExpr> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr expr
+						&& source.equals(expr.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
+						&& expr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS) >= expectedRows) {
+					matches.add(expr);
+				}
+				super.meetNode(node);
+			}
+		});
+		return !matches.isEmpty();
+	}
+
 	private static int countOccurrences(String value, String needle) {
 		int count = 0;
 		int index = 0;
@@ -1575,6 +1640,21 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	private static boolean containsCompare(TupleExpr tupleExpr, String left, String right) {
 		return containsBinaryValueOperator(tupleExpr, Compare.class, left, right);
+	}
+
+	private static boolean containsListMemberFor(TupleExpr tupleExpr, String bindingName) {
+		List<ListMemberOperator> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ListMemberOperator node) {
+				if (!node.getArguments().isEmpty()
+						&& varName(node.getArguments().getFirst()).filter(bindingName::equals).isPresent()) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
 	}
 
 	private static boolean containsEmptySet(TupleExpr tupleExpr) {

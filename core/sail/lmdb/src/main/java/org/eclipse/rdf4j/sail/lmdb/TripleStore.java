@@ -1284,6 +1284,45 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, idFilter);
 	}
 
+	long exactStatementCount(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		if (subj < 0 || pred < 0 || obj < 0 || context < 0) {
+			return -1L;
+		}
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index.getPatternScore(subj, pred, obj, context) < 4) {
+			return -1L;
+		}
+
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while counting a fully bound LMDB statement", e);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+			index.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
+			if (rc == MDB_SUCCESS) {
+				return 1L;
+			}
+			if (rc == MDB_NOTFOUND) {
+				return 0L;
+			}
+			throw new IOException(mdb_strerror(rc));
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
 	Optional<RecordIterator> getTriplesWithDistinctCursorSkip(Txn txn, StatementPattern statementPattern, long subj,
 			long pred, long obj, long context, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
 		if (statementPattern == null || idFilter == null || !idFilter.isEmpty()) {
@@ -1496,6 +1535,19 @@ class TripleStore implements Closeable {
 					new String(index.getFieldSeq()), e);
 			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
 		}
+	}
+
+	protected double planningCardinality(long subj, long pred, long obj, long context) throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (pageCardinalityEstimator) {
+			try {
+				return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+			} catch (IOException | RuntimeException e) {
+				logger.warn("Page-walk planning cardinality estimator failed for index {}, falling back to sampling",
+						new String(index.getFieldSeq()), e);
+			}
+		}
+		return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
 	}
 
 	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)

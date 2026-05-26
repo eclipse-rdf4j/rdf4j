@@ -139,7 +139,7 @@ final class GuaranteePlanOptionProvider {
 			}
 			factors.add(anchor);
 			options.add(new PlanOption("finite-anchor:" + bindingName, List.copyOf(factors),
-					anchorOption.satisfiesFilter() ? i : -1));
+					anchorOption.satisfiesFilter() ? i : -1, anchorOption.semanticRewrite()));
 		}
 		return List.copyOf(options);
 	}
@@ -218,7 +218,8 @@ final class GuaranteePlanOptionProvider {
 		BindingSetAssignment narrowedAnchor = narrowObjectAnchor(pattern, anchor, context);
 		if (narrowedAnchor != null) {
 			String bindingName = narrowedAnchor.getBindingNames().iterator().next();
-			return new AnchorOption(narrowedAnchor, bindingName, true, Set.of());
+			return new AnchorOption(narrowedAnchor, bindingName, true, Set.of(),
+					semanticFilterInAnchor(filter.condition, pattern, context));
 		}
 
 		Map<String, LinkedHashSet<Value>> assignmentValues = context.assignmentValues();
@@ -231,11 +232,22 @@ final class GuaranteePlanOptionProvider {
 					narrowedAnchor, bindingName, assignmentValues, context);
 			if (materializedAnchor != null) {
 				return new AnchorOption(materializedAnchor, bindingName, true,
-						replacedAssignmentNames(materializedAnchor, bindingName, assignmentValues));
+						replacedAssignmentNames(materializedAnchor, bindingName, assignmentValues), false);
 			}
-			return new AnchorOption(narrowedAnchor, bindingName, false, Set.of());
+			return new AnchorOption(narrowedAnchor, bindingName, false, Set.of(), false);
 		}
 		return null;
+	}
+
+	private static boolean semanticFilterInAnchor(ValueExpr condition, StatementPattern pattern,
+			AnalysisContext context) {
+		if (!(condition instanceof ListMemberOperator)) {
+			return false;
+		}
+		Optional<RdfTermDomain> guarantee = context.knownRdfTermDomain(pattern);
+		return guarantee.isPresent()
+				&& !guarantee.get().isUnknown()
+				&& !guarantee.get().equals(RdfTermDomain.UNRESTRICTED);
 	}
 
 	private static boolean replacedAssignment(TupleExpr factor, Set<String> replacedBindingNames) {
@@ -1247,7 +1259,7 @@ final class GuaranteePlanOptionProvider {
 		return Var.of(name);
 	}
 
-	record PlanOption(String name, List<TupleExpr> factors, int satisfiedFilterIndex) {
+	record PlanOption(String name, List<TupleExpr> factors, int satisfiedFilterIndex, boolean semanticRewrite) {
 
 		void materializeSelectedRows() {
 			for (TupleExpr factor : factors) {
@@ -1276,7 +1288,7 @@ final class GuaranteePlanOptionProvider {
 	}
 
 	private record AnchorOption(BindingSetAssignment anchor, String bindingName, boolean satisfiesFilter,
-			Set<String> replacedBindingNames) {
+			Set<String> replacedBindingNames, boolean semanticRewrite) {
 	}
 
 	private static final class AnalysisContext {

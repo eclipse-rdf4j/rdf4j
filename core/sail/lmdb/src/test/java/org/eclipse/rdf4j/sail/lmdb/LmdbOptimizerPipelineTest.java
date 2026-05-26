@@ -95,10 +95,10 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbOptimizerPipelineTest {
 
 	@Test
-	void automaticLmdbStoreUsesDefaultEvaluationStrategyFactoryUntilSketchesAreReady() {
+	void automaticLmdbStoreUsesLmdbEvaluationStrategyFactoryBeforeSketchesAreReady() {
 		LmdbStore store = new LmdbStore();
 
-		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+		assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 	}
 
 	@Test
@@ -136,7 +136,7 @@ class LmdbOptimizerPipelineTest {
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			assertInstanceOf(DefaultEvaluationStrategy.class, createEvaluationStrategy(factory));
+			assertInstanceOf(LmdbEvaluationStrategy.class, createEvaluationStrategy(factory));
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
@@ -183,20 +183,20 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineRunsPushdownBeforeSketchAndDoesNotOverrideSketchPlacement() {
+	void lmdbPipelineRunsPushdownBeforeCascadesAndDoesNotAddLegacySketchByDefault() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 
 		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
-		int sketchIndex = indexOf(optimizers, LmdbSketchJoinOptimizer.class);
+		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
 
 		assertTrue(filterIndex >= 0);
-		assertTrue(sketchIndex >= 0);
-		assertTrue(filterIndex < sketchIndex);
-		assertTrue(indexOf(optimizers, CompareOptimizer.class) < sketchIndex);
-		assertTrue(indexOf(optimizers, SameTermFilterOptimizer.class) < sketchIndex);
+		assertTrue(cascadesIndex >= 0);
+		assertTrue(filterIndex < cascadesIndex);
+		assertTrue(indexOf(optimizers, CompareOptimizer.class) < cascadesIndex);
+		assertTrue(indexOf(optimizers, SameTermFilterOptimizer.class) < cascadesIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
 		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) >= 0);
 		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) < indexOf(optimizers,
@@ -208,16 +208,65 @@ class LmdbOptimizerPipelineTest {
 				LmdbSetSemanticsOptimizer.class));
 		assertTrue(indexOf(optimizers, LmdbSetSemanticsOptimizer.class) < indexOf(optimizers,
 				LmdbFilterSimplifierOptimizer.class));
-		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < sketchIndex);
+		assertTrue(indexOf(optimizers, LmdbFilterSimplifierOptimizer.class) < cascadesIndex);
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
-		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
+		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(FilterOptimizer.class::isInstance));
-		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
+		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
-		assertEquals(List.of(OrderLimitOptimizer.class), nonCheckerOptimizerTypesAfter(optimizers, sketchIndex));
+		assertEquals(List.of(OrderLimitOptimizer.class, LmdbCascadesExplainFinalizer.class),
+				nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
+		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+	}
+
+	@Test
+	void lmdbPipelineCanEnableLegacySketchOptimizerExplicitly() {
+		String previousLegacy = System.setProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", "true");
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			List<QueryOptimizer> optimizers = optimizers(
+					new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
+
+			int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
+			int sketchIndex = indexOf(optimizers, LmdbSketchJoinOptimizer.class);
+
+			assertTrue(cascadesIndex >= 0);
+			assertTrue(sketchIndex >= 0);
+			assertTrue(cascadesIndex < sketchIndex);
+			assertEquals(List.of(LmdbSketchJoinOptimizer.class, OrderLimitOptimizer.class),
+					nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex));
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", previousLegacy);
+		}
+	}
+
+	@Test
+	void lmdbPipelineEnablesCascadesByDefault() {
+		String previousMode = System.clearProperty("rdf4j.optimizer.lmdb.cascades.mode");
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			List<String> optimizers = optimizers(
+					new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers())
+							.stream()
+							.map(optimizer -> optimizer.getClass().getSimpleName())
+							.collect(Collectors.toList());
+
+			int cascadesIndex = optimizers.indexOf("LmdbCascadesOptimizer");
+			int filterSimplifierIndex = optimizers.indexOf("LmdbFilterSimplifierOptimizer");
+			int orderLimitIndex = optimizers.indexOf("OrderLimitOptimizer");
+
+			assertTrue(cascadesIndex >= 0, optimizers.toString());
+			assertTrue(filterSimplifierIndex < cascadesIndex, optimizers.toString());
+			assertTrue(cascadesIndex < orderLimitIndex, optimizers.toString());
+			assertFalse(optimizers.contains("LmdbSketchJoinOptimizer"), optimizers.toString());
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
+		}
 	}
 
 	@Test
@@ -407,26 +456,31 @@ class LmdbOptimizerPipelineTest {
 
 	@Test
 	void lmdbSketchPipelineRemovesProjectionDeadOptionalUnderDistinct() {
-		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
-		TupleExpr tupleExpr = parseTupleExpr("""
-				PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-				SELECT DISTINCT ?p WHERE {
-				  ?a a foaf:Person ;
-				     ?p ?o .
-				  OPTIONAL {
-				    ?o a ?type .
-				  }
-				}
-				""");
+		String previousLegacy = System.setProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", "true");
+		try {
+			TripleSource tripleSource = new EmptyTripleSource();
+			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+			TupleExpr tupleExpr = parseTupleExpr("""
+					PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+					SELECT DISTINCT ?p WHERE {
+					  ?a a foaf:Person ;
+					     ?p ?o .
+					  OPTIONAL {
+					    ?o a ?type .
+					  }
+					}
+					""");
 
-		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
-				new EvaluationStatistics())
-						.getOptimizers()) {
-			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+					new EvaluationStatistics())
+							.getOptimizers()) {
+				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+			}
+
+			assertFalse(containsLeftJoin(tupleExpr), tupleExpr.toString());
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.legacySketchOptimizer", previousLegacy);
 		}
-
-		assertFalse(containsLeftJoin(tupleExpr), tupleExpr.toString());
 	}
 
 	@Test
@@ -601,6 +655,14 @@ class LmdbOptimizerPipelineTest {
 		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), new EvaluationStatistics());
 	}
 
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
+		}
+	}
+
 	public static final class LowHeapSketchGateProbe {
 
 		public static void main(String[] args) throws Exception {
@@ -618,8 +680,8 @@ class LmdbOptimizerPipelineTest {
 				if (store.getBackingStore().getSketchBasedJoinEstimator() != null) {
 					throw new AssertionError("Low heap should not allocate the sketch estimator");
 				}
-				if (!(store.getEvaluationStrategyFactory() instanceof DefaultEvaluationStrategyFactory)) {
-					throw new AssertionError("Low heap should keep the default evaluation strategy factory");
+				if (!(store.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+					throw new AssertionError("Low heap should keep the LMDB evaluation strategy factory");
 				}
 
 				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();

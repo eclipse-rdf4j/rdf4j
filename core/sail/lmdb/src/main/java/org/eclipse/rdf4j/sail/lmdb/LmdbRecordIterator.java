@@ -91,6 +91,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private long sourceRowsFilteredActual;
 	private long distinctCursorSkipCountActual;
 	private long distinctCursorSkipSeekCountActual;
+	private long skipAheadSeekCountActual;
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
@@ -375,5 +376,26 @@ class LmdbRecordIterator implements RecordIterator {
 			return -1;
 		}
 		return Math.max(distinctCursorSkipSeekCountActual, Math.max(0L, sourceRowsMatchedActual - 1L));
+	}
+
+	@Override
+	public boolean skipTo(long subject, long predicate, long object, long context) {
+		if (closed) {
+			return false;
+		}
+		if (minKeyBuf == null) {
+			minKeyBuf = pool.getKeyBuffer();
+		}
+		minKeyBuf.clear();
+		index.toKey(minKeyBuf, subject, predicate, object, context);
+		minKeyBuf.flip();
+		fetchNext = false;
+		skipAheadSeekCountActual++;
+		return true;
+	}
+
+	@Override
+	public long getSkipAheadSeekCountActual() {
+		return skipAheadSeekCountActual;
 	}
 }

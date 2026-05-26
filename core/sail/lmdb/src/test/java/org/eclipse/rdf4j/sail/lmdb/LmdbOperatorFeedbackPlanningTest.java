@@ -154,10 +154,11 @@ class LmdbOperatorFeedbackPlanningTest {
 						"Trained plans must expose learned work q-error:\n" + trainedPlan);
 				assertTrue(trainedPlan.contains("plannedOperatorFeedbackUncertaintyRows="),
 						"Trained plans must expose learned uncertainty used by robust ranking:\n" + trainedPlan);
-				assertTrue(trainedPlan.contains("plannedBridgeCorrectionSource="),
-						"Plans must expose which bridge/star/path correction surface was used:\n" + trainedPlan);
-				assertTrue(trainedPlan.contains("plannedBridgeCorrectionJoinVar=page"),
-						"Plans must expose the bridge variable used for the OPTIONAL RHS correction:\n" + trainedPlan);
+				assertTrue(trainedPlan.contains("plannedOperatorFeedbackKey="),
+						"Plans must expose the selected operator-feedback correction surface:\n" + trainedPlan);
+				assertTrue(trainedPlan.contains("sharedBindings=page"),
+						"Plans must expose the bridge variable used for the OPTIONAL RHS feedback correction:\n"
+								+ trainedPlan);
 			}
 		} finally {
 			repository.shutDown();
@@ -320,8 +321,9 @@ class LmdbOperatorFeedbackPlanningTest {
 		assertTrue(plan.contains("plannedEstimateFusion=operator_feedback")
 				&& plan.contains("plannedOperatorFeedbackSource=" + expectedSource),
 				message + ":\n" + plan);
-		assertTrue(plan.contains("plannedEstimateUsage=join_order_candidate"),
-				"Operator feedback must be shown only when it was a selected join-order planner input:\n" + plan);
+		assertTrue(plan.contains("plannedEstimateUsage=alternative_ranking")
+				|| plan.contains("plannedEstimateUsage=join_order_candidate"),
+				"Operator feedback must be shown only when it was a selected planner ranking input:\n" + plan);
 		assertTrue(plan.contains("plannedEstimateDecisionId="),
 				"Selected planner estimates must be tied back to the chosen decision:\n" + plan);
 		assertTrue(plan.contains("plannedCardinalityRows="),

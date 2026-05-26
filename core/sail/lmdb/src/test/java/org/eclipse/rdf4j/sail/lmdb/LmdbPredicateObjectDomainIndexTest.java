@@ -413,7 +413,7 @@ class LmdbPredicateObjectDomainIndexTest {
 
 			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 
-			assertTrue(snapshot.plan.contains("plannedIndexAccessMode=directLookup"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("optimizer.guaranteeOptions=generated=1"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
 					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT]"), snapshot.plan);
 			assertEquals(1, countResults(repository, query));
@@ -449,7 +449,8 @@ class LmdbPredicateObjectDomainIndexTest {
 
 			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 
-			assertTrue(snapshot.plan.contains("plannedIndexAccessMode=prefixScan"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("selected=finite-anchor:o"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("BindingSetAssignment"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
 					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT, INTEGER]"), snapshot.plan);
 			assertEquals(2, countResults(repository, query));
@@ -483,7 +484,8 @@ class LmdbPredicateObjectDomainIndexTest {
 			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
 					+ "LITERAL_WITHOUT_LANGUAGE, BOOLEAN]"), snapshot.plan);
-			assertTrue(snapshot.plan.contains("Compare (=)"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("selected=finite-anchor:o"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("BindingSetAssignment"), snapshot.plan);
 			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();

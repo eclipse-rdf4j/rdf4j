@@ -56,6 +56,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -272,6 +274,27 @@ public class LmdbSailStoreTest {
 			assertSame(object, statement.getObject());
 			assertSame(context, statement.getContext());
 			assertFalse(iteration.hasNext());
+		}
+	}
+
+	@Test
+	void getStatementCountUsesDirectLookupForFullyBoundStatementPattern() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:direct-count:subject");
+		IRI predicate = valueFactory.createIRI("urn:direct-count:predicate");
+		IRI object = valueFactory.createIRI("urn:direct-count:object");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object);
+		}
+
+		StatementPattern statementPattern = new StatementPattern(Var.of("s", subject),
+				Var.of("p", predicate), Var.of("o", object));
+		LmdbSailStore backingStore = sail.getBackingStore();
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			assertEquals(1L, dataset.getStatementCount(statementPattern, subject, predicate, object, (Resource) null));
+			assertEquals("direct-lookup", statementPattern.getStringMetricActual("optimizer.countRuntime"));
 		}
 	}
 

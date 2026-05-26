@@ -248,12 +248,18 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			JoinOrderPlanner.PlanStep hasObservationStep = plan.getSteps().get(hasObservationIndex);
 
 			double expectedSurfaceRows = 3.0d * OBSERVATIONS_PER_VALUE;
-			assertEquals("lmdb-finite-derived-surface", hasObservationStep.getStringMetrics()
-					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
-					"The finite value anchor should derive the ?obs surface before costing hasObservation. plan="
+			assertTrue(!"lmdb-finite-derived-surface".equals(hasObservationStep.getStringMetrics()
+					.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)),
+					"Standard planning must not derive an exact finite ?obs surface while costing hasObservation. plan="
 							+ plan.getOrderedArgs() + ", metrics=" + hasObservationStep.getStringMetrics()
 							+ hasObservationStep.getDoubleMetrics() + ", work="
 							+ hasObservationStep.getStepWorkRows());
+			assertTrue(hasObservationStep.getDoubleMetrics()
+					.get("plannedLookupDomainAverageOutputRows") <= expectedSurfaceRows * 1.25d,
+					"The planning-safe lookup-domain estimate should stay near the finite ?obs surface. "
+							+ "expected=" + expectedSurfaceRows + ", metrics="
+							+ hasObservationStep.getStringMetrics() + hasObservationStep.getDoubleMetrics()
+							+ ", work=" + hasObservationStep.getStepWorkRows());
 			assertTrue(hasObservationStep.getDoubleMetrics()
 					.get(TelemetryMetricNames.PLANNED_ACCESS_ROWS) <= expectedSurfaceRows * 1.25d,
 					"The derived hasObservation lookup should expose access rows near the finite ?obs surface. "

@@ -40,6 +40,7 @@ public final class LmdbPlannerAwait {
 	}
 
 	public static void awaitPlannerAssertion(String alias, Duration atMost, ThrowingRunnable assertion) {
+		AtomicReference<AssertionError> firstAssertion = new AtomicReference<>();
 		AtomicReference<AssertionError> lastAssertion = new AtomicReference<>();
 		try {
 			await()
@@ -53,6 +54,7 @@ public final class LmdbPlannerAwait {
 							assertion.run();
 							return true;
 						} catch (AssertionError e) {
+							firstAssertion.compareAndSet(null, e);
 							lastAssertion.set(e);
 							return false;
 						} catch (Throwable e) {
@@ -64,6 +66,10 @@ public final class LmdbPlannerAwait {
 			if (last != null) {
 				AssertionError timeout = new AssertionError(
 						"Awaited assertion \"" + alias + "\" did not pass within " + atMost);
+				AssertionError first = firstAssertion.get();
+				if (first != null && first != last) {
+					timeout.addSuppressed(first);
+				}
 				timeout.addSuppressed(last);
 				timeout.initCause(e);
 				throw timeout;

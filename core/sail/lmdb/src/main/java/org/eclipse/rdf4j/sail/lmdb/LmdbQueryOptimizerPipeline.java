@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOpti
 
 final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
+	static final String LEGACY_SKETCH_OPTIMIZER_PROPERTY = "rdf4j.optimizer.lmdb.legacySketchOptimizer";
+
 	private static boolean assertsEnabled = false;
 
 	static {
@@ -59,6 +61,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
 	private final LmdbSemanticDependencies semanticDependencies;
+	private final boolean preserveSerializableObservationOrder;
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
@@ -67,11 +70,18 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics, LmdbSemanticDependencies semanticDependencies) {
+		this(strategy, tripleSource, evaluationStatistics, semanticDependencies, false);
+	}
+
+	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, LmdbSemanticDependencies semanticDependencies,
+			boolean preserveSerializableObservationOrder) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
 		this.semanticDependencies = Objects.requireNonNull(semanticDependencies,
 				"semanticDependencies must not be null");
+		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
 	}
 
 	@Override
@@ -95,14 +105,24 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		optimizers.add(new FilterOptimizer(null, false, false));
 		optimizers.add(ITERATIVE_EVALUATION_OPTIMIZER);
 		optimizers.add(new LmdbBoundSimplifierOptimizer());
-		optimizers.add(new LmdbProjectionPushdownOptimizer());
-		optimizers.add(new LmdbSetSemanticsOptimizer());
+		if (!preserveSerializableObservationOrder) {
+			optimizers.add(new LmdbProjectionPushdownOptimizer());
+			optimizers.add(new LmdbSetSemanticsOptimizer());
+		}
 		if (!semanticDependencies.isEmpty()) {
 			optimizers.add(new LmdbSemanticDependencyOptimizer(semanticDependencies));
 		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
-		optimizers.add(new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()));
+		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
+				preserveSerializableObservationOrder));
+		boolean legacySketchOptimizer = Boolean.getBoolean(LEGACY_SKETCH_OPTIMIZER_PROPERTY);
+		if (legacySketchOptimizer) {
+			optimizers.add(new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()));
+		}
 		optimizers.add(ORDER_LIMIT_OPTIMIZER);
+		if (!legacySketchOptimizer) {
+			optimizers.add(LmdbCascadesExplainFinalizer.INSTANCE);
+		}
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

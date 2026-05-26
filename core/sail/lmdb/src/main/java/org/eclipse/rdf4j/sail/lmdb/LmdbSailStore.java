@@ -96,6 +96,7 @@ class LmdbSailStore implements SailStore {
 	private static final boolean LMDB_STORE_PATH_EVENTS_ENABLED = Boolean.getBoolean("rdf4j.benchmark.profiling")
 			|| Boolean.getBoolean("rdf4j.lmdb.jfr");
 	private static final EventType LMDB_STORE_PATH_EVENT_TYPE = EventType.getEventType(LmdbStorePathEvent.class);
+	private static final String COUNT_RUNTIME_METRIC = "optimizer.countRuntime";
 
 	private final TripleStore tripleStore;
 
@@ -537,7 +538,12 @@ class LmdbSailStore implements SailStore {
 		SketchBasedJoinEstimator.Config estimatorConfig = SketchBasedJoinEstimator.Config.defaults()
 				.withThrottleEveryN(config.getSketchEstimatorThrottleEveryN())
 				.withThrottleMillis(config.getSketchEstimatorThrottleMillis())
-				.withEstimateCacheSeconds(60);
+				.withEstimateCacheSeconds(60)
+				.withZeroIntersectionExactDistinctLimit(0)
+				.withZeroIntersectionRowBudget(0)
+				.withZeroIntersectionSampleSize(0)
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(
+						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.FAST_AGMS));
 		if (config.getSketchEstimatorSubjectBucketCount() >= 0) {
 			estimatorConfig.withSubjectBucketCount(config.getSketchEstimatorSubjectBucketCount());
 		}
@@ -1114,6 +1120,44 @@ class LmdbSailStore implements SailStore {
 
 		long count = 0;
 		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
+		if (canUseDirectStatementCount(subjID, predID, objID, contextIDList, idFilter)) {
+			for (long contextID : contextIDList) {
+				long statementCount = tripleStore.exactStatementCount(txn, subjID, predID, objID, contextID, explicit);
+				if (statementCount >= 0) {
+					count += statementCount;
+				} else {
+					return countStatementIteratorFallback(txn, statementPattern, subjID, predID, objID, contextIDList,
+							explicit, idFilter);
+				}
+			}
+			if (statementPattern != null) {
+				statementPattern.setStringMetricActual(COUNT_RUNTIME_METRIC, "direct-lookup");
+			}
+			return count;
+		}
+		return countStatementIteratorFallback(txn, statementPattern, subjID, predID, objID, contextIDList, explicit,
+				idFilter);
+	}
+
+	private static boolean canUseDirectStatementCount(long subjID, long predID, long objID, List<Long> contextIDList,
+			LmdbValueIdFilter idFilter) {
+		if (subjID < 0 || predID < 0 || objID < 0 || !idFilter.isEmpty() || contextIDList.isEmpty()) {
+			return false;
+		}
+		for (long contextID : contextIDList) {
+			if (contextID < 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private long countStatementIteratorFallback(Txn txn, StatementPattern statementPattern, long subjID, long predID,
+			long objID, List<Long> contextIDList, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
+		long count = 0;
+		if (statementPattern != null) {
+			statementPattern.setStringMetricActual(COUNT_RUNTIME_METRIC, "iterator");
+		}
 		for (long contextID : contextIDList) {
 			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit,
 					idFilter)) {

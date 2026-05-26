@@ -49,6 +49,18 @@ interface RecordIterator extends Closeable {
 	}
 
 	/**
+	 * Requests that the iterator positions the underlying cursor at or after the supplied quad key on the next
+	 * {@link #next()} call. Implementations that cannot seek may return {@code false}.
+	 */
+	default boolean skipTo(long subject, long predicate, long object, long context) {
+		return false;
+	}
+
+	default long getSkipAheadSeekCountActual() {
+		return -1;
+	}
+
+	/**
 	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
 	 * records.
 	 *

@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbDeferredFilterPlacer {
@@ -1053,7 +1054,7 @@ final class LmdbDeferredFilterPlacer {
 		}
 
 		List<BindingSet> rows = new ArrayList<>(1);
-		rows.add(new MapBindingSet(0));
+		rows.add(EmptyBindingSet.getInstance());
 		List<DeferredFilter> pendingFilters = new ArrayList<>(filters);
 		Set<String> availableNames = new HashSet<>();
 		for (BindingSetAssignment assignment : assignments) {
@@ -1150,6 +1151,12 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private BindingSet joinFiniteBindingRow(BindingSet left, BindingSet right, int bindingNameCount) {
+		if (!left.iterator().hasNext()) {
+			return right;
+		}
+		if (!right.iterator().hasNext()) {
+			return left;
+		}
 		MapBindingSet joined = new MapBindingSet(bindingNameCount);
 		for (Binding binding : left) {
 			joined.addBinding(binding);

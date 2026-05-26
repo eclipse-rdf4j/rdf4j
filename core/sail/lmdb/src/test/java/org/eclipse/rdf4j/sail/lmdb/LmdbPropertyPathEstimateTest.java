@@ -47,14 +47,15 @@ class LmdbPropertyPathEstimateTest {
 				connection.add(a, p, b);
 				connection.add(b, p, c);
 				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.awaitSketchesReady(store);
 
 				Explanation explanation = connection.prepareTupleQuery("SELECT ?o WHERE { <urn:a> <urn:p>+ ?o }")
 						.explain(Explanation.Level.Optimized);
 				ArbitraryLengthPath path = findArbitraryLengthPath((TupleExpr) explanation.tupleExpr());
 
 				assertNotNull(path, explanation::toString);
-				String proof = path.getStringMetricPlanned("optimizer.rewriteProof");
-				assertTrue(proof != null && proof.contains("PROPERTY_PATH_COST_ANNOTATION"), explanation::toString);
+				String proof = path.getStringMetricPlanned("optimizer.cascadesProofs");
+				assertTrue(proof != null && proof.contains("lmdb-property-path"), explanation::toString);
 				assertTrue("lmdb-property-path".equals(
 						path.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE)),
 						explanation::toString);

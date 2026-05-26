@@ -585,6 +585,30 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void distributesScopedUnionRootJoinWithSharedPrefixBeforeFanoutBranch() {
+		StatementPattern department = statementPattern("org", "department", "department");
+		StatementPattern makesOffer = statementPattern("department", "makesOffer", "offer");
+		StatementPattern itemOffered = statementPattern("offer", "itemOffered", "work");
+		StatementPattern about = statementPattern("work", "about", "topic");
+		StatementPattern page = statementPattern("topic", "mainEntityOfPage", "page");
+		TupleExpr sharedPrefix = new Join(department, new Join(makesOffer, new Join(itemOffered,
+				new Join(about, page))));
+		Extension reviewBranch = new Extension(statementPattern("work", "review", "review"),
+				new ExtensionElem(new Var("review"), "fanout"));
+		Extension eventBranch = new Extension(statementPattern("page", "event", "event"),
+				new ExtensionElem(new Var("event"), "fanout"));
+		Union union = new Union(reviewBranch, eventBranch);
+		union.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(new Join(sharedPrefix, union));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		Union distributed = assertInstanceOf(Union.class, root.getArg());
+		assertScopedUnionBranchKeepsSharedPrefixBeforeFanout(distributed.getLeftArg());
+		assertScopedUnionBranchKeepsSharedPrefixBeforeFanout(distributed.getRightArg());
+	}
+
+	@Test
 	void keepsMinusWhenRhsExtensionCreatesLeftBindingName() {
 		StatementPattern left = statementPattern("x", "p", "v");
 		Extension right = new Extension(statementPattern("x", "q", "rv"), new ExtensionElem(new Var("rv"), "v"));
@@ -937,6 +961,12 @@ class LmdbSketchJoinOptimizerTest {
 		Join join = assertInstanceOf(Join.class, joinRoot);
 		assertTrue(assertInstanceOf(VariableScopeChange.class, join.getLeftArg()).isVariableScopeChange());
 		assertTrue(containsBindingSetAssignment(join.getRightArg(), "target"));
+	}
+
+	private static void assertScopedUnionBranchKeepsSharedPrefixBeforeFanout(TupleExpr tupleExpr) {
+		Join join = assertInstanceOf(Join.class, tupleExpr);
+		assertTrue(statementPatterns(join.getLeftArg()).size() >= 5);
+		assertInstanceOf(Extension.class, join.getRightArg());
 	}
 
 	private static final class CountingGuaranteePlanningStatistics extends EvaluationStatistics

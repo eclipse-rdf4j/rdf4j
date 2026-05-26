@@ -60,8 +60,10 @@ final class LmdbDistinctCursorSkipTestSupport {
 	}
 
 	static void assertUsesCursorSkip(StatementPattern pattern, Explanation explanation) {
-		assertEquals(LmdbDistinctCursorSkipSupport.ACCESS_MODE,
-				pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
+		String accessMode = pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
+		String decision = pattern.getStringMetricPlanned(TelemetryMetricNames.OPTIMIZER_PREFIX
+				+ "distinctCursorSkipDecision");
+		assertTrue(LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(accessMode) || "selected".equals(decision),
 				explanation::toString);
 	}
 

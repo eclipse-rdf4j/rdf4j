@@ -187,10 +187,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		EvaluationStrategyFactory factory;
 		if (explicitEvalStratFactory != null) {
 			factory = explicitEvalStratFactory;
-		} else if (isSketchEstimatorReadyNonBlocking()) {
-			factory = getAutomaticLmdbEvaluationStrategyFactory();
 		} else {
-			factory = getAutomaticDefaultEvaluationStrategyFactory();
+			factory = getAutomaticLmdbEvaluationStrategyFactory();
 		}
 		configureEvaluationStrategyFactory(factory);
 		return factory;
@@ -442,6 +440,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 */
 	boolean isIsolationDisabled() {
 		return disabledIsolationLockManager.isActiveLock();
+	}
+
+	synchronized boolean usesDefaultAutomaticOptimizerPipeline() {
+		return explicitEvalStratFactory == null && automaticOptimizerPipeline == null;
 	}
 
 	SailStore getSailStore() {

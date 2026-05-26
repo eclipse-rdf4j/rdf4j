@@ -80,12 +80,19 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 			boolean changed = false;
 			for (BindingSet bindingSet : node.getBindingSets()) {
 				MapBindingSet normalized = new MapBindingSet(bindingSet.size());
+				boolean rowChanged = false;
 				for (Binding binding : bindingSet) {
-					Lookup lookup = lookup(binding.getValue());
+					Value bindingValue = binding.getValue();
+					if (bindingValue instanceof LmdbValue) {
+						normalized.addBinding(binding.getName(), bindingValue);
+						continue;
+					}
+					Lookup lookup = lookup(bindingValue);
 					normalized.addBinding(binding.getName(), lookup.value);
-					changed |= lookup.value != binding.getValue();
+					rowChanged |= lookup.value != bindingValue;
 				}
-				bindingSets.add(normalized);
+				changed |= rowChanged;
+				bindingSets.add(rowChanged ? normalized : bindingSet);
 			}
 
 			if (changed) {

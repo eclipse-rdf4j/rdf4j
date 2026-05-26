@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
@@ -61,6 +62,9 @@ class LmdbStoreConfigTest {
 
 	private static final IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorThrottleMillis");
+
+	private static final IRI SKETCH_ESTIMATOR_STRATEGY = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorStrategy");
 
 	private static final IRI OPTIMIZER_SAMPLING_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "optimizerSamplingEnabled");
@@ -123,6 +127,13 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleEveryN")).isEqualTo(1024L * 1024L);
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleMillis")).isEqualTo(2L);
+	}
+
+	@Test
+	void sketchEstimatorStrategyDefaultsToFastAgms() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("fastagms");
 	}
 
 	@Test
@@ -323,6 +334,31 @@ class LmdbStoreConfigTest {
 				throttleMillis,
 				true
 		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "fastagms", "tuple", "joinsketch" })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorStrategy(final String strategy) {
+		testParseAndExport(
+				SKETCH_ESTIMATOR_STRATEGY,
+				Values.literal(strategy),
+				config -> invokeStringGetter(config, "getSketchEstimatorStrategy"),
+				strategy,
+				!"fastagms".equals(strategy)
+		);
+	}
+
+	@Test
+	void invalidSketchEstimatorStrategyFailsClearly() {
+		final BNode implNode = bnode();
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal("bad-sketch"))
+				.build();
+
+		assertThatThrownBy(() -> lmdbStoreConfig.parse(configModel, implNode))
+				.hasMessageContaining("Sketch estimator strategy value required")
+				.hasMessageContaining("bad-sketch");
 	}
 
 	@ParameterizedTest
