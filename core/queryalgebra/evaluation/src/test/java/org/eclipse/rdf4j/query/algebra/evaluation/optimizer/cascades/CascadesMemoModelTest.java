@@ -173,6 +173,19 @@ class CascadesMemoModelTest {
 	}
 
 	@Test
+	void inputBoundPhysicalAlternativeDoesNotSatisfyUnboundGoal() throws Exception {
+		PhysicalProperties boundLookup = PhysicalProperties.builder()
+				.accessPath("directLookup")
+				.boundVars(Set.of("s", "p", "o"))
+				.inputBoundVars(Set.of("s"))
+				.build();
+
+		assertFalse(boundLookup.satisfies(PhysicalProperties.ANY));
+		assertTrue(boundLookup.satisfies(PhysicalProperties.builder().boundVars(Set.of("s")).build()));
+		assertEquals(List.of("inputBoundVars"), missingRequirements(boundLookup, PhysicalProperties.ANY));
+	}
+
+	@Test
 	void requiredPropertyWinnerIgnoresCheaperIncompatibleAlternative() throws Exception {
 		PhysicalProperties required = PhysicalProperties.builder()
 				.accessPath("directLookup")

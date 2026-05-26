@@ -23,6 +23,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
@@ -197,6 +199,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	}
 
 	private static boolean subplanCandidate(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof ArbitraryLengthPath || tupleExpr instanceof ZeroLengthPath) {
+			return true;
+		}
 		if (tupleExpr instanceof Filter filter) {
 			return hasFilterJoinSegment(filter.getArg()) && !containsJoinPlanningBarrier(filter);
 		}

@@ -62,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StandardCascadesRules;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -324,6 +325,7 @@ final class LmdbCascadesRuleProvider {
 			PhysicalProperties.Builder builder = PhysicalProperties.builder()
 					.accessPath(accessMode)
 					.boundVars(tupleExpr == null ? Set.of() : tupleExpr.getBindingNames())
+					.inputBoundVars(inputBoundVarsForAccessPath(tupleExpr, estimate, goal))
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES);
 			if (LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(accessMode)
@@ -338,6 +340,94 @@ final class LmdbCascadesRuleProvider {
 				builder.graphContext(sp.getContextVar().getValue().stringValue());
 			}
 			return builder.build();
+		}
+
+		private Set<String> inputBoundVarsForAccessPath(TupleExpr tupleExpr,
+				JoinFactorCostModel.FactorCostEstimate estimate, OptimizationGoal goal) {
+			Set<String> goalBoundVars = goalBoundVars(goal);
+			if (tupleExpr == null || estimate == null || !estimate.hasPhysicalAccessPath()
+					|| goalBoundVars.isEmpty()) {
+				return Set.of();
+			}
+			if (tupleExpr instanceof StatementPattern sp) {
+				int lookupComponentMask = estimate.getLookupComponentMask();
+				if (lookupComponentMask == 0) {
+					lookupComponentMask = lookupComponentMask(estimate.getStringMetrics()
+							.get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS));
+				}
+				return statementPatternInputBoundVars(sp, lookupComponentMask, goalBoundVars);
+			}
+			return bindingNameIntersection(tupleExpr.getBindingNames(), goalBoundVars);
+		}
+
+		private Set<String> goalBoundVars(OptimizationGoal goal) {
+			return goal == null ? Set.of() : goal.requiredProperties().boundVars();
+		}
+
+		private Set<String> bindingNameIntersection(Set<String> bindingNames, Set<String> goalBoundVars) {
+			if (bindingNames == null || bindingNames.isEmpty() || goalBoundVars == null || goalBoundVars.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> inputBoundVars = new LinkedHashSet<>();
+			for (String bindingName : bindingNames) {
+				if (goalBoundVars.contains(bindingName)) {
+					inputBoundVars.add(bindingName);
+				}
+			}
+			return inputBoundVars.isEmpty() ? Set.of() : Set.copyOf(inputBoundVars);
+		}
+
+		private Set<String> statementPatternInputBoundVars(StatementPattern pattern, int lookupComponentMask,
+				Set<String> goalBoundVars) {
+			if (lookupComponentMask == 0) {
+				return Set.of();
+			}
+			Set<String> inputBoundVars = new LinkedHashSet<>();
+			for (Component component : Component.values()) {
+				if ((lookupComponentMask & componentBit(component)) == 0) {
+					continue;
+				}
+				Var var = componentVar(pattern, component);
+				if (var == null || var.hasValue()) {
+					continue;
+				}
+				String name = var.getName();
+				if (name != null && !name.startsWith("_const_") && goalBoundVars.contains(name)) {
+					inputBoundVars.add(name);
+				}
+			}
+			return inputBoundVars.isEmpty() ? Set.of() : Set.copyOf(inputBoundVars);
+		}
+
+		private int lookupComponentMask(String lookupComponents) {
+			if (lookupComponents == null || lookupComponents.isBlank()) {
+				return 0;
+			}
+			int mask = 0;
+			for (String token : lookupComponents.replace("[", "").replace("]", "").split(",")) {
+				String component = token.trim();
+				if (component.length() == 1) {
+					try {
+						mask |= componentBit(Component.valueOf(component));
+					} catch (IllegalArgumentException ignored) {
+						// Ignore stale or non-component metrics from older estimates.
+					}
+				}
+			}
+			return mask;
+		}
+
+		private int componentBit(Component component) {
+			return 1 << component.ordinal();
+		}
+
+		private Var componentVar(StatementPattern pattern, Component component) {
+			return switch (component) {
+			case S -> pattern.getSubjectVar();
+			case P -> pattern.getPredicateVar();
+			case O -> pattern.getObjectVar();
+			case C -> pattern.getContextVar();
+			};
 		}
 
 		CostVector cost(JoinFactorCostModel.FactorCostEstimate estimate) {
@@ -1907,6 +1997,7 @@ final class LmdbCascadesRuleProvider {
 					estimate.get().qErrorInterval());
 			PhysicalProperties delivered = PhysicalProperties.builder()
 					.boundVars(expression.tupleExpr().getBindingNames())
+					.inputBoundVars(pathInputBoundVars(expression.tupleExpr(), boundVars))
 					.accessPath("lmdbPropertyPath")
 					.materialization(PhysicalProperties.Materialization.STREAMING)
 					.duplicateBehavior(PhysicalProperties.DuplicateBehavior.PRESERVES)
@@ -1915,6 +2006,19 @@ final class LmdbCascadesRuleProvider {
 					"LMDB property-path statistics are exposed as a Cascades physical alternative");
 			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(), delivered,
 					cost, proof, "lmdb-property-path", snapshot(estimate.get(), cost, "lmdb-property-path")));
+		}
+
+		private Set<String> pathInputBoundVars(TupleExpr tupleExpr, Set<String> boundVars) {
+			if (tupleExpr == null || boundVars == null || boundVars.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> inputBoundVars = new LinkedHashSet<>();
+			for (String bindingName : tupleExpr.getBindingNames()) {
+				if (boundVars.contains(bindingName)) {
+					inputBoundVars.add(bindingName);
+				}
+			}
+			return inputBoundVars.isEmpty() ? Set.of() : Set.copyOf(inputBoundVars);
 		}
 	}
 

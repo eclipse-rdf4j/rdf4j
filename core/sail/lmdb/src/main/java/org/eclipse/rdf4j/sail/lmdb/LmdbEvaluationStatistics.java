@@ -1855,6 +1855,11 @@ class LmdbEvaluationStatistics
 		if (assignmentEstimate.isPresent()) {
 			return assignmentEstimate;
 		}
+		Optional<FactorCostEstimate> propertyPathEstimate = estimatePropertyPathFactorCost(factor, boundVars,
+				collectMetrics);
+		if (propertyPathEstimate.isPresent()) {
+			return propertyPathEstimate;
+		}
 		double outputRows = isFiniteNonNegative(knownOutputRows) ? knownOutputRows
 				: estimateFactorOutputRows(factor, boundVars);
 		if (!Double.isFinite(outputRows) || outputRows < 0.0d) {
@@ -1913,6 +1918,12 @@ class LmdbEvaluationStatistics
 		if (assignmentEstimate.isPresent()) {
 			return assignmentEstimate;
 		}
+		Set<String> boundVars = boundVariableMaskSet(variableNames, boundVarMask);
+		Optional<FactorCostEstimate> propertyPathEstimate = estimatePropertyPathFactorCost(factor, boundVars,
+				collectMetrics);
+		if (propertyPathEstimate.isPresent()) {
+			return propertyPathEstimate;
+		}
 		double outputRows = isFiniteNonNegative(knownOutputRows) ? knownOutputRows
 				: estimateFactorOutputRows(factor, variableNames, boundVarMask);
 		if (!Double.isFinite(outputRows) || outputRows < 0.0d) {
@@ -1927,6 +1938,52 @@ class LmdbEvaluationStatistics
 			return finiteLookupEstimate;
 		}
 		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics);
+	}
+
+	private Optional<FactorCostEstimate> estimatePropertyPathFactorCost(TupleExpr factor, Set<String> boundVars,
+			boolean collectMetrics) {
+		Optional<PropertyPathEstimate> estimate = Optional.empty();
+		Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
+		if (factor instanceof ArbitraryLengthPath path) {
+			estimate = estimatePropertyPath(path, effectiveBoundVars);
+		} else if (factor instanceof ZeroLengthPath path) {
+			estimate = estimatePropertyPath(path, effectiveBoundVars);
+		}
+		if (estimate.isEmpty()) {
+			return Optional.empty();
+		}
+
+		PropertyPathEstimate pathEstimate = estimate.get();
+		double rows = pathEstimate.rows();
+		if (!isFiniteNonNegative(rows)) {
+			return Optional.empty();
+		}
+		double workRows = Math.max(rows, pathEstimate.distinctSubjects() + rows);
+		if (!isFiniteNonNegative(workRows)) {
+			workRows = rows;
+		}
+
+		Map<String, String> stringMetrics = Map.of();
+		Map<String, Double> doubleMetrics = Map.of();
+		if (collectMetrics) {
+			Map<String, String> mutableStringMetrics = new HashMap<>();
+			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-property-path");
+			mutableStringMetrics.put("plannedPropertyPathMethod", pathEstimate.method());
+			mutableStringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, "propertyPath");
+
+			Map<String, Double> mutableDoubleMetrics = new HashMap<>();
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, rows);
+			mutableDoubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, workRows);
+			mutableDoubleMetrics.put("plannedPropertyPathDistinctSubjects", pathEstimate.distinctSubjects());
+			mutableDoubleMetrics.put("plannedPropertyPathDistinctObjects", pathEstimate.distinctObjects());
+			mutableDoubleMetrics.put("plannedPropertyPathAverageFanout", pathEstimate.averagePathFanout());
+			mutableDoubleMetrics.put("plannedCardinalityQError", 3.0d);
+			stringMetrics = mutableStringMetrics;
+			doubleMetrics = mutableDoubleMetrics;
+		}
+		return Optional.of(new FactorCostEstimate(workRows, rows, stringMetrics, doubleMetrics));
 	}
 
 	private Optional<FactorCostEstimate> estimateScopedSetFactorCost(TupleExpr factor, Set<String> boundVars,

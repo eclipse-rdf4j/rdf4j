@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -228,12 +229,16 @@ public interface CascadesCostModel {
 		public PhysicalProperties deliveredProperties(MemoExpr expression, OptimizationGoal goal,
 				List<Winner> inputWinners) {
 			PhysicalProperties delivered = expression.deliveredProperties();
+			TupleExpr tupleExpr = expression.tupleExpr();
+			Set<String> inputBoundVars = new LinkedHashSet<>(delivered.inputBoundVars());
 			if (inputWinners != null && !inputWinners.isEmpty()) {
-				for (Winner inputWinner : inputWinners) {
-					delivered = delivered.mergedWith(inputWinner.deliveredProperties());
+				for (int i = 0; i < inputWinners.size(); i++) {
+					PhysicalProperties inputProperties = inputWinners.get(i).deliveredProperties();
+					inputBoundVars.addAll(externallyRequiredInputBoundVars(tupleExpr, i,
+							inputProperties.inputBoundVars()));
+					delivered = delivered.mergedWith(inputProperties.withInputBoundVars(Set.of()));
 				}
 			}
-			TupleExpr tupleExpr = expression.tupleExpr();
 			if (tupleExpr != null) {
 				delivered = delivered.withBoundVars(tupleExpr.getBindingNames());
 			}
@@ -243,7 +248,37 @@ public interface CascadesCostModel {
 								.duplicateBehavior(PhysicalProperties.DuplicateBehavior.ELIMINATES)
 								.build());
 			}
-			return delivered;
+			return delivered.withInputBoundVars(inputBoundVars);
+		}
+
+		private Set<String> externallyRequiredInputBoundVars(TupleExpr tupleExpr, int inputIndex,
+				Set<String> inputBoundVars) {
+			if (inputBoundVars == null || inputBoundVars.isEmpty()) {
+				return Set.of();
+			}
+			Set<String> internallyBoundVars = internallyBoundVars(tupleExpr, inputIndex);
+			if (internallyBoundVars.isEmpty()) {
+				return inputBoundVars;
+			}
+			Set<String> external = new LinkedHashSet<>(inputBoundVars);
+			external.removeAll(internallyBoundVars);
+			return external.isEmpty() ? Set.of() : Set.copyOf(external);
+		}
+
+		private Set<String> internallyBoundVars(TupleExpr tupleExpr, int inputIndex) {
+			if (inputIndex != 1) {
+				return Set.of();
+			}
+			if (tupleExpr instanceof Join join) {
+				return join.getLeftArg().getAssuredBindingNames();
+			}
+			if (tupleExpr instanceof LeftJoin leftJoin) {
+				return leftJoin.getLeftArg().getAssuredBindingNames();
+			}
+			if (tupleExpr instanceof Difference difference) {
+				return difference.getLeftArg().getAssuredBindingNames();
+			}
+			return Set.of();
 		}
 
 		@Override
