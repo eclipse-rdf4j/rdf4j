@@ -23,6 +23,8 @@ The observable outcome is that generated or explicit VALUES clauses are costed a
 - [x] Wire LMDB page-walk/sketch fusion.
 - [x] Run focused and module verification.
 - [x] Preserve projected finite tuple frequencies through projection.
+- [x] Add a 300-query SPARQL estimate audit corpus.
+- [x] Add a first LMDB estimate audit harness.
 - [ ] Commit logical groups and push.
 
 ## Surprises & Discoveries
@@ -34,6 +36,8 @@ The observable outcome is that generated or explicit VALUES clauses are costed a
 - The Q9 blow-up was a double-counting problem. Exact finite expansion joined the generated `condCode` relation into the statement surface, then the later `BindingSetAssignment` guard applied selectivity again. The guard now contributes only bag multiplicity once a finite binding has been absorbed.
 - Full `core/sail/lmdb` verification still has two residual failures outside this implementation: `LmdbSubSelectDirectLookupEstimateTest#subSelectPlanStaysBoundedAfterStoreMutations` times out waiting for sketch readiness before plan assertions, and `ThemeQueryBenchmarkSparseParamTest` reflects the pre-existing dirty benchmark parameter file.
 - Projection dropped exact finite tuple relations whenever any column was removed. That destroyed projected tuple frequency and correlation before later DISTINCT, GROUP, or JOIN costing. Projection now keeps a projected finite bag relation with merged tuple frequencies.
+- The first estimate audit harness parses and evaluates full queries plus statement patterns. It is enough to preserve broad query coverage and expose leaf-level access estimates, but it does not yet split nested joins, filters, groups, paths, or optional/minus subtrees into independently audited pieces.
+- The current AAS path problem appears to favor a high-work Cartesian shape because `rdf:type` class statement patterns look artificially cheap as anchors while connected property-path joins carry fallback/no-winner or inflated work estimates. The next regression should prove the connected alternative beats the type-first Cartesian alternative by modeled work, not by a class-specific placement rule.
 
 ## Decision Log
 
@@ -43,6 +47,7 @@ The observable outcome is that generated or explicit VALUES clauses are costed a
 - A generated finite range has a memory safety cap. Within the cap, choosing the rewrite is cost-based.
 - No join-placement heuristics. Generate alternatives broadly and let the shared model choose by modeled work, rows, uncertainty, and confidence.
 - Exact full-prefix finite relation estimates dominate modeled bridge products because they are stronger mathematical evidence, not because of a hard-coded VALUES position rule.
+- Audit corpus queries are generated deterministically from templates instead of stored as static fixtures so future failures can be expanded systematically without maintaining 300 hand-written query strings.
 
 ## Implementation Tasks
 
@@ -238,6 +243,7 @@ Validation commands:
 - `python3 .codex/skills/mvnf/scripts/mvnf.py core/queryalgebra/evaluation --retain-logs --stream`
 - `mvn -o -Dmaven.repo.local=.m2_repo -pl core/queryalgebra/evaluation -Dtest=BagEstimateMathTest,CascadesCostModelTest -DskipITs test`
 - `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbFiniteValuesJoinSurfacePlanningTest,LmdbThemeQ9EstimateRegressionTest,LmdbEvaluationStatisticsMemoizationTest,LmdbOperatorFeedbackPlanningTest -DskipITs test`
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbEstimateAuditHarnessTest,LmdbEstimateAuditQueryCorpusTest -DskipITs test`
 - `mvn -o -Dmaven.repo.local=.m2_repo -T 2C process-resources`
 - `./scripts/run-single-benchmark.sh --module core/sail/lmdb --class org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark --method executeQuery --warmup-iterations 1 --measurement-iterations 1 --forks 1 --param sketchEstimatorEnabled=true --param themeName=MEDICAL_RECORDS --param z_queryIndex=9 --jvm-arg -Xms1G --jvm-arg -Xmx16G`
 - `bash testsuites/benchmark/test-run-single-benchmark.sh`
