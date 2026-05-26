@@ -12,8 +12,13 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.channels.ClosedByInterruptException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,6 +34,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -57,9 +63,6 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import org.apache.datasketches.hash.MurmurHash3;
-import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesCompactSketch;
-import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesSketch;
-import org.apache.datasketches.tuple.arrayofdoubles.ArrayOfDoublesUpdatableSketch;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -113,12 +116,12 @@ import org.slf4j.LoggerFactory;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 
 /**
- * ArrayOfDoublesSketch‑based selectivity and join‑size estimator for RDF4J.
+ * FastAGMS frequency-sketch selectivity and join-size estimator for RDF4J.
  *
  * <p>
  * Features:
  * <ul>
- * <li>Array-of-doubles tuple sketches over S, P, O, C singles, component degree sketches, and all six pairs.</li>
+ * <li>FastAGMS frequency summaries over S, P, O, C singles, component degree sketches, and all six pairs.</li>
  * <li>Synchronized reads sharing buffer locks; double‑buffered rebuilds.</li>
  * <li>Incremental {@code addStatement} / {@code deleteStatement} with signed multiplicity summaries.</li>
  * <li>Configurable via {@link Config} and system properties (see below).</li>
@@ -142,7 +145,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
  * (defaults shown in {@link Config}):
  * </p>
  * <ul>
- * <li>{@code nominalEntries} (int ≥ 16, sketch nominal entries)</li>
+ * <li>{@code nominalEntries} (int ≥ 16, FastAGMS compatibility nominal entries)</li>
  * <li>{@code subjectBucketCount} (int ≥ 4)</li>
  * <li>{@code predicateBucketCount} (int ≥ 4)</li>
  * <li>{@code objectBucketCount} (int ≥ 4)</li>
@@ -221,6 +224,38 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* ────────────────────────────────────────────────────────────── */
 	/* Public enums */
 	/* ────────────────────────────────────────────────────────────── */
+
+	public enum SketchStrategy {
+		FAST_AGMS("fastagms"),
+		TUPLE("tuple"),
+		JOIN_SKETCH("joinsketch");
+
+		private final String configValue;
+
+		SketchStrategy(String configValue) {
+			this.configValue = configValue;
+		}
+
+		public String configValue() {
+			return configValue;
+		}
+
+		public static SketchStrategy fromConfigValue(String value, SketchStrategy fallback) {
+			if (value == null) {
+				return fallback;
+			}
+			String normalized = value.trim()
+					.replace("-", "")
+					.replace("_", "")
+					.toLowerCase(Locale.ROOT);
+			for (SketchStrategy strategy : values()) {
+				if (strategy.configValue.equals(normalized)) {
+					return strategy;
+				}
+			}
+			return fallback;
+		}
+	}
 
 	public enum Component {
 		S,
@@ -438,6 +473,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private final double zeroIntersectionSkewRatio;
 	private final long zeroIntersectionRowBudget;
 	private final int zeroIntersectionSampleSize;
+	private final SketchStrategy sketchStrategy;
 	private final ChurnSampler churnSampler;
 	private final java.util.concurrent.atomic.AtomicLong approxStoreSize = new java.util.concurrent.atomic.AtomicLong();
 
@@ -460,25 +496,39 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private long seenTriples = 0L;
 
-	private static final ArrayOfDoublesSketch EMPTY = TupleSketchOps.newSketch(4096).compact();
+	private static final FastAgmsBindingSummary EMPTY = new FastAgmsBindingSummary(3, 171, 0x51E7C0DEL);
 
 	/* ────────────────────────────────────────────────────────────── */
 	/* Persistence */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private static final int SKETCH_PAYLOAD_FORMAT_NATIVE = -1;
+	private static final int SKETCH_PAYLOAD_FORMAT_TUPLE = -1;
+	private static final int SKETCH_PAYLOAD_FORMAT_FAST_AGMS = 1;
+	private static final int SKETCH_PAYLOAD_FORMAT_JOIN_SKETCH = 2;
+	private static final int JOIN_SKETCH_PAYLOAD_MAGIC = 0x4a53504c; // JSPL
+	private static final int JOIN_SKETCH_PAYLOAD_VERSION = 1;
 	private static final int SKETCH_PAYLOAD_FRAME_HEADER_BYTES = Integer.BYTES + Integer.BYTES;
 	private static final int TARGET_SKETCH_PART_FILES = 128;
 	private static final int DEFAULT_BUCKET_COUNT = 4 * 1024;
 	private static final int DEFAULT_SKETCH_NOMINAL_ENTRIES = 64;
+	static final int FAST_AGMS_ROWS = 3;
+	static final int FAST_AGMS_BUCKETS = 171;
+	static final long FAST_AGMS_SEED = 0x51E7C0DEL;
 	private static final String ESTIMATE_CACHE_SECONDS_PROPERTY = "estimateCacheSeconds";
 	private static final String ZERO_INTERSECTION_EXACT_DISTINCT_LIMIT_PROPERTY = "zeroIntersectionExactDistinctLimit";
 	private static final String ZERO_INTERSECTION_SKEW_RATIO_PROPERTY = "zeroIntersectionSkewRatio";
 	private static final String ZERO_INTERSECTION_ROW_BUDGET_PROPERTY = "zeroIntersectionRowBudget";
 	private static final String ZERO_INTERSECTION_SAMPLE_SIZE_PROPERTY = "zeroIntersectionSampleSize";
 	private static final double ZERO_INTERSECTION_ONE_SIGMA_UPPER_BOUND_FRACTION = 0.1d;
+	private static final double POSITIVE_RARE_OVERLAP_FANOUT_FALLBACK_MIN = 2.0d;
 	private static final long DEFAULT_ESTIMATE_CACHE_SECONDS = 60L;
 	private static final int MAX_ESTIMATE_CACHE_ENTRIES = 4096;
+	private static final int JOIN_SKETCH_ROWS = 5;
+	private static final int JOIN_SKETCH_LIGHT_BUCKETS = 32;
+	private static final int JOIN_SKETCH_MID_BUCKETS = 16;
+	private static final int JOIN_SKETCH_HEAVY_BUCKETS = 16;
+	private static final long JOIN_SKETCH_HEAVY_THRESHOLD = 12L;
+	private static final long JOIN_SKETCH_SEED = 0x51E7C0DEL;
 
 	private static final byte REC_SINGLE_TRIPLE = 1;
 	private static final byte REC_SINGLE_CPL = 2;
@@ -1663,6 +1713,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		int oBuckets = cfg.objectBucketCount;
 		int cBuckets = cfg.contextBucketCount;
 		boolean contextPairSketches = cfg.contextPairSketchesEnabled;
+		SketchStrategy configuredSketchStrategy = cfg.sketchStrategy;
 		long thrEvery = cfg.throttleEveryN;
 		long thrMs = cfg.throttleMillis;
 		long refreshMs = cfg.refreshSleepMillis;
@@ -1694,6 +1745,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		oBuckets = propInt("objectBucketCount", oBuckets);
 		cBuckets = propInt("contextBucketCount", cBuckets);
 		contextPairSketches = propBool("contextPairSketchesEnabled", contextPairSketches);
+		configuredSketchStrategy = SketchStrategy.fromConfigValue(propValue("sketchStrategy"),
+				configuredSketchStrategy);
 		thrEvery = propLong("throttleEveryN", thrEvery);
 		thrMs = propLong("throttleMillis", thrMs);
 		refreshMs = propLong("refreshSleepMillis", refreshMs);
@@ -1767,6 +1820,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		this.zeroIntersectionSkewRatio = zeroIntersectionSkew;
 		this.zeroIntersectionRowBudget = zeroIntersectionBudget;
 		this.zeroIntersectionSampleSize = zeroIntersectionSampleSize;
+		this.sketchStrategy = configuredSketchStrategy;
 		this.incrementalQueueInitialLimit = queueInitialLimit;
 		this.incrementalQueueIdleResetMillis = queueIdleResetMillis;
 		this.incrementalWorkerKeepAliveMillis = workerKeepAliveMillis;
@@ -1777,9 +1831,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		this.memoryMonitorEstimatedOperationBytes = memoryMonitorEstimatedOperationBytes;
 		this.churnSampler = new ChurnSampler();
 		this.bufA = new State(sketchNominalEntries, subjectBucketCount, predicateBucketCount, objectBucketCount,
-				contextBucketCount, contextPairSketchesEnabled);
+				contextBucketCount, contextPairSketchesEnabled, sketchStrategy);
 		this.bufB = new State(sketchNominalEntries, subjectBucketCount, predicateBucketCount, objectBucketCount,
-				contextBucketCount, contextPairSketchesEnabled);
+				contextBucketCount, contextPairSketchesEnabled, sketchStrategy);
 		this.current = usingA ? bufA : bufB;
 		this.sketchesLoaded = true;
 		this.persistenceEnabled = false;
@@ -3494,11 +3548,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 		boolean useDeleteSketch = recType != REC_GLOBAL_COMPONENT && isDelete;
 		double delta = recType == REC_GLOBAL_COMPONENT ? signedDelta(isDelete) : 1.0d;
-		ArrayOfDoublesUpdatableSketch sketch = getSketchForWrite(state, recType, useDeleteSketch, axisA, axisB, x, y,
+		FastAgmsBindingSummary sketch = getSketchForWrite(state, recType, useDeleteSketch, axisA, axisB, x, y,
 				entryId);
-		tupleUpdateRaw(sketch, firstValue, delta);
+		frequencyUpdateRaw(sketch, firstValue, delta);
+		JoinFrequencySketch joinSketch = joinSketchForWrite(state, recType, entryId);
+		if (joinSketch != null) {
+			joinSketch.update(firstValue, 1L);
+		}
 		for (int i = 1; i < valueCount; i++) {
-			tupleUpdateRaw(sketch, overflowValues[i - 1], delta);
+			frequencyUpdateRaw(sketch, overflowValues[i - 1], delta);
+			if (joinSketch != null) {
+				joinSketch.update(overflowValues[i - 1], 1L);
+			}
 		}
 		markDirtyAndTouchResidentSketch(slot, entryId);
 	}
@@ -3705,12 +3766,12 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (estimateCacheTtlMillis <= 0L) {
 			synchronized (snap) {
 				PatternStats st = statsOf(snap, joinVar, s, p, o, c);
-				ArrayOfDoublesSketch bindings = st.sketch == null ? EMPTY : st.sketch;
+				FastAgmsBindingSummary bindings = st.sketch == null ? EMPTY : st.sketch;
 				return new JoinEstimate(snap, bindings, st.distinct, st.card);
 			}
 		}
 		PatternStats st = patternStats(snap, joinVar, s, p, o, c);
-		ArrayOfDoublesSketch bindings = st.sketch == null ? EMPTY : st.sketch;
+		FastAgmsBindingSummary bindings = st.sketch == null ? EMPTY : st.sketch;
 		return new JoinEstimate(snap, bindings, st.distinct, st.card);
 	}
 
@@ -3720,11 +3781,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	public final class JoinEstimate {
 		private final State snap;
-		private ArrayOfDoublesSketch bindings;
+		private FastAgmsBindingSummary bindings;
 		private double distinct;
 		private double resultSize;
 
-		private JoinEstimate(State snap, ArrayOfDoublesSketch bindings,
+		private JoinEstimate(State snap, FastAgmsBindingSummary bindings,
 				double distinct, double size) {
 			this.snap = snap;
 			this.bindings = bindings;
@@ -3742,33 +3803,32 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		private JoinEstimate joinWithPatternStats(PatternStats rhs) {
-			TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(this.bindings,
-					rhs.sketch, snap.k);
-			ArrayOfDoublesSketch inter = intersectionStats.sketch();
-			double interDistinct = intersectionStats.positiveDistinct();
-
-			if (interDistinct == 0.0) { // early out
-				double upperBoundRows = estimateUpperBoundIntersectionRows(intersectionStats, this.resultSize,
-						rhs.card, this.distinct, rhs.distinct, estimateDisconnectedJoinRows(this.resultSize,
-								rhs.card));
-				if (upperBoundRows > 0.0d) {
-					this.bindings = inter;
-					this.distinct = upperBoundDistinct(intersectionStats, this.distinct, rhs.distinct);
-					this.resultSize = upperBoundRows;
-					return this;
+			double leftRows = this.resultSize;
+			double disconnectedRows = estimateDisconnectedJoinRows(leftRows, rhs.card);
+			if (this.bindings != null && rhs.sketch != null) {
+				FrequencySummaryOps.IntersectionStats intersectionStats = FrequencySummaryOps.intersectProductStats(
+						this.bindings, rhs.sketch);
+				double sketchRows = Math.min(disconnectedRows, intersectionStats.positiveSum());
+				double resultRows = roundJoinEstimate(sketchRows);
+				if (resultRows == 0.0d && intersectionStats.upperBoundOnly()) {
+					resultRows = estimateUpperBoundIntersectionRows(intersectionStats, leftRows, rhs.card,
+							this.distinct, rhs.distinct, disconnectedRows);
 				}
-				this.bindings = inter;
-				this.distinct = 0.0;
-				this.resultSize = 0.0;
+				if (resultRows == 0.0d && resultRows < disconnectedRows
+						&& !(this.bindings.isTuple() && rhs.sketch.isTuple())) {
+					resultRows = estimateStatsSharedVarJoinRows(leftRows, rhs.card, this.distinct, rhs.distinct,
+							disconnectedRows);
+				}
+				this.resultSize = resultRows;
+				this.distinct = clampDistinct(Math.min(this.distinct, rhs.distinct), this.resultSize);
+				this.bindings = null;
 				return this;
 			}
 
-			/* round to nearest whole solution count if enabled */
-			this.resultSize = roundJoinEstimate(intersectionStats.positiveSum());
-
-			/* carry forward */
-			this.bindings = inter;
-			this.distinct = interDistinct;
+			this.resultSize = estimateStatsSharedVarJoinRows(this.resultSize, rhs.card, this.distinct, rhs.distinct,
+					disconnectedRows);
+			this.distinct = clampDistinct(Math.min(this.distinct, rhs.distinct), this.resultSize);
+			this.bindings = null;
 			return this;
 		}
 
@@ -3795,13 +3855,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static final class PatternStats {
-		final ArrayOfDoublesSketch sketch;
+		final FastAgmsBindingSummary sketch;
 		final double distinct;
 		final double card; // relation size |R|
 
-		PatternStats(ArrayOfDoublesSketch s, double card) {
+		PatternStats(FastAgmsBindingSummary s, double card) {
 			this.sketch = s;
-			this.distinct = TupleSketchOps.estimatePositiveDistinct(s);
+			this.distinct = s == null ? 0.0d : s.effectiveDistinct();
 			this.card = card;
 		}
 	}
@@ -3843,19 +3903,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private record BindingSketchResult(ArrayOfDoublesSketch sketch, EnumSet<Pair> usedPairs) {
+	private record BindingSketchResult(FastAgmsBindingSummary sketch, EnumSet<Pair> usedPairs) {
 
-		static BindingSketchResult of(ArrayOfDoublesSketch sketch) {
+		static BindingSketchResult of(FastAgmsBindingSummary sketch) {
 			return new BindingSketchResult(sketch, EnumSet.noneOf(Pair.class));
 		}
 
-		static BindingSketchResult of(ArrayOfDoublesSketch sketch, Pair pair) {
+		static BindingSketchResult of(FastAgmsBindingSummary sketch, Pair pair) {
 			return new BindingSketchResult(sketch, EnumSet.of(pair));
 		}
 
 	}
 
-	private record PairSketchCandidate(Pair pair, ArrayOfDoublesSketch sketch) {
+	private record PairSketchCandidate(Pair pair, FastAgmsBindingSummary sketch) {
 	}
 
 	private static EnumMap<Component, String> fixedComponents(String s, String p, String o, String c) {
@@ -3881,7 +3941,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		EnumMap<Component, String> fixed = fixedComponents(s, p, o, c);
 		BindingSketchResult bindingSketch = bindingsSketch(st, j, fixed);
-		ArrayOfDoublesSketch sk = bindingSketch.sketch;
+		FastAgmsBindingSummary sk = bindingSketch.sketch;
 
 		double pairDrivenCardinality = usedPairCardinality(st, fixed, bindingSketch.usedPairs);
 		if (Double.isFinite(pairDrivenCardinality)) {
@@ -3955,10 +4015,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (patternStats.sketch.isEmpty()) {
 			return new PatternStats(EMPTY, patternStats.card);
 		}
-		if (patternStats.sketch instanceof ArrayOfDoublesCompactSketch) {
-			return patternStats;
-		}
-		return new PatternStats(patternStats.sketch.compact(), patternStats.card);
+		return patternStats;
 	}
 
 	private void trimEstimateCache(long nowMillis) {
@@ -4005,7 +4062,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return Double.isFinite(card) ? card : Double.NaN;
 	}
 
-	private static double enforceCardinalityLowerBound(ArrayOfDoublesSketch sketch, double cardinality) {
+	private static double enforceCardinalityLowerBound(FastAgmsBindingSummary sketch, double cardinality) {
 		if (sketch == null || !Double.isFinite(cardinality)) {
 			return cardinality;
 		}
@@ -4056,7 +4113,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
-	/* ArrayOfDoublesSketch helpers */
+	/* FastAgmsBindingSummary helpers */
 	/* ────────────────────────────────────────────────────────────── */
 
 	private BindingSketchResult bindingsSketch(State st, Component j, EnumMap<Component, String> f) {
@@ -4079,7 +4136,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (pr != null && pairEnabled(pr) && (j == pr.comp1 || j == pr.comp2)) {
 				int idxX = hash(pr.x, f.get(pr.x));
 				int idxY = hash(pr.y, f.get(pr.y));
-				ArrayOfDoublesSketch pairSketch = pairNetComplementSketch(st, pr, j, pairKey(idxX, idxY));
+				FastAgmsBindingSummary pairSketch = pairNetComplementSketch(st, pr, j, pairKey(idxX, idxY));
 				return BindingSketchResult.of(pairSketch, pr);
 			}
 		} else if (f.size() == 3) {
@@ -4094,11 +4151,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					}
 					int idxX = hash(pr.x, f.get(pr.x));
 					int idxY = hash(pr.y, f.get(pr.y));
-					ArrayOfDoublesSketch candidate = pairNetComplementSketch(st, pr, j, pairKey(idxX, idxY));
+					FastAgmsBindingSummary candidate = pairNetComplementSketch(st, pr, j, pairKey(idxX, idxY));
 					if (candidate == null) {
 						continue;
 					}
-					double candidateDistinct = TupleSketchOps.estimateDistinct(candidate);
+					double candidateDistinct = FrequencySummaryOps.estimateDistinct(candidate);
 					if (candidateDistinct < best) {
 						best = candidateDistinct;
 						candidateForBest = BindingSketchResult.of(candidate, pr);
@@ -4111,7 +4168,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return candidateForBest;
 			}
 
-//			ArrayOfDoublesSketch best = null;
+//			FastAgmsBindingSummary best = null;
 //			Pair bestFirst = null;
 //			Pair bestSecond = null;
 //			double bestEstimate = Double.POSITIVE_INFINITY;
@@ -4120,7 +4177,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 //					Intersection ix = SetOperation.builder().buildIntersection();
 //					ix.intersect(pairCandidates.get(i).sketch);
 //					ix.intersect(pairCandidates.get(k).sketch);
-//					ArrayOfDoublesSketch intersection = ix.getResult();
+//					FastAgmsBindingSummary intersection = ix.getResult();
 //					double estimate = intersection.getEstimate();
 //					if (best == null || estimate < bestEstimate) {
 //						best = intersection;
@@ -4141,44 +4198,45 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		/* generic fall‑back */
-		ArrayOfDoublesSketch acc = null;
+		FastAgmsBindingSummary acc = null;
 		for (Map.Entry<Component, String> e : f.entrySet()) {
-			ArrayOfDoublesSketch sk = singleNetComplementSketch(st, e.getKey(), j, hash(e.getKey(), e.getValue()));
+			FastAgmsBindingSummary sk = singleNetComplementSketch(st, e.getKey(), j, hash(e.getKey(), e.getValue()));
 			if (sk == null) {
 				continue;
 			}
 			if (acc == null) {
 				acc = sk;
 			} else {
-				acc = TupleSketchOps.intersectMin(acc, sk, st.k);
+				acc = FrequencySummaryOps.intersectMin(acc, sk);
 			}
 		}
 		return BindingSketchResult.of(acc);
 	}
 
-	private ArrayOfDoublesSketch singleNetComplementSketch(State st, Component fixed, Component join, int fixedIndex) {
-		ArrayOfDoublesSketch additions = singleWrapper(st, fixed, false).getComplementSketch(join, fixedIndex);
-		ArrayOfDoublesSketch deletions = singleWrapper(st, fixed, true).getComplementSketch(join, fixedIndex);
+	private FastAgmsBindingSummary singleNetComplementSketch(State st, Component fixed, Component join,
+			int fixedIndex) {
+		FastAgmsBindingSummary additions = singleWrapper(st, fixed, false).getComplementSketch(join, fixedIndex);
+		FastAgmsBindingSummary deletions = singleWrapper(st, fixed, true).getComplementSketch(join, fixedIndex);
 		return netBindingSketch(additions, deletions, st.k);
 	}
 
-	private ArrayOfDoublesSketch pairNetComplementSketch(State st, Pair pair, Component join, long key) {
-		ArrayOfDoublesSketch additions = pairWrapper(st, pair, false).getComplementSketch(join, key);
-		ArrayOfDoublesSketch deletions = pairWrapper(st, pair, true).getComplementSketch(join, key);
+	private FastAgmsBindingSummary pairNetComplementSketch(State st, Pair pair, Component join, long key) {
+		FastAgmsBindingSummary additions = pairWrapper(st, pair, false).getComplementSketch(join, key);
+		FastAgmsBindingSummary deletions = pairWrapper(st, pair, true).getComplementSketch(join, key);
 		return netBindingSketch(additions, deletions, st.k);
 	}
 
-	private ArrayOfDoublesSketch globalComponentSketch(State st, Component component) {
+	private FastAgmsBindingSummary globalComponentSketch(State st, Component component) {
 		return getSketchForRead(st,
 				new SketchAddress(REC_GLOBAL_COMPONENT, false, (byte) component.ordinal(), (byte) 0, 0, 0));
 	}
 
-	private static ArrayOfDoublesSketch netBindingSketch(ArrayOfDoublesSketch additions,
-			ArrayOfDoublesSketch deletions, int k) {
+	private static FastAgmsBindingSummary netBindingSketch(FastAgmsBindingSummary additions,
+			FastAgmsBindingSummary deletions, int k) {
 		if (additions == null && deletions == null) {
 			return null;
 		}
-		return TupleSketchOps.subtractPositive(additions, deletions, k);
+		return FrequencySummaryOps.subtractPositive(additions, deletions);
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -4204,7 +4262,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			this.isDelete = isDelete;
 		}
 
-		ArrayOfDoublesSketch getComplementSketch(Component c, int fi) {
+		FastAgmsBindingSummary getComplementSketch(Component c, int fi) {
 			if (c == fixed) {
 				return null;
 			}
@@ -4223,7 +4281,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			this.isDelete = isDelete;
 		}
 
-		ArrayOfDoublesSketch getComplementSketch(Component c, long key) {
+		FastAgmsBindingSummary getComplementSketch(Component c, long key) {
 			int x = (int) (key >>> 32);
 			int y = (int) key;
 			if (c == p.comp1) {
@@ -4250,13 +4308,22 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		long keyA = pairKey(hash(a.x, ax), hash(a.y, ay));
 		long keyB = pairKey(hash(b.x, bx), hash(b.y, by));
 
-		ArrayOfDoublesSketch sa = pairWrapper(st, a, false).getComplementSketch(j, keyA);
-		ArrayOfDoublesSketch sb = pairWrapper(st, b, false).getComplementSketch(j, keyB);
-		ArrayOfDoublesSketch da = pairWrapper(st, a, true).getComplementSketch(j, keyA);
-		ArrayOfDoublesSketch db = pairWrapper(st, b, true).getComplementSketch(j, keyB);
+		FastAgmsBindingSummary sa = pairWrapper(st, a, false).getComplementSketch(j, keyA);
+		FastAgmsBindingSummary sb = pairWrapper(st, b, false).getComplementSketch(j, keyB);
+		FastAgmsBindingSummary da = pairWrapper(st, a, true).getComplementSketch(j, keyA);
+		FastAgmsBindingSummary db = pairWrapper(st, b, true).getComplementSketch(j, keyB);
 
 		if ((sa == null && da == null) || (sb == null && db == null)) {
 			return 0.0;
+		}
+
+		if (sketchStrategy == SketchStrategy.JOIN_SKETCH && da == null && db == null) {
+			double joinSketchRows = estimateJoinSketchNetInnerProduct(st, pairComplementAddress(false, a, j, keyA),
+					pairComplementAddress(false, b, j, keyB), pairComplementAddress(true, a, j, keyA),
+					pairComplementAddress(true, b, j, keyB));
+			if (Double.isFinite(joinSketchRows)) {
+				return roundJoinEstimate(joinSketchRows);
+			}
 		}
 
 		return roundJoinEstimate(estimateNetIntersectionProductSum(sa, sb, da, db, st.k));
@@ -4268,16 +4335,45 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		int idxA = hash(a, av), idxB = hash(b, bv);
 
-		ArrayOfDoublesSketch sa = singleWrapper(st, a, false).getComplementSketch(j, idxA);
-		ArrayOfDoublesSketch sb = singleWrapper(st, b, false).getComplementSketch(j, idxB);
-		ArrayOfDoublesSketch da = singleWrapper(st, a, true).getComplementSketch(j, idxA);
-		ArrayOfDoublesSketch db = singleWrapper(st, b, true).getComplementSketch(j, idxB);
+		FastAgmsBindingSummary sa = singleWrapper(st, a, false).getComplementSketch(j, idxA);
+		FastAgmsBindingSummary sb = singleWrapper(st, b, false).getComplementSketch(j, idxB);
+		FastAgmsBindingSummary da = singleWrapper(st, a, true).getComplementSketch(j, idxA);
+		FastAgmsBindingSummary db = singleWrapper(st, b, true).getComplementSketch(j, idxB);
 
 		if ((sa == null && da == null) || (sb == null && db == null)) {
 			return 0.0;
 		}
 
+		if (sketchStrategy == SketchStrategy.JOIN_SKETCH && da == null && db == null) {
+			double joinSketchRows = estimateJoinSketchNetInnerProduct(st, singleComplementAddress(false, a, j, idxA),
+					singleComplementAddress(false, b, j, idxB), singleComplementAddress(true, a, j, idxA),
+					singleComplementAddress(true, b, j, idxB));
+			if (Double.isFinite(joinSketchRows)) {
+				return roundJoinEstimate(joinSketchRows);
+			}
+		}
+
 		return roundJoinEstimate(estimateNetIntersectionProductSum(sa, sb, da, db, st.k));
+	}
+
+	private double estimateJoinSketchNetInnerProduct(State state, SketchAddress leftAdd, SketchAddress rightAdd,
+			SketchAddress leftDelete, SketchAddress rightDelete) {
+		JoinFrequencySketch la = joinSketchForRead(state, leftAdd);
+		JoinFrequencySketch ra = joinSketchForRead(state, rightAdd);
+		JoinFrequencySketch ld = joinSketchForRead(state, leftDelete);
+		JoinFrequencySketch rd = joinSketchForRead(state, rightDelete);
+		if ((la == null && ld == null) || (ra == null && rd == null)) {
+			return Double.NaN;
+		}
+		if (ld != null || rd != null) {
+			return Double.NaN;
+		}
+		double additions = joinSketchInnerProduct(la, ra);
+		return Math.max(0.0d, additions);
+	}
+
+	private static double joinSketchInnerProduct(JoinFrequencySketch left, JoinFrequencySketch right) {
+		return left == null || right == null ? 0.0d : left.innerProduct(right);
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
@@ -4304,26 +4400,28 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private static final class State {
-		final int k; // sketch nominal entries
+		final int k; // FastAGMS compatibility nominal entries
 		final int subjectBuckets;
 		final int predicateBuckets;
 		final int objectBuckets;
 		final int contextBuckets;
+		final SketchStrategy sketchStrategy;
 
 		/* live (add) sketches */
-		final StateComponents<AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> globalComponents;
-		final StateComponents<AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> singleTriples;
+		final StateComponents<AtomicReferenceArray<FastAgmsBindingSummary>> globalComponents;
+		final StateComponents<AtomicReferenceArray<FastAgmsBindingSummary>> singleTriples;
 		final StateComponents<SingleBuild> singles;
 		final EnumMap<Pair, PairBuild> pairs = new EnumMap<>(Pair.class);
 		final int maxSketchBytes;
 
 		/* tombstone (delete) sketches */
-		final StateComponents<AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> delSingleTriples;
+		final StateComponents<AtomicReferenceArray<FastAgmsBindingSummary>> delSingleTriples;
 		final StateComponents<SingleBuild> delSingles;
 		final EnumMap<Pair, PairBuild> delPairs = new EnumMap<>(Pair.class);
+		final JoinSketchByEntry joinSketches = new JoinSketchByEntry();
 
 		State(int k, int subjectBuckets, int predicateBuckets, int objectBuckets, int contextBuckets,
-				boolean contextPairSketchesEnabled) {
+				boolean contextPairSketchesEnabled, SketchStrategy sketchStrategy) {
 			logger.info(
 					"Initializing state: k={}, subjectBuckets={}, predicateBuckets={}, objectBuckets={}, contextBuckets={}, contextPairSketchesEnabled={}",
 					k, subjectBuckets, predicateBuckets, objectBuckets, contextBuckets, contextPairSketchesEnabled);
@@ -4332,7 +4430,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			this.predicateBuckets = predicateBuckets;
 			this.objectBuckets = objectBuckets;
 			this.contextBuckets = contextBuckets;
-			ArrayOfDoublesUpdatableSketch emptySketch = newSk(k);
+			this.sketchStrategy = sketchStrategy;
+			FastAgmsBindingSummary emptySketch = newSk(k, sketchStrategy);
 			this.maxSketchBytes = emptySketch.getMaxBytes();
 
 			globalComponents = new StateComponents<>(
@@ -4383,6 +4482,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 			pairs.values().forEach(PairBuild::clear);
 			delPairs.values().forEach(PairBuild::clear);
+			joinSketches.clear();
 		}
 
 		private int bucketCount(Component component) {
@@ -4400,7 +4500,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* ────────────────────────────────────────────────────────────── */
 
 	private static final class SingleBuild {
-		final EnumMap<Component, AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> cmpl = new EnumMap<>(
+		final EnumMap<Component, AtomicReferenceArray<FastAgmsBindingSummary>> cmpl = new EnumMap<>(
 				Component.class);
 
 		SingleBuild(Component fixed, int buckets) {
@@ -4412,7 +4512,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		void clear() {
-			for (AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr : cmpl.values()) {
+			for (AtomicReferenceArray<FastAgmsBindingSummary> arr : cmpl.values()) {
 				SketchBasedJoinEstimator.clearArray(arr);
 			}
 		}
@@ -4441,11 +4541,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			comp2.clear();
 		}
 
-		private ArrayOfDoublesUpdatableSketch get(byte recType, int x, int y) {
+		private FastAgmsBindingSummary get(byte recType, int x, int y) {
 			return sparseArray(recType).get(packedKey(x, y));
 		}
 
-		private void set(byte recType, int x, int y, ArrayOfDoublesUpdatableSketch sketch) {
+		private void set(byte recType, int x, int y, FastAgmsBindingSummary sketch) {
 			sparseArray(recType).put(packedKey(x, y), sketch);
 		}
 
@@ -4481,27 +4581,68 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
+	private static final class JoinSketchByEntry {
+
+		private JoinFrequencySketch[] sketches = new JoinFrequencySketch[256];
+
+		private JoinFrequencySketch get(int entryId) {
+			return entryId >= 0 && entryId < sketches.length ? sketches[entryId] : null;
+		}
+
+		private JoinFrequencySketch getOrCreate(int entryId) {
+			ensureCapacity(entryId + 1);
+			JoinFrequencySketch sketch = sketches[entryId];
+			if (sketch == null) {
+				sketch = new JoinFrequencySketch(JOIN_SKETCH_ROWS, JOIN_SKETCH_LIGHT_BUCKETS,
+						JOIN_SKETCH_MID_BUCKETS, JOIN_SKETCH_HEAVY_BUCKETS, JOIN_SKETCH_HEAVY_THRESHOLD,
+						JOIN_SKETCH_SEED);
+				sketches[entryId] = sketch;
+			}
+			return sketch;
+		}
+
+		private void set(int entryId, JoinFrequencySketch sketch) {
+			ensureCapacity(entryId + 1);
+			sketches[entryId] = sketch;
+		}
+
+		private void clear() {
+			Arrays.fill(sketches, null);
+		}
+
+		private void ensureCapacity(int minCapacity) {
+			if (minCapacity <= sketches.length) {
+				return;
+			}
+			int next = sketches.length;
+			while (next < minCapacity) {
+				next <<= 1;
+			}
+			sketches = Arrays.copyOf(sketches, next);
+		}
+	}
+
 	@FunctionalInterface
 	private interface PairSketchConsumer {
 
-		void accept(int x, int y, ArrayOfDoublesUpdatableSketch sketch);
+		void accept(int x, int y, FastAgmsBindingSummary sketch);
 	}
 
 	private static final class SparseSketchArray {
 		private static final long[] EMPTY_KEYS = {};
-		private static final ArrayOfDoublesUpdatableSketch[] EMPTY_VALUES = {};
+		private static final FastAgmsBindingSummary[] EMPTY_VALUES = {};
 		private static final int HINTED_SEARCH_LINEAR_SCAN = 16;
 		private static final int HINTED_SEARCH_MAX_GALLOPS = 5;
 
 		private long[] keys = EMPTY_KEYS;
-		private ArrayOfDoublesUpdatableSketch[] values = EMPTY_VALUES;
+		private FastAgmsBindingSummary[] values = EMPTY_VALUES;
 		int size;
 		private int prevIndex;
 
 		SparseSketchArray() {
 		}
 
-		ArrayOfDoublesUpdatableSketch get(long key) {
+		FastAgmsBindingSummary get(long key) {
 			if (size == 0) {
 				return null;
 			}
@@ -4609,7 +4750,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return lower;
 		}
 
-		void put(long key, ArrayOfDoublesUpdatableSketch value) {
+		void put(long key, FastAgmsBindingSummary value) {
 			if (size > 0) {
 				long lastKey = keys[size - 1];
 				if (key > lastKey) {
@@ -4651,7 +4792,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			size++;
 		}
 
-		private void append(long key, ArrayOfDoublesUpdatableSketch value) {
+		private void append(long key, FastAgmsBindingSummary value) {
 			ensureCapacity(size + 1);
 			keys[size] = key;
 			values[size] = value;
@@ -4665,7 +4806,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		void forEach(PairBuild pairBuild, PairSketchConsumer consumer) {
 			for (int i = 0; i < size; i++) {
-				ArrayOfDoublesUpdatableSketch sketch = values[i];
+				FastAgmsBindingSummary sketch = values[i];
 				if (sketch != null) {
 					long key = keys[i];
 					consumer.accept(pairBuild.unpackX(key), pairBuild.unpackY(key), sketch);
@@ -4699,7 +4840,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			int newCapacity = idealCapacity(minimumCapacity, currentCapacity);
 			long[] grownKeys = new long[newCapacity];
-			ArrayOfDoublesUpdatableSketch[] grownValues = new ArrayOfDoublesUpdatableSketch[newCapacity];
+			FastAgmsBindingSummary[] grownValues = new FastAgmsBindingSummary[newCapacity];
 			copyKeys(keys, grownKeys, size);
 			copyValues(values, grownValues, size);
 			keys = grownKeys;
@@ -4722,7 +4863,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 		}
 
-		private static void copyValues(ArrayOfDoublesUpdatableSketch[] source, ArrayOfDoublesUpdatableSketch[] target,
+		private static void copyValues(FastAgmsBindingSummary[] source, FastAgmsBindingSummary[] target,
 				int length) {
 			if (length >= 0) {
 				System.arraycopy(source, 0, target, 0, length);
@@ -4733,7 +4874,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			System.arraycopy(array, from, array, from + 1, to - from);
 		}
 
-		private static void shiftValuesRightObjects(ArrayOfDoublesUpdatableSketch[] array, int from, int to) {
+		private static void shiftValuesRightObjects(FastAgmsBindingSummary[] array, int from, int to) {
 			System.arraycopy(array, from, array, from + 1, to - from);
 		}
 
@@ -4743,7 +4884,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 		}
 
-		private static void shiftValuesLeft(ArrayOfDoublesUpdatableSketch[] array, int from, int to) {
+		private static void shiftValuesLeft(FastAgmsBindingSummary[] array, int from, int to) {
 			for (int i = from; i < to; i++) {
 				array[i] = array[i + 1];
 			}
@@ -4766,17 +4907,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	/* Utility */
 	/* ────────────────────────────────────────────────────────────── */
 
-	private static double estimateNetRows(ArrayOfDoublesSketch additions, ArrayOfDoublesSketch deletions) {
+	private static double estimateNetRows(FastAgmsBindingSummary additions, FastAgmsBindingSummary deletions) {
 		return Math.max(0.0d,
-				TupleSketchOps.estimatePositiveSum(additions) - TupleSketchOps.estimatePositiveSum(deletions));
+				FrequencySummaryOps.estimatePositiveSum(additions)
+						- FrequencySummaryOps.estimatePositiveSum(deletions));
 	}
 
-	private static double estimateNetIntersectionProductSum(ArrayOfDoublesSketch leftAdd,
-			ArrayOfDoublesSketch rightAdd, ArrayOfDoublesSketch leftDelete, ArrayOfDoublesSketch rightDelete, int k) {
-		double additions = TupleSketchOps.estimateIntersectionProductSum(leftAdd, rightAdd, k);
-		double leftRemoved = TupleSketchOps.estimateIntersectionProductSum(leftDelete, rightAdd, k);
-		double rightRemoved = TupleSketchOps.estimateIntersectionProductSum(leftAdd, rightDelete, k);
-		double bothRemoved = TupleSketchOps.estimateIntersectionProductSum(leftDelete, rightDelete, k);
+	private static double estimateNetIntersectionProductSum(FastAgmsBindingSummary leftAdd,
+			FastAgmsBindingSummary rightAdd, FastAgmsBindingSummary leftDelete, FastAgmsBindingSummary rightDelete,
+			int k) {
+		double additions = FrequencySummaryOps.estimateIntersectionProductSum(leftAdd, rightAdd);
+		double leftRemoved = FrequencySummaryOps.estimateIntersectionProductSum(leftDelete, rightAdd);
+		double rightRemoved = FrequencySummaryOps.estimateIntersectionProductSum(leftAdd, rightDelete);
+		double bothRemoved = FrequencySummaryOps.estimateIntersectionProductSum(leftDelete, rightDelete);
 		return Math.max(0.0d, additions - leftRemoved - rightRemoved + bothRemoved);
 	}
 
@@ -4784,12 +4927,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return isDelete ? -1.0d : 1.0d;
 	}
 
-	private static ArrayOfDoublesUpdatableSketch newSk(int k) {
-		return TupleSketchOps.newSketch(k);
+	private static FastAgmsBindingSummary newSk(int k) {
+		return newSk(k, SketchStrategy.FAST_AGMS);
 	}
 
-	private static void tupleUpdateRaw(ArrayOfDoublesUpdatableSketch sketch, long hash, double delta) {
-		TupleSketchOps.update(sketch, hash, delta);
+	private static FastAgmsBindingSummary newSk(int k, SketchStrategy strategy) {
+		return FrequencySummaryOps.newSummary(strategy, k);
+	}
+
+	private static void frequencyUpdateRaw(FastAgmsBindingSummary sketch, long hash, double delta) {
+		sketch.update(hash, delta);
 	}
 
 	private int hash(Component component, String v) {
@@ -5184,7 +5331,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					getValueOrNull(pattern.getObjectVar()),
 					getValueOrNull(pattern.getContextVar()));
 			double distinct = clampDistinct(joinEstimate.distinct, baseRows);
-			ArrayOfDoublesSketch bindings = joinEstimate.bindings;
+			FastAgmsBindingSummary bindings = joinEstimate.bindings;
 			if (!(Double.isFinite(distinct) && distinct > 0.0d)) {
 				distinct = clampDistinct(baseRows, baseRows);
 				bindings = null;
@@ -5207,8 +5354,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				continue;
 			}
 			Component component = getComponent(pattern, var);
-			ArrayOfDoublesSketch sketch = globalComponentSketch(snap, component);
-			double distinct = clampDistinct(TupleSketchOps.estimatePositiveDistinct(sketch), rows);
+			FastAgmsBindingSummary sketch = globalComponentSketch(snap, component);
+			double distinct = clampDistinct((sketch == null ? 0.0d : sketch.effectiveDistinct()), rows);
 			if (!(Double.isFinite(distinct) && distinct > 0.0d)) {
 				distinct = clampDistinct(rows, rows);
 				sketch = null;
@@ -5237,7 +5384,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 		double rows = 0.0d;
 		Map<String, Set<Value>> valueSets = new HashMap<>();
-		Map<String, ArrayOfDoublesUpdatableSketch> valueSketches = new HashMap<>();
+		Map<String, FastAgmsBindingSummary> valueSketches = new HashMap<>();
 		Set<String> bindingNames = assignment.getBindingNames();
 		if (bindingSets != null) {
 			for (BindingSet bindingSet : bindingSets) {
@@ -5246,9 +5393,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					Value value = bindingSet.getValue(bindingName);
 					if (value != null) {
 						valueSets.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-						ArrayOfDoublesUpdatableSketch sketch = valueSketches.computeIfAbsent(bindingName,
-								key -> newSk(bufA.k));
-						tupleUpdateRaw(sketch, thetaHash(valueFingerprint(str(value))), 1.0d);
+						FastAgmsBindingSummary sketch = valueSketches.computeIfAbsent(bindingName,
+								key -> newSk(bufA.k, sketchStrategy));
+						frequencyUpdateRaw(sketch, thetaHash(valueFingerprint(str(value))), 1.0d);
 					}
 				}
 			}
@@ -5259,8 +5406,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		for (Map.Entry<String, Set<Value>> entry : valueSets.entrySet()) {
 			if (!entry.getValue().isEmpty()) {
 				double distinct = clampDistinct(entry.getValue().size(), rows);
-				ArrayOfDoublesSketch sketch = valueSketches.get(entry.getKey());
-				varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.compact()));
+				FastAgmsBindingSummary sketch = valueSketches.get(entry.getKey());
+				varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.copy()));
 			}
 		}
 		return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
@@ -5537,17 +5684,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, entry.getValue(),
 					rightStats, disconnectedRows, sketchIntersectionCache, useSketches);
-			if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
-					&& right.localFilterMultiplier == 1.0d
-					&& entry.getValue().pattern != null && rightStats.pattern != null) {
-				Double exactJoinRows = zeroIntersectionFallbackJoinRows(entry.getValue().pattern, rightStats.pattern,
-						entry.getKey(), entry.getValue().distinct, rightStats.distinct, left.outputRows,
-						right.baseRows, disconnectedRows);
-				if (exactJoinRows != null && exactJoinRows > 0.0d) {
-					shared = new SharedVarEstimate(exactJoinRows, Math.min(entry.getValue().distinct,
-							rightStats.distinct), null);
-				}
-			}
+			shared = refineSharedVarJoinWithExactFallback(shared, entry.getKey(), entry.getValue().pattern,
+					rightStats.pattern, left.outputRows, right.baseRows, entry.getValue().distinct,
+					rightStats.distinct, left.localFilterMultiplier, right.localFilterMultiplier, disconnectedRows,
+					useSketches);
 			sharedVars.put(entry.getKey(), shared);
 			if (useSketches && shared.sketch == null) {
 				conditionedWithoutSketch = true;
@@ -5574,7 +5714,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (shared != null) {
 				mergedStats.put(varName, new VarPlanStats(clampDistinct(shared.distinct, outputRows), shared.sketch));
 			} else {
-				ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? entry.getValue().sketch
+				FastAgmsBindingSummary sketch = useSketches && !conditionedWithoutSketch ? entry.getValue().sketch
 						: null;
 				StatementPattern pattern = useSketches && !conditionedWithoutSketch ? entry.getValue().pattern : null;
 				mergedStats.put(varName, new VarPlanStats(clampDistinct(entry.getValue().distinct, outputRows),
@@ -5585,7 +5725,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (mergedStats.containsKey(entry.getKey())) {
 				continue;
 			}
-			ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? entry.getValue().sketch
+			FastAgmsBindingSummary sketch = useSketches && !conditionedWithoutSketch ? entry.getValue().sketch
 					: null;
 			StatementPattern pattern = useSketches && !conditionedWithoutSketch ? entry.getValue().pattern : null;
 			mergedStats.put(entry.getKey(),
@@ -5622,17 +5762,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			VarPlanStats leftStats = entry.getValue();
 			SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftStats,
 					rightStats, disconnectedRows, sketchIntersectionCache, useSketches);
-			if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
-					&& right.localFilterMultiplier == 1.0d
-					&& leftStats.pattern != null && rightStats.pattern != null) {
-				Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftStats.pattern, rightStats.pattern,
-						entry.getKey(), leftStats.distinct, rightStats.distinct, left.outputRows, right.baseRows,
-						disconnectedRows);
-				if (exactJoinRows != null && exactJoinRows > 0.0d) {
-					shared = new SharedVarEstimate(exactJoinRows, Math.min(leftStats.distinct, rightStats.distinct),
-							null);
-				}
-			}
+			shared = refineSharedVarJoinWithExactFallback(shared, entry.getKey(), leftStats.pattern,
+					rightStats.pattern, left.outputRows, right.baseRows, leftStats.distinct, rightStats.distinct,
+					left.localFilterMultiplier, right.localFilterMultiplier, disconnectedRows, useSketches);
 			rawRows = Math.min(rawRows, shared.rows);
 			hasSharedVars = true;
 		}
@@ -5667,23 +5799,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				}
 				double leftDistinct = leftStatsMap.distinctAt(i);
 				double rightDistinct = rightStatsMap.distinctAt(rightIndex);
-				ArrayOfDoublesSketch leftSketch = leftStatsMap.sketchAt(i);
-				ArrayOfDoublesSketch rightSketch = rightStatsMap.sketchAt(rightIndex);
+				FastAgmsBindingSummary leftSketch = leftStatsMap.sketchAt(i);
+				FastAgmsBindingSummary rightSketch = rightStatsMap.sketchAt(rightIndex);
 				StatementPattern leftPattern = leftStatsMap.patternAt(i);
 				StatementPattern rightPattern = rightStatsMap.patternAt(rightIndex);
 				SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftDistinct,
 						leftSketch, rightDistinct, rightSketch, leftPattern, rightPattern, disconnectedRows,
 						sketchIntersectionCache, useSketches);
-				if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
-						&& right.localFilterMultiplier == 1.0d
-						&& leftPattern != null && rightPattern != null) {
-					Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftPattern, rightPattern,
-							leftStatsMap.keyAt(i), leftDistinct, rightDistinct, left.outputRows, right.baseRows,
-							disconnectedRows);
-					if (exactJoinRows != null && exactJoinRows > 0.0d) {
-						shared = new SharedVarEstimate(exactJoinRows, Math.min(leftDistinct, rightDistinct), null);
-					}
-				}
+				shared = refineSharedVarJoinWithExactFallback(shared, leftStatsMap.keyAt(i), leftPattern,
+						rightPattern, left.outputRows, right.baseRows, leftDistinct, rightDistinct,
+						left.localFilterMultiplier, right.localFilterMultiplier, disconnectedRows, useSketches);
 				rawRows = Math.min(rawRows, shared.rows);
 				hasSharedVars = true;
 			}
@@ -5703,7 +5828,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		double disconnectedRows = estimateDisconnectedJoinRows(left.outputRows, right.baseRows);
 		double rawRows = Double.POSITIVE_INFINITY;
 		double[] sharedDistinctByLeftIndex = null;
-		ArrayOfDoublesSketch[] sharedSketchByLeftIndex = null;
+		FastAgmsBindingSummary[] sharedSketchByLeftIndex = null;
 		boolean hasSharedVars = false;
 		boolean conditionedWithoutSketch = false;
 
@@ -5722,26 +5847,19 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				}
 				double leftDistinct = leftStatsMap.distinctAt(i);
 				double rightDistinct = rightStatsMap.distinctAt(rightIndex);
-				ArrayOfDoublesSketch leftSketch = leftStatsMap.sketchAt(i);
-				ArrayOfDoublesSketch rightSketch = rightStatsMap.sketchAt(rightIndex);
+				FastAgmsBindingSummary leftSketch = leftStatsMap.sketchAt(i);
+				FastAgmsBindingSummary rightSketch = rightStatsMap.sketchAt(rightIndex);
 				StatementPattern leftPattern = leftStatsMap.patternAt(i);
 				StatementPattern rightPattern = rightStatsMap.patternAt(rightIndex);
 				SharedVarEstimate shared = estimateSharedVarJoin(left.outputRows, right.baseRows, leftDistinct,
 						leftSketch, rightDistinct, rightSketch, leftPattern, rightPattern, disconnectedRows,
 						sketchIntersectionCache, useSketches);
-				if (useSketches && shared.rows == 0.0d && left.localFilterMultiplier == 1.0d
-						&& right.localFilterMultiplier == 1.0d
-						&& leftPattern != null && rightPattern != null) {
-					Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftPattern, rightPattern,
-							leftStatsMap.keyAt(i), leftDistinct, rightDistinct, left.outputRows, right.baseRows,
-							disconnectedRows);
-					if (exactJoinRows != null && exactJoinRows > 0.0d) {
-						shared = new SharedVarEstimate(exactJoinRows, Math.min(leftDistinct, rightDistinct), null);
-					}
-				}
+				shared = refineSharedVarJoinWithExactFallback(shared, leftStatsMap.keyAt(i), leftPattern,
+						rightPattern, left.outputRows, right.baseRows, leftDistinct, rightDistinct,
+						left.localFilterMultiplier, right.localFilterMultiplier, disconnectedRows, useSketches);
 				if (sharedDistinctByLeftIndex == null) {
 					sharedDistinctByLeftIndex = new double[leftStatsMap.size()];
-					sharedSketchByLeftIndex = new ArrayOfDoublesSketch[leftStatsMap.size()];
+					sharedSketchByLeftIndex = new FastAgmsBindingSummary[leftStatsMap.size()];
 					Arrays.fill(sharedDistinctByLeftIndex, Double.NaN);
 				}
 				sharedDistinctByLeftIndex[i] = shared.distinct;
@@ -5774,7 +5892,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				mergedStats.putNew(key, id, clampDistinct(sharedDistinctByLeftIndex[i], outputRows),
 						sharedSketchByLeftIndex[i], null);
 			} else {
-				ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? leftStatsMap.sketchAt(i)
+				FastAgmsBindingSummary sketch = useSketches && !conditionedWithoutSketch ? leftStatsMap.sketchAt(i)
 						: null;
 				StatementPattern pattern = useSketches && !conditionedWithoutSketch ? leftStatsMap.patternAt(i) : null;
 				mergedStats.putNew(key, id, clampDistinct(leftStatsMap.distinctAt(i), outputRows), sketch, pattern);
@@ -5789,7 +5907,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			if (id == VariableDictionary.NO_ID && mergedStats.containsKey(key)) {
 				continue;
 			}
-			ArrayOfDoublesSketch sketch = useSketches && !conditionedWithoutSketch ? rightStatsMap.sketchAt(i) : null;
+			FastAgmsBindingSummary sketch = useSketches && !conditionedWithoutSketch ? rightStatsMap.sketchAt(i) : null;
 			StatementPattern pattern = useSketches && !conditionedWithoutSketch ? rightStatsMap.patternAt(i) : null;
 			mergedStats.putNew(key, id, clampDistinct(rightStatsMap.distinctAt(i), outputRows), sketch, pattern);
 		}
@@ -5828,7 +5946,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private SharedVarEstimate estimateSharedVarJoin(double leftRows, double rightRows, double leftDistinct,
-			ArrayOfDoublesSketch leftSketch, double rightDistinct, ArrayOfDoublesSketch rightSketch,
+			FastAgmsBindingSummary leftSketch, double rightDistinct, FastAgmsBindingSummary rightSketch,
 			StatementPattern leftPattern, StatementPattern rightPattern, double disconnectedRows,
 			JoinOrderingSketchIntersectionCache sketchIntersectionCache, boolean useSketches) {
 		leftDistinct = Math.max(1.0d, leftDistinct);
@@ -5837,7 +5955,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			SketchIntersectionResult intersectionResult = sketchIntersectionCache == null
 					? intersectJoinOrderingSketches(leftSketch, rightSketch)
 					: sketchIntersectionCache.intersect(leftSketch, rightSketch);
-			ArrayOfDoublesSketch intersection = intersectionResult.sketch;
+			FastAgmsBindingSummary intersection = intersectionResult.sketch;
 			double distinct = Math.min(intersectionResult.distinct, Math.min(leftDistinct, rightDistinct));
 			if (distinct == 0.0d) {
 				double rows = estimateUpperBoundIntersectionRows(intersectionResult.upperBoundDistinct1StdDev,
@@ -5860,6 +5978,48 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return new SharedVarEstimate(
 				estimateStatsSharedVarJoinRows(leftRows, rightRows, leftDistinct, rightDistinct, disconnectedRows),
 				Math.min(leftDistinct, rightDistinct), null);
+	}
+
+	private SharedVarEstimate refineSharedVarJoinWithExactFallback(SharedVarEstimate shared, String sharedVarName,
+			StatementPattern leftPattern, StatementPattern rightPattern, double leftRows, double rightRows,
+			double leftDistinct, double rightDistinct, double leftFilterMultiplier, double rightFilterMultiplier,
+			double disconnectedRows, boolean useSketches) {
+		if (!useSketches || shared == null || leftFilterMultiplier != 1.0d || rightFilterMultiplier != 1.0d
+				|| leftPattern == null || rightPattern == null) {
+			return shared;
+		}
+		boolean useFallback = shared.rows == 0.0d
+				|| shouldProbePositiveRareOverlapFallback(shared.rows, leftRows, rightRows, leftDistinct,
+						rightDistinct);
+		if (!useFallback) {
+			return shared;
+		}
+		Double exactJoinRows = zeroIntersectionFallbackJoinRows(leftPattern, rightPattern, sharedVarName, leftDistinct,
+				rightDistinct, leftRows, rightRows, disconnectedRows);
+		if (exactJoinRows != null && exactJoinRows > 0.0d
+				&& (shared.rows == 0.0d || exactJoinRows > shared.rows)) {
+			return new SharedVarEstimate(exactJoinRows, Math.min(leftDistinct, rightDistinct), null);
+		}
+		return shared;
+	}
+
+	private boolean shouldProbePositiveRareOverlapFallback(double rows, double leftRows, double rightRows,
+			double leftDistinct, double rightDistinct) {
+		if (!Double.isFinite(rows) || rows <= 0.0d) {
+			return false;
+		}
+		double smallerRows = Math.min(leftRows, rightRows);
+		if (!Double.isFinite(smallerRows) || smallerRows <= 0.0d || rows > smallerRows) {
+			return false;
+		}
+		if (!Double.isFinite(leftDistinct) || leftDistinct <= 0.0d
+				|| !Double.isFinite(rightDistinct) || rightDistinct <= 0.0d) {
+			return false;
+		}
+		double leftFanout = leftRows / Math.max(1.0d, leftDistinct);
+		double rightFanout = rightRows / Math.max(1.0d, rightDistinct);
+		double maxFanout = Math.max(leftFanout, rightFanout);
+		return Double.isFinite(maxFanout) && maxFanout >= POSITIVE_RARE_OVERLAP_FANOUT_FALLBACK_MIN;
 	}
 
 	private double finiteUniqueJoinRowCap(double leftRows, double rightRows, double leftDistinct,
@@ -5912,7 +6072,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return normalizeRows(rows);
 	}
 
-	private double estimateUpperBoundIntersectionRows(TupleSketchOps.IntersectionStats intersectionStats,
+	private double estimateUpperBoundIntersectionRows(FrequencySummaryOps.IntersectionStats intersectionStats,
 			double leftRows, double rightRows, double leftDistinct, double rightDistinct, double rowCap) {
 		if (intersectionStats == null || !intersectionStats.upperBoundOnly()) {
 			return 0.0d;
@@ -5951,7 +6111,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return 0.0d;
 	}
 
-	private double upperBoundDistinct(TupleSketchOps.IntersectionStats intersectionStats, double leftDistinct,
+	private double upperBoundDistinct(FrequencySummaryOps.IntersectionStats intersectionStats, double leftDistinct,
 			double rightDistinct) {
 		return intersectionStats == null ? 0.0d
 				: upperBoundDistinct(intersectionStats.upperBoundDistinct1StdDev(), leftDistinct, rightDistinct);
@@ -5966,10 +6126,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return Math.min(upperBoundDistinct, Math.min(leftDistinct, rightDistinct));
 	}
 
-	private static SketchIntersectionResult intersectJoinOrderingSketches(ArrayOfDoublesSketch left,
-			ArrayOfDoublesSketch right) {
-		TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(left, right,
-				DEFAULT_SKETCH_NOMINAL_ENTRIES);
+	private static SketchIntersectionResult intersectJoinOrderingSketches(FastAgmsBindingSummary left,
+			FastAgmsBindingSummary right) {
+		FrequencySummaryOps.IntersectionStats intersectionStats = FrequencySummaryOps.intersectProductStats(left,
+				right);
 		return new SketchIntersectionResult(intersectionStats.positiveDistinct(), intersectionStats.positiveSum(),
 				intersectionStats.upperBoundDistinct1StdDev(), intersectionStats.sketch());
 	}
@@ -6074,8 +6234,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private record VarPlanStats(double distinct, ArrayOfDoublesSketch sketch, StatementPattern pattern) {
-		private VarPlanStats(double distinct, ArrayOfDoublesSketch sketch) {
+	private record VarPlanStats(double distinct, FastAgmsBindingSummary sketch, StatementPattern pattern) {
+		private VarPlanStats(double distinct, FastAgmsBindingSummary sketch) {
 			this(distinct, sketch, null);
 		}
 
@@ -6290,7 +6450,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		private String[] keys;
 		private int[] ids;
 		private double[] distincts;
-		private ArrayOfDoublesSketch[] sketches;
+		private FastAgmsBindingSummary[] sketches;
 		private StatementPattern[] patterns;
 		private int size;
 		private long variableMask;
@@ -6305,7 +6465,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			keys = new String[capacity];
 			ids = new int[capacity];
 			distincts = new double[capacity];
-			sketches = new ArrayOfDoublesSketch[capacity];
+			sketches = new FastAgmsBindingSummary[capacity];
 			patterns = new StatementPattern[capacity];
 		}
 
@@ -6341,7 +6501,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return distincts[index];
 		}
 
-		private ArrayOfDoublesSketch sketchAt(int index) {
+		private FastAgmsBindingSummary sketchAt(int index) {
 			return sketches[index];
 		}
 
@@ -6532,7 +6692,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			putNew(key, id, value.distinct, value.sketch, value.pattern);
 		}
 
-		private void putNew(String key, int id, double distinct, ArrayOfDoublesSketch sketch,
+		private void putNew(String key, int id, double distinct, FastAgmsBindingSummary sketch,
 				StatementPattern pattern) {
 			ensureCapacity(size + 1);
 			keys[size] = key;
@@ -6568,13 +6728,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private record SharedVarEstimate(double rows, double distinct, ArrayOfDoublesSketch sketch) {
+	private record SharedVarEstimate(double rows, double distinct, FastAgmsBindingSummary sketch) {
 	}
 
 	static final class JoinOrderingSketchIntersectionCache {
 		private final Map<SketchPairKey, SketchIntersectionResult> intersections = new HashMap<>();
 
-		private SketchIntersectionResult intersect(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right) {
+		private SketchIntersectionResult intersect(FastAgmsBindingSummary left, FastAgmsBindingSummary right) {
 			return intersections.computeIfAbsent(new SketchPairKey(left, right),
 					ignored -> intersectJoinOrderingSketches(left, right));
 		}
@@ -6703,15 +6863,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private record SketchIntersectionResult(double distinct, double rows, double upperBoundDistinct1StdDev,
-			ArrayOfDoublesSketch sketch) {
+			FastAgmsBindingSummary sketch) {
 	}
 
 	private static final class SketchPairKey {
-		private final ArrayOfDoublesSketch left;
-		private final ArrayOfDoublesSketch right;
+		private final FastAgmsBindingSummary left;
+		private final FastAgmsBindingSummary right;
 		private final int hashCode;
 
-		private SketchPairKey(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right) {
+		private SketchPairKey(FastAgmsBindingSummary left, FastAgmsBindingSummary right) {
 			this.left = left;
 			this.right = right;
 			this.hashCode = System.identityHashCode(left) ^ System.identityHashCode(right);
@@ -6881,7 +7041,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		double totalRows = 0.0d;
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
-		Map<String, ArrayOfDoublesUpdatableSketch> survivingAssignmentSketches = new HashMap<>();
+		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
 
 		for (BindingSet bindingSet : bindingSets) {
@@ -6907,7 +7067,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					continue;
 				}
 				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-				tupleUpdateRaw(survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k)),
+				frequencyUpdateRaw(
+						survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k,
+								sketchStrategy)),
 						thetaHash(valueFingerprint(str(value))), 1.0d);
 			}
 			for (Map.Entry<String, VarPlanStats> entry : rowEstimate.varStats.entrySet()) {
@@ -6921,8 +7083,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, VarPlanStats> varStats = newVarStatsMap(survivingAssignmentValues.size() + carriedDistinct.size());
 		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
 			double distinct = clampDistinct(entry.getValue().size(), totalRows);
-			ArrayOfDoublesSketch sketch = survivingAssignmentSketches.get(entry.getKey());
-			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.compact()));
+			FastAgmsBindingSummary sketch = survivingAssignmentSketches.get(entry.getKey());
+			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.copy()));
 		}
 		for (Map.Entry<String, Double> entry : carriedDistinct.entrySet()) {
 			varStats.putIfAbsent(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue(), totalRows), null));
@@ -7800,7 +7962,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		double totalRows = 0.0d;
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
-		Map<String, ArrayOfDoublesUpdatableSketch> survivingAssignmentSketches = new HashMap<>();
+		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
 
 		for (BindingSet bindingSet : bindingSets) {
@@ -7827,7 +7989,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					continue;
 				}
 				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-				tupleUpdateRaw(survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k)),
+				frequencyUpdateRaw(
+						survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k,
+								sketchStrategy)),
 						thetaHash(valueFingerprint(str(value))), 1.0d);
 			}
 
@@ -7846,8 +8010,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, VarPlanStats> varStats = newVarStatsMap(survivingAssignmentValues.size() + carriedDistinct.size());
 		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
 			double distinct = clampDistinct(entry.getValue().size(), totalRows);
-			ArrayOfDoublesSketch sketch = survivingAssignmentSketches.get(entry.getKey());
-			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.compact()));
+			FastAgmsBindingSummary sketch = survivingAssignmentSketches.get(entry.getKey());
+			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.copy()));
 		}
 		for (Map.Entry<String, Double> entry : carriedDistinct.entrySet()) {
 			varStats.putIfAbsent(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue(), totalRows), null));
@@ -7881,7 +8045,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		double totalRows = 0.0d;
 		Map<String, Set<Value>> survivingAssignmentValues = new HashMap<>();
-		Map<String, ArrayOfDoublesUpdatableSketch> survivingAssignmentSketches = new HashMap<>();
+		Map<String, FastAgmsBindingSummary> survivingAssignmentSketches = new HashMap<>();
 		Map<String, Double> carriedDistinct = new HashMap<>();
 
 		for (BindingSet bindingSet : bindingSets) {
@@ -7908,7 +8072,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 					continue;
 				}
 				survivingAssignmentValues.computeIfAbsent(bindingName, key -> new HashSet<>()).add(value);
-				tupleUpdateRaw(survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k)),
+				frequencyUpdateRaw(
+						survivingAssignmentSketches.computeIfAbsent(bindingName, key -> newSk(bufA.k,
+								sketchStrategy)),
 						thetaHash(valueFingerprint(str(value))), 1.0d);
 			}
 
@@ -7927,8 +8093,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		Map<String, VarPlanStats> varStats = newVarStatsMap(survivingAssignmentValues.size() + carriedDistinct.size());
 		for (Map.Entry<String, Set<Value>> entry : survivingAssignmentValues.entrySet()) {
 			double distinct = clampDistinct(entry.getValue().size(), totalRows);
-			ArrayOfDoublesSketch sketch = survivingAssignmentSketches.get(entry.getKey());
-			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.compact()));
+			FastAgmsBindingSummary sketch = survivingAssignmentSketches.get(entry.getKey());
+			varStats.put(entry.getKey(), new VarPlanStats(distinct, sketch == null ? null : sketch.copy()));
 		}
 		for (Map.Entry<String, Double> entry : carriedDistinct.entrySet()) {
 			varStats.putIfAbsent(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue(), totalRows), null));
@@ -8563,18 +8729,18 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				continue;
 			}
 
-			TupleSketchStats nestedStats = estimateTupleExprForJoinVar(nested, var.getName());
+			SummaryStats nestedStats = estimateTupleExprForJoinVar(nested, var.getName());
 			if (nestedStats == null) {
 				continue;
 			}
 
-			TupleSketchStats flatStats = estimatePatternForJoinVar(flat, var.getName(), flatInput.filterMultiplier);
+			SummaryStats flatStats = estimatePatternForJoinVar(flat, var.getName(), flatInput.filterMultiplier);
 			if (flatStats == null) {
 				continue;
 			}
 
 			double leftRows = leftNested ? nestedStats.rows : flatStats.rows;
-			double joinRows = mergeTupleSketchStats(leftNested ? nestedStats : flatStats,
+			double joinRows = mergeSummaryStats(leftNested ? nestedStats : flatStats,
 					leftNested ? flatStats : nestedStats).rows;
 			return leftJoin ? Math.max(leftRows, joinRows) : joinRows;
 		}
@@ -8628,8 +8794,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return -1.0d;
 		}
 
-		TupleSketchStats leftStats = estimateTupleExprForJoinVar(singlePrefixJoinFactor, joinVarName);
-		TupleSketchStats rightStats = estimateTupleExprForJoinVar(factor, joinVarName);
+		SummaryStats leftStats = estimateTupleExprForJoinVar(singlePrefixJoinFactor, joinVarName);
+		SummaryStats rightStats = estimateTupleExprForJoinVar(factor, joinVarName);
 		if (leftStats == null || rightStats == null) {
 			return -1.0d;
 		}
@@ -8642,7 +8808,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		if (!isReady() || factor == null || joinVarName == null) {
 			return -1.0d;
 		}
-		TupleSketchStats stats = estimateTupleExprForJoinVar(factor, joinVarName);
+		SummaryStats stats = estimateTupleExprForJoinVar(factor, joinVarName);
 		if (stats == null || !Double.isFinite(stats.distinct) || stats.distinct < 0.0d) {
 			return -1.0d;
 		}
@@ -8655,7 +8821,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return -1.0d;
 		}
 
-		TupleSketchStats prefixStats = null;
+		SummaryStats prefixStats = null;
 		TupleExpr singlePrefixJoinFactor = null;
 		int prefixJoinFactorCount = 0;
 		for (TupleExpr prefixFactor : prefixFactors) {
@@ -8664,20 +8830,20 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			prefixJoinFactorCount++;
 			singlePrefixJoinFactor = prefixFactor;
-			TupleSketchStats factorStats = estimateTupleExprForJoinVar(prefixFactor, joinVarName);
+			SummaryStats factorStats = estimateTupleExprForJoinVar(prefixFactor, joinVarName);
 			if (factorStats == null) {
 				return -1.0d;
 			}
-			prefixStats = prefixStats == null ? factorStats : mergeTupleSketchStats(prefixStats, factorStats);
+			prefixStats = prefixStats == null ? factorStats : mergeSummaryStats(prefixStats, factorStats);
 		}
 		if (prefixStats == null) {
 			return -1.0d;
 		}
-		TupleSketchStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
+		SummaryStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
 		if (factorStats == null) {
 			return -1.0d;
 		}
-		double surfaceRows = normalizeRows(mergeTupleSketchStats(prefixStats, factorStats).rows);
+		double surfaceRows = normalizeRows(mergeSummaryStats(prefixStats, factorStats).rows);
 		if (!exactFallback) {
 			return surfaceRows;
 		}
@@ -8697,7 +8863,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private Double sampledPairwiseJoinSurfaceRows(TupleExpr left, TupleExpr right, String joinVarName,
-			TupleSketchStats leftStats, TupleSketchStats rightStats) {
+			SummaryStats leftStats, SummaryStats rightStats) {
 		StatementPattern leftPattern = exactJoinSurfacePattern(left, joinVarName);
 		StatementPattern rightPattern = exactJoinSurfacePattern(right, joinVarName);
 		if (leftPattern == null || rightPattern == null) {
@@ -8781,8 +8947,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return -1.0d;
 		}
 
-		TupleSketchStats leftStats = estimateTupleExprForJoinVar(left, joinVarName);
-		TupleSketchStats rightStats = estimateTupleExprForJoinVar(right, joinVarName);
+		SummaryStats leftStats = estimateTupleExprForJoinVar(left, joinVarName);
+		SummaryStats rightStats = estimateTupleExprForJoinVar(right, joinVarName);
 		if (leftStats == null || rightStats == null) {
 			return -1.0d;
 		}
@@ -8795,16 +8961,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return -1.0d;
 		}
 
-		TupleSketchStats prefixStats = null;
+		SummaryStats prefixStats = null;
 		for (TupleExpr factor : factors) {
 			if (factor == null || !factor.getBindingNames().contains(joinVarName)) {
 				continue;
 			}
-			TupleSketchStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
+			SummaryStats factorStats = estimateTupleExprForJoinVar(factor, joinVarName);
 			if (factorStats == null) {
 				return -1.0d;
 			}
-			prefixStats = prefixStats == null ? factorStats : mergeTupleSketchStats(prefixStats, factorStats);
+			prefixStats = prefixStats == null ? factorStats : mergeSummaryStats(prefixStats, factorStats);
 		}
 		if (prefixStats == null) {
 			return -1.0d;
@@ -8963,25 +9129,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return -1;
 	}
 
-	private TupleSketchStats estimateTupleExprForJoinVar(TupleExpr tupleExpr, String joinVarName) {
+	private SummaryStats estimateTupleExprForJoinVar(TupleExpr tupleExpr, String joinVarName) {
 		PatternEstimateInput patternInput = asSketchCompatibleInput(tupleExpr);
 		if (patternInput != null) {
 			return estimatePatternForJoinVar(patternInput.pattern, joinVarName, patternInput.filterMultiplier);
 		}
 
 		if (tupleExpr instanceof Join join) {
-			TupleSketchStats leftStats = estimateTupleExprForJoinVar(join.getLeftArg(), joinVarName);
-			TupleSketchStats rightStats = estimateTupleExprForJoinVar(join.getRightArg(), joinVarName);
+			SummaryStats leftStats = estimateTupleExprForJoinVar(join.getLeftArg(), joinVarName);
+			SummaryStats rightStats = estimateTupleExprForJoinVar(join.getRightArg(), joinVarName);
 			if (leftStats == null || rightStats == null) {
 				return null;
 			}
-			return mergeTupleSketchStats(leftStats, rightStats);
+			return mergeSummaryStats(leftStats, rightStats);
 		}
 
 		return null;
 	}
 
-	private TupleSketchStats estimatePatternForJoinVar(StatementPattern pattern, String joinVarName,
+	private SummaryStats estimatePatternForJoinVar(StatementPattern pattern, String joinVarName,
 			double filterMultiplier) {
 		Var joinVar = findUnboundVarByName(pattern, joinVarName);
 		if (joinVar == null) {
@@ -8993,14 +9159,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				getValueOrNull(pattern.getPredicateVar()),
 				getValueOrNull(pattern.getObjectVar()),
 				getValueOrNull(pattern.getContextVar()));
-		return new TupleSketchStats(estimate.bindings, estimate.distinct,
+		return new SummaryStats(estimate.bindings, estimate.distinct,
 				applyFilterMultiplier(estimate.resultSize, filterMultiplier), false);
 	}
 
-	private TupleSketchStats mergeTupleSketchStats(TupleSketchStats leftStats, TupleSketchStats rightStats) {
-		TupleSketchOps.IntersectionStats intersectionStats = TupleSketchOps.intersectProductStats(leftStats.bindings,
-				rightStats.bindings, DEFAULT_SKETCH_NOMINAL_ENTRIES);
-		ArrayOfDoublesSketch inter = intersectionStats.sketch();
+	private SummaryStats mergeSummaryStats(SummaryStats leftStats, SummaryStats rightStats) {
+		FrequencySummaryOps.IntersectionStats intersectionStats = FrequencySummaryOps.intersectProductStats(
+				leftStats.bindings, rightStats.bindings);
+		FastAgmsBindingSummary inter = intersectionStats.sketch();
 		double interDistinct = intersectionStats.positiveDistinct();
 		double disconnectedRows = estimateDisconnectedJoinRows(leftStats.rows, rightStats.rows);
 
@@ -9008,7 +9174,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			double rows = estimateUpperBoundIntersectionRows(intersectionStats, leftStats.rows, rightStats.rows,
 					leftStats.distinct, rightStats.distinct, disconnectedRows);
 			if (rows > 0.0d) {
-				return new TupleSketchStats(inter, upperBoundDistinct(intersectionStats, leftStats.distinct,
+				return new SummaryStats(inter, upperBoundDistinct(intersectionStats, leftStats.distinct,
 						rightStats.distinct), rows, true);
 			}
 			if (leftStats.upperBoundOnly || rightStats.upperBoundOnly) {
@@ -9016,15 +9182,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				rows = estimateUpperBoundIntersectionRows(upperBoundDistinct, leftStats.rows, rightStats.rows,
 						leftStats.distinct, rightStats.distinct, disconnectedRows);
 				if (rows > 0.0d) {
-					return new TupleSketchStats(inter, upperBoundDistinct(upperBoundDistinct, leftStats.distinct,
+					return new SummaryStats(inter, upperBoundDistinct(upperBoundDistinct, leftStats.distinct,
 							rightStats.distinct), rows, true);
 				}
 			}
-			return new TupleSketchStats(inter, 0.0, 0.0, false);
+			return new SummaryStats(inter, 0.0, 0.0, false);
 		}
 
 		double joinRows = roundJoinEstimate(intersectionStats.positiveSum());
-		return new TupleSketchStats(inter, interDistinct, joinRows, false);
+		if (joinRows == 0.0d) {
+			double rows = estimateUpperBoundIntersectionRows(intersectionStats.upperBoundDistinct1StdDev(),
+					leftStats.rows, rightStats.rows, leftStats.distinct, rightStats.distinct, disconnectedRows);
+			if (rows > 0.0d) {
+				return new SummaryStats(inter, upperBoundDistinct(intersectionStats, leftStats.distinct,
+						rightStats.distinct), rows, true);
+			}
+		}
+		return new SummaryStats(inter, interDistinct, joinRows, false);
 	}
 
 	private Var findUnboundVarByName(StatementPattern pattern, String varName) {
@@ -9036,7 +9210,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return null;
 	}
 
-	private record TupleSketchStats(ArrayOfDoublesSketch bindings, double distinct, double rows,
+	private record SummaryStats(FastAgmsBindingSummary bindings, double distinct, double rows,
 			boolean upperBoundOnly) {
 	}
 
@@ -10739,8 +10913,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			throw new IOException("Snapshot contextPairSketchesEnabled mismatch: snapshot="
 					+ metadata.contextPairSketchesEnabled + " current=" + contextPairSketchesEnabled);
 		}
+		if (metadata.sketchStrategy == null) {
+			throw new IOException("Snapshot sketch strategy missing: current=" + sketchStrategy.configValue());
+		}
+		if (metadata.sketchStrategy != sketchStrategy) {
+			throw new IOException("Snapshot sketch strategy mismatch: snapshot="
+					+ metadata.sketchStrategy.configValue() + " current=" + sketchStrategy.configValue());
+		}
 		if (metadata.sketchNominalEntries != bufA.k) {
-			throw new IOException("Snapshot sketch nominal entries mismatch: snapshot=" + metadata.sketchNominalEntries
+			throw new IOException("Snapshot FastAGMS compatibility nominal entries mismatch: snapshot="
+					+ metadata.sketchNominalEntries
 					+ " current=" + bufA.k);
 		}
 		if (!Objects.equals(metadata.defaultContext, defaultContextString)) {
@@ -10810,8 +10992,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		byte activeSlot = slotByte(slotOf(current));
 		long approxSize = store.approximateSize();
 		return new SketchEstimatorMetadata(subjectBucketCount, predicateBucketCount, objectBucketCount,
-				contextBucketCount, contextPairSketchesEnabled, bufA.k, defaultContextString, activeSlot, seenTriples,
-				approxSize, lastRebuildPublishMs, slotGenerations[0], slotGenerations[1]);
+				contextBucketCount, contextPairSketchesEnabled, sketchStrategy, bufA.k, defaultContextString,
+				activeSlot,
+				seenTriples, approxSize, lastRebuildPublishMs, slotGenerations[0], slotGenerations[1]);
 	}
 
 	private void clearSlotPersistence(byte slot) {
@@ -10885,7 +11068,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	/* ────────────────────────────────────────────────────────────── */
-	/* ArrayOfDoublesSketch cache + IO */
+	/* FastAgmsBindingSummary cache + IO */
 	/* ────────────────────────────────────────────────────────────── */
 
 	private BufferSlot slotOf(State state) {
@@ -10908,8 +11091,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return new SketchAddress(recType, isDelete, (byte) pair.ordinal(), (byte) 0, x, y);
 	}
 
-	private ArrayOfDoublesUpdatableSketch getSketchForRead(State state, SketchAddress address) {
-		ArrayOfDoublesUpdatableSketch sketch = getResidentSketch(state, address.recType, address.isDelete,
+	private static SketchAddress pairComplementAddress(boolean isDelete, Pair pair, Component component, long key) {
+		byte recType = component == pair.comp1 ? REC_PAIR_COMP1 : REC_PAIR_COMP2;
+		return pairAddress(recType, isDelete, pair, (int) (key >>> 32), (int) key);
+	}
+
+	private FastAgmsBindingSummary getSketchForRead(State state, SketchAddress address) {
+		FastAgmsBindingSummary sketch = getResidentSketch(state, address.recType, address.isDelete,
 				address.axisA, address.axisB,
 				address.x, address.y);
 		if (sketch != null) {
@@ -10918,10 +11106,34 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return loadPersistedSketch(state, address);
 	}
 
-	private ArrayOfDoublesUpdatableSketch getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
+	private JoinFrequencySketch joinSketchForRead(State state, SketchAddress address) {
+		if (state.sketchStrategy != SketchStrategy.JOIN_SKETCH) {
+			return null;
+		}
+		if (address.recType == REC_GLOBAL_COMPONENT) {
+			return null;
+		}
+		int entryId;
+		synchronized (sketchCacheLock) {
+			entryId = cacheDirectory.find(address);
+		}
+		return state.joinSketches.get(entryId);
+	}
+
+	private JoinFrequencySketch joinSketchForWrite(State state, byte recType, int entryId) {
+		if (state.sketchStrategy != SketchStrategy.JOIN_SKETCH) {
+			return null;
+		}
+		if (recType == REC_GLOBAL_COMPONENT || entryId < 0) {
+			return null;
+		}
+		return state.joinSketches.getOrCreate(entryId);
+	}
+
+	private FastAgmsBindingSummary getSketchForWrite(State state, byte recType, boolean isDelete, byte axisA,
 			byte axisB, int x,
 			int y, int entryId) {
-		ArrayOfDoublesUpdatableSketch sketch = getResidentSketch(state, recType, isDelete, axisA, axisB, x, y);
+		FastAgmsBindingSummary sketch = getResidentSketch(state, recType, isDelete, axisA, axisB, x, y);
 		if (sketch == null) {
 			SketchAddress address = new SketchAddress(recType, isDelete, axisA, axisB, x, y);
 			sketch = entryId >= 0 ? loadPersistedSketch(state, address, entryId)
@@ -10938,20 +11150,20 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return sketch;
 	}
 
-	private ArrayOfDoublesUpdatableSketch newSketchForWrite(State state, SketchAddress address, int entryId) {
+	private FastAgmsBindingSummary newSketchForWrite(State state, SketchAddress address, int entryId) {
 		SketchEstimatorPersistenceStore store = persistenceStore;
 		if (entryId < 0 || !persistenceEnabled || persistenceFile == null || store == null
-				|| (rebuildEpoch.get() & 1L) == 0L) {
-			return newSk(state.k);
+				|| (rebuildEpoch.get() & 1L) == 0L || state.sketchStrategy != SketchStrategy.TUPLE) {
+			return newSk(state.k, state.sketchStrategy);
 		}
 
 		byte slot = slotByte(slotOf(state));
 		try {
 			synchronized (persistLock) {
 				SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
-						fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, state.maxSketchBytes,
+						fileKindFor(address), payloadFormat(state), state.maxSketchBytes,
 						slotGenerations[slot]);
-				ArrayOfDoublesUpdatableSketch sketch = TupleSketchOps.newSketch(state.k, allocation.payload());
+				FastAgmsBindingSummary sketch = FastAgmsBindingSummary.tuple(state.k, allocation.payload());
 				SketchEstimatorPersistenceStore.Ref persistedRef = allocation.ref();
 				synchronized (sketchCacheLock) {
 					cacheDirectory.setPersistedRef(entryId, slot, persistedRef.fileKind(), persistedRef.offset(),
@@ -10965,7 +11177,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address) {
+	private FastAgmsBindingSummary loadPersistedSketch(State state, SketchAddress address) {
 		int entryId;
 		synchronized (sketchCacheLock) {
 			entryId = cacheDirectory.find(address);
@@ -10976,9 +11188,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return loadPersistedSketch(state, address, entryId);
 	}
 
-	private ArrayOfDoublesUpdatableSketch loadPersistedSketch(State state, SketchAddress address, int entryId) {
+	private FastAgmsBindingSummary loadPersistedSketch(State state, SketchAddress address, int entryId) {
 		try {
-			ArrayOfDoublesUpdatableSketch loaded;
+			FastAgmsBindingSummary loaded;
 			byte slot = slotByte(slotOf(state));
 			synchronized (persistLock) {
 				PersistedSketchRef persistedSketchRef;
@@ -10992,7 +11204,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				if (store == null) {
 					return null;
 				}
-				loaded = readSketchFromStore(state, store, persistedSketchRef, address, slot);
+				loaded = readSketchFromStore(state, store, persistedSketchRef, address, slot, entryId);
 			}
 			putResidentSketch(state, address, loaded);
 			return loaded;
@@ -11002,7 +11214,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private void putResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch) {
+	private void putResidentSketch(State state, SketchAddress address, FastAgmsBindingSummary sketch) {
 		setResidentSketch(state, address, sketch);
 	}
 
@@ -11035,7 +11247,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		int deleteMask = isDelete ? DELETE_KEY_PREFIX_MASK : 0;
 		for (Component fixed : COMPONENT_VALUES) {
 			SingleBuild build = singles.get(fixed);
-			for (Map.Entry<Component, AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> entry : build.cmpl
+			for (Map.Entry<Component, AtomicReferenceArray<FastAgmsBindingSummary>> entry : build.cmpl
 					.entrySet()) {
 				int keyPrefix = SINGLE_COMPLEMENT_KEY_PREFIXES[fixed.ordinal()][entry.getKey().ordinal()] | deleteMask;
 				trackRebuiltArray(slot, keyPrefix, entry.getValue());
@@ -11061,13 +11273,13 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private void trackRebuiltArray(byte slot, int keyPrefix,
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches) {
+			AtomicReferenceArray<FastAgmsBindingSummary> sketches) {
 		for (int x = 0; x < sketches.length(); x++) {
 			trackRebuiltSketch(slot, keyPrefix, x, 0, sketches.get(x));
 		}
 	}
 
-	private void trackRebuiltSketch(byte slot, int keyPrefix, int x, int y, ArrayOfDoublesUpdatableSketch sketch) {
+	private void trackRebuiltSketch(byte slot, int keyPrefix, int x, int y, FastAgmsBindingSummary sketch) {
 		if (sketch == null) {
 			return;
 		}
@@ -11086,23 +11298,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private ArrayOfDoublesUpdatableSketch getResidentSketch(State state, SketchAddress address) {
+	private FastAgmsBindingSummary getResidentSketch(State state, SketchAddress address) {
 		return getResidentSketch(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
 				address.y);
 	}
 
-	private ArrayOfDoublesUpdatableSketch getResidentSketch(State state, byte recType, boolean isDelete, byte axisA,
+	private FastAgmsBindingSummary getResidentSketch(State state, byte recType, boolean isDelete, byte axisA,
 			byte axisB, int x,
 			int y) {
 		switch (recType) {
 		case REC_GLOBAL_COMPONENT: {
 			Component component = COMPONENT_VALUES[axisA];
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr = state.globalComponents.get(component);
+			AtomicReferenceArray<FastAgmsBindingSummary> arr = state.globalComponents.get(component);
 			return arr.get(0);
 		}
 		case REC_SINGLE_TRIPLE: {
 			Component component = COMPONENT_VALUES[axisA];
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr = isDelete ? state.delSingleTriples.get(component)
+			AtomicReferenceArray<FastAgmsBindingSummary> arr = isDelete ? state.delSingleTriples.get(component)
 					: state.singleTriples.get(component);
 			return arr.get(x);
 		}
@@ -11110,7 +11322,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			Component fixed = COMPONENT_VALUES[axisA];
 			Component other = COMPONENT_VALUES[axisB];
 			SingleBuild build = isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr = build.cmpl.get(other);
+			AtomicReferenceArray<FastAgmsBindingSummary> arr = build.cmpl.get(other);
 			return arr == null ? null : arr.get(x);
 		}
 		case REC_PAIR_TRIPLE:
@@ -11128,23 +11340,23 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 	}
 
-	private void setResidentSketch(State state, SketchAddress address, ArrayOfDoublesUpdatableSketch sketch) {
+	private void setResidentSketch(State state, SketchAddress address, FastAgmsBindingSummary sketch) {
 		setResidentSketch(state, address.recType, address.isDelete, address.axisA, address.axisB, address.x,
 				address.y, sketch);
 	}
 
 	private void setResidentSketch(State state, byte recType, boolean isDelete, byte axisA, byte axisB, int x, int y,
-			ArrayOfDoublesUpdatableSketch sketch) {
+			FastAgmsBindingSummary sketch) {
 		switch (recType) {
 		case REC_GLOBAL_COMPONENT: {
 			Component component = COMPONENT_VALUES[axisA];
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr = state.globalComponents.get(component);
+			AtomicReferenceArray<FastAgmsBindingSummary> arr = state.globalComponents.get(component);
 			arr.set(0, sketch);
 			return;
 		}
 		case REC_SINGLE_TRIPLE: {
 			Component component = COMPONENT_VALUES[axisA];
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr = isDelete ? state.delSingleTriples.get(component)
+			AtomicReferenceArray<FastAgmsBindingSummary> arr = isDelete ? state.delSingleTriples.get(component)
 					: state.singleTriples.get(component);
 			arr.set(x, sketch);
 			return;
@@ -11153,7 +11365,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			Component fixed = COMPONENT_VALUES[axisA];
 			Component other = COMPONENT_VALUES[axisB];
 			SingleBuild build = isDelete ? state.delSingles.get(fixed) : state.singles.get(fixed);
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> arr = build.cmpl.get(other);
+			AtomicReferenceArray<FastAgmsBindingSummary> arr = build.cmpl.get(other);
 			if (arr != null) {
 				arr.set(x, sketch);
 			}
@@ -11201,7 +11413,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 	private boolean appendDirtySketchIfResident(int entryId, SketchAddress address, State state) throws IOException {
 		synchronized (state) {
-			ArrayOfDoublesUpdatableSketch sketch = getResidentSketch(state, address);
+			FastAgmsBindingSummary sketch = getResidentSketch(state, address);
 			if (sketch == null) {
 				return false;
 			}
@@ -11210,7 +11422,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				clearDirtyMappedSketch(entryId, currentSlot);
 				return true;
 			}
-			byte[] payload = serializeNativeSketchPayload(sketch);
+			byte[] payload = serializeNativeSketchPayload(state, entryId, sketch);
 			synchronized (persistLock) {
 				appendNativeSketchPayload(state, entryId, address, payload);
 			}
@@ -11223,13 +11435,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		SketchEstimatorPersistenceStore store = ensurePersistenceStore();
 		if (store != null) {
 			byte slot = slotByte(slotOf(state));
-			int slotBytes = shouldPersistCompactly(address) ? payload.length : state.maxSketchBytes;
+			int slotBytes = shouldPersistCompactly(address) || state.sketchStrategy != SketchStrategy.TUPLE
+					? payload.length
+					: state.maxSketchBytes;
 			if (payload.length > slotBytes) {
 				throw new IOException("Serialized sketch exceeds mapped slot: payload=" + payload.length + " slot="
 						+ slotBytes);
 			}
 			SketchEstimatorPersistenceStore.FramedPayloadAllocation allocation = store.allocateFramedPayload(slot,
-					fileKindFor(address), SKETCH_PAYLOAD_FORMAT_NATIVE, slotBytes, slotGenerations[slot]);
+					fileKindFor(address), payloadFormat(state), slotBytes, slotGenerations[slot]);
 			if (payload.length > 0) {
 				MemorySegment.copy(MemorySegment.ofArray(payload), 0L, allocation.payload(), 0L, payload.length);
 			}
@@ -11279,22 +11493,91 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		};
 	}
 
-	private byte[] serializeNativeSketchPayload(ArrayOfDoublesUpdatableSketch sketch) throws IOException {
+	private byte[] serializeNativeSketchPayload(State state, int entryId, FastAgmsBindingSummary sketch)
+			throws IOException {
 		try {
-			return TupleSketchOps.toByteArray(sketch);
+			byte[] summaryPayload = sketch.toByteArray();
+			if (state.sketchStrategy != SketchStrategy.JOIN_SKETCH) {
+				return summaryPayload;
+			}
+			JoinFrequencySketch joinSketch = entryId >= 0 ? state.joinSketches.get(entryId) : null;
+			byte[] joinSketchPayload = joinSketch == null ? new byte[0] : joinSketch.toByteArray();
+			ByteArrayOutputStream bytes = new ByteArrayOutputStream(summaryPayload.length + joinSketchPayload.length
+					+ Integer.BYTES * 4);
+			try (DataOutputStream out = new DataOutputStream(bytes)) {
+				out.writeInt(JOIN_SKETCH_PAYLOAD_MAGIC);
+				out.writeInt(JOIN_SKETCH_PAYLOAD_VERSION);
+				out.writeInt(summaryPayload.length);
+				out.write(summaryPayload);
+				out.writeInt(joinSketchPayload.length);
+				out.write(joinSketchPayload);
+			}
+			return bytes.toByteArray();
 		} catch (RuntimeException e) {
 			throw new IOException("Failed to serialize sketch payload", e);
 		}
 	}
 
-	private ArrayOfDoublesUpdatableSketch readSketchFromStore(State state, SketchEstimatorPersistenceStore store,
-			PersistedSketchRef persistedSketchRef, SketchAddress address, byte slot) throws IOException {
+	private FastAgmsBindingSummary readSketchFromStore(State state, SketchEstimatorPersistenceStore store,
+			PersistedSketchRef persistedSketchRef, SketchAddress address, byte slot, int entryId) throws IOException {
 		SketchEstimatorPersistenceStore.Ref storeRef = persistedSketchRef.storeRef(slot);
+		if (state.sketchStrategy == SketchStrategy.JOIN_SKETCH) {
+			return store.readFramedPayload(storeRef, payloadFormat(state),
+					payload -> readJoinSketchPayload(state, entryId, payload));
+		}
+		if (state.sketchStrategy != SketchStrategy.TUPLE) {
+			return store.readFramedPayload(storeRef, payloadFormat(state), FastAgmsBindingSummary::fromMemorySegment);
+		}
 		if (shouldPersistCompactly(address)
 				&& storeRef.length() < state.maxSketchBytes + SKETCH_PAYLOAD_FRAME_HEADER_BYTES) {
-			return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::heapify);
+			return store.readFramedPayload(storeRef, payloadFormat(state),
+					payload -> FastAgmsBindingSummary.heapifyTuple(payload, state.k));
 		}
-		return store.readFramedPayload(storeRef, SKETCH_PAYLOAD_FORMAT_NATIVE, TupleSketchOps::wrapUpdatable);
+		return store.readFramedPayload(storeRef, payloadFormat(state),
+				payload -> FastAgmsBindingSummary.wrapTuple(payload, state.k));
+	}
+
+	private FastAgmsBindingSummary readJoinSketchPayload(State state, int entryId, MemorySegment payload)
+			throws IOException {
+		try (DataInputStream in = new DataInputStream(
+				new ByteArrayInputStream(payload.toArray(ValueLayout.JAVA_BYTE)))) {
+			int magic = in.readInt();
+			if (magic != JOIN_SKETCH_PAYLOAD_MAGIC) {
+				throw new IOException("Unsupported JoinSketch payload magic: " + magic);
+			}
+			int version = in.readInt();
+			if (version != JOIN_SKETCH_PAYLOAD_VERSION) {
+				throw new IOException("Unsupported JoinSketch payload version: " + version);
+			}
+			byte[] summaryPayload = readBoundedPayload(in, "FastAGMS summary");
+			FastAgmsBindingSummary summary = FastAgmsBindingSummary.fromByteArray(summaryPayload);
+			byte[] joinSketchPayload = readBoundedPayload(in, "JoinSketch");
+			if (joinSketchPayload.length > 0 && entryId >= 0) {
+				state.joinSketches.set(entryId, JoinFrequencySketch.fromByteArray(joinSketchPayload));
+			}
+			if (in.available() != 0) {
+				throw new IOException("JoinSketch envelope payload has trailing bytes: " + in.available());
+			}
+			return summary;
+		}
+	}
+
+	private static byte[] readBoundedPayload(DataInputStream in, String label) throws IOException {
+		int length = in.readInt();
+		if (length < 0 || length > 64 * 1024 * 1024) {
+			throw new IOException("Invalid " + label + " payload length: " + length);
+		}
+		byte[] payload = new byte[length];
+		in.readFully(payload);
+		return payload;
+	}
+
+	private static int payloadFormat(State state) {
+		return switch (state.sketchStrategy) {
+		case TUPLE -> SKETCH_PAYLOAD_FORMAT_TUPLE;
+		case JOIN_SKETCH -> SKETCH_PAYLOAD_FORMAT_JOIN_SKETCH;
+		case FAST_AGMS -> SKETCH_PAYLOAD_FORMAT_FAST_AGMS;
+		};
 	}
 
 	private static boolean shouldPersistCompactly(SketchAddress address) {
@@ -11326,14 +11609,14 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	private void collectResidentArray(List<DebugSketchAddress> resident, BufferSlot slot,
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches, SketchAddress address) {
+			AtomicReferenceArray<FastAgmsBindingSummary> sketches, SketchAddress address) {
 		if (sketches.get(0) != null) {
 			resident.add(new DebugSketchAddress(slot, address));
 		}
 	}
 
 	private void collectResidentArray(List<DebugSketchAddress> resident, BufferSlot slot,
-			AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches, Component component, boolean isDelete) {
+			AtomicReferenceArray<FastAgmsBindingSummary> sketches, Component component, boolean isDelete) {
 		for (int i = 0; i < sketches.length(); i++) {
 			if (sketches.get(i) != null) {
 				resident.add(new DebugSketchAddress(slot, singleTripleAddress(isDelete, component, i)));
@@ -11345,10 +11628,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			StateComponents<SingleBuild> singles, boolean isDelete) {
 		for (Component fixed : COMPONENT_VALUES) {
 			SingleBuild build = singles.get(fixed);
-			for (Map.Entry<Component, AtomicReferenceArray<ArrayOfDoublesUpdatableSketch>> entry : build.cmpl
+			for (Map.Entry<Component, AtomicReferenceArray<FastAgmsBindingSummary>> entry : build.cmpl
 					.entrySet()) {
 				Component other = entry.getKey();
-				AtomicReferenceArray<ArrayOfDoublesUpdatableSketch> sketches = entry.getValue();
+				AtomicReferenceArray<FastAgmsBindingSummary> sketches = entry.getValue();
 				for (int i = 0; i < sketches.length(); i++) {
 					if (sketches.get(i) != null) {
 						resident.add(new DebugSketchAddress(slot, singleComplementAddress(isDelete, fixed, other, i)));
@@ -11494,7 +11777,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	 * Configuration for {@link SketchBasedJoinEstimator}.
 	 *
 	 * <p>
-	 * Defaults use explicit S/P/O/C bucket counts and {@value #DEFAULT_SKETCH_NOMINAL_ENTRIES} sketch nominal entries.
+	 * Defaults use explicit S/P/O/C bucket counts and {@value #DEFAULT_SKETCH_NOMINAL_ENTRIES} FastAGMS compatibility
+	 * nominal entries.
 	 * </p>
 	 */
 	public static final class Config {
@@ -11521,6 +11805,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		String defaultContextString = "urn:default-context";
 		boolean roundJoinEstimates = true;
 		boolean contextPairSketchesEnabled = true;
+		SketchStrategy sketchStrategy = SketchStrategy.FAST_AGMS;
 
 		int churnSampleMin = 128;
 		int churnSampleMax = 4096;
@@ -11574,6 +11859,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 
 		public Config withoutContextPairSketches() {
 			return withContextPairSketchesEnabled(false);
+		}
+
+		public Config withSketchStrategy(SketchStrategy strategy) {
+			this.sketchStrategy = Objects.requireNonNull(strategy, "strategy");
+			return this;
 		}
 
 		/** Sleep every N scanned statements during a full rebuild. */

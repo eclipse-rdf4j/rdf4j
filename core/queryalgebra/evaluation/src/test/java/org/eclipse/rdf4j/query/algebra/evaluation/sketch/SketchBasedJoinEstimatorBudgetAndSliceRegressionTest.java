@@ -39,11 +39,21 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private final List<SketchBasedJoinEstimator> estimators = new ArrayList<>();
+
+	@AfterEach
+	void closeEstimators() {
+		for (SketchBasedJoinEstimator estimator : estimators) {
+			estimator.close();
+		}
+		estimators.clear();
+	}
 
 	@Test
 	void slicePlanEstimateClampsVariableDistinctCountsToLimitedRows() {
@@ -53,7 +63,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 			store.add(st(VF.createIRI("urn:encounter:" + i), predicate, VF.createIRI("urn:observation:" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.rebuild();
 
 		StatementPattern pattern = new StatementPattern(Var.of("enc"), Var.of("p", predicate), Var.of("obs"));
@@ -79,7 +89,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		store.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o1"), c));
 		store.add(st(VF.createIRI("urn:s1"), p2, VF.createIRI("urn:o2"), c));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.rebuild();
 		assertTrue(estimator.isReady(), "Expected populated rebuild to be ready");
 
@@ -110,7 +120,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 			store.add(st(VF.createIRI("urn:encounter:" + i), hasObservation, observation));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.rebuild();
 		int rebuildReads = store.readCalls;
 		store.failOnRead = true;
@@ -141,7 +151,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 					VF.createIRI("urn:upper-bound-surface:right-key:" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.rebuild();
 		StatementPattern leftPattern = new StatementPattern(Var.of("leftSubject"), Var.of("left", left),
 				Var.of("shared"));
@@ -169,7 +179,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 					VF.createIRI("urn:upper-bound-multi-surface:right-key:" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.rebuild();
 		StatementPattern leftPattern = new StatementPattern(Var.of("leftSubject"), Var.of("left", left),
 				Var.of("shared"));
@@ -192,7 +202,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		AtomicInteger providerCalls = new AtomicInteger();
 
 		StubSketchStatementSource store = new StubSketchStatementSource();
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.setPatternCardinalityProvider(pattern -> {
 			if (hasObservation.equals(pattern.getPredicateVar().getValue())
 					&& observation.equals(pattern.getObjectVar().getValue())) {
@@ -216,7 +226,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		IRI predicate = VF.createIRI("urn:page-walk-single-pattern");
 		AtomicInteger providerCalls = new AtomicInteger();
 		StubSketchStatementSource store = new StubSketchStatementSource();
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = estimator(store);
 		estimator.setPatternCardinalityProvider(pattern -> {
 			if (predicate.equals(pattern.getPredicateVar().getValue())) {
 				providerCalls.incrementAndGet();
@@ -244,7 +254,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		}
 		assignment.setBindingSets(rows);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		SketchBasedJoinEstimator estimator = estimator(new StubSketchStatementSource());
 
 		double cardinality = estimator.orderedCardinality(List.of(assignment));
 
@@ -260,7 +270,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		Value missing = VF.createLiteral("missing");
 		Map<Value, Double> rowsByObject = Map.of(first, 2.0d, second, 5.0d, missing, 0.0d);
 		AtomicInteger providerCalls = new AtomicInteger();
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		SketchBasedJoinEstimator estimator = estimator(new StubSketchStatementSource());
 		estimator.setPatternCardinalityProvider(pattern -> {
 			if (predicate.equals(pattern.getPredicateVar().getValue()) && pattern.getObjectVar().hasValue()) {
 				providerCalls.incrementAndGet();
@@ -287,7 +297,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		Value missing = VF.createLiteral("missing");
 		Map<Value, Double> rowsByObject = Map.of(first, 3.0d, second, 4.0d, missing, 0.0d);
 		AtomicInteger providerCalls = new AtomicInteger();
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		SketchBasedJoinEstimator estimator = estimator(new StubSketchStatementSource());
 		estimator.setPatternCardinalityProvider(pattern -> {
 			if (predicate.equals(pattern.getPredicateVar().getValue()) && pattern.getObjectVar().hasValue()) {
 				providerCalls.incrementAndGet();
@@ -332,6 +342,12 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
 				.withRefreshSleepMillis(5);
+	}
+
+	private SketchBasedJoinEstimator estimator(StubSketchStatementSource store) {
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimators.add(estimator);
+		return estimator;
 	}
 
 	private static void clearActiveSingleTriples(SketchBasedJoinEstimator estimator) throws Exception {

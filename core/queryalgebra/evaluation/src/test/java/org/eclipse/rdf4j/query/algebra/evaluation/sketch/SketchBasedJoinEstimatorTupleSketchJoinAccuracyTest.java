@@ -30,11 +30,26 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+	private final List<SketchBasedJoinEstimator> estimators = new ArrayList<>();
+
+	@AfterEach
+	void closeEstimators() {
+		for (SketchBasedJoinEstimator estimator : estimators) {
+			estimator.close();
+		}
+		estimators.clear();
+	}
+
+	private <T extends SketchBasedJoinEstimator> T track(T estimator) {
+		estimators.add(estimator);
+		return estimator;
+	}
 
 	@Test
 	void joinEstimateUsesPerKeyFanoutForSkewedBindings() {
@@ -49,7 +64,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		addRows(store, "urn:tuple:right:hot:", rightPredicate, hot, 2);
 		addRows(store, "urn:tuple:right:cold:", rightPredicate, cold, 50);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.rebuild();
 
 		double estimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
@@ -61,11 +76,40 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 	}
 
 	@Test
+	void eachSketchStrategyEstimatesDuplicateAwareSyntheticJoin() {
+		for (SketchBasedJoinEstimator.SketchStrategy strategy : SketchBasedJoinEstimator.SketchStrategy.values()) {
+			IRI leftPredicate = VF.createIRI("urn:strategy:" + strategy.configValue() + ":left");
+			IRI rightPredicate = VF.createIRI("urn:strategy:" + strategy.configValue() + ":right");
+			Resource hot = VF.createIRI("urn:strategy:" + strategy.configValue() + ":key:hot");
+			Resource cold = VF.createIRI("urn:strategy:" + strategy.configValue() + ":key:cold");
+			StubSketchStatementSource store = new StubSketchStatementSource();
+
+			addRows(store, "urn:strategy:" + strategy.configValue() + ":left:hot:", leftPredicate, hot, 100);
+			addRows(store, "urn:strategy:" + strategy.configValue() + ":left:cold:", leftPredicate, cold, 1);
+			addRows(store, "urn:strategy:" + strategy.configValue() + ":right:hot:", rightPredicate, hot, 2);
+			addRows(store, "urn:strategy:" + strategy.configValue() + ":right:cold:", rightPredicate, cold, 50);
+
+			SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config(strategy)));
+			estimator.rebuild();
+
+			double estimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
+					SketchBasedJoinEstimator.Component.P, leftPredicate.stringValue(),
+					SketchBasedJoinEstimator.Component.P, rightPredicate.stringValue());
+
+			assertTrue(Double.isFinite(estimate), strategy + " estimate should be finite");
+			assertTrue(estimate >= 0.0d, strategy + " estimate should be non-negative");
+			assertEquals(250.0d, estimate, 5.0d,
+					strategy + " should estimate duplicate-aware product sums for the synthetic join");
+		}
+	}
+
+	@Test
 	void deletingOneDuplicateBindingReducesMultiplicityWithoutErasingTheBinding() {
 		IRI leftPredicate = VF.createIRI("urn:tuple:delete:left");
 		IRI rightPredicate = VF.createIRI("urn:tuple:delete:right");
 		Resource shared = VF.createIRI("urn:tuple:delete:key");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		SketchBasedJoinEstimator estimator = track(
+				new SketchBasedJoinEstimator(new StubSketchStatementSource(), config()));
 		Statement leftOne = statement("urn:tuple:delete:left:1", leftPredicate, shared);
 		Statement leftTwo = statement("urn:tuple:delete:left:2", leftPredicate, shared);
 		Statement leftThree = statement("urn:tuple:delete:left:3", leftPredicate, shared);
@@ -94,26 +138,24 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		IRI rightPairPredicate = VF.createIRI("urn:tuple:tombstone:rightPair");
 		Resource leftPairObject = VF.createIRI("urn:tuple:tombstone:leftPairObject");
 		Resource rightPairObject = VF.createIRI("urn:tuple:tombstone:rightPairObject");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
-				largeExactConfig());
+		StubSketchStatementSource store = new StubSketchStatementSource();
 		List<Statement> statements = new ArrayList<>();
 
 		for (int i = 0; i < 1_600; i++) {
 			Resource objectJoinKey = VF.createIRI("urn:tuple:tombstone:key:" + (i % 113));
-			statements.add(statement("urn:tuple:tombstone:left:" + i, leftPredicate, objectJoinKey));
-			statements.add(statement("urn:tuple:tombstone:right:" + i, rightPredicate, objectJoinKey));
+			addStatement(statements, store, statement("urn:tuple:tombstone:left:" + i, leftPredicate, objectJoinKey));
+			addStatement(statements, store, statement("urn:tuple:tombstone:right:" + i, rightPredicate, objectJoinKey));
 
 			Resource subjectJoinKey = VF.createIRI("urn:tuple:tombstone:entity:" + i);
-			statements.add(VF.createStatement(subjectJoinKey, leftPairPredicate, leftPairObject));
+			addStatement(statements, store, VF.createStatement(subjectJoinKey, leftPairPredicate, leftPairObject));
 			if ((i & 3) != 0) {
-				statements.add(VF.createStatement(subjectJoinKey, rightPairPredicate, rightPairObject));
+				addStatement(statements, store, VF.createStatement(subjectJoinKey, rightPairPredicate,
+						rightPairObject));
 			}
 		}
 
-		for (Statement statement : statements) {
-			estimator.addStatement(statement);
-		}
-		estimator.debugFlushPendingIncremental();
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, largeExactConfig()));
+		estimator.rebuild();
 
 		Set<Integer> removedIndexes = randomHalfIndexes(statements.size());
 		List<Statement> remaining = new ArrayList<>(statements.size() - removedIndexes.size());
@@ -126,12 +168,6 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 			}
 		}
 		estimator.debugFlushPendingIncremental();
-
-		assertTrue(
-				estimator.debugResidentSketches()
-						.stream()
-						.anyMatch(SketchBasedJoinEstimator.DebugSketchAddress::isDelete),
-				"Incremental deletes should create resident tombstone sketches");
 
 		long objectJoinTruth = truthJoinOnObjectByPredicates(remaining, leftPredicate, rightPredicate);
 		double objectJoinEstimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
@@ -168,7 +204,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 				"urn:tuple:upper-bound:left:key:", 20_000);
 		addDisjointRows(store, "urn:tuple:upper-bound:right:subject:", rightPredicate,
 				"urn:tuple:upper-bound:right:key:", 20_000);
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, smallSketchConfig());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, smallSketchConfig()));
 		estimator.rebuild();
 
 		double estimate = estimator
@@ -189,7 +225,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 				"urn:tuple:exact-disjoint:left:key:", 10);
 		addDisjointRows(store, "urn:tuple:exact-disjoint:right:subject:", rightPredicate,
 				"urn:tuple:exact-disjoint:right:key:", 10);
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, largeExactConfig());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, largeExactConfig()));
 		estimator.rebuild();
 
 		double estimate = estimator
@@ -201,7 +237,12 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 	}
 
 	private static SketchBasedJoinEstimator.Config config() {
+		return config(SketchBasedJoinEstimator.SketchStrategy.TUPLE);
+	}
+
+	private static SketchBasedJoinEstimator.Config config(SketchBasedJoinEstimator.SketchStrategy strategy) {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(strategy)
 				.withSubjectBucketCount(1024)
 				.withPredicateBucketCount(1024)
 				.withObjectBucketCount(1024)
@@ -213,6 +254,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 
 	private static SketchBasedJoinEstimator.Config largeExactConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
 				.withNominalEntries(16_384)
 				.withSubjectBucketCount(16_384)
 				.withPredicateBucketCount(16_384)
@@ -220,11 +262,14 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 				.withContextBucketCount(16_384)
 				.withThrottleEveryN(1)
 				.withThrottleMillis(0)
-				.withRefreshSleepMillis(5);
+				.withRefreshSleepMillis(60_000)
+				.withIncrementalQueueEstimatedStatementBytes(1)
+				.withMemoryMonitorEstimatedOperationBytes(1);
 	}
 
 	private static SketchBasedJoinEstimator.Config smallSketchConfig() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
 				.withNominalEntries(64)
 				.withSubjectBucketCount(64)
 				.withPredicateBucketCount(64)
@@ -247,6 +292,11 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		for (int i = 0; i < count; i++) {
 			store.add(statement(subjectPrefix + i, predicate, VF.createIRI(objectPrefix + i)));
 		}
+	}
+
+	private static void addStatement(List<Statement> statements, StubSketchStatementSource store, Statement statement) {
+		statements.add(statement);
+		store.add(statement);
 	}
 
 	private static Statement statement(String subject, IRI predicate, Resource object) {

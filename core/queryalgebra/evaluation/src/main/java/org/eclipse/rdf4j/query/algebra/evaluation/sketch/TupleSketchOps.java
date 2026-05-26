@@ -105,6 +105,19 @@ final class TupleSketchOps {
 		return summarizePositiveEntries(sketch).positiveDistinct();
 	}
 
+	static double estimateF2(ArrayOfDoublesSketch sketch) {
+		if (sketch == null || sketch.getRetainedEntries() == 0) {
+			return 0.0d;
+		}
+		double sum = 0.0d;
+		ArrayOfDoublesSketchIterator iterator = sketch.iterator();
+		while (iterator.next()) {
+			double value = Math.max(0.0d, iterator.getValues()[0]);
+			sum += value * value;
+		}
+		return scaleByTheta(sum, sketch);
+	}
+
 	static double estimateIntersectionProductSum(ArrayOfDoublesSketch left, ArrayOfDoublesSketch right, int k) {
 		return intersectProductStats(left, right, k).positiveSum();
 	}

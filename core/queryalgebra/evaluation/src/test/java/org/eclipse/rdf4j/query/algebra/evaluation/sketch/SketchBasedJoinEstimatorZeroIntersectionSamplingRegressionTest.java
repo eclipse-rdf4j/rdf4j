@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
@@ -41,12 +42,27 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 	private static final String SKEW_RATIO_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionSkewRatio";
 	private static final String ROW_BUDGET_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionRowBudget";
 	private static final String SAMPLE_SIZE_PROPERTY = PROPERTY_PREFIX + "zeroIntersectionSampleSize";
+	private final List<SketchBasedJoinEstimator> estimators = new ArrayList<>();
+
+	@AfterEach
+	void closeEstimators() {
+		for (SketchBasedJoinEstimator estimator : estimators) {
+			estimator.close();
+		}
+		estimators.clear();
+	}
+
+	private <T extends SketchBasedJoinEstimator> T track(T estimator) {
+		estimators.add(estimator);
+		return estimator;
+	}
 
 	@Test
 	void exactJoinSurfaceProviderShortCircuitsGenericSharedValueScan() {
 		IRI leftPredicate = VF.createIRI("urn:left");
 		IRI rightPredicate = VF.createIRI("urn:right");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new FailingStatementSource(), config());
+		SketchBasedJoinEstimator estimator = track(
+				new SketchBasedJoinEstimator(new FailingStatementSource(), config()));
 		AtomicBoolean providerCalled = new AtomicBoolean();
 		estimator.setPatternCardinalityProvider(pattern -> 1.0d);
 		estimator.setExactJoinSurfaceProvider(request -> {
@@ -73,7 +89,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		store.add(st(VF.createIRI("urn:s2"), leftPredicate, x2));
 		store.add(st(x1, rightPredicate, VF.createLiteral("one")));
 		store.add(st(x2, rightPredicate, VF.createLiteral("two")));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		AtomicBoolean providerCalled = new AtomicBoolean();
 		estimator.setPatternCardinalityProvider(pattern -> {
 			if (rightPredicate.equals(pattern.getPredicateVar().getValue()) && pattern.getSubjectVar().hasValue()) {
@@ -98,7 +114,8 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 	void exactJoinSurfaceProviderNoExactEstimateSkipsGenericSharedValueScan() {
 		IRI leftPredicate = VF.createIRI("urn:left");
 		IRI rightPredicate = VF.createIRI("urn:right");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new FailingStatementSource(), config());
+		SketchBasedJoinEstimator estimator = track(
+				new SketchBasedJoinEstimator(new FailingStatementSource(), config()));
 		AtomicBoolean providerCalled = new AtomicBoolean();
 		estimator.setPatternCardinalityProvider(pattern -> 1.0d);
 		estimator.setExactJoinSurfaceProvider(request -> {
@@ -123,7 +140,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		ProbeThrowingStatementSource store = new ProbeThrowingStatementSource(rightPredicate);
 		store.add(st(VF.createIRI("urn:s1"), leftPredicate, x1));
 		store.add(st(VF.createIRI("urn:s2"), leftPredicate, x2));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		estimator.setPatternCardinalityProvider(pattern -> {
 			if (rightPredicate.equals(pattern.getPredicateVar().getValue()) && pattern.getSubjectVar().hasValue()) {
 				return 5.0d;
@@ -147,7 +164,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		IRI hasObservation = VF.createIRI("urn:hasObservation");
 		Resource observation = VF.createIRI("urn:observation:1");
 		SwitchingStatementSource store = new SwitchingStatementSource();
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 		store.failOnRead = true;
 		estimator.setPatternCardinalityProvider(pattern -> {
 			if (hasObservation.equals(pattern.getPredicateVar().getValue())
@@ -192,7 +209,23 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		}
 	}
 
-	private static RareOverlapFixture buildRareOverlapFixture() throws Exception {
+	@Test
+	void positiveRareOverlapSketchCanUseExactSurfaceProvider() throws Exception {
+		RareOverlapFixture fixture = buildRareOverlapFixture();
+		AtomicBoolean providerCalled = new AtomicBoolean();
+		fixture.estimator.setExactJoinSurfaceProvider(request -> {
+			providerCalled.set(true);
+			assertTrue(request.pairwiseFallback(), "Positive rare-overlap refinement should use pairwise provider");
+			return fixture.actualJoinRows;
+		});
+
+		double plannerJoinEstimate = fixture.estimator.cardinality(fixture.join);
+
+		assertTrue(providerCalled.get(), "Positive rare-overlap sketch estimate should consult exact provider");
+		assertEquals(fixture.actualJoinRows, plannerJoinEstimate, 0.0d);
+	}
+
+	private RareOverlapFixture buildRareOverlapFixture() throws Exception {
 		IRI locatedAt = VF.createIRI("urn:locatedAt");
 		IRI hasName = VF.createIRI("urn:hasName");
 		int overlapBranches = 64;
@@ -202,7 +235,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 			StubSketchStatementSource store = new StubSketchStatementSource();
 			populateRareOverlapData(store, locatedAt, hasName, overlapBranches, copiesPerBranch, noiseSubjects);
 
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+			SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
 			estimator.rebuild();
 
 			return new RareOverlapFixture(estimator, joinNode(locatedAt, hasName),
@@ -234,6 +267,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 
 	private static SketchBasedJoinEstimator.Config config() {
 		return SketchBasedJoinEstimator.Config.defaults()
+				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
 				.withNominalEntries(512)
 				.withSubjectBucketCount(128)
 				.withPredicateBucketCount(128)

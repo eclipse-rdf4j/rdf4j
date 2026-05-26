@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
@@ -125,18 +126,14 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isBoundStatementGuardInvocationBudgetReasonable(Join join) {
-		double leftRows = join.getLeftArg()
-				.getResultSizeEstimate();
-		if (Double.isFinite(leftRows) && leftRows >= 0.0d) {
-			return leftRows <= MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS;
+		RuntimeEstimate leftEstimate = RuntimeEstimate.of(join.getLeftArg());
+		if (leftEstimate.hasRows()) {
+			return leftEstimate.rows() <= MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS;
 		}
-		double leftWorkRows = join.getLeftArg()
-				.getCostEstimate();
-		return isBoundStatementGuardBudgetReasonable(leftWorkRows, MAX_BOUND_STATEMENT_GUARD_LEFT_WORK_ROWS);
-	}
-
-	private static boolean isBoundStatementGuardBudgetReasonable(double value, double maximum) {
-		return !Double.isFinite(value) || value < 0.0d || value <= maximum;
+		if (leftEstimate.hasWorkRows()) {
+			return leftEstimate.workRows() <= MAX_BOUND_STATEMENT_GUARD_LEFT_WORK_ROWS;
+		}
+		return false;
 	}
 
 	private static boolean isBoundStatementPatternGuardCandidate(TupleExpr expr) {
@@ -216,6 +213,57 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				return -1;
 			}
 		};
+	}
+
+	private static final class RuntimeEstimate {
+
+		private static final double UNKNOWN = -1.0d;
+
+		private final double rows;
+		private final double workRows;
+
+		private RuntimeEstimate(double rows, double workRows) {
+			this.rows = rows;
+			this.workRows = workRows;
+		}
+
+		private static RuntimeEstimate of(TupleExpr tupleExpr) {
+			double rows = firstKnown(tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS),
+					tupleExpr.getResultSizeEstimate());
+			double workRows = firstKnown(tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS),
+					tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS),
+					tupleExpr.getCostEstimate());
+			return new RuntimeEstimate(rows, workRows);
+		}
+
+		private boolean hasRows() {
+			return isKnown(rows);
+		}
+
+		private double rows() {
+			return rows;
+		}
+
+		private boolean hasWorkRows() {
+			return isKnown(workRows);
+		}
+
+		private double workRows() {
+			return workRows;
+		}
+
+		private static double firstKnown(double... values) {
+			for (double value : values) {
+				if (isKnown(value)) {
+					return value;
+				}
+			}
+			return UNKNOWN;
+		}
+
+		private static boolean isKnown(double value) {
+			return Double.isFinite(value) && value >= 0.0d;
+		}
 	}
 
 }

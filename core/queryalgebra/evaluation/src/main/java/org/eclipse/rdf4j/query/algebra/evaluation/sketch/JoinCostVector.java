@@ -14,31 +14,69 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 
 @Experimental
 final class JoinCostVector implements Comparable<JoinCostVector> {
 
 	private static final double WORK_EQUIVALENCE_ABSOLUTE_ROWS = 4.0d;
 	private static final double WORK_EQUIVALENCE_RELATIVE_RATIO = 0.10d;
+	private static final double STRONG_RAW_WORK_IMPROVEMENT_RATIO = 0.75d;
+	private static final double ROBUST_REGRET_TOLERANCE_RATIO = 1.25d;
+	private static final double OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO = 0.50d;
+	private static final double OUTPUT_SURFACE_ROBUST_REGRET_RATIO = 2.00d;
 
 	private final double totalWorkRows;
 	private final double finalRows;
 	private final double maxIntermediateRows;
 	private final double uncertaintyRows;
 	private final double cartesianWorkRows;
+	private final double robustWorkRows;
+	private final double rowQErrorMax;
+	private final double workQErrorMax;
+	private final double confidence;
+	private final double evidenceCount;
 
 	private JoinCostVector(double totalWorkRows, double finalRows, double maxIntermediateRows,
-			double uncertaintyRows, double cartesianWorkRows) {
+			double uncertaintyRows, double cartesianWorkRows, double robustWorkRows, double rowQErrorMax,
+			double workQErrorMax, double confidence, double evidenceCount) {
 		this.totalWorkRows = finiteNonNegative(totalWorkRows);
 		this.finalRows = finiteNonNegative(finalRows);
 		this.maxIntermediateRows = finiteNonNegative(maxIntermediateRows);
 		this.uncertaintyRows = finiteNonNegative(uncertaintyRows);
 		this.cartesianWorkRows = finiteNonNegative(cartesianWorkRows);
+		this.robustWorkRows = finiteNonNegative(robustWorkRows);
+		this.rowQErrorMax = finiteQError(rowQErrorMax);
+		this.workQErrorMax = finiteQError(workQErrorMax);
+		this.confidence = clamp01(confidence);
+		this.evidenceCount = finiteNonNegative(evidenceCount, 0.0d);
 	}
 
 	static JoinCostVector of(double totalWorkRows, double finalRows, double maxIntermediateRows,
 			double uncertaintyRows, double cartesianWorkRows) {
-		return new JoinCostVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows);
+		double robustWorkRows = robustStepWorkRows(totalWorkRows, uncertaintyRows, 4.0d, 4.0d, 0.0d, 0.0d);
+		return new JoinCostVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows,
+				robustWorkRows, 4.0d, 4.0d, 0.0d, 0.0d);
+	}
+
+	static JoinCostVector ofStep(double totalWorkRows, double finalRows, double maxIntermediateRows,
+			double uncertaintyRows, double cartesianWorkRows, JoinCostVector prefix, double stepWorkRows,
+			JoinFactorCostModel.EstimateVector estimateVector) {
+		double rowQErrorMax = estimateVector == null ? 4.0d : estimateVector.rowQErrorMax();
+		double workQErrorMax = estimateVector == null ? 4.0d : estimateVector.workQErrorMax();
+		double confidence = estimateVector == null ? 0.0d : estimateVector.confidence();
+		double evidenceCount = estimateVector == null ? 0.0d : estimateVector.evidenceCount();
+		double stepUncertaintyRows = estimateVector == null ? 0.0d : estimateVector.uncertaintyRows();
+		double robustStepWorkRows = robustStepWorkRows(stepWorkRows, stepUncertaintyRows, rowQErrorMax,
+				workQErrorMax, confidence, evidenceCount);
+		double robustWorkRows = prefix == null ? robustStepWorkRows : prefix.robustWorkRows + robustStepWorkRows;
+		double combinedRowQErrorMax = prefix == null ? rowQErrorMax : Math.max(prefix.rowQErrorMax, rowQErrorMax);
+		double combinedWorkQErrorMax = prefix == null ? workQErrorMax : Math.max(prefix.workQErrorMax, workQErrorMax);
+		double combinedConfidence = prefix == null ? confidence : Math.min(prefix.confidence, confidence);
+		double combinedEvidenceCount = (prefix == null ? 0.0d : prefix.evidenceCount) + evidenceCount;
+		return new JoinCostVector(totalWorkRows, finalRows, maxIntermediateRows, uncertaintyRows, cartesianWorkRows,
+				robustWorkRows, combinedRowQErrorMax, combinedWorkQErrorMax, combinedConfidence,
+				combinedEvidenceCount);
 	}
 
 	boolean dominates(JoinCostVector other) {
@@ -48,11 +86,19 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 				&& maxIntermediateRows <= other.maxIntermediateRows
 				&& uncertaintyRows <= other.uncertaintyRows
 				&& cartesianWorkRows <= other.cartesianWorkRows
+				&& rowQErrorMax <= other.rowQErrorMax
+				&& workQErrorMax <= other.workQErrorMax
+				&& confidence >= other.confidence
+				&& evidenceCount >= other.evidenceCount
 				&& (totalWorkRows < other.totalWorkRows
 						|| finalRows < other.finalRows
 						|| maxIntermediateRows < other.maxIntermediateRows
 						|| uncertaintyRows < other.uncertaintyRows
-						|| cartesianWorkRows < other.cartesianWorkRows);
+						|| cartesianWorkRows < other.cartesianWorkRows
+						|| rowQErrorMax < other.rowQErrorMax
+						|| workQErrorMax < other.workQErrorMax
+						|| confidence > other.confidence
+						|| evidenceCount > other.evidenceCount);
 	}
 
 	double totalWorkRows() {
@@ -75,10 +121,55 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 		return cartesianWorkRows;
 	}
 
+	double rowQErrorMax() {
+		return rowQErrorMax;
+	}
+
+	double workQErrorMax() {
+		return workQErrorMax;
+	}
+
+	double confidence() {
+		return confidence;
+	}
+
+	double evidenceCount() {
+		return evidenceCount;
+	}
+
 	@Override
 	public int compareTo(JoinCostVector other) {
+		int rawComparison = Double.compare(totalWorkRows, other.totalWorkRows);
+		if (rawComparison != 0 && strongRawWorkImprovement(other)
+				&& robustRegretWithinTolerance(other, rawComparison)) {
+			return rawComparison;
+		}
+		int surfaceComparison = robustSurfaceImprovementComparison(other);
+		if (surfaceComparison != 0) {
+			return surfaceComparison;
+		}
+		int robustComparison = Double.compare(robustWorkRows, other.robustWorkRows);
+		if (robustComparison != 0 && !equivalentTotalWork(robustWorkRows, other.robustWorkRows)) {
+			return robustComparison;
+		}
 		if (equivalentTotalWork(totalWorkRows, other.totalWorkRows)) {
 			int comparison = Double.compare(outputSurfaceRows(), other.outputSurfaceRows());
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(rowQErrorMax, other.rowQErrorMax);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = Double.compare(workQErrorMax, other.workQErrorMax);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = -Double.compare(confidence, other.confidence);
+			if (comparison != 0) {
+				return comparison;
+			}
+			comparison = -Double.compare(evidenceCount, other.evidenceCount);
 			if (comparison != 0) {
 				return comparison;
 			}
@@ -100,7 +191,7 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 			}
 			return Double.compare(totalWorkRows, other.totalWorkRows);
 		}
-		int comparison = Double.compare(totalWorkRows, other.totalWorkRows);
+		int comparison = rawComparison;
 		if (comparison != 0) {
 			return comparison;
 		}
@@ -123,6 +214,26 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 		return finalRows + uncertaintyRows;
 	}
 
+	private int robustSurfaceImprovementComparison(JoinCostVector other) {
+		double leftSurface = outputSurfaceRows();
+		double rightSurface = other.outputSurfaceRows();
+		if (!Double.isFinite(leftSurface) || !Double.isFinite(rightSurface)
+				|| leftSurface < 0.0d || rightSurface < 0.0d) {
+			return 0;
+		}
+		if (leftSurface <= rightSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
+				&& robustWorkRows <= Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
+						other.robustWorkRows * OUTPUT_SURFACE_ROBUST_REGRET_RATIO)) {
+			return -1;
+		}
+		if (rightSurface <= leftSurface * OUTPUT_SURFACE_STRONG_IMPROVEMENT_RATIO
+				&& other.robustWorkRows <= Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
+						robustWorkRows * OUTPUT_SURFACE_ROBUST_REGRET_RATIO)) {
+			return 1;
+		}
+		return 0;
+	}
+
 	private static boolean equivalentTotalWork(double left, double right) {
 		double difference = Math.abs(left - right);
 		if (difference <= WORK_EQUIVALENCE_ABSOLUTE_ROWS) {
@@ -132,14 +243,40 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 		return difference <= baseline * WORK_EQUIVALENCE_RELATIVE_RATIO;
 	}
 
+	private boolean strongRawWorkImprovement(JoinCostVector other) {
+		double cheaperWork = Math.min(totalWorkRows, other.totalWorkRows);
+		double expensiveWork = Math.max(totalWorkRows, other.totalWorkRows);
+		return Double.isFinite(cheaperWork)
+				&& Double.isFinite(expensiveWork)
+				&& cheaperWork >= 0.0d
+				&& expensiveWork > 0.0d
+				&& cheaperWork <= expensiveWork * STRONG_RAW_WORK_IMPROVEMENT_RATIO;
+	}
+
+	private boolean robustRegretWithinTolerance(JoinCostVector other, int rawComparison) {
+		double cheaperRobustWork = rawComparison < 0 ? robustWorkRows : other.robustWorkRows;
+		double expensiveRobustWork = rawComparison < 0 ? other.robustWorkRows : robustWorkRows;
+		if (!Double.isFinite(cheaperRobustWork) || !Double.isFinite(expensiveRobustWork)) {
+			return false;
+		}
+		double tolerance = Math.max(WORK_EQUIVALENCE_ABSOLUTE_ROWS,
+				expensiveRobustWork * ROBUST_REGRET_TOLERANCE_RATIO);
+		return cheaperRobustWork <= tolerance;
+	}
+
 	@Override
 	public String toString() {
 		return "JoinCostVector{"
 				+ "totalWorkRows=" + totalWorkRows
+				+ ", robustWorkRows=" + robustWorkRows
 				+ ", finalRows=" + finalRows
 				+ ", maxIntermediateRows=" + maxIntermediateRows
 				+ ", uncertaintyRows=" + uncertaintyRows
 				+ ", cartesianWorkRows=" + cartesianWorkRows
+				+ ", rowQErrorMax=" + rowQErrorMax
+				+ ", workQErrorMax=" + workQErrorMax
+				+ ", confidence=" + confidence
+				+ ", evidenceCount=" + evidenceCount
 				+ '}';
 	}
 
@@ -148,5 +285,44 @@ final class JoinCostVector implements Comparable<JoinCostVector> {
 			return value;
 		}
 		return Double.MAX_VALUE;
+	}
+
+	private static double finiteNonNegative(double value, double fallback) {
+		if (Double.isFinite(value) && value >= 0.0d) {
+			return value;
+		}
+		return fallback;
+	}
+
+	private static double finiteQError(double value) {
+		if (Double.isFinite(value) && value >= 1.0d) {
+			return value;
+		}
+		return 4.0d;
+	}
+
+	private static double clamp01(double value) {
+		if (!Double.isFinite(value)) {
+			return 0.0d;
+		}
+		return Math.max(0.0d, Math.min(1.0d, value));
+	}
+
+	private static double robustStepWorkRows(double stepWorkRows, double uncertaintyRows, double rowQErrorMax,
+			double workQErrorMax, double confidence, double evidenceCount) {
+		double safeStepWorkRows = finiteNonNegative(stepWorkRows, 0.0d);
+		double safeUncertaintyRows = finiteNonNegative(uncertaintyRows, 0.0d);
+		double safeRowQError = finiteQError(rowQErrorMax);
+		double safeWorkQError = finiteQError(workQErrorMax);
+		double safeConfidence = clamp01(confidence);
+		double confidenceGap = 1.0d - safeConfidence;
+		double safeEvidence = finiteNonNegative(evidenceCount, 0.0d);
+		double thinEvidencePenalty = safeEvidence <= 0.0d ? 1.0d : 1.0d / (1.0d + Math.sqrt(safeEvidence));
+		double rowPenalty = Math.max(0.0d, safeRowQError - 1.0d) * 0.10d;
+		double workPenalty = Math.max(0.0d, safeWorkQError - 1.0d) * 0.25d;
+		double qErrorMultiplier = 1.0d + (rowPenalty + workPenalty) * (0.5d + confidenceGap);
+		double evidenceMultiplier = 1.0d + confidenceGap * thinEvidencePenalty;
+		return safeStepWorkRows * qErrorMultiplier * evidenceMultiplier
+				+ safeUncertaintyRows * (1.0d + confidenceGap);
 	}
 }

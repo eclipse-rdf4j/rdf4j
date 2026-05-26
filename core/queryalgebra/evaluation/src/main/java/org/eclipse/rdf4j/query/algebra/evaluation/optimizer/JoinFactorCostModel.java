@@ -25,6 +25,7 @@ import java.util.function.LongFunction;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Optional SPI for join-factor work estimates under a concrete prefix binding set.
@@ -47,7 +48,51 @@ public interface JoinFactorCostModel {
 		return estimateFactorCost(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
 	}
 
+	record EstimateVector(double rows, double workRows, double memoryRows, double seeks, double pageWalkRows,
+			double rowQErrorMean, double rowQErrorMax, double workQErrorMean, double workQErrorMax,
+			double uncertaintyRows, double confidence, double evidenceCount) {
+
+		public EstimateVector {
+			rows = finiteNonNegative(rows, Double.MAX_VALUE);
+			workRows = finiteNonNegative(workRows, Double.MAX_VALUE);
+			memoryRows = finiteNonNegative(memoryRows, 0.0d);
+			seeks = finiteNonNegative(seeks, 0.0d);
+			pageWalkRows = finiteNonNegative(pageWalkRows, 0.0d);
+			rowQErrorMean = finiteQError(rowQErrorMean, 4.0d);
+			rowQErrorMax = Math.max(finiteQError(rowQErrorMax, rowQErrorMean), rowQErrorMean);
+			workQErrorMean = finiteQError(workQErrorMean, rowQErrorMean);
+			workQErrorMax = Math.max(finiteQError(workQErrorMax, workQErrorMean), workQErrorMean);
+			uncertaintyRows = finiteNonNegative(uncertaintyRows, 0.0d);
+			confidence = clamp01(confidence);
+			evidenceCount = finiteNonNegative(evidenceCount, 0.0d);
+		}
+
+		private static double finiteNonNegative(double value, double fallback) {
+			return Double.isFinite(value) && value >= 0.0d ? value : fallback;
+		}
+
+		private static double finiteQError(double value, double fallback) {
+			double qError = Double.isFinite(value) && value >= 1.0d ? value : fallback;
+			return Double.isFinite(qError) && qError >= 1.0d ? qError : 4.0d;
+		}
+
+		private static double clamp01(double value) {
+			if (!Double.isFinite(value)) {
+				return 0.0d;
+			}
+			if (value < 0.0d) {
+				return 0.0d;
+			}
+			if (value > 1.0d) {
+				return 1.0d;
+			}
+			return value;
+		}
+	}
+
 	final class CostContext {
+		private static final EstimationTier DEFAULT_ESTIMATION_TIER = EstimationTier.STANDARD;
+
 		private Set<String> currentlyBoundVars;
 		private final String[] variableNames;
 		private final long currentlyBoundVarMask;
@@ -76,7 +121,7 @@ public interface JoinFactorCostModel {
 				boolean nestedIteratorInvocation, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
 				List<TupleExpr> prefixFactors) {
 			this(currentlyBoundVars, outerPrefixRows, distinctLookupBindings, nestedIteratorInvocation, collectMetrics,
-					finiteBindingValues, prefixFactors, EstimationTier.EXACT);
+					finiteBindingValues, prefixFactors, DEFAULT_ESTIMATION_TIER);
 		}
 
 		private CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
@@ -95,7 +140,7 @@ public interface JoinFactorCostModel {
 			this.prefixFactors = immutablePrefixFactors(prefixFactors);
 			this.prefixFactorProvider = null;
 			this.prefixFactorMask = 0L;
-			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
+			this.estimationTier = estimationTier == null ? DEFAULT_ESTIMATION_TIER : estimationTier;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -117,7 +162,7 @@ public interface JoinFactorCostModel {
 			this.prefixFactors = List.of();
 			this.prefixFactorProvider = null;
 			this.prefixFactorMask = 0L;
-			this.estimationTier = EstimationTier.EXACT;
+			this.estimationTier = DEFAULT_ESTIMATION_TIER;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -131,7 +176,8 @@ public interface JoinFactorCostModel {
 				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
 				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
 			this(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
-					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, EstimationTier.EXACT);
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors,
+					DEFAULT_ESTIMATION_TIER);
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -145,11 +191,11 @@ public interface JoinFactorCostModel {
 			this.distinctLookupBindings = distinctLookupBindings;
 			this.nestedIteratorInvocation = nestedIteratorInvocation;
 			this.collectMetrics = collectMetrics;
-			this.finiteBindingValues = (finiteBindingValues);
-			this.prefixFactors = (prefixFactors);
+			this.finiteBindingValues = finiteBindingValues;
+			this.prefixFactors = prefixFactors;
 			this.prefixFactorProvider = null;
 			this.prefixFactorMask = 0L;
-			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
+			this.estimationTier = estimationTier == null ? DEFAULT_ESTIMATION_TIER : estimationTier;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -167,7 +213,7 @@ public interface JoinFactorCostModel {
 			this.prefixFactors = null;
 			this.prefixFactorProvider = prefixFactorProvider;
 			this.prefixFactorMask = prefixFactorMask;
-			this.estimationTier = estimationTier == null ? EstimationTier.EXACT : estimationTier;
+			this.estimationTier = estimationTier == null ? DEFAULT_ESTIMATION_TIER : estimationTier;
 		}
 
 		public static CostContext of(Set<String> currentlyBoundVars, double outerPrefixRows,
@@ -181,6 +227,14 @@ public interface JoinFactorCostModel {
 				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
 			return new CostContext(currentlyBoundVars, outerPrefixRows, distinctLookupBindings,
 					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors);
+		}
+
+		public static CostContext forOptimization(Set<String> currentlyBoundVars, double outerPrefixRows,
+				double distinctLookupBindings, boolean nestedIteratorInvocation, boolean collectMetrics,
+				Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
+			return new CostContext(currentlyBoundVars, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors,
+					EstimationTier.STANDARD);
 		}
 
 		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -215,6 +269,14 @@ public interface JoinFactorCostModel {
 				EstimationTier estimationTier) {
 			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
 					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
+		}
+
+		public static CostContext forOptimization(String[] variableNames, long currentlyBoundVarMask,
+				double outerPrefixRows, double distinctLookupBindings, boolean nestedIteratorInvocation,
+				boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
+			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
+					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors,
+					EstimationTier.STANDARD);
 		}
 
 		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -392,6 +454,7 @@ public interface JoinFactorCostModel {
 		private final double accessRowsBeforeFilter;
 		private final boolean repeatedInvocationsCosted;
 		private final boolean exactOutputRows;
+		private final EstimateVector estimateVector;
 
 		public FactorCostEstimate(double workRows, double outputRows) {
 			this(workRows, outputRows, Map.of(), Map.of());
@@ -438,6 +501,23 @@ public interface JoinFactorCostModel {
 			this.repeatedInvocationsCosted = nestedInvocationCosted
 					|| (doubleMetrics != null && doubleMetrics.containsKey("plannedRepeatedInvocations"));
 			this.exactOutputRows = exactOutputRows;
+			double rowQErrorMean = rowQErrorMean(this.doubleMetrics, this.outputRows, exactOutputRows);
+			double rowQErrorMax = rowQErrorMax(this.doubleMetrics, this.outputRows, exactOutputRows);
+			double workQErrorMean = workQErrorMean(this.doubleMetrics, this.outputRows, exactOutputRows);
+			double workQErrorMax = workQErrorMax(this.doubleMetrics, this.outputRows, exactOutputRows);
+			double confidence = confidence(this.doubleMetrics);
+			this.estimateVector = new EstimateVector(this.outputRows, this.workRows,
+					metric(this.doubleMetrics, "plannedMemoryRows", 0.0d),
+					metric(this.doubleMetrics, "plannedSeeks", 0.0d),
+					pageWalkRows(this.doubleMetrics),
+					rowQErrorMean,
+					rowQErrorMax,
+					workQErrorMean,
+					workQErrorMax,
+					uncertaintyRows(this.doubleMetrics, this.outputRows, rowQErrorMax, workQErrorMax, confidence,
+							exactOutputRows),
+					confidence,
+					evidenceCount(this.doubleMetrics));
 		}
 
 		public double getWorkRows() {
@@ -482,6 +562,128 @@ public interface JoinFactorCostModel {
 
 		public boolean hasExactOutputRows() {
 			return exactOutputRows;
+		}
+
+		public EstimateVector getEstimateVector() {
+			return estimateVector;
+		}
+
+		private static double metric(Map<String, Double> metrics, String name, double fallback) {
+			Double value = metrics.get(name);
+			return value != null && Double.isFinite(value) && value >= 0.0d ? value : fallback;
+		}
+
+		private static double pageWalkRows(Map<String, Double> metrics) {
+			return firstMetric(metrics, 0.0d, "optimizer.pageWalkRows", "plannedBoundLookupPageWalkRows",
+					"plannedBoundLookupPageWalkRawRows");
+		}
+
+		private static double rowQErrorMean(Map<String, Double> metrics, double rows, boolean exactOutputRows) {
+			return firstQError(metrics, rows, exactOutputRows, "plannedOperatorFeedbackRowQErrorMean",
+					"plannedOperatorFeedbackRowQErrorMax", "plannedCardinalityQError");
+		}
+
+		private static double rowQErrorMax(Map<String, Double> metrics, double rows, boolean exactOutputRows) {
+			return firstQError(metrics, rows, exactOutputRows, "plannedOperatorFeedbackRowQErrorMax",
+					"plannedOperatorFeedbackRowQErrorMean", "plannedCardinalityQError");
+		}
+
+		private static double workQErrorMean(Map<String, Double> metrics, double rows, boolean exactOutputRows) {
+			return firstQError(metrics, rows, exactOutputRows, "plannedOperatorFeedbackWorkQErrorMean",
+					"plannedOperatorFeedbackWorkQErrorMax", "plannedOperatorFeedbackRowQErrorMean",
+					"plannedOperatorFeedbackRowQErrorMax", "plannedCardinalityQError");
+		}
+
+		private static double workQErrorMax(Map<String, Double> metrics, double rows, boolean exactOutputRows) {
+			return firstQError(metrics, rows, exactOutputRows, "plannedOperatorFeedbackWorkQErrorMax",
+					"plannedOperatorFeedbackWorkQErrorMean", "plannedOperatorFeedbackRowQErrorMax",
+					"plannedOperatorFeedbackRowQErrorMean", "plannedCardinalityQError");
+		}
+
+		private static double uncertaintyRows(Map<String, Double> metrics, double rows, double rowQErrorMax,
+				double workQErrorMax, double confidence, boolean exactOutputRows) {
+			Double explicit = metrics.get("plannedOperatorFeedbackUncertaintyRows");
+			if (explicit != null && Double.isFinite(explicit) && explicit >= 0.0d) {
+				return explicit;
+			}
+			if (exactOutputRows || hasQErrorMetric(metrics)) {
+				return 0.0d;
+			}
+			double qError = Math.max(rowQErrorMax, workQErrorMax);
+			if (!Double.isFinite(qError) || qError <= 1.0d || !Double.isFinite(rows) || rows <= 0.0d) {
+				return 0.0d;
+			}
+			double confidenceGap = 1.0d - clamp01(confidence);
+			return rows * (qError - 1.0d) * confidenceGap;
+		}
+
+		private static boolean hasQErrorMetric(Map<String, Double> metrics) {
+			return metrics.containsKey("plannedOperatorFeedbackRowQErrorMean")
+					|| metrics.containsKey("plannedOperatorFeedbackRowQErrorMax")
+					|| metrics.containsKey("plannedOperatorFeedbackWorkQErrorMean")
+					|| metrics.containsKey("plannedOperatorFeedbackWorkQErrorMax")
+					|| metrics.containsKey("plannedCardinalityQError");
+		}
+
+		private static double clamp01(double value) {
+			if (!Double.isFinite(value)) {
+				return 0.0d;
+			}
+			return Math.max(0.0d, Math.min(1.0d, value));
+		}
+
+		private static double firstMetric(Map<String, Double> metrics, double fallback, String... names) {
+			for (String name : names) {
+				Double value = metrics.get(name);
+				if (value != null && Double.isFinite(value) && value >= 0.0d) {
+					return value;
+				}
+			}
+			return fallback;
+		}
+
+		private static double confidence(Map<String, Double> metrics) {
+			return firstMetric(metrics, 0.0d, "plannedOperatorFeedbackConfidence",
+					TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE,
+					TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
+					TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK_CONFIDENCE);
+		}
+
+		private static double evidenceCount(Map<String, Double> metrics) {
+			return firstMetric(metrics, 0.0d, "plannedOperatorFeedbackEvidence",
+					TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
+					TelemetryMetricNames.SAMPLE_COUNT_ACTUAL);
+		}
+
+		private static double firstQError(Map<String, Double> metrics, double rows, boolean exactOutputRows,
+				String... names) {
+			for (String name : names) {
+				Double value = metrics.get(name);
+				if (value != null && Double.isFinite(value) && value >= 1.0d) {
+					return value;
+				}
+			}
+			double boundsQError = cardinalityBoundsQError(metrics, rows);
+			if (Double.isFinite(boundsQError) && boundsQError >= 1.0d) {
+				return boundsQError;
+			}
+			return exactOutputRows ? 1.0d : 4.0d;
+		}
+
+		private static double cardinalityBoundsQError(Map<String, Double> metrics, double rows) {
+			if (!Double.isFinite(rows) || rows <= 0.0d) {
+				return Double.NaN;
+			}
+			Double lower = metrics.get(TelemetryMetricNames.PLANNED_CARDINALITY_LOWER);
+			Double upper = metrics.get(TelemetryMetricNames.PLANNED_CARDINALITY_UPPER);
+			double qError = 1.0d;
+			if (lower != null && Double.isFinite(lower) && lower > 0.0d && lower <= rows) {
+				qError = Math.max(qError, rows / lower);
+			}
+			if (upper != null && Double.isFinite(upper) && upper >= rows) {
+				qError = Math.max(qError, upper / rows);
+			}
+			return qError > 1.0d ? qError : Double.NaN;
 		}
 	}
 }
