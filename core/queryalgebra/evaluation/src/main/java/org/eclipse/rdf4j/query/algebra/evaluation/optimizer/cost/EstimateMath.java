@@ -138,8 +138,8 @@ public final class EstimateMath {
 		}
 		Map<VariableSetKey, FiniteRelationEstimate> relations = new LinkedHashMap<>();
 		for (FiniteRelationEstimate relation : input.finiteRelations().values()) {
-			relation.retainIfVariablesRemain(vars)
-					.ifPresent(retained -> relations.put(retained.variableSetKey(), retained));
+			relation.projectTo(vars, "projected-finite-relation")
+					.ifPresent(projected -> relations.put(projected.variableSetKey(), projected));
 		}
 		return new BagEstimate(input.rows(), input.workRows(), input.memoryRows(), input.confidence(), "projection",
 				variables, relations, input.metrics());

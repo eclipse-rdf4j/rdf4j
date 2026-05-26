@@ -22,6 +22,7 @@ The observable outcome is that generated or explicit VALUES clauses are costed a
 - [x] Wire CascadesCostModel and RdfStatisticsProvider.
 - [x] Wire LMDB page-walk/sketch fusion.
 - [x] Run focused and module verification.
+- [x] Preserve projected finite tuple frequencies through projection.
 - [ ] Commit logical groups and push.
 
 ## Surprises & Discoveries
@@ -32,6 +33,7 @@ The observable outcome is that generated or explicit VALUES clauses are costed a
 - `mvnf` runs Maven `verify`; for LMDB method-level Surefire checks it can continue into unrelated Failsafe ITs. Use `mvn ... -DskipITs test` for tight unit evidence when needed.
 - The Q9 blow-up was a double-counting problem. Exact finite expansion joined the generated `condCode` relation into the statement surface, then the later `BindingSetAssignment` guard applied selectivity again. The guard now contributes only bag multiplicity once a finite binding has been absorbed.
 - Full `core/sail/lmdb` verification still has two residual failures outside this implementation: `LmdbSubSelectDirectLookupEstimateTest#subSelectPlanStaysBoundedAfterStoreMutations` times out waiting for sketch readiness before plan assertions, and `ThemeQueryBenchmarkSparseParamTest` reflects the pre-existing dirty benchmark parameter file.
+- Projection dropped exact finite tuple relations whenever any column was removed. That destroyed projected tuple frequency and correlation before later DISTINCT, GROUP, or JOIN costing. Projection now keeps a projected finite bag relation with merged tuple frequencies.
 
 ## Decision Log
 
@@ -214,6 +216,7 @@ Acceptance:
 - LMDB medical Q9 no longer produces the 424M intermediate `med:code` lookup.
 - Plan annotations show finite relation and shared model cost source.
 - No query-specific join-order heuristic is introduced.
+- Projected finite relations survive projection with bag multiplicity preserved.
 
 ## Outcomes & Retrospective
 

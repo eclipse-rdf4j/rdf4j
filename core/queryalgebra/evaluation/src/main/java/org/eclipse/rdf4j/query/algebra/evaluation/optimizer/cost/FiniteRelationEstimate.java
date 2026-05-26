@@ -95,6 +95,20 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 				: Optional.empty();
 	}
 
+	public Optional<FiniteRelationEstimate> projectTo(Collection<String> retainedVariables, String source) {
+		if (retainedVariables == null || retainedVariables.isEmpty()) {
+			return Optional.empty();
+		}
+		List<String> projectedVariables = variables.stream()
+				.filter(retainedVariables::contains)
+				.toList();
+		if (projectedVariables.isEmpty()) {
+			return Optional.empty();
+		}
+		Map<List<Value>, Double> projectedFrequencies = frequencyBy(projectedVariables);
+		return Optional.of(new FiniteRelationEstimate(projectedVariables, projectedFrequencies, source));
+	}
+
 	private List<Integer> indexes(List<String> names) {
 		List<Integer> indexes = new ArrayList<>(names.size());
 		for (String name : names) {

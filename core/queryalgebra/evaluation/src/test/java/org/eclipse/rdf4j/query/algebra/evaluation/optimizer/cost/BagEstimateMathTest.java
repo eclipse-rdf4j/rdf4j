@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.List;
 import java.util.Set;
@@ -149,15 +148,18 @@ class BagEstimateMathTest {
 	}
 
 	@Test
-	void projectionDropsFiniteRelationsThatReferenceRemovedVariables() {
+	void projectionRetainsProjectedFiniteTupleFrequencies() {
 		BagEstimate input = finite("input", List.of("enc", "code"),
-				List.of(row("e1", "A"), row("e2", "B")));
+				List.of(row("e1", "A"), row("e1", "A"), row("e2", "B")));
 
 		BagEstimate projected = EstimateMath.project(input, Set.of("enc"));
 
-		assertEquals(2.0d, projected.rows(), 0.0d);
-		assertFalse(projected.finiteRelation(Set.of("enc", "code")).isPresent(),
-				"Projection must not leave stale finite tuple relations for removed variables");
+		assertEquals(3.0d, projected.rows(), 0.0d);
+		FiniteRelationEstimate relation = projected.finiteRelation(Set.of("enc"))
+				.orElseThrow(() -> new AssertionError(
+						"Projection should preserve exact projected tuple frequencies instead of dropping them"));
+		assertEquals(2.0d, relation.distinctRows(Set.of("enc")), 0.0d);
+		assertEquals(2.0d, relation.frequencyBy(Set.of("enc")).get(row("e1")), 0.0d);
 		assertEquals(2.0d, projected.variable("enc").distinctRows(), 0.0d);
 	}
 
