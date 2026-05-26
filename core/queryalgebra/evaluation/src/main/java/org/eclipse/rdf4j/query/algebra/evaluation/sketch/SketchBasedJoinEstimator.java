@@ -107,6 +107,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -215,6 +216,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	private static final double DEFAULT_ZERO_INTERSECTION_SKEW_RATIO = 128.0d;
 	private static final long DEFAULT_ZERO_INTERSECTION_ROW_BUDGET = 4096L;
 	private static final int DEFAULT_ZERO_INTERSECTION_SAMPLE_SIZE = 128;
+	private static final long DEFAULT_FINITE_RELATION_SURFACE_ROW_BUDGET = 16_384L;
 	private static final int FINITE_UNIQUE_JOIN_CAP_MAX_ROWS = 4096;
 	private static final double FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT = 1.25d;
 	private static final Object FINITE_FILTER_UNSUPPORTED = new Object();
@@ -2364,6 +2366,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			}
 			return new ExactConnectedJoinEstimate(rows, rows, rows, 1, 0);
 		}
+
+		default double estimateFiniteJoinSurface(ExactFiniteJoinSurfaceRequest request) {
+			return UNSUPPORTED;
+		}
 	}
 
 	public record ExactJoinSurfaceRequest(List<StatementPattern> patterns, String sharedVarName,
@@ -2373,6 +2379,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 	}
 
 	public record ExactJoinRequest(List<StatementPattern> patterns, long rowBudget, int sampleSize) {
+	}
+
+	public record ExactFiniteJoinSurfaceRequest(List<Map<String, Value>> rows, List<StatementPattern> patterns,
+			String surfaceVarName, long rowBudget) {
 	}
 
 	public record ExactConnectedJoinEstimate(double rows, double minRows, double maxRows, int anchorCount,
@@ -8772,6 +8782,33 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		return exactSurfaceRows == null ? -1.0d : normalizeRows(exactSurfaceRows);
 	}
 
+	public double estimateExactFiniteJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName) {
+		if (prefixFactors == null || factor == null) {
+			return -1.0d;
+		}
+		List<TupleExpr> factors = new ArrayList<>(prefixFactors.size() + 1);
+		factors.addAll(prefixFactors);
+		factors.add(factor);
+		return estimateExactFiniteJoinSurfaceRows(factors, joinVarName);
+	}
+
+	public double estimateExactFiniteJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
+		if (!isReady() || factors == null || factors.isEmpty() || joinVarName == null) {
+			return -1.0d;
+		}
+		ExactJoinSurfaceProvider provider = exactJoinSurfaceProvider;
+		if (provider == null) {
+			return -1.0d;
+		}
+		ExactFiniteJoinSurfaceRequest request = exactFiniteJoinSurfaceRequest(factors, joinVarName);
+		if (request == null) {
+			return -1.0d;
+		}
+		double rows = provider.estimateFiniteJoinSurface(request);
+		return Double.isFinite(rows) && rows >= 0.0d ? normalizeRows(rows) : -1.0d;
+	}
+
 	public double estimatePairwiseJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor,
 			String joinVarName) {
 		if (!isReady() || prefixFactors == null || prefixFactors.isEmpty() || factor == null || joinVarName == null) {
@@ -8986,6 +9023,80 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return exactSurfaceRows;
 		}
 		return surfaceRows;
+	}
+
+	private ExactFiniteJoinSurfaceRequest exactFiniteJoinSurfaceRequest(List<TupleExpr> factors,
+			String joinVarName) {
+		List<Map<String, Value>> rows = new ArrayList<>();
+		rows.add(new LinkedHashMap<>());
+		List<StatementPattern> patterns = new ArrayList<>();
+		boolean sawFiniteRelation = false;
+		boolean sawSurfaceVariable = false;
+		for (TupleExpr factor : factors) {
+			if (factor instanceof BindingSetAssignment assignment) {
+				rows = joinFiniteAssignmentRows(rows, assignment);
+				if (rows == null || rows.isEmpty()) {
+					return null;
+				}
+				sawFiniteRelation = true;
+				sawSurfaceVariable |= assignment.getBindingNames().contains(joinVarName);
+			} else if (factor instanceof StatementPattern pattern) {
+				patterns.add(pattern);
+				sawSurfaceVariable |= pattern.getBindingNames().contains(joinVarName);
+			} else {
+				return null;
+			}
+		}
+		if (!sawFiniteRelation || !sawSurfaceVariable) {
+			return null;
+		}
+		return new ExactFiniteJoinSurfaceRequest(List.copyOf(rows), List.copyOf(patterns), joinVarName,
+				finiteRelationSurfaceRowBudget());
+	}
+
+	private List<Map<String, Value>> joinFiniteAssignmentRows(List<Map<String, Value>> input,
+			BindingSetAssignment assignment) {
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets == null) {
+			return null;
+		}
+		List<Map<String, Value>> joined = new ArrayList<>();
+		long rowBudget = finiteRelationSurfaceRowBudget();
+		double inputRows = 0.0d;
+		for (Map<String, Value> row : input) {
+			for (BindingSet bindingSet : bindingSets) {
+				Map<String, Value> merged = mergeFiniteAssignmentRow(row, bindingSet, bindingSet.getBindingNames());
+				if (merged != null) {
+					joined.add(merged);
+					inputRows++;
+					if (inputRows > rowBudget) {
+						return null;
+					}
+				}
+			}
+		}
+		return joined;
+	}
+
+	private long finiteRelationSurfaceRowBudget() {
+		return zeroIntersectionRowBudget > 0L ? zeroIntersectionRowBudget : DEFAULT_FINITE_RELATION_SURFACE_ROW_BUDGET;
+	}
+
+	private static Map<String, Value> mergeFiniteAssignmentRow(Map<String, Value> row, BindingSet bindingSet,
+			Set<String> bindingNames) {
+		Map<String, Value> merged = new LinkedHashMap<>(row);
+		for (String bindingName : bindingNames) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value == null) {
+				continue;
+			}
+			Value previous = merged.get(bindingName);
+			if (previous != null && !FiniteRelationEstimate.sameValue(previous, value)) {
+				return null;
+			}
+			merged.put(bindingName, value);
+		}
+		return merged;
 	}
 
 	private Double exactJoinSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {

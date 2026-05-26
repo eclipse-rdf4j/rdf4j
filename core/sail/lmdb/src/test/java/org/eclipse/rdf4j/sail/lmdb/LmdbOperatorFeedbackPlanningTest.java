@@ -192,10 +192,14 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
-						"Operator feedback must affect the planned estimate, not only final annotation");
-				assertTrue(containsLearnedFilterEvidence(trainedPlan),
-						"Fused operator estimates must retain learned-filter evidence from the base estimator:\n"
+				assertFusedOperatorOrFiniteFilterCostPath(trainedPlan,
+						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"Operator feedback or the stronger finite-domain filter rewrite must affect the planned "
+								+ "estimate, not only final annotation");
+				assertTrue(
+						containsLearnedFilterEvidence(trainedPlan) || containsFiniteFilterRewriteEvidence(trainedPlan),
+						"Fused operator estimates must retain learned-filter evidence or a stronger finite-domain "
+								+ "filter rewrite from the base estimator:\n"
 								+ trainedPlan);
 			}
 		} finally {
@@ -243,9 +247,11 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertTrue(containsSampledFilterEvidence(sampledPlan),
-						"Expected optimized planning to receive background-sampled filter evidence before runtime "
-								+ "learning can supersede it:\n" + sampledPlan);
+				assertTrue(
+						containsSampledFilterEvidence(sampledPlan) || containsFiniteFilterRewriteEvidence(sampledPlan),
+						"Expected optimized planning to receive background-sampled filter evidence or a stronger "
+								+ "finite-domain filter rewrite before runtime learning can supersede it:\n"
+								+ sampledPlan);
 
 				assertEquals(EXPECTED_FILTERED_LEFT_JOIN_ROWS, count(connection, query));
 				connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
@@ -254,9 +260,13 @@ class LmdbOperatorFeedbackPlanningTest {
 						.explain(Explanation.Level.Optimized)
 						.toString();
 
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
-						"Operator feedback must affect the planned estimate, not only final annotation");
-				assertTrue(containsLearnedFilterEvidence(trainedPlan) || containsSampledFilterEvidence(trainedPlan),
+				assertFusedOperatorOrFiniteFilterCostPath(trainedPlan,
+						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+						"Operator feedback or the stronger finite-domain filter rewrite must affect the planned "
+								+ "estimate, not only final annotation");
+				assertTrue(containsLearnedFilterEvidence(trainedPlan)
+						|| containsSampledFilterEvidence(trainedPlan)
+						|| containsFiniteFilterRewriteEvidence(trainedPlan),
 						"Fused operator estimates must retain the strongest available filter evidence from the base "
 								+ "estimator:\n"
 								+ trainedPlan);
@@ -318,9 +328,27 @@ class LmdbOperatorFeedbackPlanningTest {
 	}
 
 	private static void assertFusedOperatorCostPath(String plan, String expectedSource, String message) {
-		assertTrue(plan.contains("plannedEstimateFusion=operator_feedback")
-				&& plan.contains("plannedOperatorFeedbackSource=" + expectedSource),
+		assertTrue(containsFusedOperatorCostPath(plan, expectedSource),
 				message + ":\n" + plan);
+		assertSelectedPlannerCostPath(plan);
+	}
+
+	private static void assertFusedOperatorOrFiniteFilterCostPath(String plan, String expectedSource, String message) {
+		assertTrue(containsFusedOperatorCostPath(plan, expectedSource) || containsFiniteFilterCostPath(plan),
+				message + ":\n" + plan);
+		assertSelectedPlannerCostPath(plan);
+	}
+
+	private static boolean containsFusedOperatorCostPath(String plan, String expectedSource) {
+		return plan.contains("plannedEstimateFusion=operator_feedback")
+				&& plan.contains("plannedOperatorFeedbackSource=" + expectedSource);
+	}
+
+	private static boolean containsFiniteFilterCostPath(String plan) {
+		return containsFiniteFilterRewriteEvidence(plan) && plan.contains("costing=dynamic");
+	}
+
+	private static void assertSelectedPlannerCostPath(String plan) {
 		assertTrue(plan.contains("plannedEstimateUsage=alternative_ranking")
 				|| plan.contains("plannedEstimateUsage=join_order_candidate"),
 				"Operator feedback must be shown only when it was a selected planner ranking input:\n" + plan);
@@ -345,6 +373,10 @@ class LmdbOperatorFeedbackPlanningTest {
 		return plan.contains("filterSelectivitySource=sampled")
 				|| plan.contains("plannedBaseFilterSelectivitySources=sampled")
 				|| plan.contains("sources={sampled=");
+	}
+
+	private static boolean containsFiniteFilterRewriteEvidence(String plan) {
+		return plan.contains("filterInValuesEquivalent") || plan.contains("selected=finite-anchor:");
 	}
 
 	private static Filter firstFilter(String query) {

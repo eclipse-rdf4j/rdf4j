@@ -946,9 +946,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.accessShapeForJoinOrdering(any(), any(Set.class))).thenReturn(accessShape);
 		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, "org")).thenReturn(300.0d);
 		when(estimator.estimateExactJoinSurfaceRows(prefixFactors, "org")).thenReturn(-1.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
+				.thenReturn(Double.NaN);
 		when(estimator.estimateJoinSurfaceRows(prefixFactors, "org")).thenReturn(300.0d);
 		when(estimator.estimateSketchJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(12_000.0d);
 		when(estimator.estimateExactJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(-1.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
+				.thenReturn(Double.NaN);
 		when(estimator.estimateJoinSurfaceRows(prefixFactors, orgEmployee, "org")).thenReturn(12_000.0d);
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.of(
@@ -1203,6 +1207,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.estimateSketchJoinSurfaceRows(factors, "org")).thenReturn(3_000.0d);
 		when(estimator.estimatePairwiseJoinSurfaceRows(factors, "org")).thenReturn(4_000.0d);
 		when(estimator.estimateExactJoinSurfaceRows(factors, "org")).thenReturn(100.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
+				.thenReturn(Double.NaN);
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 			double expectedHarmonicSurfaceRows = 2.0d * 3_000.0d * 4_000.0d / (3_000.0d + 4_000.0d);
@@ -1232,6 +1238,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(estimator.estimateSketchJoinSurfaceRows(factors, "org")).thenReturn(4_000.0d);
 		when(estimator.estimatePairwiseJoinSurfaceRows(factors, "org")).thenReturn(120_000_000.0d);
 		when(estimator.estimateExactJoinSurfaceRows(factors, "org")).thenReturn(100.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
+				.thenReturn(Double.NaN);
 
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 			assertEquals(120_000_000.0d, statistics.estimateBoundJoinSurfaceRows(factors, "org"));
@@ -1264,10 +1272,14 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		List<TupleExpr> clonedPrefixFactors = List.of(orgDepartment.clone(), departmentOffer.clone());
 
 		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(String.class))).thenReturn(120_000_000.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(String.class)))
+				.thenReturn(Double.NaN);
 		when(estimator.estimateExactJoinSurfaceRows(any(List.class), any(String.class))).thenReturn(Double.NaN);
 		when(estimator.estimatePairwiseJoinSurfaceRows(any(List.class), any(String.class))).thenReturn(120_000_000.0d);
 		when(estimator.estimateSketchJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
 				.thenReturn(240_000_000.0d);
+		when(estimator.estimateExactFiniteJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
+				.thenReturn(Double.NaN);
 		when(estimator.estimateExactJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))
 				.thenReturn(Double.NaN);
 		when(estimator.estimatePairwiseJoinSurfaceRows(any(List.class), any(TupleExpr.class), any(String.class)))

@@ -73,6 +73,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -2368,6 +2369,8 @@ class LmdbEvaluationStatistics
 		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, BOUND_JOIN_PRODUCT_SOURCE);
 		stringMetrics.put("plannedEstimateFusion",
 				pageWalkBlend == null ? "tuple_sketch_surface_product" : "tuple_sketch_page_walk_harmonic");
+		stringMetrics.put("plannedBoundJoinProductSurfaceSource",
+				productEstimate.exactRows() ? "exact-full-prefix" : "modeled-surface");
 		stringMetrics.put(PLANNED_BRIDGE_CORRECTION_SOURCE, BOUND_JOIN_PRODUCT_SOURCE);
 		if (productEstimate.joinVarName() != null) {
 			stringMetrics.put("plannedBoundJoinProductJoinVar", productEstimate.joinVarName());
@@ -3221,7 +3224,7 @@ class LmdbEvaluationStatistics
 				return null;
 			}
 		}
-		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount, false);
+		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount, false, finiteVarName);
 	}
 
 	private FiniteDerivedSurfaceEstimate finiteConstrainedSurfaceRows(List<TupleExpr> prefixFactors,
@@ -3229,6 +3232,11 @@ class LmdbEvaluationStatistics
 		if (prefixFactors == null || prefixFactors.isEmpty() || factor == null || finiteVarName == null
 				|| finiteValues == null || finiteValues.isEmpty()) {
 			return null;
+		}
+		FiniteDerivedSurfaceEstimate exactFiniteRelationEstimate = exactFiniteRelationConstrainedRows(prefixFactors,
+				factor, finiteVarName, finiteValues);
+		if (exactFiniteRelationEstimate != null && isFiniteNonNegative(exactFiniteRelationEstimate.surfaceRows())) {
+			return exactFiniteRelationEstimate;
 		}
 		double rows = 0.0d;
 		int branchCount = 0;
@@ -3280,7 +3288,42 @@ class LmdbEvaluationStatistics
 		if (!isFiniteNonNegative(prefixRows)) {
 			prefixRows = rows;
 		}
-		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount, exactRows);
+		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, branchCount, exactRows, finiteVarName);
+	}
+
+	private FiniteDerivedSurfaceEstimate exactFiniteRelationConstrainedRows(List<TupleExpr> prefixFactors,
+			TupleExpr factor, String finiteVarName, Set<Value> finiteValues) {
+		if (sketchBasedJoinEstimator == null || prefixFactors == null || prefixFactors.isEmpty() || factor == null
+				|| finiteVarName == null || finiteValues == null || finiteValues.isEmpty()
+				|| finiteValues.size() > FINITE_LOOKUP_MAX_COMBINATIONS) {
+			return null;
+		}
+		BindingSetAssignment finiteAssignment = finiteBindingSetAssignment(finiteVarName, finiteValues);
+		List<TupleExpr> factors = new ArrayList<>(prefixFactors.size() + 2);
+		factors.addAll(prefixFactors);
+		factors.add(factor);
+		factors.add(finiteAssignment);
+		double rows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(factors, finiteVarName);
+		if (!isFiniteNonNegative(rows)) {
+			return null;
+		}
+		double prefixRows = estimateFiniteBranchRows(prefixFactors);
+		if (!isFiniteNonNegative(prefixRows)) {
+			prefixRows = rows;
+		}
+		return new FiniteDerivedSurfaceEstimate(rows, prefixRows, finiteValues.size(), true, finiteVarName);
+	}
+
+	private BindingSetAssignment finiteBindingSetAssignment(String finiteVarName, Set<Value> finiteValues) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		List<BindingSet> bindingSets = new ArrayList<>(finiteValues.size());
+		for (Value value : finiteValues) {
+			MapBindingSet bindingSet = new MapBindingSet(1);
+			bindingSet.addBinding(finiteVarName, value);
+			bindingSets.add(bindingSet);
+		}
+		assignment.setBindingSets(bindingSets);
+		return assignment;
 	}
 
 	private double estimateExactFiniteConstrainedBranchRows(List<TupleExpr> branchFactors) {
@@ -3647,31 +3690,44 @@ class LmdbEvaluationStatistics
 	}
 
 	private double finiteBranchSurfaceRows(List<TupleExpr> factors, String joinVarName) {
-		return finiteBranchSurfaceRows(factors, joinVarName, false);
+		return finiteBranchSurfaceEstimate(factors, joinVarName, false).rows();
 	}
 
 	private double finiteBranchSurfaceRows(List<TupleExpr> factors, String joinVarName, boolean allowExact) {
+		return finiteBranchSurfaceEstimate(factors, joinVarName, allowExact).rows();
+	}
+
+	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimate(List<TupleExpr> factors, String joinVarName,
+			boolean allowExact) {
 		OptimizationCostScope scope = optimizationCostScope.get();
 		if (scope == null) {
-			return finiteBranchSurfaceRowsUncached(factors, joinVarName, allowExact);
+			return finiteBranchSurfaceEstimateUncached(factors, joinVarName, allowExact);
 		}
 		FiniteBranchSurfaceCacheKey cacheKey = FiniteBranchSurfaceCacheKey.of(factors, joinVarName, allowExact);
-		Double cachedRows = scope.finiteBranchSurfaceCache.get(cacheKey);
-		if (cachedRows != null) {
+		FiniteBranchSurfaceEstimate cachedEstimate = scope.finiteBranchSurfaceCache.get(cacheKey);
+		if (cachedEstimate != null) {
 			scope.finiteBranchSurfaceCacheHits++;
 			if (estimateTraceEnabled()) {
 				traceEstimate("surface-list-cache-hit", factors.getFirst(), null,
-						"joinVar=" + joinVarName + ", selected=" + estimateTraceRows(cachedRows));
+						"joinVar=" + joinVarName + ", selected=" + estimateTraceRows(cachedEstimate.rows())
+								+ ", exact=" + cachedEstimate.exactRows());
 			}
-			return cachedRows;
+			return cachedEstimate;
 		}
 		scope.finiteBranchSurfaceCacheMisses++;
-		double rows = finiteBranchSurfaceRowsUncached(factors, joinVarName, allowExact);
-		scope.finiteBranchSurfaceCache.put(cacheKey, rows);
-		return rows;
+		FiniteBranchSurfaceEstimate estimate = finiteBranchSurfaceEstimateUncached(factors, joinVarName, allowExact);
+		scope.finiteBranchSurfaceCache.put(cacheKey, estimate);
+		return estimate;
 	}
 
-	private double finiteBranchSurfaceRowsUncached(List<TupleExpr> factors, String joinVarName, boolean allowExact) {
+	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimateUncached(List<TupleExpr> factors,
+			String joinVarName, boolean allowExact) {
+		double finiteRows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(factors, joinVarName);
+		if (isFiniteNonNegative(finiteRows)) {
+			traceJoinSurfaceSelection("surface-list-finite", null, joinVarName, Double.NaN, finiteRows,
+					Double.NaN, Double.NaN, finiteRows);
+			return new FiniteBranchSurfaceEstimate(finiteRows, true);
+		}
 		countSketchJoinSurfaceCall();
 		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(factors, joinVarName);
 
@@ -3689,13 +3745,13 @@ class LmdbEvaluationStatistics
 		if (isFiniteNonNegative(selectedRows)) {
 			traceJoinSurfaceSelection("surface-list", null, joinVarName, sketchRows, exactRows, pairwiseRows,
 					Double.NaN, selectedRows);
-			return selectedRows;
+			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows));
 		}
 
 		double fallbackRows = sketchRows;
 		traceJoinSurfaceSelection("surface-list-fallback", null, joinVarName, sketchRows, exactRows, pairwiseRows,
 				fallbackRows, fallbackRows);
-		return fallbackRows;
+		return new FiniteBranchSurfaceEstimate(fallbackRows, false);
 	}
 
 	double estimateBoundJoinSurfaceRows(List<TupleExpr> factors, String joinVarName) {
@@ -3706,34 +3762,49 @@ class LmdbEvaluationStatistics
 	}
 
 	private double finiteBranchSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName) {
-		return finiteBranchSurfaceRows(prefixFactors, factor, joinVarName, false);
+		return finiteBranchSurfaceEstimate(prefixFactors, factor, joinVarName, false).rows();
 	}
 
 	private double finiteBranchSurfaceRows(List<TupleExpr> prefixFactors, TupleExpr factor, String joinVarName,
 			boolean allowExact) {
+		return finiteBranchSurfaceEstimate(prefixFactors, factor, joinVarName, allowExact).rows();
+	}
+
+	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimate(List<TupleExpr> prefixFactors, TupleExpr factor,
+			String joinVarName, boolean allowExact) {
 		OptimizationCostScope scope = optimizationCostScope.get();
 		if (scope == null) {
-			return finiteBranchSurfaceRowsUncached(prefixFactors, factor, joinVarName, allowExact);
+			return finiteBranchSurfaceEstimateUncached(prefixFactors, factor, joinVarName, allowExact);
 		}
 		FiniteBranchFactorSurfaceCacheKey cacheKey = FiniteBranchFactorSurfaceCacheKey.of(prefixFactors, factor,
 				joinVarName, allowExact);
-		Double cachedRows = scope.finiteBranchFactorSurfaceCache.get(cacheKey);
-		if (cachedRows != null) {
+		FiniteBranchSurfaceEstimate cachedEstimate = scope.finiteBranchFactorSurfaceCache.get(cacheKey);
+		if (cachedEstimate != null) {
 			scope.finiteBranchFactorSurfaceCacheHits++;
 			if (estimateTraceEnabled()) {
 				traceEstimate("surface-prefix-factor-cache-hit", factor, null,
-						"joinVar=" + joinVarName + ", selected=" + estimateTraceRows(cachedRows));
+						"joinVar=" + joinVarName + ", selected=" + estimateTraceRows(cachedEstimate.rows())
+								+ ", exact=" + cachedEstimate.exactRows());
 			}
-			return cachedRows;
+			return cachedEstimate;
 		}
 		scope.finiteBranchFactorSurfaceCacheMisses++;
-		double rows = finiteBranchSurfaceRowsUncached(prefixFactors, factor, joinVarName, allowExact);
-		scope.finiteBranchFactorSurfaceCache.put(cacheKey, rows);
-		return rows;
+		FiniteBranchSurfaceEstimate estimate = finiteBranchSurfaceEstimateUncached(prefixFactors, factor,
+				joinVarName, allowExact);
+		scope.finiteBranchFactorSurfaceCache.put(cacheKey, estimate);
+		return estimate;
 	}
 
-	private double finiteBranchSurfaceRowsUncached(List<TupleExpr> prefixFactors, TupleExpr factor,
+	private FiniteBranchSurfaceEstimate finiteBranchSurfaceEstimateUncached(List<TupleExpr> prefixFactors,
+			TupleExpr factor,
 			String joinVarName, boolean allowExact) {
+		double finiteRows = sketchBasedJoinEstimator.estimateExactFiniteJoinSurfaceRows(prefixFactors, factor,
+				joinVarName);
+		if (isFiniteNonNegative(finiteRows)) {
+			traceJoinSurfaceSelection("surface-prefix-factor-finite", factor, joinVarName, Double.NaN, finiteRows,
+					Double.NaN, Double.NaN, finiteRows);
+			return new FiniteBranchSurfaceEstimate(finiteRows, true);
+		}
 		countSketchJoinSurfaceCall();
 		double sketchRows = sketchBasedJoinEstimator.estimateSketchJoinSurfaceRows(prefixFactors, factor, joinVarName);
 
@@ -3752,13 +3823,13 @@ class LmdbEvaluationStatistics
 		if (isFiniteNonNegative(selectedRows)) {
 			traceJoinSurfaceSelection("surface-prefix-factor", factor, joinVarName, sketchRows, exactRows,
 					pairwiseRows, Double.NaN, selectedRows);
-			return selectedRows;
+			return new FiniteBranchSurfaceEstimate(selectedRows, isFiniteNonNegative(exactRows));
 		}
 
 		double fallbackRows = sketchRows;
 		traceJoinSurfaceSelection("surface-prefix-factor-fallback", factor, joinVarName, sketchRows, exactRows,
 				pairwiseRows, fallbackRows, fallbackRows);
-		return fallbackRows;
+		return new FiniteBranchSurfaceEstimate(fallbackRows, false);
 	}
 
 	private double selectJoinSurfaceRows(double sketchRows, double exactRows, double pairwiseRows) {
@@ -3892,13 +3963,16 @@ class LmdbEvaluationStatistics
 			if (prefixBridge == null || !isPositiveFinite(prefixBridge.rows())) {
 				continue;
 			}
-			double continuationRows = bridgeContinuationRows(leftFactors, rightWithoutBridge, bridge, prefixBridge,
-					finiteBindingValues);
+			BridgeContinuationEstimate continuation = bridgeContinuationRows(leftFactors, rightWithoutBridge, bridge,
+					prefixBridge, finiteBindingValues);
+			double continuationRows = continuation == null ? Double.NaN : continuation.rows();
 			double bridgeRightRows = Double.NaN;
 			double bridgeRows = Double.NaN;
 			double bridgeProductRows = continuationRows;
 			String source = "nested-page-walk";
-			double blendedContinuationRows = bridgeContinuationBlendRows(prefixBridge, continuationRows);
+			double blendedContinuationRows = continuation != null && continuation.exactRows()
+					? Double.NaN
+					: bridgeContinuationBlendRows(prefixBridge, continuationRows);
 			if (isPositiveFinite(blendedContinuationRows) && (!isPositiveFinite(bridgeProductRows)
 					|| blendedContinuationRows > bridgeProductRows)) {
 				bridgeProductRows = blendedContinuationRows;
@@ -4168,15 +4242,16 @@ class LmdbEvaluationStatistics
 		return joinVarNames == null || joinVarNames.isEmpty() ? null : String.join(",", joinVarNames);
 	}
 
-	private double bridgeContinuationRows(List<TupleExpr> leftFactors, List<TupleExpr> rightWithoutBridge,
-			StatementPattern bridge, PrefixBridgeEstimate prefixBridge, Map<String, Set<Value>> finiteBindingValues) {
+	private BridgeContinuationEstimate bridgeContinuationRows(List<TupleExpr> leftFactors,
+			List<TupleExpr> rightWithoutBridge, StatementPattern bridge, PrefixBridgeEstimate prefixBridge,
+			Map<String, Set<Value>> finiteBindingValues) {
 		if (rightWithoutBridge == null || rightWithoutBridge.isEmpty() || bridge == null || prefixBridge == null
 				|| !isPositiveFinite(prefixBridge.rows())) {
-			return Double.NaN;
+			return null;
 		}
 		Set<String> boundNames = new HashSet<>(plannerBindingNames(bridge.getBindingNames()));
 		if (boundNames.isEmpty()) {
-			return Double.NaN;
+			return null;
 		}
 		List<TupleExpr> prefixFactors = new ArrayList<>(rightWithoutBridge.size() + 1
 				+ (leftFactors == null ? 0 : leftFactors.size()));
@@ -4185,19 +4260,25 @@ class LmdbEvaluationStatistics
 		}
 		prefixFactors.add(bridge);
 		double rows = prefixBridge.rows();
+		boolean exactRows = false;
+		Set<String> absorbedFiniteBindingNames = new HashSet<>();
 		List<TupleExpr> orderedRightFactors = reachableFactorOrder(boundNames, rightWithoutBridge);
 		if (orderedRightFactors.isEmpty()) {
-			return Double.NaN;
+			return null;
 		}
 		for (TupleExpr factor : orderedRightFactors) {
 			Set<String> factorNames = plannerBindingNames(factor.getBindingNames());
 			if (factorNames.isEmpty() || Collections.disjoint(boundNames, factorNames)) {
-				return Double.NaN;
+				return null;
 			}
 			if (boundNames.containsAll(factorNames)) {
-				rows = repeatedBoundGuardRows(prefixFactors, factor, factorNames, rows);
+				if (isAbsorbedFiniteBindingGuard(factor, factorNames, absorbedFiniteBindingNames)) {
+					rows = repeatedFiniteBindingMultiplicityRows(factor, factorNames, rows);
+				} else {
+					rows = repeatedBoundGuardRows(prefixFactors, factor, factorNames, rows);
+				}
 				if (!isFiniteNonNegative(rows)) {
-					return Double.NaN;
+					return null;
 				}
 				prefixFactors.add(factor);
 				continue;
@@ -4207,7 +4288,7 @@ class LmdbEvaluationStatistics
 					prefixFactors);
 			Optional<FactorCostEstimate> factorEstimate = estimateFactorCost(factor, context);
 			if (factorEstimate.isEmpty()) {
-				return Double.NaN;
+				return null;
 			}
 			double factorRows = factorEstimate.get().getOutputRows();
 			if (!isPositiveFinite(factorRows)) {
@@ -4217,17 +4298,39 @@ class LmdbEvaluationStatistics
 					prefixFactors, factor, finiteBindingValues);
 			if (finiteConstrainedEstimate != null && isFiniteNonNegative(finiteConstrainedEstimate.surfaceRows())) {
 				factorRows = finiteConstrainedRowsWithPrefixMultiplicity(finiteConstrainedEstimate, prefixBridge);
+				exactRows = finiteConstrainedEstimate.exactRows();
+				if (finiteConstrainedEstimate.finiteVarName() != null) {
+					absorbedFiniteBindingNames.add(finiteConstrainedEstimate.finiteVarName());
+				}
 			} else {
 				factorRows = repeatedBoundProductRows(prefixFactors, factor, rows, factorRows, finiteBindingValues);
+				exactRows = false;
 			}
 			if (!isFiniteNonNegative(factorRows)) {
-				return Double.NaN;
+				return null;
 			}
 			rows = factorRows;
 			boundNames.addAll(factorNames);
 			prefixFactors.add(factor);
 		}
-		return rows;
+		return new BridgeContinuationEstimate(rows, exactRows);
+	}
+
+	private boolean isAbsorbedFiniteBindingGuard(TupleExpr factor, Set<String> factorNames,
+			Set<String> absorbedFiniteBindingNames) {
+		return factor instanceof BindingSetAssignment && factorNames != null && !factorNames.isEmpty()
+				&& absorbedFiniteBindingNames != null && absorbedFiniteBindingNames.containsAll(factorNames);
+	}
+
+	private double repeatedFiniteBindingMultiplicityRows(TupleExpr factor, Set<String> factorNames, double rows) {
+		if (!isFiniteNonNegative(rows)) {
+			return Double.NaN;
+		}
+		// If exact finite relation math already joined VALUES into a statement, applying selectivity here would
+		// double-count the same restriction. The remaining BindingSetAssignment only contributes bag multiplicity.
+		double multiplicity = averageGuardMultiplicity(factor, factorNames);
+		double adjustedRows = rows * multiplicity;
+		return isFiniteNonNegative(adjustedRows) ? adjustedRows : rows;
 	}
 
 	private double finiteConstrainedRowsWithPrefixMultiplicity(FiniteDerivedSurfaceEstimate estimate,
@@ -4364,8 +4467,12 @@ class LmdbEvaluationStatistics
 		boolean rightIntroducesNoNewBindings = !introducesNewBinding(rightFactor, allLeftBindingNames);
 		BoundJoinProductEstimate fullPrefixEstimate = null;
 		for (String sharedBindingName : leftBindingNames) {
-			double prefixSurfaceRows = finiteBranchSurfaceRows(leftFactors, sharedBindingName);
-			double prefixRightSurfaceRows = finiteBranchSurfaceRows(leftFactors, rightFactor, sharedBindingName);
+			FiniteBranchSurfaceEstimate prefixSurface = finiteBranchSurfaceEstimate(leftFactors, sharedBindingName,
+					false);
+			FiniteBranchSurfaceEstimate prefixRightSurface = finiteBranchSurfaceEstimate(leftFactors, rightFactor,
+					sharedBindingName, false);
+			double prefixSurfaceRows = prefixSurface.rows();
+			double prefixRightSurfaceRows = prefixRightSurface.rows();
 			traceBoundJoinProductCandidate(rightFactor, "full-prefix", sharedBindingName, prefixRows,
 					prefixSurfaceRows, prefixRightSurfaceRows);
 			if (!isPositiveFinite(prefixSurfaceRows) || !isPositiveFinite(prefixRightSurfaceRows)) {
@@ -4376,7 +4483,8 @@ class LmdbEvaluationStatistics
 				continue;
 			}
 			BoundJoinProductEstimate estimate = new BoundJoinProductEstimate(rows, prefixRows, prefixSurfaceRows,
-					prefixRightSurfaceRows, sharedBindingName);
+					prefixRightSurfaceRows, sharedBindingName,
+					prefixSurface.exactRows() && prefixRightSurface.exactRows());
 			fullPrefixEstimate = selectFullPrefixBoundJoinEstimate(fullPrefixEstimate, estimate,
 					rightIntroducesNoNewBindings);
 		}
@@ -4387,7 +4495,7 @@ class LmdbEvaluationStatistics
 		if (bestEstimate != null && rightIntroducesNoNewBindings && bestEstimate.productRows() > prefixRows) {
 			bestEstimate = new BoundJoinProductEstimate(prefixRows, bestEstimate.prefixRows(),
 					bestEstimate.prefixSurfaceRows(), bestEstimate.prefixRightSurfaceRows(),
-					bestEstimate.joinVarName());
+					bestEstimate.joinVarName(), bestEstimate.exactRows());
 		}
 		return bestEstimate;
 	}
@@ -4414,6 +4522,11 @@ class LmdbEvaluationStatistics
 		if (bridgeEstimate == null) {
 			return fullPrefixEstimate;
 		}
+		// Exact full-prefix finite relation math is evidence, while a bridge candidate is only a projection through
+		// one join variable. Prefer the stronger estimate instead of encoding a VALUES placement rule.
+		if (fullPrefixEstimate.exactRows() != bridgeEstimate.exactRows()) {
+			return fullPrefixEstimate.exactRows() ? fullPrefixEstimate : bridgeEstimate;
+		}
 		if (rightIntroducesNoNewBindings) {
 			return selectLargerBoundJoinEstimate(fullPrefixEstimate, bridgeEstimate);
 		}
@@ -4434,7 +4547,7 @@ class LmdbEvaluationStatistics
 				: bridgeEstimate;
 		return new BoundJoinProductEstimate(blendedRows, metricSource.prefixRows(),
 				metricSource.prefixSurfaceRows(), metricSource.prefixRightSurfaceRows(),
-				metricSource.joinVarName());
+				metricSource.joinVarName(), false);
 	}
 
 	private boolean requiresTypeDistributionBlend(TupleExpr factor) {
@@ -4466,13 +4579,16 @@ class LmdbEvaluationStatistics
 				if (leftFactor == null || !leftFactor.getBindingNames().contains(sharedBindingName)) {
 					continue;
 				}
-				double bridgeSurfaceRows = finiteBranchSurfaceRows(List.of(leftFactor), sharedBindingName);
+				FiniteBranchSurfaceEstimate bridgeSurface = finiteBranchSurfaceEstimate(List.of(leftFactor),
+						sharedBindingName, false);
+				double bridgeSurfaceRows = bridgeSurface.rows();
 				double bridgeDenominatorRows = bridgeFactorRows(leftFactor);
 				if (!isPositiveFinite(bridgeDenominatorRows)) {
 					bridgeDenominatorRows = bridgeSurfaceRows;
 				}
-				double bridgeRightSurfaceRows = finiteBranchSurfaceRows(List.of(leftFactor), rightFactor,
-						sharedBindingName);
+				FiniteBranchSurfaceEstimate bridgeRightSurface = finiteBranchSurfaceEstimate(List.of(leftFactor),
+						rightFactor, sharedBindingName, false);
+				double bridgeRightSurfaceRows = bridgeRightSurface.rows();
 				traceBoundJoinProductCandidate(rightFactor, "single-bridge", sharedBindingName, prefixRows,
 						bridgeDenominatorRows, bridgeRightSurfaceRows);
 				double averageBridgeRightSurfaceRows = domainAverageBridgeRightSurfaceRows(rightFactor,
@@ -4501,7 +4617,7 @@ class LmdbEvaluationStatistics
 					continue;
 				}
 				BoundJoinProductEstimate estimate = new BoundJoinProductEstimate(rows, prefixRows,
-						bridgeDenominatorRows, bridgeRightSurfaceRows, sharedBindingName);
+						bridgeDenominatorRows, bridgeRightSurfaceRows, sharedBindingName, false);
 				if (bestEstimate == null || rows > bestEstimate.productRows()) {
 					bestEstimate = estimate;
 				}
@@ -6321,8 +6437,8 @@ class LmdbEvaluationStatistics
 		private final Map<FiniteDerivedSurfaceCacheKey, Optional<FiniteDerivedSurfaceEstimate>> finiteDerivedSurfaceCache = new HashMap<>();
 		private final Map<FiniteBranchRowsCacheKey, Double> finiteBranchRowsCache = new HashMap<>();
 		private final Map<FiniteBranchRowsCacheKey, Optional<ConnectedBranchEstimate>> connectedFiniteBranchEstimateCache = new HashMap<>();
-		private final Map<FiniteBranchSurfaceCacheKey, Double> finiteBranchSurfaceCache = new HashMap<>();
-		private final Map<FiniteBranchFactorSurfaceCacheKey, Double> finiteBranchFactorSurfaceCache = new HashMap<>();
+		private final Map<FiniteBranchSurfaceCacheKey, FiniteBranchSurfaceEstimate> finiteBranchSurfaceCache = new HashMap<>();
+		private final Map<FiniteBranchFactorSurfaceCacheKey, FiniteBranchSurfaceEstimate> finiteBranchFactorSurfaceCache = new HashMap<>();
 		private final Map<IRI, Optional<RdfTermDomain>> predicateObjectDomainCache = new HashMap<>();
 		private long finiteDerivedSurfaceCacheHits;
 		private long finiteDerivedSurfaceCacheMisses;
@@ -6739,7 +6855,15 @@ class LmdbEvaluationStatistics
 	}
 
 	private record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,
-			boolean exactRows) {
+			boolean exactRows, String finiteVarName) {
+
+	}
+
+	private record FiniteBranchSurfaceEstimate(double rows, boolean exactRows) {
+
+	}
+
+	private record BridgeContinuationEstimate(double rows, boolean exactRows) {
 
 	}
 
@@ -6750,7 +6874,7 @@ class LmdbEvaluationStatistics
 	}
 
 	record BoundJoinProductEstimate(double productRows, double prefixRows, double prefixSurfaceRows,
-			double prefixRightSurfaceRows, String joinVarName) {
+			double prefixRightSurfaceRows, String joinVarName, boolean exactRows) {
 
 	}
 

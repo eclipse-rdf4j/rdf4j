@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactConnectedJoinEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactFiniteJoinSurfaceRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinRequest;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.ExactJoinSurfaceRequest;
@@ -112,6 +113,106 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		} catch (IOException | RuntimeException e) {
 			return ExactConnectedJoinEstimate.unsupported();
 		}
+	}
+
+	@Override
+	public double estimateFiniteJoinSurface(ExactFiniteJoinSurfaceRequest request) {
+		if (request == null || request.rows() == null || request.rows()
+				.isEmpty() || request.surfaceVarName() == null) {
+			trace("finite-unsupported", request, "reason=invalid-request");
+			return UNSUPPORTED;
+		}
+		Guard guard = readGuard.acquire();
+		if (guard == null) {
+			trace("finite-unsupported", request, "reason=lock-unavailable");
+			return UNSUPPORTED;
+		}
+		try (guard; Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			double rows = estimateFiniteJoinSurface(txn, request);
+			trace("finite-result", request, "rows=" + rows);
+			return Double.isFinite(rows) && rows >= 0.0d ? rows : NO_EXACT_ESTIMATE;
+		} catch (IOException | RuntimeException e) {
+			trace("finite-unsupported", request, "reason=" + e.getClass()
+					.getSimpleName());
+			return UNSUPPORTED;
+		}
+	}
+
+	private double estimateFiniteJoinSurface(Txn txn, ExactFiniteJoinSurfaceRequest request) throws IOException {
+		List<Map<String, Long>> rows = finiteRowsToIds(request.rows());
+		if (rows.isEmpty()) {
+			trace("finite-empty-values", request, "inputRows=" + request.rows()
+					.size());
+			return 0.0d;
+		}
+		long rowBudget = request.rowBudget() <= 0L ? CONNECTED_JOIN_MAX_ENUMERATED_ROWS : request.rowBudget();
+		for (StatementPattern pattern : request.patterns()) {
+			rows = expandFiniteRows(txn, rows, pattern, rowBudget);
+			if (rows == null) {
+				trace("finite-budget-exceeded", request, "pattern=" + pattern + ", budget=" + rowBudget);
+				return NO_EXACT_ESTIMATE;
+			}
+			if (rows.isEmpty()) {
+				trace("finite-empty-pattern", request, "pattern=" + pattern);
+				return 0.0d;
+			}
+		}
+		for (Map<String, Long> row : rows) {
+			if (row.containsKey(request.surfaceVarName())) {
+				return rows.size();
+			}
+		}
+		trace("finite-unsupported", request, "reason=surface-unbound");
+		return UNSUPPORTED;
+	}
+
+	private List<Map<String, Long>> finiteRowsToIds(List<Map<String, Value>> rows) throws IOException {
+		List<Map<String, Long>> converted = new ArrayList<>(rows.size());
+		for (Map<String, Value> row : rows) {
+			Map<String, Long> ids = new HashMap<>();
+			boolean missing = false;
+			for (Map.Entry<String, Value> entry : row.entrySet()) {
+				long id = storedId(entry.getValue());
+				if (id == MISSING_ID) {
+					missing = true;
+					break;
+				}
+				ids.put(entry.getKey(), id);
+			}
+			if (!missing) {
+				converted.add(ids);
+			}
+		}
+		return converted;
+	}
+
+	private List<Map<String, Long>> expandFiniteRows(Txn txn, List<Map<String, Long>> input,
+			StatementPattern pattern, long rowBudget) throws IOException {
+		List<Map<String, Long>> output = new ArrayList<>();
+		for (Map<String, Long> row : input) {
+			PatternIds ids = patternIds(pattern, row);
+			if (ids == null) {
+				return null;
+			}
+			if (ids.zeroRows()) {
+				continue;
+			}
+			try (RecordIterator records = tripleStore.getTriples(txn, ids.subjectId(), ids.predicateId(),
+					ids.objectId(), ids.contextId(), true)) {
+				long[] quad;
+				while ((quad = records.next()) != null) {
+					Map<String, Long> merged = mergeBindings(pattern, quad, row);
+					if (merged == null) {
+						continue;
+					}
+					output.add(merged);
+					if (output.size() > rowBudget) {
+						return null;
+					}
+				}
+			}
+		}
+		return output;
 	}
 
 	private ConnectedJoinEstimate estimateConnectedJoin(Txn txn, ExactJoinRequest request) throws IOException {
@@ -933,6 +1034,23 @@ final class LmdbSamplingJoinCardinalityEstimator implements ExactJoinSurfaceProv
 		System.err.println("[lmdb-id-surface-trace] event=" + event
 				+ " connected=true patterns=" + request.patterns()
 						.size()
+				+ (details == null || details.isEmpty() ? "" : " details={" + details + "}"));
+	}
+
+	private static void trace(String event, ExactFiniteJoinSurfaceRequest request, String details) {
+		if (!Boolean.getBoolean(ESTIMATE_TRACE_PROPERTY)) {
+			return;
+		}
+		String requestDetails = request == null
+				? "request=null"
+				: "surface=" + request.surfaceVarName()
+						+ " rows=" + request.rows()
+								.size()
+						+ " patterns=" + request.patterns()
+								.size()
+						+ " budget=" + request.rowBudget();
+		System.err.println("[lmdb-id-surface-trace] event=" + event
+				+ " finite=true " + requestDetails
 				+ (details == null || details.isEmpty() ? "" : " details={" + details + "}"));
 	}
 
