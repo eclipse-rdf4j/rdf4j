@@ -83,6 +83,38 @@ class RdfTermDomainTest {
 	}
 
 	@Test
+	void observedCanonicalIntegerJoinTracksMinAndMax() {
+		RdfTermDomain minusThree = RdfTermDomain.classify(VF.createLiteral("-3", XSD.INT));
+		RdfTermDomain eleven = RdfTermDomain.classify(VF.createLiteral("11", XSD.INT));
+
+		RdfTermDomain range = minusThree.joinObserved(eleven);
+
+		assertHas(range, RdfTermDomain.Fact.CANONICAL_INTEGER);
+		assertIntegerRange(range, -3, 11);
+		assertTrue(range.toString().contains("integerRange=[-3, 11]"));
+		assertNotEquals(range.fingerprint(), RdfTermDomain.CANONICAL_INTEGER.fingerprint());
+	}
+
+	@Test
+	void finiteMeetKeepsOnlyValuesInsideObservedIntegerRange() {
+		RdfTermDomain observedRange = RdfTermDomain.classify(VF.createLiteral("50", XSD.INT))
+				.joinObserved(RdfTermDomain.classify(VF.createLiteral("60", XSD.INT)));
+		var low = VF.createLiteral("49", XSD.INT);
+		var min = VF.createLiteral("50", XSD.INT);
+		var max = VF.createLiteral("60", XSD.INT);
+		var high = VF.createLiteral("61", XSD.INT);
+
+		RdfTermDomain matched = observedRange.meetRequired(RdfTermDomain.finiteValues(List.of(low, min, max, high)));
+
+		assertEquals(2, matched.finiteValues().size());
+		assertFalse(matched.finiteValues().contains(low));
+		assertTrue(matched.finiteValues().contains(min));
+		assertTrue(matched.finiteValues().contains(max));
+		assertFalse(matched.finiteValues().contains(high));
+		assertIntegerRange(matched, 50, 60);
+	}
+
+	@Test
 	void fingerprintIncludesFiniteValues() {
 		RdfTermDomain intSeven = RdfTermDomain.finiteValues(List.of(VF.createLiteral("7", XSD.INT)));
 		RdfTermDomain intEight = RdfTermDomain.finiteValues(List.of(VF.createLiteral("8", XSD.INT)));
@@ -97,5 +129,9 @@ class RdfTermDomainTest {
 
 	private static void assertHasDatatype(RdfTermDomain domain, CoreDatatype.XSD datatype) {
 		assertTrue(domain.hasDatatype(datatype), () -> "Expected " + domain + " to contain " + datatype);
+	}
+
+	private static void assertIntegerRange(RdfTermDomain domain, long minInclusive, long maxInclusive) {
+		assertEquals(new RdfTermDomain.IntegerRange(minInclusive, maxInclusive), domain.integerRange().orElseThrow());
 	}
 }

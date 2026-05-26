@@ -15,6 +15,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -79,14 +80,52 @@ final class RdfTermDomain {
 
 	private final long mask;
 	private final Set<Value> finiteValues;
+	private final IntegerRange integerRange;
 
 	private RdfTermDomain(long mask) {
-		this(mask, null);
+		this(mask, null, null);
 	}
 
 	private RdfTermDomain(long mask, Set<Value> finiteValues) {
+		this(mask, finiteValues, null);
+	}
+
+	private RdfTermDomain(long mask, Set<Value> finiteValues, IntegerRange integerRange) {
 		this.mask = mask;
 		this.finiteValues = finiteValues;
+		this.integerRange = integerRange;
+	}
+
+	record IntegerRange(long minInclusive, long maxInclusive) {
+
+		IntegerRange {
+			if (minInclusive > maxInclusive) {
+				throw new IllegalArgumentException("minInclusive must not be greater than maxInclusive");
+			}
+		}
+
+		private IntegerRange join(IntegerRange other) {
+			return new IntegerRange(Math.min(minInclusive, other.minInclusive),
+					Math.max(maxInclusive, other.maxInclusive));
+		}
+
+		private IntegerRange intersect(IntegerRange other) {
+			long min = Math.max(minInclusive, other.minInclusive);
+			long max = Math.min(maxInclusive, other.maxInclusive);
+			return min > max ? null : new IntegerRange(min, max);
+		}
+
+		boolean contains(long value) {
+			return value >= minInclusive && value <= maxInclusive;
+		}
+
+		boolean touchesEndpoint(long value) {
+			return value == minInclusive || value == maxInclusive;
+		}
+	}
+
+	Optional<IntegerRange> integerRange() {
+		return Optional.ofNullable(integerRange);
 	}
 
 	boolean has(Fact fact) {
@@ -145,7 +184,9 @@ final class RdfTermDomain {
 	}
 
 	String fingerprint() {
-		return Long.toUnsignedString(mask) + ':' + (finiteValues == null ? 0 : finiteValues.hashCode());
+		return Long.toUnsignedString(mask)
+				+ ':' + (finiteValues == null ? 0 : finiteValues.hashCode())
+				+ ':' + (integerRange == null ? "" : integerRange.minInclusive + "-" + integerRange.maxInclusive);
 	}
 
 	boolean isFinite() {
@@ -185,7 +226,9 @@ final class RdfTermDomain {
 			values.addAll(observed.finiteValues);
 			joinedFiniteValues = immutableSet(values);
 		}
-		return fromMask(possibleFacts | universalFacts, joinedFiniteValues);
+		long joinedMask = possibleFacts | universalFacts;
+		return fromMask(joinedMask, joinedFiniteValues, joinIntegerRanges(joinedMask, integerRange,
+				observed.integerRange));
 	}
 
 	RdfTermDomain meetRequired(RdfTermDomain required) {
@@ -226,22 +269,34 @@ final class RdfTermDomain {
 		if (isContradictory(result)) {
 			return EMPTY;
 		}
-		return fromMask(result);
+		return fromMask(result, null, meetIntegerRanges(result, integerRange, required.integerRange));
 	}
 
 	static RdfTermDomain fromMask(long mask) {
-		return fromMask(mask, null);
+		return fromMask(mask, (Set<Value>) null);
 	}
 
 	private static RdfTermDomain fromMask(long mask, Set<Value> finiteValues) {
+		return fromMask(mask, finiteValues, null);
+	}
+
+	static RdfTermDomain fromMask(long mask, IntegerRange integerRange) {
+		return fromMask(mask, null, integerRange);
+	}
+
+	private static RdfTermDomain fromMask(long mask, Set<Value> finiteValues, IntegerRange integerRange) {
 		if ((mask & EMPTY_MASK) != 0L) {
 			return EMPTY;
 		}
 		if ((mask & UNKNOWN_MASK) != 0L) {
 			return UNKNOWN;
 		}
+		integerRange = usableIntegerRange(mask, integerRange);
 		if (finiteValues != null) {
-			return finiteValues.isEmpty() ? EMPTY : new RdfTermDomain(mask & ~STATE_MASK, finiteValues);
+			return finiteValues.isEmpty() ? EMPTY : new RdfTermDomain(mask & ~STATE_MASK, finiteValues, integerRange);
+		}
+		if (integerRange != null) {
+			return new RdfTermDomain(mask & ~STATE_MASK, null, integerRange);
 		}
 		if (mask == UNRESTRICTED.mask) {
 			return UNRESTRICTED;
@@ -278,11 +333,12 @@ final class RdfTermDomain {
 			RdfTermDomain valueDomain = classify(value);
 			domain = domain == null ? valueDomain : domain.joinObserved(valueDomain);
 		}
-		return fromMask(domain.mask, immutableSet(exactValues));
+		return fromMask(domain.mask, immutableSet(exactValues), domain.integerRange);
 	}
 
 	static RdfTermDomain classify(Value value) {
-		return fromMask(classifyMask(value));
+		long mask = classifyMask(value);
+		return fromMask(mask, canonicalIntegerRange(value, mask));
 	}
 
 	static long classifyMask(Value value) {
@@ -427,7 +483,40 @@ final class RdfTermDomain {
 		if (domain.has(Fact.NUMBER) && !valueDomain.has(Fact.NUMBER)) {
 			return false;
 		}
-		return !domain.has(Fact.CANONICAL_INTEGER) || valueDomain.has(Fact.CANONICAL_INTEGER);
+		if (domain.has(Fact.CANONICAL_INTEGER) && !valueDomain.has(Fact.CANONICAL_INTEGER)) {
+			return false;
+		}
+		if (domain.integerRange != null) {
+			IntegerRange valueRange = valueDomain.integerRange;
+			return valueRange != null
+					&& domain.integerRange.contains(valueRange.minInclusive)
+					&& domain.integerRange.contains(valueRange.maxInclusive);
+		}
+		return true;
+	}
+
+	private static IntegerRange joinIntegerRanges(long mask, IntegerRange left, IntegerRange right) {
+		if ((mask & Fact.CANONICAL_INTEGER.mask()) == 0L || left == null || right == null) {
+			return null;
+		}
+		return left.join(right);
+	}
+
+	private static IntegerRange meetIntegerRanges(long mask, IntegerRange left, IntegerRange right) {
+		if ((mask & Fact.CANONICAL_INTEGER.mask()) == 0L) {
+			return null;
+		}
+		if (left == null) {
+			return right;
+		}
+		if (right == null) {
+			return left;
+		}
+		return left.intersect(right);
+	}
+
+	private static IntegerRange usableIntegerRange(long mask, IntegerRange integerRange) {
+		return (mask & Fact.CANONICAL_INTEGER.mask()) == 0L ? null : integerRange;
 	}
 
 	private static long datatypeMask(CoreDatatype.XSD datatype) {
@@ -517,6 +606,18 @@ final class RdfTermDomain {
 		}
 	}
 
+	private static IntegerRange canonicalIntegerRange(Value value, long mask) {
+		if ((mask & Fact.CANONICAL_INTEGER.mask()) == 0L || !(value instanceof Literal literal)) {
+			return null;
+		}
+		try {
+			long integerValue = Long.parseLong(literal.getLabel());
+			return new IntegerRange(integerValue, integerValue);
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
 	private static long classifyCalendar(long mask, String label, CoreDatatype.XSD xsdDatatype) {
 		if (!XMLDatatypeUtil.isValidValue(label, xsdDatatype)) {
 			return mask;
@@ -561,12 +662,13 @@ final class RdfTermDomain {
 	public boolean equals(Object other) {
 		return other instanceof RdfTermDomain domain
 				&& mask == domain.mask
-				&& Objects.equals(finiteValues, domain.finiteValues);
+				&& Objects.equals(finiteValues, domain.finiteValues)
+				&& Objects.equals(integerRange, domain.integerRange);
 	}
 
 	@Override
 	public int hashCode() {
-		return 31 * Long.hashCode(mask) + Objects.hashCode(finiteValues);
+		return Objects.hash(mask, finiteValues, integerRange);
 	}
 
 	@Override
@@ -594,6 +696,10 @@ final class RdfTermDomain {
 		}
 		if (finiteValues != null) {
 			first = appendFact(builder, first, "finiteValues=" + finiteValues);
+		}
+		if (integerRange != null) {
+			first = appendFact(builder, first,
+					"integerRange=[" + integerRange.minInclusive + ", " + integerRange.maxInclusive + "]");
 		}
 		return builder.append(']').toString();
 	}

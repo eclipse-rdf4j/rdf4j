@@ -169,6 +169,39 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	@Test
+	void canonicalIntegerPredicateGuaranteePersistsMinAndMaxRange(@TempDir File dataDir) throws Exception {
+		IRI predicate = VF.createIRI("http://example.com/value");
+
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), predicate, VF.createLiteral("11", XSD.INT));
+				connection.add(VF.createIRI("http://example.com/s2"), predicate, VF.createLiteral("-2", XSD.INT));
+				connection.add(VF.createIRI("http://example.com/s3"), predicate, VF.createLiteral("5", XSD.INT));
+			}
+
+			RdfTermDomain cached = cachedGuarantee(repository, predicate).orElseThrow();
+			RdfTermDomain persisted = persistedGuarantee(repository, predicate).orElseThrow();
+			assertHas(cached, RdfTermDomain.Fact.CANONICAL_INTEGER);
+			assertHasDatatype(cached, CoreDatatype.XSD.INT);
+			assertEquals(cached, persisted);
+			assertIntegerRange(cached, -2, 11);
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = repository(dataDir);
+		try {
+			RdfTermDomain reopenedGuarantee = cachedGuarantee(reopened, predicate).orElseThrow();
+			assertHas(reopenedGuarantee, RdfTermDomain.Fact.CANONICAL_INTEGER);
+			assertHasDatatype(reopenedGuarantee, CoreDatatype.XSD.INT);
+			assertIntegerRange(reopenedGuarantee, -2, 11);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
 	void rebuildsDegradedGuaranteeOnRestartAfterPotentiallyRestoringDelete(@TempDir File dataDir) {
 		IRI predicate = VF.createIRI("http://example.com/value");
 		IRI firstSubject = VF.createIRI("http://example.com/s1");
@@ -415,7 +448,8 @@ class LmdbPredicateObjectDomainIndexTest {
 
 			assertTrue(snapshot.plan.contains("optimizer.guaranteeOptions=generated=1"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
-					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT]"), snapshot.plan);
+					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT, integerRange=[7, 7]]"),
+					snapshot.plan);
 			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();
@@ -452,7 +486,8 @@ class LmdbPredicateObjectDomainIndexTest {
 			assertTrue(snapshot.plan.contains("selected=finite-anchor:o"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("BindingSetAssignment"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
-					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT, INTEGER]"), snapshot.plan);
+					+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT, INTEGER, "
+					+ "integerRange=[0, 199]]"), snapshot.plan);
 			assertEquals(2, countResults(repository, query));
 		} finally {
 			repository.shutDown();
@@ -484,8 +519,8 @@ class LmdbPredicateObjectDomainIndexTest {
 			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
 					+ "LITERAL_WITHOUT_LANGUAGE, BOOLEAN]"), snapshot.plan);
-			assertTrue(snapshot.plan.contains("selected=finite-anchor:o"), snapshot.plan);
-			assertTrue(snapshot.plan.contains("BindingSetAssignment"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("selected=original"), snapshot.plan);
+			assertTrue(snapshot.plan.contains("finite-anchor:o[valid"), snapshot.plan);
 			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();
@@ -662,6 +697,11 @@ class LmdbPredicateObjectDomainIndexTest {
 
 	private static void assertHasDatatype(RdfTermDomain guarantee, CoreDatatype.XSD datatype) {
 		assertTrue(guarantee.hasDatatype(datatype), () -> "Expected " + guarantee + " to contain " + datatype);
+	}
+
+	private static void assertIntegerRange(RdfTermDomain guarantee, long minInclusive, long maxInclusive) {
+		assertEquals(new RdfTermDomain.IntegerRange(minInclusive, maxInclusive),
+				guarantee.integerRange().orElseThrow());
 	}
 
 	private static void downgradeGuaranteeMetadata(File dataDir) {

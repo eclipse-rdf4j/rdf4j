@@ -77,6 +77,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	private static final IRI CONNECTED_NODE = VF.createIRI("http://example.com/theme/connected/Node");
 	private static final IRI CONNECTED_WEIGHT = VF.createIRI("http://example.com/theme/connected/weight");
 	private static final IRI MED_CODE = VF.createIRI("http://example.com/theme/medical/code");
+	private static final IRI MED_VALUE = VF.createIRI("http://example.com/theme/medical/value");
 	private static final IRI MED_MEDICATION = VF.createIRI("http://example.com/theme/medical/Medication");
 	private static final IRI LIB_NAME = VF.createIRI("http://example.com/theme/library/name");
 	private static final IRI LIB_WRITTEN_BY = VF.createIRI("http://example.com/theme/library/writtenBy");
@@ -697,6 +698,46 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
+	void boundedIntegerRangeFilterBecomesSemanticValuesRewrite(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticMedicalValueRangeData(repository);
+			store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+
+			TupleExpr optimized;
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(medicalValueRangeFilterQuery())
+						.explain(Explanation.Level.Optimized);
+				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedPlan = explanation.toString();
+			}
+
+			BindingSetAssignment valueAnchor = findBindingSetAssignment(optimized, "value")
+					.orElseThrow(() -> new AssertionError("Expected bounded integer FILTER to become VALUES ?value: "
+							+ optimized));
+			assertEquals(10, countBindingSets(valueAnchor),
+					"The generated VALUES rows should cover the finite [50, 60) predicate range: " + optimized);
+			assertFalse(containsCompareFor(optimized, "value"),
+					"The selected range VALUES anchor should satisfy the original filter: " + optimized);
+			assertTrue(optimizedPlan.contains("selected=finite-anchor:value"),
+					"The semantic range finite anchor should be selected explicitly:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("filterInValuesEquivalent"),
+					"The selected rewrite should carry the filter/VALUES equivalence proof fact:\n"
+							+ optimizedPlan);
+			assertTrue(optimizedPlan.contains("integerRange=[50, 1049]"),
+					"The predicate object guarantee should expose the observed integer min/max:\n"
+							+ optimizedPlan);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void knownPredicateObjectVarsShowGuaranteeDiagnostics(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -1041,6 +1082,17 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				Resource medication = VF.createIRI("urn:test:selective-medication:" + i);
 				connection.add(medication, RDF_TYPE, MED_MEDICATION);
 				connection.add(medication, MED_CODE, VF.createLiteral("MED-" + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadSyntheticMedicalValueRangeData(SailRepository repository) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 50; i < 1050; i++) {
+				Resource observation = VF.createIRI("urn:test:medical-observation:" + i);
+				connection.add(observation, MED_VALUE, VF.createLiteral(String.valueOf(i), XSD.INT));
 			}
 			connection.commit();
 		}
@@ -1439,6 +1491,15 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 				"}");
 	}
 
+	private static String medicalValueRangeFilterQuery() {
+		return String.join("\n",
+				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+				"SELECT * WHERE {",
+				"  ?obs <" + MED_VALUE + "> ?value .",
+				"  FILTER (?value < \"60\"^^xsd:int)",
+				"}");
+	}
+
 	private record PlannedBranch(Optional<JoinOrderPlanner.JoinOrderPlan> plan, BindingSetAssignment targets,
 			StatementPattern typePattern, StatementPattern feedsPattern, Filter filteredNamePattern,
 			JoinFactorCostModel.FactorCostEstimate targetBoundFilteredNameCost) {
@@ -1640,6 +1701,21 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 	private static boolean containsCompare(TupleExpr tupleExpr, String left, String right) {
 		return containsBinaryValueOperator(tupleExpr, Compare.class, left, right);
+	}
+
+	private static boolean containsCompareFor(TupleExpr tupleExpr, String bindingName) {
+		List<Compare> matches = new ArrayList<>(1);
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Compare node) {
+				if (varName(node.getLeftArg()).filter(bindingName::equals).isPresent()
+						|| varName(node.getRightArg()).filter(bindingName::equals).isPresent()) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return !matches.isEmpty();
 	}
 
 	private static boolean containsListMemberFor(TupleExpr tupleExpr, String bindingName) {

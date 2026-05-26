@@ -63,6 +63,9 @@ final class GuaranteePlanOptionProvider {
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_DOMAIN = "optimizer.guaranteeAnchorDomain";
 	private static final String OPTIMIZER_GUARANTEE_ANCHOR_ROLE = "optimizer.guaranteeAnchorRole";
 	private static final int MAX_MATERIALIZED_FILTER_ROWS = 5000;
+	// Keep this as a candidate-size guard only. Join-order heuristics can help one query while hard-coding a worse
+	// plan for another; the planner should choose among accurate, mathematically costed alternatives instead.
+	private static final int MAX_RANGE_FILTER_VALUES = 256;
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final List<CoreDatatype.XSD> INTEGER_ANCHOR_DATATYPES = List.of(
 			CoreDatatype.XSD.INTEGER,
@@ -222,6 +225,11 @@ final class GuaranteePlanOptionProvider {
 					semanticFilterInAnchor(filter.condition, pattern, context));
 		}
 
+		AnchorOption rangeAnchor = integerRangeFilterAnchor(filter.condition, pattern, context);
+		if (rangeAnchor != null) {
+			return rangeAnchor;
+		}
+
 		Map<String, LinkedHashSet<Value>> assignmentValues = context.assignmentValues();
 		BindingSetAssignment valuesVariableAnchor = LmdbFiniteAnchorInference.valuesVariableFilterAnchor(
 				filter.condition, assignmentValues, GuaranteePlanOptionProvider::isPotentialAnchorValue);
@@ -248,6 +256,130 @@ final class GuaranteePlanOptionProvider {
 		return guarantee.isPresent()
 				&& !guarantee.get().isUnknown()
 				&& !guarantee.get().equals(RdfTermDomain.UNRESTRICTED);
+	}
+
+	private static AnchorOption integerRangeFilterAnchor(ValueExpr condition, StatementPattern pattern,
+			AnalysisContext context) {
+		String bindingName = unboundVarName(pattern.getObjectVar());
+		if (bindingName == null) {
+			return null;
+		}
+		Optional<IntegerBounds> bounds = integerFilterBounds(condition, bindingName);
+		if (bounds.isEmpty()) {
+			return null;
+		}
+		Optional<RdfTermDomain> guarantee = context.knownRdfTermDomain(pattern);
+		if (guarantee.isEmpty()) {
+			return null;
+		}
+		LinkedHashSet<Value> values = boundedIntegerValues(bounds.get(), guarantee.get());
+		if (values.isEmpty()) {
+			return null;
+		}
+
+		BindingSetAssignment anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(bindingName, values);
+		RdfTermDomain anchorDomain = RdfTermDomain.finiteValues(values);
+		return new AnchorOption(annotateAnchor(anchor, pattern, bindingName, guarantee.get(), anchorDomain),
+				bindingName, true, Set.of(), true);
+	}
+
+	private static Optional<IntegerBounds> integerFilterBounds(ValueExpr condition, String bindingName) {
+		if (condition instanceof And and) {
+			Optional<IntegerBounds> left = integerFilterBounds(and.getLeftArg(), bindingName);
+			Optional<IntegerBounds> right = integerFilterBounds(and.getRightArg(), bindingName);
+			if (left.isEmpty() || right.isEmpty()) {
+				return Optional.empty();
+			}
+			return left.get().intersect(right.get());
+		}
+		if (!(condition instanceof Compare compare)) {
+			return Optional.empty();
+		}
+
+		Optional<String> leftVariable = optionalUnboundName(compare.getLeftArg());
+		Optional<Long> rightInteger = canonicalIntegerConstant(compare.getRightArg());
+		if (leftVariable.filter(bindingName::equals).isPresent() && rightInteger.isPresent()) {
+			return boundsForVariableCompare(compare.getOperator(), rightInteger.get());
+		}
+		Optional<String> rightVariable = optionalUnboundName(compare.getRightArg());
+		Optional<Long> leftInteger = canonicalIntegerConstant(compare.getLeftArg());
+		if (rightVariable.filter(bindingName::equals).isPresent() && leftInteger.isPresent()) {
+			return boundsForVariableCompare(reverse(compare.getOperator()), leftInteger.get());
+		}
+		return Optional.empty();
+	}
+
+	private static Optional<IntegerBounds> boundsForVariableCompare(Compare.CompareOp operator, long constant) {
+		return switch (operator) {
+		case EQ -> Optional.of(new IntegerBounds(constant, constant));
+		case LT -> constant == Long.MIN_VALUE
+				? Optional.empty()
+				: Optional.of(new IntegerBounds(Long.MIN_VALUE, constant - 1));
+		case LE -> Optional.of(new IntegerBounds(Long.MIN_VALUE, constant));
+		case GT -> constant == Long.MAX_VALUE
+				? Optional.empty()
+				: Optional.of(new IntegerBounds(constant + 1, Long.MAX_VALUE));
+		case GE -> Optional.of(new IntegerBounds(constant, Long.MAX_VALUE));
+		case NE -> Optional.empty();
+		};
+	}
+
+	private static Compare.CompareOp reverse(Compare.CompareOp operator) {
+		return switch (operator) {
+		case LT -> Compare.CompareOp.GT;
+		case LE -> Compare.CompareOp.GE;
+		case GT -> Compare.CompareOp.LT;
+		case GE -> Compare.CompareOp.LE;
+		case EQ -> Compare.CompareOp.EQ;
+		case NE -> Compare.CompareOp.NE;
+		};
+	}
+
+	private static Optional<Long> canonicalIntegerConstant(ValueExpr expression) {
+		if (!(expression instanceof ValueConstant valueConstant)) {
+			return Optional.empty();
+		}
+		return RdfTermDomain.classify(valueConstant.getValue())
+				.integerRange()
+				.map(RdfTermDomain.IntegerRange::minInclusive);
+	}
+
+	private static LinkedHashSet<Value> boundedIntegerValues(IntegerBounds bounds, RdfTermDomain guarantee) {
+		Optional<RdfTermDomain.IntegerRange> observedRange = guarantee.integerRange();
+		CoreDatatype.XSD datatype = guarantee.singleXsdDatatype();
+		if (observedRange.isEmpty()
+				|| datatype == null
+				|| !datatype.isIntegerDatatype()
+				|| !guarantee.has(RdfTermDomain.Fact.CANONICAL_INTEGER)) {
+			return new LinkedHashSet<>();
+		}
+
+		long min = Math.max(bounds.minInclusive, observedRange.get().minInclusive());
+		long max = Math.min(bounds.maxInclusive, observedRange.get().maxInclusive());
+		if (min > max) {
+			return new LinkedHashSet<>();
+		}
+
+		LinkedHashSet<Value> values = new LinkedHashSet<>();
+		long current = min;
+		while (true) {
+			if (values.size() >= MAX_RANGE_FILTER_VALUES) {
+				return new LinkedHashSet<>();
+			}
+			String label = Long.toString(current);
+			if (!XMLDatatypeUtil.isValidValue(label, datatype)
+					|| !label.equals(XMLDatatypeUtil.normalize(label, datatype))) {
+				return new LinkedHashSet<>();
+			}
+			values.add(VF.createLiteral(label, datatype));
+			if (current == max) {
+				return values;
+			}
+			if (current == Long.MAX_VALUE) {
+				return new LinkedHashSet<>();
+			}
+			current++;
+		}
 	}
 
 	private static boolean replacedAssignment(TupleExpr factor, Set<String> replacedBindingNames) {
@@ -479,6 +611,15 @@ final class GuaranteePlanOptionProvider {
 		private MaterializedFilterStats {
 			bindingNames = List.copyOf(bindingNames);
 			finiteValues = Map.copyOf(finiteValues);
+		}
+	}
+
+	private record IntegerBounds(long minInclusive, long maxInclusive) {
+
+		private Optional<IntegerBounds> intersect(IntegerBounds other) {
+			long min = Math.max(minInclusive, other.minInclusive);
+			long max = Math.min(maxInclusive, other.maxInclusive);
+			return min > max ? Optional.empty() : Optional.of(new IntegerBounds(min, max));
 		}
 	}
 
