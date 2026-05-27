@@ -174,6 +174,23 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
+	void planStateAdvanceNormalizesRuntimeVariableSurfaces() {
+		StatementPattern factor = pattern("seed", PREDICATE, "value");
+		PlanState prefix = PlanState.initial(BagEstimate.exact(2.0d, "outer")
+				.withVariable("seed", VariableEstimate.bound(2.0d, 1.0d)), Set.of("seed"), Map.of());
+		BagEstimate scalarEstimate = BagEstimate.heuristic(4.0d, "transition-without-surfaces");
+
+		PlanState next = prefix.advance(AccessPathCandidate.forFactor(factor),
+				new JoinFactorCostModel.FactorCostEstimate(5.0d, 4.0d), scalarEstimate,
+				JoinCostVector.of(5.0d, 4.0d, 4.0d, 0.0d, 0.0d));
+
+		assertEquals(4.0d, next.estimate().variable("seed").boundRows(), 1.0e-9d);
+		assertEquals(1.0d, next.estimate().variable("seed").distinctRows(), 1.0e-9d);
+		assertEquals(4.0d, next.estimate().variable("value").boundRows(), 1.0e-9d);
+		assertEquals(4.0d, next.estimate().variable("value").distinctRows(), 1.0e-9d);
+	}
+
+	@Test
 	void statementAlternativesExposePhysicalLookupChoices() {
 		StatementPattern factor = pattern("s", PREDICATE, "o");
 		int lookupMask = componentMask(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P);

@@ -64,6 +64,7 @@ final class PlanState {
 		Objects.requireNonNull(factorCostEstimate, "factorCostEstimate");
 		Set<String> nextBoundVars = new LinkedHashSet<>(boundVars);
 		nextBoundVars.addAll(candidate.runtimeVars());
+		BagEstimate normalizedEstimate = withBoundVariableRows(nextEstimate, nextBoundVars, estimate.variables());
 
 		List<TupleExpr> nextPrefixFactors = new ArrayList<>(prefixFactors);
 		nextPrefixFactors.add(candidate.factor());
@@ -76,13 +77,13 @@ final class PlanState {
 		Map<String, Double> nextDoubleDiagnostics = new LinkedHashMap<>(doubleDiagnostics);
 		nextDoubleDiagnostics.putAll(factorCostEstimate.getDoubleMetrics());
 
-		return new PlanState(nextEstimate, nextBoundVars, finiteBindingValues, nextPrefixFactors, nextCostVector,
+		return new PlanState(normalizedEstimate, nextBoundVars, finiteBindingValues, nextPrefixFactors, nextCostVector,
 				nextHistory, nextStringDiagnostics, nextDoubleDiagnostics);
 	}
 
 	PlanState withEstimateAndCost(BagEstimate nextEstimate, JoinCostVector nextCostVector,
 			Map<String, String> stringMetrics, Map<String, Double> doubleMetrics) {
-		BagEstimate normalizedEstimate = withCurrentBoundVariableRows(nextEstimate);
+		BagEstimate normalizedEstimate = withBoundVariableRows(nextEstimate, boundVars, estimate.variables());
 		Map<String, String> nextStringDiagnostics = new LinkedHashMap<>(stringDiagnostics);
 		if (stringMetrics != null) {
 			nextStringDiagnostics.putAll(stringMetrics);
@@ -127,13 +128,16 @@ final class PlanState {
 		return doubleDiagnostics;
 	}
 
-	private BagEstimate withCurrentBoundVariableRows(BagEstimate nextEstimate) {
+	private static BagEstimate withBoundVariableRows(BagEstimate nextEstimate, Set<String> normalizedBoundVars,
+			Map<String, VariableEstimate> fallbackVariables) {
 		Objects.requireNonNull(nextEstimate, "nextEstimate");
-		if (boundVars.isEmpty()) {
+		if (normalizedBoundVars == null || normalizedBoundVars.isEmpty()) {
 			return nextEstimate;
 		}
-		Map<String, VariableEstimate> variables = new LinkedHashMap<>(nextEstimate.variables());
-		for (String variable : boundVars) {
+		Map<String, VariableEstimate> variables = new LinkedHashMap<>(
+				fallbackVariables == null ? Map.of() : fallbackVariables);
+		variables.putAll(nextEstimate.variables());
+		for (String variable : normalizedBoundVars) {
 			variables.put(variable, nextVariableEstimate(variables.get(variable), nextEstimate.rows()));
 		}
 		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
