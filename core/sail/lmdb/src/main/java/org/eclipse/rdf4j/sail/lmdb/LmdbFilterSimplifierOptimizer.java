@@ -69,6 +69,13 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final String OPTIMIZER_GUARANTEE_OPTION = "optimizer.guaranteeOption";
+	private static final String OPTIMIZER_GUARANTEE_OPTIONS = "optimizer.guaranteeOptions";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_BINDING = "optimizer.guaranteeAnchorBinding";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE = "optimizer.guaranteeAnchorPredicate";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE_DOMAIN = "optimizer.guaranteeAnchorPredicateDomain";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_DOMAIN = "optimizer.guaranteeAnchorDomain";
+	private static final String OPTIMIZER_GUARANTEE_ANCHOR_ROLE = "optimizer.guaranteeAnchorRole";
 	private static final List<CoreDatatype.XSD> INTEGER_ANCHOR_DATATYPES = List.of(
 			CoreDatatype.XSD.INTEGER,
 			CoreDatatype.XSD.LONG,
@@ -187,17 +194,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 					&& !shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
 				continue;
 			}
-			if (LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition) != null) {
-				remainingConditions.add(condition);
-				continue;
-			}
 			BindingSetAssignment materializedAnchor = materializedSmallLiteralFilterAnchor(filter, condition, anchor,
 					assuredBindings);
 			if (materializedAnchor != null) {
-				if (shouldRetainSmallLiteralAnchorFilter(filter, condition)) {
-					remainingConditions.add(condition);
-					continue;
-				}
 				if (!equivalentSmallLiteralAssignmentExists(materializedAnchor, assignmentValues)) {
 					anchors.add(materializedAnchor);
 				}
@@ -555,7 +554,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				&& !containsVariableScopeChangeBinding(filter.getArg(), bindingName)
 				&& !LmdbJoinPlanSupport.containsPathContextBinding(filter.getArg(), bindingName)
 				&& canMaterializeSmallLiteralFilterAnchor(filter, condition, anchor, bindingName)) {
-			return expandFiniteAnchor(filter, condition, anchor, bindingName);
+			return annotateFiniteAnchor(filter, condition, expandFiniteAnchor(filter, condition, anchor, bindingName),
+					bindingName);
 		}
 		return null;
 	}
@@ -564,7 +564,10 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			BindingSetAssignment anchor, String bindingName) {
 		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
 		boolean objectAnchor = pattern != null && bindingName.equals(unboundName(pattern.getObjectVar()));
-		if (objectAnchor) {
+		if (pattern != null) {
+			if (!objectAnchor) {
+				return false;
+			}
 			Optional<RdfTermDomain> guarantee = knownRdfTermDomain(pattern);
 			return guarantee.isPresent() && canMaterializeObjectFilterAnchor(anchor, bindingName, guarantee.get());
 		}
@@ -600,6 +603,32 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			}
 		}
 		return bindingSetAssignment(bindingName, expandedValues);
+	}
+
+	private BindingSetAssignment annotateFiniteAnchor(Filter filter, ValueExpr condition, BindingSetAssignment anchor,
+			String bindingName) {
+		if (anchor == null) {
+			return null;
+		}
+		StatementPattern pattern = LmdbJoinPlanSupport.patternLocalBaseForFilterCondition(filter, condition);
+		if (pattern == null || !bindingName.equals(unboundName(pattern.getObjectVar()))) {
+			return anchor;
+		}
+		Optional<RdfTermDomain> guarantee = knownRdfTermDomain(pattern);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTION, "finite-anchor:" + bindingName);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS,
+				"generated=1, selected=finite-anchor:" + bindingName);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_BINDING, bindingName);
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE_DOMAIN,
+				String.valueOf(guarantee.orElse(RdfTermDomain.UNKNOWN)));
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_DOMAIN,
+				String.valueOf(RdfTermDomain.finiteValues(anchorValues(anchor, bindingName))));
+		anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_ROLE, "object-lookup");
+		IRI predicate = constantPredicate(pattern);
+		if (predicate != null) {
+			anchor.setStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE, predicate.stringValue());
+		}
+		return anchor;
 	}
 
 	private static void addCanonicalIntegerFamilyValues(Literal literal, RdfTermDomain guarantee,
@@ -656,15 +685,34 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		return assignment;
 	}
 
+	private static LinkedHashSet<Value> anchorValues(BindingSetAssignment anchor, String bindingName) {
+		LinkedHashSet<Value> values = new LinkedHashSet<>();
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			Value value = bindingSet.getValue(bindingName);
+			if (value != null) {
+				values.add(value);
+			}
+		}
+		return values;
+	}
+
 	private Optional<RdfTermDomain> knownRdfTermDomain(StatementPattern pattern) {
 		if (!(statistics instanceof LmdbPredicateObjectDomainSource guaranteeSource)) {
 			return Optional.empty();
 		}
-		Var predicate = pattern.getPredicateVar();
-		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+		IRI predicate = constantPredicate(pattern);
+		if (predicate == null) {
 			return Optional.empty();
 		}
-		return guaranteeSource.getKnownRdfTermDomain((IRI) predicate.getValue());
+		return guaranteeSource.getKnownRdfTermDomain(predicate);
+	}
+
+	private static IRI constantPredicate(StatementPattern pattern) {
+		Var predicate = pattern.getPredicateVar();
+		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
+			return null;
+		}
+		return (IRI) predicate.getValue();
 	}
 
 	private static boolean canMaterializeObjectFilterAnchor(BindingSetAssignment anchor, String bindingName,

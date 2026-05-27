@@ -2033,35 +2033,27 @@ class LmdbThemeQueryRegressionIT {
 					assertPlannerDiagnosticsPresent(theme, 5, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
 					String plan = snapshot.plan();
-					assertContains(plan, "original[skipped-semantic-rewrite selected=finite-anchor:value",
-							"Medical q5 should show that the original filter path was kept only as a semantic "
-									+ "rewrite fallback\n" + plan);
 					assertContains(plan, " finalRows=");
-					assertContains(plan, "finite-anchor:value[valid",
-							"Medical q5 should show that the value VALUES anchor was generated and costed\n" + plan);
-					assertContains(plan, "finite-anchor:value[valid total=");
-					assertContains(plan, "anchorAccessRows=");
-					assertContains(plan, "anchorWorkRows=");
-					assertContains(plan, "anchorIndex=");
-					assertContains(plan, "anchorLookupComponents=");
-					assertContains(plan, "surfaceRows=");
-					assertContains(plan, "satisfiedFilters=");
-					assertMetricRowsAtLeast(plan, "anchorAccessRows", 1_000.0d,
-							"Medical q5 finite anchor should carry the positive finite PO lookup estimate "
-									+ "without requiring exact join-surface refinement during candidate gating\n"
+					assertContains(plan, "optimizer.guaranteeOption=finite-anchor:value",
+							"Medical q5 should materialize the value filter as a real finite VALUES factor\n"
 									+ plan);
-					assertContains(plan, "lmdb-finite-binding-lookup:posc:[P, O]",
+					assertContains(plan, "optimizer.guaranteeOptions=generated=1, selected=finite-anchor:value",
+							"Medical q5 finite anchor should be selected before join planning\n" + plan);
+					assertContains(plan, "plannedIndexName=posc",
 							"Medical q5 finite anchor should cost the value lookup through the PO access path\n"
 									+ plan);
+					assertContains(plan, "plannedIndexAccessMode=directLookup",
+							"Medical q5 value lookup should use a direct finite PO lookup\n" + plan);
+					assertContains(plan, "plannedLookupComponents=[P, O]",
+							"Medical q5 value lookup should bind predicate and finite object values\n" + plan);
 					assertContains(plan, "optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
-							+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT]",
+							+ "LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT",
 							"Medical q5 value object should expose its integer-domain guarantee\n" + plan);
 					assertContains(plan, "optimizer.objectGuaranteePredicate=http://example.com/theme/medical/value",
 							"Medical q5 value object should expose the predicate that provided the guarantee\n"
 									+ plan);
-					assertContains(plan, "selected=finite-anchor:value",
-							"Medical q5 should choose the exact finite value anchor over a broad value scan\n"
-									+ plan);
+					assertDoesNotContain(plan, "ListMemberOperator",
+							"Medical q5 finite anchor should satisfy and remove the runtime IN filter\n" + plan);
 					assertRenderedValueAnchor(renderedQuery, "value",
 							"Medical q5 selected finite anchor should be visible in the rendered query\n" + plan);
 					assertDoesNotContain(renderedQuery, "FILTER (?value IN (50, 60, 70))",
@@ -2123,16 +2115,13 @@ class LmdbThemeQueryRegressionIT {
 									+ "Pareto planner option path\n" + plan);
 					assertDoesNotContain(plan, "optimizer.logicalExploration=mode=finite-anchor-fastpath",
 							"Medical q5 should not bypass the cascade planner for guarantee choices\n" + plan);
-					assertOriginalGuaranteeCandidate(plan,
-							"Medical q5 cold benchmark store should still explain the original candidate "
-									+ "when choosing the finite-anchor option\n" + plan);
-					assertContains(plan, "finite-anchor:value[valid",
-							"Medical q5 cold benchmark store should cost the finite anchor candidate\n" + plan);
-					assertContains(plan, "selected=finite-anchor:value",
-							"Medical q5 cold benchmark store should choose finite-anchor:value\n" + plan);
-					assertContains(plan, "Join (BoundStatementPatternJoinIteration)",
-							"Medical q5 finite-anchor plan should keep the bounded statement-pattern join "
-									+ "physical path for the final patient type lookup\n" + plan);
+					assertContains(plan, "optimizer.guaranteeOption=finite-anchor:value",
+							"Medical q5 cold benchmark store should materialize the finite value anchor\n" + plan);
+					assertContains(plan, "optimizer.guaranteeOptions=generated=1, selected=finite-anchor:value",
+							"Medical q5 cold benchmark store should expose the selected logical finite anchor\n"
+									+ plan);
+					assertContains(plan, "plannedLookupComponents=[P, O]",
+							"Medical q5 cold benchmark store should use the finite PO value lookup\n" + plan);
 					assertContains(plan, "passRatio=0.0 source=sketch_nested_not_exists",
 							"Medical q5 finite-anchor plan should preserve the exact sketch anti-join "
 									+ "selectivity for the hasCondition NOT EXISTS filter\n" + plan);

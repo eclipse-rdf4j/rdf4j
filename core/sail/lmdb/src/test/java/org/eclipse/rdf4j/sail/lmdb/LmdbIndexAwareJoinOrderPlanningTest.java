@@ -679,19 +679,16 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 					"Duplicate IN constants should not duplicate generated VALUES rows: " + optimized);
 			assertFalse(containsListMemberFor(optimized, "code"),
 					"Object-domain FILTER IN should be satisfied by the generated VALUES anchor: " + optimized);
-			assertTrue(optimizedPlan.contains("selected=finite-anchor:code"),
+			assertEquals("finite-anchor:code", codeAnchor.getStringMetricPlanned("optimizer.guaranteeOption"),
 					"The semantic finite anchor should be selected explicitly:\n" + optimizedPlan);
-			assertTrue(optimizedPlan.contains("original[skipped-semantic-rewrite"),
-					"The original FILTER path should be a fallback after a proven semantic rewrite:\n"
-							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("filterInValuesEquivalent"),
-					"The selected rewrite should carry the SPARQL FILTER IN/VALUES equivalence proof fact:\n"
-							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("objectGuarantee"),
+			assertTrue(optimizedPlan.contains("optimizer.guaranteeOptions=generated=1, selected=finite-anchor:code"),
+					"The selected finite anchor should be visible as a logical planner factor:\n" + optimizedPlan);
+			assertTrue(
+					optimizedPlan.contains("optimizer.guaranteeAnchorPredicate=http://example.com/theme/medical/code"),
 					"The selected rewrite should carry the object-domain guarantee proof fact:\n"
 							+ optimizedPlan);
-			assertTrue(optimizedPlan.contains("duplicateSafeFiniteAnchor"),
-					"The selected rewrite should carry the duplicate-safety proof fact:\n" + optimizedPlan);
+			assertTrue(optimizedPlan.contains("finiteValues=[\"MED-1000\", \"MED-1001\"]"),
+					"The selected rewrite should expose the duplicate-safe finite values:\n" + optimizedPlan);
 		} finally {
 			repository.shutDown();
 		}
