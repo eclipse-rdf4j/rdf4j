@@ -896,29 +896,13 @@ class LmdbEvaluationStatistics
 					double factorOutputRows = step.getFactorOutputRows();
 					double prefixOutputRows = step.getPrefixOutputRows();
 					double stepWorkRows = step.getStepWorkRows();
-					boolean hasDeferredFilterAction = !step.getAppliedFilterIndexes().isEmpty()
-							|| step.getStringMetrics()
-									.containsKey(TelemetryMetricNames.UNLOCKED_FILTERS);
-					boolean replaceStepRows = hasStepRowReplacementSource(refinedEstimate)
-							|| repeatedEstimateOutputRowsRepresentPrefix(refinedEstimate);
-					boolean replaceStepWork = replaceStepRows || refinedEstimate.isRepeatedInvocationsCosted();
-					if (replaceStepRows) {
-						if (isFiniteNonNegative(refinedEstimate.getOutputRows())) {
-							factorOutputRows = refinedEstimate.getOutputRows();
-							if ((repeatedEstimateOutputRowsRepresentPrefix(refinedEstimate) && !hasDeferredFilterAction)
-									|| hasRowPreservingSubplanSource(refinedEstimate)) {
-								prefixOutputRows = factorOutputRows;
-							}
-						}
-					}
-					if (replaceStepWork) {
-						if (isFiniteNonNegative(refinedEstimate.getWorkRows())) {
-							stepWorkRows = refinedEstimate.getWorkRows();
-							doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
-						}
-					}
+					// The stateful transition planner owns row and work flow. This enrichment pass may add access-path
+					// diagnostics, but must not replace the selected PlanState/cardinality result with a scalar
+					// factor re-estimate.
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, factorOutputRows);
 					doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, prefixOutputRows);
+					doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
+					doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, stepWorkRows);
 					enrichedStep = new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(),
 							factorOutputRows,
 							prefixOutputRows, stepWorkRows, stringMetrics, doubleMetrics,
@@ -935,17 +919,6 @@ class LmdbEvaluationStatistics
 				} else {
 					traceEstimate("plan-step-refined-empty", tupleExpr, null, "step=" + stepIndex);
 				}
-			}
-			JoinOrderPlanner.PlanStep connectedPageWalkStep = refineConnectedPageWalkPlanStep(tupleExpr,
-					enrichedStep);
-			if (connectedPageWalkStep != enrichedStep) {
-				enrichedStep = connectedPageWalkStep;
-				JoinOrderPlanner.PlanStep tracedEnrichedStep = enrichedStep;
-				traceEstimate("plan-step-connected-page-walk-blend", tupleExpr, null,
-						() -> "step=" + stepIndex
-								+ ", factorRows=" + estimateTraceRows(tracedEnrichedStep.getFactorOutputRows())
-								+ ", prefixRows=" + estimateTraceRows(tracedEnrichedStep.getPrefixOutputRows())
-								+ ", work=" + estimateTraceRows(tracedEnrichedStep.getStepWorkRows()));
 			}
 			enrichedStep = normalizePrefixRows(enrichedStep);
 			if (enrichedSteps != null) {
@@ -1023,96 +996,6 @@ class LmdbEvaluationStatistics
 		return step.getPrefixOutputRows();
 	}
 
-	private JoinOrderPlanner.PlanStep refineConnectedPageWalkPlanStep(TupleExpr tupleExpr,
-			JoinOrderPlanner.PlanStep step) {
-		if (step == null) {
-			return step;
-		}
-		Map<String, String> stepStringMetrics = step.getStringMetrics();
-		String source = stepStringMetrics.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-		if (!"lmdb-access-path".equals(source)
-				|| hasProtectedEstimateSource(source)
-				|| "connected_page_walk_geometric_blend".equals(stepStringMetrics.get("plannedEstimateFusion"))) {
-			return step;
-		}
-		if (!hasBoundBridgeContext(tupleExpr, step.getBoundVarsBefore())) {
-			return step;
-		}
-		Map<String, Double> stepDoubleMetrics = step.getDoubleMetrics();
-		boolean includeExactBridgeSignal = shouldUseExactConnectedBridgeSignal(tupleExpr, stepDoubleMetrics);
-		double connectedRows = connectedPageWalkRowsSignal(stepDoubleMetrics, tupleExpr, includeExactBridgeSignal);
-		double connectedWorkRows = connectedPageWalkWorkSignal(stepDoubleMetrics, tupleExpr, connectedRows,
-				includeExactBridgeSignal);
-		double baseRows = connectedPageWalkBaseRows(step.getFactorOutputRows(), stepDoubleMetrics,
-				metric(stepDoubleMetrics, "plannedRepeatedInvocations"));
-		if (!isPositiveFinite(baseRows)) {
-			baseRows = step.getPrefixOutputRows();
-		}
-		double baseWorkRows = connectedPageWalkBaseWorkRows(step.getStepWorkRows(), stepDoubleMetrics, baseRows,
-				metric(stepDoubleMetrics, "plannedRepeatedInvocations"));
-		if (!isPositiveFinite(baseRows) || !isPositiveFinite(baseWorkRows)
-				|| !isPositiveFinite(connectedRows) || !isPositiveFinite(connectedWorkRows)) {
-			return step;
-		}
-		double rowDisagreementRatio = maxRatio(baseRows, connectedRows);
-		double workDisagreementRatio = maxRatio(baseWorkRows, connectedWorkRows);
-		boolean pageWalkRaisesRows = connectedRows > baseRows
-				&& isPositiveFinite(rowDisagreementRatio)
-				&& rowDisagreementRatio >= BOUND_JOIN_PRODUCT_PAGE_WALK_BLEND_MIN_RATIO;
-		boolean pageWalkRaisesWork = connectedWorkRows > baseWorkRows
-				&& isPositiveFinite(workDisagreementRatio)
-				&& workDisagreementRatio >= BOUND_JOIN_PRODUCT_PAGE_WALK_BLEND_MIN_RATIO;
-		if (!pageWalkRaisesRows && !pageWalkRaisesWork) {
-			return step;
-		}
-		double blendedRows = pageWalkRaisesRows ? geometricMean(baseRows, connectedRows) : baseRows;
-		double blendedWorkRows = pageWalkRaisesWork ? geometricMean(baseWorkRows, connectedWorkRows) : baseWorkRows;
-		if (!isPositiveFinite(blendedRows)) {
-			blendedRows = baseRows;
-		}
-		if (!isPositiveFinite(blendedWorkRows)) {
-			blendedWorkRows = baseWorkRows;
-		}
-		blendedWorkRows = Math.max(blendedWorkRows, blendedRows);
-		if (blendedRows == baseRows && blendedWorkRows == baseWorkRows) {
-			return step;
-		}
-
-		Map<String, String> stringMetrics = new HashMap<>(stepStringMetrics);
-		String baseFusion = stringMetrics.get("plannedEstimateFusion");
-		if (baseFusion != null) {
-			stringMetrics.put("plannedPreBlendEstimateFusion", baseFusion);
-		}
-		stringMetrics.put("plannedEstimateFusion", "connected_page_walk_geometric_blend");
-		stringMetrics.put("plannedConnectedJoinBlendSource", "plan_step_geometric_mean");
-
-		Map<String, Double> doubleMetrics = new HashMap<>(stepDoubleMetrics);
-		doubleMetrics.put("plannedConnectedJoinBlendRawRows", baseRows);
-		doubleMetrics.put("plannedConnectedJoinBlendRawWorkRows", baseWorkRows);
-		doubleMetrics.put("plannedConnectedJoinBlendRows", blendedRows);
-		doubleMetrics.put("plannedConnectedJoinBlendWorkRows", blendedWorkRows);
-		doubleMetrics.put("plannedConnectedJoinBlendRowsRatio", rowDisagreementRatio);
-		doubleMetrics.put("plannedConnectedJoinBlendWorkRatio", workDisagreementRatio);
-		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, blendedWorkRows);
-		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, blendedWorkRows);
-		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, blendedRows);
-		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, blendedRows);
-		double repeatedInvocations = doubleMetrics.getOrDefault("plannedRepeatedInvocations", Double.NaN);
-		if (!isPositiveFinite(repeatedInvocations)) {
-			repeatedInvocations = doubleMetrics.getOrDefault("plannedConnectedJoinPrefixRows", Double.NaN);
-		}
-		if (isPositiveFinite(repeatedInvocations)) {
-			doubleMetrics.put("plannedRepeatedInvocations", repeatedInvocations);
-			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS,
-					Math.max(1.0d, blendedRows / repeatedInvocations));
-			doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS,
-					Math.max(1.0d, blendedWorkRows / repeatedInvocations));
-		}
-
-		return new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(), blendedRows, blendedRows,
-				blendedWorkRows, stringMetrics, doubleMetrics, step.getAppliedFilterIndexes());
-	}
-
 	private Optional<FactorCostEstimate> estimateEnrichedFactorCost(TupleExpr tupleExpr, JoinOrderPlanner.PlanStep step,
 			Map<String, Set<Value>> finiteValuesForStep, boolean hasFiniteValuesForStep,
 			List<TupleExpr> prefixFactors, double prefixRowsBeforeStep, boolean needsNestedPrefixCost) {
@@ -1145,18 +1028,9 @@ class LmdbEvaluationStatistics
 				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
 	}
 
-	private boolean hasFiniteDerivedSurfaceSource(FactorCostEstimate estimate) {
-		return estimate != null && "lmdb-finite-derived-surface".equals(estimate.getStringMetrics()
-				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
-	}
-
 	private boolean hasRowPreservingSubplanSource(FactorCostEstimate estimate) {
 		return estimate != null && ROW_PRESERVING_SUBPLAN_SOURCE.equals(estimate.getStringMetrics()
 				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
-	}
-
-	private boolean hasStepRowReplacementSource(FactorCostEstimate estimate) {
-		return hasFiniteDerivedSurfaceSource(estimate) || hasRowPreservingSubplanSource(estimate);
 	}
 
 	private boolean hasFiniteDerivedOrConnectedJoinSource(FactorCostEstimate estimate) {
@@ -2583,7 +2457,7 @@ class LmdbEvaluationStatistics
 		}
 		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, BOUND_JOIN_PRODUCT_SOURCE);
 		stringMetrics.put("plannedEstimateFusion",
-				pageWalkBlend == null ? "tuple_sketch_surface_product" : "tuple_sketch_page_walk_harmonic");
+				pageWalkBlend == null ? "tuple_sketch_surface_product" : pageWalkBlend.fusion());
 		stringMetrics.put("plannedBoundJoinProductSurfaceSource",
 				productEstimate.exactRows() ? "exact-full-prefix" : "modeled-surface");
 		stringMetrics.put(PLANNED_BRIDGE_CORRECTION_SOURCE, BOUND_JOIN_PRODUCT_SOURCE);
@@ -2607,6 +2481,8 @@ class LmdbEvaluationStatistics
 			doubleMetrics.put("plannedBoundJoinProductRawWorkRows", pageWalkBlend.rawWorkRows());
 			doubleMetrics.put("plannedBoundJoinProductPageWalkRows", pageWalkBlend.pageWalkOutputRows());
 			doubleMetrics.put("plannedBoundJoinProductPageWalkWorkRows", pageWalkBlend.pageWalkWorkRows());
+			doubleMetrics.put("plannedBoundJoinProductAccessPathRows", pageWalkBlend.outputRows());
+			doubleMetrics.put("plannedBoundJoinProductAccessPathWorkRows", pageWalkBlend.workRows());
 			doubleMetrics.put("plannedBoundJoinProductBlendRatio", pageWalkBlend.disagreementRatio());
 		}
 		if (isPositiveFinite(optionalSourceWorkRows)) {
@@ -2933,14 +2809,45 @@ class LmdbEvaluationStatistics
 
 	private BoundProductPageWalkBlend blendBoundJoinProductWithPageWalkEstimate(double productRows, double workRows,
 			double repeatedInvocations, double accessRows, double accessWorkRows, FactorCostEstimate baseEstimate) {
-		if (!hasFiniteDerivedOrConnectedJoinSource(baseEstimate)
-				|| !isPositiveFinite(productRows)
+		if (!isPositiveFinite(productRows)
 				|| !isPositiveFinite(workRows)
 				|| !isPositiveFinite(repeatedInvocations)) {
 			return null;
 		}
-		double pageWalkRows = baseEstimate.getOutputRows();
-		double pageWalkWorkRows = baseEstimate.getWorkRows();
+		double pageWalkRows = Double.NaN;
+		double pageWalkWorkRows = Double.NaN;
+		if (hasFiniteDerivedOrConnectedJoinSource(baseEstimate)) {
+			pageWalkRows = baseEstimate.getOutputRows();
+			pageWalkWorkRows = baseEstimate.getWorkRows();
+		}
+		double accessEnvelopeRows = accessPathEnvelopeRows(baseEstimate, repeatedInvocations);
+		double accessEnvelopeWorkRows = accessPathEnvelopeWorkRows(baseEstimate, repeatedInvocations,
+				accessEnvelopeRows);
+		if (boundAccessPathEnvelopeIsAuthoritative(baseEstimate)
+				&& isPositiveFinite(accessEnvelopeRows)
+				&& isPositiveFinite(accessEnvelopeWorkRows)) {
+			double envelopeWorkRows = Math.max(accessEnvelopeRows, accessEnvelopeWorkRows);
+			double envelopeAccessRows = Math.max(1.0d, accessEnvelopeRows / repeatedInvocations);
+			if (!isPositiveFinite(envelopeAccessRows)) {
+				envelopeAccessRows = accessRows;
+			}
+			double envelopeAccessWorkRows = Math.max(envelopeAccessRows, envelopeWorkRows / repeatedInvocations);
+			if (!isPositiveFinite(envelopeAccessWorkRows)) {
+				envelopeAccessWorkRows = accessWorkRows;
+			}
+			double disagreementRatio = maxRatio(productRows, accessEnvelopeRows);
+			if (!isPositiveFinite(disagreementRatio)) {
+				disagreementRatio = maxRatio(workRows, envelopeWorkRows);
+			}
+			return new BoundProductPageWalkBlend(productRows, workRows, accessEnvelopeRows, envelopeWorkRows,
+					accessEnvelopeRows, envelopeWorkRows, repeatedInvocations, envelopeAccessRows,
+					envelopeAccessWorkRows, disagreementRatio, "access_path_transition_envelope");
+		}
+		if (isPositiveFinite(accessEnvelopeRows)
+				&& (!isPositiveFinite(pageWalkRows) || accessEnvelopeRows < pageWalkRows)) {
+			pageWalkRows = accessEnvelopeRows;
+			pageWalkWorkRows = accessEnvelopeWorkRows;
+		}
 		if (!isPositiveFinite(pageWalkRows) || !isPositiveFinite(pageWalkWorkRows)) {
 			return null;
 		}
@@ -2979,7 +2886,44 @@ class LmdbEvaluationStatistics
 		double selectedRatio = isPositiveFinite(disagreementRatio) ? disagreementRatio : workDisagreementRatio;
 		return new BoundProductPageWalkBlend(productRows, workRows, pageWalkRows, pageWalkWorkRows,
 				blendedRows, blendedWorkRows, blendedInvocations, blendedAccessRows, blendedAccessWorkRows,
-				selectedRatio);
+				selectedRatio, "tuple_sketch_page_walk_harmonic");
+	}
+
+	private boolean boundAccessPathEnvelopeIsAuthoritative(FactorCostEstimate baseEstimate) {
+		return baseEstimate != null
+				&& baseEstimate.hasPhysicalAccessPath()
+				&& baseEstimate.isDirectLookup()
+				&& baseEstimate.getLookupComponentMask() != 0
+				&& baseEstimate.getMissingLookupComponentMask() == 0
+				&& !baseEstimate.isRepeatedInvocationsCosted();
+	}
+
+	private double accessPathEnvelopeRows(FactorCostEstimate baseEstimate, double repeatedInvocations) {
+		if (baseEstimate == null || !baseEstimate.hasPhysicalAccessPath()
+				|| baseEstimate.getLookupComponentMask() == 0
+				|| !isPositiveFinite(repeatedInvocations)) {
+			return Double.NaN;
+		}
+		double accessRows = baseEstimate.getAccessRowsBeforeFilter();
+		if (!isPositiveFinite(accessRows)) {
+			return Double.NaN;
+		}
+		double rows = repeatedInvocations * accessRows;
+		return isPositiveFinite(rows) ? rows : Double.NaN;
+	}
+
+	private double accessPathEnvelopeWorkRows(FactorCostEstimate baseEstimate, double repeatedInvocations,
+			double fallbackRows) {
+		double accessRows = baseEstimate == null ? Double.NaN : baseEstimate.getAccessRowsBeforeFilter();
+		double accessWorkRows = baseEstimate == null ? Double.NaN
+				: baseEstimate.getDoubleMetrics()
+						.getOrDefault(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, Double.NaN);
+		double perInvocationWorkRows = maxFinite(accessRows, accessWorkRows, 1.0d, Double.NaN);
+		double workRows = repeatedInvocations * perInvocationWorkRows;
+		if (!isPositiveFinite(workRows)) {
+			workRows = fallbackRows;
+		}
+		return isPositiveFinite(workRows) ? Math.max(workRows, fallbackRows) : Double.NaN;
 	}
 
 	private double optionalSourceWorkRows(TupleExpr factor, double prefixSurfaceRows, double workRows) {
@@ -6117,8 +6061,11 @@ class LmdbEvaluationStatistics
 	}
 
 	private Optional<FactorCostEstimate> estimateJoinFactorCost(Join join, Set<String> boundVars) {
-		List<TupleExpr> flattenedFactors = new ArrayList<>();
-		flattenJoinFactors(join, flattenedFactors);
+		Optional<FactorCostEstimate> starEstimate = estimateStarMultiPredicateJoinFactorCost(join, boundVars);
+		if (starEstimate.isPresent()) {
+			return starEstimate;
+		}
+		List<TupleExpr> flattenedFactors = LmdbJoinIslandConnectivity.flattenFactors(join);
 		if (flattenedFactors.size() > 1 && supportsJoinEstimation()) {
 			Optional<JoinOrderPlan> plan = estimateJoinOrder(flattenedFactors, boundVars, Algorithm.DYNAMIC_PROGRAMMING,
 					List.of());
@@ -6156,6 +6103,55 @@ class LmdbEvaluationStatistics
 		return Optional.of(new FactorCostEstimate(repeatedRightWorkRows, outputRows));
 	}
 
+	private Optional<FactorCostEstimate> estimateStarMultiPredicateJoinFactorCost(Join join, Set<String> boundVars) {
+		Optional<LmdbStarJoinScanSupport.Plan> starPlan = LmdbStarJoinScanSupport.plan(join);
+		if (starPlan.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<StatisticsEstimate> starEstimate = starMultiPredicateScan(starPlan.get().patterns(),
+				boundVars == null ? Set.of() : boundVars);
+		if (starEstimate.isEmpty()) {
+			return Optional.empty();
+		}
+		StatisticsEstimate estimate = starEstimate.get();
+		Map<String, String> stringMetrics = new HashMap<>();
+		stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, estimate.method());
+		stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE, LmdbStarJoinScanSupport.ACCESS_MODE);
+		stringMetrics.put(LmdbStarJoinScanSupport.SUBJECT_VAR_METRIC, starPlan.get().subjectName());
+		stringMetrics.put(LmdbStarJoinScanSupport.PROOF_METRIC,
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.STAR_MULTI_PREDICATE_SCAN,
+						LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+						Set.of("subject=" + starPlan.get().subjectName(),
+								"predicates=" + starPlan.get().predicateValues().size(), "sameSubjectStar",
+								"constantPredicates"),
+						"constant-predicate subject star can be evaluated as a batched predicate range scan")
+								.metricFragment()
+						+ ", method=" + estimate.method());
+		if ("lmdb-characteristic-set".equals(estimate.method())) {
+			stringMetrics.put("optimizer.rewriteProof",
+					new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.CHARACTERISTIC_SET_STAR_ESTIMATE,
+							LmdbRewriteProof.EquivalenceScope.PHYSICAL_EQUIVALENT,
+							Set.of("method=" + estimate.method(), "source=lmdb-characteristic-set",
+									"subject=" + starPlan.get().subjectName()),
+							"characteristic-set-star-cardinality")
+									.metricFragment());
+		}
+		Map<String, Double> doubleMetrics = new HashMap<>(estimate.metrics());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, estimate.rows());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, estimate.workRows());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, estimate.rows());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, estimate.workRows());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_ROWS, estimate.rows());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, estimate.rows());
+		doubleMetrics.put(LmdbStarJoinScanSupport.PREDICATES_METRIC,
+				(double) starPlan.get().predicateValues().size());
+		doubleMetrics.put("plannedCardinalityQError", estimate.qErrorInterval().qError());
+		doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE,
+				estimate.qErrorInterval().confidence());
+		return Optional.of(new FactorCostEstimate(estimate.workRows(), estimate.rows(), stringMetrics,
+				doubleMetrics, true, false, 0, 0, estimate.rows()));
+	}
+
 	private FactorCostEstimate joinPlanFactorCostEstimate(JoinOrderPlan joinPlan, double outputRows) {
 		Map<String, String> stringMetrics = new HashMap<>(joinPlan.getSummaryStringMetrics());
 		Map<String, Double> doubleMetrics = new HashMap<>(joinPlan.getSummaryDoubleMetrics());
@@ -6183,15 +6179,6 @@ class LmdbEvaluationStatistics
 		if (!estimateSources.isEmpty()) {
 			stringMetrics.put("plannedBaseEstimateSources", String.join(",", estimateSources));
 		}
-	}
-
-	private void flattenJoinFactors(TupleExpr tupleExpr, List<TupleExpr> factors) {
-		if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(tupleExpr)) {
-			flattenJoinFactors(join.getLeftArg(), factors);
-			flattenJoinFactors(join.getRightArg(), factors);
-			return;
-		}
-		factors.add(tupleExpr);
 	}
 
 	private Set<String> unionBindingNames(Set<String> base, Set<String> additions) {
@@ -7068,7 +7055,8 @@ class LmdbEvaluationStatistics
 
 	private record BoundProductPageWalkBlend(double rawOutputRows, double rawWorkRows,
 			double pageWalkOutputRows, double pageWalkWorkRows, double outputRows, double workRows,
-			double repeatedInvocations, double accessRows, double accessWorkRows, double disagreementRatio) {
+			double repeatedInvocations, double accessRows, double accessWorkRows, double disagreementRatio,
+			String fusion) {
 
 	}
 

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -96,12 +97,32 @@ final class LmdbJoinIslandConnectivity {
 	}
 
 	private static void flatten(TupleExpr tupleExpr, List<TupleExpr> factors) {
+		if (tupleExpr instanceof Projection projection && transparentProjection(projection)) {
+			flatten(projection.getArg(), factors);
+			return;
+		}
 		if (tupleExpr instanceof Join join && reorderableJoin(join)) {
 			flatten(join.getLeftArg(), factors);
 			flatten(join.getRightArg(), factors);
 			return;
 		}
 		factors.add(tupleExpr);
+	}
+
+	private static boolean transparentProjection(Projection projection) {
+		if (projection == null || TupleExprs.isVariableScopeChange(projection)) {
+			return false;
+		}
+		Set<String> projectedNames = new LinkedHashSet<>();
+		for (ProjectionElem elem : projection.getProjectionElemList().getElements()) {
+			if (elem.getName() == null || elem.getProjectionAlias().isPresent()
+					|| elem.hasAggregateOperatorInExpression() || elem.getSourceExpression() != null
+					|| !projectedNames.add(elem.getName())) {
+				return false;
+			}
+		}
+		return LmdbJoinPlanSupport.plannerBindingNames(projectedNames)
+				.equals(LmdbJoinPlanSupport.plannerBindingNames(projection.getArg().getBindingNames()));
 	}
 
 	private static boolean reorderableJoin(TupleExpr tupleExpr) {

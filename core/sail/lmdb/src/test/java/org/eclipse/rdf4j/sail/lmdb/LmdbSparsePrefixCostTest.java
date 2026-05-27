@@ -78,6 +78,10 @@ class LmdbSparsePrefixCostTest {
 					assertTrue(Double.isFinite(plannedCardinalityRows) && plannedCardinalityRows >= 0.0d,
 							"Expected finite root plannedCardinalityRows for prefix " + prefixLength
 									+ ", actualRows=" + actualRows + "\n" + explanation);
+					assertTrue(qError(actualRows, plannedCardinalityRows) <= 1.5d,
+							"Expected sparse prefix " + prefixLength + " planned cardinality to stay within 1.5x"
+									+ ", actualRows=" + actualRows + ", plannedCardinalityRows="
+									+ plannedCardinalityRows + "\n" + explanation);
 				}
 			}
 		} finally {
@@ -119,5 +123,11 @@ class LmdbSparsePrefixCostTest {
 			}
 			return count;
 		}
+	}
+
+	private static double qError(double actualRows, double plannedRows) {
+		double actual = Math.max(1.0d, actualRows);
+		double planned = Math.max(1.0d, plannedRows);
+		return Math.max(actual / planned, planned / actual);
 	}
 }
