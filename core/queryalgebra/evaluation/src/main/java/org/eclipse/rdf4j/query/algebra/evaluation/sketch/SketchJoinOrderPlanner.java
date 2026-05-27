@@ -33,7 +33,6 @@ import java.util.function.LongFunction;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -120,13 +119,11 @@ final class SketchJoinOrderPlanner {
 	private final BindingSetAssignment[] bindingSetAssignments;
 	private final boolean[] bindingSetAssignmentFactors;
 	private final boolean[] smallBindingSetAssignmentFactors;
-	private final boolean[] subjectTypeGuardFactors;
 	private final long[] subjectVarMasks;
 	private final long factorUniverseMask;
 	private final long variableUniverseMask;
 	private final long bindingSetAssignmentFactorMask;
 	private final long smallBindingSetAssignmentFactorMask;
-	private final long subjectTypeGuardFactorMask;
 	private final int structuralConnectedComponentCount;
 	private final long[] deferredFilterRequiredVarMasks;
 	private final long[] deferredFiltersByRequiredVariable;
@@ -287,12 +284,10 @@ final class SketchJoinOrderPlanner {
 		this.smallBindingSetAssignmentFactors = buildSmallBindingSetAssignmentFactors(this.factors,
 				this.bindingSetAssignmentFactors);
 		this.subjectVarMasks = buildSubjectVarMasks(this.factors, variableIds);
-		this.subjectTypeGuardFactors = buildSubjectTypeGuardFactors(this.factors, this.subjectVarMasks);
 		this.factorUniverseMask = factorUniverseMask(this.factors.size());
 		this.variableUniverseMask = factorUniverseMask(this.variableNames.length);
 		this.bindingSetAssignmentFactorMask = factorMask(this.bindingSetAssignmentFactors);
 		this.smallBindingSetAssignmentFactorMask = factorMask(this.smallBindingSetAssignmentFactors);
-		this.subjectTypeGuardFactorMask = factorMask(this.subjectTypeGuardFactors);
 		this.structuralConnectedComponentCount = computeStructuralConnectedComponentCount();
 		this.deferredFilterRequiredVarMasks = buildDeferredFilterRequiredVarMasks(this.deferredFilters, variableIds);
 		this.plannedFilterActionCount = computePlannedFilterActionCount(this.deferredFilters, this.factors.size());
@@ -809,25 +804,6 @@ final class SketchJoinOrderPlanner {
 		return masks;
 	}
 
-	private static boolean[] buildSubjectTypeGuardFactors(List<PlanFactor> factors, long[] subjectVarMasks) {
-		boolean[] guards = new boolean[factors.size()];
-		for (int i = 0; i < factors.size(); i++) {
-			if (subjectVarMasks[i] == 0L) {
-				continue;
-			}
-			TupleExpr tupleExpr = factors.get(i).tupleExpr();
-			if (!(tupleExpr instanceof StatementPattern statementPattern)) {
-				continue;
-			}
-			Var predicate = statementPattern.getPredicateVar();
-			Var object = statementPattern.getObjectVar();
-			guards[i] = predicate != null && predicate.hasValue()
-					&& RDF.TYPE.equals(predicate.getValue())
-					&& object != null && object.hasValue();
-		}
-		return guards;
-	}
-
 	private static long factorMask(boolean[] factors) {
 		long mask = 0L;
 		for (int i = 0; i < factors.length; i++) {
@@ -1094,33 +1070,6 @@ final class SketchJoinOrderPlanner {
 		if (delayedAnchoredProbeWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
 			stepWorkRows += delayedAnchoredProbeWorkRows;
 		}
-		double pendingSubjectTypeGuardRows = pendingSubjectTypeGuardUncertaintyRows(factorIndex, 0L,
-				initiallyBoundVarMask, rowsEnteringEstimate);
-		double pendingPredicateOnlyTypeGuardWorkRows = pendingPredicateOnlySubjectTypeGuardWorkRows(physicalEstimate,
-				pendingSubjectTypeGuardRows);
-		if (pendingPredicateOnlyTypeGuardWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
-			stepWorkRows += pendingPredicateOnlyTypeGuardWorkRows;
-		}
-		double delayedSubjectTypeGuardSeedWorkRows = delayedSubjectTypeGuardSeedWorkRows(factorIndex,
-				initiallyBoundVarMask, seedEstimate);
-		if (delayedSubjectTypeGuardSeedWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
-			stepWorkRows += delayedSubjectTypeGuardSeedWorkRows;
-		}
-		double delayedEndpointSubjectTypeGuardSeedWorkRows = delayedEndpointSubjectTypeGuardSeedWorkRows(factorIndex,
-				initiallyBoundVarMask, seedMask, seedEstimate);
-		if (delayedEndpointSubjectTypeGuardSeedWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
-			stepWorkRows += delayedEndpointSubjectTypeGuardSeedWorkRows;
-		}
-		double delayedSubjectBridgeWorkRows = delayedSubjectBridgeWorkRows(factorIndex, 0L, initiallyBoundVarMask,
-				seedEstimate);
-		if (delayedSubjectBridgeWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
-			stepWorkRows += delayedSubjectBridgeWorkRows;
-		}
-		double delayedNestedEndpointBridgeWorkRows = delayedNestedEndpointBridgeWorkRows(factorIndex, seedMask,
-				seedBoundVarMask, seedEstimate);
-		if (delayedNestedEndpointBridgeWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
-			stepWorkRows += delayedNestedEndpointBridgeWorkRows;
-		}
 		double delayedBroadBridgeEndpointPrepWorkRows = delayedBroadBridgeEndpointPrepWorkRows(factorIndex, seedMask,
 				seedBoundVarMask, seedEstimate);
 		if (delayedBroadBridgeEndpointPrepWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
@@ -1131,11 +1080,9 @@ final class SketchJoinOrderPlanner {
 		if (delayedDisconnectedFiniteSeedWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
 			stepWorkRows += delayedDisconnectedFiniteSeedWorkRows;
 		}
-		double uncertaintyRows = pendingSubjectTypeGuardRows + delayedAnchoredProbeWorkRows
+		double uncertaintyRows = delayedAnchoredProbeWorkRows
 				+ delayedFilterExpansionWorkRows
-				+ delayedFiniteDomainWorkRows + delayedFiniteInteractionWorkRows + delayedSubjectBridgeWorkRows
-				+ delayedNestedEndpointBridgeWorkRows + delayedSubjectTypeGuardSeedWorkRows
-				+ delayedEndpointSubjectTypeGuardSeedWorkRows;
+				+ delayedFiniteDomainWorkRows + delayedFiniteInteractionWorkRows;
 		JoinCostVector costVector = costVector(stepWorkRows, seedEstimate.outputRows(), rowsProcessed,
 				uncertaintyRows, delayedDisconnectedFiniteSeedWorkRows, null, stepWorkRows, physicalEstimate);
 		ForwardChainState forwardChainState = forwardChainStateAfter(factorIndex, 0L, initiallyBoundVarMask);
@@ -1369,18 +1316,6 @@ final class SketchJoinOrderPlanner {
 		}
 		double cartesianWorkRows = prefix.costVector().cartesianWorkRows() + cartesianStepWorkRows
 				+ disconnectedFiniteExpansionWorkRows;
-		double pendingSubjectTypeGuardRows = pendingSubjectTypeGuardUncertaintyRows(candidate, mask,
-				currentBoundVarMask, rowsEnteringEstimate);
-		double pendingPredicateOnlyTypeGuardWorkRows = pendingPredicateOnlySubjectTypeGuardWorkRows(physicalEstimate,
-				pendingSubjectTypeGuardRows);
-		if (pendingPredicateOnlyTypeGuardWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
-			stepWorkRows += pendingPredicateOnlyTypeGuardWorkRows;
-		}
-		double delayedSubjectBridgeWorkRows = delayedSubjectBridgeWorkRows(candidate, mask, currentBoundVarMask,
-				rowsEnteringEstimate);
-		if (delayedSubjectBridgeWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
-			stepWorkRows += delayedSubjectBridgeWorkRows;
-		}
 		double delayedSubjectLocalPreparationWorkRows = delayedSubjectLocalPreparationWorkRows(prefix, candidate,
 				rowsEnteringEstimate);
 		if (delayedSubjectLocalPreparationWorkRows > 0.0d && isFiniteNonNegative(stepWorkRows)) {
@@ -1393,8 +1328,6 @@ final class SketchJoinOrderPlanner {
 				+ delayedEligibleNestedFilterWorkRows
 				+ delayedFiniteInteractionWorkRows
 				+ forwardContinuationWorkRows
-				+ pendingSubjectTypeGuardRows
-				+ delayedSubjectBridgeWorkRows
 				+ delayedSubjectLocalPreparationWorkRows;
 		double stepIntermediateRows = maxFinite(rowsProcessed, rowsBeforeUnlockedFilters.outputRows(),
 				rowsEnteringEstimate.outputRows(), nextEstimate.outputRows());
@@ -1472,10 +1405,6 @@ final class SketchJoinOrderPlanner {
 			return prefix;
 		}
 		double filterWorkRows = filterActionWorkRows(filter, prefix.estimate(), currentBoundVarMask);
-		double pendingGuardWorkRows = pendingBoundSubjectTypeGuardWorkRowsBeforeFilter(filterIndex, prefix);
-		if (pendingGuardWorkRows > 0.0d && isFiniteNonNegative(filterWorkRows)) {
-			filterWorkRows += pendingGuardWorkRows;
-		}
 		SketchBasedJoinEstimator.TuplePlanEstimate nextEstimate = filterAdjustedEstimate(filter, prefix.estimate(),
 				prefix.mask(), currentBoundVarMask);
 		long nextAppliedFilterMask = prefix.appliedFilterMask() | filterBit;
@@ -1511,33 +1440,6 @@ final class SketchJoinOrderPlanner {
 			return 0.0d;
 		}
 		return nestedFilterWorkRows(filter, estimate.outputRows(), estimate, boundVarMask);
-	}
-
-	private double pendingBoundSubjectTypeGuardWorkRowsBeforeFilter(int filterIndex, StatePlan prefix) {
-		JoinOrderPlanner.FilterConstraint filter = deferredFilters.get(filterIndex);
-		if (!filter.hasNestedTupleExpression() || prefix == null) {
-			return 0.0d;
-		}
-		long correlatedVars = deferredFilterRequiredVarMasks[filterIndex] & prefix.boundVarMask();
-		if (correlatedVars == 0L) {
-			return 0.0d;
-		}
-		double workRows = 0.0d;
-		long guards = subjectTypeGuardFactorMask & ~prefix.mask();
-		while (guards != 0L) {
-			int guardIndex = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(guardIndex) & correlatedVars) == 0L
-					|| (bindingVarMasks[guardIndex] & ~prefix.boundVarMask()) != 0L) {
-				continue;
-			}
-			double guardWorkRows = rawFactorAccessWorkRows(guardIndex, prefix.mask(), prefix.boundVarMask(),
-					prefix.estimate());
-			if (isFiniteNonNegative(guardWorkRows)) {
-				workRows += guardWorkRows;
-			}
-		}
-		return isFiniteNonNegative(workRows) ? workRows : 0.0d;
 	}
 
 	private SketchBasedJoinEstimator.TuplePlanEstimate filterAdjustedEstimate(JoinOrderPlanner.FilterConstraint filter,
@@ -2561,323 +2463,6 @@ final class SketchJoinOrderPlanner {
 				&& factorOutputRows[factorIndex] <= 1.0d;
 	}
 
-	private double pendingSubjectTypeGuardUncertaintyRows(int factorIndex, long mask, long currentlyBoundVarMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
-		if (isSubjectTypeGuard(factorIndex)
-				|| pendingSubjectTypeGuardRows(factorIndex, mask, currentlyBoundVarMask) <= 0.0d) {
-			return 0.0d;
-		}
-		if (rowsEnteringEstimate != null && isFiniteNonNegative(rowsEnteringEstimate.outputRows())) {
-			return rowsEnteringEstimate.outputRows();
-		}
-		double factorRows = factorOutputRows[factorIndex];
-		return isFiniteNonNegative(factorRows) ? factorRows : 1.0d;
-	}
-
-	private double pendingPredicateOnlySubjectTypeGuardWorkRows(FactorPhysicalEstimate physicalEstimate,
-			double pendingSubjectTypeGuardRows) {
-		if (!(pendingSubjectTypeGuardRows > 0.0d) || physicalEstimate == null
-				|| !physicalEstimate.physicalComparable()) {
-			return 0.0d;
-		}
-		int subjectBit = componentBit(SketchBasedJoinEstimator.Component.S);
-		int predicateBit = componentBit(SketchBasedJoinEstimator.Component.P);
-		int objectBit = componentBit(SketchBasedJoinEstimator.Component.O);
-		int lookupMask = physicalEstimate.lookupComponentMask();
-		boolean predicateOnly = (lookupMask & predicateBit) != 0
-				&& (lookupMask & (subjectBit | objectBit)) == 0;
-		return predicateOnly ? pendingSubjectTypeGuardRows : 0.0d;
-	}
-
-	private double delayedSubjectTypeGuardSeedWorkRows(int factorIndex, long currentlyBoundVarMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
-		if (isSubjectTypeGuard(factorIndex)
-				|| unlocksNestedFilterOnIntroducedNonSubjectEndpoint(factorIndex, currentlyBoundVarMask)
-				|| hasStrongSelectiveLocalFilter(factorIndex, currentlyBoundVarMask)
-				|| participatesInPendingFiniteFilter(factorIndex, currentlyBoundVarMask)
-				|| unlocksStrongSelectiveDeferredFilterOnSeed(factorIndex)) {
-			return 0.0d;
-		}
-		double seedRows = rowsEnteringEstimate == null ? Double.NaN : rowsEnteringEstimate.outputRows();
-		if (!isFiniteNonNegative(seedRows)) {
-			seedRows = factorOutputRows[factorIndex];
-		}
-		if (!(isFiniteNonNegative(seedRows) && seedRows > 1.0d)) {
-			return 0.0d;
-		}
-		double pendingDomainRows = pendingNarrowerSubjectTypeGuardRows(factorIndex, 0L, currentlyBoundVarMask,
-				seedRows);
-		if (!(pendingDomainRows > 0.0d)) {
-			return 0.0d;
-		}
-		double pendingContinuationRows = pendingSubjectTypeGuardContinuationRows(factorIndex, currentlyBoundVarMask);
-		double delayedRows = Math.max(pendingDomainRows, pendingContinuationRows);
-		double workRows = seedRows * delayedRows;
-		return isFiniteNonNegative(workRows) ? workRows : 0.0d;
-	}
-
-	private double pendingNarrowerSubjectTypeGuardRows(int factorIndex, long mask, long currentlyBoundVarMask,
-			double seedRows) {
-		long introducedVars = bindingVarMasks[factorIndex] & ~currentlyBoundVarMask;
-		if (introducedVars == 0L || !isFiniteNonNegative(seedRows)) {
-			return 0.0d;
-		}
-		double rows = 0.0d;
-		long guards = remainingSubjectTypeGuardMask(mask, factorIndex);
-		while (guards != 0L) {
-			int i = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(i) & introducedVars) == 0L) {
-				continue;
-			}
-			double typeRows = factorOutputRows[i];
-			if (isFiniteNonNegative(typeRows) && typeRows < seedRows) {
-				rows += typeRows;
-			}
-		}
-		return rows;
-	}
-
-	private boolean hasStrongSelectiveLocalFilter(int factorIndex, long currentlyBoundVarMask) {
-		double passRatio = localFilterPassRatio(factorIndex, currentlyBoundVarMask);
-		return isValidPassRatio(passRatio) && passRatio <= SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO;
-	}
-
-	private boolean unlocksStrongSelectiveDeferredFilterOnSeed(int factorIndex) {
-		double passRatio = newlyUnlockedFilterPassRatio(0L, bit(factorIndex), initiallyBoundVarMask,
-				initiallyBoundVarMask | bindingVarMasks[factorIndex]);
-		return isValidPassRatio(passRatio) && passRatio <= SEED_FILTER_ROW_FLOW_MAX_PASS_RATIO;
-	}
-
-	private boolean participatesInPendingFiniteFilter(int factorIndex, long currentlyBoundVarMask) {
-		long introducedVars = bindingVarMasks[factorIndex] & ~currentlyBoundVarMask & variableUniverseMask;
-		return finiteFilterParticipationCount(introducedVars) > 0;
-	}
-
-	private double delayedEndpointSubjectTypeGuardSeedWorkRows(int factorIndex, long currentlyBoundVarMask,
-			long seedMask, SketchBasedJoinEstimator.TuplePlanEstimate seedEstimate) {
-		if (isSubjectTypeGuard(factorIndex) || !unlocksWeakLocalFilterOnStep(factorIndex, 0L, seedMask,
-				currentlyBoundVarMask)) {
-			return 0.0d;
-		}
-		long seedVars = bindingVarMasks[factorIndex] & ~currentlyBoundVarMask & variableUniverseMask;
-		if (seedVars == 0L) {
-			return 0.0d;
-		}
-		long seedBoundVarMask = currentlyBoundVarMask | bindingVarMasks[factorIndex];
-		double seedRows = seedEstimate == null ? Double.NaN : seedEstimate.outputRows();
-		if (!isFiniteNonNegative(seedRows)) {
-			seedRows = factorOutputRows[factorIndex];
-		}
-		if (!(isFiniteNonNegative(seedRows) && seedRows > 1.0d)) {
-			return 0.0d;
-		}
-		double workRows = 0.0d;
-		long bridges = (factorUniverseMask & ~seedMask) & ~bindingSetAssignmentFactorMask & ~subjectTypeGuardFactorMask;
-		while (bridges != 0L) {
-			int bridge = Long.numberOfTrailingZeros(bridges);
-			bridges &= bridges - 1L;
-			if (statementPatternBase(factors.get(bridge).tupleExpr()) == null) {
-				continue;
-			}
-			long subjectVars = statementSubjectVarMask(bridge) & variableUniverseMask;
-			long objectVars = statementObjectVarMask(bridge) & variableUniverseMask;
-			if (subjectVars == 0L || objectVars == 0L || (subjectVars & objectVars) != 0L) {
-				continue;
-			}
-			long guardedEndpointVars = 0L;
-			if ((subjectVars & seedVars) != 0L && (objectVars & seedVars) == 0L) {
-				guardedEndpointVars = objectVars;
-			} else if ((objectVars & seedVars) != 0L && (subjectVars & seedVars) == 0L) {
-				guardedEndpointVars = subjectVars;
-			}
-			double guardWorkRows = cheapestPendingSubjectTypeGuardWorkRows(guardedEndpointVars,
-					seedMask | bit(bridge), seedBoundVarMask | bindingVarMasks[bridge], seedEstimate);
-			if (!(guardWorkRows > 0.0d)) {
-				continue;
-			}
-			double bridgeWorkRows = delayedStepWorkRows(bridge, seedMask, seedBoundVarMask, seedEstimate);
-			if (isFiniteNonNegative(bridgeWorkRows)) {
-				workRows += Math.max(1.0d, bridgeWorkRows) + guardWorkRows;
-			}
-		}
-		return isFiniteNonNegative(workRows) ? workRows : 0.0d;
-	}
-
-	private boolean unlocksWeakLocalFilterOnStep(int factorIndex, long previousMask, long nextMask,
-			long currentlyBoundVarMask) {
-		if (isFilteredFactor(factorIndex)) {
-			return !hasSelectiveOrderingPassRatio(localFilterPassRatio(factorIndex, currentlyBoundVarMask));
-		}
-		if (deferredFilters.isEmpty()) {
-			return false;
-		}
-		long previousBound = currentlyBoundVarMask;
-		long nextBound = currentlyBoundVarMask | bindingVarMasks[factorIndex];
-		long introducedVars = bindingVarMasks[factorIndex] & ~currentlyBoundVarMask & variableUniverseMask;
-		if (introducedVars == 0L) {
-			return false;
-		}
-		for (int i = 0; i < deferredFilters.size(); i++) {
-			JoinOrderPlanner.FilterConstraint filter = deferredFilters.get(i);
-			if (filter.hasNestedTupleExpression()) {
-				continue;
-			}
-			long requiredVars = deferredFilterRequiredVarMasks[i];
-			if ((requiredVars & introducedVars) == 0L
-					|| (previousBound & requiredVars) == requiredVars
-					|| (nextBound & requiredVars) != requiredVars) {
-				continue;
-			}
-			double passRatio = filter.getEstimatedPassRatio();
-			if (!isValidPassRatio(passRatio)) {
-				passRatio = finiteDomainFilterPassRatio(filter, nextMask);
-			}
-			if (!hasSelectiveOrderingPassRatio(passRatio)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private double cheapestPendingSubjectTypeGuardWorkRows(long endpointVars, long mask, long currentBoundVarMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
-		if (endpointVars == 0L) {
-			return 0.0d;
-		}
-		double cheapestRows = Double.POSITIVE_INFINITY;
-		long guards = subjectTypeGuardFactorMask & ~mask;
-		while (guards != 0L) {
-			int guard = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(guard) & endpointVars) == 0L) {
-				continue;
-			}
-			double guardWorkRows = delayedStepWorkRows(guard, mask, currentBoundVarMask, prefixEstimate);
-			if (isFiniteNonNegative(guardWorkRows) && guardWorkRows < cheapestRows) {
-				cheapestRows = Math.max(1.0d, guardWorkRows);
-			}
-		}
-		return Double.isFinite(cheapestRows) ? cheapestRows : 0.0d;
-	}
-
-	private double pendingSubjectTypeGuardContinuationRows(int factorIndex, long currentlyBoundVarMask) {
-		long introducedVars = bindingVarMasks[factorIndex] & ~currentlyBoundVarMask;
-		if (introducedVars == 0L) {
-			return 0.0d;
-		}
-		double rows = 0.0d;
-		long guards = remainingSubjectTypeGuardMask(0L, factorIndex);
-		while (guards != 0L) {
-			int guardIndex = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			long guardedSubjectVars = subjectVarMask(guardIndex) & introducedVars;
-			if (guardedSubjectVars == 0L) {
-				continue;
-			}
-			long continuations = factorUniverseMask & ~bit(factorIndex) & ~bit(guardIndex)
-					& ~bindingSetAssignmentFactorMask & ~subjectTypeGuardFactorMask;
-			while (continuations != 0L) {
-				int continuation = Long.numberOfTrailingZeros(continuations);
-				continuations &= continuations - 1L;
-				if ((bindingVarMasks[continuation] & guardedSubjectVars) == 0L) {
-					continue;
-				}
-				double continuationRows = factorOutputRows[continuation];
-				if (isFiniteNonNegative(continuationRows)) {
-					rows += continuationRows;
-				}
-			}
-		}
-		return isFiniteNonNegative(rows) ? rows : 0.0d;
-	}
-
-	private boolean unlocksNestedFilterOnIntroducedNonSubjectEndpoint(int factorIndex, long currentlyBoundVarMask) {
-		if (deferredFilters.isEmpty()) {
-			return false;
-		}
-		long introducedNonSubjectVars = (bindingVarMasks[factorIndex] & ~currentlyBoundVarMask
-				& ~subjectVarMask(factorIndex) & variableUniverseMask);
-		if (introducedNonSubjectVars == 0L) {
-			return false;
-		}
-		long boundAfterFactor = currentlyBoundVarMask | bindingVarMasks[factorIndex];
-		for (int i = 0; i < plannedFilterActionCount(); i++) {
-			JoinOrderPlanner.FilterConstraint filter = deferredFilters.get(i);
-			if (!filter.hasNestedTupleExpression()) {
-				continue;
-			}
-			long requiredVars = deferredFilterRequiredVarMasks[i];
-			if ((requiredVars & introducedNonSubjectVars) != 0L
-					&& (requiredVars & ~currentlyBoundVarMask) != 0L
-					&& (requiredVars & ~boundAfterFactor) == 0L) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private boolean hasBroadBridgeBetweenEndpointGuards(long leftEndpointVars, long rightEndpointVars,
-			double leftEndpointRows, double rightEndpointRows, int leftGuardIndex, int rightGuardIndex) {
-		return broadBridgeRowsBetweenEndpointGuards(leftEndpointVars, rightEndpointVars, leftEndpointRows,
-				rightEndpointRows, leftGuardIndex, rightGuardIndex) > 0.0d;
-	}
-
-	private double broadBridgeRowsBetweenEndpointGuards(long leftEndpointVars, long rightEndpointVars,
-			double leftEndpointRows, double rightEndpointRows, int leftGuardIndex, int rightGuardIndex) {
-		if (leftEndpointVars == 0L || rightEndpointVars == 0L) {
-			return 0.0d;
-		}
-		double broadBridgeRows = 0.0d;
-		long candidates = factorUniverseMask & ~bit(leftGuardIndex) & ~bit(rightGuardIndex)
-				& ~bindingSetAssignmentFactorMask;
-		while (candidates != 0L) {
-			int bridge = Long.numberOfTrailingZeros(candidates);
-			candidates &= candidates - 1L;
-			if (statementPatternBase(factors.get(bridge).tupleExpr()) == null) {
-				continue;
-			}
-			long subjectVars = statementSubjectVarMask(bridge) & variableUniverseMask;
-			long objectVars = statementObjectVarMask(bridge) & variableUniverseMask;
-			if (subjectVars == 0L || objectVars == 0L || (subjectVars & objectVars) != 0L) {
-				continue;
-			}
-			boolean connectsEndpoints = ((subjectVars & leftEndpointVars) != 0L
-					&& (objectVars & rightEndpointVars) != 0L)
-					|| ((objectVars & leftEndpointVars) != 0L && (subjectVars & rightEndpointVars) != 0L);
-			double rows = bridgeRows(bridge, null);
-			if (connectsEndpoints && isBroadEndpointBridge(rows, leftEndpointRows, rightEndpointRows)) {
-				broadBridgeRows = Math.max(broadBridgeRows, rows);
-			}
-		}
-		return broadBridgeRows;
-	}
-
-	private double delayedSubjectBridgeWorkRows(int factorIndex, long mask, long currentlyBoundVarMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
-		if (!isSubjectTypeGuard(factorIndex) || currentlyBoundVarMask == 0L) {
-			return 0.0d;
-		}
-		long introducedSubjectVars = subjectVarMask(factorIndex) & ~currentlyBoundVarMask;
-		if (introducedSubjectVars == 0L) {
-			return 0.0d;
-		}
-		long nextMask = mask | bit(factorIndex);
-		long nextBoundVarMask = currentlyBoundVarMask | bindingVarMasks[factorIndex];
-		double workRows = 0.0d;
-		long bridges = remainingBoundSubjectBridgeMask(factorIndex, mask, introducedSubjectVars,
-				currentlyBoundVarMask);
-		while (bridges != 0L) {
-			int i = Long.numberOfTrailingZeros(bridges);
-			bridges &= bridges - 1L;
-			double bridgeWorkRows = rawFactorAccessWorkRows(i, nextMask, nextBoundVarMask, rowsEnteringEstimate);
-			if (isFiniteNonNegative(bridgeWorkRows)) {
-				workRows += Math.max(1.0d, bridgeWorkRows);
-			}
-		}
-		return isFiniteNonNegative(workRows) ? workRows : 0.0d;
-	}
-
 	private double delayedSubjectLocalPreparationWorkRows(StatePlan prefix, int factorIndex,
 			SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate) {
 		if (prefix == null || rowsEnteringEstimate == null || isBindingSetAssignment(factorIndex)) {
@@ -2917,7 +2502,7 @@ final class SketchJoinOrderPlanner {
 		}
 		long mask = prefix.mask();
 		long candidates = factorUniverseMask & ~mask & ~bit(factorIndex)
-				& ~bindingSetAssignmentFactorMask & ~subjectTypeGuardFactorMask;
+				& ~bindingSetAssignmentFactorMask;
 		double workRows = 0.0d;
 		while (candidates != 0L) {
 			int i = Long.numberOfTrailingZeros(candidates);
@@ -2941,28 +2526,6 @@ final class SketchJoinOrderPlanner {
 			double delayedWorkRows = bridgeRows * Math.max(1.0d, preparationRows);
 			if (isFiniteNonNegative(delayedWorkRows)) {
 				workRows += delayedWorkRows;
-			}
-		}
-		return isFiniteNonNegative(workRows) ? workRows : 0.0d;
-	}
-
-	private double delayedNestedEndpointBridgeWorkRows(int factorIndex, long seedMask, long seedBoundVarMask,
-			SketchBasedJoinEstimator.TuplePlanEstimate seedEstimate) {
-		if (!isSubjectTypeGuard(factorIndex) || deferredFilters.isEmpty()) {
-			return 0.0d;
-		}
-		long subjectVars = subjectVarMask(factorIndex) & variableUniverseMask;
-		if (subjectVars == 0L) {
-			return 0.0d;
-		}
-		double workRows = 0.0d;
-		long bridges = remainingNestedEndpointBridgeMask(seedMask, seedBoundVarMask, subjectVars);
-		while (bridges != 0L) {
-			int bridge = Long.numberOfTrailingZeros(bridges);
-			bridges &= bridges - 1L;
-			double bridgeWorkRows = delayedStepWorkRows(bridge, seedMask, seedBoundVarMask, seedEstimate);
-			if (isFiniteNonNegative(bridgeWorkRows)) {
-				workRows += Math.max(1.0d, bridgeWorkRows);
 			}
 		}
 		return isFiniteNonNegative(workRows) ? workRows : 0.0d;
@@ -3110,60 +2673,6 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		return false;
-	}
-
-	private long remainingNestedEndpointBridgeMask(long seedMask, long seedBoundVarMask, long subjectVars) {
-		long bridges = 0L;
-		long candidates = (factorUniverseMask & ~seedMask) & ~bindingSetAssignmentFactorMask
-				& ~subjectTypeGuardFactorMask;
-		while (candidates != 0L) {
-			int i = Long.numberOfTrailingZeros(candidates);
-			candidates &= candidates - 1L;
-			if (statementPatternBase(factors.get(i).tupleExpr()) == null) {
-				continue;
-			}
-			long bridgeSubjectVars = statementSubjectVarMask(i) & variableUniverseMask;
-			if ((bridgeSubjectVars & subjectVars) == 0L) {
-				continue;
-			}
-			long bridgeVars = bindingVarMasks[i] & variableUniverseMask;
-			long introducedEndpointVars = bridgeVars & ~subjectVars;
-			if (introducedEndpointVars != 0L
-					&& unlocksPositiveNestedFilter(seedBoundVarMask | bindingVarMasks[i],
-							introducedEndpointVars)) {
-				bridges |= bit(i);
-			}
-		}
-		return bridges;
-	}
-
-	private boolean unlocksPositiveNestedFilter(long boundVars, long introducedEndpointVars) {
-		for (int i = 0; i < plannedFilterActionCount(); i++) {
-			JoinOrderPlanner.FilterConstraint filter = deferredFilters.get(i);
-			if (!filter.hasNestedTupleExpression() || filter.isNotExists()) {
-				continue;
-			}
-			long requiredVars = deferredFilterRequiredVarMasks[i];
-			if ((requiredVars & introducedEndpointVars) != 0L && (requiredVars & ~boundVars) == 0L) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private long remainingBoundSubjectBridgeMask(int factorIndex, long mask, long introducedSubjectVars,
-			long currentlyBoundVarMask) {
-		long bridges = 0L;
-		long candidates = (factorUniverseMask & ~mask & ~bit(factorIndex)) & ~bindingSetAssignmentFactorMask;
-		while (candidates != 0L) {
-			int i = Long.numberOfTrailingZeros(candidates);
-			candidates &= candidates - 1L;
-			long vars = bindingVarMasks[i];
-			if ((vars & introducedSubjectVars) != 0L && (vars & currentlyBoundVarMask) != 0L) {
-				bridges |= bit(i);
-			}
-		}
-		return bridges;
 	}
 
 	private double maxFinite(double first, double second) {
@@ -5382,8 +4891,7 @@ final class SketchJoinOrderPlanner {
 				|| hasStructuralConnection(factorIndex, currentlyBoundVarMask)) {
 			return accessWorkRows;
 		}
-		if (hasBroadPendingEndpointBridge(mask, factorIndex, currentlyBoundVarMask, prefixEstimate)
-				&& !hasPreparedSmallerEndpointGuard(mask, factorIndex)) {
+		if (hasBroadPendingEndpointBridge(mask, factorIndex, currentlyBoundVarMask, prefixEstimate)) {
 			return accessWorkRows;
 		}
 		double prefixRows = effectiveInvocationRows(mask, prefixEstimate);
@@ -5428,27 +4936,6 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		return false;
-	}
-
-	private double pendingSubjectTypeGuardRows(int factorIndex, long mask, long currentlyBoundVarMask) {
-		long introducedVars = bindingVarMasks[factorIndex] & ~currentlyBoundVarMask;
-		if (introducedVars == 0L) {
-			return 0.0d;
-		}
-		double rows = 0.0d;
-		long guards = remainingSubjectTypeGuardMask(mask, factorIndex);
-		while (guards != 0L) {
-			int i = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(i) & introducedVars) == 0L) {
-				continue;
-			}
-			double typeRows = factorOutputRows[i];
-			if (isFiniteNonNegative(typeRows)) {
-				rows += typeRows;
-			}
-		}
-		return rows;
 	}
 
 	private double factorStepWorkRows(FactorPhysicalEstimate physicalEstimate, double rowsProcessed) {
@@ -5511,58 +4998,9 @@ final class SketchJoinOrderPlanner {
 				|| (bindingVarMasks[factorIndex] & variableUniverseMask) == 0L) {
 			return false;
 		}
-		if (hasPendingBoundSubjectTypeGuard(previousMask, currentlyBoundVarMask, factorIndex)) {
-			return false;
-		}
-		if (hasPreparedSmallerEndpointGuard(previousMask, factorIndex)) {
-			return false;
-		}
 		long directlySharedVars = currentlyBoundVarMask & bindingVarMasks[factorIndex] & variableUniverseMask;
 		return directlySharedVars == 0L
 				&& hasBroadPendingEndpointBridge(previousMask, factorIndex, currentlyBoundVarMask, prefixEstimate);
-	}
-
-	private boolean hasPreparedSmallerEndpointGuard(long mask, int factorIndex) {
-		if (mask == 0L || !isSubjectTypeGuard(factorIndex)) {
-			return false;
-		}
-		long factorSubjectVars = subjectVarMask(factorIndex) & variableUniverseMask;
-		double factorRows = factorOutputRows[factorIndex];
-		if (factorSubjectVars == 0L || !(isFiniteNonNegative(factorRows) && factorRows > 0.0d)) {
-			return false;
-		}
-		long guards = subjectTypeGuardFactorMask & mask;
-		while (guards != 0L) {
-			int guardIndex = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			long guardSubjectVars = subjectVarMask(guardIndex) & variableUniverseMask;
-			double guardRows = factorOutputRows[guardIndex];
-			if (guardSubjectVars == 0L || (guardSubjectVars & factorSubjectVars) != 0L
-					|| !(isFiniteNonNegative(guardRows) && guardRows > 0.0d && guardRows < factorRows)) {
-				continue;
-			}
-			if (hasBroadBridgeBetweenEndpointGuards(factorSubjectVars, guardSubjectVars, factorRows, guardRows,
-					factorIndex, guardIndex)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private boolean hasPendingBoundSubjectTypeGuard(long mask, long currentlyBoundVarMask, int excludedFactorIndex) {
-		long boundVars = currentlyBoundVarMask & variableUniverseMask;
-		if (boundVars == 0L) {
-			return false;
-		}
-		long guards = remainingSubjectTypeGuardMask(mask, excludedFactorIndex);
-		while (guards != 0L) {
-			int guardIndex = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(guardIndex) & boundVars) != 0L) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private double delayedBindingAssignmentRowsProcessed(StatePlan prefix, int factorIndex, long nextMask,
@@ -6109,20 +5547,12 @@ final class SketchJoinOrderPlanner {
 		return factors.get(factorIndex).tupleExpr() instanceof BindingSetAssignment;
 	}
 
-	private boolean isSubjectTypeGuard(int factorIndex) {
-		return subjectTypeGuardFactors[factorIndex];
-	}
-
 	private long subjectVarMask(int factorIndex) {
 		return subjectVarMasks[factorIndex];
 	}
 
 	private long remainingSmallBindingSetAssignmentMask(long mask, int excludedFactorIndex) {
 		return smallBindingSetAssignmentFactorMask & ~mask & ~bit(excludedFactorIndex);
-	}
-
-	private long remainingSubjectTypeGuardMask(long mask, int excludedFactorIndex) {
-		return subjectTypeGuardFactorMask & ~mask & ~bit(excludedFactorIndex);
 	}
 
 	private SketchBasedJoinEstimator.TuplePlanEstimate applyUnlockedFilters(long previousMask, long nextMask,
@@ -6211,19 +5641,6 @@ final class SketchJoinOrderPlanner {
 	private boolean hasFactorConnectedToInitiallyBoundVars() {
 		for (long runtimeVarMask : runtimeVarMasks) {
 			if ((runtimeVarMask & initiallyBoundVarMask) != 0L) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private boolean introducedVarsHasPendingSubjectTypeGuard(int alternativeIndex, long previousMask,
-			long introducedVars) {
-		long guards = remainingSubjectTypeGuardMask(previousMask, alternativeIndex);
-		while (guards != 0L) {
-			int i = Long.numberOfTrailingZeros(guards);
-			guards &= guards - 1L;
-			if ((subjectVarMask(i) & introducedVars) != 0L) {
 				return true;
 			}
 		}

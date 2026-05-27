@@ -69,7 +69,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -6095,17 +6094,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				&& distinct > 0.0d)) {
 			return false;
 		}
-		if (pattern != null && !isConstantTypePattern(pattern)) {
+		if (pattern != null && !isConstantObjectPattern(pattern)) {
 			return false;
 		}
 		return Math.abs(rows - distinct) <= Math.max(1.0e-9d, rows * 1.0e-9d)
 				|| rows <= distinct * FINITE_UNIQUE_JOIN_CAP_MAX_ROWS_PER_DISTINCT;
 	}
 
-	private boolean isConstantTypePattern(StatementPattern pattern) {
-		Var predicate = pattern.getPredicateVar();
+	private boolean isConstantObjectPattern(StatementPattern pattern) {
 		Var object = pattern.getObjectVar();
-		return predicate != null && RDF.TYPE.equals(predicate.getValue()) && object != null && object.hasValue();
+		return object != null && object.hasValue();
 	}
 
 	private double estimateStatsSharedVarJoinRows(double leftRows, double rightRows, double leftDistinct,

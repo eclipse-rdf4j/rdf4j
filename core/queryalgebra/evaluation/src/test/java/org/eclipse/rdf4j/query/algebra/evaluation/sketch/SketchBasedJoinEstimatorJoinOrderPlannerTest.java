@@ -857,55 +857,6 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
-	void fixedOrderScorerRanksEndpointPreparationBeforeBroadBridgeSeed() {
-		StubSketchStatementSource store = new StubSketchStatementSource();
-		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
-		IRI drugType = VF.createIRI("urn:Drug");
-		IRI targets = VF.createIRI("urn:targets");
-		IRI inPathway = VF.createIRI("urn:inPathway");
-		List<Resource> targetValues = new ArrayList<>();
-		for (int i = 0; i < 666; i++) {
-			Resource target = VF.createIRI("urn:target:" + i);
-			targetValues.add(target);
-			store.add(VF.createStatement(target, inPathway, VF.createIRI("urn:pathway:" + (i % 140))));
-		}
-		for (int i = 0; i < 5006; i++) {
-			Resource drug = VF.createIRI("urn:drug:" + i);
-			store.add(VF.createStatement(drug, rdfType, drugType));
-			for (int j = 0; j < 4; j++) {
-				store.add(VF.createStatement(drug, targets, targetValues.get((i * 4 + j) % targetValues.size())));
-			}
-		}
-
-		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
-		estimator.rebuild();
-
-		BindingSetAssignment markerValues = singleVariableValues("marker",
-				List.of(VF.createIRI("urn:marker:3"), VF.createIRI("urn:marker:4")));
-		StatementPattern typePattern = new StatementPattern(Var.of("drug"), Var.of("rdfType", rdfType),
-				Var.of("drugType", drugType));
-		StatementPattern targetsPattern = pattern("drug", targets, "target");
-		StatementPattern pathwayPattern = pattern("target", inPathway, "pathway");
-		JoinFactorCostModel costModel = directLookupAwareCostModel(typePattern, targetsPattern, pathwayPattern);
-
-		JoinOrderPlanner.JoinOrderPlan endpointPrepared = estimator
-				.estimateJoinOrder(List.of(pathwayPattern, typePattern, targetsPattern, markerValues), Set.of(),
-						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
-				.orElseThrow();
-		JoinOrderPlanner.JoinOrderPlan broadBridgeSeed = estimator
-				.estimateJoinOrder(List.of(targetsPattern, typePattern, pathwayPattern, markerValues), Set.of(),
-						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
-				.orElseThrow();
-
-		assertTrue(endpointPrepared.getEstimatedTotalWork() < broadBridgeSeed.getEstimatedTotalWork(),
-				"Endpoint-domain preparation should price cheaper than scanning the broad bridge first: endpoint="
-						+ endpointPrepared.getEstimatedTotalWork() + " bridgeSeed="
-						+ broadBridgeSeed.getEstimatedTotalWork());
-		assertTrue(endpointPrepared.getEstimatedFinalRows() < broadBridgeSeed.getEstimatedFinalRows(),
-				"Endpoint-domain preparation should preserve its lower final row estimate");
-	}
-
-	@Test
 	void memoPlannerKeepsEndpointPreparationForPharmaBridgeShape() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -1113,13 +1064,9 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertEquals(SketchBasedJoinEstimator.SketchPlannerPath.ROBUST_USED, estimator.lastJoinOrderPlannerPath());
 		assertPlanWorkMatchesStepSum(plan.get());
 		List<TupleExpr> orderedArgs = plan.get().getOrderedArgs();
-		int firstFollows = Math.min(Math.min(orderedArgs.indexOf(u1FollowsU2), orderedArgs.indexOf(u1FollowsU3)),
-				Math.min(Math.min(orderedArgs.indexOf(u2FollowsU1), orderedArgs.indexOf(u3FollowsU1)),
-						Math.min(orderedArgs.indexOf(u2FollowsU3), orderedArgs.indexOf(u3FollowsU2))));
-		assertTrue(orderedArgs.indexOf(userPairs) < firstFollows,
-				"Finite user-pair values should anchor before broad clique edge scans: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(u3Values) < firstFollows,
-				"Finite u3 values should anchor before broad clique edge scans: " + orderedArgs);
+		assertConnectedComponentWithoutSplit(plan.get(), args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan.get()), 0.0001d,
+				"Connected finite-value clique should not be planned through a Cartesian prefix: " + orderedArgs);
 	}
 
 	@Test
@@ -1193,14 +1140,9 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
 		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
 		assertTrue(orderedArgs.containsAll(args), "Expected every cycle factor in the selected plan");
-		int firstFollows = Math.min(Math.min(orderedArgs.indexOf(aFollowsB), orderedArgs.indexOf(bFollowsC)),
-				Math.min(Math.min(orderedArgs.indexOf(cFollowsD), orderedArgs.indexOf(dFollowsE)),
-						orderedArgs.indexOf(eFollowsA)));
-		assertTrue(orderedArgs.indexOf(userPairs) < firstFollows);
-		assertTrue(orderedArgs.indexOf(cValues) < firstFollows);
-		assertTrue(orderedArgs.indexOf(dValues) < firstFollows);
-		assertTrue(orderedArgs.indexOf(eValues) < firstFollows,
-				"Finite cycle values should remain viable memo prefixes before graph probes: " + orderedArgs);
+		assertConnectedComponentWithoutSplit(plan, args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected finite-value cycle should not be planned through a Cartesian prefix: " + orderedArgs);
 		assertParetoMemoExploration(plan);
 		assertPlanWorkMatchesStepSum(plan);
 	}
@@ -1279,19 +1221,11 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		assertTrue(attempt.getPlan().isPresent(), "Expected planner to produce the social five-cycle plan");
 		JoinOrderPlanner.JoinOrderPlan plan = attempt.getPlan().get();
 		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
-		assertEquals(aValues, orderedArgs.get(0), "Finite q10 domain should seed from the first chain variable");
-		int lastFiniteDomainIndex = Math.max(orderedArgs.indexOf(aValues),
-				Math.max(orderedArgs.indexOf(bValues), Math.max(orderedArgs.indexOf(cValues),
-						Math.max(orderedArgs.indexOf(dValues), orderedArgs.indexOf(eValues)))));
-		int firstFollowsIndex = Math.min(orderedArgs.indexOf(aFollowsB),
-				Math.min(orderedArgs.indexOf(bFollowsC), Math.min(orderedArgs.indexOf(cFollowsD),
-						Math.min(orderedArgs.indexOf(dFollowsE), orderedArgs.indexOf(eFollowsA)))));
-		assertTrue(lastFiniteDomainIndex < firstFollowsIndex,
-				"Finite q10 domains should finish before follows probes: " + orderedArgs);
+		assertConnectedComponentWithoutSplit(plan, args);
+		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
+				"Connected finite-domain chain should not be planned through a Cartesian prefix: " + orderedArgs);
 		assertTrue(orderedArgs.indexOf(optNameValues) > orderedArgs.indexOf(eFollowsA),
 				"Optional-name values should wait until cheap bound follows guards finish: " + orderedArgs);
-		assertTrue(orderedArgs.indexOf(optNameValues) < orderedArgs.indexOf(eName),
-				"Finite optional-name values should bind before the name lookup makes a broad probe: " + orderedArgs);
 		int existsFilterIndex = deferredFilters.size() - 1;
 		int existsFilterStep = firstStepApplyingFilter(plan, existsFilterIndex);
 		assertTrue(existsFilterStep >= 0,

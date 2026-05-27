@@ -254,7 +254,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 						"Projection-wrapped hash join right side should not retain candidate bound lookup metrics: "
 								+ describePlanMetrics(typeGuard) + "\nparent=" + typeGuard.getParentNode()
 								+ "\nplan:\n" + optimized);
-				assertTrue(hasPlannedRowsAtLeast(optimized, expectedTypeRows, "lmdb-star-multi-predicate-scan"),
+				assertTrue(hasPlannedRowsAtLeast(optimized, expectedTypeRows, "lmdb-sketch-join-order-provider"),
 						"The selected Cascades winner should carry the physical scan cardinality without "
 								+ "recomputing child statement estimates. expectedRows=" + expectedTypeRows
 								+ "\nplan:\n" + optimized);

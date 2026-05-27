@@ -27,7 +27,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -549,7 +548,7 @@ final class LmdbDeferredFilterPlacer {
 		}
 		StatementPattern pattern = factor.containedPatterns.iterator()
 				.next();
-		return isSubjectTypeGuardForRequiredBinding(pattern, filter.requiredVars) || isExactDirectLookup(pattern);
+		return isExactDirectLookup(pattern);
 	}
 
 	private Set<String> plannerBindingNames(Set<String> bindingNames) {
@@ -559,20 +558,6 @@ final class LmdbDeferredFilterPlacer {
 		Set<String> plannerNames = new HashSet<>();
 		addPlannerBindingNames(plannerNames, bindingNames);
 		return plannerNames;
-	}
-
-	private boolean isSubjectTypeGuardForRequiredBinding(StatementPattern statementPattern, Set<String> requiredVars) {
-		Var subject = statementPattern.getSubjectVar();
-		Var predicate = statementPattern.getPredicateVar();
-		Var object = statementPattern.getObjectVar();
-		return subject != null
-				&& !subject.hasValue()
-				&& requiredVars.contains(subject.getName())
-				&& predicate != null
-				&& predicate.hasValue()
-				&& RDF.TYPE.equals(predicate.getValue())
-				&& object != null
-				&& object.hasValue();
 	}
 
 	private boolean isExactDirectLookup(StatementPattern statementPattern) {

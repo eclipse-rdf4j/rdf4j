@@ -31,7 +31,6 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -109,7 +108,6 @@ class LmdbEvaluationStatistics
 	private static final double DUPLICATE_CORRECTION_MIN_MULTIPLIER = 1.25d;
 	private static final double DUPLICATE_CORRECTION_CONNECTED_PREFIX_MAX_RATIO = 10.0d;
 	private static final double BOUND_JOIN_PRODUCT_PAGE_WALK_BLEND_MIN_RATIO = 2.0d;
-	private static final double BOUND_JOIN_PRODUCT_CANDIDATE_BLEND_MIN_RATIO = 2.0d;
 	private static final double BRIDGE_DOMAIN_AVERAGE_CONFIRMATION_MAX_RATIO = 1.25d;
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_DISTINCT_ROWS = 1_024.0d;
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_MIN_FANOUT = 64.0d;
@@ -4631,34 +4629,7 @@ class LmdbEvaluationStatistics
 		if (rightIntroducesNoNewBindings) {
 			return selectLargerBoundJoinEstimate(fullPrefixEstimate, bridgeEstimate);
 		}
-		if (!requiresTypeDistributionBlend(rightFactor)) {
-			return bridgeEstimate;
-		}
-		double disagreementRatio = maxRatio(fullPrefixEstimate.productRows(), bridgeEstimate.productRows());
-		if (!isPositiveFinite(disagreementRatio)
-				|| disagreementRatio < BOUND_JOIN_PRODUCT_CANDIDATE_BLEND_MIN_RATIO) {
-			return selectLargerBoundJoinEstimate(fullPrefixEstimate, bridgeEstimate);
-		}
-		double blendedRows = harmonicMean(fullPrefixEstimate.productRows(), bridgeEstimate.productRows());
-		if (!isPositiveFinite(blendedRows)) {
-			return selectLargerBoundJoinEstimate(fullPrefixEstimate, bridgeEstimate);
-		}
-		BoundJoinProductEstimate metricSource = fullPrefixEstimate.productRows() <= bridgeEstimate.productRows()
-				? fullPrefixEstimate
-				: bridgeEstimate;
-		return new BoundJoinProductEstimate(blendedRows, metricSource.prefixRows(),
-				metricSource.prefixSurfaceRows(), metricSource.prefixRightSurfaceRows(),
-				metricSource.joinVarName(), false);
-	}
-
-	private boolean requiresTypeDistributionBlend(TupleExpr factor) {
-		if (!(factor instanceof StatementPattern statementPattern)) {
-			return false;
-		}
-		Var predicate = statementPattern.getPredicateVar();
-		Var object = statementPattern.getObjectVar();
-		return predicate != null && RDF.TYPE.equals(predicate.getValue())
-				&& object != null && !object.hasValue();
+		return bridgeEstimate;
 	}
 
 	private BoundJoinProductEstimate selectLargerBoundJoinEstimate(BoundJoinProductEstimate current,
