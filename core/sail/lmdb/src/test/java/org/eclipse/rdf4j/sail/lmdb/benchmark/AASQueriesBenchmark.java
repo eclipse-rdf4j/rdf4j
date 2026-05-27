@@ -152,7 +152,7 @@ public class AASQueriesBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println();
-			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Optimized));
+			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Timed));
 			System.out.println();
 		}
 

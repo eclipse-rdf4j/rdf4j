@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 /**
  * Rewrites safe RDF-term equality IN filters into a finite VALUES semijoin anchor.
  */
-final class FilterInValuesOptimizer implements QueryOptimizer {
+public final class FilterInValuesOptimizer implements QueryOptimizer {
 
 	private static final int MAX_VALUES = 64;
 
@@ -104,7 +104,11 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return null;
 			}
 			Value value = ((ValueConstant) arguments.get(i)).getValue();
-			if (!isSafeValuesAnchorValue(value) || !values.add(value) || values.size() > MAX_VALUES) {
+			if (!isSafeValuesAnchorValue(value)) {
+				return null;
+			}
+			values.add(value);
+			if (values.size() > MAX_VALUES) {
 				return null;
 			}
 		}

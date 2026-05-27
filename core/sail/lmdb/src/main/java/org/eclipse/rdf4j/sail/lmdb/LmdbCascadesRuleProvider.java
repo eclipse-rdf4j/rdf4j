@@ -1688,7 +1688,7 @@ final class LmdbCascadesRuleProvider {
 		private final RdfStatisticsProvider statisticsProvider;
 
 		LmdbSketchJoinOrderImplementationRule(EvaluationStatistics statistics) {
-			super("lmdb-sketch-join-order-provider", RuleKind.IMPLEMENTATION, 120, statistics);
+			super("lmdb-sketch-join-order-provider", RuleKind.IMPLEMENTATION, 8, statistics);
 			this.joinOrderPlanner = statistics instanceof JoinOrderPlanner planner ? planner : null;
 			this.statisticsProvider = statistics instanceof RdfStatisticsProvider provider ? provider : null;
 		}

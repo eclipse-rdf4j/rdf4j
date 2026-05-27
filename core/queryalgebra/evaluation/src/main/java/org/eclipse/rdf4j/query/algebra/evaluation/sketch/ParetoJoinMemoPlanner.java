@@ -196,13 +196,12 @@ final class ParetoJoinMemoPlanner<T> {
 			StatsBuilder stats) {
 		long groupKey = memoGroupKey.applyAsLong(plan);
 		ParetoFrontier<T> frontier = frontierByGroup.get(groupKey);
-		boolean newGroup = frontier == null;
-		if (newGroup) {
+		if (frontier == null) {
 			frontier = frontierByGroup.getOrCreate(groupKey);
 		}
 		boolean accepted = add(frontier, plan, stats);
-		if (accepted && newGroup) {
-			groupsByDepth.add(planStepCount.applyAsInt(plan), groupKey);
+		if (accepted) {
+			groupsByDepth.addIfAbsent(planStepCount.applyAsInt(plan), groupKey);
 		}
 		return accepted;
 	}
@@ -266,12 +265,17 @@ final class ParetoJoinMemoPlanner<T> {
 			sizesByDepth = new int[maxPlanStepCount + 1];
 		}
 
-		private void add(int depth, long key) {
+		private void addIfAbsent(int depth, long key) {
 			if (depth < 0 || depth >= keysByDepth.length) {
 				return;
 			}
 			long[] keys = keysByDepth[depth];
 			int size = sizesByDepth[depth];
+			for (int i = 0; i < size; i++) {
+				if (keys[i] == key) {
+					return;
+				}
+			}
 			if (keys == null) {
 				keys = new long[4];
 				keysByDepth[depth] = keys;

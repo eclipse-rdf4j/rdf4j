@@ -112,12 +112,7 @@ public final class CascadesPlanner {
 			}
 			MemoExpr expression = group.mutableExpressionsView().get(index++);
 			for (CascadesRule rule : ruleRegistry.applicableRules(expression, goal, memo)) {
-				boolean addedOpaqueAlternative = applyRule(memo, expression, rule, goal, context, state);
-				if (addedOpaqueAlternative
-						&& goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED
-						&& rule.kind() == RuleKind.IMPLEMENTATION) {
-					return;
-				}
+				applyRule(memo, expression, rule, goal, context, state);
 				if (state.approximate && goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED) {
 					return;
 				}

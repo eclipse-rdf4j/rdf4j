@@ -3034,22 +3034,11 @@ final class SketchJoinOrderPlanner {
 		if (legalCandidates == 0L) {
 			return 0L;
 		}
-		// Structural connectivity is a search-space rule: if a real runtime-variable edge is available,
-		// disconnected candidates are not costed. Do not add query-specific join placement exceptions here.
-		long connectedCandidates = structurallyConnectedCandidates(legalCandidates, boundVarMask);
-		if (connectedCandidates == 0L) {
-			return legalCandidates;
-		}
-		boolean hasPrefixFactor = plan.mask() != 0L;
-		boolean hasOuterSeed = (boundVarMask & initiallyBoundVarMask) != 0L && initiallyBoundVarMask != 0L;
-		if (!hasPrefixFactor && !hasOuterSeed) {
-			return legalCandidates;
-		}
-		long rejected = legalCandidates & ~connectedCandidates;
-		if (rejected != 0L) {
-			disconnectedCandidateRejectedCount += Long.bitCount(rejected);
-		}
-		return connectedCandidates;
+		// Structural connectivity is a costing signal, not a semantic search-space boundary.
+		// Keep disconnected legal candidates in the frontier so finite VALUES anchors, learned-filter anchors and
+		// path endpoint domains can be chosen before they become structurally connected to the current prefix.
+		// Disconnected work is still charged later by the per-step costing path.
+		return legalCandidates;
 	}
 
 	private long structurallyConnectedCandidates(long candidates, long boundVarMask) {

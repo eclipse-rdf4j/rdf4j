@@ -673,7 +673,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return !(tupleExpr instanceof Join
 					|| tupleExpr instanceof Filter
 					|| tupleExpr instanceof StatementPattern
-					|| tupleExpr instanceof BindingSetAssignment);
+					|| tupleExpr instanceof BindingSetAssignment
+					|| tupleExpr instanceof ArbitraryLengthPath
+					|| tupleExpr instanceof ZeroLengthPath);
 		}
 	}
 
