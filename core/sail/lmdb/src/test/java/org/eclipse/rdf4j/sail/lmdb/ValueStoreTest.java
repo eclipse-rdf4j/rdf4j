@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
@@ -116,7 +117,8 @@ public class ValueStoreTest {
 		Value[] values = new Value[] {
 				RDF.TYPE, RDFS.CLASS,
 				Values.iri("some:iri"),
-				Values.literal("This is a literal.")
+				Values.literal("This is a literal."),
+				Values.tripleTerm(Values.iri("other:iri"), RDF.TYPE, RDFS.CLASS)
 		};
 		long[] ids = new long[values.length];
 		valueStore.startTransaction(true);
@@ -128,17 +130,20 @@ public class ValueStoreTest {
 		ValueStoreRevision revBefore = valueStore.getRevision();
 
 		valueStore.startTransaction(true);
-		Set<Long> idsToGc = new HashSet<>(Arrays.stream(ids).boxed().collect(Collectors.toList()));
-		valueStore.gcIds(idsToGc, new HashSet<>());
+		Set<Long> idsToGc = Arrays.stream(ids).boxed().collect(Collectors.toSet());
+		Set<Long> nextIds = new HashSet<>();
+		valueStore.gcIds(idsToGc, nextIds);
+		valueStore.gcIds(nextIds, new HashSet<>());
 		valueStore.commit();
 
 		ValueStoreRevision revAfter = valueStore.getRevision();
 		assertNotEquals("revisions must change after gc of IDs", revBefore, revAfter);
 
 		for (int i = 0; i < values.length; i++) {
-			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
+			Assert.assertEquals("Value should be removed:" + values[i], LmdbValue.UNKNOWN_ID,
+					valueStore.getId(values[i]));
 			// access to value must be ensured as long as revision is not invalidated
-			Assert.assertTrue(valueStore.getValue(ids[i]) != null);
+			assertNotNull(valueStore.getValue(ids[i]));
 		}
 
 		// simulate GC of unused revisions
@@ -149,15 +154,16 @@ public class ValueStoreTest {
 		valueStore.commit();
 
 		for (int i = 0; i < values.length; i++) {
-			Assert.assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(values[i]));
+			Assert.assertEquals("Value should be removed:" + values[i], LmdbValue.UNKNOWN_ID,
+					valueStore.getId(values[i]));
 			// value should be removed after invalidating the revision
-			Assert.assertTrue(valueStore.getValue(ids[i]) == null);
+			assertNull(valueStore.getValue(ids[i]));
 		}
 
 		valueStore.startTransaction(true);
-		for (int i = 0; i < values.length; i++) {
+		for (Value value : values) {
 			// this ID should have been reused
-			idsToGc.remove(valueStore.storeValue(values[i]));
+			idsToGc.remove(valueStore.storeValue(value));
 		}
 		valueStore.commit();
 
@@ -465,6 +471,31 @@ public class ValueStoreTest {
 
 		assertEquals("org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm", lmdbValue.getClass().getName());
 		assertEquals(tripleTerm, lmdbValue);
+	}
+
+	@Test
+	public void testStoreAndGetTripleTerm() throws Exception {
+		TripleTerm tripleTerm = valueStore.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
+
+		valueStore.startTransaction(true);
+		long id = valueStore.storeValue(tripleTerm);
+		valueStore.commit();
+		reopenValueStore(new LmdbStoreConfig());
+
+		assertEquals("org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm", valueStore.getValue(id).getClass().getName());
+		assertEquals(tripleTerm, valueStore.getValue(id));
+	}
+
+	@Test
+	public void testLazyTripleTermDoesNotInitializeAfterRestart() throws Exception {
+		TripleTerm tripleTerm = valueStore.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
+		long id = storeValueAndReopen(tripleTerm, new LmdbStoreConfig());
+
+		LmdbTripleTerm lazyValue = (LmdbTripleTerm) valueStore.getLazyValue(id);
+		assertFalse(isInitialized(lazyValue));
+		assertEquals(RDF.TYPE, lazyValue.getSubject());
+		assertTrue(isInitialized(lazyValue));
+		assertEquals(tripleTerm, lazyValue);
 	}
 
 	@Test

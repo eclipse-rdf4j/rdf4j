@@ -25,8 +25,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
-import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
-import static org.lwjgl.util.lmdb.LMDB.MDB_READERS_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -48,8 +46,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
-import static org.lwjgl.util.lmdb.LMDB.mdb_txn_renew;
-import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
 import java.io.File;
 import java.io.IOException;
@@ -57,20 +53,21 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
 import java.util.zip.CRC32;
 
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -84,6 +81,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -107,7 +105,10 @@ class ValueStore extends AbstractValueFactory {
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
-	private static final long VALUE_EVICTION_INTERVAL = 60000; // 60 seconds
+	/**
+	 * The default triple term indexes. These are always used - even if not specified.
+	 */
+	private static final String DEFAULT_TRIPLE_TERM_INDEXES = "spoc,cspo";
 
 	private static final byte URI_VALUE = 0;
 
@@ -175,10 +176,6 @@ class ValueStore extends AbstractValueFactory {
 	 * namespace.
 	 */
 	private final ConcurrentCache<String, Long> namespaceIDCache;
-	/**
-	 * This lock is required to block transactions while auto-growing the map size.
-	 */
-	private final ReadWriteLock txnLock = new ReentrantReadWriteLock();
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
 	/**
@@ -196,10 +193,18 @@ class ValueStore extends AbstractValueFactory {
 	// database with internal reference counts for IRIs and namespaces
 	private int refCountsDbi;
 	private long writeTxn;
+	private Thread writeTxnOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
 	private boolean invalidateRevisionOnCommit = false;
+
+	/**
+	 * The list of triple term indexes that are used to store and retrieve triples.
+	 */
+	private final List<TripleIndex> tripleTermIndexes = new ArrayList<>();
+	private TripleIndex tripleTermSpocIndex;
+	private TripleIndex tripleTermCspoIndex;
 
 	/**
 	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
@@ -221,15 +226,12 @@ class ValueStore extends AbstractValueFactory {
 	private final Map<Long, Integer> pendingHashUpdates = new HashMap<>();
 
 	private volatile long nextValueEvictionTime = 0;
+	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
 	// package-protected for testing
 	final Set<Long> unusedRevisionIds = new HashSet<>();
 
-	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
-	// Keep live native read transactions visible until abort completes during close/cleanup.
-	private final Set<ReadTxn.State> activeReadTransactions = ConcurrentHashMap.newKeySet();
-	private final ThreadLocal<ReadTxn> threadLocalReadTxn = ThreadLocal
-			.withInitial(() -> new ReadTxn(activeReadTransactions, cleaner));
+	private TxnManager txnManager;
 
 	@SuppressWarnings("unused")
 	private Object[] previousNamespaceEntry;
@@ -299,6 +301,7 @@ class ValueStore extends AbstractValueFactory {
 		});
 
 		startTransaction(true);
+		initTermIndexes(config);
 		commit();
 	}
 
@@ -366,7 +369,8 @@ class ValueStore extends AbstractValueFactory {
 			env = pp.get(0);
 		}
 
-		E(mdb_env_set_maxdbs(env, 6));
+		// 6 basic dbs and max. 12 triple term indexes
+		E(mdb_env_set_maxdbs(env, 6 + 12));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -381,6 +385,8 @@ class ValueStore extends AbstractValueFactory {
 
 		// open main database
 		dbi = openDatabase(env, null, MDB_CREATE);
+
+		txnManager = new TxnManager(env, Mode.RESET);
 
 		// initialize page size and set map size for env
 		readTransaction(env, (stack, txn) -> {
@@ -410,6 +416,8 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 
+		txnManager.closeReadTxn();
+
 		// open unused IDs database
 		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE);
 		// open free IDs database
@@ -420,10 +428,10 @@ class ValueStore extends AbstractValueFactory {
 		// check if free IDs are available
 		readTransaction(env, (stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
-			mdb_stat(txn, freeDbi, stat);
+			E(mdb_stat(txn, freeDbi, stat));
 			freeIdsAvailable = stat.ms_entries() > 0;
 
-			mdb_stat(txn, unusedDbi, stat);
+			E(mdb_stat(txn, unusedDbi, stat));
 			if (stat.ms_entries() > 0) {
 				// free unused IDs
 				resizeMap(txn, stat.ms_entries() * (2L + Long.BYTES));
@@ -437,12 +445,153 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
+	private Set<String> getTripleTermIndexSpecs() throws SailException {
+		String indexesStr = properties.getTripleTermIndexes();
+		if (indexesStr == null || indexesStr.trim().isEmpty()) {
+			throw new SailException(StoreProperties.INDEXES_KEY + " missing in " + StoreProperties.FILE_NAME + " file");
+		}
+
+		Set<String> indexSpecs = TripleIndex.parseIndexSpecList(indexesStr);
+		if (indexSpecs.isEmpty()) {
+			throw new SailException(
+					"Invalid " + StoreProperties.INDEXES_KEY + " found in " + StoreProperties.FILE_NAME + " file");
+		}
+		return indexSpecs;
+	}
+
+	private void initTermIndexes(LmdbStoreConfig config) throws IOException {
+		try {
+			String indexSpecStr = config.getTripleIndexes();
+			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
+			if (!properties.isLoaded()) {
+				// newly created lmdb store
+				Set<String> termIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
+				termIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+				initTripleTermIndexes(termIndexSpecs);
+			} else {
+				// Initialize existing indexes
+				Set<String> termIndexSpecs = getTripleTermIndexSpecs();
+				initTripleTermIndexes(termIndexSpecs);
+
+				// Compare the existing triple term indexes with the requested indexes
+				Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
+				reqTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+				if (reqTermIndexSpecs.isEmpty()) {
+					// No indexes specified, use the existing ones
+					indexSpecStr = properties.getTripleTermIndexes();
+				} else if (!reqTermIndexSpecs.equals(termIndexSpecs)) {
+					// Set of indexes needs to be changed
+					reindex(termIndexSpecs, reqTermIndexSpecs);
+				}
+			}
+
+			properties.setTripleIndexes(indexSpecStr);
+			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
+		} catch (IOException | SailException e) {
+			throw e;
+		}
+	}
+
+	private void initTripleTermIndexes(Set<String> indexSpecs) throws IOException {
+		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
+			logger.trace("Initializing index '{}'...", fieldSeq);
+			var index = new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
+			tripleTermIndexes.add(index);
+			// ensure simple access to main indexes
+			switch (fieldSeq) {
+			case "spoc" -> tripleTermSpocIndex = index;
+			case "cspo" -> tripleTermCspoIndex = index;
+			}
+		}
+	}
+
+	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs)
+			throws IOException, SailException {
+		Map<String, TripleIndex> currentIndexes = new HashMap<>();
+		for (TripleIndex index : tripleTermIndexes) {
+			currentIndexes.put(new String(index.getFieldSeq()), index);
+		}
+
+		// Determine the set of newly added indexes and initialize these using an
+		// existing index as source
+		Set<String> addedIndexSpecs = new HashSet<>(newIndexSpecs);
+		addedIndexSpecs.removeAll(currentIndexSpecs);
+
+		if (!addedIndexSpecs.isEmpty()) {
+			TripleIndex sourceIndex = tripleTermIndexes.getFirst();
+			try (MemoryStack stack = stackPush()) {
+				MDBVal keyValue = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				keyValue.mv_data(keyBuf);
+				MDBVal dataValue = MDBVal.calloc(stack);
+				for (String fieldSeq : addedIndexSpecs) {
+					logger.debug("Initializing new index '{}'...", fieldSeq);
+
+					TripleIndex addedIndex = new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
+					RecordIterator[] sourceIter = { null };
+					try {
+						sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
+								true, txnManager.createTxn(writeTxn));
+
+						RecordIterator it = sourceIter[0];
+						long[] quad;
+						while ((quad = it.next()) != null) {
+							keyBuf.clear();
+							addedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+									quad[TripleIndex.OBJ_IDX],
+									quad[TripleIndex.CONTEXT_IDX]);
+							keyBuf.flip();
+
+							resizeMap(writeTxn, 0L);
+							E(mdb_put(writeTxn, addedIndex.getDB(true), keyValue, dataValue, 0));
+						}
+					} finally {
+						if (sourceIter[0] != null) {
+							sourceIter[0].close();
+						}
+					}
+
+					currentIndexes.put(fieldSeq, addedIndex);
+				}
+			}
+
+			logger.debug("New index(es) initialized");
+		}
+
+		// Determine the set of removed indexes
+		Set<String> removedIndexSpecs = new HashSet<>(currentIndexSpecs);
+		removedIndexSpecs.removeAll(newIndexSpecs);
+
+		List<Throwable> removedIndexExceptions = new ArrayList<>();
+		// Delete files for removed indexes
+		for (String fieldSeq : removedIndexSpecs) {
+			try {
+				TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
+				removedIndex.destroy(writeTxn);
+				logger.debug("Deleted file(s) for removed {} index", fieldSeq);
+			} catch (Throwable e) {
+				removedIndexExceptions.add(e);
+			}
+		}
+
+		if (!removedIndexExceptions.isEmpty()) {
+			throw new IOException(removedIndexExceptions.getFirst());
+		}
+
+		// Update the indexes using the specified index order
+		tripleTermIndexes.clear();
+		for (String fieldSeq : newIndexSpecs) {
+			tripleTermIndexes.add(currentIndexes.remove(fieldSeq));
+		}
+	}
+
 	private long nextId(byte valueType) throws IOException {
 		int idType = switch (valueType) {
 		case URI_VALUE -> ValueIds.T_URI;
 		case BNODE_VALUE -> ValueIds.T_BNODE;
 		case LITERAL_VALUE -> ValueIds.T_LITERAL;
 		case NAMESPACE_VALUE -> ValueIds.T_PTR;
+		case TRIPLE_VALUE -> ValueIds.T_TRIPLE;
 		default -> throw new IllegalArgumentException("Unexpected value type: " + valueType);
 		};
 		if (freeIdsAvailable) {
@@ -650,6 +799,9 @@ class ValueStore extends AbstractValueFactory {
 				case ValueIds.T_BNODE:
 					resultValue = new LmdbBNode(lazyRevision, id);
 					break;
+				case ValueIds.T_TRIPLE:
+					resultValue = new LmdbTripleTerm(lazyRevision, id);
+					break;
 				default:
 					if (ValueIds.isInlined(id)) {
 						resultValue = new LmdbLiteral(lazyRevision, id);
@@ -685,16 +837,20 @@ class ValueStore extends AbstractValueFactory {
 					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
 				}
 
+				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+					resultValue = id2tripleTerm(id, null);
+					cacheValue(id, resultValue);
+					return resultValue;
+				}
+
 				// Value not in cache, fetch it from file
 				byte[] data = getData(id);
-
 				if (data != null) {
 					resultValue = data2value(id, data, null);
 					// Store value in cache
 					cacheValue(id, resultValue);
 				}
 			}
-
 			return resultValue;
 		} finally {
 			revisionLock.unlockRead(stamp);
@@ -723,6 +879,12 @@ class ValueStore extends AbstractValueFactory {
 			return true;
 		}
 		try {
+			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+				value = id2tripleTerm(id, (LmdbTripleTerm) value);
+				cacheValue(id, value);
+				return true;
+			}
+
 			byte[] data = getData(id);
 			if (data != null) {
 //				System.out.println(id);
@@ -743,24 +905,24 @@ class ValueStore extends AbstractValueFactory {
 
 				requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
 
-				boolean readLocked = false;
-				try {
-					txnLock.readLock().unlock();
-					readLocked = true;
-				} catch (IllegalMonitorStateException e) {
-					// ignore
+				var lockManager = txnManager.lockManager();
+				long stamp = lockManager.tryWriteLock();
+				boolean readLocked = stamp == 0L;
+				if (readLocked) {
+					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 				}
-				txnLock.writeLock().lock();
+				try {
+					stamp = lockManager.writeLock();
+				} catch (InterruptedException e) {
+					throw new IOException(e);
+				}
 
 				try {
 					boolean activeWriteTxn = writeTxn != 0;
-					boolean txnIsRead = txn != writeTxn;
-					if (txnIsRead) {
-						mdb_txn_reset(txn);
-					}
 					if (activeWriteTxn) {
 						endTransaction(true, true);
 					}
+					txnManager.deactivate();
 
 					long oldMapSize = mapSize;
 					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
@@ -771,13 +933,16 @@ class ValueStore extends AbstractValueFactory {
 					if (activeWriteTxn) {
 						startTransaction(false);
 					}
-					if (txnIsRead) {
-						E(mdb_txn_renew(txn));
-					}
+
+					txnManager.activate();
 				} finally {
-					txnLock.writeLock().unlock();
+					lockManager.unlockWrite(stamp);
 					if (readLocked) {
-						txnLock.readLock().lock();
+						try {
+							lockManager.readLock();
+						} catch (InterruptedException e) {
+							throw new IOException(e);
+						}
 					}
 				}
 			}
@@ -810,6 +975,31 @@ class ValueStore extends AbstractValueFactory {
 				}
 			});
 		}
+	}
+
+	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) {
+		refCountsTxCache.compute(id, (k, v) -> {
+			if (v == null) {
+				try {
+					stack.push();
+					MDBVal idVal = MDBVal.calloc(stack);
+					MDBVal dataVal = MDBVal.calloc(stack);
+					var bb = idBuffer(stack);
+					Varint.writeUnsigned(bb, id);
+					idVal.mv_data(bb.flip());
+					long newCount = 1;
+					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
+						// update count
+						newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
+					}
+					return newCount;
+				} finally {
+					stack.pop();
+				}
+			} else {
+				return v + 1;
+			}
+		});
 	}
 
 	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) {
@@ -1015,23 +1205,113 @@ class ValueStore extends AbstractValueFactory {
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
 
+	LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value) throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			final var index = tripleTermCspoIndex;
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, index.getDB(true), pp));
+			long cursor = pp.get(0);
+
+			MDBVal keyVal = MDBVal.malloc(stack);
+			// use calloc to get an empty data value
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMinKey(keyBuf, -1, -1, -1, id);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
+				long[] quad = new long[4];
+				index.keyToQuad(keyVal.mv_data(), quad);
+				if (value != null) {
+					value.setFromInitializedValue(new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
+							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id));
+					return value;
+				} else {
+					return new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
+							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id);
+				}
+			}
+			return null;
+		});
+	}
+
+	long findTripleTermId(long subj, long pred, long obj, boolean create) throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			final TripleIndex mainIndex = tripleTermSpocIndex;
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, mainIndex.getDB(true), pp));
+			long cursor = pp.get(0);
+
+			MDBVal keyVal = MDBVal.malloc(stack);
+			// use calloc to get an empty data value
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			mainIndex.getMinKey(keyBuf, subj, pred, obj, -1);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+			if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data())) {
+				var bb = keyVal.mv_data();
+				return Varint.readUnsigned(bb, Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred) +
+						Varint.calcLengthUnsigned(obj));
+			}
+
+			if (!create) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+
+			incrementRefCount(stack, writeTxn, subj);
+			incrementRefCount(stack, writeTxn, pred);
+			incrementRefCount(stack, writeTxn, obj);
+
+			long id = nextId(TRIPLE_VALUE);
+			for (TripleIndex index : tripleTermIndexes) {
+				keyBuf.clear();
+				index.toKey(keyBuf, subj, pred, obj, id);
+				keyBuf.flip();
+
+				// update buffer positions in MDBVal
+				keyVal.mv_data(keyBuf);
+
+				resizeMap(writeTxn, 0L);
+				E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+			}
+			return id;
+		});
+	}
+
+	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
+		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
+		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txnManager.getReadTxn());
+	}
+
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
+		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
+			return LmdbUtil.readTransaction(env, writeTxn, transaction);
+		}
 		for (int attempt = 0;; attempt++) {
 			try {
-				txnLock.readLock().lock();
+				var lockManager = txnManager.lockManager();
+				long stamp = lockManager.readLock();
 				try {
-					if (writeTxn != 0) {
-						return LmdbUtil.readTransaction(env, writeTxn, transaction);
+					try (MemoryStack stack = stackPush()) {
+						return transaction.exec(stack, txnManager.getReadTxn().get());
 					}
-					return threadLocalReadTxn.get().execute(transaction, env);
 				} finally {
-					txnLock.readLock().unlock();
+					lockManager.unlockRead(stamp);
 				}
+			} catch (InterruptedException e) {
+				throw new IOException(e);
 			} catch (ReadersFullException e) {
 				if (attempt > 0) {
 					throw e;
 				}
-				closeInactiveReadTransactions();
 			}
 		}
 	}
@@ -1042,7 +1322,11 @@ class ValueStore extends AbstractValueFactory {
 				return transaction.exec(stack, writeTxn);
 			}
 		} else {
-			return LmdbUtil.transaction(env, transaction);
+			try {
+				return LmdbUtil.transaction(env, transaction);
+			} finally {
+				txnManager.reset();
+			}
 		}
 	}
 
@@ -1119,14 +1403,27 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			if (id == LmdbValue.UNKNOWN_ID) {
-				// not inlined or ID not cached, search in index
-				byte[] data = value2data(value, create);
-				if (data == null && value instanceof Literal) {
-					data = literal2legacy((Literal) value);
-				}
+				if (value.isTripleTerm()) {
+					TripleTerm tripleTerm = (TripleTerm) value;
+					long subjectId = getId(tripleTerm.getSubject(), create);
+					long predicateId = getId(tripleTerm.getPredicate(), create);
+					long objectId = getId(tripleTerm.getObject(), create);
 
-				if (data != null) {
-					id = findId(data, create);
+					if (subjectId == LmdbValue.UNKNOWN_ID || predicateId == LmdbValue.UNKNOWN_ID
+							|| objectId == LmdbValue.UNKNOWN_ID) {
+						return LmdbValue.UNKNOWN_ID;
+					}
+					id = findTripleTermId(subjectId, predicateId, objectId, create);
+				} else {
+					// not inlined or ID not cached, search in index
+					byte[] data = value2data(value, create);
+					if (data == null && value instanceof Literal) {
+						data = literal2legacy((Literal) value);
+					}
+
+					if (data != null) {
+						id = findId(data, create);
+					}
 				}
 			}
 
@@ -1155,7 +1452,6 @@ class ValueStore extends AbstractValueFactory {
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
-
 		return LmdbValue.UNKNOWN_ID;
 	}
 
@@ -1197,7 +1493,6 @@ class ValueStore extends AbstractValueFactory {
 						}
 						// mark id as unused
 						E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
-
 					}
 
 					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
@@ -1213,7 +1508,8 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	protected void deleteValueToIdMappings(MemoryStack stack, long txn, Collection<Long> ids, Collection<Long> newGcIds)
+	protected void deleteValueToIdMappings(MemoryStack stack, long writeTxn, Collection<Long> ids,
+			Collection<Long> newGcIds)
 			throws IOException {
 		int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
 		ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
@@ -1223,23 +1519,69 @@ class ValueStore extends AbstractValueFactory {
 		MDBVal dataVal = MDBVal.calloc(stack);
 		MDBVal ignoreVal = MDBVal.calloc(stack);
 
+		MDBVal keyVal = MDBVal.malloc(stack);
+		ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		PointerBuffer pp = stack.mallocPointer(1);
+
+		long termsCursor = 0;
 		long valuesCursor = 0;
 		try {
 			for (Long id : ids) {
 				// resizeMap(writeTxn, 10L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
+
+				// special handling of triple terms
+				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+					if (termsCursor == 0) {
+						E(mdb_cursor_open(writeTxn, tripleTermCspoIndex.getDB(true), pp));
+						termsCursor = pp.get(0);
+					}
+
+					keyBuf.clear();
+					tripleTermCspoIndex.getMinKey(keyBuf, -1, -1, -1, id);
+					keyBuf.flip();
+					keyVal.mv_data(keyBuf);
+
+					int rc = mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE);
+					if (rc == MDB_SUCCESS
+							&& tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
+						long[] quad = new long[4];
+						tripleTermCspoIndex.keyToQuad(keyVal.mv_data(), quad);
+						for (int i = 0; i < 3; i++) {
+							if (decrementRefCount(stack, writeTxn, quad[i])) {
+								newGcIds.add(quad[i]);
+							}
+						}
+
+						for (TripleIndex index : tripleTermIndexes) {
+							// keep index for resolving id -> triple term
+							if (index == tripleTermCspoIndex) {
+								continue;
+							}
+							keyBuf.clear();
+							index.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+									quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
+							keyBuf.flip();
+							// update buffer positions in MDBVal
+							keyVal.mv_data(keyBuf);
+
+							E(mdb_del(writeTxn, index.getDB(true), keyVal, null));
+						}
+					}
+					continue;
+				}
 
 				idVal.mv_data(id2data(idBb.clear(), id).flip());
 				// id must not have a reference count or reference count must be zero and id must have an associated
 				// value
 				Long refCount = refCountsTxCache.get(id);
 				if (((refCount != null && refCount <= 0) || mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
-						mdb_get(txn, dbi, idVal, dataVal) == 0) {
+						mdb_get(writeTxn, dbi, idVal, dataVal) == 0) {
 					ByteBuffer dataBuffer = dataVal.mv_data();
 
 					// update ref count if literal or URI namespace is removed
 					if (dataBuffer.get(0) == LITERAL_VALUE || dataBuffer.get(0) == URI_VALUE) {
 						long refId = Varint.readUnsigned(dataBuffer, 1);
-						if (decrementRefCount(stack, txn, refId)) {
+						if (decrementRefCount(stack, writeTxn, refId)) {
 							newGcIds.add(refId);
 						}
 					}
@@ -1259,7 +1601,7 @@ class ValueStore extends AbstractValueFactory {
 						hashVal.mv_data(hashBb);
 
 						// delete HASH -> ID association
-						if (mdb_del(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
+						if (mdb_del(writeTxn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
 							// was first entry, find a possible next entry and make it the first
 							hashBb.put(0, HASHID_KEY);
 							hashBb.rewind();
@@ -1267,8 +1609,7 @@ class ValueStore extends AbstractValueFactory {
 
 							if (valuesCursor == 0) {
 								// initialize cursor
-								PointerBuffer pp = stack.mallocPointer(1);
-								E(mdb_cursor_open(txn, dbi, pp));
+								E(mdb_cursor_open(writeTxn, dbi, pp));
 								valuesCursor = pp.get(0);
 							}
 
@@ -1281,10 +1622,9 @@ class ValueStore extends AbstractValueFactory {
 									hashVal.mv_data(hashBb);
 
 									// HASH -> ID
-									E(mdb_put(txn, dbi, hashVal, idVal, 0));
+									E(mdb_put(writeTxn, dbi, hashVal, idVal, 0));
 									// delete existing mapping
 									E(mdb_cursor_del(valuesCursor, 0));
-
 								}
 							}
 						} else {
@@ -1297,18 +1637,21 @@ class ValueStore extends AbstractValueFactory {
 
 							hashVal.mv_data(hashBb);
 							// delete HASH+ID -> [] association
-							mdb_del(txn, dbi, hashVal, null);
+							mdb_del(writeTxn, dbi, hashVal, null);
 						}
 					} else {
 						// delete value -> ID association
 						dataVal.mv_data(dataBuffer);
-						mdb_del(txn, dbi, dataVal, null);
+						mdb_del(writeTxn, dbi, dataVal, null);
 					}
 
 					// does not delete ID -> value association
 				}
 			}
 		} finally {
+			if (termsCursor != 0) {
+				mdb_cursor_close(termsCursor);
+			}
 			if (valuesCursor != 0) {
 				mdb_cursor_close(valuesCursor);
 			}
@@ -1320,11 +1663,14 @@ class ValueStore extends AbstractValueFactory {
 		MDBVal revIdVal = MDBVal.calloc(stack);
 		MDBVal dataVal = MDBVal.calloc(stack);
 		MDBVal emptyVal = MDBVal.calloc(stack);
+		MDBVal keyVal = null;
+		ByteBuffer keyBuf = null;
 
 		ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
 
 		boolean freeIds = false;
 		long unusedIdsCursor = 0;
+		long termsCursor = 0;
 		try {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, unusedDbi, pp));
@@ -1348,9 +1694,33 @@ class ValueStore extends AbstractValueFactory {
 
 							// add id to free list
 							E(mdb_put(txn, freeDbi, idVal, emptyVal, 0));
-							// delete id -> value association
-							E(mdb_del(txn, dbi, idVal, null));
-							clearStoredHash(data2id(idVal.mv_data().duplicate()));
+
+							long id = Varint.readUnsigned(keyBb, keyBb.position() + 1);
+							if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+								if (termsCursor == 0) {
+									E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+									termsCursor = pp.get(0);
+									keyVal = MDBVal.calloc(stack);
+									keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+								}
+
+								keyBuf.clear();
+								tripleTermCspoIndex.getMinKey(keyBuf, -1, -1, -1, id);
+								keyBuf.flip();
+								keyVal.mv_data(keyBuf);
+
+								int rc = mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE);
+								if (rc == MDB_SUCCESS &&
+										tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
+									// delete id -> triple term association
+									E(mdb_cursor_del(termsCursor, 0));
+								}
+							} else {
+								// delete id -> value association
+								E(mdb_del(txn, dbi, idVal, null));
+							}
+
+							clearStoredHash(id);
 							// delete id and value from unused list
 							E(mdb_cursor_del(unusedIdsCursor, 0));
 
@@ -1365,6 +1735,9 @@ class ValueStore extends AbstractValueFactory {
 			if (unusedIdsCursor != 0) {
 				mdb_cursor_close(unusedIdsCursor);
 			}
+			if (termsCursor != 0) {
+				mdb_cursor_close(termsCursor);
+			}
 		}
 		this.freeIdsAvailable |= freeIds;
 	}
@@ -1375,6 +1748,7 @@ class ValueStore extends AbstractValueFactory {
 
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
+			writeTxnOwner = Thread.currentThread();
 
 			// delete unused IDs if required on a regular basis
 			// this is also run after opening the database
@@ -1439,18 +1813,28 @@ class ValueStore extends AbstractValueFactory {
 				clearPendingHashUpdates();
 			}
 			writeTxn = 0;
+			writeTxnOwner = null;
 			invalidateRevisionOnCommit = false;
+			long stamp;
+			try {
+				stamp = txnManager.lockManager().writeLock();
+			} catch (InterruptedException e) {
+				throw new IOException(e);
+			}
+			try {
+				txnManager.reset();
+			} finally {
+				txnManager.lockManager().unlockWrite(stamp);
+			}
 		}
 	}
 
 	public void commit() throws IOException {
 		endTransaction(true, false);
-		threadLocalReadTxn.get().close();
 	}
 
 	public void rollback() throws IOException {
 		endTransaction(false, false);
-		threadLocalReadTxn.get().close();
 	}
 
 	/**
@@ -1462,7 +1846,6 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public long storeValue(Value value) throws IOException {
-
 		return getId(value, true);
 	}
 
@@ -1505,43 +1888,17 @@ class ValueStore extends AbstractValueFactory {
 		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, null);
 	}
 
-	private void closeReadTransactions() {
-		txnLock.writeLock().lock();
-		try {
-			ReadTxn.State[] snapshot = activeReadTransactions.toArray(new ReadTxn.State[0]);
-			for (ReadTxn.State readTxn : snapshot) {
-				readTxn.closeTxn();
-			}
-			threadLocalReadTxn.remove();
-		} finally {
-			txnLock.writeLock().unlock();
-		}
-	}
-
-	private void closeInactiveReadTransactions() {
-		txnLock.writeLock().lock();
-		try {
-			ReadTxn.State[] snapshot = activeReadTransactions.toArray(new ReadTxn.State[0]);
-			for (ReadTxn.State readTxn : snapshot) {
-				readTxn.closeInactiveTxn();
-			}
-		} finally {
-			txnLock.writeLock().unlock();
-		}
-	}
-
 	/**
 	 * Closes the ValueStore, releasing any file references, etc. Once closed, the ValueStore can no longer be used.
 	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
-
 		if (env != 0) {
 			if (writeTxn == 0) {
 				flushPendingHashUpdates();
 			}
-			closeReadTransactions();
+			txnManager.close();
 			endTransaction(false, false);
 			mdb_env_close(env);
 			env = 0;
@@ -1613,148 +1970,6 @@ class ValueStore extends AbstractValueFactory {
 			logger.warn("Could not delete LMDB hash cache", deleteFailure);
 		}
 		openHashFileQuietly();
-	}
-
-	private static final class ReadTxn {
-
-		private final State state;
-
-		static class State implements Runnable {
-			private final Set<State> activeReadTransactions;
-			public long txn = -1;
-			public long depth;
-			private boolean initialized;
-
-			public State(Set<State> activeReadTransactions) {
-				this.activeReadTransactions = activeReadTransactions;
-			}
-
-			@Override
-			public void run() {
-				closeTxn();
-			}
-
-			synchronized void initialize(long txn) {
-				this.txn = txn;
-				depth = 0;
-				initialized = true;
-				activeReadTransactions.add(this);
-			}
-
-			synchronized void closeTxn() {
-				if (!initialized) {
-					activeReadTransactions.remove(this);
-					return;
-				}
-
-				long txn = this.txn;
-				long depth = this.depth;
-				this.txn = -1;
-				this.depth = 0;
-				this.initialized = false;
-				try {
-					if (txn != -1) {
-						try {
-							if (depth > 0) {
-								mdb_txn_reset(txn);
-							}
-						} finally {
-							mdb_txn_abort(txn);
-						}
-					}
-				} finally {
-					activeReadTransactions.remove(this);
-				}
-			}
-
-			synchronized void closeInactiveTxn() {
-				if (initialized && depth == 0) {
-					closeTxn();
-				}
-			}
-		}
-
-		public ReadTxn(Set<State> activeReadTransactions, ConcurrentCleaner cleaner) {
-			this.state = new State(activeReadTransactions);
-			cleaner.register(this, state);
-		}
-
-		synchronized <T> T execute(Transaction<T> transaction, long env) throws IOException {
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				try {
-					ensureTxn(env);
-					state.depth++;
-					try {
-						return transaction.exec(stack, state.txn);
-					} finally {
-						releaseTxn();
-					}
-				} catch (ReadersFullException e) {
-					throw e;
-				} catch (Exception e) {
-					// Retry once
-					try {
-						System.gc();
-						Thread.sleep(1);
-						System.gc();
-						Thread.sleep(1);
-					} catch (InterruptedException ie) {
-						Thread.currentThread().interrupt();
-					}
-
-					ensureTxn(env);
-					state.depth++;
-					try {
-						return transaction.exec(stack, state.txn);
-					} finally {
-						releaseTxn();
-					}
-				}
-			}
-		}
-
-		private void ensureTxn(long env) throws IOException {
-			if (!state.initialized) {
-				startTxn(env);
-				return;
-			}
-
-			if (state.depth == 0) {
-				try {
-					E(mdb_txn_renew(state.txn));
-				} catch (IOException e) {
-					close();
-					startTxn(env);
-				}
-			}
-
-		}
-
-		private void startTxn(long env) throws IOException {
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				int rc = mdb_txn_begin(env, NULL, MDB_RDONLY, pp);
-				if (rc == MDB_READERS_FULL) {
-					throw new ReadersFullException();
-				}
-				E(rc);
-				state.initialize(pp.get(0));
-			}
-		}
-
-		private void releaseTxn() {
-			if (state.depth == 0) {
-				return;
-			}
-			state.depth--;
-			if (state.depth == 0 && state.initialized) {
-				mdb_txn_reset(state.txn);
-			}
-		}
-
-		void close() {
-			state.closeTxn();
-		}
 	}
 
 	private static final class ReadersFullException extends IOException {

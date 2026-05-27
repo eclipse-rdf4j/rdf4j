@@ -67,7 +67,7 @@ public class TripleStoreIndexOrderOptimizationTest {
 		indexesField.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		List<TripleStore.TripleIndex> configuredIndexes = (List<TripleStore.TripleIndex>) indexesField.get(store);
+		List<TripleIndex> configuredIndexes = (List<TripleIndex>) indexesField.get(store);
 		return configuredIndexes.stream()
 				.map(index -> new String(index.getFieldSeq()))
 				.collect(Collectors.toList());

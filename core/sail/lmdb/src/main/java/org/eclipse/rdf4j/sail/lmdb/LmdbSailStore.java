@@ -38,6 +38,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -834,6 +835,44 @@ class LmdbSailStore implements SailStore {
 		return count;
 	}
 
+	/**
+	 * Creates a triple term iterator based on the supplied pattern.
+	 *
+	 * @param subj The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param pred The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param obj  The object of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @return A triple term iterator that can be used to iterate over the triple terms that match the specified
+	 *         pattern.
+	 */
+	CloseableIteration<? extends TripleTerm> createTripleTermIterator(Resource subj, IRI pred, Value obj)
+			throws IOException {
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return new EmptyIteration<>();
+			}
+		}
+
+		long predID = LmdbValue.UNKNOWN_ID;
+		if (pred != null) {
+			predID = valueStore.getId(pred);
+			if (predID == LmdbValue.UNKNOWN_ID) {
+				return new EmptyIteration<>();
+			}
+		}
+
+		long objID = LmdbValue.UNKNOWN_ID;
+		if (obj != null) {
+			objID = valueStore.getId(obj);
+			if (objID == LmdbValue.UNKNOWN_ID) {
+				return new EmptyIteration<>();
+			}
+		}
+
+		return new LmdbTripleTermIterator(valueStore.getTripleTerms(subjID, predID, objID), valueStore);
+	}
+
 	private final class LmdbSailSource extends BackingSailSource {
 
 		private final boolean explicit;
@@ -1214,7 +1253,8 @@ class LmdbSailStore implements SailStore {
 					}
 					q.p = predicateId;
 
-					q.o = valueStore.storeValue(obj);
+					long objId = valueStore.storeValue(obj);
+					q.o = objId;
 					if (context == null) {
 						q.c = 0;
 					} else {
@@ -1239,11 +1279,9 @@ class LmdbSailStore implements SailStore {
 							}
 							Thread.onSpinWait();
 						}
-
 					} else {
 						q.execute();
 					}
-
 				}
 			} catch (IOException | RuntimeException e) {
 				rollback();
@@ -1407,9 +1445,7 @@ class LmdbSailStore implements SailStore {
 			} else {
 				try {
 					operation.execute();
-				} catch (IOException e) {
-					throw e;
-				} catch (RuntimeException e) {
+				} catch (IOException | RuntimeException e) {
 					throw e;
 				} catch (Exception e) {
 					throw new SailException(e);
@@ -1653,7 +1689,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
-			return SailDataset.super.getTriples(subj, pred, obj);
+			try {
+				return createTripleTermIterator(subj, pred, obj);
+			} catch (IOException e) {
+				throw new SailException("Unable to get triple terms", e);
+			}
 		}
 
 		@Override
