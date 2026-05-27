@@ -759,6 +759,56 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void dynamicProgrammingPrunesDisconnectedAppendWhenConnectedCompletionExists() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		IRI relationshipType = VF.createIRI("https://admin-shell.io/aas/3/RelationshipElement");
+		IRI shellType = VF.createIRI("https://admin-shell.io/aas/3/AssetAdministrationShell");
+		IRI submodel = VF.createIRI("https://admin-shell.io/aas/3/submodel");
+		IRI submodelElement = VF.createIRI("https://admin-shell.io/aas/3/submodelElement");
+		Resource lineAas = VF.createIRI("urn:aas:line");
+		Resource lineSubmodel = VF.createIRI("urn:submodel:line");
+		Resource rel = VF.createIRI("urn:rel:drive");
+		store.add(VF.createStatement(lineAas, rdfType, shellType));
+		store.add(VF.createStatement(lineAas, submodel, lineSubmodel));
+		store.add(VF.createStatement(lineSubmodel, submodelElement, rel));
+		store.add(VF.createStatement(rel, rdfType, relationshipType));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern relType = new StatementPattern(Var.of("rel"), Var.of("rdfType", rdfType),
+				Var.of("relationshipType", relationshipType));
+		StatementPattern lineSubmodelPattern = pattern("lineAAS", submodel, "lineSubmodel");
+		StatementPattern lineElementPattern = pattern("lineSubmodel", submodelElement, "rel");
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == lineElementPattern) {
+				boolean connected = boundVars.contains("lineSubmodel") || boundVars.contains("rel");
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(connected ? 10_000.0d : 1_000_000.0d,
+						1.0d));
+			}
+			return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(List.of(relType, lineSubmodelPattern, lineElementPattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel, List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertTrue(orderedArgs.indexOf(lineElementPattern) < Math.max(orderedArgs.indexOf(relType),
+				orderedArgs.indexOf(lineSubmodelPattern)),
+				"Connected-only enumeration must add the bridge before both disconnected leaves are in the prefix: "
+						+ orderedArgs);
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d,
+				"A connected island should not retain avoidable Cartesian work: " + plan.getSummaryDoubleMetrics());
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"));
+	}
+
+	@Test
 	void planJoinOrderPreparesSelectiveEndpointDomainsBeforeBroadBridge() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");

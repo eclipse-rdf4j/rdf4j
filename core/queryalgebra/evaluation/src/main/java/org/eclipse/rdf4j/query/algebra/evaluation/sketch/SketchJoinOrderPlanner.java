@@ -74,6 +74,13 @@ final class SketchJoinOrderPlanner {
 	private static final double CONNECTED_PAGE_WALK_BLEND_MIN_RATIO = 2.0d;
 	private static final String EXACT_CONNECTED_JOIN_MIN_ROWS = "optimizer.exactConnectedJoinMinRows";
 	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
+	static final String OPTIMIZER_CONNECTED_ENUMERATION = "optimizer.connectedEnumeration";
+	static final String OPTIMIZER_CONNECTED_COMPONENT_COUNT = "optimizer.connectedComponentCount";
+	static final String OPTIMIZER_DISCONNECTED_CANDIDATE_REJECTED_COUNT = "optimizer.disconnectedCandidateRejectedCount";
+	static final String OPTIMIZER_CARTESIAN_FALLBACK_REASON = "optimizer.cartesianFallbackReason";
+	private static final String CONNECTED_ENUMERATION_PHASE1 = "phase1_connected_only";
+	private static final String CONNECTED_ENUMERATION_PHASE2 = "phase2_disconnected_components";
+	private static final String CARTESIAN_FALLBACK_DISCONNECTED_COMPONENTS = "disconnected-components";
 	static final String PLANNED_COST_ROW_Q_ERROR_MAX = "plannedCostRowQErrorMax";
 	static final String PLANNED_COST_WORK_Q_ERROR_MAX = "plannedCostWorkQErrorMax";
 	static final String PLANNED_COST_CONFIDENCE = "plannedCostConfidence";
@@ -120,6 +127,7 @@ final class SketchJoinOrderPlanner {
 	private final long bindingSetAssignmentFactorMask;
 	private final long smallBindingSetAssignmentFactorMask;
 	private final long subjectTypeGuardFactorMask;
+	private final int structuralConnectedComponentCount;
 	private final long[] deferredFilterRequiredVarMasks;
 	private final long[] deferredFiltersByRequiredVariable;
 	private final long plannedFilterMask;
@@ -172,6 +180,7 @@ final class SketchJoinOrderPlanner {
 	private int logicalFinalFrontierWidth;
 	private int logicalDominatedCount;
 	private int logicalTrimmedCount;
+	private int disconnectedCandidateRejectedCount;
 	private String logicalExplorationMode;
 	private String logicalFinalFrontierSummary = "[]";
 	private String logicalConsideredCandidatesSummary = "[]";
@@ -284,6 +293,7 @@ final class SketchJoinOrderPlanner {
 		this.bindingSetAssignmentFactorMask = factorMask(this.bindingSetAssignmentFactors);
 		this.smallBindingSetAssignmentFactorMask = factorMask(this.smallBindingSetAssignmentFactors);
 		this.subjectTypeGuardFactorMask = factorMask(this.subjectTypeGuardFactors);
+		this.structuralConnectedComponentCount = computeStructuralConnectedComponentCount();
 		this.deferredFilterRequiredVarMasks = buildDeferredFilterRequiredVarMasks(this.deferredFilters, variableIds);
 		this.plannedFilterActionCount = computePlannedFilterActionCount(this.deferredFilters, this.factors.size());
 		this.plannedFilterMask = factorUniverseMask(this.plannedFilterActionCount);
@@ -473,6 +483,12 @@ final class SketchJoinOrderPlanner {
 				runtimeCorrectionHints());
 		summaryStringMetrics.put(TelemetryMetricNames.OPTIMIZER_RUNTIME_FEEDBACK,
 				runtimeFeedbackSummary());
+		String connectedEnumeration = connectedEnumeration(result);
+		summaryStringMetrics.put(OPTIMIZER_CONNECTED_ENUMERATION, connectedEnumeration);
+		if (CONNECTED_ENUMERATION_PHASE2.equals(connectedEnumeration)) {
+			summaryStringMetrics.put(OPTIMIZER_CARTESIAN_FALLBACK_REASON,
+					CARTESIAN_FALLBACK_DISCONNECTED_COMPONENTS);
+		}
 		if (traceDiagnostics && !diagnostics.isEmpty()) {
 			summaryStringMetrics.put(TelemetryMetricNames.OPTIMIZER_PLANNER_DIAGNOSTICS,
 					summarizeDiagnostics(diagnostics));
@@ -496,6 +512,10 @@ final class SketchJoinOrderPlanner {
 				(double) logicalMaxFrontierWidth);
 		summaryDoubleMetrics.put(TelemetryMetricNames.OPTIMIZER_FINAL_FRONTIER_WIDTH,
 				(double) logicalFinalFrontierWidth);
+		summaryDoubleMetrics.put(OPTIMIZER_CONNECTED_COMPONENT_COUNT,
+				(double) structuralConnectedComponentCount);
+		summaryDoubleMetrics.put(OPTIMIZER_DISCONNECTED_CANDIDATE_REJECTED_COUNT,
+				(double) disconnectedCandidateRejectedCount);
 		if (sketchIntersectionUpperBoundUses > 0) {
 			summaryDoubleMetrics.put("optimizer.sketchIntersectionUpperBoundUses",
 					(double) sketchIntersectionUpperBoundUses);
@@ -555,6 +575,13 @@ final class SketchJoinOrderPlanner {
 	private int sketchIntersectionUpperBoundUses() {
 		return Math.max(0,
 				estimator.sketchIntersectionUpperBoundUses() - initialSketchIntersectionUpperBoundUses);
+	}
+
+	private String connectedEnumeration(StatePlan result) {
+		if (structuralConnectedComponentCount > 1 || result.costVector().cartesianWorkRows() > 0.0d) {
+			return CONNECTED_ENUMERATION_PHASE2;
+		}
+		return CONNECTED_ENUMERATION_PHASE1;
 	}
 
 	private FactorBuildResult buildFactors(List<TupleExpr> expressions) {
@@ -888,6 +915,44 @@ final class SketchJoinOrderPlanner {
 		return null;
 	}
 
+	private int computeStructuralConnectedComponentCount() {
+		long remaining = factorUniverseMask;
+		int components = 0;
+		boolean hasScalarFactor = false;
+		while (remaining != 0L) {
+			int factorIndex = Long.numberOfTrailingZeros(remaining);
+			if (isZeroVarScalarFactor(factorIndex)) {
+				hasScalarFactor = true;
+				remaining &= ~bit(factorIndex);
+				continue;
+			}
+			components++;
+			remaining &= ~structuralComponentMask(factorIndex, remaining);
+		}
+		return components == 0 && (hasScalarFactor || !factors.isEmpty()) ? 1 : components;
+	}
+
+	private long structuralComponentMask(int startFactor, long availableFactors) {
+		long component = bit(startFactor);
+		long componentVars = structuralFactorVarMask(startFactor);
+		boolean expanded;
+		do {
+			expanded = false;
+			long candidates = availableFactors & ~component;
+			while (candidates != 0L) {
+				int candidate = Long.numberOfTrailingZeros(candidates);
+				candidates &= candidates - 1L;
+				long candidateVars = structuralFactorVarMask(candidate);
+				if (candidateVars != 0L && (candidateVars & componentVars) != 0L) {
+					component |= bit(candidate);
+					componentVars |= candidateVars;
+					expanded = true;
+				}
+			}
+		} while (expanded);
+		return component;
+	}
+
 	private List<Set<Integer>> physicalComponents() {
 		Set<Integer> seenFactors = new LinkedHashSet<>();
 		List<Set<Integer>> components = new ArrayList<>();
@@ -950,6 +1015,10 @@ final class SketchJoinOrderPlanner {
 			return null;
 		}
 		if (applySeedDelayGuards) {
+			if (shouldDelayDisconnectedOuterSeed(factorIndex)) {
+				disconnectedCandidateRejectedCount++;
+				return null;
+			}
 			if (shouldDelayUnfilteredFiniteSeed(factorIndex)) {
 				return null;
 			}
@@ -1042,6 +1111,22 @@ final class SketchJoinOrderPlanner {
 				1, seedEstimate, stepWorkRows, costVector, 0L, 1,
 				seedBoundVarMask, forwardChainState);
 		return applyAutomaticFilterActions(seed);
+	}
+
+	private boolean shouldDelayDisconnectedOuterSeed(int factorIndex) {
+		return initiallyBoundVarMask != 0L
+				&& !isZeroVarScalarFactor(factorIndex)
+				&& (structuralFactorVarMask(factorIndex) & initiallyBoundVarMask) == 0L
+				&& hasStructuralFactorConnectedToInitiallyBoundVars();
+	}
+
+	private boolean hasStructuralFactorConnectedToInitiallyBoundVars() {
+		for (int i = 0; i < runtimeVarMasks.length; i++) {
+			if ((structuralFactorVarMask(i) & initiallyBoundVarMask) != 0L) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean shouldDelayUnfilteredFiniteSeed(int factorIndex) {
@@ -2402,7 +2487,7 @@ final class SketchJoinOrderPlanner {
 			SketchBasedJoinEstimator.TuplePlanEstimate rowsBeforeUnlockedFilters,
 			boolean endpointDomainPreparation) {
 		if (mask == 0L || !isFiniteNonNegative(stepWorkRows)
-				|| hasConnection(mask, candidate, currentlyBoundVarMask)) {
+				|| hasStructuralConnection(candidate, currentlyBoundVarMask)) {
 			return 0.0d;
 		}
 		if (isSingletonBindingSetAssignment(candidate) || containsOnlySingletonBindingSetAssignments(mask)) {
@@ -3284,13 +3369,51 @@ final class SketchJoinOrderPlanner {
 				legal |= bit(candidate);
 			}
 		}
-		plan.candidatesMask = legal;
+		plan.candidatesMask = connectedOnlyCandidates(plan, legal, boundVarMask);
 		plan.candidatesMaskLoaded = true;
-		return legal;
+		return plan.candidatesMask;
 	}
 
 	private boolean isFactorActionLegal(int factorIndex, long boundVarMask) {
 		return (factorRequiredBeforeVarMasks[factorIndex] & ~boundVarMask) == 0L;
+	}
+
+	private long connectedOnlyCandidates(StatePlan plan, long legalCandidates, long boundVarMask) {
+		if (legalCandidates == 0L) {
+			return 0L;
+		}
+		// Structural connectivity is a search-space rule: if a real runtime-variable edge is available,
+		// disconnected candidates are not costed. Do not add query-specific join placement exceptions here.
+		long connectedCandidates = structurallyConnectedCandidates(legalCandidates, boundVarMask);
+		if (connectedCandidates == 0L) {
+			return legalCandidates;
+		}
+		boolean hasPrefixFactor = plan.mask() != 0L;
+		boolean hasOuterSeed = (boundVarMask & initiallyBoundVarMask) != 0L && initiallyBoundVarMask != 0L;
+		if (!hasPrefixFactor && !hasOuterSeed) {
+			return legalCandidates;
+		}
+		long rejected = legalCandidates & ~connectedCandidates;
+		if (rejected != 0L) {
+			disconnectedCandidateRejectedCount += Long.bitCount(rejected);
+		}
+		return connectedCandidates;
+	}
+
+	private long structurallyConnectedCandidates(long candidates, long boundVarMask) {
+		long connected = 0L;
+		while (candidates != 0L) {
+			int candidate = Long.numberOfTrailingZeros(candidates);
+			candidates &= candidates - 1L;
+			if (isZeroVarScalarFactor(candidate) || hasStructuralConnection(candidate, boundVarMask)) {
+				connected |= bit(candidate);
+			}
+		}
+		return connected;
+	}
+
+	private boolean hasStructuralConnection(int candidate, long boundVarMask) {
+		return (structuralFactorVarMask(candidate) & boundVarMask) != 0L;
 	}
 
 	private long candidateActionsMask(StatePlan plan) {
@@ -3650,6 +3773,9 @@ final class SketchJoinOrderPlanner {
 			return estimate;
 		}
 		double outputRows = physicalEstimate.factorOutputRows();
+		if (estimate.outputRows() == 0.0d && outputRows > 0.0d) {
+			return estimate;
+		}
 		if (!isFiniteNonNegative(outputRows) || outputRows < 0.0d
 				|| Double.compare(estimate.outputRows(), outputRows) == 0) {
 			return estimate;
@@ -4338,6 +4464,9 @@ final class SketchJoinOrderPlanner {
 			return estimate;
 		}
 		double outputRows = physicalEstimate.factorOutputRows();
+		if (estimate.outputRows() == 0.0d && outputRows > 0.0d) {
+			return estimate;
+		}
 		if (!isFiniteNonNegative(outputRows) || outputRows <= estimate.outputRows()) {
 			return estimate;
 		}
@@ -5218,7 +5347,7 @@ final class SketchJoinOrderPlanner {
 			double accessWorkRows, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate) {
 		if (mask == 0L || prefixEstimate == null || !isFiniteNonNegative(accessWorkRows)
 				|| isSmallBindingSetAssignment(factorIndex) || runtimeVarMasks[factorIndex] == 0L
-				|| hasConnection(mask, factorIndex, currentlyBoundVarMask)) {
+				|| hasStructuralConnection(factorIndex, currentlyBoundVarMask)) {
 			return accessWorkRows;
 		}
 		if (hasBroadPendingEndpointBridge(mask, factorIndex, currentlyBoundVarMask, prefixEstimate)
@@ -5928,6 +6057,16 @@ final class SketchJoinOrderPlanner {
 
 	private boolean isSmallBindingSetAssignment(int factorIndex) {
 		return smallBindingSetAssignmentFactors[factorIndex];
+	}
+
+	private boolean isZeroVarScalarFactor(int factorIndex) {
+		return structuralFactorVarMask(factorIndex) == 0L
+				&& isFiniteNonNegative(factorOutputRows[factorIndex])
+				&& factorOutputRows[factorIndex] <= 1.0d;
+	}
+
+	private long structuralFactorVarMask(int factorIndex) {
+		return runtimeVarMasks[factorIndex] & variableUniverseMask;
 	}
 
 	private boolean isBindingSetAssignment(int factorIndex) {

@@ -5237,6 +5237,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		TuplePlanEstimate estimate;
 		if (tupleExpr instanceof BindingSetAssignment) {
 			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
+		} else if (tupleExpr instanceof ArbitraryLengthPath) {
+			estimate = estimatePropertyPathTupleExprPlan((ArbitraryLengthPath) tupleExpr);
+		} else if (tupleExpr instanceof ZeroLengthPath) {
+			estimate = estimatePropertyPathTupleExprPlan((ZeroLengthPath) tupleExpr);
 		} else if (tupleExpr instanceof Filter && initiallyBoundVars != null && !initiallyBoundVars.isEmpty()) {
 			return null;
 		} else {
@@ -5254,6 +5258,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		TuplePlanEstimate estimate;
 		if (tupleExpr instanceof BindingSetAssignment) {
 			estimate = estimateBindingSetAssignment((BindingSetAssignment) tupleExpr);
+		} else if (tupleExpr instanceof ArbitraryLengthPath) {
+			estimate = estimatePropertyPathTupleExprPlan((ArbitraryLengthPath) tupleExpr);
+		} else if (tupleExpr instanceof ZeroLengthPath) {
+			estimate = estimatePropertyPathTupleExprPlan((ZeroLengthPath) tupleExpr);
 		} else if (tupleExpr instanceof Filter && initiallyBoundVarMask != 0L) {
 			return null;
 		} else {
@@ -5327,6 +5335,33 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			varStats = clampVarStatsToRows(varStats, outputRows, false);
 		}
 		return new TuplePlanEstimate(baseRows, outputRows, input.filterMultiplier, varStats);
+	}
+
+	private TuplePlanEstimate estimatePropertyPathTupleExprPlan(ArbitraryLengthPath path) {
+		return estimate(path, Set.of())
+				.map(estimate -> propertyPathTupleExprPlan(path.getSubjectVar(), path.getObjectVar(), estimate))
+				.orElse(null);
+	}
+
+	private TuplePlanEstimate estimatePropertyPathTupleExprPlan(ZeroLengthPath path) {
+		return estimate(path, Set.of())
+				.map(estimate -> propertyPathTupleExprPlan(path.getSubjectVar(), path.getObjectVar(), estimate))
+				.orElse(null);
+	}
+
+	private TuplePlanEstimate propertyPathTupleExprPlan(Var subjectVar, Var objectVar, PropertyPathEstimate estimate) {
+		double rows = normalizeRows(estimate.rows());
+		Map<String, VarPlanStats> varStats = newVarStatsMap(2);
+		addPropertyPathVarStats(varStats, subjectVar, estimate.distinctSubjects(), rows);
+		addPropertyPathVarStats(varStats, objectVar, estimate.distinctObjects(), rows);
+		return new TuplePlanEstimate(rows, rows, 1.0d, varStats);
+	}
+
+	private void addPropertyPathVarStats(Map<String, VarPlanStats> varStats, Var var, double distinct, double rows) {
+		if (var == null || var.hasValue() || var.getName() == null || varStats.containsKey(var.getName())) {
+			return;
+		}
+		varStats.put(var.getName(), new VarPlanStats(clampDistinct(distinct, rows), null));
 	}
 
 	private Map<String, VarPlanStats> estimatePatternVarStats(StatementPattern pattern, double baseRows) {
@@ -7757,8 +7792,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
-		double outputRows = leftJoin ? Math.max(leftEstimate.outputRows, step.outputRows) : step.outputRows;
-		return new TuplePlanEstimate(outputRows, outputRows, 1.0d, step.varStats);
+		return leftJoin ? estimateLeftJoinTupleExprPlan(leftEstimate, rightEstimate, step)
+				: new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
 	}
 
 	private TuplePlanEstimate estimateJoinedTupleExprPlan(TupleExpr leftArg, TupleExpr rightArg, boolean leftJoin,
@@ -7774,8 +7809,76 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 			return null;
 		}
 		JoinStepEstimate step = estimateJoinStep(leftEstimate, rightEstimate);
-		double outputRows = leftJoin ? Math.max(leftEstimate.outputRows, step.outputRows) : step.outputRows;
-		return new TuplePlanEstimate(outputRows, outputRows, 1.0d, step.varStats);
+		return leftJoin ? estimateLeftJoinTupleExprPlan(leftEstimate, rightEstimate, step)
+				: new TuplePlanEstimate(step.outputRows, step.outputRows, 1.0d, step.varStats);
+	}
+
+	private TuplePlanEstimate estimateLeftJoinTupleExprPlan(TuplePlanEstimate leftEstimate,
+			TuplePlanEstimate rightEstimate, JoinStepEstimate step) {
+		double joinRows = step.outputRows;
+		double matchedLeftRows = estimateMatchedLeftRows(leftEstimate, rightEstimate);
+		double unmatchedLeftRows = Math.max(0.0d, leftEstimate.outputRows - matchedLeftRows);
+		double outputRows = normalizeRows(joinRows + unmatchedLeftRows);
+		return new TuplePlanEstimate(outputRows, outputRows, 1.0d,
+				leftJoinVarStats(leftEstimate, rightEstimate, joinRows, outputRows));
+	}
+
+	private double estimateMatchedLeftRows(TuplePlanEstimate leftEstimate, TuplePlanEstimate rightEstimate) {
+		if (leftEstimate.outputRows <= 0.0d) {
+			return 0.0d;
+		}
+		if (rightEstimate.outputRows <= 0.0d) {
+			return 0.0d;
+		}
+		double matchedRows = leftEstimate.outputRows;
+		boolean hasSharedVars = false;
+		for (Map.Entry<String, VarPlanStats> entry : leftEstimate.varStats.entrySet()) {
+			VarPlanStats rightStats = rightEstimate.varStats.get(entry.getKey());
+			if (rightStats == null) {
+				continue;
+			}
+			double leftDistinct = Math.max(1.0d, entry.getValue().distinct);
+			double rightDistinct = Math.max(1.0d, rightStats.distinct);
+			double domainDistinct = Math.max(leftDistinct, rightDistinct);
+			double coveredRightDistinct = estimatedCoveredDistinct(rightEstimate.outputRows, domainDistinct);
+			double matchRatio = Math.min(1.0d, Math.min(rightDistinct, coveredRightDistinct) / leftDistinct);
+			matchedRows = Math.min(matchedRows, leftEstimate.outputRows * matchRatio);
+			hasSharedVars = true;
+		}
+		if (!hasSharedVars) {
+			return rightEstimate.outputRows > 0.0d ? leftEstimate.outputRows : 0.0d;
+		}
+		return normalizeRows(matchedRows);
+	}
+
+	private double estimatedCoveredDistinct(double rows, double domainDistinct) {
+		if (rows <= 0.0d || domainDistinct <= 0.0d) {
+			return 0.0d;
+		}
+		if (domainDistinct <= 1.0d) {
+			return 1.0d;
+		}
+		double missExponent = rows * Math.log1p(-1.0d / domainDistinct);
+		double covered = domainDistinct * -Math.expm1(missExponent);
+		return Math.max(0.0d, Math.min(Math.min(rows, domainDistinct), covered));
+	}
+
+	private Map<String, VarPlanStats> leftJoinVarStats(TuplePlanEstimate leftEstimate,
+			TuplePlanEstimate rightEstimate, double joinRows, double outputRows) {
+		Map<String, VarPlanStats> varStats = newVarStatsMap(
+				leftEstimate.varStats.size() + rightEstimate.varStats.size());
+		for (Map.Entry<String, VarPlanStats> entry : leftEstimate.varStats.entrySet()) {
+			VarPlanStats stats = entry.getValue();
+			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(stats.distinct, outputRows), stats.sketch,
+					stats.pattern));
+		}
+		for (Map.Entry<String, VarPlanStats> entry : rightEstimate.varStats.entrySet()) {
+			if (varStats.containsKey(entry.getKey())) {
+				continue;
+			}
+			varStats.put(entry.getKey(), new VarPlanStats(clampDistinct(entry.getValue().distinct, joinRows), null));
+		}
+		return varStats;
 	}
 
 	private TuplePlanEstimate estimateUnionTupleExprPlan(Union union, Set<String> initiallyBoundVars) {

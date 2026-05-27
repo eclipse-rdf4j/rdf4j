@@ -241,8 +241,14 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateForLocalCost(MemoExpr expression, TupleExpr tupleExpr,
 				Set<String> boundVars, List<Winner> inputWinners) {
-			if (expression.physical() && !expression.inputGroupIds().isEmpty() && tupleExpr instanceof Join join) {
-				return estimateConcretePhysicalJoin(join, boundVars, inputWinners);
+			if (expression.physical() && !expression.inputGroupIds().isEmpty()) {
+				if (tupleExpr instanceof Join join) {
+					return estimateConcretePhysicalJoin(join, boundVars, inputWinners);
+				}
+				if (tupleExpr instanceof UnaryTupleOperator unary && inputWinners != null
+						&& inputWinners.size() == 1) {
+					return estimateConcretePhysicalUnary(unary, boundVars, inputWinners);
+				}
 			}
 			return estimate(tupleExpr, boundVars);
 		}
@@ -489,6 +495,10 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateFilter(Filter filter, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(filter.getArg(), boundVars);
+			return estimateFilter(filter, boundVars, input);
+		}
+
+		private StatisticsEstimate estimateFilter(Filter filter, Set<String> boundVars, StatisticsEstimate input) {
 			Optional<StatisticsEstimate> provider = rdfStatisticsProvider.filter(filter.getArg(), filter.getCondition(),
 					input, boundVars);
 			if (provider.isPresent()) {
@@ -529,6 +539,36 @@ public interface CascadesCostModel {
 					"physical-join");
 		}
 
+		private StatisticsEstimate estimateConcretePhysicalUnary(UnaryTupleOperator unary, Set<String> boundVars,
+				List<Winner> inputWinners) {
+			StatisticsEstimate input = inputWinnerEstimate(inputWinners, 0, unary.getArg(), boundVars);
+			if (unary instanceof QueryRoot root) {
+				return estimateUnary(root, input, "query-root");
+			}
+			if (unary instanceof Filter filter) {
+				return estimateFilter(filter, boundVars, input);
+			}
+			if (unary instanceof Projection projection) {
+				return estimateProjection(projection, input);
+			}
+			if (unary instanceof Extension extension) {
+				return estimateExtension(extension, input);
+			}
+			if (unary instanceof Group group) {
+				return estimateGroup(group, input);
+			}
+			if (unary instanceof Slice slice) {
+				return estimateSlice(slice, input);
+			}
+			if (unary instanceof Order order) {
+				return estimateOrder(order, input);
+			}
+			if (unary instanceof Distinct || unary instanceof Reduced) {
+				return estimateDistinct(unary, input);
+			}
+			return estimateUnary(unary, input, "unary-pass-through");
+		}
+
 		private StatisticsEstimate inputWinnerEstimate(List<Winner> inputWinners, int index, TupleExpr fallback,
 				Set<String> boundVars) {
 			if (inputWinners == null || index >= inputWinners.size()) {
@@ -542,9 +582,33 @@ public interface CascadesCostModel {
 			String source = winner.provenance() == null || winner.provenance().estimate() == null
 					? "physical-input"
 					: winner.provenance().estimate().source();
-			BagEstimate bag = bagWithBindings(plan, winner.cost().rows(), winner.cost().rows(),
+			StatisticsEstimate logical = estimate(plan, boundVars);
+			BagEstimate bag = physicalInputBag(plan, logical, winner.cost().rows(), winner.cost().workRows(),
 					source + "-physical-input");
 			return StatisticsEstimate.fromBag(bag, source + "-physical-input");
+		}
+
+		private BagEstimate physicalInputBag(TupleExpr plan, StatisticsEstimate logical, double rows, double workRows,
+				String source) {
+			if (logical == null || logical.bag().variables().isEmpty()) {
+				return bagWithBindings(plan, rows, workRows, source);
+			}
+			BagEstimate bag = logical.bag();
+			double scale = bag.rows() > 0.0d ? rows / bag.rows() : 0.0d;
+			Map<String, VariableEstimate> variables = new LinkedHashMap<>();
+			for (Map.Entry<String, VariableEstimate> entry : bag.variables().entrySet()) {
+				VariableEstimate variable = entry.getValue();
+				double boundRows = variable.boundRows() * scale;
+				double nullableRows = variable.nullableRows() * scale;
+				double distinctRows = Math.min(variable.distinctRows(), Math.max(1.0d, boundRows));
+				variables.put(entry.getKey(), new VariableEstimate(distinctRows, boundRows, nullableRows,
+						variable.sketch()));
+			}
+			Map<VariableSetKey, FiniteRelationEstimate> relations = Math.abs(scale - 1.0d) < 0.000001d
+					? bag.finiteRelations()
+					: Map.of();
+			return new BagEstimate(rows, Math.max(rows, workRows), bag.memoryRows(), bag.confidence(), source,
+					variables, relations, bag.metrics());
 		}
 
 		private boolean weakZeroContradictsPositiveJoin(StatisticsEstimate provider, StatisticsEstimate formula) {
@@ -597,6 +661,10 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateUnary(UnaryTupleOperator operator, Set<String> boundVars, String method) {
 			StatisticsEstimate input = estimate(operator.getArg(), boundVars);
+			return estimateUnary(operator, input, method);
+		}
+
+		private StatisticsEstimate estimateUnary(UnaryTupleOperator operator, StatisticsEstimate input, String method) {
 			return StatisticsEstimate.fromBag(input.bag()
 					.withWorkRows(input.workRows() + Math.max(1.0d, input.rows() * 0.05d),
 							method + "-pass-through"),
@@ -605,6 +673,10 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateDistinct(UnaryTupleOperator operator, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(operator.getArg(), boundVars);
+			return estimateDistinct(operator, input);
+		}
+
+		private StatisticsEstimate estimateDistinct(UnaryTupleOperator operator, StatisticsEstimate input) {
 			return rdfStatisticsProvider.distinct(input, operator.getBindingNames())
 					.orElseGet(() -> StatisticsEstimate.fromBag(EstimateMath.distinct(input.bag(),
 							operator.getBindingNames()), "distinct"));
@@ -612,6 +684,10 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateProjection(Projection projection, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(projection.getArg(), boundVars);
+			return estimateProjection(projection, input);
+		}
+
+		private StatisticsEstimate estimateProjection(Projection projection, StatisticsEstimate input) {
 			BagEstimate bag = input.bag();
 			for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
 				String sourceName = element.getName();
@@ -625,6 +701,10 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateExtension(Extension extension, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(extension.getArg(), boundVars);
+			return estimateExtension(extension, input);
+		}
+
+		private StatisticsEstimate estimateExtension(Extension extension, StatisticsEstimate input) {
 			BagEstimate bag = input.bag();
 			for (ExtensionElem element : extension.getElements()) {
 				ValueExpr expr = element.getExpr();
@@ -642,6 +722,10 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateGroup(Group group, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(group.getArg(), boundVars);
+			return estimateGroup(group, input);
+		}
+
+		private StatisticsEstimate estimateGroup(Group group, StatisticsEstimate input) {
 			BagEstimate bag = EstimateMath.group(input.bag(), group.getGroupBindingNames());
 			for (String aggregateName : group.getAggregateBindingNames()) {
 				bag = bag.withVariable(aggregateName, VariableEstimate.bound(bag.rows(), bag.rows()));
@@ -651,12 +735,20 @@ public interface CascadesCostModel {
 
 		private StatisticsEstimate estimateSlice(Slice slice, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(slice.getArg(), boundVars);
+			return estimateSlice(slice, input);
+		}
+
+		private StatisticsEstimate estimateSlice(Slice slice, StatisticsEstimate input) {
 			return StatisticsEstimate.fromBag(EstimateMath.slice(input.bag(), slice.getOffset(), slice.getLimit()),
 					"slice");
 		}
 
 		private StatisticsEstimate estimateOrder(Order order, Set<String> boundVars) {
 			StatisticsEstimate input = estimate(order.getArg(), boundVars);
+			return estimateOrder(order, input);
+		}
+
+		private StatisticsEstimate estimateOrder(Order order, StatisticsEstimate input) {
 			return StatisticsEstimate.fromBag(EstimateMath.order(input.bag()), "order");
 		}
 
