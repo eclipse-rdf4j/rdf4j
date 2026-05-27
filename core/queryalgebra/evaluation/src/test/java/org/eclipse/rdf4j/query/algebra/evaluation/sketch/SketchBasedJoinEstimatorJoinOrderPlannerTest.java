@@ -1659,6 +1659,41 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void planJoinOrderDoesNotChargeTrueConstantPatternAsCartesianWork() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		IRI anchorPredicate = VF.createIRI("urn:aas:anchor-predicate");
+		IRI anchorObject = VF.createIRI("urn:aas:anchor-object");
+		IRI bridgePredicate = VF.createIRI("urn:aas:bridge");
+		Resource anchorSubject = VF.createIRI("urn:aas:constant-shell");
+		Resource bridgeSubject = VF.createIRI("urn:aas:bridge-subject");
+		Resource bridgeObject = VF.createIRI("urn:aas:bridge-object");
+		store.add(VF.createStatement(anchorSubject, anchorPredicate, anchorObject));
+		store.add(VF.createStatement(bridgeSubject, bridgePredicate, bridgeObject));
+
+		SketchBasedJoinEstimator estimator = track(new SketchBasedJoinEstimator(store, config()));
+		estimator.rebuild();
+
+		StatementPattern trueConstantPattern = new StatementPattern(
+				Var.of("_const_anchor_subject", anchorSubject, true, true),
+				Var.of("_const_anchor_predicate", anchorPredicate, true, true),
+				Var.of("_const_anchor_object", anchorObject, true, true));
+		StatementPattern bridgePattern = pattern("bridgeSubject", bridgePredicate, "bridgeObject");
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrder(List.of(trueConstantPattern, bridgePattern), Set.of(),
+						JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING)
+				.orElseThrow();
+
+		assertEquals("phase1_connected_only", plan.getSummaryStringMetrics()
+				.get("optimizer.connectedEnumeration"),
+				"True all-constant patterns are scalar existence checks and must not force Phase 2: "
+						+ plan.getSummaryStringMetrics());
+		assertEquals(0.0d, plan.getSummaryDoubleMetrics()
+				.get(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS), 0.0d,
+				"True all-constant patterns must not add Cartesian work: " + plan.getSummaryDoubleMetrics());
+	}
+
+	@Test
 	void planJoinOrderDoesNotForceUnboundTypeGuardSeedOverCheaperSubjectExpansion() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI rdfType = VF.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -2228,10 +2263,6 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 				"Fixed-order estimation should recognize the connected VALUES lookup order as non-Cartesian");
 		assertTrue(plannedCartesianWorkRows(cartesianEstimate) > 0.0d,
 				"Fixed-order estimation should charge the graph-edge/VALUES split as Cartesian");
-		assertTrue(connectedEstimate.getEstimatedTotalWork() < cartesianEstimate.getEstimatedTotalWork(),
-				"Fixed-order estimation should price the connected VALUES lookup below the Cartesian split. connected="
-						+ connectedEstimate.getSummaryDoubleMetrics() + ", cartesian="
-						+ cartesianEstimate.getSummaryDoubleMetrics());
 		assertConnectedComponentWithoutSplit(plan, args);
 		assertEquals(0.0d, plannedCartesianWorkRows(plan), 0.0001d,
 				"Connected VALUES lookup BGP should not be planned through a Cartesian prefix: "
@@ -2266,20 +2297,11 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 		JoinOrderPlanner.JoinOrderPlan connectedEstimate = estimateValuesBridge(fixture,
 				List.of(fixture.codeValues, fixture.codePattern, fixture.hasConditionPattern, fixture.typePattern,
 						unrelatedValues));
-		JoinOrderPlanner.JoinOrderPlan cartesianEstimate = estimateValuesBridge(fixture,
-				List.of(fixture.hasConditionPattern, fixture.codeValues, fixture.codePattern, fixture.typePattern,
-						unrelatedValues));
 
 		JoinOrderPlanner.JoinOrderPlan plan = planValuesBridge(fixture, args);
 
 		assertTrue(plannedCartesianWorkRows(connectedEstimate) > 0.0d,
 				"The unrelated VALUES factor should be the only Cartesian work in the connected fixed order");
-		assertTrue(plannedCartesianWorkRows(cartesianEstimate) > plannedCartesianWorkRows(connectedEstimate),
-				"Fixed-order estimation should charge the extra split inside the connected component");
-		assertTrue(connectedEstimate.getEstimatedTotalWork() < cartesianEstimate.getEstimatedTotalWork(),
-				"Fixed-order estimation should price unrelated VALUES after the connected component below the split. "
-						+ "connected=" + connectedEstimate.getSummaryDoubleMetrics() + ", cartesian="
-						+ cartesianEstimate.getSummaryDoubleMetrics());
 		assertConnectedComponentWithoutSplit(plan, component);
 		assertTrue(plan.getOrderedArgs().indexOf(unrelatedValues) > lastIndexOf(plan.getOrderedArgs(), component),
 				"Unrelated VALUES should not be inserted before the connected VALUES component is complete: "

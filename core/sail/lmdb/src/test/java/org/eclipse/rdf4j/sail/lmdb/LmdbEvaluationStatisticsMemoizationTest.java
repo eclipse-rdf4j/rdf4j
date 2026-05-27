@@ -962,13 +962,15 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		JoinFactorCostModel.FactorCostEstimate estimate = statistics.estimateFactorCost(orgEmployee, context)
 				.orElseThrow();
 
-		assertEquals(48_000.0d, estimate.getOutputRows(), 0.0d);
-		assertEquals(48_000.0d, estimate.getWorkRows(), 0.0d);
-		assertEquals(40.0d, estimate.getAccessRowsBeforeFilter(), 0.0d);
+		assertEquals(10_666.666666666666d, estimate.getOutputRows(), 1.0e-9d);
+		assertEquals(10_666.666666666666d, estimate.getWorkRows(), 1.0e-9d);
+		assertEquals(8.88888888888889d, estimate.getAccessRowsBeforeFilter(), 1.0e-9d);
 		assertEquals("lmdb-bound-join-product",
 				estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+		assertEquals("tuple_sketch_page_walk_harmonic", estimate.getStringMetrics().get("plannedEstimateFusion"));
 		assertEquals(1_200.0d, estimate.getDoubleMetrics().get("plannedRepeatedInvocations"), 0.0d);
 		assertEquals(300.0d, estimate.getDoubleMetrics().get("plannedDistinctLookupBindings"), 0.0d);
+		assertEquals(48_000.0d, estimate.getDoubleMetrics().get("plannedBoundJoinProductRawRows"), 0.0d);
 	}
 
 	@Test
@@ -2101,7 +2103,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void medicalAggregateInFilterUsesBackgroundSampledRecordedOnSelectivityWhenForegroundSamplingDisabled()
+	void medicalAggregateInFilterUsesFiniteAnchorOrBackgroundSampledRecordedOnSelectivityWhenForegroundSamplingDisabled()
 			throws Exception {
 		File dataDir = createTemporaryDirectory("lmdb-eval-stats-medical-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
@@ -2130,13 +2132,25 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					HAVING (COUNT(?enc) > 0)
 					""";
 			TupleExpr optimized;
+			String optimizedText;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
 						.explain(Explanation.Level.Optimized);
 				optimized = (TupleExpr) explanation.tupleExpr();
+				optimizedText = explanation.toString();
 			}
 
 			List<?> requests = peekBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore));
+			Filter recordedOnFilter = findRecordedOnFilter(optimized);
+			if (recordedOnFilter == null && optimizedText.contains("selected=finite-anchor:date")) {
+				assertTrue(optimizedText.contains("BindingSetAssignment ([[date="),
+						"Expected optimized plan to use the exact selected date anchor\n" + optimizedText);
+				assertTrue(requests.isEmpty(),
+						"Finite date anchors should not need background filter sampling; requests=" + requests);
+				assertFalse(optimizedText.contains("Filter (filterSelectivitySource=unknown)"),
+						"Selected date anchor should not leave an unknown recordedOn filter\n" + optimizedText);
+				return;
+			}
 			assertTrue(requests.stream()
 					.anyMatch(request -> {
 						try {
@@ -2149,7 +2163,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					"Expected optimizer to queue background sampling for the recordedOn IN filter; requests="
 							+ requests);
 
-			Filter recordedOnFilter = findRecordedOnFilter(optimized);
 			Filter recordedOnSamplingFilter = recordedOnFilter == null ? recordedOnLocalFilter() : recordedOnFilter;
 			assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, backingStore.getEvaluationStatistics(),
 					recordedOnSamplingFilter) > 0,

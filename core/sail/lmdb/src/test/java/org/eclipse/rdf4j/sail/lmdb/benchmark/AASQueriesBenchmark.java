@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -114,6 +115,9 @@ public class AASQueriesBenchmark {
 	@Param({ "lmdb" })
 	private String store;
 
+	@Param({ "true", "false" })
+	String useCascades;
+
 	@Param({
 			"query1PropertyProjection",
 			"query2ThresholdCount",
@@ -156,21 +160,32 @@ public class AASQueriesBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		try {
-			repository.shutDown();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			System.out.println();
+			System.out.println(connection.prepareTupleQuery(querySpec.query()).explain(Explanation.Level.Timed));
+			System.out.println();
 		} finally {
-			if (dataDir != null) {
-				FileUtils.deleteDirectory(dataDir);
-				dataDir = null;
+			try {
+				repository.shutDown();
+			} finally {
+				if (dataDir != null) {
+					FileUtils.deleteDirectory(dataDir);
+					dataDir = null;
+				}
 			}
 		}
+
 	}
 
 	private SailRepository createRepository() throws IOException {
 
 		dataDir = Files.newTemporaryFolder();
 
-		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc")));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		if (!Boolean.parseBoolean(useCascades)) {
+			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
+		}
+		return new SailRepository(new LmdbStore(dataDir, config));
 	}
 
 	@Benchmark

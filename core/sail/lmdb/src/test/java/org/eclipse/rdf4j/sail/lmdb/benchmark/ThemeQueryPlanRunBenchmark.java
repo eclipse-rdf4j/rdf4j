@@ -96,17 +96,17 @@ public class ThemeQueryPlanRunBenchmark {
 	public static class BaseState {
 
 		@Param({
-				"0",
-				"1",
-				"2",
-				"3",
-				"4",
+//				"0",
+//				"1",
+//				"2",
+//				"3",
+//				"4",
 				"5",
-				"6",
-				"7",
-				"8",
-				"9",
-				"10",
+//				"6",
+//				"7",
+//				"8",
+//				"9",
+//				"10",
 //			"11",
 //			"12"
 		})
@@ -165,7 +165,7 @@ public class ThemeQueryPlanRunBenchmark {
 			}
 			if (repository != null) {
 				try (SailRepositoryConnection connection = repository.getConnection()) {
-					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Timed);
 					System.out.println();
 					System.out.println();
 					System.out.println(explain);

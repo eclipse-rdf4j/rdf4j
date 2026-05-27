@@ -1331,14 +1331,16 @@ class LmdbEvaluationStatistics
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor,
 			JoinFactorCostModel.CostContext context) {
+		RequestedAccessPath requestedAccessPath = RequestedAccessPath.of(context);
 		if (context.hasCurrentlyBoundVarMask()) {
 			return estimateLmdbFactorCost(factor, context.getVariableNames(),
 					context.getCurrentlyBoundVarMask(),
 					Double.NaN, context.shouldCollectMetrics(), context.getFiniteBindingValues(),
-					context.getEstimationTier());
+					context.getEstimationTier(), requestedAccessPath);
 		}
 		return estimateLmdbFactorCost(factor, context.getCurrentlyBoundVars(), Double.NaN,
-				context.shouldCollectMetrics(), context.getFiniteBindingValues(), context.getEstimationTier());
+				context.shouldCollectMetrics(), context.getFiniteBindingValues(), context.getEstimationTier(),
+				requestedAccessPath);
 	}
 
 	private FactorCostEstimate accountNestedInvocationWork(TupleExpr factor, FactorCostEstimate estimate,
@@ -1763,13 +1765,24 @@ class LmdbEvaluationStatistics
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, Set<String> currentlyBoundVars,
 			double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
 			JoinFactorCostModel.EstimationTier estimationTier) {
+		return estimateLmdbFactorCost(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
+				finiteBindingValues, estimationTier, null);
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, Set<String> currentlyBoundVars,
+			double knownOutputRows, boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues,
+			JoinFactorCostModel.EstimationTier estimationTier, RequestedAccessPath requestedAccessPath) {
 		if (factor == null) {
 			return Optional.empty();
+		}
+		if (requestedAccessPath != null) {
+			return estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
+					finiteBindingValues, estimationTier, requestedAccessPath);
 		}
 		return estimateScopedSetFactorCost(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
 				finiteBindingValues, estimationTier,
 				() -> estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
-						finiteBindingValues, estimationTier));
+						finiteBindingValues, estimationTier, null));
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor,
@@ -1781,6 +1794,14 @@ class LmdbEvaluationStatistics
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor,
 			Set<String> currentlyBoundVars, double knownOutputRows, boolean collectMetrics,
 			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+		return estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
+				finiteBindingValues, estimationTier, null);
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor,
+			Set<String> currentlyBoundVars, double knownOutputRows, boolean collectMetrics,
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
+			RequestedAccessPath requestedAccessPath) {
 		Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
 		if (factor instanceof Join join) {
 			return estimateJoinFactorCost(join, boundVars);
@@ -1808,12 +1829,14 @@ class LmdbEvaluationStatistics
 
 		SketchBasedJoinEstimator.AccessShape accessShape = sketchBasedJoinEstimator
 				.accessShapeForJoinOrdering(factor, boundVars);
-		Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(factor, accessShape,
-				outputRows, finiteBindingValues, collectMetrics);
-		if (finiteLookupEstimate.isPresent()) {
-			return finiteLookupEstimate;
+		if (requestedAccessPath == null) {
+			Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(factor, accessShape,
+					outputRows, finiteBindingValues, collectMetrics);
+			if (finiteLookupEstimate.isPresent()) {
+				return finiteLookupEstimate;
+			}
 		}
-		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics);
+		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics, requestedAccessPath);
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, String[] variableNames,
@@ -1832,13 +1855,25 @@ class LmdbEvaluationStatistics
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, String[] variableNames,
 			long boundVarMask, double knownOutputRows, boolean collectMetrics,
 			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+		return estimateLmdbFactorCost(factor, variableNames, boundVarMask, knownOutputRows, collectMetrics,
+				finiteBindingValues, estimationTier, null);
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCost(TupleExpr factor, String[] variableNames,
+			long boundVarMask, double knownOutputRows, boolean collectMetrics,
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
+			RequestedAccessPath requestedAccessPath) {
 		if (factor == null) {
 			return Optional.empty();
+		}
+		if (requestedAccessPath != null) {
+			return estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows,
+					collectMetrics, finiteBindingValues, estimationTier, requestedAccessPath);
 		}
 		return estimateScopedMaskFactorCost(factor, boundVarMask, knownOutputRows, collectMetrics,
 				finiteBindingValues, estimationTier,
 				() -> estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows,
-						collectMetrics, finiteBindingValues, estimationTier));
+						collectMetrics, finiteBindingValues, estimationTier, null));
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor, String[] variableNames,
@@ -1850,6 +1885,14 @@ class LmdbEvaluationStatistics
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor, String[] variableNames,
 			long boundVarMask, double knownOutputRows, boolean collectMetrics,
 			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+		return estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows,
+				collectMetrics, finiteBindingValues, estimationTier, null);
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor, String[] variableNames,
+			long boundVarMask, double knownOutputRows, boolean collectMetrics,
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
+			RequestedAccessPath requestedAccessPath) {
 		if (factor instanceof Join join) {
 			return estimateJoinFactorCost(join, boundVariableMaskSet(variableNames, boundVarMask));
 		}
@@ -1877,12 +1920,14 @@ class LmdbEvaluationStatistics
 
 		SketchBasedJoinEstimator.AccessShape accessShape = sketchBasedJoinEstimator
 				.accessShapeForJoinOrdering(factor, variableNames, boundVarMask);
-		Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(factor, accessShape,
-				outputRows, finiteBindingValues, collectMetrics);
-		if (finiteLookupEstimate.isPresent()) {
-			return finiteLookupEstimate;
+		if (requestedAccessPath == null) {
+			Optional<FactorCostEstimate> finiteLookupEstimate = estimateFiniteBindingLookupCost(factor, accessShape,
+					outputRows, finiteBindingValues, collectMetrics);
+			if (finiteLookupEstimate.isPresent()) {
+				return finiteLookupEstimate;
+			}
 		}
-		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics);
+		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics, requestedAccessPath);
 	}
 
 	private Optional<FactorCostEstimate> estimateRowPreservingSubplanFactorCost(TupleExpr factor,
@@ -5867,11 +5912,19 @@ class LmdbEvaluationStatistics
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCost(double outputRows,
 			SketchBasedJoinEstimator.AccessShape accessShape, boolean collectMetrics) {
+		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics, null);
+	}
+
+	private Optional<FactorCostEstimate> estimateLmdbFactorCost(double outputRows,
+			SketchBasedJoinEstimator.AccessShape accessShape, boolean collectMetrics,
+			RequestedAccessPath requestedAccessPath) {
 		if (accessShape == null) {
 			return Optional.of(new FactorCostEstimate(outputRows, outputRows));
 		}
 
-		AccessPathEstimate accessPathEstimate = chooseAccessPath(accessShape, outputRows);
+		AccessPathEstimate accessPathEstimate = requestedAccessPath == null
+				? chooseAccessPath(accessShape, outputRows)
+				: requestedAccessPath(accessShape, outputRows, requestedAccessPath);
 		int prefixLength = accessPathEstimate == null ? 0 : accessPathEstimate.prefixLength();
 		int lookupComponentMask = accessPathEstimate == null ? accessShape.lookupBoundComponentMask()
 				: accessPathEstimate.lookupComponentMask();
@@ -6548,6 +6601,76 @@ class LmdbEvaluationStatistics
 				: null;
 	}
 
+	private AccessPathEstimate requestedAccessPath(SketchBasedJoinEstimator.AccessShape accessShape,
+			double factorRows, RequestedAccessPath request) {
+		if (request == null) {
+			return chooseAccessPath(accessShape, factorRows);
+		}
+		int lookupComponentMask = request.lookupComponentMask() & lookupComponentMaskWithConstants(accessShape,
+				accessShape.pattern());
+		if (lookupComponentMask == 0) {
+			return isFiniteNonNegative(factorRows)
+					? new AccessPathEstimate(factorRows, factorRows, factorRows, "", 0, 0, false, 0,
+							request.missingLookupComponentMask(), 1)
+					: null;
+		}
+		double rowsBefore = accessShape.estimateAccessRows(lookupComponentMask);
+		if (!isFiniteNonNegative(rowsBefore)) {
+			return null;
+		}
+		if (request.missingLookupComponentMask() != 0) {
+			double rowsBeforeLowerBound = rowsBeforeFilterLowerBound(factorRows, accessShape.filterMultiplier());
+			if (isFiniteNonNegative(rowsBeforeLowerBound) && rowsBeforeLowerBound > rowsBefore) {
+				rowsBefore = rowsBeforeLowerBound;
+			}
+		}
+		boolean filterAppliedAtAccess = canApplyFilterAtAccess(accessShape, lookupComponentMask)
+				&& isFiniteNonNegative(accessShape.filterMultiplier())
+				&& accessShape.filterMultiplier() < 1.0d;
+		double rowsAfter = filterAppliedAtAccess ? rowsBefore * accessShape.filterMultiplier() : rowsBefore;
+		if (!isFiniteNonNegative(rowsAfter)) {
+			return null;
+		}
+		TripleStore.IndexAccessPath indexAccessPath = requestedIndexAccessPath(lookupComponentMask);
+		int prefixComponentMask = indexAccessPath == null ? lookupComponentMask : indexAccessPath.prefixComponentMask();
+		int prefixLength = indexAccessPath == null ? 0 : indexAccessPath.prefixLength();
+		String indexFieldSequence = indexAccessPath == null ? "" : indexAccessPath.indexFieldSequence();
+		boolean directLookup = request.directLookup()
+				&& (prefixComponentMask & lookupComponentMask) == lookupComponentMask;
+		boolean exactStatementDirectLookup = directLookup
+				&& isExactStatementLookup(prefixComponentMask, lookupComponentMask);
+		double plannedRowsBefore = exactStatementDirectLookup
+				? Math.min(rowsBefore, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+				: rowsBefore;
+		double plannedRowsAfter = exactStatementDirectLookup
+				? Math.min(rowsAfter, DIRECT_LOOKUP_WORK_ROW_FLOOR)
+				: rowsAfter;
+		double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter)
+				: filterAppliedAtAccess ? rowsAfter : rowsBefore;
+		if (!isFiniteNonNegative(workRows)) {
+			return null;
+		}
+		return new AccessPathEstimate(workRows, plannedRowsBefore, plannedRowsAfter, indexFieldSequence,
+				prefixLength, prefixComponentMask, directLookup, lookupComponentMask,
+				request.missingLookupComponentMask(), 1);
+	}
+
+	private TripleStore.IndexAccessPath requestedIndexAccessPath(int lookupComponentMask) {
+		if (tripleStore == null || lookupComponentMask == 0) {
+			return null;
+		}
+		TripleStore.IndexAccessPath best = null;
+		for (TripleStore.IndexAccessPath candidate : tripleStore.indexAccessPaths(lookupComponentMask)) {
+			if ((candidate.prefixComponentMask() & lookupComponentMask) != lookupComponentMask) {
+				continue;
+			}
+			if (best == null || candidate.prefixLength() > best.prefixLength()) {
+				best = candidate;
+			}
+		}
+		return best;
+	}
+
 	private double rowsBeforeFilterLowerBound(double factorRows, double filterMultiplier) {
 		if (!isFiniteNonNegative(factorRows)) {
 			return Double.NaN;
@@ -6944,7 +7067,7 @@ class LmdbEvaluationStatistics
 	private record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outerPrefixRowsBits,
 			long distinctLookupBindingsBits, boolean nestedIteratorInvocation, boolean collectMetrics,
 			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
-			FiniteBranchRowsCacheKey prefixFactors) {
+			FiniteBranchRowsCacheKey prefixFactors, RequestedAccessPath requestedAccessPath) {
 
 		private static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context) {
 			JoinFactorCostModel.EstimationTier tier = context.getEstimationTier() == null
@@ -6959,7 +7082,8 @@ class LmdbEvaluationStatistics
 					Double.doubleToLongBits(context.getDistinctLookupBindings()),
 					context.isNestedIteratorInvocation(),
 					context.shouldCollectMetrics(),
-					immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors);
+					immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
+					RequestedAccessPath.of(context));
 		}
 
 		private static Map<String, Set<Value>> immutableFiniteBindingValues(
@@ -7027,6 +7151,18 @@ class LmdbEvaluationStatistics
 			double rowsAfterFilterAtAccess, String indexFieldSequence, int prefixLength, int prefixComponentMask,
 			boolean directLookup, int lookupComponentMask, int missingLookupComponentMask, int candidateCount) {
 
+	}
+
+	private record RequestedAccessPath(String accessMode, int lookupComponentMask, int missingLookupComponentMask,
+			boolean directLookup) {
+
+		private static RequestedAccessPath of(JoinFactorCostModel.CostContext context) {
+			if (context == null || !context.hasRequestedAccessPath()) {
+				return null;
+			}
+			return new RequestedAccessPath(context.getRequestedAccessMode(), context.getRequestedLookupComponentMask(),
+					context.getRequestedMissingLookupComponentMask(), context.isRequestedDirectLookup());
+		}
 	}
 
 	private record FiniteDerivedSurfaceEstimate(double surfaceRows, double prefixRows, int branchCount,

@@ -66,7 +66,7 @@ class LmdbCascadesConnectedRuleAdmissibilityTest {
 		TupleExpr island = thresholdPathIsland();
 
 		assertTrue(LmdbJoinIslandConnectivity.connectedJoinProviderCanOwn(island));
-		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true));
+		assertFalse(LmdbJoinIslandConnectivity.genericImplementationAllowed(island, true, true));
 	}
 
 	@Test

@@ -60,11 +60,12 @@ final class LmdbJoinIslandConnectivity {
 		return analyze(tupleExpr);
 	}
 
-	static boolean genericImplementationAllowed(TupleExpr tupleExpr, boolean lmdbPropertyPathProviderAvailable) {
+	static boolean genericImplementationAllowed(TupleExpr tupleExpr, boolean lmdbJoinProviderAvailable,
+			boolean lmdbPropertyPathProviderAvailable) {
 		if (tupleExpr == null) {
 			return true;
 		}
-		if (joinProviderCanOwn(tupleExpr)) {
+		if (lmdbJoinProviderAvailable && joinProviderCanOwn(tupleExpr)) {
 			return false;
 		}
 		return !(lmdbPropertyPathProviderAvailable && propertyPath(tupleExpr));

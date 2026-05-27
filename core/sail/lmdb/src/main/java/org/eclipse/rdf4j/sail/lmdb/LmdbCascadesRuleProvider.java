@@ -90,7 +90,7 @@ final class LmdbCascadesRuleProvider {
 				.add(new LmdbMinusBoundProbeRule(statistics))
 				.add(new StandardCascadesRules.GenericImplementationRule(
 						tupleExpr -> LmdbJoinIslandConnectivity.genericImplementationAllowed(tupleExpr,
-								statistics instanceof RdfStatisticsProvider)))
+								statistics instanceof JoinOrderPlanner, statistics instanceof RdfStatisticsProvider)))
 				.add(new StandardCascadesRules.DistinctEnforcerRule())
 				.add(new StandardCascadesRules.MaterializeEnforcerRule());
 		return builder.build();

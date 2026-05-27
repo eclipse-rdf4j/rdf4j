@@ -1030,6 +1030,9 @@ final class SketchJoinOrderPlanner {
 				disconnectedCandidateRejectedCount++;
 				return null;
 			}
+			if (shouldDelayZeroVarScalarSeed(factorIndex)) {
+				return null;
+			}
 			if (shouldDelayUnfilteredFiniteSeed(factorIndex)) {
 				return null;
 			}
@@ -1103,6 +1106,20 @@ final class SketchJoinOrderPlanner {
 				&& !isZeroVarScalarFactor(factorIndex)
 				&& (structuralFactorVarMask(factorIndex) & initiallyBoundVarMask) == 0L
 				&& hasStructuralFactorConnectedToInitiallyBoundVars();
+	}
+
+	private boolean shouldDelayZeroVarScalarSeed(int factorIndex) {
+		if (!isZeroVarScalarFactor(factorIndex)
+				|| !isFiniteNonNegative(factorOutputRows[factorIndex])
+				|| factorOutputRows[factorIndex] <= 0.0d) {
+			return false;
+		}
+		for (int i = 0; i < factors.size(); i++) {
+			if (i != factorIndex && !isZeroVarScalarFactor(i) && isFactorActionLegal(i, initiallyBoundVarMask)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean hasStructuralFactorConnectedToInitiallyBoundVars() {
@@ -2502,7 +2519,8 @@ final class SketchJoinOrderPlanner {
 				|| hasStructuralConnection(candidate, currentlyBoundVarMask)) {
 			return 0.0d;
 		}
-		if (isSingletonBindingSetAssignment(candidate) || containsOnlySingletonBindingSetAssignments(mask)) {
+		if (isZeroVarScalarFactor(candidate) || containsOnlyZeroVarScalarFactors(mask)
+				|| isSingletonBindingSetAssignment(candidate) || containsOnlySingletonBindingSetAssignments(mask)) {
 			return 0.0d;
 		}
 		if (endpointDomainPreparation) {
@@ -2529,6 +2547,21 @@ final class SketchJoinOrderPlanner {
 			int factorIndex = Long.numberOfTrailingZeros(remaining);
 			remaining &= remaining - 1L;
 			if (!isSingletonBindingSetAssignment(factorIndex)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean containsOnlyZeroVarScalarFactors(long mask) {
+		if (mask == 0L) {
+			return false;
+		}
+		long remaining = mask;
+		while (remaining != 0L) {
+			int factorIndex = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1L;
+			if (!isZeroVarScalarFactor(factorIndex)) {
 				return false;
 			}
 		}
@@ -3024,7 +3057,7 @@ final class SketchJoinOrderPlanner {
 		while (candidates != 0L) {
 			int candidate = Long.numberOfTrailingZeros(candidates);
 			candidates &= candidates - 1L;
-			if (isZeroVarScalarFactor(candidate) || hasStructuralConnection(candidate, boundVarMask)) {
+			if (hasStructuralConnection(candidate, boundVarMask)) {
 				connected |= bit(candidate);
 			}
 		}
@@ -3409,7 +3442,10 @@ final class SketchJoinOrderPlanner {
 			return estimate;
 		}
 		double outputRows = physicalEstimate.factorOutputRows();
-		if (!isFiniteNonNegative(outputRows) || outputRows <= estimate.outputRows()) {
+		if (estimate.outputRows() == 0.0d && outputRows > 0.0d) {
+			return estimate;
+		}
+		if (!isFiniteNonNegative(outputRows) || Double.compare(outputRows, estimate.outputRows()) == 0) {
 			return estimate;
 		}
 		return estimator.withOutputRowsForJoinOrdering(estimate, outputRows);
@@ -3842,14 +3878,15 @@ final class SketchJoinOrderPlanner {
 		SketchBasedJoinEstimator.AccessShape accessShape = null;
 		boolean endpointDomainPreparation = isEndpointDomainPreparationStep(factorIndex, mask, currentlyBoundVarMask,
 				prefixEstimate);
+		boolean nestedIteratorInvocation = !endpointDomainPreparation && !isZeroVarScalarFactor(factorIndex);
 		AccessPathFactorEstimate accessPathEstimate = isPlainBindingSetAssignment(factorIndex) ? null
 				: requestedAccessPathFactorEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
-						!endpointDomainPreparation, estimationTier, selectedPrefix);
+						nestedIteratorInvocation, estimationTier, selectedPrefix);
 		AccessPathCandidate selectedAccessPath = accessPathEstimate == null ? null : accessPathEstimate.candidate();
 		JoinFactorCostModel.FactorCostEstimate factorCostEstimate = accessPathEstimate == null
 				? isPlainBindingSetAssignment(factorIndex) ? null
 						: factorCostEstimate(factorIndex, mask, currentlyBoundVarMask, prefixEstimate,
-								!endpointDomainPreparation, estimationTier, selectedPrefix)
+								nestedIteratorInvocation, estimationTier, selectedPrefix)
 				: accessPathEstimate.estimate();
 		factorCostEstimate = refineConnectedPageWalkFactorCostEstimate(factorCostEstimate, factorIndex,
 				currentlyBoundVarMask);

@@ -7322,8 +7322,46 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 		}
 
 		double rows = estimateArbitraryLengthPathRows(directRows, path.getMinLength(), averageFanout, predicateRows);
+		boolean subjectBound = isBoundEndpoint(path.getSubjectVar(), boundVars);
+		boolean objectBound = isBoundEndpoint(path.getObjectVar(), boundVars);
+		String method = "sketch-single-predicate-path";
+		if (subjectBound || objectBound) {
+			double zeroLengthRows = path.getMinLength() <= 0 ? 1.0d : 0.0d;
+			if (subjectBound && objectBound) {
+				double pairRows = rows / Math.max(1.0d, distinctSubjects * distinctObjects);
+				rows = Math.min(1.0d, Math.max(zeroLengthRows, pairRows));
+				distinctSubjects = Math.min(1.0d, distinctSubjects);
+				distinctObjects = Math.min(1.0d, distinctObjects);
+				averageFanout = rows;
+				method = "sketch-single-predicate-path-bound-pair";
+			} else if (subjectBound) {
+				rows = Math.max(zeroLengthRows, rows / Math.max(1.0d, distinctSubjects));
+				distinctSubjects = Math.min(1.0d, distinctSubjects);
+				distinctObjects = Math.min(distinctObjects, rows);
+				averageFanout = rows;
+				method = "sketch-single-predicate-path-bound-subject";
+			} else {
+				rows = Math.max(zeroLengthRows, rows / Math.max(1.0d, distinctObjects));
+				distinctSubjects = Math.min(distinctSubjects, rows);
+				distinctObjects = Math.min(1.0d, distinctObjects);
+				averageFanout = rows;
+				method = "sketch-single-predicate-path-bound-object";
+			}
+			rows = normalizeRows(rows);
+		}
 		return Optional.of(new PropertyPathEstimate(rows, distinctSubjects, distinctObjects, averageFanout,
-				"sketch-single-predicate-path"));
+				method));
+	}
+
+	private static boolean isBoundEndpoint(Var var, Set<String> boundVars) {
+		if (var == null) {
+			return false;
+		}
+		if (var.hasValue()) {
+			return true;
+		}
+		String name = var.getName();
+		return name != null && boundVars != null && boundVars.contains(name);
 	}
 
 	@Override
