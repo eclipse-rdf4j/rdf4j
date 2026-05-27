@@ -103,6 +103,7 @@ final class SketchJoinOrderPlanner {
 	private final SketchBasedJoinEstimator estimator;
 	private final SketchBasedJoinEstimator.JoinOrderWorkAdjuster workAdjuster;
 	private final JoinFactorCostModel factorCostModel;
+	private final PlanStateTransitionEstimator transitionEstimator;
 	private final SketchBasedJoinEstimator.JoinOrderingSketchIntersectionCache sketchIntersectionCache;
 	private final int initialSketchIntersectionUpperBoundUses;
 	private final List<PlanFactor> factors;
@@ -256,6 +257,7 @@ final class SketchJoinOrderPlanner {
 		this.estimator = Objects.requireNonNull(estimator, "estimator");
 		this.workAdjuster = Objects.requireNonNull(workAdjuster, "workAdjuster");
 		this.factorCostModel = factorCostModel;
+		this.transitionEstimator = new ScalarFactorTransitionEstimator(factorCostModel);
 		this.sketchIntersectionCache = estimator.newJoinOrderingSketchIntersectionCache();
 		this.initialSketchIntersectionUpperBoundUses = estimator.sketchIntersectionUpperBoundUses();
 		this.initiallyBoundVars = initiallyBoundVars == null || initiallyBoundVars.isEmpty() ? Set.of()
@@ -1438,7 +1440,7 @@ final class SketchJoinOrderPlanner {
 				transitionAccessMode(physicalEstimate), factors.get(factorIndex).bindingVars(),
 				physicalEstimate.lookupComponentMask(), physicalEstimate.missingLookupComponentMask(),
 				physicalEstimate.directLookup());
-		return ScalarFactorTransitionEstimator.transition(prefixState, candidate, factorCost, costVector).nextState();
+		return transitionEstimator.transition(prefixState, candidate, factorCost, costVector).nextState();
 	}
 
 	private PlanState filterTransitionState(StatePlan prefix, int filterIndex,

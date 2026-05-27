@@ -22,18 +22,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 /**
  * Transitional adapter from scalar factor-cost estimates to stateful physical transitions.
  */
-final class ScalarFactorTransitionEstimator {
+final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstimator {
 	private static final String DEFAULT_SOURCE = "scalar-factor-adapter";
 
 	private final JoinFactorCostModel costModel;
 
 	ScalarFactorTransitionEstimator(JoinFactorCostModel costModel) {
-		this.costModel = Objects.requireNonNull(costModel, "costModel");
+		this.costModel = costModel;
 	}
 
-	Optional<TransitionEstimate> transition(PlanState prefixState, AccessPathCandidate candidate) {
+	@Override
+	public Optional<TransitionEstimate> transition(PlanState prefixState, AccessPathCandidate candidate) {
 		Objects.requireNonNull(prefixState, "prefixState");
 		Objects.requireNonNull(candidate, "candidate");
+		if (costModel == null) {
+			return Optional.empty();
+		}
 
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(
 				prefixState.boundVars(), prefixState.estimate().rows(), prefixState.estimate().rows(), false, true,
@@ -54,7 +58,8 @@ final class ScalarFactorTransitionEstimator {
 		return Optional.of(transition(prefixState, candidate, factorCost, planCost));
 	}
 
-	static TransitionEstimate transition(PlanState prefixState, AccessPathCandidate candidate,
+	@Override
+	public TransitionEstimate transition(PlanState prefixState, AccessPathCandidate candidate,
 			JoinFactorCostModel.FactorCostEstimate factorCost, JoinCostVector planCost) {
 		Objects.requireNonNull(prefixState, "prefixState");
 		Objects.requireNonNull(candidate, "candidate");
