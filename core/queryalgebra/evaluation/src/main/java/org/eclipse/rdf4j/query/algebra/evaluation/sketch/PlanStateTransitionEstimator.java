@@ -24,4 +24,10 @@ interface PlanStateTransitionEstimator {
 
 	TransitionEstimate transition(PlanState prefixState, AccessPathCandidate candidate,
 			JoinFactorCostModel.FactorCostEstimate factorCost, JoinCostVector planCost);
+
+	default TransitionEstimate transition(PlanState prefixState, AccessPathCandidate candidate,
+			JoinFactorCostModel.FactorCostEstimate factorCost, JoinCostVector planCost,
+			SketchBasedJoinEstimator.TuplePlanEstimate nextTupleEstimate) {
+		return transition(prefixState, candidate, factorCost, planCost);
+	}
 }

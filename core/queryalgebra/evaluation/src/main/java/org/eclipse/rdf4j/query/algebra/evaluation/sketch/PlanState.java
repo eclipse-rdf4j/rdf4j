@@ -42,10 +42,12 @@ final class PlanState {
 	private final List<AccessPathCandidate> accessPathHistory;
 	private final Map<String, String> stringDiagnostics;
 	private final Map<String, Double> doubleDiagnostics;
+	private final SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate;
 
 	private PlanState(BagEstimate estimate, Set<String> boundVars, Map<String, Set<Value>> finiteBindingValues,
 			List<TupleExpr> prefixFactors, JoinCostVector costVector, List<AccessPathCandidate> accessPathHistory,
-			Map<String, String> stringDiagnostics, Map<String, Double> doubleDiagnostics) {
+			Map<String, String> stringDiagnostics, Map<String, Double> doubleDiagnostics,
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
 		this.estimate = Objects.requireNonNullElseGet(estimate, () -> BagEstimate.heuristic(1.0d, "empty-state"));
 		this.boundVars = immutableSet(boundVars);
 		this.finiteBindingValues = immutableFiniteBindingValues(finiteBindingValues);
@@ -54,20 +56,33 @@ final class PlanState {
 		this.accessPathHistory = immutableList(accessPathHistory);
 		this.stringDiagnostics = immutableStringMap(stringDiagnostics);
 		this.doubleDiagnostics = immutableDoubleMap(doubleDiagnostics);
+		this.tupleEstimate = tupleEstimate;
 	}
 
 	static PlanState initial(BagEstimate estimate, Set<String> boundVars, Map<String, Set<Value>> finiteBindingValues) {
+		return initial(estimate, boundVars, finiteBindingValues, null);
+	}
+
+	static PlanState initial(BagEstimate estimate, Set<String> boundVars, Map<String, Set<Value>> finiteBindingValues,
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
 		return new PlanState(estimate, boundVars, finiteBindingValues, List.of(), null, List.of(), Map.of(),
-				Map.of());
+				Map.of(), tupleEstimate);
 	}
 
 	PlanState advance(AccessPathCandidate candidate, JoinFactorCostModel.FactorCostEstimate factorCostEstimate,
 			BagEstimate nextEstimate, JoinCostVector nextCostVector) {
+		return advance(candidate, factorCostEstimate, nextEstimate, nextCostVector, null);
+	}
+
+	PlanState advance(AccessPathCandidate candidate, JoinFactorCostModel.FactorCostEstimate factorCostEstimate,
+			BagEstimate nextEstimate, JoinCostVector nextCostVector,
+			SketchBasedJoinEstimator.TuplePlanEstimate nextTupleEstimate) {
 		Objects.requireNonNull(candidate, "candidate");
 		Objects.requireNonNull(factorCostEstimate, "factorCostEstimate");
 		Set<String> nextBoundVars = new LinkedHashSet<>(boundVars);
 		nextBoundVars.addAll(candidate.runtimeVars());
-		BagEstimate normalizedEstimate = withFiniteBindingSetRelation(nextEstimate, candidate.factor());
+		BagEstimate normalizedEstimate = withTupleVariableEstimates(nextEstimate, nextTupleEstimate);
+		normalizedEstimate = withFiniteBindingSetRelation(normalizedEstimate, candidate.factor());
 		normalizedEstimate = withBoundVariableRows(normalizedEstimate, nextBoundVars, estimate.variables());
 
 		List<TupleExpr> nextPrefixFactors = new ArrayList<>(prefixFactors);
@@ -82,7 +97,8 @@ final class PlanState {
 		nextDoubleDiagnostics.putAll(factorCostEstimate.getDoubleMetrics());
 
 		return new PlanState(normalizedEstimate, nextBoundVars, mergeFiniteBindingValues(candidate.factor()),
-				nextPrefixFactors, nextCostVector, nextHistory, nextStringDiagnostics, nextDoubleDiagnostics);
+				nextPrefixFactors, nextCostVector, nextHistory, nextStringDiagnostics, nextDoubleDiagnostics,
+				nextTupleEstimate);
 	}
 
 	PlanState withEstimateAndCost(BagEstimate nextEstimate, JoinCostVector nextCostVector,
@@ -97,7 +113,7 @@ final class PlanState {
 			nextDoubleDiagnostics.putAll(doubleMetrics);
 		}
 		return new PlanState(normalizedEstimate, boundVars, finiteBindingValues, prefixFactors, nextCostVector,
-				accessPathHistory, nextStringDiagnostics, nextDoubleDiagnostics);
+				accessPathHistory, nextStringDiagnostics, nextDoubleDiagnostics, tupleEstimate);
 	}
 
 	BagEstimate estimate() {
@@ -130,6 +146,30 @@ final class PlanState {
 
 	Map<String, Double> doubleDiagnostics() {
 		return doubleDiagnostics;
+	}
+
+	SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate() {
+		return tupleEstimate;
+	}
+
+	boolean hasSketchEvidence(String variableName) {
+		return tupleEstimate != null && tupleEstimate.hasSketchEvidence(variableName);
+	}
+
+	private static BagEstimate withTupleVariableEstimates(BagEstimate nextEstimate,
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
+		if (tupleEstimate == null) {
+			return nextEstimate;
+		}
+		Map<String, VariableEstimate> tupleVariables = tupleEstimate.variableEstimates();
+		if (tupleVariables.isEmpty()) {
+			return nextEstimate;
+		}
+		Map<String, VariableEstimate> variables = new LinkedHashMap<>(nextEstimate.variables());
+		variables.putAll(tupleVariables);
+		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
+				nextEstimate.confidence(), nextEstimate.source(), variables, nextEstimate.finiteRelations(),
+				nextEstimate.metrics());
 	}
 
 	private static BagEstimate withBoundVariableRows(BagEstimate nextEstimate, Set<String> normalizedBoundVars,

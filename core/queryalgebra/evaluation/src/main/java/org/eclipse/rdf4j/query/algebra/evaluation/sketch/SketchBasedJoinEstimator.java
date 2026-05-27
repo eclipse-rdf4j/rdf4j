@@ -107,6 +107,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -6271,6 +6272,31 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider,
 				return outputRows;
 			}
 			return Math.min(stats.distinct, outputRows);
+		}
+
+		Map<String, VariableEstimate> variableEstimates() {
+			if (varStats.isEmpty()) {
+				return Map.of();
+			}
+			Map<String, VariableEstimate> estimates = new LinkedHashMap<>(varStats.size());
+			for (Map.Entry<String, VarPlanStats> entry : varStats.entrySet()) {
+				VarPlanStats stats = entry.getValue();
+				double distinct = stats == null ? outputRows : clampTupleDistinct(stats.distinct, outputRows);
+				estimates.put(entry.getKey(), VariableEstimate.bound(outputRows, distinct));
+			}
+			return estimates;
+		}
+
+		boolean hasSketchEvidence(String variableName) {
+			VarPlanStats stats = varStats.get(variableName);
+			return stats != null && stats.sketch != null && !stats.sketch.isEmpty();
+		}
+
+		private static double clampTupleDistinct(double distinct, double rows) {
+			if (!Double.isFinite(distinct) || distinct <= 0.0d || rows <= 0.0d) {
+				return 0.0d;
+			}
+			return Math.min(distinct, rows);
 		}
 
 		String summary() {

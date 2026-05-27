@@ -157,7 +157,7 @@ class PlanStateTransitionAdapterTest {
 		assertEquals(Set.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201")),
 				next.finiteBindingValues().get("code"));
 		assertEquals(3.0d, next.estimate().variable("code").boundRows(), 1.0e-9d);
-		assertEquals(3.0d, next.estimate().variable("code").distinctRows(), 1.0e-9d);
+		assertEquals(2.0d, next.estimate().variable("code").distinctRows(), 1.0e-9d);
 	}
 
 	@Test

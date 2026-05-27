@@ -1090,7 +1090,7 @@ final class SketchJoinOrderPlanner {
 		JoinCostVector costVector = costVector(stepWorkRows, seedEstimate.outputRows(), rowsProcessed,
 				uncertaintyRows, delayedDisconnectedFiniteSeedWorkRows, null, stepWorkRows, physicalEstimate);
 		PlanState physicalState = factorTransitionState(null, factorIndex, physicalEstimate, stepWorkRows,
-				seedEstimate.outputRows(), costVector);
+				seedEstimate.outputRows(), costVector, seedEstimate);
 		ForwardChainState forwardChainState = forwardChainStateAfter(factorIndex, 0L, initiallyBoundVarMask);
 		StatePlan seed = new StatePlan(seedMask, null, factorIndex, factorIndex, physicalEstimate,
 				1, seedEstimate, stepWorkRows, costVector, 0L, 1,
@@ -1344,7 +1344,7 @@ final class SketchJoinOrderPlanner {
 				physicalEstimate);
 		long nextBoundVarMask = currentBoundVarMask | bindingVarMasks[candidate];
 		PlanState physicalState = factorTransitionState(prefix, candidate, physicalEstimate, stepWorkRows,
-				nextEstimate.outputRows(), costVector);
+				nextEstimate.outputRows(), costVector, nextEstimate);
 		ForwardChainState forwardChainState = forwardChainStateAfter(candidate, mask, currentBoundVarMask);
 		StatePlan extended = new StatePlan(nextMask, prefix, candidate, candidate, physicalEstimate,
 				prefix.orderSize() + 1, nextEstimate, prefix.totalWork() + stepWorkRows, costVector,
@@ -1434,7 +1434,8 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private PlanState factorTransitionState(StatePlan prefix, int factorIndex, FactorPhysicalEstimate physicalEstimate,
-			double stepWorkRows, double outputRows, JoinCostVector costVector) {
+			double stepWorkRows, double outputRows, JoinCostVector costVector,
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate) {
 		PlanState prefixState = prefix == null ? initialPhysicalPlanState() : prefix.physicalState();
 		JoinFactorCostModel.FactorCostEstimate factorCost = transitionFactorCost(physicalEstimate, stepWorkRows,
 				outputRows);
@@ -1442,7 +1443,8 @@ final class SketchJoinOrderPlanner {
 				transitionAccessMode(physicalEstimate), factors.get(factorIndex).bindingVars(),
 				physicalEstimate.lookupComponentMask(), physicalEstimate.missingLookupComponentMask(),
 				physicalEstimate.directLookup());
-		return transitionEstimator.transition(prefixState, candidate, factorCost, costVector).nextState();
+		return transitionEstimator.transition(prefixState, candidate, factorCost, costVector, tupleEstimate)
+				.nextState();
 	}
 
 	private PlanState filterTransitionState(StatePlan prefix, int filterIndex,

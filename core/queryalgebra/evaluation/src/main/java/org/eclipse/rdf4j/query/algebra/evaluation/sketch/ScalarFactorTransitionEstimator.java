@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 
 /**
  * Transitional adapter from scalar factor-cost estimates to stateful physical transitions.
@@ -61,12 +62,20 @@ final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstima
 	@Override
 	public TransitionEstimate transition(PlanState prefixState, AccessPathCandidate candidate,
 			JoinFactorCostModel.FactorCostEstimate factorCost, JoinCostVector planCost) {
+		return transition(prefixState, candidate, factorCost, planCost, null);
+	}
+
+	@Override
+	public TransitionEstimate transition(PlanState prefixState, AccessPathCandidate candidate,
+			JoinFactorCostModel.FactorCostEstimate factorCost, JoinCostVector planCost,
+			SketchBasedJoinEstimator.TuplePlanEstimate nextTupleEstimate) {
 		Objects.requireNonNull(prefixState, "prefixState");
 		Objects.requireNonNull(candidate, "candidate");
 		Objects.requireNonNull(factorCost, "factorCost");
 		Objects.requireNonNull(planCost, "planCost");
-		BagEstimate nextEstimate = nextEstimate(prefixState, factorCost, factorCost.getEstimateVector());
-		PlanState nextState = prefixState.advance(candidate, factorCost, nextEstimate, planCost);
+		BagEstimate nextEstimate = nextEstimate(prefixState, factorCost, factorCost.getEstimateVector(),
+				nextTupleEstimate);
+		PlanState nextState = prefixState.advance(candidate, factorCost, nextEstimate, planCost, nextTupleEstimate);
 		return new TransitionEstimate(prefixState, nextState, candidate, factorCost, planCost,
 				factorCost.getStringMetrics(), factorCost.getDoubleMetrics());
 	}
@@ -86,11 +95,16 @@ final class ScalarFactorTransitionEstimator implements PlanStateTransitionEstima
 	}
 
 	private static BagEstimate nextEstimate(PlanState prefixState,
-			JoinFactorCostModel.FactorCostEstimate factorCost, JoinFactorCostModel.EstimateVector estimateVector) {
+			JoinFactorCostModel.FactorCostEstimate factorCost, JoinFactorCostModel.EstimateVector estimateVector,
+			SketchBasedJoinEstimator.TuplePlanEstimate nextTupleEstimate) {
 		BagEstimate prefixEstimate = prefixState.estimate();
 		Map<String, Double> metrics = new LinkedHashMap<>(factorCost.getDoubleMetrics());
 		String source = factorCost.getStringMetrics().getOrDefault("plannedEstimateSource", DEFAULT_SOURCE);
-		return new BagEstimate(estimateVector.rows(), estimateVector.workRows(), estimateVector.memoryRows(),
-				estimateVector.confidence(), source, Map.of(), prefixEstimate.finiteRelations(), metrics);
+		double rows = nextTupleEstimate == null ? estimateVector.rows() : nextTupleEstimate.outputRows();
+		Map<String, VariableEstimate> variables = nextTupleEstimate == null ? Map.of()
+				: nextTupleEstimate.variableEstimates();
+		return new BagEstimate(rows, estimateVector.workRows(), estimateVector.memoryRows(),
+				estimateVector.confidence(),
+				source, variables, prefixEstimate.finiteRelations(), metrics);
 	}
 }
