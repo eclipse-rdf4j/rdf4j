@@ -135,7 +135,41 @@ class PlanStateTransitionAdapterTest {
 				transition.nextState().finiteBindingValues().get("code"));
 	}
 
+	@Test
+	void statementAlternativesExposePhysicalLookupChoices() {
+		StatementPattern factor = pattern("s", PREDICATE, "o");
+		int lookupMask = componentMask(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P);
+
+		List<AccessPathCandidate> alternatives = AccessPathCandidate.statementAlternatives(factor, Set.of("s", "o"),
+				lookupMask);
+
+		assertTrue(alternatives.stream()
+				.anyMatch(candidate -> "fullScan".equals(candidate.accessMode())
+						&& candidate.lookupComponentMask() == 0
+						&& candidate.missingLookupComponentMask() == lookupMask
+						&& !candidate.directLookup()));
+		assertTrue(alternatives.stream()
+				.anyMatch(candidate -> "prefixScan".equals(candidate.accessMode())
+						&& candidate.lookupComponentMask() == componentMask(SketchBasedJoinEstimator.Component.S)
+						&& candidate.missingLookupComponentMask() == componentMask(SketchBasedJoinEstimator.Component.P)
+						&& !candidate.directLookup()));
+		assertTrue(alternatives.stream()
+				.anyMatch(candidate -> "directLookup".equals(candidate.accessMode())
+						&& candidate.lookupComponentMask() == lookupMask
+						&& candidate.missingLookupComponentMask() == 0
+						&& candidate.directLookup()));
+		assertEquals(Set.of("s", "o"), alternatives.get(0).runtimeVars());
+	}
+
 	private static StatementPattern pattern(String subjectName, IRI predicate, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var("p", predicate), new Var(objectName));
+	}
+
+	private static int componentMask(SketchBasedJoinEstimator.Component... components) {
+		int mask = 0;
+		for (SketchBasedJoinEstimator.Component component : components) {
+			mask |= 1 << component.ordinal();
+		}
+		return mask;
 	}
 }

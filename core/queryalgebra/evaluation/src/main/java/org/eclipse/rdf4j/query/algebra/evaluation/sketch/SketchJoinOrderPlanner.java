@@ -1434,8 +1434,10 @@ final class SketchJoinOrderPlanner {
 		PlanState prefixState = prefix == null ? initialPhysicalPlanState() : prefix.physicalState();
 		JoinFactorCostModel.FactorCostEstimate factorCost = transitionFactorCost(physicalEstimate, stepWorkRows,
 				outputRows);
-		AccessPathCandidate candidate = AccessPathCandidate.of(factors.get(factorIndex).tupleExpr(),
-				transitionAccessMode(physicalEstimate), factors.get(factorIndex).bindingVars());
+		AccessPathCandidate candidate = AccessPathCandidate.physical(factors.get(factorIndex).tupleExpr(),
+				transitionAccessMode(physicalEstimate), factors.get(factorIndex).bindingVars(),
+				physicalEstimate.lookupComponentMask(), physicalEstimate.missingLookupComponentMask(),
+				physicalEstimate.directLookup());
 		return ScalarFactorTransitionEstimator.transition(prefixState, candidate, factorCost, costVector).nextState();
 	}
 
@@ -3804,6 +3806,7 @@ final class SketchJoinOrderPlanner {
 		double accessWorkRows = Double.NaN;
 		boolean physicalComparable = false;
 		int missingLookupComponents = 0;
+		int missingLookupComponentMask = 0;
 		int lookupComponents = 0;
 		int lookupComponentMask = 0;
 		boolean directLookup = false;
@@ -3833,7 +3836,7 @@ final class SketchJoinOrderPlanner {
 				accessShape = accessShape(factorIndex, mask, currentlyBoundVarMask);
 				if (factorCostEstimate.hasPhysicalAccessPath()) {
 					directLookup = factorCostEstimate.isDirectLookup();
-					int missingLookupComponentMask = factorCostEstimate.getMissingLookupComponentMask();
+					missingLookupComponentMask = factorCostEstimate.getMissingLookupComponentMask();
 					missingLookupComponents = Integer.bitCount(missingLookupComponentMask);
 					lookupComponentMask = factorCostEstimate.getLookupComponentMask();
 					lookupComponents = Integer.bitCount(lookupComponentMask);
@@ -3842,6 +3845,9 @@ final class SketchJoinOrderPlanner {
 					directLookup = "directLookup".equals(
 							factorCostEstimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
 					missingLookupComponents = componentCount(
+							factorCostEstimate.getStringMetrics()
+									.get(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS));
+					missingLookupComponentMask = componentMask(
 							factorCostEstimate.getStringMetrics()
 									.get(TelemetryMetricNames.PLANNED_MISSING_LOOKUP_COMPONENTS));
 					String plannedLookupComponents = factorCostEstimate.getStringMetrics()
@@ -3894,8 +3900,8 @@ final class SketchJoinOrderPlanner {
 			factorRows = defaultFactorRows;
 		}
 		return new FactorPhysicalEstimate(accessWorkRows, factorRows, physicalComparable, missingLookupComponents,
-				lookupComponents, lookupComponentMask, directLookup, accessRowsBeforeFilter, exactOutputRows,
-				factorCostEstimate);
+				missingLookupComponentMask, lookupComponents, lookupComponentMask, directLookup,
+				accessRowsBeforeFilter, exactOutputRows, factorCostEstimate);
 	}
 
 	private JoinFactorCostModel.FactorCostEstimate scaleCostedLookupDomainByPrefixMultiplicity(int factorIndex,
@@ -6621,8 +6627,8 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private record FactorPhysicalEstimate(double workRows, double factorOutputRows, boolean physicalComparable,
-			int missingLookupComponents, int lookupComponents, int lookupComponentMask, boolean directLookup,
-			double accessRowsBeforeFilter, boolean exactOutputRows,
+			int missingLookupComponents, int missingLookupComponentMask, int lookupComponents,
+			int lookupComponentMask, boolean directLookup, double accessRowsBeforeFilter, boolean exactOutputRows,
 			JoinFactorCostModel.FactorCostEstimate factorCostEstimate) {
 	}
 
