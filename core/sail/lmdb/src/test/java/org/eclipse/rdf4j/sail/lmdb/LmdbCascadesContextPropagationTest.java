@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -21,12 +22,17 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +59,27 @@ class LmdbCascadesContextPropagationTest {
 		}
 	}
 
+	@Test
+	void subtreeRequiredOutputVarsAreNotTreatedAsAlreadyBoundAccessInputs() {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
+		try {
+			RecordingAccessPathStatistics statistics = new RecordingAccessPathStatistics();
+			StatementPattern leftAnchor = new StatementPattern(new Var("line"), new Var("lineToRel"), new Var("rel"));
+			StatementPattern typeGuard = new StatementPattern(new Var("rel"), new Var("type"),
+					new Var("relationshipType"));
+			StatementPattern relationshipEdge = new StatementPattern(new Var("rel"), new Var("second"),
+					new Var("component"));
+			QueryRoot root = new QueryRoot(new Join(leftAnchor, new Join(typeGuard, relationshipEdge)));
+
+			new LmdbCascadesOptimizer(statistics, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+			List<StatementPattern> badGuards = unanchoredBoundLookupTypeGuards(root);
+			assertTrue(badGuards.isEmpty(), () -> root.toString());
+		} finally {
+			restoreMode(previousMode);
+		}
+	}
+
 	private static void restoreMode(String previousMode) {
 		if (previousMode == null) {
 			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
@@ -69,6 +96,63 @@ class LmdbCascadesContextPropagationTest {
 		}
 	}
 
+	private static List<StatementPattern> unanchoredBoundLookupTypeGuards(TupleExpr tupleExpr) {
+		List<StatementPattern> result = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (isRelationshipTypeGuard(node)
+						&& "rel".equals(node.getStringMetricPlanned("testBoundContext"))
+						&& !isBoundByLeftAncestor(node, "rel")) {
+					result.add(node);
+				}
+			}
+		});
+		return result;
+	}
+
+	private static boolean isRelationshipTypeGuard(StatementPattern pattern) {
+		return pattern.getSubjectVar() != null
+				&& "rel".equals(pattern.getSubjectVar().getName())
+				&& pattern.getPredicateVar() != null
+				&& "type".equals(pattern.getPredicateVar().getName())
+				&& pattern.getObjectVar() != null
+				&& "relationshipType".equals(pattern.getObjectVar().getName());
+	}
+
+	private static boolean isBoundByLeftAncestor(QueryModelNode node, String bindingName) {
+		QueryModelNode current = node;
+		QueryModelNode parent = current.getParentNode();
+		while (parent != null) {
+			if (parent instanceof Join join && containsNode(join.getRightArg(), current)
+					&& join.getLeftArg().getBindingNames().contains(bindingName)) {
+				return true;
+			}
+			current = parent;
+			parent = parent.getParentNode();
+		}
+		return false;
+	}
+
+	private static boolean containsNode(QueryModelNode root, QueryModelNode needle) {
+		if (root == needle) {
+			return true;
+		}
+		List<Boolean> found = new ArrayList<>(List.of(false));
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meetNode(QueryModelNode node) {
+				if (node == needle) {
+					found.set(0, true);
+				}
+				if (!found.get(0)) {
+					super.meetNode(node);
+				}
+			}
+		});
+		return found.get(0);
+	}
+
 	private static final class RecordingJoinOrderStatistics extends EvaluationStatistics implements JoinOrderPlanner {
 		private final List<JoinOrderCall> calls = new ArrayList<>();
 
@@ -81,6 +165,58 @@ class LmdbCascadesContextPropagationTest {
 			this.calls.add(new JoinOrderCall(initiallyBoundVars == null ? Set.of() : Set.copyOf(initiallyBoundVars),
 					argBindingNames));
 			return Optional.of(new JoinOrderPlan(args, 10.0d, 50.0d, List.of(), Map.of(), Map.of(), List.of()));
+		}
+	}
+
+	private static final class RecordingAccessPathStatistics extends EvaluationStatistics
+			implements JoinFactorCostModel {
+		private static final int SUBJECT_COMPONENT = 1;
+		private static final int PREDICATE_COMPONENT = 2;
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			return estimate(factor, currentlyBoundVars == null ? Set.of() : currentlyBoundVars);
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
+			return estimate(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
+		}
+
+		private Optional<FactorCostEstimate> estimate(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (!(factor instanceof StatementPattern pattern)) {
+				return Optional.empty();
+			}
+			boolean relBound = currentlyBoundVars.contains("rel");
+			boolean typeGuard = isRelationshipTypeGuard(pattern);
+			double workRows;
+			double outputRows;
+			if (typeGuard) {
+				workRows = relBound ? 1.0d : 10_000.0d;
+				outputRows = relBound ? 1.0d : 1_000.0d;
+			} else if (pattern.getBindingNames().contains("rel")) {
+				workRows = relBound ? 1.0d : 10.0d;
+				outputRows = relBound ? 1.0d : 10.0d;
+			} else {
+				workRows = 10.0d;
+				outputRows = 10.0d;
+			}
+
+			Map<String, String> stringMetrics = new HashMap<>();
+			stringMetrics.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "recording-access-path");
+			stringMetrics.put(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE,
+					relBound ? "directLookup" : "prefixScan");
+			stringMetrics.put(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS, relBound ? "[S, P]" : "[P]");
+			stringMetrics.put("testBoundContext", relBound ? "rel" : "none");
+
+			Map<String, Double> doubleMetrics = Map.of(
+					TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, outputRows,
+					TelemetryMetricNames.PLANNED_WORK_ROWS, workRows,
+					TelemetryMetricNames.PLANNED_ACCESS_ROWS, outputRows,
+					TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS, workRows);
+			int lookupMask = relBound ? SUBJECT_COMPONENT | PREDICATE_COMPONENT : PREDICATE_COMPONENT;
+			return Optional.of(new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, true,
+					relBound, lookupMask, 0, outputRows));
 		}
 	}
 }

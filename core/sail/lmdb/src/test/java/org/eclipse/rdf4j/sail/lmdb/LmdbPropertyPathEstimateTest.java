@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -115,6 +116,85 @@ class LmdbPropertyPathEstimateTest {
 				assertEquals(1, paths.size(), explanation::toString);
 				assertPropertyPathCosted(paths.get(0), explanation);
 				assertNoUnanchoredRelationshipTypeDirectLookup((TupleExpr) explanation.tupleExpr(), explanation);
+				assertNoPositiveCartesianJoinWork((TupleExpr) explanation.tupleExpr(), explanation);
+			}
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
+		}
+	}
+
+	@Test
+	void avoidsCartesianRelationshipTypeGuardInLargerAasDriveAggregation(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadAasDriveAggregationData(connection, 400, 3, 4);
+				store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+				LmdbPlannerAwait.awaitSketchesReady(store);
+
+				Explanation explanation = connection.prepareTupleQuery("""
+						PREFIX aas: <https://admin-shell.io/aas/3/>
+						PREFIX aas-ext: <https://admin-shell.io/aas/3/extended/>
+						PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+						SELECT ?lineAAS (COUNT(DISTINCT ?compAAS) AS ?numDrives) (AVG(xsd:double(?val)) AS ?avgPower)
+						WHERE {
+						  ?lineAAS a aas:AssetAdministrationShell ;
+						           aas:submodel / aas:submodelElement ?rel .
+						  ?rel a aas:RelationshipElement ;
+						       aas:second / aas-ext:resolvesTo ?compAAS .
+						  ?compAAS aas:submodel / aas:submodelElement / (aas:value)* ?prop .
+						  ?prop aas:idShort "ratedPower" ;
+						        aas:value ?val .
+						}
+						GROUP BY ?lineAAS
+						""").explain(Explanation.Level.Optimized);
+
+				assertNoUnanchoredRelationshipTypeDirectLookup((TupleExpr) explanation.tupleExpr(), explanation);
+				assertNoPositiveCartesianJoinWork((TupleExpr) explanation.tupleExpr(), explanation);
+			}
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
+		}
+	}
+
+	@Test
+	void avoidsCartesianRelationshipTypeGuardWhenSketchesAreDisabled(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig().setSketchEstimatorEnabled(false));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadAasDriveAggregationData(connection, 400, 3, 4);
+
+				Explanation explanation = connection.prepareTupleQuery("""
+						PREFIX aas: <https://admin-shell.io/aas/3/>
+						PREFIX aas-ext: <https://admin-shell.io/aas/3/extended/>
+						PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+						SELECT ?lineAAS (COUNT(DISTINCT ?compAAS) AS ?numDrives) (AVG(xsd:double(?val)) AS ?avgPower)
+						WHERE {
+						  ?lineAAS a aas:AssetAdministrationShell ;
+						           aas:submodel / aas:submodelElement ?rel .
+						  ?rel a aas:RelationshipElement ;
+						       aas:second / aas-ext:resolvesTo ?compAAS .
+						  ?compAAS aas:submodel / aas:submodelElement / (aas:value)* ?prop .
+						  ?prop aas:idShort "ratedPower" ;
+						        aas:value ?val .
+						}
+						GROUP BY ?lineAAS
+						""").explain(Explanation.Level.Optimized);
+
+				assertNoUnanchoredRelationshipTypeDirectLookup((TupleExpr) explanation.tupleExpr(), explanation);
+				assertNoPositiveCartesianJoinWork((TupleExpr) explanation.tupleExpr(), explanation);
 			}
 		} finally {
 			try {
@@ -211,6 +291,22 @@ class LmdbPropertyPathEstimateTest {
 		assertTrue(badPatterns.isEmpty(), () -> explanation.toString());
 	}
 
+	private static void assertNoPositiveCartesianJoinWork(TupleExpr tupleExpr, Explanation explanation) {
+		List<Join> badJoins = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join node) {
+				double cartesianWork = node
+						.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_CARTESIAN_WORK_ROWS);
+				if (Double.isFinite(cartesianWork) && cartesianWork > 0.0d) {
+					badJoins.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		assertTrue(badJoins.isEmpty(), () -> explanation.toString());
+	}
+
 	private static boolean isRelationshipElementTypePattern(StatementPattern pattern) {
 		return pattern.getSubjectVar() != null
 				&& "rel".equals(pattern.getSubjectVar().getName())
@@ -259,12 +355,17 @@ class LmdbPropertyPathEstimateTest {
 	}
 
 	private static void loadAasDriveAggregationData(SailRepositoryConnection connection) {
-		for (int lineIndex = 0; lineIndex < 12; lineIndex++) {
+		loadAasDriveAggregationData(connection, 12, 3, 4);
+	}
+
+	private static void loadAasDriveAggregationData(SailRepositoryConnection connection, int lineCount,
+			int drivesPerLine, int noisePropertiesPerComponent) {
+		for (int lineIndex = 0; lineIndex < lineCount; lineIndex++) {
 			IRI line = VF.createIRI("urn:aas:line:", Integer.toString(lineIndex));
 			IRI lineSubmodel = VF.createIRI("urn:aas:line-submodel:", Integer.toString(lineIndex));
 			connection.add(line, RDF.TYPE, AAS_ASSET_ADMINISTRATION_SHELL);
 			connection.add(line, AAS_SUBMODEL, lineSubmodel);
-			for (int driveIndex = 0; driveIndex < 3; driveIndex++) {
+			for (int driveIndex = 0; driveIndex < drivesPerLine; driveIndex++) {
 				int componentIndex = lineIndex * 10 + driveIndex;
 				IRI rel = VF.createIRI("urn:aas:rel:", lineIndex + "-" + driveIndex);
 				IRI ref = VF.createIRI("urn:aas:ref:", lineIndex + "-" + driveIndex);
@@ -273,7 +374,7 @@ class LmdbPropertyPathEstimateTest {
 				connection.add(rel, RDF.TYPE, AAS_RELATIONSHIP_ELEMENT);
 				connection.add(rel, AAS_SECOND, ref);
 				connection.add(ref, AAS_EXT_RESOLVES_TO, component);
-				addComponentWithRatedPower(connection, component, componentIndex);
+				addComponentWithRatedPower(connection, component, componentIndex, noisePropertiesPerComponent);
 			}
 		}
 	}
@@ -293,6 +394,11 @@ class LmdbPropertyPathEstimateTest {
 
 	private static void addComponentWithRatedPower(SailRepositoryConnection connection, IRI component,
 			int componentIndex) {
+		addComponentWithRatedPower(connection, component, componentIndex, 4);
+	}
+
+	private static void addComponentWithRatedPower(SailRepositoryConnection connection, IRI component,
+			int componentIndex, int noiseProperties) {
 		IRI submodel = VF.createIRI("urn:aas:component-submodel:", Integer.toString(componentIndex));
 		IRI root = VF.createIRI("urn:aas:component-root:", Integer.toString(componentIndex));
 		IRI folder = VF.createIRI("urn:aas:component-folder:", Integer.toString(componentIndex));
@@ -304,7 +410,7 @@ class LmdbPropertyPathEstimateTest {
 		connection.add(folder, AAS_VALUE, ratedPower);
 		connection.add(ratedPower, AAS_ID_SHORT, VF.createLiteral("ratedPower"));
 		connection.add(ratedPower, AAS_VALUE, VF.createLiteral(10.0d + componentIndex));
-		for (int noiseIndex = 0; noiseIndex < 4; noiseIndex++) {
+		for (int noiseIndex = 0; noiseIndex < noiseProperties; noiseIndex++) {
 			IRI noise = VF.createIRI("urn:aas:noise-property:", componentIndex + "-" + noiseIndex);
 			connection.add(root, AAS_VALUE, noise);
 			connection.add(noise, AAS_ID_SHORT, VF.createLiteral("temperature" + noiseIndex));
