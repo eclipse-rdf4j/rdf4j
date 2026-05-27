@@ -1045,6 +1045,7 @@ final class SketchJoinOrderPlanner {
 		FactorPhysicalEstimate physicalEstimate = factorPhysicalEstimate(factorIndex, 0L, initiallyBoundVarMask,
 				conditionedEstimate.outputRows(), null);
 		SketchBasedJoinEstimator.TuplePlanEstimate rowsEnteringEstimate = factor.estimate();
+		rowsEnteringEstimate = repeatedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = connectedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		if (appliesSelectiveSeedFilterRowFlow(seedMask)) {
@@ -1250,6 +1251,7 @@ final class SketchJoinOrderPlanner {
 				currentBoundVarMask, prefix.estimate(), step);
 		rowsEnteringEstimate = finiteBindingAssignmentRowFlowEstimate(candidate, prefix.estimate(),
 				rowsEnteringEstimate);
+		rowsEnteringEstimate = repeatedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = exactPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = connectedPhysicalRowFlowEstimate(rowsEnteringEstimate, physicalEstimate);
 		rowsEnteringEstimate = boundedFiniteLookupRowFlowEstimate(candidate, mask, currentBoundVarMask,
@@ -3398,11 +3400,25 @@ final class SketchJoinOrderPlanner {
 		return estimator.withOutputRowsForJoinOrdering(estimate, outputRows);
 	}
 
+	private SketchBasedJoinEstimator.TuplePlanEstimate repeatedPhysicalRowFlowEstimate(
+			SketchBasedJoinEstimator.TuplePlanEstimate estimate, FactorPhysicalEstimate physicalEstimate) {
+		if (estimate == null || physicalEstimate == null
+				|| !costModelChargedRepeatedInvocations(physicalEstimate.factorCostEstimate())) {
+			return estimate;
+		}
+		double outputRows = physicalEstimate.factorOutputRows();
+		if (!isFiniteNonNegative(outputRows) || outputRows <= estimate.outputRows()) {
+			return estimate;
+		}
+		return estimator.withOutputRowsForJoinOrdering(estimate, outputRows);
+	}
+
 	private SketchBasedJoinEstimator.TuplePlanEstimate boundedFiniteLookupRowFlowEstimate(int factorIndex, long mask,
 			long currentlyBoundVarMask, SketchBasedJoinEstimator.TuplePlanEstimate prefixEstimate,
 			SketchBasedJoinEstimator.TuplePlanEstimate estimate, FactorPhysicalEstimate physicalEstimate) {
 		if (estimate == null || prefixEstimate == null || physicalEstimate == null
 				|| isSmallBindingSetAssignment(factorIndex)
+				|| costModelChargedRepeatedInvocations(physicalEstimate.factorCostEstimate())
 				|| (runtimeVarMasks[factorIndex] & ~currentlyBoundVarMask) == 0L) {
 			return estimate;
 		}

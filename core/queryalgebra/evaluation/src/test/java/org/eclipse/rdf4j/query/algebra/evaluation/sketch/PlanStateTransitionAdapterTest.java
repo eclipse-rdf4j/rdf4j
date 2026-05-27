@@ -14,8 +14,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -158,6 +161,31 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
+	void bindingSetAssignmentTransitionAddsFiniteRelationToStateEstimate() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(binding("code", "DX-200", "label", "cold"),
+				binding("code", "DX-201", "label", "warm"), binding("code", "DX-201", "label", "warm")));
+		PlanState prefix = PlanState.initial(BagEstimate.exact(1.0d, "outer"), Set.of(), Map.of());
+
+		PlanState next = prefix.advance(AccessPathCandidate.forFactor(assignment),
+				new JoinFactorCostModel.FactorCostEstimate(3.0d, 3.0d),
+				BagEstimate.heuristic(3.0d, "values-transition"),
+				JoinCostVector.of(3.0d, 3.0d, 3.0d, 0.0d, 0.0d));
+
+		FiniteRelationEstimate relation = next.estimate()
+				.finiteRelation(Set.of("code", "label"))
+				.orElseThrow();
+		assertEquals(3.0d, relation.rows(), 1.0e-9d);
+		assertTrue(relation.frequencyBy(List.of("code", "label"))
+				.entrySet()
+				.stream()
+				.anyMatch(entry -> entry.getValue() == 2.0d
+						&& FiniteRelationEstimate.sameValue(entry.getKey().get(0), VF.createLiteral("DX-201"))
+						&& FiniteRelationEstimate.sameValue(entry.getKey().get(1), VF.createLiteral("warm"))));
+		assertEquals(Set.of("code", "label"), next.boundVars());
+	}
+
+	@Test
 	void transitionUpdatesVariableSurfacesInNextState() {
 		StatementPattern factor = pattern("seed", PREDICATE, "value");
 		BagEstimate prefixEstimate = BagEstimate.exact(2.0d, "outer")
@@ -209,6 +237,63 @@ class PlanStateTransitionAdapterTest {
 		assertEquals(1.0d, next.estimate().variable("seed").distinctRows(), 1.0e-9d);
 		assertEquals(4.0d, next.estimate().variable("value").boundRows(), 1.0e-9d);
 		assertEquals(4.0d, next.estimate().variable("value").distinctRows(), 1.0e-9d);
+	}
+
+	@Test
+	void planStateCarriesTupleSketchEstimateForStatefulTransitions() throws Exception {
+		IRI memberOf = VF.createIRI("urn:memberOf");
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		for (int i = 0; i < 16; i++) {
+			store.add(VF.createStatement(VF.createIRI("urn:person:" + i), memberOf,
+					VF.createIRI("urn:org:" + (i % 4))));
+		}
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+				SketchBasedJoinEstimator.Config.defaults()
+						.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.TUPLE)
+						.withNominalEntries(64)
+						.withThrottleEveryN(1)
+						.withThrottleMillis(0)
+						.withRefreshSleepMillis(5));
+		try {
+			estimator.rebuild();
+			StatementPattern factor = pattern("person", memberOf, "org");
+			SketchBasedJoinEstimator.TuplePlanEstimate tupleEstimate = estimator.planEstimateForJoinOrdering(factor,
+					Set.of());
+
+			Method initialWithTupleEstimate = Arrays.stream(PlanState.class.getDeclaredMethods())
+					.filter(method -> method.getName()
+							.equals("initial"))
+					.filter(method -> method.getParameterCount() == 4)
+					.filter(method -> method.getParameterTypes()[3]
+							.equals(SketchBasedJoinEstimator.TuplePlanEstimate.class))
+					.findFirst()
+					.orElse(null);
+			assertTrue(initialWithTupleEstimate != null,
+					"PlanState must be constructible with a sketch-backed TuplePlanEstimate");
+			PlanState state = (PlanState) initialWithTupleEstimate.invoke(null, BagEstimate.exact(16.0d, "memberOf"),
+					Set.of("person", "org"), Map.of(), tupleEstimate);
+
+			Method tupleEstimateAccessor = Arrays.stream(PlanState.class.getDeclaredMethods())
+					.filter(method -> method.getName()
+							.equals("tupleEstimate"))
+					.filter(method -> method.getParameterCount() == 0)
+					.findFirst()
+					.orElse(null);
+			assertTrue(tupleEstimateAccessor != null, "PlanState must expose its sketch-backed TuplePlanEstimate");
+			assertSame(tupleEstimate, tupleEstimateAccessor.invoke(state));
+
+			Method hasSketchEvidence = Arrays.stream(PlanState.class.getDeclaredMethods())
+					.filter(method -> method.getName()
+							.equals("hasSketchEvidence"))
+					.filter(method -> method.getParameterCount() == 1)
+					.findFirst()
+					.orElse(null);
+			assertTrue(hasSketchEvidence != null, "PlanState must expose per-variable sketch evidence");
+			assertEquals(Boolean.TRUE, hasSketchEvidence.invoke(state, "org"));
+		} finally {
+			estimator.close();
+		}
 	}
 
 	@Test
@@ -278,6 +363,12 @@ class PlanStateTransitionAdapterTest {
 	private static QueryBindingSet binding(String name, String value) {
 		QueryBindingSet row = new QueryBindingSet();
 		row.addBinding(name, VF.createLiteral(value));
+		return row;
+	}
+
+	private static QueryBindingSet binding(String firstName, String firstValue, String secondName, String secondValue) {
+		QueryBindingSet row = binding(firstName, firstValue);
+		row.addBinding(secondName, VF.createLiteral(secondValue));
 		return row;
 	}
 

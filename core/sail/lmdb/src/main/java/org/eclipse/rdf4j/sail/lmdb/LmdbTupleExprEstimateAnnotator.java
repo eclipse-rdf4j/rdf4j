@@ -185,7 +185,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 
 	@Override
 	public void meet(Projection node) {
-		stampPassThrough(node, true);
+		stampRowPreservingPassThrough(node, true);
 	}
 
 	@Override
@@ -554,6 +554,12 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 		double childRows = nodeRows(node.getArg());
 		double rows = finiteOr(nodeRows(node), childRows);
 		stampEstimate(node, rows, passThroughWork(node.getArg(), childRows, rowPassWork), source);
+	}
+
+	private void stampRowPreservingPassThrough(UnaryTupleOperator node, boolean rowPassWork) {
+		node.getArg().visit(this);
+		double childRows = nodeRows(node.getArg());
+		stampEstimate(node, childRows, passThroughWork(node.getArg(), childRows, rowPassWork), LMDB_SYNTHETIC);
 	}
 
 	private void annotateRdfTermDomain(StatementPattern node) {

@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -112,6 +113,7 @@ class LmdbEvaluationStatistics
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_DISTINCT_ROWS = 1_024.0d;
 	private static final double LARGE_OUTER_LOOKUP_DOMAIN_FALLBACK_MIN_FANOUT = 64.0d;
 	private static final String BOUND_JOIN_PRODUCT_SOURCE = "lmdb-bound-join-product";
+	private static final String ROW_PRESERVING_SUBPLAN_SOURCE = "lmdb-row-preserving-subplan";
 	private static final String EXACT_CONNECTED_JOIN_MIN_ROWS = "optimizer.exactConnectedJoinMinRows";
 	private static final String EXACT_CONNECTED_JOIN_MAX_ROWS = "optimizer.exactConnectedJoinMaxRows";
 	private static final String CONNECTED_JOIN_BLEND_SUPPRESSED = "plannedConnectedJoinBlendSuppressed";
@@ -897,19 +899,26 @@ class LmdbEvaluationStatistics
 					boolean hasDeferredFilterAction = !step.getAppliedFilterIndexes().isEmpty()
 							|| step.getStringMetrics()
 									.containsKey(TelemetryMetricNames.UNLOCKED_FILTERS);
-					if (hasFiniteDerivedSurfaceSource(refinedEstimate)
-							|| refinedEstimate.isRepeatedInvocationsCosted()) {
+					boolean replaceStepRows = hasStepRowReplacementSource(refinedEstimate)
+							|| repeatedEstimateOutputRowsRepresentPrefix(refinedEstimate);
+					boolean replaceStepWork = replaceStepRows || refinedEstimate.isRepeatedInvocationsCosted();
+					if (replaceStepRows) {
 						if (isFiniteNonNegative(refinedEstimate.getOutputRows())) {
 							factorOutputRows = refinedEstimate.getOutputRows();
-							if (refinedEstimate.isRepeatedInvocationsCosted() && !hasDeferredFilterAction) {
+							if ((repeatedEstimateOutputRowsRepresentPrefix(refinedEstimate) && !hasDeferredFilterAction)
+									|| hasRowPreservingSubplanSource(refinedEstimate)) {
 								prefixOutputRows = factorOutputRows;
 							}
 						}
+					}
+					if (replaceStepWork) {
 						if (isFiniteNonNegative(refinedEstimate.getWorkRows())) {
 							stepWorkRows = refinedEstimate.getWorkRows();
 							doubleMetrics.put(TelemetryMetricNames.PLANNED_WORK_ROWS, stepWorkRows);
 						}
 					}
+					doubleMetrics.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, factorOutputRows);
+					doubleMetrics.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, prefixOutputRows);
 					enrichedStep = new JoinOrderPlanner.PlanStep(step.getBoundVarsBefore(),
 							factorOutputRows,
 							prefixOutputRows, stepWorkRows, stringMetrics, doubleMetrics,
@@ -1139,6 +1148,15 @@ class LmdbEvaluationStatistics
 	private boolean hasFiniteDerivedSurfaceSource(FactorCostEstimate estimate) {
 		return estimate != null && "lmdb-finite-derived-surface".equals(estimate.getStringMetrics()
 				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+	}
+
+	private boolean hasRowPreservingSubplanSource(FactorCostEstimate estimate) {
+		return estimate != null && ROW_PRESERVING_SUBPLAN_SOURCE.equals(estimate.getStringMetrics()
+				.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+	}
+
+	private boolean hasStepRowReplacementSource(FactorCostEstimate estimate) {
+		return hasFiniteDerivedSurfaceSource(estimate) || hasRowPreservingSubplanSource(estimate);
 	}
 
 	private boolean hasFiniteDerivedOrConnectedJoinSource(FactorCostEstimate estimate) {
@@ -1511,7 +1529,7 @@ class LmdbEvaluationStatistics
 					nestedWorkRows = lookupDomainWorkRows;
 				}
 			}
-		} else if (lookupUsesOuterBindings) {
+		} else if (lookupUsesOuterBindings || !estimate.hasPhysicalAccessPath()) {
 			nestedOutputRows = repeatedOutputRows(estimate, repeatedInvocations);
 		}
 		if (isFiniteNonNegative(nestedOutputRows) && nestedOutputRows > nestedWorkRows) {
@@ -1877,20 +1895,26 @@ class LmdbEvaluationStatistics
 		return estimateScopedSetFactorCost(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
 				finiteBindingValues, estimationTier,
 				() -> estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics,
-						finiteBindingValues));
+						finiteBindingValues, estimationTier));
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor,
 			Set<String> currentlyBoundVars, double knownOutputRows, boolean collectMetrics) {
-		return estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics, Map.of());
+		return estimateLmdbFactorCostUncached(factor, currentlyBoundVars, knownOutputRows, collectMetrics, Map.of(),
+				JoinFactorCostModel.EstimationTier.STANDARD);
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor,
 			Set<String> currentlyBoundVars, double knownOutputRows, boolean collectMetrics,
-			Map<String, Set<Value>> finiteBindingValues) {
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
 		Set<String> boundVars = currentlyBoundVars == null ? Set.of() : currentlyBoundVars;
 		if (factor instanceof Join join) {
 			return estimateJoinFactorCost(join, boundVars);
+		}
+		Optional<FactorCostEstimate> rowPreservingSubplanEstimate = estimateRowPreservingSubplanFactorCost(factor,
+				boundVars, knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
+		if (rowPreservingSubplanEstimate.isPresent()) {
+			return rowPreservingSubplanEstimate;
 		}
 		Optional<FactorCostEstimate> assignmentEstimate = estimateBindingSetAssignmentFactorCost(factor,
 				knownOutputRows);
@@ -1940,27 +1964,32 @@ class LmdbEvaluationStatistics
 		return estimateScopedMaskFactorCost(factor, boundVarMask, knownOutputRows, collectMetrics,
 				finiteBindingValues, estimationTier,
 				() -> estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows,
-						collectMetrics, finiteBindingValues));
+						collectMetrics, finiteBindingValues, estimationTier));
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor, String[] variableNames,
 			long boundVarMask, double knownOutputRows, boolean collectMetrics) {
 		return estimateLmdbFactorCostUncached(factor, variableNames, boundVarMask, knownOutputRows, collectMetrics,
-				Map.of());
+				Map.of(), JoinFactorCostModel.EstimationTier.STANDARD);
 	}
 
 	private Optional<FactorCostEstimate> estimateLmdbFactorCostUncached(TupleExpr factor, String[] variableNames,
 			long boundVarMask, double knownOutputRows, boolean collectMetrics,
-			Map<String, Set<Value>> finiteBindingValues) {
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
 		if (factor instanceof Join join) {
 			return estimateJoinFactorCost(join, boundVariableMaskSet(variableNames, boundVarMask));
+		}
+		Set<String> boundVars = boundVariableMaskSet(variableNames, boundVarMask);
+		Optional<FactorCostEstimate> rowPreservingSubplanEstimate = estimateRowPreservingSubplanFactorCost(factor,
+				boundVars, knownOutputRows, collectMetrics, finiteBindingValues, estimationTier);
+		if (rowPreservingSubplanEstimate.isPresent()) {
+			return rowPreservingSubplanEstimate;
 		}
 		Optional<FactorCostEstimate> assignmentEstimate = estimateBindingSetAssignmentFactorCost(factor,
 				knownOutputRows);
 		if (assignmentEstimate.isPresent()) {
 			return assignmentEstimate;
 		}
-		Set<String> boundVars = boundVariableMaskSet(variableNames, boundVarMask);
 		Optional<FactorCostEstimate> propertyPathEstimate = estimatePropertyPathFactorCost(factor, boundVars,
 				collectMetrics);
 		if (propertyPathEstimate.isPresent()) {
@@ -1980,6 +2009,93 @@ class LmdbEvaluationStatistics
 			return finiteLookupEstimate;
 		}
 		return estimateLmdbFactorCost(outputRows, accessShape, collectMetrics);
+	}
+
+	private Optional<FactorCostEstimate> estimateRowPreservingSubplanFactorCost(TupleExpr factor,
+			Set<String> boundVars, double knownOutputRows, boolean collectMetrics,
+			Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier) {
+		TupleExpr arg = rowPreservingSubplanArg(factor);
+		if (arg == null) {
+			return Optional.empty();
+		}
+		Optional<FactorCostEstimate> childEstimate = estimateLmdbFactorCost(arg, boundVars, knownOutputRows,
+				collectMetrics, finiteBindingValues, estimationTier);
+		if (childEstimate.isEmpty()) {
+			return Optional.empty();
+		}
+
+		FactorCostEstimate child = childEstimate.get();
+		double rows = rowPreservingSubplanRows(knownOutputRows, child);
+		if (!isFiniteNonNegative(rows)) {
+			rows = estimateFactorOutputRows(arg, boundVars);
+		}
+		if (!isFiniteNonNegative(rows)) {
+			return Optional.empty();
+		}
+		double workRows = child.getWorkRows();
+		if (isFiniteNonNegative(workRows)) {
+			workRows += rows;
+		} else {
+			workRows = rows;
+		}
+
+		Map<String, String> stringMetrics = Map.of();
+		Map<String, Double> doubleMetrics = Map.of();
+		if (collectMetrics) {
+			Map<String, String> mutableStrings = new HashMap<>(child.getStringMetrics());
+			String childSource = mutableStrings.get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+			if (childSource != null) {
+				mutableStrings.put("plannedBaseEstimateSource", childSource);
+			}
+			mutableStrings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, ROW_PRESERVING_SUBPLAN_SOURCE);
+			stringMetrics = mutableStrings;
+
+			Map<String, Double> mutableDoubles = new HashMap<>(child.getDoubleMetrics());
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, rows);
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_COST_FINAL_ROWS, rows);
+			mutableDoubles.put(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, workRows);
+			doubleMetrics = mutableDoubles;
+		}
+		return Optional.of(new FactorCostEstimate(workRows, rows, stringMetrics, doubleMetrics,
+				child.hasPhysicalAccessPath(), child.isDirectLookup(), child.getLookupComponentMask(),
+				child.getMissingLookupComponentMask(), child.getAccessRowsBeforeFilter(),
+				child.isRepeatedInvocationsCosted(), child.hasExactOutputRows()));
+	}
+
+	private TupleExpr rowPreservingSubplanArg(TupleExpr factor) {
+		if (factor instanceof Projection projection) {
+			TupleExpr arg = projection.getArg();
+			if (arg instanceof Join) {
+				return arg;
+			}
+		}
+		return null;
+	}
+
+	private double rowPreservingSubplanRows(double knownOutputRows, FactorCostEstimate child) {
+		if (child == null) {
+			return knownOutputRows;
+		}
+		if (repeatedEstimateOutputRowsRepresentPrefix(child) || child.hasExactOutputRows()
+				|| hasRowPreservingSubplanSource(child)) {
+			return child.getOutputRows();
+		}
+		return isFiniteNonNegative(knownOutputRows) ? knownOutputRows : child.getOutputRows();
+	}
+
+	private boolean repeatedEstimateOutputRowsRepresentPrefix(FactorCostEstimate estimate) {
+		if (estimate == null || !estimate.isRepeatedInvocationsCosted()
+				|| !isFiniteNonNegative(estimate.getOutputRows())) {
+			return false;
+		}
+		Map<String, Double> metrics = estimate.getDoubleMetrics();
+		double repeatedInvocations = metric(metrics, "plannedRepeatedInvocations");
+		if (isPositiveFinite(repeatedInvocations) && estimate.getOutputRows() < repeatedInvocations) {
+			return false;
+		}
+		double lookupDomainRows = metric(metrics, "plannedLookupDomainAverageOutputRows");
+		return !isPositiveFinite(lookupDomainRows) || estimate.getOutputRows() >= lookupDomainRows;
 	}
 
 	private Optional<FactorCostEstimate> estimatePropertyPathFactorCost(TupleExpr factor, Set<String> boundVars,

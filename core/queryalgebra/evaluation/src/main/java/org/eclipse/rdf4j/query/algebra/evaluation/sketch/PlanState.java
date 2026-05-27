@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 
 /**
@@ -66,7 +67,8 @@ final class PlanState {
 		Objects.requireNonNull(factorCostEstimate, "factorCostEstimate");
 		Set<String> nextBoundVars = new LinkedHashSet<>(boundVars);
 		nextBoundVars.addAll(candidate.runtimeVars());
-		BagEstimate normalizedEstimate = withBoundVariableRows(nextEstimate, nextBoundVars, estimate.variables());
+		BagEstimate normalizedEstimate = withFiniteBindingSetRelation(nextEstimate, candidate.factor());
+		normalizedEstimate = withBoundVariableRows(normalizedEstimate, nextBoundVars, estimate.variables());
 
 		List<TupleExpr> nextPrefixFactors = new ArrayList<>(prefixFactors);
 		nextPrefixFactors.add(candidate.factor());
@@ -152,6 +154,27 @@ final class PlanState {
 			return VariableEstimate.bound(rows, rows);
 		}
 		return existing.withBoundRows(rows);
+	}
+
+	private static BagEstimate withFiniteBindingSetRelation(BagEstimate estimate, TupleExpr factor) {
+		if (!(factor instanceof BindingSetAssignment assignment)) {
+			return estimate;
+		}
+		List<String> bindingNames = new ArrayList<>(assignment.getBindingNames());
+		if (bindingNames.isEmpty()) {
+			return estimate;
+		}
+		bindingNames.sort(String::compareTo);
+		List<List<Value>> rows = new ArrayList<>();
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			List<Value> row = new ArrayList<>(bindingNames.size());
+			for (String bindingName : bindingNames) {
+				row.add(bindingSet.getValue(bindingName));
+			}
+			rows.add(row);
+		}
+		return estimate.withFiniteRelation(FiniteRelationEstimate.fromRows(bindingNames, rows,
+				"binding-set-assignment"));
 	}
 
 	private Map<String, Set<Value>> mergeFiniteBindingValues(TupleExpr factor) {
