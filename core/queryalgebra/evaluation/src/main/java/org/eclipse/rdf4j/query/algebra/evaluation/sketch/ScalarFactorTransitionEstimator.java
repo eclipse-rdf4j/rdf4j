@@ -38,6 +38,10 @@ final class ScalarFactorTransitionEstimator {
 		JoinFactorCostModel.CostContext context = JoinFactorCostModel.CostContext.forOptimization(
 				prefixState.boundVars(), prefixState.estimate().rows(), prefixState.estimate().rows(), false, true,
 				prefixState.finiteBindingValues(), prefixState.prefixFactors());
+		if (candidate.hasPhysicalAccessPath()) {
+			context.withRequestedAccessPath(candidate.accessMode(), candidate.lookupComponentMask(),
+					candidate.missingLookupComponentMask(), candidate.directLookup());
+		}
 		Optional<JoinFactorCostModel.FactorCostEstimate> maybeFactorCost = costModel
 				.estimateFactorCost(candidate.factor(), context);
 		if (maybeFactorCost.isEmpty()) {

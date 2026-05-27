@@ -42,7 +42,8 @@ not independent factor estimates.
 - [x] Add the stateful planning contracts and an adapter over current scalar factor costs.
 - [x] Add focused tests for transition state propagation and diagnostics.
 - [x] Wire `SketchJoinOrderPlanner` seed/extend paths through transition estimates.
-- [ ] Move statement-pattern access paths from scalar factor estimates to transition alternatives.
+- [x] Expose selected statement-pattern access paths as transition metadata.
+- [ ] Branch statement-pattern access paths as costed transition alternatives.
 - [ ] Move property-path access paths into the same transition alternative model.
 - [ ] Add per-transition audit output for planned/actual rows and work.
 - [ ] Retire scalar repair code that becomes unreachable after transition ownership.
@@ -62,6 +63,10 @@ not independent factor estimates.
 
 - Observation: The current DP planner can continue to rank with `JoinCostVector` during migration.
   Evidence: `ParetoJoinMemoPlanner` is generic over state type and only requires a `JoinCostVector` from each state.
+
+- Observation: Statement access-path metadata is now available on the transition candidate itself.
+  Evidence: `AccessPathCandidate` carries lookup/missing lookup masks and direct-lookup state, while
+  `SketchJoinOrderPlanner` copies selected `FactorPhysicalEstimate` masks into the state transition.
 
 ## Decision Log
 
@@ -83,6 +88,11 @@ not independent factor estimates.
 - Decision: LMDB connected islands remain single-owner.
   Rationale: Cascades should not preserve or invent alternative join trees inside a connected LMDB island after the
   stateful provider has planned that island.
+  Date/Author: 2026-05-27 / Codex.
+
+- Decision: Keep the first statement-pattern migration as a selected-access adapter before changing DP branching.
+  Rationale: The planner can now persist physical access metadata in `PlanState` without destabilizing the existing
+  join-order tests; later slices can replace scalar selection with multiple costed transition branches.
   Date/Author: 2026-05-27 / Codex.
 
 ## PlanState Contract

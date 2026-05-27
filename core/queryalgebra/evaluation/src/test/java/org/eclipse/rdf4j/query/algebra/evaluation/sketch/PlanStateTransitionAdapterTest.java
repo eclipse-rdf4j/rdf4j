@@ -161,6 +161,40 @@ class PlanStateTransitionAdapterTest {
 		assertEquals(Set.of("s", "o"), alternatives.get(0).runtimeVars());
 	}
 
+	@Test
+	void transitionContextCarriesRequestedAccessPath() {
+		StatementPattern factor = pattern("s", PREDICATE, "o");
+		int lookupMask = componentMask(SketchBasedJoinEstimator.Component.S);
+		int missingLookupMask = componentMask(SketchBasedJoinEstimator.Component.P);
+		AccessPathCandidate candidate = AccessPathCandidate.physical(factor, "prefixScan", Set.of("s", "o"),
+				lookupMask, missingLookupMask, false);
+		AtomicReference<JoinFactorCostModel.CostContext> observedContext = new AtomicReference<>();
+		JoinFactorCostModel costModel = new JoinFactorCostModel() {
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr requestedFactor,
+					Set<String> currentlyBoundVars) {
+				return Optional.empty();
+			}
+
+			@Override
+			public Optional<JoinFactorCostModel.FactorCostEstimate> estimateFactorCost(TupleExpr requestedFactor,
+					JoinFactorCostModel.CostContext context) {
+				observedContext.set(context);
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(2.0d, 1.0d));
+			}
+		};
+
+		new ScalarFactorTransitionEstimator(costModel)
+				.transition(PlanState.initial(BagEstimate.exact(1.0d, "outer"), Set.of(), Map.of()), candidate)
+				.orElseThrow();
+
+		assertTrue(observedContext.get().hasRequestedAccessPath());
+		assertEquals("prefixScan", observedContext.get().getRequestedAccessMode());
+		assertEquals(lookupMask, observedContext.get().getRequestedLookupComponentMask());
+		assertEquals(missingLookupMask, observedContext.get().getRequestedMissingLookupComponentMask());
+		assertFalse(observedContext.get().isRequestedDirectLookup());
+	}
+
 	private static StatementPattern pattern(String subjectName, IRI predicate, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var("p", predicate), new Var(objectName));
 	}

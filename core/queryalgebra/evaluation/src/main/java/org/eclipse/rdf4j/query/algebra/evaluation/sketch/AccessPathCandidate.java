@@ -53,6 +53,10 @@ record AccessPathCandidate(TupleExpr factor, String accessMode, Set<String> runt
 				missingLookupComponentMask, directLookup);
 	}
 
+	boolean hasPhysicalAccessPath() {
+		return !LOGICAL_FACTOR_ACCESS.equals(accessMode);
+	}
+
 	static List<AccessPathCandidate> statementAlternatives(TupleExpr factor, Set<String> runtimeVars,
 			int lookupBoundComponentMask) {
 		int lookupMask = lookupBoundComponentMask & componentUniverseMask();
