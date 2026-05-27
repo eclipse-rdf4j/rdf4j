@@ -18,7 +18,6 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 
 /**
  * Transitional adapter from scalar factor-cost estimates to stateful physical transitions.
@@ -61,7 +60,7 @@ final class ScalarFactorTransitionEstimator {
 		Objects.requireNonNull(candidate, "candidate");
 		Objects.requireNonNull(factorCost, "factorCost");
 		Objects.requireNonNull(planCost, "planCost");
-		BagEstimate nextEstimate = nextEstimate(prefixState, candidate, factorCost, factorCost.getEstimateVector());
+		BagEstimate nextEstimate = nextEstimate(prefixState, factorCost, factorCost.getEstimateVector());
 		PlanState nextState = prefixState.advance(candidate, factorCost, nextEstimate, planCost);
 		return new TransitionEstimate(prefixState, nextState, candidate, factorCost, planCost,
 				factorCost.getStringMetrics(), factorCost.getDoubleMetrics());
@@ -81,32 +80,12 @@ final class ScalarFactorTransitionEstimator {
 				cartesianWorkRows, prefixCost, factorCost.getWorkRows(), estimateVector);
 	}
 
-	private static BagEstimate nextEstimate(PlanState prefixState, AccessPathCandidate candidate,
+	private static BagEstimate nextEstimate(PlanState prefixState,
 			JoinFactorCostModel.FactorCostEstimate factorCost, JoinFactorCostModel.EstimateVector estimateVector) {
 		BagEstimate prefixEstimate = prefixState.estimate();
 		Map<String, Double> metrics = new LinkedHashMap<>(factorCost.getDoubleMetrics());
 		String source = factorCost.getStringMetrics().getOrDefault("plannedEstimateSource", DEFAULT_SOURCE);
-		Map<String, VariableEstimate> variables = nextVariables(prefixState, candidate, estimateVector.rows());
 		return new BagEstimate(estimateVector.rows(), estimateVector.workRows(), estimateVector.memoryRows(),
-				estimateVector.confidence(), source, variables, prefixEstimate.finiteRelations(), metrics);
-	}
-
-	private static Map<String, VariableEstimate> nextVariables(PlanState prefixState, AccessPathCandidate candidate,
-			double rows) {
-		Map<String, VariableEstimate> variables = new LinkedHashMap<>(prefixState.estimate().variables());
-		for (String variable : prefixState.boundVars()) {
-			variables.put(variable, nextVariableEstimate(variables.get(variable), rows));
-		}
-		for (String variable : candidate.runtimeVars()) {
-			variables.put(variable, nextVariableEstimate(variables.get(variable), rows));
-		}
-		return variables;
-	}
-
-	private static VariableEstimate nextVariableEstimate(VariableEstimate existing, double rows) {
-		if (existing == null || existing.equals(VariableEstimate.empty())) {
-			return VariableEstimate.bound(rows, rows);
-		}
-		return existing.withBoundRows(rows);
+				estimateVector.confidence(), source, Map.of(), prefixEstimate.finiteRelations(), metrics);
 	}
 }
