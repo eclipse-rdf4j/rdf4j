@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.junit.jupiter.api.Test;
 
@@ -133,6 +134,27 @@ class PlanStateTransitionAdapterTest {
 		assertEquals(Set.of("code", "obs", "value"), transition.nextState().boundVars());
 		assertEquals(Set.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201")),
 				transition.nextState().finiteBindingValues().get("code"));
+	}
+
+	@Test
+	void transitionUpdatesVariableSurfacesInNextState() {
+		StatementPattern factor = pattern("seed", PREDICATE, "value");
+		BagEstimate prefixEstimate = BagEstimate.exact(2.0d, "outer")
+				.withVariable("seed", VariableEstimate.bound(2.0d, 1.0d));
+		PlanState prefix = PlanState.initial(prefixEstimate, Set.of("seed"), Map.of());
+		JoinFactorCostModel costModel = (requestedFactor, boundVars) -> Optional
+				.of(new JoinFactorCostModel.FactorCostEstimate(5.0d, 4.0d));
+
+		TransitionEstimate transition = new ScalarFactorTransitionEstimator(costModel)
+				.transition(prefix, AccessPathCandidate.forFactor(factor))
+				.orElseThrow();
+
+		VariableEstimate seed = transition.nextState().estimate().variable("seed");
+		VariableEstimate value = transition.nextState().estimate().variable("value");
+		assertEquals(4.0d, seed.boundRows(), 1.0e-9d);
+		assertEquals(1.0d, seed.distinctRows(), 1.0e-9d);
+		assertEquals(4.0d, value.boundRows(), 1.0e-9d);
+		assertEquals(4.0d, value.distinctRows(), 1.0e-9d);
 	}
 
 	@Test
