@@ -36,8 +36,9 @@ The observable outcome is that generated or explicit VALUES clauses are costed a
 - The Q9 blow-up was a double-counting problem. Exact finite expansion joined the generated `condCode` relation into the statement surface, then the later `BindingSetAssignment` guard applied selectivity again. The guard now contributes only bag multiplicity once a finite binding has been absorbed.
 - Full `core/sail/lmdb` verification still has two residual failures outside this implementation: `LmdbSubSelectDirectLookupEstimateTest#subSelectPlanStaysBoundedAfterStoreMutations` times out waiting for sketch readiness before plan assertions, and `ThemeQueryBenchmarkSparseParamTest` reflects the pre-existing dirty benchmark parameter file.
 - Projection dropped exact finite tuple relations whenever any column was removed. That destroyed projected tuple frequency and correlation before later DISTINCT, GROUP, or JOIN costing. Projection now keeps a projected finite bag relation with merged tuple frequencies.
-- The first estimate audit harness parses and evaluates full queries plus statement patterns. It is enough to preserve broad query coverage and expose leaf-level access estimates, but it does not yet split nested joins, filters, groups, paths, or optional/minus subtrees into independently audited pieces.
-- The current AAS path problem appears to favor a high-work Cartesian shape because `rdf:type` class statement patterns look artificially cheap as anchors while connected property-path joins carry fallback/no-winner or inflated work estimates. The next regression should prove the connected alternative beats the type-first Cartesian alternative by modeled work, not by a class-specific placement rule.
+- The estimate audit harness now captures full queries plus nested joins, filters, groups, paths, optional/minus subtrees, projections, slice/order/distinct, and VALUES assignments. Running the first 30 generated templates found a MINUS/VALUES false-zero estimate that focused tests had missed.
+- The pasted AAS path plan shows `?rel rdf:type aas:RelationshipElement` as an exact `[S, P, O]` direct lookup even though `?rel` is unbound at that leaf and not bound by a left ancestor. Mathematically, unbound `?rel` with constant `P/O` is a class-membership prefix lookup over `(P, O)`, while exact `[S, P, O]` is only valid when `?rel` is already an input binding. The root cause is stale/missing input-bound physical properties, not a valid priority for `rdf:type` class predicates. The current branch has `inputBoundVars` coverage and regression tests for this, so new AAS regressions should assert property validity and no positive Cartesian work rather than adding class-specific ordering rules.
+- MINUS and LeftJoin matched-left estimates were too eager when RHS join-key NDV came from weak row-count fallback stats. `rightDistinct == leftDistinct` was treated as proof that every left key matched, collapsing retained rows to zero. The formula now uses expected occupied RHS keys over the join-key domain unless exact finite frequencies are available.
 
 ## Decision Log
 
@@ -48,6 +49,15 @@ The observable outcome is that generated or explicit VALUES clauses are costed a
 - No join-placement heuristics. Generate alternatives broadly and let the shared model choose by modeled work, rows, uncertainty, and confidence.
 - Exact full-prefix finite relation estimates dominate modeled bridge products because they are stronger mathematical evidence, not because of a hard-coded VALUES position rule.
 - Audit corpus queries are generated deterministically from templates instead of stored as static fixtures so future failures can be expanded systematically without maintaining 300 hand-written query strings.
+- For semijoin coverage in OPTIONAL/MINUS, exact finite RHS frequencies remain authoritative. Without exact RHS frequencies, estimate covered keys as `domain * (1 - (1 - 1/domain)^rhsRows)`, capped by RHS NDV and rows, instead of interpreting weak NDV fallback as complete coverage.
+
+## Validation Log
+
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/queryalgebra/evaluation -Dtest=BagEstimateMathTest#differenceDoesNotTreatWeakRightDistinctAsFullLeftCoverage -DskipITs test` passed after the semijoin coverage fix.
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbEstimateAuditHarnessTest#valuesInsideMinusKeepsRetainedLeftRowsEstimate -DskipITs test` failed before the fix with `difference plannedRows=0.0 actualRows=11`, then passed after the fix.
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/queryalgebra/evaluation -Dtest=BagEstimateMathTest -DskipITs test` passed with 14 tests.
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbEstimateAuditHarnessTest -DskipITs clean test` passed with 5 tests.
+- `mvn -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=LmdbPropertyPathEstimateTest,LmdbCascadesContextPropagationTest -DskipITs clean test` passed with 7 tests.
 
 ## Implementation Tasks
 

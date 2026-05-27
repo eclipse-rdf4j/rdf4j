@@ -33,13 +33,19 @@ final class LmdbEstimateAuditQueryCorpus {
 	static List<AuditQuery> generatedQueries() {
 		List<AuditQuery> queries = new ArrayList<>(QUERY_COUNT);
 		for (int i = 0; i < QUERY_COUNT; i++) {
-			queries.add(new AuditQuery("audit-q" + i, query(i), tags(i)));
+			queries.add(new AuditQuery("audit-q" + i, stampedQuery(i), tags(i)));
 		}
 		return List.copyOf(queries);
 	}
 
+	private static String stampedQuery(int index) {
+		String body = query(index);
+		String stamped = "# audit-query-" + index + "\n" + body;
+		return body.startsWith("PREFIX") ? stamped : PREFIXES + stamped;
+	}
+
 	private static String query(int index) {
-		return switch (index % 15) {
+		return switch (index % 30) {
 		case 0 -> typeStar(index);
 		case 1 -> connectedValues(index);
 		case 2 -> multiColumnValues(index);
@@ -54,12 +60,27 @@ final class LmdbEstimateAuditQueryCorpus {
 		case 11 -> existsFilter(index);
 		case 12 -> notExistsFilter(index);
 		case 13 -> subqueryAggregate(index);
-		default -> mixedAasMedicalJoin(index);
+		case 14 -> mixedAasMedicalJoin(index);
+		case 15 -> twoIndependentOptionals(index);
+		case 16 -> nestedUnionValues(index);
+		case 17 -> relationshipPowerAverage(index);
+		case 18 -> valuesInsideMinus(index);
+		case 19 -> reducedProjection(index);
+		case 20 -> boundOptionalFilter(index);
+		case 21 -> coalesceExtension(index);
+		case 22 -> inverseRelationshipPath(index);
+		case 23 -> alternativePropertyPath(index);
+		case 24 -> doubleValuesJoin(index);
+		case 25 -> disjointTypeCartesian(index);
+		case 26 -> groupedOptionalPath(index);
+		case 27 -> countDistinctAfterUnion(index);
+		case 28 -> sliceOverGroupedSubquery(index);
+		default -> aasSpecificAssetPath(index);
 		};
 	}
 
 	private static Set<String> tags(int index) {
-		return switch (index % 15) {
+		return switch (index % 30) {
 		case 0 -> Set.of("bgp", "type");
 		case 1 -> Set.of("values", "filter", "connected");
 		case 2 -> Set.of("values", "multi-column");
@@ -74,7 +95,22 @@ final class LmdbEstimateAuditQueryCorpus {
 		case 11 -> Set.of("exists");
 		case 12 -> Set.of("not-exists");
 		case 13 -> Set.of("subquery", "aggregate");
-		default -> Set.of("mixed-domain", "join");
+		case 14 -> Set.of("mixed-domain", "join");
+		case 15 -> Set.of("optional", "independent");
+		case 16 -> Set.of("union", "values", "nested");
+		case 17 -> Set.of("aas", "group", "path", "average");
+		case 18 -> Set.of("minus", "values");
+		case 19 -> Set.of("reduced", "projection");
+		case 20 -> Set.of("optional", "bound", "filter");
+		case 21 -> Set.of("extension", "coalesce");
+		case 22 -> Set.of("inverse-path", "relationship");
+		case 23 -> Set.of("alternative-path");
+		case 24 -> Set.of("values", "two-domain");
+		case 25 -> Set.of("cartesian", "type");
+		case 26 -> Set.of("group", "optional", "path");
+		case 27 -> Set.of("union", "count-distinct");
+		case 28 -> Set.of("subquery", "group", "slice");
+		default -> Set.of("aas", "specific-asset-path");
 		};
 	}
 
@@ -246,7 +282,7 @@ final class LmdbEstimateAuditQueryCorpus {
 	}
 
 	private static String mixedAasMedicalJoin(int index) {
-		return PREFIXES + """
+		return """
 				SELECT ?aas ?enc ?value WHERE {
 				  VALUES ?idShort { "%s" "%s" }
 				  ?aas a aas:AssetAdministrationShell ;
@@ -258,6 +294,211 @@ final class LmdbEstimateAuditQueryCorpus {
 				  FILTER(?value > %d)
 				}
 				""".formatted(id(index), id(index + 1), 40 + index % 55);
+	}
+
+	private static String twoIndependentOptionals(int index) {
+		return """
+				SELECT ?enc ?code ?practitioner ?obsValue WHERE {
+				  ?enc a med:Encounter ;
+				       med:hasCondition ?cond .
+				  ?cond med:code ?code .
+				  OPTIONAL { ?enc med:handledBy ?practitioner . }
+				  OPTIONAL {
+				    ?enc med:hasObservation ?obs .
+				    ?obs med:value ?obsValue .
+				    FILTER(?obsValue >= %d)
+				  }
+				  FILTER(?code != "%s")
+				}
+				""".formatted(50 + index % 35, dx(index + 3));
+	}
+
+	private static String nestedUnionValues(int index) {
+		return """
+				SELECT ?thing ?label WHERE {
+				  VALUES ?wanted { "%s" "%s" "%s" }
+				  {
+				    { ?thing a aas:AssetAdministrationShell . }
+				    UNION
+				    { ?thing a aas:RelationshipElement . }
+				  }
+				  ?thing aas:idShort ?label .
+				  FILTER(?label IN (?wanted, "%s"))
+				}
+				""".formatted(id(index), id(index + 1), id(index + 2), "missing-" + index);
+	}
+
+	private static String relationshipPowerAverage(int index) {
+		return """
+				SELECT ?lineAAS (COUNT(DISTINCT ?compAAS) AS ?numDrives) (AVG(xsd:double(?val)) AS ?avgPower)
+				WHERE {
+				  ?lineAAS a aas:AssetAdministrationShell ;
+				           aas:submodel / aas:submodelElement ?rel .
+				  ?rel a aas:RelationshipElement ;
+				       aas:second / aas-ext:resolvesTo ?compAAS .
+				  ?compAAS aas:submodel / aas:submodelElement / (aas:value)* ?prop .
+				  ?prop aas:idShort "%s" ;
+				        aas:value ?val .
+				  FILTER(xsd:double(?val) >= %d)
+				}
+				GROUP BY ?lineAAS
+				""".formatted("ratedPower", 10 + index % 45);
+	}
+
+	private static String valuesInsideMinus(int index) {
+		return """
+				SELECT ?enc ?code WHERE {
+				  ?enc med:hasCondition ?cond .
+				  ?cond med:code ?code .
+				  MINUS {
+				    VALUES ?blocked { "%s" "%s" }
+				    ?enc med:hasCondition ?blockedCond .
+				    ?blockedCond med:code ?blocked .
+				  }
+				}
+				""".formatted(dx(index + 1), dx(index + 4));
+	}
+
+	private static String reducedProjection(int index) {
+		return """
+				SELECT REDUCED ?id WHERE {
+				  ?aas a aas:AssetAdministrationShell ;
+				       aas:submodel / aas:submodelElement / aas:value ?prop .
+				  ?prop aas:idShort ?id ;
+				        aas:value ?value .
+				  FILTER(?id != "%s")
+				}
+				""".formatted("never-" + index);
+	}
+
+	private static String boundOptionalFilter(int index) {
+		return """
+				SELECT ?lineAAS ?rel ?compAAS WHERE {
+				  ?lineAAS a aas:AssetAdministrationShell ;
+				           aas:submodel / aas:submodelElement ?rel .
+				  OPTIONAL {
+				    ?rel aas:second / aas-ext:resolvesTo ?compAAS .
+				  }
+				  FILTER(BOUND(?compAAS) || ?lineAAS != <urn:audit:none:%d>)
+				}
+				""".formatted(index);
+	}
+
+	private static String coalesceExtension(int index) {
+		return """
+				SELECT ?enc (COALESCE(?practitioner, ?enc) AS ?owner) WHERE {
+				  ?enc a med:Encounter .
+				  OPTIONAL { ?enc med:handledBy ?practitioner . }
+				  FILTER(?enc != <urn:audit:none:%d>)
+				}
+				""".formatted(index);
+	}
+
+	private static String inverseRelationshipPath(int index) {
+		return """
+				SELECT ?lineAAS ?compAAS WHERE {
+				  ?compAAS ^aas-ext:resolvesTo / ^aas:second ?rel .
+				  ?rel a aas:RelationshipElement .
+				  ?lineAAS aas:submodel / aas:submodelElement ?rel .
+				  FILTER(?compAAS != ?lineAAS)
+				}
+				""";
+	}
+
+	private static String alternativePropertyPath(int index) {
+		return """
+				SELECT ?aas ?target WHERE {
+				  ?aas a aas:AssetAdministrationShell ;
+				       (aas:submodel|aas:submodel/aas:submodelElement|aas:submodel/aas:submodelElement/aas:value) ?target .
+				  FILTER(?target != <urn:audit:none:%d>)
+				}
+				"""
+				.formatted(index);
+	}
+
+	private static String doubleValuesJoin(int index) {
+		return """
+				SELECT ?enc ?cond ?practitioner WHERE {
+				  VALUES ?code { "%s" "%s" }
+				  VALUES ?severity { "primary" "secondary" }
+				  ?enc med:hasCondition ?cond ;
+				       med:handledBy ?practitioner .
+				  ?cond med:code ?code ;
+				        med:severity ?severity .
+				}
+				""".formatted(dx(index), dx(index + 2));
+	}
+
+	private static String disjointTypeCartesian(int index) {
+		return """
+				SELECT ?lineAAS ?enc WHERE {
+				  ?lineAAS a aas:AssetAdministrationShell .
+				  ?enc a med:Encounter .
+				  FILTER(?lineAAS != <urn:audit:none:%d>)
+				  FILTER(?enc != <urn:audit:none:%d>)
+				}
+				""".formatted(index, index + 1);
+	}
+
+	private static String groupedOptionalPath(int index) {
+		return """
+				SELECT ?lineAAS (COUNT(?prop) AS ?props) WHERE {
+				  ?lineAAS a aas:AssetAdministrationShell ;
+				           aas:submodel / aas:submodelElement ?element .
+				  OPTIONAL {
+				    ?element (aas:value)* ?prop .
+				    ?prop aas:idShort "%s" .
+				  }
+				}
+				GROUP BY ?lineAAS
+				""".formatted(id(index));
+	}
+
+	private static String countDistinctAfterUnion(int index) {
+		return """
+				SELECT (COUNT(DISTINCT ?thing) AS ?count) WHERE {
+				  {
+				    ?thing a aas:AssetAdministrationShell ;
+				           aas:idShort ?label .
+				  }
+				  UNION
+				  {
+				    ?thing a med:Encounter ;
+				           med:hasCondition / med:code ?label .
+				  }
+				  FILTER(?label != "%s")
+				}
+				""".formatted("never-" + index);
+	}
+
+	private static String sliceOverGroupedSubquery(int index) {
+		return """
+				SELECT ?code ?count WHERE {
+				  {
+				    SELECT ?code (COUNT(?enc) AS ?count) WHERE {
+				      VALUES ?code { "%s" "%s" "%s" }
+				      ?enc med:hasCondition / med:code ?code .
+				    }
+				    GROUP BY ?code
+				  }
+				}
+				ORDER BY DESC(?count)
+				LIMIT %d
+				OFFSET %d
+				""".formatted(dx(index), dx(index + 1), dx(index + 3), 1 + index % 4, index % 2);
+	}
+
+	private static String aasSpecificAssetPath(int index) {
+		return """
+				SELECT (COUNT(*) AS ?count) WHERE {
+				  ?aas a aas:AssetAdministrationShell ;
+				       aas:assetInformation/aas:specificAssetId [ aas:value "%s" ] ;
+				       aas:submodel/aas:submodelElement/(aas:value)* ?p1 .
+				  ?p1 aas:idShort "%s" ;
+				      aas:value ?v1 .
+				  FILTER (xsd:double(?v1) > %d)
+				}
+				""".formatted(id(index + 2), id(index), 10 + index % 45);
 	}
 
 	private static String id(int index) {

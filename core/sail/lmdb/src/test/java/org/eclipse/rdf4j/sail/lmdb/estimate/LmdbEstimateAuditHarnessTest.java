@@ -72,10 +72,18 @@ class LmdbEstimateAuditHarnessTest {
 								}
 								""");
 
-				assertEquals(3, rows.size());
+				assertEquals(5, rows.size());
 				assertEquals(1,
 						rows.stream()
 								.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+								.count());
+				assertEquals(1,
+						rows.stream()
+								.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.PROJECTION)
+								.count());
+				assertEquals(1,
+						rows.stream()
+								.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.JOIN)
 								.count());
 				assertEquals(2,
 						rows.stream()
@@ -151,7 +159,7 @@ class LmdbEstimateAuditHarnessTest {
 
 				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditQueryCorpus.generatedQueries()
 						.stream()
-						.limit(15)
+						.limit(30)
 						.flatMap(query -> LmdbEstimateAuditHarness.auditQuery(connection, query.id(), query.sparql())
 								.stream())
 						.toList();
@@ -159,7 +167,7 @@ class LmdbEstimateAuditHarnessTest {
 				Set<String> kinds = rows.stream()
 						.map(row -> row.kind().name())
 						.collect(Collectors.toSet());
-				assertEquals(15, rows.stream()
+				assertEquals(30, rows.stream()
 						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
 						.count());
 				assertTrue(kinds.containsAll(Set.of("FULL_QUERY", "STATEMENT_PATTERN", "JOIN", "LEFT_JOIN",
@@ -206,6 +214,39 @@ class LmdbEstimateAuditHarnessTest {
 
 				assertEquals(1L, groupRow.actualRows(), groupRow::toString);
 				assertEquals(1.0d, groupRow.plannedRows(), 0.0d, groupRow::toString);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void valuesInsideMinusKeepsRetainedLeftRowsEstimate(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery minusValuesQuery = LmdbEstimateAuditQueryCorpus
+						.generatedQueries()
+						.stream()
+						.filter(query -> query.id().equals("audit-q18"))
+						.findFirst()
+						.orElseThrow();
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, minusValuesQuery.id(), minusValuesQuery.sparql());
+				LmdbEstimateAuditHarness.AuditRow fullRow = rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(11L, fullRow.actualRows(), fullRow::toString);
+				assertTrue(fullRow.plannedRows() > 0.0d,
+						() -> "MINUS + VALUES must not estimate retained left rows as zero: " + rows);
+				assertTrue(fullRow.qError() <= 4.0d, () -> "MINUS + VALUES estimate too imprecise: " + rows);
 			}
 		} finally {
 			repository.shutDown();

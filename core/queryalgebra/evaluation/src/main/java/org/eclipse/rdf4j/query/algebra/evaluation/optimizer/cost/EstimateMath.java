@@ -210,10 +210,27 @@ public final class EstimateMath {
 					.mapToDouble(Map.Entry::getValue)
 					.sum();
 		}
-		double rightDistinct = tupleDistinct(right, joinVars);
 		double leftDistinct = Math.max(1.0d, tupleDistinct(left, joinVars));
-		double matchRatio = Math.min(1.0d, rightDistinct / leftDistinct);
+		if (rightFrequencies.isPresent()) {
+			double matchRatio = Math.min(1.0d, rightFrequencies.get().size() / leftDistinct);
+			return left.rows() * matchRatio;
+		}
+		double rightDistinct = tupleDistinct(right, joinVars);
+		double coveredRightDistinct = estimatedCoveredDistinct(right.rows(), Math.max(leftDistinct, rightDistinct));
+		double matchRatio = Math.min(1.0d, Math.min(rightDistinct, coveredRightDistinct) / leftDistinct);
 		return left.rows() * matchRatio;
+	}
+
+	private static double estimatedCoveredDistinct(double rows, double domainDistinct) {
+		if (rows <= 0.0d || domainDistinct <= 0.0d) {
+			return 0.0d;
+		}
+		if (domainDistinct <= 1.0d) {
+			return 1.0d;
+		}
+		double missExponent = rows * Math.log1p(-1.0d / domainDistinct);
+		double covered = domainDistinct * -Math.expm1(missExponent);
+		return Math.max(0.0d, Math.min(Math.min(rows, domainDistinct), covered));
 	}
 
 	private static Map<String, VariableEstimate> joinedVariables(BagEstimate left, BagEstimate right, double rows,

@@ -27,6 +27,8 @@ class LmdbEstimateAuditQueryCorpusTest {
 		List<LmdbEstimateAuditQueryCorpus.AuditQuery> queries = LmdbEstimateAuditQueryCorpus.generatedQueries();
 
 		assertEquals(300, queries.size());
+		assertEquals(300, queries.stream().map(LmdbEstimateAuditQueryCorpus.AuditQuery::sparql).distinct().count());
+		assertTrue(queries.stream().map(LmdbEstimateAuditQueryCorpus.AuditQuery::tags).distinct().count() >= 30);
 		assertTrue(queries.stream().anyMatch(query -> query.sparql().contains("VALUES")));
 		assertTrue(queries.stream().anyMatch(query -> query.sparql().contains("OPTIONAL")));
 		assertTrue(queries.stream().anyMatch(query -> query.sparql().contains("MINUS")));

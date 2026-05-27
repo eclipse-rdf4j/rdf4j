@@ -103,6 +103,20 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void differenceDoesNotTreatWeakRightDistinctAsFullLeftCoverage() {
+		BagEstimate left = BagEstimate.heuristic(18.0d, "left")
+				.withVariable("enc", VariableEstimate.bound(18.0d, 18.0d));
+		BagEstimate right = BagEstimate.heuristic(18.0d, "right")
+				.withVariable("enc", VariableEstimate.bound(18.0d, 18.0d));
+
+		BagEstimate difference = EstimateMath.difference(left, right, Set.of("enc"));
+
+		double expectedRetainedRows = 18.0d - 18.0d * (1.0d - Math.pow(17.0d / 18.0d, 18.0d));
+		assertEquals(expectedRetainedRows, difference.rows(), 0.000001d,
+				"Weak RHS NDV derived from row count should be occupancy coverage, not proof every LHS key matches");
+	}
+
+	@Test
 	void filterScalesRowsAndVariableCoverage() {
 		BagEstimate input = finite("input", List.of("code"),
 				List.of(row("A"), row("B"), row("C"), row("D")));
