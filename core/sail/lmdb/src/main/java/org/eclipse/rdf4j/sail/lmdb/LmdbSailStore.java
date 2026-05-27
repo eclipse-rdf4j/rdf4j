@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -1647,6 +1648,12 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 			return Set.of();
+		}
+
+		@Override
+		public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
+				throws SailException {
+			return SailDataset.super.getTriples(subj, pred, obj);
 		}
 
 		@Override

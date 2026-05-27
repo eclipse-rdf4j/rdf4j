@@ -148,6 +148,10 @@ class TripleStore implements Closeable {
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
 	private final List<TripleIndex> indexes = new ArrayList<>();
+	/**
+	 * The list of triple term indexes that are used to store and retrieve triples.
+	 */
+	private final List<TripleIndex> tripleTermIndexes = new ArrayList<>();
 	private final ValueStore valueStore;
 
 	private long env;
@@ -260,6 +264,12 @@ class TripleStore implements Closeable {
 			if (!indexSpecStr.equals(properties.getTripleIndexes())) {
 				// Store up-to-date properties
 				properties.setTripleIndexes(indexSpecStr);
+			}
+
+			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
+			if (tripleTermIndexSpecStr != null
+					&& !tripleTermIndexSpecStr.equals(properties.getTripleTermIndexes())) {
+				properties.setTripleTermIndexes(tripleTermIndexSpecStr);
 			}
 		} catch (IOException | SailException e) {
 			endTransaction(false);
