@@ -121,7 +121,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		optimizers.add(ORDER_LIMIT_OPTIMIZER);
 		if (!legacySketchOptimizer) {
-			optimizers.add(LmdbCascadesExplainFinalizer.INSTANCE);
+			optimizers.add(new LmdbCascadesExplainFinalizer(evaluationStatistics));
 		}
 
 		if (assertsEnabled) {

@@ -1606,6 +1606,7 @@ final class LmdbTupleExprEstimateAnnotator extends AbstractSimpleQueryModelVisit
 			return;
 		}
 
+		stampPlannerDecisionMetrics(node, rows, workRows);
 		node.setResultSizeEstimate(rows);
 		node.setCostEstimate(workRows);
 		node.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS, workRows);

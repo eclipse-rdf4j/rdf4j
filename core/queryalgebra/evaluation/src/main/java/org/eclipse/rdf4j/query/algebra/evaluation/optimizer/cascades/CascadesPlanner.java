@@ -192,7 +192,8 @@ public final class CascadesPlanner {
 					CostVector.ZERO, expression.tupleExpr());
 			return Optional.empty();
 		}
-		CostVector cost = costModel.localCost(expression, goal, inputWinners).plus(expression.ruleCost());
+		CostVector cost = composePhysicalCost(costModel.localCost(expression, goal, inputWinners),
+				expression.ruleCost());
 		telemetry.alternativeCosted(expression.groupId(), ruleId, goal.requiredProperties(), delivered, cost,
 				expression.tupleExpr());
 		if (goal.searchMode() == OptimizationGoal.SearchMode.BUDGETED && cost.exceeds(goal.costBound())) {
@@ -229,6 +230,15 @@ public final class CascadesPlanner {
 			telemetry.alternativeAccepted(expression.groupId(), ruleId, cost, plan);
 		}
 		return accepted ? Optional.of(winner) : Optional.empty();
+	}
+
+	private CostVector composePhysicalCost(CostVector inputAndLocalCost, CostVector ruleCost) {
+		CostVector safeBase = inputAndLocalCost == null ? CostVector.ZERO : inputAndLocalCost;
+		if (ruleCost == null || CostVector.ZERO.equals(ruleCost)) {
+			return safeBase;
+		}
+		return safeBase.plus(ruleCost)
+				.withRows(ruleCost.rows());
 	}
 
 	private List<Winner> optimizeInputs(Memo memo, MemoExpr expression, OptimizationGoal goal, SearchState state) {

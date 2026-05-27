@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -69,20 +70,35 @@ public final class CascadesPlanProvenanceAnnotator {
 
 	public static void annotateFallback(TupleExpr plan, String plannerId, String source, String usage,
 			CostVector fallbackCost) {
+		annotateFallback(plan, plannerId, source, usage, ignored -> fallbackCost);
+	}
+
+	public static void annotateFallback(TupleExpr plan, String plannerId, String source, String usage,
+			Function<TupleExpr, CostVector> fallbackCostProvider) {
 		if (plan == null) {
 			return;
 		}
 		sanitizeSubtree(plan);
-		CostVector cost = fallbackCost == null ? fallbackCost() : fallbackCost;
 		plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
-				if (node instanceof TupleExpr) {
+				if (node instanceof TupleExpr tupleExpr) {
+					CostVector cost = fallbackCost(tupleExpr, fallbackCostProvider);
 					annotateFallbackNode(node, plannerId, source, usage, cost);
 				}
 				node.visitChildren(this);
 			}
 		});
+	}
+
+	private static CostVector fallbackCost(TupleExpr tupleExpr, Function<TupleExpr, CostVector> fallbackCostProvider) {
+		if (fallbackCostProvider != null) {
+			CostVector cost = fallbackCostProvider.apply(tupleExpr);
+			if (cost != null) {
+				return cost;
+			}
+		}
+		return fallbackCost();
 	}
 
 	private static void annotateRecursive(TupleExpr node, PlanProvenance provenance, String plannerIdOverride) {
@@ -179,6 +195,8 @@ public final class CascadesPlanProvenanceAnnotator {
 
 	private static void annotateFallbackNode(QueryModelNode node, String plannerId, String source, String usage,
 			CostVector cost) {
+		boolean replaceFallbackMetrics = missingOrFallbackUsage(
+				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
 		if (!isBlank(plannerId)) {
 			node.setStringMetricPlanned(TelemetryMetricNames.PLANNER_ID, plannerId);
 		}
@@ -192,17 +210,28 @@ public final class CascadesPlanProvenanceAnnotator {
 				node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE))) {
 			return;
 		}
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, cost.rows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_WORK_ROWS, cost.workRows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, cost.uncertaintyRows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS, cost.uncertaintyRows());
-		setDoubleIfMissing(node, TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, cost.confidence());
-		setDoubleIfMissing(node, PLANNED_CARDINALITY_Q_ERROR, cost.rowQErrorMax());
-		setDoubleIfMissing(node, PLANNED_COST_ROW_Q_ERROR_MAX, cost.rowQErrorMax());
-		setDoubleIfMissing(node, PLANNED_COST_WORK_Q_ERROR_MAX, cost.workQErrorMax());
-		setDoubleIfMissing(node, "plannedCascadesEvidenceCount", cost.evidenceCount());
+		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, cost.rows(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_WORK_ROWS, cost.workRows(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_COST_WORK_ROWS, cost.workRows(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_OBJECTIVE_SCORE, cost.objectiveScore(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_UNCERTAINTY_ROWS, cost.uncertaintyRows(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_COST_UNCERTAINTY_ROWS,
+				cost.uncertaintyRows(), replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, TelemetryMetricNames.PLANNED_CARDINALITY_CONFIDENCE, cost.confidence(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, PLANNED_CARDINALITY_Q_ERROR, cost.rowQErrorMax(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, PLANNED_COST_ROW_Q_ERROR_MAX, cost.rowQErrorMax(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, PLANNED_COST_WORK_Q_ERROR_MAX, cost.workQErrorMax(),
+				replaceFallbackMetrics);
+		setDoubleIfMissingOrFallback(node, "plannedCascadesEvidenceCount", cost.evidenceCount(),
+				replaceFallbackMetrics);
 	}
 
 	private static void sanitizeSubtree(TupleExpr root) {
@@ -311,6 +340,15 @@ public final class CascadesPlanProvenanceAnnotator {
 		double current = node.getDoubleMetricPlanned(metricName);
 		if (!Double.isFinite(current) || current < 0.0d) {
 			node.setDoubleMetricPlanned(metricName, value);
+		}
+	}
+
+	private static void setDoubleIfMissingOrFallback(QueryModelNode node, String metricName, double value,
+			boolean replaceFallbackMetrics) {
+		if (replaceFallbackMetrics) {
+			node.setDoubleMetricPlanned(metricName, value);
+		} else {
+			setDoubleIfMissing(node, metricName, value);
 		}
 	}
 

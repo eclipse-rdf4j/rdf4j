@@ -12,17 +12,33 @@
 package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -41,35 +57,110 @@ final class LmdbEstimateAuditHarness {
 		List<AuditRow> rows = new ArrayList<>();
 		rows.add(auditTupleExpr(connection, queryId, "full", PieceKind.FULL_QUERY, tupleExpr));
 
-		List<StatementPattern> patterns = StatementPatternCollector.process(tupleExpr);
-		for (int i = 0; i < patterns.size(); i++) {
-			rows.add(auditTupleExpr(connection, queryId, "sp-" + i, PieceKind.STATEMENT_PATTERN, patterns.get(i)));
+		Map<PieceKind, Integer> counts = new EnumMap<>(PieceKind.class);
+		for (TupleExpr piece : tuplePieces(tupleExpr)) {
+			PieceKind kind = kind(piece);
+			int index = counts.merge(kind, 1, Integer::sum) - 1;
+			rows.add(auditTupleExpr(connection, queryId, pieceId(kind, index), kind, piece));
 		}
 		return List.copyOf(rows);
 	}
 
-	private static AuditRow auditTupleExpr(SailRepositoryConnection connection, String queryId, String pieceId,
-			PieceKind kind, TupleExpr tupleExpr) {
-		double plannedRows = plannedRows(connection, tupleExpr);
-		long actualRows = actualRows(connection, tupleExpr);
-		return new AuditRow(queryId, pieceId, kind, plannedRows, actualRows, qError(plannedRows, actualRows));
+	private static List<TupleExpr> tuplePieces(TupleExpr tupleExpr) {
+		List<TupleExpr> pieces = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple && !(tuple instanceof QueryRoot)) {
+					pieces.add(tuple);
+				}
+				super.meetNode(node);
+			}
+		});
+		return pieces;
 	}
 
-	private static double plannedRows(SailRepositoryConnection connection, TupleExpr tupleExpr) {
+	private static String pieceId(PieceKind kind, int index) {
+		return kind.name().toLowerCase().replace('_', '-') + "-" + index;
+	}
+
+	private static PieceKind kind(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof StatementPattern) {
+			return PieceKind.STATEMENT_PATTERN;
+		}
+		if (tupleExpr instanceof Join) {
+			return PieceKind.JOIN;
+		}
+		if (tupleExpr instanceof LeftJoin) {
+			return PieceKind.LEFT_JOIN;
+		}
+		if (tupleExpr instanceof Difference) {
+			return PieceKind.DIFFERENCE;
+		}
+		if (tupleExpr instanceof Filter) {
+			return PieceKind.FILTER;
+		}
+		if (tupleExpr instanceof Group) {
+			return PieceKind.GROUP;
+		}
+		if (tupleExpr instanceof Distinct) {
+			return PieceKind.DISTINCT;
+		}
+		if (tupleExpr instanceof Reduced) {
+			return PieceKind.REDUCED;
+		}
+		if (tupleExpr instanceof Union) {
+			return PieceKind.UNION;
+		}
+		if (tupleExpr instanceof Projection) {
+			return PieceKind.PROJECTION;
+		}
+		if (tupleExpr instanceof Extension) {
+			return PieceKind.EXTENSION;
+		}
+		if (tupleExpr instanceof Slice) {
+			return PieceKind.SLICE;
+		}
+		if (tupleExpr instanceof Order) {
+			return PieceKind.ORDER;
+		}
+		if (tupleExpr instanceof ArbitraryLengthPath) {
+			return PieceKind.ARBITRARY_LENGTH_PATH;
+		}
+		if (tupleExpr instanceof ZeroLengthPath) {
+			return PieceKind.ZERO_LENGTH_PATH;
+		}
+		if (tupleExpr instanceof BindingSetAssignment) {
+			return PieceKind.BINDING_SET_ASSIGNMENT;
+		}
+		return PieceKind.TUPLE_EXPR;
+	}
+
+	private static AuditRow auditTupleExpr(SailRepositoryConnection connection, String queryId, String pieceId,
+			PieceKind kind, TupleExpr tupleExpr) {
+		PlanEstimate planned = plannedRows(connection, tupleExpr);
+		long actualRows = actualRows(connection, tupleExpr);
+		return new AuditRow(queryId, pieceId, kind, planned.rows(), actualRows, qError(planned.rows(), actualRows),
+				planned.source(), planned.usage());
+	}
+
+	private static PlanEstimate plannedRows(SailRepositoryConnection connection, TupleExpr tupleExpr) {
 		Explanation explanation = connection.getSailConnection()
 				.explain(Explanation.Level.Optimized, root(tupleExpr.clone()), null, EmptyBindingSet.getInstance(),
 						false, 60);
 		Object explainedObject = explanation.tupleExpr();
 		if (!(explainedObject instanceof QueryModelNode explained)) {
-			return Double.NaN;
+			return new PlanEstimate(Double.NaN, null, null);
 		}
 		double rootRows = estimateRows(explained);
+		String source = explained.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		String usage = explained.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
 		if (Double.isFinite(rootRows) && rootRows >= 0.0d) {
-			return rootRows;
+			return new PlanEstimate(rootRows, source, usage);
 		}
 		FiniteEstimateVisitor visitor = new FiniteEstimateVisitor();
 		explained.visit(visitor);
-		return visitor.rows;
+		return new PlanEstimate(visitor.rows, source, usage);
 	}
 
 	private static long actualRows(SailRepositoryConnection connection, TupleExpr tupleExpr) {
@@ -137,11 +228,30 @@ final class LmdbEstimateAuditHarness {
 	}
 
 	record AuditRow(String queryId, String pieceId, PieceKind kind, double plannedRows, long actualRows,
-			double qError) {
+			double qError, String plannedSource, String plannedUsage) {
+	}
+
+	private record PlanEstimate(double rows, String source, String usage) {
 	}
 
 	enum PieceKind {
 		FULL_QUERY,
-		STATEMENT_PATTERN
+		STATEMENT_PATTERN,
+		JOIN,
+		LEFT_JOIN,
+		DIFFERENCE,
+		FILTER,
+		GROUP,
+		DISTINCT,
+		REDUCED,
+		UNION,
+		PROJECTION,
+		EXTENSION,
+		SLICE,
+		ORDER,
+		ARBITRARY_LENGTH_PATH,
+		ZERO_LENGTH_PATH,
+		BINDING_SET_ASSIGNMENT,
+		TUPLE_EXPR
 	}
 }

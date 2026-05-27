@@ -23,8 +23,10 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -62,6 +64,48 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void joinFallsBackToFormulaWhenWeakProviderReportsZeroForPositiveInputs() {
+		TrackingProvider provider = new TrackingProvider(true, 0.0d);
+		CascadesCostModel model = model(provider);
+		Join join = new Join(pattern("s", "p1", "o1"), pattern("s", "p2", "o2"));
+
+		LogicalProperties properties = model.logicalProperties(join);
+
+		assertEquals(1, provider.multiPatternCalls);
+		assertTrue(properties.estimatedRows() > 0.0d,
+				"Weak sketch/provider zero must not overwrite positive algebraic join evidence");
+	}
+
+	@Test
+	void joinLogicalCardinalityDoesNotTreatLeftOutputsAsExternalBindings() {
+		TrackingProvider provider = new TrackingProvider(false);
+		CascadesCostModel model = model(provider);
+		StatementPattern left = pattern("s", "left", "leftValue");
+		StatementPattern right = pattern("s", "right", "rightValue");
+
+		model.logicalProperties(new Join(left, right));
+
+		assertFalse(provider.rightPatternBoundVars.isEmpty(), "Expected the test provider to observe the JOIN RHS");
+		assertTrue(provider.rightPatternBoundVars.stream().noneMatch(boundVars -> boundVars.contains("s")),
+				"Logical JOIN cardinality must estimate the RHS as a relation, not as a lookup bound by the LHS: "
+						+ provider.rightPatternBoundVars);
+	}
+
+	@Test
+	void providerRowsStillCarryBindingStatsThroughCartesianBranches() {
+		TrackingProvider provider = new TrackingProvider(false);
+		CascadesCostModel model = model(provider);
+		Join disconnected = new Join(pattern("a", "p1", "x"), pattern("b", "p2", "y"));
+		Join connectedAfterCartesian = new Join(disconnected, pattern("b", "p3", "z"));
+
+		LogicalProperties properties = model.logicalProperties(connectedAfterCartesian);
+
+		assertEquals(100.0d, properties.estimatedRows(), 0.0d,
+				"Provider row estimates must expose binding stats so later joins do not divide by the whole "
+						+ "Cartesian branch cardinality");
+	}
+
+	@Test
 	void leftJoinAndDifferenceKeepConservativeRowBounds() {
 		CascadesCostModel model = model(new TrackingProvider());
 		StatementPattern left = pattern("s", "p1", "o1");
@@ -87,6 +131,22 @@ class CascadesCostModelTest {
 	}
 
 	@Test
+	void optionalAndMinusLogicalCardinalityDoNotTreatLeftOutputsAsExternalBindings() {
+		TrackingProvider provider = new TrackingProvider(false);
+		CascadesCostModel model = model(provider);
+		StatementPattern left = pattern("s", "left", "leftValue");
+		StatementPattern right = pattern("s", "right", "rightValue");
+
+		model.logicalProperties(new LeftJoin(left, right));
+		model.logicalProperties(new Difference(left, right));
+
+		assertFalse(provider.rightPatternBoundVars.isEmpty(), "Expected the test provider to observe RHS patterns");
+		assertTrue(provider.rightPatternBoundVars.stream().noneMatch(boundVars -> boundVars.contains("s")),
+				"OPTIONAL/MINUS cardinality must estimate the RHS relation before applying join math: "
+						+ provider.rightPatternBoundVars);
+	}
+
+	@Test
 	void localCostUsesStandardOptimizationEstimatorTier() {
 		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel();
 		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
@@ -97,6 +157,42 @@ class CascadesCostModelTest {
 		model.localCost(expression, OptimizationGoal.root(), List.of());
 
 		assertEquals(List.of(EstimationTier.STANDARD), factorCostModel.estimationTiers);
+	}
+
+	@Test
+	void localCostUsesTupleAlgebraRowsForCompositeGroup() {
+		RecordingFactorCostModel factorCostModel = new RecordingFactorCostModel(999.0d);
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(new EvaluationStatistics(),
+				factorCostModel, new TrackingProvider());
+		Group group = new Group(pattern("s", "p1", "o"));
+		MemoExpr expression = new MemoExpr(1, 7, "Group", List.of(2), "", group, PhysicalProperties.ANY,
+				RuleKind.IMPLEMENTATION, CostVector.ZERO, List.of(), null);
+
+		CostVector cost = model.localCost(expression, OptimizationGoal.root(), List.of(winner(2, group.getArg())));
+
+		assertEquals(1.0d, cost.rows(), 0.0d);
+		assertTrue(factorCostModel.estimationTiers.isEmpty(),
+				"Composite tuple algebra operators must use operator formulas, not join-factor access estimates");
+	}
+
+	@Test
+	void queryRootUsesWrappedTupleRows() {
+		EvaluationStatistics fallbackStatistics = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expr) {
+				if (expr instanceof QueryRoot) {
+					return 999.0d;
+				}
+				return super.getCardinality(expr);
+			}
+		};
+		CascadesCostModel model = new CascadesCostModel.DefaultCascadesCostModel(fallbackStatistics, null,
+				new TrackingProvider());
+		QueryRoot root = new QueryRoot(new Group(pattern("s", "p1", "o")));
+
+		LogicalProperties properties = model.logicalProperties(root);
+
+		assertEquals(1.0d, properties.estimatedRows(), 0.0d);
 	}
 
 	@Test
@@ -158,13 +254,19 @@ class CascadesCostModelTest {
 		private int multiPatternCalls;
 		private final List<Set<String>> rightPatternBoundVars = new java.util.ArrayList<>();
 		private final boolean provideMultiPattern;
+		private final double multiPatternRows;
 
 		private TrackingProvider() {
 			this(true);
 		}
 
 		private TrackingProvider(boolean provideMultiPattern) {
+			this(provideMultiPattern, 7.0d);
+		}
+
+		private TrackingProvider(boolean provideMultiPattern, double multiPatternRows) {
 			this.provideMultiPattern = provideMultiPattern;
+			this.multiPatternRows = multiPatternRows;
 		}
 
 		@Override
@@ -193,12 +295,21 @@ class CascadesCostModelTest {
 			if (!provideMultiPattern) {
 				return Optional.empty();
 			}
-			return Optional.of(StatisticsEstimate.heuristic(7.0d, "test-multi-pattern"));
+			return Optional.of(StatisticsEstimate.heuristic(multiPatternRows, "test-multi-pattern"));
 		}
 	}
 
 	private static final class RecordingFactorCostModel implements JoinFactorCostModel {
 		private final List<EstimationTier> estimationTiers = new java.util.ArrayList<>();
+		private final double outputRows;
+
+		private RecordingFactorCostModel() {
+			this(1.0d);
+		}
+
+		private RecordingFactorCostModel(double outputRows) {
+			this.outputRows = outputRows;
+		}
 
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
@@ -208,7 +319,7 @@ class CascadesCostModelTest {
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, CostContext context) {
 			estimationTiers.add(context.getEstimationTier());
-			return Optional.of(new FactorCostEstimate(2.0d, 1.0d, Map.of(), Map.of()));
+			return Optional.of(new FactorCostEstimate(outputRows * 2.0d, outputRows, Map.of(), Map.of()));
 		}
 	}
 }

@@ -242,6 +242,23 @@ class CascadesMemoModelTest {
 		assertCoveredWithoutInheritedNumbers(join.getRightArg(), "opaque-provider:g10:e11");
 	}
 
+	@Test
+	void fallbackAnnotationReplacesPreviousFallbackMetrics() {
+		StatementPattern pattern = pattern("s", "p", "o");
+		pattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "fallback_no_winner");
+		pattern.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS, 0.0d);
+		pattern.setDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS, 0.0d);
+
+		CascadesPlanProvenanceAnnotator.annotateFallback(pattern, "test-planner", "fallback-source",
+				"fallback_no_winner", new CostVector(12.0d, 34.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d,
+						4.0d, 4.0d, 36.0d, 0.0d, 0.0d));
+
+		assertEquals(12.0d, pattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d);
+		assertEquals(34.0d, pattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_COST_WORK_ROWS), 0.0d);
+		assertEquals("fallback_no_winner",
+				pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE));
+	}
+
 	@SuppressWarnings("unchecked")
 	private static List<String> missingRequirements(PhysicalProperties delivered, PhysicalProperties required)
 			throws Exception {

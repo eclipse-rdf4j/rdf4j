@@ -16,8 +16,11 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlanProvenanceAnnotator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostVector;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.LogicalProperties;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -26,7 +29,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
  * conservative planner-owned vector metadata when Cascades produced no winner for a node.
  */
 final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
-	static final LmdbCascadesExplainFinalizer INSTANCE = new LmdbCascadesExplainFinalizer();
+	static final LmdbCascadesExplainFinalizer INSTANCE = new LmdbCascadesExplainFinalizer(null);
 	static final String PLANNER_ID = "lmdb-cascades";
 
 	private static final String FALLBACK_SOURCE = "lmdb-cascades-fallback";
@@ -34,14 +37,30 @@ final class LmdbCascadesExplainFinalizer implements QueryOptimizer {
 	private static final CostVector FALLBACK_COST = new CostVector(1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 4.0d, 4.0d,
 			4.0d, 4.0d, 3.0d, 0.0d, 0.0d);
 
-	private LmdbCascadesExplainFinalizer() {
+	private final CascadesCostModel costModel;
+
+	LmdbCascadesExplainFinalizer(EvaluationStatistics statistics) {
+		this.costModel = statistics == null ? null : CascadesCostModel.from(statistics);
 	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		CascadesPlanProvenanceAnnotator.annotateFallback(tupleExpr, PLANNER_ID, FALLBACK_SOURCE, FALLBACK_USAGE,
-				FALLBACK_COST);
+				this::fallbackCost);
 		promoteDistinctCursorSkipRuntimeHints(tupleExpr);
+	}
+
+	private CostVector fallbackCost(TupleExpr tupleExpr) {
+		if (costModel == null || tupleExpr == null) {
+			return FALLBACK_COST;
+		}
+		try {
+			LogicalProperties properties = costModel.logicalProperties(tupleExpr);
+			double rows = properties.estimatedRows();
+			return CostVector.ofRowsAndWork(rows, Math.max(1.0d, rows), properties.qErrorInterval());
+		} catch (RuntimeException ignored) {
+			return FALLBACK_COST;
+		}
 	}
 
 	private void promoteDistinctCursorSkipRuntimeHints(TupleExpr tupleExpr) {

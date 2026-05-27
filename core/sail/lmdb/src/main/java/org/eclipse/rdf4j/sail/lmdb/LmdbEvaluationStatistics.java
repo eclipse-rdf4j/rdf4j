@@ -311,6 +311,9 @@ class LmdbEvaluationStatistics
 			return Optional.empty();
 		}
 		Set<String> effectiveBoundVars = boundVars == null ? Set.of() : boundVars;
+		if (!supportsSketchTuplePlan(orderedFactors, effectiveBoundVars)) {
+			return Optional.empty();
+		}
 		double rows = sketchBasedJoinEstimator.orderedCardinality(orderedFactors);
 		if (!isFiniteNonNegative(rows)) {
 			rows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(leftDeepJoin(orderedFactors),
@@ -338,6 +341,18 @@ class LmdbEvaluationStatistics
 		return Optional.of(new StatisticsEstimate(rows,
 				QErrorInterval.heuristic(rows, 2.5d, "lmdb-sketch-multi-pattern-join"), workRows,
 				"lmdb-sketch-multi-pattern-join", metrics));
+	}
+
+	private boolean supportsSketchTuplePlan(List<TupleExpr> orderedFactors, Set<String> boundVars) {
+		Set<String> currentBoundVars = boundVars == null ? Set.of() : boundVars;
+		for (TupleExpr factor : orderedFactors) {
+			double factorRows = sketchBasedJoinEstimator.factorOutputRowsForJoinOrdering(factor, currentBoundVars);
+			if (!isFiniteNonNegative(factorRows)) {
+				return false;
+			}
+			currentBoundVars = unionBindingNames(currentBoundVars, factor.getBindingNames());
+		}
+		return true;
 	}
 
 	@Override

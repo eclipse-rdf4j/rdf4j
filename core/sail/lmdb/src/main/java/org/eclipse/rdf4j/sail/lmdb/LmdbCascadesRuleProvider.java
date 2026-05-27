@@ -2029,7 +2029,7 @@ final class LmdbCascadesRuleProvider {
 
 		@Override
 		public boolean matches(MemoExpr expression, OptimizationGoal goal, Memo memo) {
-			return expression.logical() && costModel != null;
+			return expression.logical() && costModel != null && isAccessPathCandidate(expression.tupleExpr());
 		}
 
 		@Override
@@ -2044,6 +2044,20 @@ final class LmdbCascadesRuleProvider {
 			return List.of(RuleApplication.physical(expression.groupId(), expression.tupleExpr().clone(),
 					delivered(expression.tupleExpr(), estimate.get(), goal), cost, proof,
 					"lmdb-access", snapshot(estimate.get(), cost)));
+		}
+
+		private boolean isAccessPathCandidate(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern || tupleExpr instanceof BindingSetAssignment
+					|| tupleExpr instanceof EmptySet) {
+				return true;
+			}
+			if (tupleExpr instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+				return isAccessPathCandidate(filter.getArg());
+			}
+			if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
+				return isAccessPathCandidate(join.getLeftArg()) && isAccessPathCandidate(join.getRightArg());
+			}
+			return false;
 		}
 	}
 

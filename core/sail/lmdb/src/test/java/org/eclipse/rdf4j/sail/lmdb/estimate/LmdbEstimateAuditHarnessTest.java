@@ -15,10 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -29,6 +33,24 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbEstimateAuditHarnessTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final String AAS_NS = "https://admin-shell.io/aas/3/";
+	private static final String AAS_EXT_NS = "https://admin-shell.io/aas/3/extended/";
+	private static final String MED_NS = "http://example.com/theme/medical/";
+	private static final IRI AAS_ASSET_ADMINISTRATION_SHELL = VF.createIRI(AAS_NS, "AssetAdministrationShell");
+	private static final IRI AAS_RELATIONSHIP_ELEMENT = VF.createIRI(AAS_NS, "RelationshipElement");
+	private static final IRI AAS_SUBMODEL = VF.createIRI(AAS_NS, "submodel");
+	private static final IRI AAS_SUBMODEL_ELEMENT = VF.createIRI(AAS_NS, "submodelElement");
+	private static final IRI AAS_SECOND = VF.createIRI(AAS_NS, "second");
+	private static final IRI AAS_VALUE = VF.createIRI(AAS_NS, "value");
+	private static final IRI AAS_ID_SHORT = VF.createIRI(AAS_NS, "idShort");
+	private static final IRI AAS_EXT_RESOLVES_TO = VF.createIRI(AAS_EXT_NS, "resolvesTo");
+	private static final IRI MED_ENCOUNTER = VF.createIRI(MED_NS, "Encounter");
+	private static final IRI MED_HAS_CONDITION = VF.createIRI(MED_NS, "hasCondition");
+	private static final IRI MED_CODE = VF.createIRI(MED_NS, "code");
+	private static final IRI MED_SEVERITY = VF.createIRI(MED_NS, "severity");
+	private static final IRI MED_HANDLED_BY = VF.createIRI(MED_NS, "handledBy");
+	private static final IRI MED_HAS_OBSERVATION = VF.createIRI(MED_NS, "hasObservation");
+	private static final IRI MED_VALUE = VF.createIRI(MED_NS, "value");
 
 	@Test
 	void capturesFullQueryAndStatementPiecesWithQError(@TempDir File dataDir) {
@@ -67,5 +89,198 @@ class LmdbEstimateAuditHarnessTest {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
+	}
+
+	@Test
+	void capturesNestedOperatorPiecesWithQError(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			IRI p = VF.createIRI("urn:test:audit:p");
+			IRI p2 = VF.createIRI("urn:test:audit:p2");
+			IRI q = VF.createIRI("urn:test:audit:q");
+			IRI r = VF.createIRI("urn:test:audit:r");
+			IRI value = VF.createIRI("urn:test:audit:value");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("urn:test:audit:s1"), p, VF.createIRI("urn:test:audit:o1"));
+				connection.add(VF.createIRI("urn:test:audit:o1"), p2, VF.createIRI("urn:test:audit:o1b"));
+				connection.add(VF.createIRI("urn:test:audit:s1"), q, VF.createIRI("urn:test:audit:o2"));
+				connection.add(VF.createIRI("urn:test:audit:s2"), p, VF.createIRI("urn:test:audit:o3"));
+				connection.add(VF.createIRI("urn:test:audit:o3"), p2, VF.createIRI("urn:test:audit:o3b"));
+				connection.add(VF.createIRI("urn:test:audit:s2"), r, value);
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness.auditQuery(connection,
+						"audit-nested", """
+								SELECT DISTINCT ?s WHERE {
+								  {
+								    ?s <urn:test:audit:p> ?p .
+								    ?p <urn:test:audit:p2> ?p2 .
+								    OPTIONAL { ?s <urn:test:audit:q> ?q . }
+								  }
+								  MINUS {
+								    ?s <urn:test:audit:r> ?r .
+								    FILTER(?r = <urn:test:audit:value>)
+								  }
+								}
+								ORDER BY ?s
+								LIMIT 10
+								""");
+
+				Set<String> kinds = rows.stream()
+						.map(row -> row.kind().name())
+						.collect(Collectors.toSet());
+				assertTrue(kinds.containsAll(Set.of("FULL_QUERY", "STATEMENT_PATTERN", "JOIN", "LEFT_JOIN",
+						"DIFFERENCE", "FILTER", "DISTINCT", "ORDER", "SLICE", "PROJECTION")), rows::toString);
+				assertTrue(rows.stream().allMatch(row -> row.actualRows() >= 0));
+				assertTrue(rows.stream().allMatch(row -> Double.isFinite(row.plannedRows())));
+				assertTrue(rows.stream().allMatch(row -> row.qError() >= 1.0d && Double.isFinite(row.qError())));
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void auditsGeneratedCorpusTemplatesAcrossNestedPieces(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditQueryCorpus.generatedQueries()
+						.stream()
+						.limit(15)
+						.flatMap(query -> LmdbEstimateAuditHarness.auditQuery(connection, query.id(), query.sparql())
+								.stream())
+						.toList();
+
+				Set<String> kinds = rows.stream()
+						.map(row -> row.kind().name())
+						.collect(Collectors.toSet());
+				assertEquals(15, rows.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
+						.count());
+				assertTrue(kinds.containsAll(Set.of("FULL_QUERY", "STATEMENT_PATTERN", "JOIN", "LEFT_JOIN",
+						"DIFFERENCE", "FILTER", "GROUP", "DISTINCT", "UNION", "PROJECTION", "SLICE", "ORDER",
+						"ARBITRARY_LENGTH_PATH", "BINDING_SET_ASSIGNMENT")), kinds::toString);
+				assertTrue(rows.stream().allMatch(row -> row.actualRows() >= 0));
+				assertTrue(rows.stream().allMatch(row -> Double.isFinite(row.plannedRows())));
+				assertTrue(rows.stream().allMatch(row -> row.qError() >= 1.0d && Double.isFinite(row.qError())));
+
+				List<LmdbEstimateAuditHarness.AuditRow> worstRows = rows.stream()
+						.sorted(Comparator.comparingDouble(LmdbEstimateAuditHarness.AuditRow::qError).reversed())
+						.limit(10)
+						.toList();
+				double worstQError = worstRows.isEmpty() ? 1.0d : worstRows.get(0).qError();
+				assertTrue(worstQError <= 10.0d, () -> "Worst estimate q-error too high: " + worstRows);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void noKeyAggregateUsesAggregateOutputRows(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+
+				LmdbEstimateAuditQueryCorpus.AuditQuery aggregatePathQuery = LmdbEstimateAuditQueryCorpus
+						.generatedQueries()
+						.stream()
+						.filter(query -> query.id().equals("audit-q10"))
+						.findFirst()
+						.orElseThrow();
+
+				LmdbEstimateAuditHarness.AuditRow groupRow = LmdbEstimateAuditHarness
+						.auditQuery(connection, aggregatePathQuery.id(), aggregatePathQuery.sparql())
+						.stream()
+						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.GROUP)
+						.findFirst()
+						.orElseThrow();
+
+				assertEquals(1L, groupRow.actualRows(), groupRow::toString);
+				assertEquals(1.0d, groupRow.plannedRows(), 0.0d, groupRow::toString);
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	private static void loadMixedAuditData(SailRepositoryConnection connection) {
+		for (int lineIndex = 0; lineIndex < 6; lineIndex++) {
+			IRI line = VF.createIRI("urn:audit:line:", Integer.toString(lineIndex));
+			IRI lineSubmodel = VF.createIRI("urn:audit:line-submodel:", Integer.toString(lineIndex));
+			connection.add(line, RDF.TYPE, AAS_ASSET_ADMINISTRATION_SHELL);
+			connection.add(line, AAS_ID_SHORT, VF.createLiteral("line-" + lineIndex));
+			connection.add(line, AAS_SUBMODEL, lineSubmodel);
+			for (int driveIndex = 0; driveIndex < 2; driveIndex++) {
+				int componentIndex = lineIndex * 10 + driveIndex;
+				IRI rel = VF.createIRI("urn:audit:rel:", lineIndex + "-" + driveIndex);
+				IRI ref = VF.createIRI("urn:audit:ref:", lineIndex + "-" + driveIndex);
+				IRI component = VF.createIRI("urn:audit:component:", Integer.toString(componentIndex));
+				connection.add(lineSubmodel, AAS_SUBMODEL_ELEMENT, rel);
+				connection.add(rel, RDF.TYPE, AAS_RELATIONSHIP_ELEMENT);
+				connection.add(rel, AAS_ID_SHORT, VF.createLiteral("relationship-" + componentIndex));
+				connection.add(rel, AAS_SECOND, ref);
+				connection.add(ref, AAS_EXT_RESOLVES_TO, component);
+				addAasComponent(connection, component, componentIndex);
+			}
+		}
+		for (int encounterIndex = 0; encounterIndex < 18; encounterIndex++) {
+			IRI encounter = VF.createIRI("urn:audit:encounter:", Integer.toString(encounterIndex));
+			IRI condition = VF.createIRI("urn:audit:condition:", Integer.toString(encounterIndex));
+			IRI observation = VF.createIRI("urn:audit:observation:", Integer.toString(encounterIndex));
+			connection.add(encounter, RDF.TYPE, MED_ENCOUNTER);
+			connection.add(encounter, MED_HAS_CONDITION, condition);
+			connection.add(encounter, MED_HANDLED_BY,
+					VF.createIRI("urn:audit:practitioner:", Integer.toString(encounterIndex % 4)));
+			connection.add(encounter, MED_HAS_OBSERVATION, observation);
+			connection.add(condition, MED_CODE, VF.createLiteral(dx(encounterIndex)));
+			connection.add(condition, MED_SEVERITY,
+					VF.createLiteral(encounterIndex % 2 == 0 ? "primary" : "secondary"));
+			connection.add(observation, MED_VALUE, VF.createLiteral(50 + encounterIndex));
+		}
+	}
+
+	private static void addAasComponent(SailRepositoryConnection connection, IRI component, int componentIndex) {
+		IRI submodel = VF.createIRI("urn:audit:component-submodel:", Integer.toString(componentIndex));
+		IRI root = VF.createIRI("urn:audit:component-root:", Integer.toString(componentIndex));
+		IRI folder = VF.createIRI("urn:audit:component-folder:", Integer.toString(componentIndex));
+		IRI ratedPower = VF.createIRI("urn:audit:rated-power:", Integer.toString(componentIndex));
+		connection.add(component, RDF.TYPE, AAS_ASSET_ADMINISTRATION_SHELL);
+		connection.add(component, AAS_ID_SHORT, VF.createLiteral("DriveUnit"));
+		connection.add(component, AAS_SUBMODEL, submodel);
+		connection.add(submodel, AAS_SUBMODEL_ELEMENT, root);
+		connection.add(root, AAS_VALUE, folder);
+		connection.add(folder, AAS_VALUE, ratedPower);
+		connection.add(ratedPower, AAS_ID_SHORT, VF.createLiteral("ratedPower"));
+		connection.add(ratedPower, AAS_VALUE, VF.createLiteral(10.0d + componentIndex));
+		addAasProperty(connection, root, "serialNumber", componentIndex);
+		addAasProperty(connection, root, "temperature", componentIndex + 20);
+		addAasProperty(connection, root, "pressure", componentIndex + 30);
+	}
+
+	private static void addAasProperty(SailRepositoryConnection connection, IRI root, String idShort, int value) {
+		IRI property = VF.createIRI("urn:audit:property:", idShort + "-" + value);
+		connection.add(root, AAS_VALUE, property);
+		connection.add(property, AAS_ID_SHORT, VF.createLiteral(idShort));
+		connection.add(property, AAS_VALUE, VF.createLiteral(value));
+	}
+
+	private static String dx(int index) {
+		return switch (index % 5) {
+		case 0 -> "DX-200";
+		case 1 -> "DX-201";
+		case 2 -> "DX-202";
+		case 3 -> "DX-300";
+		default -> "DX-301";
+		};
 	}
 }
