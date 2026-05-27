@@ -26,9 +26,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -134,6 +136,25 @@ class PlanStateTransitionAdapterTest {
 		assertEquals(Set.of("code", "obs", "value"), transition.nextState().boundVars());
 		assertEquals(Set.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201")),
 				transition.nextState().finiteBindingValues().get("code"));
+	}
+
+	@Test
+	void bindingSetAssignmentTransitionAddsFiniteBindingValuesToState() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(binding("code", "DX-200"), binding("code", "DX-201"),
+				binding("code", "DX-201")));
+		PlanState prefix = PlanState.initial(BagEstimate.exact(1.0d, "outer"), Set.of(), Map.of());
+
+		PlanState next = prefix.advance(AccessPathCandidate.forFactor(assignment),
+				new JoinFactorCostModel.FactorCostEstimate(3.0d, 3.0d),
+				BagEstimate.heuristic(3.0d, "values-transition"),
+				JoinCostVector.of(3.0d, 3.0d, 3.0d, 0.0d, 0.0d));
+
+		assertEquals(Set.of("code"), next.boundVars());
+		assertEquals(Set.of(VF.createLiteral("DX-200"), VF.createLiteral("DX-201")),
+				next.finiteBindingValues().get("code"));
+		assertEquals(3.0d, next.estimate().variable("code").boundRows(), 1.0e-9d);
+		assertEquals(3.0d, next.estimate().variable("code").distinctRows(), 1.0e-9d);
 	}
 
 	@Test
@@ -252,6 +273,12 @@ class PlanStateTransitionAdapterTest {
 
 	private static StatementPattern pattern(String subjectName, IRI predicate, String objectName) {
 		return new StatementPattern(new Var(subjectName), new Var("p", predicate), new Var(objectName));
+	}
+
+	private static QueryBindingSet binding(String name, String value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding(name, VF.createLiteral(value));
+		return row;
 	}
 
 	private static int componentMask(SketchBasedJoinEstimator.Component... components) {

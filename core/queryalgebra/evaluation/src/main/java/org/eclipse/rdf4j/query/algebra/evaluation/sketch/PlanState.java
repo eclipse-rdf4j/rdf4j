@@ -21,6 +21,8 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
@@ -77,8 +79,8 @@ final class PlanState {
 		Map<String, Double> nextDoubleDiagnostics = new LinkedHashMap<>(doubleDiagnostics);
 		nextDoubleDiagnostics.putAll(factorCostEstimate.getDoubleMetrics());
 
-		return new PlanState(normalizedEstimate, nextBoundVars, finiteBindingValues, nextPrefixFactors, nextCostVector,
-				nextHistory, nextStringDiagnostics, nextDoubleDiagnostics);
+		return new PlanState(normalizedEstimate, nextBoundVars, mergeFiniteBindingValues(candidate.factor()),
+				nextPrefixFactors, nextCostVector, nextHistory, nextStringDiagnostics, nextDoubleDiagnostics);
 	}
 
 	PlanState withEstimateAndCost(BagEstimate nextEstimate, JoinCostVector nextCostVector,
@@ -150,6 +152,26 @@ final class PlanState {
 			return VariableEstimate.bound(rows, rows);
 		}
 		return existing.withBoundRows(rows);
+	}
+
+	private Map<String, Set<Value>> mergeFiniteBindingValues(TupleExpr factor) {
+		if (!(factor instanceof BindingSetAssignment assignment)) {
+			return finiteBindingValues;
+		}
+		Map<String, Set<Value>> merged = new LinkedHashMap<>();
+		for (Map.Entry<String, Set<Value>> entry : finiteBindingValues.entrySet()) {
+			merged.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+		}
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			for (String bindingName : assignment.getBindingNames()) {
+				Value value = bindingSet.getValue(bindingName);
+				if (value != null) {
+					merged.computeIfAbsent(bindingName, ignored -> new LinkedHashSet<>())
+							.add(value);
+				}
+			}
+		}
+		return immutableFiniteBindingValues(merged);
 	}
 
 	private static Set<String> immutableSet(Set<String> values) {

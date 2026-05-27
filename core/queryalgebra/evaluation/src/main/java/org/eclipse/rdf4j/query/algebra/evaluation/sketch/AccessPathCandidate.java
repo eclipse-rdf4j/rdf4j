@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -99,6 +100,11 @@ record AccessPathCandidate(TupleExpr factor, String accessMode, Set<String> runt
 				return;
 			}
 			names.add(name);
+		}
+
+		@Override
+		public void meet(BindingSetAssignment assignment) {
+			names.addAll(assignment.getBindingNames());
 		}
 	}
 }
