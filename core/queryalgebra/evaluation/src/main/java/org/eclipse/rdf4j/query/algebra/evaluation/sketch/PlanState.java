@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 
 /**
  * Stateful physical-planning prefix. This is the transition-state container used while the LMDB planner migrates away
@@ -81,6 +82,7 @@ final class PlanState {
 
 	PlanState withEstimateAndCost(BagEstimate nextEstimate, JoinCostVector nextCostVector,
 			Map<String, String> stringMetrics, Map<String, Double> doubleMetrics) {
+		BagEstimate normalizedEstimate = withCurrentBoundVariableRows(nextEstimate);
 		Map<String, String> nextStringDiagnostics = new LinkedHashMap<>(stringDiagnostics);
 		if (stringMetrics != null) {
 			nextStringDiagnostics.putAll(stringMetrics);
@@ -89,7 +91,7 @@ final class PlanState {
 		if (doubleMetrics != null) {
 			nextDoubleDiagnostics.putAll(doubleMetrics);
 		}
-		return new PlanState(nextEstimate, boundVars, finiteBindingValues, prefixFactors, nextCostVector,
+		return new PlanState(normalizedEstimate, boundVars, finiteBindingValues, prefixFactors, nextCostVector,
 				accessPathHistory, nextStringDiagnostics, nextDoubleDiagnostics);
 	}
 
@@ -123,6 +125,27 @@ final class PlanState {
 
 	Map<String, Double> doubleDiagnostics() {
 		return doubleDiagnostics;
+	}
+
+	private BagEstimate withCurrentBoundVariableRows(BagEstimate nextEstimate) {
+		Objects.requireNonNull(nextEstimate, "nextEstimate");
+		if (boundVars.isEmpty()) {
+			return nextEstimate;
+		}
+		Map<String, VariableEstimate> variables = new LinkedHashMap<>(nextEstimate.variables());
+		for (String variable : boundVars) {
+			variables.put(variable, nextVariableEstimate(variables.get(variable), nextEstimate.rows()));
+		}
+		return new BagEstimate(nextEstimate.rows(), nextEstimate.workRows(), nextEstimate.memoryRows(),
+				nextEstimate.confidence(), nextEstimate.source(), variables, nextEstimate.finiteRelations(),
+				nextEstimate.metrics());
+	}
+
+	private static VariableEstimate nextVariableEstimate(VariableEstimate existing, double rows) {
+		if (existing == null || existing.equals(VariableEstimate.empty())) {
+			return VariableEstimate.bound(rows, rows);
+		}
+		return existing.withBoundRows(rows);
 	}
 
 	private static Set<String> immutableSet(Set<String> values) {

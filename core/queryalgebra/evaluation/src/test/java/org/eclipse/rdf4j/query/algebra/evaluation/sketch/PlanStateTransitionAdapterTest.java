@@ -158,6 +158,22 @@ class PlanStateTransitionAdapterTest {
 	}
 
 	@Test
+	void estimateOnlyTransitionUpdatesBoundVariableSurfacesInNextState() {
+		BagEstimate prefixEstimate = BagEstimate.exact(10.0d, "outer")
+				.withVariable("value", VariableEstimate.bound(10.0d, 6.0d));
+		PlanState prefix = PlanState.initial(prefixEstimate, Set.of("value"), Map.of());
+		BagEstimate filteredEstimate = new BagEstimate(3.0d, 2.0d, 0.0d, 0.8d, "filter-transition",
+				prefixEstimate.variables(), prefixEstimate.finiteRelations(), Map.of());
+
+		PlanState next = prefix.withEstimateAndCost(filteredEstimate,
+				JoinCostVector.of(12.0d, 3.0d, 10.0d, 0.0d, 0.0d), Map.of(), Map.of());
+
+		VariableEstimate value = next.estimate().variable("value");
+		assertEquals(3.0d, value.boundRows(), 1.0e-9d);
+		assertEquals(3.0d, value.distinctRows(), 1.0e-9d);
+	}
+
+	@Test
 	void statementAlternativesExposePhysicalLookupChoices() {
 		StatementPattern factor = pattern("s", PREDICATE, "o");
 		int lookupMask = componentMask(SketchBasedJoinEstimator.Component.S, SketchBasedJoinEstimator.Component.P);
